@@ -193,7 +193,6 @@ class AgentCompositionResolver:
                     plugin_id=item.plugin_id,
                     version=item.version,
                     commit=item.commit,
-                    content_digest=item.content_digest,
                     path=item.path,
                     skills_path=item.skills_path,
                 )
@@ -281,7 +280,13 @@ class AgentCompositionResolver:
                     )
                 )
             else:
-                markdown = source.subagents[edge.markdown]
+                markdown = source.subagents.get(edge.markdown)
+                if markdown is None:
+                    raise CompositionError(
+                        "A selected Markdown subagent is unavailable; repair its source or remove the selection.",
+                        code="composition_subagent_unavailable",
+                        details={"agent_id": agent.id, "subagent_id": edge.markdown},
+                    )
                 child = self._markdown_node(
                     source,
                     markdown,
@@ -301,6 +306,12 @@ class AgentCompositionResolver:
                         definition=child,
                     )
                 )
+        if len({child.name for child in children}) != len(children):
+            raise CompositionError(
+                "The selected Agent has duplicate roster names.",
+                code="composition_subagent_conflict",
+                details={"agent_id": agent.id},
+            )
         return provisional.model_copy(update={"children": tuple(children)})
 
     def _markdown_node(
@@ -315,6 +326,12 @@ class AgentCompositionResolver:
         depth: int,
     ) -> ResolvedAgentNode:
         _consume_budget(budget, depth)
+        if child.model is not None and child.model not in source.models:
+            raise CompositionError(
+                "The selected Markdown subagent model is unavailable.",
+                code="composition_subagent_model_unavailable",
+                details={"subagent_id": child.id, "model_id": child.model},
+            )
         model = parent.model if child.model is None else self._model_recipe(source.models[child.model])
         return ResolvedAgentNode(
             source_kind="markdown",

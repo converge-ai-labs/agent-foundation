@@ -9,11 +9,11 @@ import pytest
 from a13n_ui.cli import main
 from a13n_ui.configuration import load_agent_ui_configuration
 from a13n_ui.content_plugins import ContentPluginStore
-from a13n_ui.errors import ConfigurationError, ContentPluginError
+from a13n_ui.errors import ContentPluginError
 
 
 @pytest.mark.anyio
-async def test_install_list_and_uninstall_retains_content(tmp_path: Path) -> None:
+async def test_install_list_and_uninstall_deletes_content(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
 
@@ -30,9 +30,10 @@ async def test_install_list_and_uninstall_retains_content(tmp_path: Path) -> Non
     removed = await store.uninstall("plugin-reviewer")
 
     assert removed.plugin_id == installed.plugin_id
-    assert removed.retained_path == installed.path
+    assert removed.removed_path == installed.path
     assert await store.list() == ()
-    assert Path(installed.path).is_dir()
+    assert not Path(installed.path).exists()
+    assert tuple(store.root.iterdir()) == ()
 
 
 @pytest.mark.anyio
@@ -97,8 +98,8 @@ def test_cli_installs_lists_and_uninstalls_content_plugin(
 
     main(["--data-root", os.fspath(data_root), "plugin", "uninstall", "plugin-reviewer", "--format", "json"])
     removed = json.loads(capsys.readouterr().out)
-    assert removed == {"plugin_id": "plugin-reviewer", "retained_path": installed["path"]}
-    assert Path(installed["path"]).is_dir()
+    assert removed == {"plugin_id": "plugin-reviewer", "removed_path": installed["path"]}
+    assert not Path(installed["path"]).exists()
 
 
 @pytest.mark.anyio
@@ -137,21 +138,20 @@ async def test_configuration_loads_plugin_subagent_and_prefers_local_override(tm
 
 
 @pytest.mark.anyio
-async def test_configuration_rejects_plugin_to_plugin_subagent_conflict(tmp_path: Path) -> None:
+async def test_configuration_resolves_plugin_subagent_conflicts_deterministically(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     await store.install(os.fspath(repository), plugin_id="plugin-reviewer")
     await store.install(os.fspath(repository), plugin_id="plugin-writer")
     configuration = _configuration(tmp_path / "configuration")
 
-    with pytest.raises(ConfigurationError) as conflict:
-        await load_agent_ui_configuration(configuration, content_plugin_root=store.root)
-
-    assert conflict.value.code == "configuration_duplicate_resource"
+    loaded = await load_agent_ui_configuration(configuration, content_plugin_root=store.root)
+    assert "subagent-explorer" in loaded.subagents
+    assert any("Overrides plugin subagent" in item for item in loaded.content_plugin_diagnostics)
 
 
 @pytest.mark.anyio
-async def test_installed_content_can_be_edited_and_retained_on_uninstall(tmp_path: Path) -> None:
+async def test_installed_content_can_be_edited_and_deleted_on_uninstall(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     installed = await store.install(os.fspath(repository))
@@ -175,15 +175,15 @@ async def test_installed_content_can_be_edited_and_retained_on_uninstall(tmp_pat
     removed = await store.uninstall("plugin-reviewer")
 
     assert fingerprint_after != fingerprint_before
-    assert listed[0].content_digest == installed.content_digest
+    assert listed[0].commit == installed.commit
     assert loaded.subagents["subagent-explorer"].description == "Explore the edited repository."
     assert loaded.subagents["subagent-explorer"].body == "Inspect local changes."
-    assert removed.retained_path == installed.path
+    assert removed.removed_path == installed.path
     assert await store.list() == ()
 
 
 @pytest.mark.anyio
-async def test_reinstall_reuses_edited_retained_content(tmp_path: Path) -> None:
+async def test_reinstall_starts_with_fresh_repository_content(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     installed = await store.install(os.fspath(repository))
@@ -195,11 +195,11 @@ async def test_reinstall_reuses_edited_retained_content(tmp_path: Path) -> None:
     reinstalled = await store.install(os.fspath(repository))
 
     assert reinstalled.path == installed.path
-    assert skill_document.read_text(encoding="utf-8") == edited
+    assert skill_document.read_text(encoding="utf-8") != edited
 
 
 @pytest.mark.anyio
-async def test_invalid_local_edit_rejects_installed_catalog(tmp_path: Path) -> None:
+async def test_invalid_local_subagent_does_not_block_plugin_or_configuration(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     installed = await store.install(os.fspath(repository))
@@ -208,14 +208,15 @@ async def test_invalid_local_edit_rejects_installed_catalog(tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    with pytest.raises(ContentPluginError) as invalid:
-        await store.list()
-
-    assert invalid.value.code == "content_plugin_invalid"
+    assert len(await store.list()) == 1
+    loaded = await load_agent_ui_configuration(_configuration(tmp_path / "config"), content_plugin_root=store.root)
+    assert loaded.subagents == {}
+    assert loaded.content_plugin_diagnostics
+    assert loaded.content_plugins[0].skills_path is not None
 
 
 @pytest.mark.anyio
-async def test_install_rejects_invalid_canonical_subagent(tmp_path: Path) -> None:
+async def test_install_keeps_invalid_subagent_for_editing(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",), commit=False)
     (repository / "plugins" / "reviewer" / "subagents" / "explorer.md").write_text(
         "Missing frontmatter.\n",
@@ -224,15 +225,14 @@ async def test_install_rejects_invalid_canonical_subagent(tmp_path: Path) -> Non
     _commit(repository)
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
 
-    with pytest.raises(ContentPluginError) as invalid:
-        await store.install(os.fspath(repository))
-
-    assert invalid.value.code == "content_plugin_invalid"
-    assert await store.list() == ()
+    installed = await store.install(os.fspath(repository))
+    assert Path(installed.path).is_dir()
+    loaded = await load_agent_ui_configuration(_configuration(tmp_path / "config"), content_plugin_root=store.root)
+    assert loaded.content_plugin_diagnostics
 
 
 @pytest.mark.anyio
-async def test_install_rejects_duplicate_subagent_ids_within_plugin(tmp_path: Path) -> None:
+async def test_install_loads_duplicate_subagent_ids_deterministically(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",), commit=False)
     (repository / "plugins" / "reviewer" / "subagents" / "second.md").write_text(
         "---\nname: explorer\ndescription: Duplicate explorer.\n---\n\nDuplicate.\n",
@@ -241,15 +241,14 @@ async def test_install_rejects_duplicate_subagent_ids_within_plugin(tmp_path: Pa
     _commit(repository)
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
 
-    with pytest.raises(ContentPluginError) as invalid:
-        await store.install(os.fspath(repository))
-
-    assert invalid.value.code == "content_plugin_invalid"
-    assert await store.list() == ()
+    installed = await store.install(os.fspath(repository))
+    assert Path(installed.path).is_dir()
+    loaded = await load_agent_ui_configuration(_configuration(tmp_path / "config"), content_plugin_root=store.root)
+    assert loaded.content_plugin_diagnostics
 
 
 @pytest.mark.anyio
-async def test_failed_registration_publication_leaves_no_catalog_entry(
+async def test_failed_directory_publication_leaves_no_installed_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -259,12 +258,12 @@ async def test_failed_registration_publication_leaves_no_catalog_entry(
     def fail_link(*_args: object, **_kwargs: object) -> None:
         raise OSError("publication failed")
 
-    monkeypatch.setattr(os, "link", fail_link)
+    monkeypatch.setattr(Path, "rename", fail_link)
     with pytest.raises(ContentPluginError) as unavailable:
         await store.install(os.fspath(repository))
 
-    assert unavailable.value.code == "content_plugin_store_unavailable"
-    assert tuple(store.installed.iterdir()) == ()
+    assert unavailable.value.code == "content_plugin_install_failed"
+    assert tuple(store.root.iterdir()) == ()
 
 
 @pytest.mark.anyio
@@ -399,3 +398,88 @@ def _commit(repository: Path) -> None:
         ),
         check=True,
     )
+
+
+@pytest.mark.anyio
+async def test_manifest_is_the_only_authority_for_editable_metadata(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    store = ContentPluginStore(tmp_path / "content-plugins")
+    installed = await store.install(os.fspath(repository))
+    root = Path(installed.path)
+    assert root == store.root / "plugin-reviewer"
+    manifest = root / ".a13n-plugin" / "plugin.yaml"
+    manifest.write_text(manifest.read_text().replace("Content for reviewer.", "My local description."))
+    listed = await store.list()
+    assert listed[0].description == "My local description."
+    assert listed[0].commit == installed.commit
+    assert set(json.loads((root / ".a13n-plugin" / "origin.json").read_text())) == {"repository", "commit"}
+
+
+@pytest.mark.anyio
+async def test_bad_plugin_and_bad_subagent_do_not_hide_healthy_content(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
+    store = ContentPluginStore(tmp_path / "content-plugins")
+    first = await store.install(os.fspath(repository), plugin_id="plugin-reviewer")
+    second = await store.install(os.fspath(repository), plugin_id="plugin-writer")
+    (Path(first.path) / ".a13n-plugin" / "plugin.yaml").write_text("invalid manifest")
+    (Path(second.path) / "subagents" / "bad.md").write_bytes(b"\xff")
+    config = _configuration(tmp_path / "config")
+    loaded = await load_agent_ui_configuration(config, content_plugin_root=store.root)
+    assert [p.plugin_id for p in loaded.content_plugins] == ["plugin-writer"]
+    assert "subagent-explorer" in loaded.subagents
+    assert len(loaded.content_plugin_diagnostics) == 2
+    # Deletion is possible even when the manifest cannot be parsed.
+    await store.uninstall(first.plugin_id)
+    assert not Path(first.path).exists()
+    assert Path(second.path).is_dir()
+
+
+@pytest.mark.anyio
+async def test_empty_and_extra_files_are_valid_editable_content(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    store = ContentPluginStore(tmp_path / "content-plugins")
+    installed = await store.install(os.fspath(repository))
+    root = Path(installed.path)
+    (root / "skills" / "notes.txt").write_text("Notes, not a Skill.")
+    (root / "subagents" / "notes.txt").write_text("Notes, not a subagent.")
+    (root / "subagents" / "explorer.md").unlink()
+    listed = await store.list()
+    assert listed[0].subagent_paths == ()
+    assert listed[0].skills_path is not None
+
+
+@pytest.mark.anyio
+async def test_loading_does_not_read_supporting_asset_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import a13n_ui.content_plugins as plugins
+
+    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    store = ContentPluginStore(tmp_path / "content-plugins")
+    installed = await store.install(os.fspath(repository))
+    asset = Path(installed.path) / "skills" / "review" / "asset.bin"
+    asset.write_bytes(b"x" * 1024)
+    read = plugins._read_regular_file
+
+    def guarded_read(path: Path, limit: int) -> bytes:
+        assert path != asset
+        return read(path, limit)
+
+    monkeypatch.setattr(plugins, "_read_regular_file", guarded_read)
+    assert len(await store.list()) == 1
+    assert await store.fingerprint()
+
+
+@pytest.mark.anyio
+async def test_uninstall_removes_symlink_not_its_target(tmp_path: Path) -> None:
+    store = ContentPluginStore(tmp_path / "content-plugins")
+    store.root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("Keep")
+    link = store.root / "plugin-linked"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are unavailable")
+    await store.uninstall("plugin-linked")
+    assert not link.is_symlink()
+    assert (outside / "keep.txt").read_text() == "Keep"

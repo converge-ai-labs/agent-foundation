@@ -99,10 +99,8 @@ class AgentReconstructor:
                 canonical_host_paths=environment_adapter.preserves_host_paths,
                 project_roots=composition.project_roots,
                 user_skills_root=self._user_skills_root,
-                content_plugin_skills=tuple(
-                    (item.plugin_id, item.skills_path)
-                    for item in composition.content_plugins
-                    if item.skills_path is not None
+                content_plugins=tuple(
+                    (item.plugin_id, item.path, item.skills_path) for item in composition.content_plugins
                 ),
             )
             model_recipes: dict[str, ResolvedModelRecipe] = {}

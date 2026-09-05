@@ -60,6 +60,7 @@ version = "0.0.0"
 source = { editable = "../../packages/agent-harness" }
 dependencies = [
     { name = "a13n-environment-provider" },
+    { name = "a13n-logging" },
     { name = "anyio" },
     { name = "genai-prices" },
     { name = "httpx2" },
@@ -77,6 +78,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
+    { name = "a13n-logging", editable = "../../packages/logging" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "genai-prices", specifier = ">=0.1.4,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
@@ -96,6 +98,17 @@ test = [
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
     { name = "pytest", specifier = ">=9,<10" },
 ]
+
+[[package]]
+name = "a13n-logging"
+version = "0.0.0"
+source = { editable = "../../packages/logging" }
+dependencies = [
+    { name = "rich" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "rich", specifier = ">=15,<16" }]
 
 [[package]]
 name = "a13n-plugin-examples"

@@ -112,6 +112,17 @@ async def load_agent_ui_configuration(
         if before != after:
             continue
         parsed = _parse_complete_tree(selected, captured, content_plugins)
+        if plugin_store is not None:
+            parsed = parsed.model_copy(
+                update={
+                    "source_digest": (
+                        canonical_digest((parsed.source_digest, tuple(plugin_store.diagnostics)))
+                        if plugin_store.diagnostics
+                        else parsed.source_digest
+                    ),
+                    "content_plugin_diagnostics": (*plugin_store.diagnostics, *parsed.content_plugin_diagnostics),
+                }
+            )
         plugin_after = () if plugin_store is None else await plugin_store.fingerprint()
         if plugin_before != plugin_after:
             continue
@@ -312,7 +323,7 @@ def _parse_complete_tree(
             )
         )
 
-    _merge_content_plugin_subagents(
+    plugin_diagnostics = _merge_content_plugin_subagents(
         content_plugins,
         local_subagents=subagents,
         sources=sources,
@@ -322,9 +333,12 @@ def _parse_complete_tree(
         return LoadedAgentUiConfiguration(
             document=document,
             root_digest=sources[0].source_digest,
-            source_digest=canonical_digest(tuple((item.relative_path, item.source_digest) for item in sources)),
+            source_digest=canonical_digest(
+                (tuple((item.relative_path, item.source_digest) for item in sources), tuple(plugin_diagnostics))
+            ),
             sources=tuple(sources),
             content_plugins=content_plugins,
+            content_plugin_diagnostics=tuple(plugin_diagnostics),
             models=models,
             harness_plugins=plugins,
             environment_profiles=profiles,
@@ -348,39 +362,49 @@ def _merge_content_plugin_subagents(
     *,
     local_subagents: dict[str, CanonicalSubagent],
     sources: list[SourceDocument],
-) -> None:
+) -> list[str]:
+    diagnostics: list[str] = []
     plugin_subagents: dict[str, tuple[CanonicalSubagent, Path, bytes, str]] = {}
     total_bytes = 0
     total_files = 0
     for plugin in sorted(content_plugins, key=lambda item: item.plugin_id):
-        registration_content = plugin.model_dump_json(exclude={"subagent_paths"}, indent=2)
-        registration_digest = hashlib.sha256(registration_content.encode()).hexdigest()
+        plugin_content = plugin.model_dump_json(exclude={"subagent_paths"}, indent=2)
+        plugin_digest = hashlib.sha256(plugin_content.encode()).hexdigest()
         sources.append(
             SourceDocument(
-                relative_path=f"content-plugins/{plugin.plugin_id}/registration.json",
-                source_digest=registration_digest,
+                relative_path=f"content-plugins/{plugin.plugin_id}/plugin.json",
+                source_digest=plugin_digest,
                 resource_kind="content_plugin",
-                content=registration_content,
+                content=plugin_content,
             )
         )
         for source_value in plugin.subagent_paths:
             source_path = Path(source_value)
-            content, _fingerprint_value = _read_bounded_stable(source_path, _MAX_SOURCE_BYTES)
+            try:
+                content, _fingerprint_value = _read_bounded_stable(source_path, _MAX_SOURCE_BYTES)
+            except ConfigurationError as exc:
+                diagnostics.append(f"{source_path}: {exc}")
+                continue
             total_files += 1
             total_bytes += len(content)
             if total_files > _MAX_FILES or total_bytes > _MAX_TOTAL_BYTES:
-                raise _error(
-                    "configuration_source_limit",
-                    "Installed Content Plugin subagents exceed configuration source limits.",
-                    source_path,
+                diagnostics.append(f"{source_path}: Plugin subagent source limit exceeded.")
+                continue
+            try:
+                resource = parse_canonical_markdown(source_path, content)
+            except ConfigurationError as exc:
+                diagnostics.append(f"{source_path}: {exc}")
+                sources.append(
+                    SourceDocument(
+                        relative_path=f"content-plugins/{plugin.plugin_id}/subagents/{source_path.name}",
+                        source_digest=hashlib.sha256(content).hexdigest(),
+                        resource_kind="content_plugin_invalid",
+                        content=content.decode("utf-8", errors="replace"),
+                    )
                 )
-            resource = parse_canonical_markdown(source_path, content)
+                continue
             if resource.id in plugin_subagents:
-                raise _error(
-                    "configuration_duplicate_resource",
-                    f"Installed Content Plugins contribute duplicate subagent ID: {resource.id}",
-                    source_path,
-                )
+                diagnostics.append(f"{source_path}: Overrides plugin subagent {resource.id}.")
             relative_path = f"content-plugins/{plugin.plugin_id}/subagents/{source_path.name}"
             plugin_subagents[resource.id] = (resource, source_path, content, relative_path)
 
@@ -397,6 +421,8 @@ def _merge_content_plugin_subagents(
                 content=_decode_source(Path(relative_path), content, code="configuration_markdown_invalid"),
             )
         )
+
+    return diagnostics
 
 
 def _validate_extension(raw: dict[str, Any], path: Path) -> ExtensionResource:

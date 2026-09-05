@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import yaml
+from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -47,6 +48,7 @@ _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
     {"environment_not_found", "environment_selection_invalid", "environment_unsupported"}
 )
 _MAX_SKILL_SELECTION = 10_000
+_LOGGER = get_logger(__name__)
 _SKILL_ROUTING_POLICY = """Before starting a task or a materially different phase, compare it with the available
 skill descriptions. When a skill directly applies, use the ordinary Environment file tools to read the listed
 path's SKILL.md in full before following that workflow. If a read reports more content, continue from the returned
@@ -165,6 +167,7 @@ class FileSkillSource:
         roots: Sequence[str],
         *,
         required: bool = True,
+        skip_invalid: bool = False,
         max_entries_per_root: int = 256,
         max_frontmatter_lines: int = 256,
         max_line_length: int = 16 * 1024,
@@ -177,6 +180,7 @@ class FileSkillSource:
         if max_entries_per_root <= 0 or max_frontmatter_lines <= 0 or max_line_length <= 0:
             raise ValueError("File skill source limits must be positive")
         self._required = required
+        self._skip_invalid = skip_invalid
         self._max_entries_per_root = max_entries_per_root
         self._max_frontmatter_lines = max_frontmatter_lines
         self._max_line_length = max_line_length
@@ -219,14 +223,29 @@ class FileSkillSource:
                 )
             direct = _join_logical_path(root, _SKILL_FILE_NAME)
             if await _is_file(files, direct):
-                discovered.append(await self._catalog_entry(files, root))
+                await self._append_entry(files, root, discovered)
             for entry in sorted(entries.entries, key=lambda item: item.path):
                 if entry.kind != "directory":
                     continue
                 skill_file = _join_logical_path(entry.path, _SKILL_FILE_NAME)
                 if await _is_file(files, skill_file):
-                    discovered.append(await self._catalog_entry(files, entry.path))
+                    await self._append_entry(files, entry.path, discovered)
         return tuple(discovered)
+
+    async def _append_entry(
+        self,
+        files: FileOperator,
+        path: str,
+        entries: list[SkillCatalogItem],
+    ) -> None:
+        try:
+            entries.append(await self._catalog_entry(files, path))
+        except DefinitionError as exc:
+            if not self._skip_invalid:
+                raise
+            _LOGGER.warning(
+                "skill_catalog_entry_skipped", extra={"source_id": self.source_id, "path": path, "code": exc.code}
+            )
 
     async def _catalog_entry(self, files: FileOperator, skill_dir: str) -> SkillCatalogItem:
         path = _join_logical_path(skill_dir, _SKILL_FILE_NAME)

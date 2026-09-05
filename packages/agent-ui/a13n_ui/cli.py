@@ -300,8 +300,12 @@ async def _run_content_plugins(args: argparse.Namespace, data_root: Path) -> int
         _print_projection({"installed": _content_plugin_projection(installed)}, args.format)
         return 0
     if args.plugin_command == "list":
+        plugins = await store.list()
         _print_projection(
-            {"plugins": tuple(_content_plugin_projection(item) for item in await store.list())},
+            {
+                "plugins": tuple(_content_plugin_projection(item) for item in plugins),
+                "diagnostics": tuple(store.diagnostics),
+            },
             args.format,
         )
         return 0
@@ -318,7 +322,6 @@ def _content_plugin_projection(plugin: InstalledContentPlugin) -> dict[str, str]
         "description": plugin.description,
         "repository": plugin.repository,
         "commit": plugin.commit,
-        "content_digest": plugin.content_digest,
         "path": plugin.path,
     }
 
@@ -416,6 +419,7 @@ async def _run_management(
             status = await app.status()
             projection = {
                 "valid": status.candidate_error_code is None,
+                "content_plugin_diagnostics": status.content_plugin_diagnostics,
                 "accepted_generation_digest": status.accepted_generation_digest,
                 "error": (
                     None

@@ -636,13 +636,18 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
     assert finalization.state_publications[0].status == "unchanged"
 
 
-async def test_environment_run_service_mounts_captured_content_plugin_skills_read_write(tmp_path: Path) -> None:
+@pytest.mark.parametrize("skills_enabled", [True, False])
+async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: Path, skills_enabled: bool) -> None:
     root = _write_configuration(tmp_path)
     agent = tmp_path / "agents" / "assistant.yaml"
-    agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
-    plugin_skills = tmp_path / "state" / "content-plugins" / "objects" / ("1" * 64) / "skills"
+    if skills_enabled:
+        agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
+    plugin_skills = tmp_path / "state" / "content-plugins" / "plugin-reviewer" / "skills"
     plugin_skill = plugin_skills / "review" / "SKILL.md"
     plugin_skill.parent.mkdir(parents=True)
+    subagent = plugin_skills.parent / "subagents" / "explorer.md"
+    subagent.parent.mkdir()
+    subagent.write_text("Original subagent")
     plugin_skill.write_text("---\nname: review\ndescription: Review a change.\n---\n\nReview carefully.\n")
     user_skills = tmp_path / "home" / ".agents" / "skills"
 
@@ -676,9 +681,8 @@ async def test_environment_run_service_mounts_captured_content_plugin_skills_rea
                         plugin_id="plugin-reviewer",
                         version="1.0.0",
                         commit="2" * 40,
-                        content_digest="1" * 64,
                         path=plugin_skills.parent.as_posix(),
-                        skills_path=plugin_skills.as_posix(),
+                        skills_path=plugin_skills.as_posix() if skills_enabled else None,
                     ),
                 )
             }
@@ -686,12 +690,12 @@ async def test_environment_run_service_mounts_captured_content_plugin_skills_rea
 
         plan = await executor._environments.prepare(composition)
 
-        assert tuple(plan.environments) == ("workspace", "content-plugin-1", "user-skills")
+        expected_aliases = ("workspace", "content-plugin-1") + (("user-skills",) if skills_enabled else ())
+        assert tuple(plan.environments) == expected_aliases
         assert tuple(item.mount_path for item in plan._mounts) == (
             (tmp_path / "workspace").resolve().as_posix(),
-            plugin_skills.resolve().as_posix(),
-            user_skills.resolve().as_posix(),
-        )
+            plugin_skills.parent.resolve().as_posix(),
+        ) + ((user_skills.resolve().as_posix(),) if skills_enabled else ())
         plugin_mount = plan._mounts[1]
         assert plugin_mount.permission_ceiling.operations == frozenset(
             action for action in EnvironmentAction if action.value.startswith("environment.file.")
@@ -710,9 +714,17 @@ async def test_environment_run_service_mounts_captured_content_plugin_skills_rea
                 "---\nname: review\ndescription: Review an updated change.\n---\n\nUpdated by the Agent.\n",
                 mode="replace",
             )
+            await environment.files.write_text(subagent.resolve().as_posix(), "Edited subagent", mode="replace")
+            with pytest.raises(EnvironmentError):
+                await environment.files.write_text(
+                    (plugin_skills.parent.parent / "outside.md").as_posix(),
+                    "Not allowed",
+                    mode="create",
+                )
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()
+    assert subagent.read_text() == "Edited subagent"
     assert "Updated by the Agent." in plugin_skill.read_text()
 
 

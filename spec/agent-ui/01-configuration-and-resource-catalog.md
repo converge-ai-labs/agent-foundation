@@ -4,7 +4,7 @@
 
 Agent UI uses a small multi-file configuration tree so people can configure and inspect the workstation with an ordinary editor when no browser is available. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
 
-A stable valid read of the complete tree and installed Content Plugin registrations and payloads produces one accepted configuration generation. A malformed, incomplete, or changing source leaves the previous accepted generation active. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
+A stable valid read of the configuration tree plus usable optional Content Plugin sources produces one accepted configuration generation. A malformed, incomplete, or changing primary configuration tree leaves the previous accepted generation active. Invalid optional plugin content is skipped with diagnostics under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration). Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
 
 ## Configuration Tree
 
@@ -27,7 +27,7 @@ An explicit `--config <path>` selects the root YAML. Otherwise Agent UI selects 
     <resource>.yaml
 ```
 
-Each resource file defines exactly one resource. Agent UI scans immediate lower-case `.yaml` files in the YAML directories and immediate non-README `.md` files in `subagents/`. Local Markdown subagents override an installed Content Plugin contribution with the same ID; plugin-to-plugin duplicate IDs reject the candidate generation. It does not recurse, follow a symlinked directory, follow file symlinks, walk parent directories, process YAML includes, or discover ambient product configuration as a live layer.
+Each resource file defines exactly one resource. Agent UI scans immediate lower-case `.yaml` files in the YAML directories and immediate non-README `.md` files in `subagents/`. Local Markdown subagents override an installed Content Plugin contribution with the same ID; plugin-to-plugin duplicates use deterministic precedence with diagnostics. It does not recurse, follow a symlinked directory, follow file symlinks, walk parent directories, process YAML includes, or discover ambient product configuration as a live layer.
 
 The root file owns restart-bound process settings and global defaults:
 
@@ -98,7 +98,7 @@ sequenceDiagram
     Loader->>DB: compare-and-select accepted generation digest
 ```
 
-The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures validated installed Content Plugin registrations, exact object identities, and contributed canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the ordered source-relative identities and exact source digests, not timestamps. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
+The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures current Content Plugin metadata, editable directory paths, diagnostics, and usable canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the ordered source-relative identities and exact source digests, not timestamps. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
 
 Acceptance is all-or-nothing. Publishing immutable content can leave harmless unreferenced objects, but SQLite selects a generation only after every selected resource, catalog key, graph, credential reference, and default validates. A failed candidate never removes or partially updates the previous accepted generation.
 
@@ -158,18 +158,18 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 
 ## Dynamic Values
 
-| Change                                               | Effect                                                                                                   |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Valid resource file edit                             | Later Runs resolve the new accepted content; an active Run is unchanged                                  |
-| Invalid or partial multi-file edit                   | Previous accepted generation remains active                                                              |
-| Global default edit                                  | Affects newly created root Threads only                                                                  |
-| Thread configuration patch                           | Affects the admitted Run and subsequent Runs; omitted axes retain prior Thread values                    |
-| Project root edit                                    | Affects later Runs of Threads selecting that Project                                                     |
-| Secret value behind an unchanged reference           | Later native construction resolves the current value                                                     |
-| Compatible Codex or Grok account-store change        | The next subscription-backed Model request resolves the current shared account                           |
-| Newly installed extension or Capability contribution | Becomes available after catalog refresh and a successful generation; it is not auto-selected             |
-| Content Plugin install or uninstall                  | Affects the next successful generation and later Runs; an admitted Run retains its captured plugin paths |
-| Updated already imported Python extension code       | Requires a new App process                                                                               |
+| Change                                               | Effect                                                                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Valid resource file edit                             | Later Runs resolve the new accepted content; an active Run is unchanged                                |
+| Invalid or partial multi-file edit                   | Previous accepted generation remains active                                                            |
+| Global default edit                                  | Affects newly created root Threads only                                                                |
+| Thread configuration patch                           | Affects the admitted Run and subsequent Runs; omitted axes retain prior Thread values                  |
+| Project root edit                                    | Affects later Runs of Threads selecting that Project                                                   |
+| Secret value behind an unchanged reference           | Later native construction resolves the current value                                                   |
+| Compatible Codex or Grok account-store change        | The next subscription-backed Model request resolves the current shared account                         |
+| Newly installed extension or Capability contribution | Becomes available after catalog refresh and a successful generation; it is not auto-selected           |
+| Content Plugin install or uninstall                  | Updates later generations; uninstall deletes live files even when an admitted Run captured their paths |
+| Updated already imported Python extension code       | Requires a new App process                                                                             |
 
 ## Failure Semantics
 

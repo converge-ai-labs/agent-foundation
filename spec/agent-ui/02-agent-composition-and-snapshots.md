@@ -133,6 +133,8 @@ A child Thread persists the same discriminated Agent or Markdown source referenc
 
 ## Canonical Markdown Subagents
 
+Markdown reference availability is validated when resolving the selected Agent, not across every configured Agent. Missing plugin models and resolved roster-name conflicts fail the affected composition explicitly. Invalid optional plugin files remain diagnosed under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration).
+
 Immediate local `subagents/*.md` files and installed Content Plugin `subagents/*.md` files provide a concise human-authored child format compatible with the common Claude Code shape and the minimal YAACLI adapter pattern. Local files override plugin content with the same ID under the [Content Plugin precedence contract](01b-content-plugin-repositories.md#configuration-integration):
 
 ```markdown
@@ -234,7 +236,7 @@ Every continuation bundle records the Run composition that produced it. This is 
 2. Agent configuration selects Capabilities; Capabilities own Toolsets.
 3. Thread selections can replace Agent Plugin and MCP defaults between Runs.
 4. Every Run captures a complete immutable composition before native construction.
-5. An active Run never changes when a source file, installed plugin registration, or Thread configuration changes.
+5. A captured Agent definition never changes when configuration files or Thread selections change. Environment-routed plugin files remain live and can be edited or deleted; their paths do not pin content.
 6. Canonical Markdown remains small and broadly compatible rather than encoding a complete authorization system.
 7. Claude Code, Cursor, and Codex import is explicit, previewable, diagnostic, and no-clobber.
 8. `HarnessState` can continue across supported composition changes without silently discarding component state.

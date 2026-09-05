@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -82,6 +82,7 @@ version = "0.0.0"
 source = { editable = "packages/agent-harness" }
 dependencies = [
     { name = "a13n-environment-provider" },
+    { name = "a13n-logging" },
     { name = "anyio" },
     { name = "genai-prices" },
     { name = "httpx2" },
@@ -105,6 +106,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
+    { name = "a13n-logging", editable = "packages/logging" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "genai-prices", specifier = ">=0.1.4,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },

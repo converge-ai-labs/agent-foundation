@@ -444,3 +444,34 @@ async def test_acceptance_publishes_complete_generation_before_atomic_selection(
             ("project", "project-main"),
             ("subagent", "subagent-explorer"),
         }
+
+
+def test_plugin_layout_routes_skills_inside_the_full_plugin_mount(tmp_path: Path) -> None:
+    plugin = tmp_path / "plugin-reviewer"
+    layout = EnvironmentPathLayout.resolve(
+        canonical_host_paths=False,
+        project_roots=(tmp_path / "project",),
+        content_plugins=(
+            ("plugin-reviewer", str(plugin), str(plugin / "skills")),
+            ("plugin-subagents", str(tmp_path / "plugin-subagents"), None),
+        ),
+    )
+    assert layout.content_plugin_roots == (
+        ("plugin-reviewer", "/environment/content-plugin-1"),
+        ("plugin-subagents", "/environment/content-plugin-2"),
+    )
+    assert layout.content_plugin_skills == (("plugin-reviewer", "/environment/content-plugin-1/skills"),)
+
+
+async def test_missing_markdown_only_blocks_the_agent_that_selects_it(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    source = await load_agent_ui_configuration(path)
+    source = source.model_copy(update={"subagents": {}})
+    resolver = AgentCompositionResolver(_catalog())
+    resolver.validate_generation(source)
+    with pytest.raises(CompositionError) as exc:
+        resolver.resolve_run(source, _selection())
+    assert exc.value.code == "composition_subagent_unavailable"
+    # Reviewer has no Markdown dependency; its Run remains resolvable.
+    composition = resolver.resolve_run(source, replace(_selection(), agent_source_id="agent-reviewer"))
+    assert composition.root.source_id == "agent-reviewer"
