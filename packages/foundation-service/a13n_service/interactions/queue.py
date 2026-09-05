@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
 from sqlalchemy import exists, or_, select
@@ -67,10 +68,14 @@ class QueuedSubmissionStore:
         authority_principal: PrincipalRef,
         submission: ThreadRunSubmissionIntent,
         queued_submission_id: str | None = None,
+        replay: Callable[[AsyncSession], Awaitable[QueuedSubmissionMutationReceipt | None]] | None = None,
+        transaction_hook: (Callable[[AsyncSession, QueuedSubmissionMutationReceipt], Awaitable[None]] | None) = None,
     ) -> QueuedSubmissionMutationReceipt:
         await self._validate_inline_hook_destination(submission)
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
+            if replay is not None and (replayed := await replay(database)) is not None:
+                return replayed
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=thread_id)
             if thread.version != expected_thread_version:
                 raise QueuedSubmissionConflict("Thread version changed before queue admission")
@@ -122,10 +127,13 @@ class QueuedSubmissionStore:
             thread.queue_version += 1
             thread.updated_at = now
             await database.flush()
-            return QueuedSubmissionMutationReceipt(
+            receipt = QueuedSubmissionMutationReceipt(
                 queued_submission=value,
                 queue_version=thread.queue_version,
             )
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
+            return receipt
 
     async def list(
         self,
@@ -219,10 +227,14 @@ class QueuedSubmissionStore:
         expected_version: int,
         actor_principal: PrincipalRef,
         submission: ThreadRunSubmissionIntent,
+        replay: Callable[[AsyncSession], Awaitable[QueuedSubmissionMutationReceipt | None]] | None = None,
+        transaction_hook: (Callable[[AsyncSession, QueuedSubmissionMutationReceipt], Awaitable[None]] | None) = None,
     ) -> QueuedSubmissionMutationReceipt:
         await self._validate_inline_hook_destination(submission)
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
+            if replay is not None and (replayed := await replay(database)) is not None:
+                return replayed
             scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=scope)
             row = await _lock_entry(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
@@ -251,10 +263,13 @@ class QueuedSubmissionStore:
             thread.queue_version += 1
             thread.updated_at = now
             await database.flush()
-            return QueuedSubmissionMutationReceipt(
+            receipt = QueuedSubmissionMutationReceipt(
                 queued_submission=row.to_resource(),
                 queue_version=thread.queue_version,
             )
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
+            return receipt
 
     async def delete(
         self,
@@ -262,9 +277,13 @@ class QueuedSubmissionStore:
         tenant_id: str,
         queued_submission_id: str,
         expected_version: int,
+        replay: Callable[[AsyncSession], Awaitable[ThreadQueueMutationReceipt | None]] | None = None,
+        transaction_hook: Callable[[AsyncSession, ThreadQueueMutationReceipt], Awaitable[None]] | None = None,
     ) -> ThreadQueueMutationReceipt:
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
+            if replay is not None and (replayed := await replay(database)) is not None:
+                return replayed
             scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=scope)
             rows = await _lock_live(database, tenant_id=tenant_id, thread_id=scope)
@@ -293,7 +312,10 @@ class QueuedSubmissionStore:
                 row.position = position - offset - 1
             thread.queue_version += 1
             thread.updated_at = now
-            return ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+            receipt = ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
+            return receipt
 
     async def reorder(
         self,
@@ -302,9 +324,13 @@ class QueuedSubmissionStore:
         thread_id: str,
         expected_queue_version: int,
         queued_submission_ids: tuple[str, ...],
+        replay: Callable[[AsyncSession], Awaitable[ThreadQueueMutationReceipt | None]] | None = None,
+        transaction_hook: Callable[[AsyncSession, ThreadQueueMutationReceipt], Awaitable[None]] | None = None,
     ) -> ThreadQueueMutationReceipt:
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
+            if replay is not None and (replayed := await replay(database)) is not None:
+                return replayed
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=thread_id)
             rows = await _lock_live(database, tenant_id=tenant_id, thread_id=thread_id)
             if thread.queue_version != expected_queue_version:
@@ -313,7 +339,10 @@ class QueuedSubmissionStore:
                 raise QueuedSubmissionConflict("reorder must name every queued submission exactly once")
             current = tuple(row.id for row in rows)
             if current == queued_submission_ids:
-                return ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+                receipt = ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+                if transaction_hook is not None:
+                    await transaction_hook(database, receipt)
+                return receipt
 
             by_id = {row.id: row for row in rows}
             offset = len(rows) + max((row.position or 0 for row in rows), default=0)
@@ -324,7 +353,10 @@ class QueuedSubmissionStore:
                 by_id[entry_id].position = index
             thread.queue_version += 1
             thread.updated_at = now
-            return ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+            receipt = ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
+            return receipt
 
     async def _validate_inline_hook_destination(self, submission: ThreadRunSubmissionIntent) -> None:
         try:

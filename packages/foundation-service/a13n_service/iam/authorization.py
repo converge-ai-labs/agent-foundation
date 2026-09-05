@@ -71,6 +71,8 @@ class WorkspaceAction(StrEnum):
     queued_submission_delete = "queued_submission.delete"
     queued_submission_reorder = "queued_submission.reorder"
     queued_submission_consume = "queued_submission.consume"
+    a2a_push_configuration_read = "a2a_push_configuration.read"
+    a2a_push_configuration_manage = "a2a_push_configuration.manage"
     application_account_read = "application_account.read"
     application_account_manage = "application_account.manage"
     application_account_use = "application_account.use"
@@ -106,6 +108,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.trace_read,
         WorkspaceAction.hook_subscription_read,
         WorkspaceAction.queued_submission_read,
+        WorkspaceAction.a2a_push_configuration_read,
         WorkspaceAction.application_account_read,
         WorkspaceAction.ingress_read,
         WorkspaceAction.route_read,
@@ -135,6 +138,7 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
         WorkspaceAction.queued_submission_delete,
         WorkspaceAction.queued_submission_reorder,
         WorkspaceAction.queued_submission_consume,
+        WorkspaceAction.a2a_push_configuration_manage,
     }
 )
 
@@ -174,6 +178,7 @@ _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
         WorkspaceAction.lifecycle_event_read,
         WorkspaceAction.notification_subscribe,
         WorkspaceAction.trace_read,
+        WorkspaceAction.a2a_push_configuration_read,
     }
 )
 
@@ -192,6 +197,7 @@ _DIRECT_AGENT_RUNNER_ACTIONS = _DIRECT_AGENT_VIEWER_ACTIONS | frozenset(
         WorkspaceAction.queued_submission_delete,
         WorkspaceAction.queued_submission_reorder,
         WorkspaceAction.queued_submission_consume,
+        WorkspaceAction.a2a_push_configuration_manage,
     }
 )
 

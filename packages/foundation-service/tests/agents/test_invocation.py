@@ -57,6 +57,41 @@ def test_scalar_and_list_overrides_replace_and_clear() -> None:
     assert merged.config.retries.output == 1
 
 
+def test_client_tool_override_narrows_optional_protocol_surface() -> None:
+    payload = agent_config().model_dump(mode="json", by_alias=True)
+    payload["client_tools"] = [
+        {"name": "required_tool", "description": "Required.", "parameters_json_schema": {"type": "object"}},
+        {"name": "optional_tool", "description": "Optional.", "parameters_json_schema": {"type": "object"}},
+    ]
+    payload["protocol"]["client_tools"] = [
+        {"name": "required_tool", "required": True},
+        {"name": "optional_tool", "required": False},
+    ]
+    base = agent_config().__class__.model_validate(payload)
+
+    merged = merge_agent_run_override(
+        base,
+        AgentRunOverride(client_tools=(base.client_tools[0],)),
+    )
+
+    assert [item.name for item in merged.config.client_tools] == ["required_tool"]
+    assert [item.name for item in merged.config.protocol.client_tools] == ["required_tool"]
+
+
+def test_client_tool_override_retains_missing_required_protocol_tool_for_validation() -> None:
+    payload = agent_config().model_dump(mode="json", by_alias=True)
+    payload["client_tools"] = [
+        {"name": "required_tool", "description": "Required.", "parameters_json_schema": {"type": "object"}},
+    ]
+    payload["protocol"]["client_tools"] = [{"name": "required_tool", "required": True}]
+    base = agent_config().__class__.model_validate(payload)
+
+    merged = merge_agent_run_override(base, AgentRunOverride(client_tools=()))
+
+    assert merged.config.client_tools == ()
+    assert [item.name for item in merged.config.protocol.client_tools] == ["required_tool"]
+
+
 def test_empty_retry_patch_is_a_noop() -> None:
     base = agent_config().model_copy(update={"retries": None})
 

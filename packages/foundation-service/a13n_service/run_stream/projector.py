@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 import anyio
@@ -23,6 +23,7 @@ from a13n_service.storage import transaction
 from a13n_service.temporal import require_aware_utc, utc_now
 
 from .domain import (
+    CompleteRunStream,
     RetainedReplayUnavailable,
     RunStreamEvent,
     deterministic_item_id,
@@ -54,6 +55,7 @@ class LifecycleRunStreamProjector:
         max_attempts: int = 20,
         poll_interval_seconds: float = 1,
         claim_limit: int = 16,
+        terminal_projection: Callable[[LifecycleEvent, CompleteRunStream], Awaitable[None]] | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if not worker_id:
@@ -71,6 +73,7 @@ class LifecycleRunStreamProjector:
         self._max_attempts = max_attempts
         self._poll_interval_seconds = poll_interval_seconds
         self._claim_limit = claim_limit
+        self._terminal_projection = terminal_projection
         self._clock = clock
 
     async def run(self) -> None:
@@ -227,6 +230,11 @@ class LifecycleRunStreamProjector:
             )
         except Exception as error:
             raise _ReplayPublicationFailed("retained replay object publication failed") from error
+        if self._terminal_projection is not None:
+            try:
+                await self._terminal_projection(event, source)
+            except Exception as error:
+                raise _ReplayPublicationFailed("secondary retained projection publication failed") from error
 
     async def _interrupt_open_items(self, event: LifecycleEvent) -> None:
         if event.thread_id is None:  # pragma: no cover - guarded by the caller

@@ -7,7 +7,12 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.interactions.domain import Run
+from a13n_service.interactions.domain import Run, RunInputKind
+from a13n_service.interactions.input import (
+    AcceptedBinaryContent,
+    BinaryContentDelivery,
+    PathBinarySource,
+)
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.records import run_record
 from a13n_service.interactions.state import RunStateEnvelope
@@ -29,6 +34,21 @@ async def add_run_with_environment(
 ) -> RunRecord:
     await database.flush()
     run = await select_run_environment(database, run=run, workspace_id=workspace_id, choice=choice)
+    input_value = run.input if run.input_kind is RunInputKind.agent_input else None
+    if run.input_kind is RunInputKind.waiting_continue and isinstance(run.input, dict):
+        input_value = run.input.get("input")
+    contents = input_value.get("content") if isinstance(input_value, dict) else None
+    if isinstance(contents, list):
+        for content in contents:
+            if not isinstance(content, dict) or content.get("type") != "binary":
+                continue
+            block = AcceptedBinaryContent.model_validate(content)
+            if isinstance(block.source, PathBinarySource) and run.environment_id is None:
+                raise invalid_environment("Path input requires a selected Environment")
+            if block.delivery is BinaryContentDelivery.environment_path and (
+                run.environment_id is None or run.environment_access == "read_only"
+            ):
+                raise invalid_environment("Environment-path delivery requires a writable Environment")
     if state.effective_agent_config.skills and (run.environment_id is None or run.environment_access == "read_only"):
         raise invalid_environment("Managed Skills require a writable Environment")
     if (run.environment_id is None) != (run.environment_access is None):

@@ -1,0 +1,29 @@
+"""Gateway application-service composition."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .a2a import A2AService
+from .commands import NativeInteractionCommands
+from .hosted_agui import HostedAguiService
+from .native_streaming import NativeRunStreamService
+from .notifications import NotificationService
+from .queries import NativeInteractionQueries
+from .queue import NativeQueuedSubmissionService
+
+
+@dataclass(frozen=True, slots=True)
+class GatewayRuntime:
+    """Application ports shared by public protocol adapters."""
+
+    commands: NativeInteractionCommands
+    hosted_agui: HostedAguiService
+    native_streams: NativeRunStreamService
+    notifications: NotificationService
+    queries: NativeInteractionQueries
+    queued_submissions: NativeQueuedSubmissionService
+    a2a: A2AService | None
+
+
+__all__ = ["GatewayRuntime"]

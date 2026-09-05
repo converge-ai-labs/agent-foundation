@@ -20,6 +20,7 @@ from a13n_service.interactions.lifecycle_queries import read_workspace_lifecycle
 from a13n_service.interactions.records import run_record, session_record, thread_record
 from a13n_service.lifecycle import (
     LifecycleEntityType,
+    LifecycleEvent,
     LifecycleEventDraft,
     LifecycleEventRecord,
     LifecycleProjectionState,
@@ -305,7 +306,7 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     await _seed_run(interaction_sessions)
     async with transaction(interaction_sessions) as database:
         await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
-        await append_lifecycle_event(
+        terminal = await append_lifecycle_event(
             database,
             _draft(
                 event_type="run.completed",
@@ -317,11 +318,17 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
 
     stream = RedisRunStream(redis_client)
     replay = RunReplayStore(interaction_object_store)
+    terminal_projections: list[tuple[LifecycleEvent, CompleteRunStream]] = []
+
+    async def project_terminal(event: LifecycleEvent, source: CompleteRunStream) -> None:
+        terminal_projections.append((event, source))
+
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
         stream,
         replay,
         worker_id="projection-worker-1",
+        terminal_projection=project_terminal,
         clock=lambda: NOW,
     )
 
@@ -336,6 +343,11 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     assert terminal_page.closed
     assert tuple(entry.event.event_type for entry in terminal_page.items) == ("run.accepted", "run.completed")
     assert tuple(entry.event.event_type for entry in snapshot.events) == ("run.accepted", "run.completed")
+    assert len(terminal_projections) == 1
+    projected_event, projected_source = terminal_projections[0]
+    assert projected_event.id == terminal.id
+    assert projected_source.entries == terminal_page.items
+    assert projected_source.closed_at == snapshot.closed_at
     async with short_session(interaction_sessions) as database:
         projection_states = tuple(
             await database.scalars(select(LifecycleEventRecord.projection_state).order_by(LifecycleEventRecord.seq))

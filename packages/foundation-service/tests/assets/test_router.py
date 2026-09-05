@@ -248,6 +248,70 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
 
 
 @pytest.mark.anyio
+async def test_protocol_import_object_becomes_authoritative_only_with_owning_transaction(api: Api) -> None:
+    service = api.app.state.runtime.control.assets
+    sessions = api.app.state.runtime.shared.storage.sessions
+    actor = AuthenticatedActor(
+        principal=PrincipalRef(principal_type="user", principal_id=BUILDER_ID),
+        auth_method="session",
+        credential_id="ses_1234567890abcdef",
+        boundary_workspace_id=WORKSPACE_ID,
+        request_id="req_protocol",
+    )
+
+    async def body() -> AsyncIterator[bytes]:
+        yield PDF
+
+    prepared = await service.prepare_protocol_import(
+        actor=actor,
+        workspace_id=WORKSPACE_ID,
+        filename="part-0.pdf",
+        media_type="application/pdf",
+        body=body(),
+        content_length=len(PDF),
+    )
+    key = asset_content_key(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        asset_id=prepared.asset.id,
+    )
+    assert (await api.app.state.runtime.shared.storage.objects.stat(key)).size == len(PDF)
+    async with transaction(sessions) as session:
+        assert await session.get(AssetRecord, prepared.asset.id) is None
+
+    async with transaction(sessions) as session:
+        await service.commit_protocol_imports_in_transaction(
+            session,
+            actor=actor,
+            publications=(prepared,),
+        )
+    await service.discard_protocol_import(prepared)
+
+    async with transaction(sessions) as session:
+        stored = await session.get(AssetRecord, prepared.asset.id)
+    assert stored is not None
+    assert stored.content_sha256 == prepared.asset.content_sha256
+    assert (await api.app.state.runtime.shared.storage.objects.stat(key)).size == len(PDF)
+
+    orphan = await service.prepare_protocol_import(
+        actor=actor,
+        workspace_id=WORKSPACE_ID,
+        filename="part-1.pdf",
+        media_type="application/pdf",
+        body=body(),
+        content_length=len(PDF),
+    )
+    orphan_key = asset_content_key(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        asset_id=orphan.asset.id,
+    )
+    await service.discard_protocol_import(orphan)
+    with pytest.raises(ObjectNotFound):
+        await api.app.state.runtime.shared.storage.objects.stat(orphan_key)
+
+
+@pytest.mark.anyio
 async def test_concurrent_same_key_uploads_reconcile_one_asset_and_object(api: Api) -> None:
     first, second = await asyncio.gather(
         upload(api.client, key="concurrent-upload"),

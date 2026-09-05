@@ -25,7 +25,13 @@ from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.temporal import require_aware_utc
 
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
-ThreadId = Annotated[str, StringConstraints(pattern=r"^thread-[a-f0-9]{32}$", max_length=39)]
+ThreadId = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+        max_length=72,
+    ),
+]
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 SchemaVersion = Annotated[str, StringConstraints(min_length=1, max_length=32)]
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]

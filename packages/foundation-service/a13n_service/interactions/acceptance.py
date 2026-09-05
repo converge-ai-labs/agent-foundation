@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import canonical_digest
-from a13n_service.environments.domain import EnvironmentSelection
+from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection
 from a13n_service.environments.selection import Omitted, bind_environment_intent, queued_environment_choice
 from a13n_service.environments.usage import add_run_with_environment, schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
@@ -76,6 +78,8 @@ class RunAcceptanceService:
         run: Run,
         state: RunStateEnvelope,
         hook_subscription: InlineHookSubscriptionInput | None = None,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
     ) -> RunAcceptanceReceipt:
         run = bind_environment_intent(run, environment)
@@ -90,6 +94,8 @@ class RunAcceptanceService:
         await self._publish_initial(run, state)
         try:
             async with transaction(self._sessions) as database:
+                if final_validator is not None:
+                    await final_validator(database)
                 if session is None:
                     session_record_value = await _require_session(database, run)
                     workspace_id = session_record_value.workspace_id
@@ -121,9 +127,12 @@ class RunAcceptanceService:
                     now=self._clock(),
                 )
                 await append_accepted_run_lifecycle(database, run_record_value)
+                receipt = _receipt(thread, run, hook_subscription_id=hook_subscription_id)
+                if transaction_hook is not None:
+                    await transaction_hook(database, receipt)
         except IntegrityError as error:
             return await self._reconcile_conflict(run, state, error, accepted_thread_version=1)
-        return _receipt(thread, run, hook_subscription_id=hook_subscription_id)
+        return receipt
 
     async def advance_thread(
         self,
@@ -135,6 +144,9 @@ class RunAcceptanceService:
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
         hook_subscription: InlineHookSubscriptionInput | None = None,
+        inherit_parent_environment: bool = False,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
     ) -> RunAcceptanceReceipt:
         run = bind_environment_intent(run, environment)
@@ -150,6 +162,8 @@ class RunAcceptanceService:
         await self._publish_initial(run, state)
         try:
             async with transaction(self._sessions) as database:
+                if final_validator is not None:
+                    await final_validator(database)
                 thread = await _lock_thread(database, run)
                 _require_thread_precondition(
                     thread,
@@ -177,12 +191,23 @@ class RunAcceptanceService:
                     workspace_id=session_record_value.workspace_id,
                     subscription=hook_subscription,
                 )
+                selected_environment = environment
+                if inherit_parent_environment and environment is Omitted.UNSET:
+                    if run.parent_run_id is None:
+                        raise RunAcceptanceError("run_parent_required", "Historical continuation needs a parent Run")
+                    parent = await _load_run(database, run.tenant_id, run.parent_run_id)
+                    selected_environment = (
+                        ExistingEnvironmentSelection(environment_id=parent.environment_id)
+                        if parent.environment_id
+                        else None
+                    )
+                    run = run.model_copy(update={"environment_access": parent.environment_access})
                 run_record_value = await add_run_with_environment(
                     database,
                     run=run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
-                    choice=environment,
+                    choice=selected_environment,
                 )
                 if run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
                     await database.flush()
@@ -228,6 +253,8 @@ class RunAcceptanceService:
                     run_version=run.version,
                     hook_subscription_id=hook_subscription_id,
                 )
+                if transaction_hook is not None:
+                    await transaction_hook(database, receipt)
         except IntegrityError as error:
             return await self._reconcile_conflict(
                 run,
@@ -250,6 +277,7 @@ class RunAcceptanceService:
         expected_current_run_id: str | None,
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> QueuedSubmissionConsumptionReceipt:
         """Atomically consume the first queue row and accept its prepared Run."""
 
@@ -280,6 +308,8 @@ class RunAcceptanceService:
         now = self._clock()
         try:
             async with transaction(self._sessions) as database:
+                if final_validator is not None:
+                    await final_validator(database)
                 thread = await _lock_thread(database, run)
                 _require_thread_precondition(
                     thread,
@@ -726,7 +756,7 @@ async def _validate_advancement(
         raise RunAcceptanceError("thread_head_invalid", "Thread advancement selected an unrelated continuation head")
     if run.retry_of_run_id is not None:
         _validate_retry_advancement(current, run)
-    if run.parent_run_id is None:
+    elif run.parent_run_id is None:
         _validate_root_advancement(thread, current, run)
     else:
         await _validate_parent_advancement(database, thread, run, candidate_payload)

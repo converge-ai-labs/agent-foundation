@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, cast
 
@@ -77,6 +77,8 @@ class ThreadInboxStore:
         run_id: str,
         input: AcceptedAgentInput,
         entry_id: str | None = None,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
+        transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
         """Append one already-authorized, canonical steer to the current Run."""
 
@@ -85,6 +87,8 @@ class ThreadInboxStore:
         payload = input.model_dump(mode="json", by_alias=True, exclude_none=True)
         async with transaction(self._sessions) as database:
             thread, run = await _lock_current_run(database, tenant_id=tenant_id, run_id=run_id)
+            if final_validator is not None:
+                await final_validator(database)
             target_run_id: str | None
             source_waiting_run_id: str | None
             if run.status in {"accepted", "running"}:
@@ -117,6 +121,8 @@ class ThreadInboxStore:
                 delivery_sequence=entry.delivery_sequence,
                 accepted_at=now,
             )
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
         await self._best_effort_signal(tenant_id=tenant_id, thread_id=receipt.thread_id)
         return receipt
 

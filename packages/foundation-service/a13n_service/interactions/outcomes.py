@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -127,6 +128,8 @@ class RunOutcomeService:
         expected_run_version: int,
         expected_thread_version: int,
         failure: SafeFailure,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
+        transaction_hook: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> RunOutcomeReceipt:
         """Seal an accepted or running Run without object-store I/O."""
 
@@ -158,6 +161,8 @@ class RunOutcomeService:
                 or run.status not in {RunStatus.accepted.value, RunStatus.running.value}
             ):
                 raise RunOutcomeError("Run cancellation precondition changed")
+            if final_validator is not None:
+                await final_validator(database)
             attempt: RunAttemptRecord | None = None
             if run.current_run_attempt_id is not None:
                 attempt = await database.scalar(
@@ -212,6 +217,8 @@ class RunOutcomeService:
                 None if attempt is None else attempt.version,
                 thread.version,
             )
+            if transaction_hook is not None:
+                await transaction_hook(database)
             cancelled_thread_id = thread.id
         await self._best_effort_signal(tenant_id=tenant_id, thread_id=cancelled_thread_id)
         return receipt

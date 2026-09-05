@@ -9,6 +9,7 @@ from datetime import timedelta
 import httpx2
 
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.publisher import WebhookPublisher
 from a13n_service.lifecycle.retention import LifecycleRetentionReconciler
@@ -20,6 +21,7 @@ from a13n_service.settings import Settings
 
 @dataclass(frozen=True, slots=True)
 class _HookBundle:
+    inline_validator: InlineHookValidator
     subscriptions: HookSubscriptionService
     lifecycle_events: LifecycleEventService
     delivery_task: BackgroundTask
@@ -76,6 +78,7 @@ async def build_hook_bundle(
         batch_limit=settings.lifecycle_retention_batch_limit,
     )
     return _HookBundle(
+        inline_validator=InlineHookValidator(endpoint_policy),
         subscriptions=subscriptions,
         lifecycle_events=LifecycleEventService(shared.storage.sessions),
         delivery_task=BackgroundTask("webhook publisher", publisher.run),

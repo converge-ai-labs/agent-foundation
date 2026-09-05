@@ -37,8 +37,8 @@ USER_ID = "usr_1234567890abcdef"
 NOW = datetime(2026, 9, 3, 0, 30, tzinfo=UTC)
 
 
-def effective_agent_config() -> EffectiveAgentConfig:
-    base = AgentConfig.model_validate(
+def agent_config() -> AgentConfig:
+    return AgentConfig.model_validate(
         {
             "model": {
                 "model_key": MODEL_KEY,
@@ -55,6 +55,10 @@ def effective_agent_config() -> EffectiveAgentConfig:
             },
         }
     )
+
+
+def effective_agent_config() -> EffectiveAgentConfig:
+    base = agent_config()
     execution = ModelExecutionSnapshot(
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
@@ -203,7 +207,7 @@ async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession])
                 agent_id=AGENT_ID,
                 version=1,
                 plugin_runtime_mode="on_demand",
-                config={},
+                config=agent_config().model_dump(mode="json", by_alias=True),
                 config_digest="b" * 64,
                 resolved_model={},
                 resolved_plugin_versions=[],

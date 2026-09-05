@@ -67,6 +67,38 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/workspaces/{workspace_id}/events" in document["paths"]
     assert "/api/v1/runs/{run_id}/events" in document["paths"]
     assert "/api/v1/run-attempts/{run_attempt_id}/events" in document["paths"]
+    assert "/api/v1/runs/{run_id}/stream" in document["paths"]
+    assert "/api/v1/workspaces/{workspace_id}/sessions" in document["paths"]
+    assert "/api/v1/sessions/{session_id}/threads" in document["paths"]
+    assert "/api/v1/threads/{thread_id}" in document["paths"]
+    assert "/api/v1/workspaces/{workspace_id}/runs" in document["paths"]
+    assert "/api/v1/threads/{thread_id}/runs" in document["paths"]
+    assert "/api/v1/runs/{run_id}" in document["paths"]
+    assert "/api/v1/runs/{run_id}/lineage" in document["paths"]
+    assert "/api/v1/runs/{run_id}/items" in document["paths"]
+    assert "/api/v1/runs/{run_id}/pending-actions" in document["paths"]
+    assert "/api/v1/runs/{run_id}/attempts" in document["paths"]
+    assert "/api/v1/run-attempts/{run_attempt_id}" in document["paths"]
+    assert "/ag-ui/v1/agents/{agent_id}/runs" in document["paths"]
+    assert "/ag-ui/v1/agents/{agent_id}/cancel" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/agent-card.json" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/message:send" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/message:stream" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}:cancel" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}:subscribe" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs/{config_id}" in document["paths"]
+    assert "/api/v1/runs/{run_id}/interrupt" in document["paths"]
+    assert "/api/v1/runs/{run_id}/feedback" in document["paths"]
+    assert "/api/v1/runs/{run_id}/fork" in document["paths"]
+    assert "/api/v1/runs/{run_id}/retry" in document["paths"]
+    assert "/api/v1/runs/{run_id}/steer" in document["paths"]
+    assert "/api/v1/runs/{run_id}/steers/{steer_id}" in document["paths"]
+    assert "/api/v1/threads/{thread_id}/queued-submissions" in document["paths"]
+    assert "/api/v1/threads/{thread_id}/queued-submissions/consume" in document["paths"]
+    assert "/api/v1/queued-submissions/{queued_submission_id}" in document["paths"]
+    assert "/api/v1/threads/{thread_id}/queued-submissions/reorder" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/application-accounts" in document["paths"]
     assert "/api/v1/application-accounts/{account_id}/credentials" in document["paths"]
     assert "/api/v1/ingresses/{ingress_id}/credentials" not in document["paths"]
@@ -123,6 +155,14 @@ def test_worker_role_serves_only_operational_endpoints() -> None:
     assert request(app, "/healthz").status_code == 200
     assert request(app, "/api/openapi.json").status_code == 404
     assert request(app, "/").status_code == 404
+
+
+def test_a2a_switch_removes_discovery_and_runtime_routes() -> None:
+    app = create_app(Settings(_env_file=None, role=ProcessRole.control, a2a_enabled=False))
+
+    document = request(app, "/api/openapi.json").json()
+    assert all(not path.startswith("/a2a/") for path in document["paths"])
+    assert "/.well-known/agent-card.json" not in document["paths"]
 
 
 def test_connectivity_role_exposes_no_control_plane_routes() -> None:

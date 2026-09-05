@@ -7,7 +7,15 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 import rfc8785
-from pydantic import Field, JsonValue, StringConstraints, field_validator, model_validator
+from pydantic import (
+    Field,
+    JsonValue,
+    SerializerFunctionWrapHandler,
+    StringConstraints,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from a13n_service.agents.domain import AgentRunOverride
 from a13n_service.environments.domain import EnvironmentSelection
@@ -39,6 +47,15 @@ class ThreadRunSubmissionIntent(StrictModel):
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
 
+    @model_serializer(mode="wrap")
+    def preserve_environment_selection(self, handler: SerializerFunctionWrapHandler):
+        payload = handler(self)
+        if "environment" not in self.model_fields_set:
+            payload.pop("environment", None)
+        elif self.environment is None:
+            payload["environment"] = None
+        return payload
+
     def retained_payload(self) -> dict[str, JsonValue]:
         payload = self.model_dump(mode="json", by_alias=True, exclude_none=True)
         if "environment" in self.model_fields_set:
@@ -67,6 +84,15 @@ class ThreadRunSubmissionRequest(StrictModel):
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
     waiting_resolution: WaitingResolutionDefaults | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_environment_selection(self, handler: SerializerFunctionWrapHandler):
+        payload = handler(self)
+        if "environment" not in self.model_fields_set:
+            payload.pop("environment", None)
+        elif self.environment is None:
+            payload["environment"] = None
+        return payload
 
     def intent(self) -> ThreadRunSubmissionIntent:
         return ThreadRunSubmissionIntent.model_validate(

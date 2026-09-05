@@ -33,6 +33,7 @@ def service_metadata() -> MetaData:
     from a13n_service.connectivity.mcp import models as mcp_models
     from a13n_service.durable_operations import models as durable_operations_models
     from a13n_service.environments import models as environment_models
+    from a13n_service.gateway import models as gateway_models
     from a13n_service.hooks import models as hook_models
     from a13n_service.iam import models as iam_models
     from a13n_service.interactions import control_models as interaction_control_models
@@ -52,6 +53,7 @@ def service_metadata() -> MetaData:
         connector_models,
         durable_operations_models,
         environment_models,
+        gateway_models,
         hook_models,
         iam_models,
         interaction_control_models,

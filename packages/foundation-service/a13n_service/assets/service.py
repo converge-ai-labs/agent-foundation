@@ -41,6 +41,7 @@ from .domain import (
     Asset,
     AssetCollection,
     AssetSourceKind,
+    UploadedAssetSource,
     new_asset_id,
     normalize_asset_filename,
     normalize_media_type,
@@ -69,6 +70,13 @@ class AssetUploadResult:
 class PreparedAssetContent:
     asset: Asset
     content: StagedAssetContent
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedAssetPublication:
+    """Published object candidate awaiting an owning application transaction."""
+
+    asset: Asset
 
 
 class AssetService:
@@ -152,6 +160,131 @@ class AssetService:
             )
         finally:
             await staged.remove()
+
+    async def prepare_protocol_import(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        filename: str,
+        media_type: str | None,
+        body: AsyncIterable[bytes],
+        content_length: int | None,
+    ) -> PreparedAssetPublication:
+        """Publish one bounded candidate without committing relational authority."""
+
+        normalized_filename = _normalize_filename(filename)
+        normalized_media_type = _normalize_media_type(media_type)
+        organization_id = await self._preauthorize_protocol_import(actor=actor, workspace_id=workspace_id)
+        staged = await self._staging.stage_upload(
+            body,
+            max_size_bytes=self._max_size_bytes,
+            content_length=content_length,
+        )
+        try:
+            if (
+                normalized_media_type != "application/octet-stream"
+                and staged.detected_media_type is not None
+                and staged.detected_media_type != normalized_media_type
+            ):
+                raise asset_media_type_invalid()
+            asset = Asset(
+                id=new_asset_id(),
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                filename=normalized_filename,
+                media_type=normalized_media_type,
+                size_bytes=staged.size_bytes,
+                content_sha256=staged.content_sha256,
+                source=UploadedAssetSource(principal=actor.principal),
+                created_at=self._clock(),
+                deleted_at=None,
+            )
+            await self._objects.publish(
+                asset_id=asset.id,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                content=staged,
+            )
+            return PreparedAssetPublication(asset=asset)
+        finally:
+            await staged.remove()
+
+    async def commit_protocol_imports_in_transaction(
+        self,
+        database: AsyncSession,
+        *,
+        actor: AuthenticatedActor,
+        publications: tuple[PreparedAssetPublication, ...],
+    ) -> None:
+        """Make prepared protocol imports authoritative in their owning transaction."""
+
+        if not publications:
+            return
+        workspace_id = actor.boundary_workspace_id
+        workspace = await authorize_workspace(
+            database,
+            actor=actor,
+            workspace_id=workspace_id,
+            action=WorkspaceAction.asset_create,
+        )
+        await authorize_workspace(
+            database,
+            actor=actor,
+            workspace_id=workspace_id,
+            action=WorkspaceAction.asset_use,
+        )
+        if len({publication.asset.id for publication in publications}) != len(publications):
+            raise asset_content_invalid()
+        now = self._clock()
+        for publication in publications:
+            asset = publication.asset
+            if (
+                asset.organization_id != workspace.organization_id
+                or asset.workspace_id != workspace_id
+                or asset.deleted_at is not None
+                or asset.source.kind != AssetSourceKind.upload
+                or asset.source.principal != actor.principal
+            ):
+                raise asset_content_invalid()
+            database.add(
+                AssetRecord(
+                    id=asset.id,
+                    organization_id=asset.organization_id,
+                    workspace_id=asset.workspace_id,
+                    filename=asset.filename,
+                    media_type=asset.media_type,
+                    size_bytes=asset.size_bytes,
+                    content_sha256=asset.content_sha256,
+                    source_kind="upload",
+                    source_principal_type=actor.principal.principal_type.value,
+                    source_principal_id=actor.principal.principal_id,
+                    source_run_attempt_id=None,
+                    source_invocation_id=None,
+                    created_at=asset.created_at,
+                    deleted_at=None,
+                )
+            )
+            database.add(
+                _asset_audit_record(
+                    actor=actor,
+                    organization_id=asset.organization_id,
+                    workspace_id=asset.workspace_id,
+                    asset_id=asset.id,
+                    action="asset.create",
+                    source_kind="upload",
+                    now=now,
+                )
+            )
+        await database.flush()
+
+    async def discard_protocol_import(self, publication: PreparedAssetPublication) -> None:
+        asset = publication.asset
+        await self._delete_candidate_if_unowned(
+            asset_id=asset.id,
+            organization_id=asset.organization_id,
+            workspace_id=asset.workspace_id,
+        )
 
     async def list(
         self,
@@ -342,6 +475,31 @@ class AssetService:
                     actor=actor,
                     workspace_id=workspace_id,
                     action=WorkspaceAction.asset_create,
+                )
+                return workspace.organization_id
+        except AuthorizationError as error:
+            await self._record_denied(
+                actor=actor,
+                workspace_id=workspace_id,
+                asset_id=None,
+                action="asset.create",
+            )
+            raise _authorization_error(error) from error
+
+    async def _preauthorize_protocol_import(self, *, actor: AuthenticatedActor, workspace_id: str) -> str:
+        try:
+            async with transaction(self._sessions) as session:
+                workspace = await authorize_workspace(
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    action=WorkspaceAction.asset_create,
+                )
+                await authorize_workspace(
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    action=WorkspaceAction.asset_use,
                 )
                 return workspace.organization_id
         except AuthorizationError as error:
