@@ -27,8 +27,22 @@ class MCPDiscoveryService:
 
     async def discover(self, connection_id: str) -> tuple[MCPTool, ...]:
         snapshot = await self._credentials.current(connection_id)
+        generation = snapshot.credential_generation
+
+        async def headers() -> dict[str, str]:
+            nonlocal generation
+            current = await self._credentials.current(connection_id)
+            if current.endpoint != snapshot.endpoint or current.version != snapshot.version:
+                raise MCPConnectionError(
+                    "connection_changed", "MCPConnection changed during discovery.", status_code=409
+                )
+            generation = current.credential_generation
+            return current.headers
+
         try:
-            async with self._transport.connect(snapshot.endpoint, headers=snapshot.headers) as client:
+            async with self._transport.connect(
+                snapshot.endpoint, headers=snapshot.headers, refresh_headers=headers
+            ) as client:
                 toolset = MCPToolset(client)
                 async with toolset:
                     tools = tuple(
@@ -51,7 +65,8 @@ class MCPDiscoveryService:
             current = await require_connection(session, connection_id, lock=True)
             if (
                 current.version != snapshot.version
-                or current.credential_generation != snapshot.credential_generation
+                or current.credential_generation != generation
+                or current.endpoint_url != snapshot.endpoint
                 or current.status not in {"pending", "ready"}
             ):
                 raise MCPConnectionError(
