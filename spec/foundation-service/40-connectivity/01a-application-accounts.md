@@ -55,7 +55,7 @@ Account defaults select input execution authority and the default Agent. Exact t
 
 `active` is administrative eligibility, not a health claim. A disabled Account blocks reception and subsequent provider dispatch, including from accepted Runs. Re-enabling it does not change `receive_enabled`.
 
-Setting `receive_enabled=false` on an Account or exact target stops unaccepted input. Accepted replies retain their protected target and action policy and continue checking Account availability, execution Principal, and Attempt fencing. Reception settings do not grant proactive authority.
+Setting `receive_enabled=false` on an Account or exact target stops new admission; already acknowledged batches continue processing. Accepted replies retain their protected target and action policy and continue checking Account availability, execution Principal, and Attempt fencing. Reception settings do not grant proactive authority.
 
 Account deletion makes the identity unavailable and clears its credentials. Retained Run, Event, Batch, and Binding evidence keeps its original identity; recovery never substitutes another Account. A newly created Account inherits no retained Run authority.
 

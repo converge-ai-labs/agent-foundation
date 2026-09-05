@@ -33,9 +33,7 @@ from .connectors.management import decode_credentials, require_connection, requi
 from .connectors.registry import ConnectorProviderRegistry
 from .connectors.tool_discovery import discover_tools, mcp_tool
 from .domain import JsonObject
-from .mcp.credentials import decode_request_headers
 from .mcp.management import require_connection as require_mcp_connection
-from .mcp.oauth_bundles import decode_oauth_bundle, optional_expiration
 from .mcp.refresh import OAuthCredentialRefresh
 from .mcp.transport import RemoteTransport
 from .native import native_capability
@@ -224,30 +222,22 @@ class ExternalToolRuntime:
                 record = await require_mcp_connection(session, selection.mcp_connection_id)
                 if record.endpoint_url != endpoint:
                     raise ValueError("mcp_endpoint_changed")
-                if record.auth_mode == "none":
-                    return {}
-                context = record.credential_snapshot()
-                auth_mode = record.auth_mode
-            if auth_mode == "oauth":
-                if not await self._oauth_refresh.ensure_current(selection.mcp_connection_id):
-                    raise ValueError("mcp_credentials_unavailable")
-                await guard()
-                async with short_session(self._sessions) as session:
-                    await self._selections.require_current_source(
-                        session,
-                        actor=scope.actor,
-                        organization_id=scope.organization_id,
-                        workspace_id=scope.workspace_id,
-                        selection=selection,
-                    )
-                    record = await require_mcp_connection(session, selection.mcp_connection_id)
-                    context = record.credential_snapshot()
-            value = context.decrypt(self._protector)
-            if auth_mode == "oauth":
-                expires_at = optional_expiration(decode_oauth_bundle(value).get("expires_at"))
-                if expires_at is not None and expires_at <= utc_now():
-                    raise ValueError("mcp_credentials_expired")
-            return decode_request_headers(value)
+            current = await self._oauth_refresh.current(selection.mcp_connection_id)
+            await guard()
+            async with short_session(self._sessions) as session:
+                await self._selections.require_current_source(
+                    session,
+                    actor=scope.actor,
+                    organization_id=scope.organization_id,
+                    workspace_id=scope.workspace_id,
+                    selection=selection,
+                )
+                record = await require_mcp_connection(session, selection.mcp_connection_id)
+                if record.version != current.version or record.credential_generation != current.credential_generation:
+                    raise ValueError("mcp_connection_changed")
+            if current.endpoint != endpoint:
+                raise ValueError("mcp_endpoint_changed")
+            return current.headers
 
         async def call(
             ctx: RunContext[AgentContext], call_tool: CallToolFunc, name: str, arguments: JsonObject

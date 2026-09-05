@@ -48,7 +48,7 @@ Compatibility covers Account/target configuration generations and the provider n
 
 ## Canonical Run and Steer Acceptance
 
-Before a new submission, current Account and target reception, execution Service Account, Workspace authority, and destination eligibility are checked. For an idle Thread, the current exact-target Agent or Account default and current narrow override enter ordinary canonical preparation and freezing. Existing history does not permanently select the next Agent.
+Before a new submission, current Account administrative eligibility, execution Service Account, Workspace authority, and destination eligibility are checked. Closing Account or target reception prevents new admission and does not revoke reception eligibility for already acknowledged batches. For an idle Thread, the current exact-target Agent or Account default and current narrow override enter ordinary canonical preparation and freezing. Existing history does not permanently select the next Agent.
 
 - An unbound reservation uses root Run acceptance.
 - An empty existing Thread uses ordinary empty-Thread continuation.
@@ -77,13 +77,13 @@ The canonical input acceptor is required process composition for reception readi
 
 ## Failure Semantics
 
-| Condition                                                   | Outcome                                                         |
-| ----------------------------------------------------------- | --------------------------------------------------------------- |
-| Invalid authentication, identity, or body bounds            | Reject before admission                                         |
-| Deterministically irrelevant event or disabled exact target | No Agent input; provider-safe acknowledgement                   |
-| Capacity exhausted                                          | Backpressure without losing acknowledged input                  |
-| Account, target, or execution authority becomes unavailable | Pending Batch is rejected with a safe reason                    |
-| Input schema or projection is invalid                       | Terminal rejection                                              |
-| Temporary infrastructure failure                            | Retry the same frozen Batch, preserving sequence and membership |
-| Claim or Thread transition race                             | Reread/retry with current fence; no partial acceptance          |
-| Acceptance reply lost                                       | Replay exact persisted Run or Steer receipt                     |
+| Condition                                                              | Outcome                                                         |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Invalid authentication, identity, or body bounds                       | Reject before admission                                         |
+| Deterministically irrelevant event or disabled exact target            | No Agent input; provider-safe acknowledgement                   |
+| Capacity exhausted                                                     | Backpressure without losing acknowledged input                  |
+| Account is disabled/deleted or execution authority becomes unavailable | Pending Batch is rejected with a safe reason                    |
+| Input schema or projection is invalid                                  | Terminal rejection                                              |
+| Temporary infrastructure failure                                       | Retry the same frozen Batch, preserving sequence and membership |
+| Claim or Thread transition race                                        | Reread/retry with current fence; no partial acceptance          |
+| Acceptance reply lost                                                  | Replay exact persisted Run or Steer receipt                     |

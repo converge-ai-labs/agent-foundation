@@ -38,4 +38,4 @@ Reception never sends a reply automatically. The Agent calls an authorized nativ
 
 `thread` and `main` force provider-native placement and omit a placement argument. `auto` permits a bounded provider choice: top-level group tasks normally use an available thread/topic/reply chain, while direct messages remain in their main flow. Placement cannot change the Binding. A main-flow notification does not migrate the current Discussion.
 
-Closing Account or target reception blocks new unaccepted input while accepted replies retain their bounded context. Account disablement or lost execution authority blocks subsequent dispatch.
+Closing Account or target reception blocks new admission; already acknowledged batches continue processing while accepted replies retain their bounded context. Account disablement or lost execution authority blocks subsequent dispatch.

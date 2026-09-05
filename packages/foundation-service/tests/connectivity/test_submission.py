@@ -6,6 +6,7 @@ from datetime import timedelta
 import pytest
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord, IngressBatchRecord
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord
@@ -25,7 +26,7 @@ ACCOUNT = "acct_aaaaaaaaaaaaaaaa"
 EXECUTOR = "sa_aaaaaaaaaaaaaaaa"
 
 
-async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=False):
+async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=False, before_accept=None):
     await _seed_interaction_database(sessions)
     async with transaction(sessions) as session:
         session.add(
@@ -122,6 +123,9 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
             assert await session.scalar(select(func.count()).select_from(RunRecord)) == 0
             assert await session.scalar(select(AgentThreadBindingRecord.thread_id)) is None
         return
+    if before_accept is not None:
+        await before_accept(prepared, acceptor, delivery)
+        return
     outcome = await acceptor.accept_ingress_batch(prepared)
     assert outcome.kind == "accepted", outcome
     async with sessions() as session:
@@ -195,3 +199,55 @@ async def test_postgresql_inbound_atomic_acceptance(
         waiting=scenario == "waiting",
         stale_claim=scenario == "stale_claim",
     )
+
+
+@pytest.mark.parametrize("change", ["account_reception", "target_reception", "disabled", "deleted", "revoked"])
+async def test_admitted_batch_retains_reception_but_checks_execution(
+    connectivity_sessions, connectivity_objects, credential_protector, change
+):
+    sessions = connectivity_sessions
+
+    async def check_admitted(prepared, acceptor, delivery):
+        async with transaction(sessions) as session:
+            account = await session.get(AccountRecord, ACCOUNT)
+            if change == "account_reception":
+                account.receive_enabled = False
+            elif change == "target_reception":
+                session.add(
+                    AccountTargetRecord(
+                        id="target_closed",
+                        organization_id=TENANT_ID,
+                        workspace_id=WORKSPACE_ID,
+                        account_id=ACCOUNT,
+                        target_kind=prepared.configuration.target_kind,
+                        external_target_id=prepared.configuration.external_target_id,
+                        receive_enabled=False,
+                        version=1,
+                        created_by_type="service_account",
+                        created_by_id=EXECUTOR,
+                        created_at=NOW,
+                        updated_at=NOW,
+                    )
+                )
+            elif change == "disabled":
+                account.status = "disabled"
+            elif change == "deleted":
+                account.deleted_at = NOW
+                account.clear_credential()
+            else:
+                role = await session.get(RoleBindingRecord, "rb_submission")
+                await session.delete(role)
+            account.version += 1
+        outcome = await acceptor.accept_ingress_batch(prepared)
+        if change in {"account_reception", "target_reception"}:
+            assert outcome.kind == "accepted"
+            await delivery.receive(account_id=ACCOUNT, request=_request("after-closure"))
+            async with sessions() as session:
+                assert await session.scalar(select(func.count()).select_from(IngressBatchRecord)) == 1
+                assert await session.scalar(select(func.count()).select_from(RunRecord)) == 1
+        else:
+            assert outcome.kind == "rejected"
+            async with sessions() as session:
+                assert await session.scalar(select(func.count()).select_from(RunRecord)) == 0
+
+    await _exercise(sessions, connectivity_objects, credential_protector, before_accept=check_admitted)

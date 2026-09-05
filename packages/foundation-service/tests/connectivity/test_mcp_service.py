@@ -181,7 +181,16 @@ async def service_bundle(connectivity_sessions, credential_protector):
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(remote), follow_redirects=False) as http_client:
         oauth_client = MCPOAuthClient(http_client, policy)
         discovery = MCPDiscoveryService(
-            connectivity_sessions, RemoteTransport(policy, transport=httpx2.MockTransport(remote)), credential_protector
+            connectivity_sessions,
+            RemoteTransport(policy, transport=httpx2.MockTransport(remote)),
+            OAuthCredentialRefresh(
+                connectivity_sessions,
+                oauth_client,
+                credential_protector,
+                instance_id="discovery",
+                skew_seconds=0,
+                clock=lambda: NOW,
+            ),
         )
         connections = MCPConnectionService(
             connectivity_sessions,
@@ -680,11 +689,24 @@ async def test_postgresql_cross_pod_callback_and_single_refresh(
         second = OAuthCredentialRefresh(
             sessions, pod_a._oauth, credential_protector, instance_id="pod-b", clock=lambda: NOW
         )
-        running = create_task(first.ensure_current(ready.id))
+        running = create_task(first.current(ready.id))
         await entered.wait()
-        assert await second.ensure_current(ready.id) is False
+        waiting = Event()
+        original_claim = second._claim
+
+        async def observe_claim(connection_id):
+            claim = await original_claim(connection_id)
+            waiting.set()
+            return claim
+
+        monkeypatch.setattr(second, "_claim", observe_claim)
+        competing = create_task(second.current(ready.id))
+        await waiting.wait()
+        assert not competing.done()
         release.set()
-        assert await running is True
+        assert (
+            (await running).headers == (await competing).headers == {"Authorization": "Bearer refreshed-oauth-secret"}
+        )
         assert await second.ensure_current(ready.id) is True
         assert len(calls) == 1
         if invalidation != "abandoned":

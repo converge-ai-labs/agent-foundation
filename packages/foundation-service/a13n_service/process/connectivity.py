@@ -26,6 +26,7 @@ from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.reconciler import MCPReconciler
+from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.service import MCPConnectionService
 from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.connectivity.runtime import (
@@ -216,12 +217,16 @@ def _build_mcp_control(
     http_client: httpx2.AsyncClient,
 ) -> _MCPControl:
     instance_id = settings.service_instance_id or new_object_id("svc")
-    discovery = MCPDiscoveryService(storage.sessions, RemoteTransport(endpoint_policy), secret_protector)
     oauth_client = MCPOAuthClient(
         http_client,
         endpoint_policy,
         response_max_bytes=settings.connectivity_response_max_bytes,
         max_redirects=settings.connectivity_max_redirects,
+    )
+    discovery = MCPDiscoveryService(
+        storage.sessions,
+        RemoteTransport(endpoint_policy),
+        OAuthCredentialRefresh(storage.sessions, oauth_client, secret_protector, instance_id=instance_id),
     )
     connections = MCPConnectionService(
         storage.sessions,

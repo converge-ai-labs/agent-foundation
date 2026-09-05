@@ -136,3 +136,33 @@ async def test_remote_redirect_is_rejected_without_forwarding_credentials():
         async with transport.connect(MCP_ENDPOINT, headers={"authorization": "Bearer secret"}):
             pytest.fail("redirect cannot initialize a client")
     assert destinations and set(destinations) == {MCP_ENDPOINT}
+
+
+@pytest.mark.parametrize("changed_field", ["version", "credential_generation"])
+async def test_replacement_during_authorization_blocks_stale_headers(
+    remote_runtime, connectivity_sessions, monkeypatch, changed_field
+):
+    runtime, server = remote_runtime
+    original = runtime._oauth_refresh.current
+
+    async def replace_after_read(connection_id):
+        snapshot = await original(connection_id)
+        async with transaction(connectivity_sessions) as session:
+            source = await session.get(MCPConnectionRecord, connection_id)
+            setattr(source, changed_field, getattr(source, changed_field) + 1)
+        return snapshot
+
+    monkeypatch.setattr(runtime._oauth_refresh, "current", replace_after_read)
+
+    async def guard():
+        pass
+
+    selection = MCPConnectionRunSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    with pytest.raises(ValueError, match="mcp_connection_changed"):
+        async with runtime._mcp(
+            selection,
+            guard,
+            AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ()),
+        ):
+            pytest.fail("stale headers cannot initialize a client")
+    assert not server.requests

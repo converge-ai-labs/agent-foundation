@@ -202,7 +202,6 @@ class IngressInputAcceptor:
             account is None
             or account.status != "active"
             or account.deleted_at is not None
-            or not account.receive_enabled
             or account.default_agent_id is None
             or account.execution_service_account_id is None
         ):
@@ -213,8 +212,6 @@ class IngressInputAcceptor:
             AccountTargetRecord.external_target_id == batch.configuration.external_target_id,
         )
         target = await session.scalar(target_query.with_for_update() if lock else target_query)
-        if target is not None and not target.receive_enabled:
-            raise _Ineligible("target_inactive")
         actor = AuthenticatedActor(
             principal=PrincipalRef(
                 principal_type=PrincipalType.service_account, principal_id=account.execution_service_account_id
