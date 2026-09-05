@@ -83,9 +83,13 @@ jobs:
 
       - name: Test Foundation Service
         if: matrix.name == 'tests'
+        timeout-minutes: 10
         run: >-
           uv run --locked python -m pytest
-          -n 7 --dist loadgroup --durations=30
+          -n 7 --dist loadgroup --max-worker-restart=0
+          -vv --tb=short --durations=30
+          -o faulthandler_timeout=120
+          -o faulthandler_exit_on_timeout=true
           packages/foundation-service/tests
 
       - name: Build Foundation Python distributions

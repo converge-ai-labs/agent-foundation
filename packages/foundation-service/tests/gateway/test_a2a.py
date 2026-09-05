@@ -836,13 +836,18 @@ async def test_push_configuration_delete_waits_for_claimed_delivery(
 
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(delete_configuration)
-        await anyio.sleep(0.01)
+        # Wait for the committed fence, not a scheduler-dependent delay.
+        with anyio.fail_after(5):
+            while True:
+                async with short_session(lifecycle_interaction_sessions) as database:
+                    configuration = await database.get(A2APushConfigurationRecord, created.id)
+                assert configuration is not None
+                if configuration.state == "disabled":
+                    break
+                await anyio.sleep(0.01)
         assert not deleted.is_set()
         async with short_session(lifecycle_interaction_sessions) as database:
-            configuration = await database.get(A2APushConfigurationRecord, created.id)
             claimed = await database.get(OutboxRecord, delivery.id)
-        assert configuration is not None
-        assert configuration.state == "disabled"
         assert claimed is not None
         async with transaction(lifecycle_interaction_sessions) as database:
             claimed = await database.get(OutboxRecord, delivery.id)
@@ -851,7 +856,8 @@ async def test_push_configuration_delete_waits_for_claimed_delivery(
             claimed.lease_expires_at = None
             claimed.published_at = NOW + timedelta(seconds=1)
             claimed.updated_at = NOW + timedelta(seconds=1)
-        await deleted.wait()
+        with anyio.fail_after(5):
+            await deleted.wait()
 
     async with short_session(lifecycle_interaction_sessions) as database:
         assert await database.get(OutboxRecord, delivery.id) is None
