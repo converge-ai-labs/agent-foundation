@@ -70,11 +70,12 @@ async def sandbox():
         try:
             await env.close()
         finally:
-            if env.dump_state() is not None:
-                cleanup = E2BEnvironment(
-                    config, environment_id=env.environment_id, state=env.dump_state(), runtime=runtime
-                )
+            state = env.dump_state()
+            if state is not None:
+                cleanup = E2BEnvironment(config, environment_id=env.environment_id, state=state, runtime=runtime)
                 await cleanup.destroy()
+                probe = E2BEnvironment(config, environment_id=env.environment_id, state=state, runtime=runtime)
+                assert await probe.reconcile() == "absent"
 
 
 def request(script: str, *, maximum=65536, overflow="retain", **kwargs):
