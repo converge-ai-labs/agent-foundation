@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from pydantic import ValidationError
+
 from a13n_ui.live import LiveEvent
 from a13n_ui.surfaces import (
     ChildControlResult,
@@ -21,6 +23,7 @@ from a13n_ui.surfaces import (
     RootRunReceipt,
     SkillCatalogView,
     SkillReference,
+    TaskView,
     ThreadFocusSnapshot,
     ThreadSelectorCatalog,
     TranscriptPage,
@@ -46,6 +49,8 @@ class StreamPartEvent:
     kind: Literal["assistant", "reasoning"]
     action: Literal["open", "append", "close"]
     text: str = ""
+    root_thread_id: str | None = None
+    parent_thread_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +64,8 @@ class ToolEvent:
     action: Literal["open", "arguments", "close", "result"]
     tool_name: str | None = None
     text: str = ""
+    root_thread_id: str | None = None
+    parent_thread_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +77,8 @@ class RunHintEvent:
     execution_id: str | None
     action: Literal["started", "finished", "error"]
     message: str | None = None
+    root_thread_id: str | None = None
+    parent_thread_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,9 +90,25 @@ class UnknownLiveEvent:
     execution_id: str | None
     event_type: str
     summary: str
+    root_thread_id: str | None = None
+    parent_thread_id: str | None = None
 
 
-type NormalizedLiveEvent = StreamPartEvent | ToolEvent | RunHintEvent | UnknownLiveEvent
+@dataclass(frozen=True, slots=True)
+class TaskChangedEvent:
+    epoch: str
+    sequence: int
+    thread_id: str
+    run_id: str
+    execution_id: str | None
+    task_state_version: int
+    task: TaskView
+    created: bool = False
+    root_thread_id: str | None = None
+    parent_thread_id: str | None = None
+
+
+type NormalizedLiveEvent = StreamPartEvent | ToolEvent | RunHintEvent | UnknownLiveEvent | TaskChangedEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +264,7 @@ class DecisionValidationFailed:
 @dataclass(frozen=True, slots=True)
 class DecisionSubmitted:
     thread_id: str
+    receipt_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -421,6 +447,8 @@ def normalize_live_event(event: LiveEvent) -> NormalizedLiveEvent:
         "thread_id": event.thread_id,
         "run_id": event.run_id,
         "execution_id": execution_id,
+        "root_thread_id": event.root_thread_id,
+        "parent_thread_id": event.parent_thread_id,
     }
     if event.payload_omitted:
         return UnknownLiveEvent(
@@ -484,6 +512,29 @@ def normalize_live_event(event: LiveEvent) -> NormalizedLiveEvent:
     name = _string(payload, "name") if event_type == "CUSTOM" else None
     summary = name or event.event_type
     value = payload.get("value")
+    if name == "a13n.harness.state" and isinstance(value, dict):
+        extension = value.get("event")
+        mutation = extension.get("payload") if isinstance(extension, dict) else None
+        if isinstance(mutation, dict) and mutation.get("type") == "task_changed":
+            task = mutation.get("task")
+            version = mutation.get("task_state_version")
+            if isinstance(task, dict) and isinstance(version, int) and not isinstance(version, bool) and version >= 1:
+                try:
+                    projected = TaskView.model_validate(
+                        {
+                            "task_id": task.get("id"),
+                            **{key: task[key] for key in TaskView.model_fields if key != "task_id" and key in task},
+                        }
+                    )
+                except ValidationError:
+                    pass
+                else:
+                    return TaskChangedEvent(
+                        **common,
+                        task_state_version=version,
+                        task=projected,
+                        created=mutation.get("reason") == "created",
+                    )
     if value is not None:
         try:
             rendered = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -545,6 +596,7 @@ __all__ = [
     "StartupReady",
     "StartupStarted",
     "StreamPartEvent",
+    "TaskChangedEvent",
     "TerminalEvent",
     "ThreadPickerLoaded",
     "TimelineSelectionChanged",

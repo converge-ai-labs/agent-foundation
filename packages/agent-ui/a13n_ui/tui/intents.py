@@ -93,6 +93,11 @@ class LoadOlderTranscript:
 
 
 @dataclass(frozen=True, slots=True)
+class LoadLatestTranscript:
+    thread_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class EditDraft:
     key: str
     text: str
@@ -287,6 +292,7 @@ type TerminalIntent = (
     | SubmitThreadDraft
     | CancelThreadOperation
     | LoadOlderTranscript
+    | LoadLatestTranscript
     | EditDraft
     | SubmitComposer
     | CancelFocusedOperation
@@ -329,6 +335,7 @@ __all__ = [
     "ExecuteCommand",
     "ExitTerminal",
     "InsertSkillReference",
+    "LoadLatestTranscript",
     "LoadMoreWorkbench",
     "LoadOlderTranscript",
     "NavigateDecision",

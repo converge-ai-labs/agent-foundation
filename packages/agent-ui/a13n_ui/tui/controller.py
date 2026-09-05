@@ -105,6 +105,7 @@ from a13n_ui.tui.intents import (
     ExecuteCommand,
     ExitTerminal,
     InsertSkillReference,
+    LoadLatestTranscript,
     LoadMoreWorkbench,
     LoadOlderTranscript,
     NavigateDecision,
@@ -365,6 +366,7 @@ class TerminalController:
         self._focus_lock = asyncio.Lock()
         self._app: TerminalAppProtocol | None = None
         self._tasks: set[asyncio.Task[None]] = set()
+        self._receipt_tasks: dict[str, asyncio.Task[None]] = {}
         self._lifetime_task: asyncio.Task[None] | None = None
         self._startup_future: asyncio.Future[None] | None = None
         self._shutdown_event: asyncio.Event | None = None
@@ -499,7 +501,7 @@ class TerminalController:
             if self._state.mode is TerminalMode.FOCUS:
                 self._cancel_completion()
                 await self._dispatch(CompletionClosed())
-                await self._dispatch(RouteChanged(mode="workbench"), immediate=True)
+                await self._show_workbench()
             elif self._state.previous_focused_thread_id is not None:
                 await self._replace_focus(self._state.previous_focused_thread_id)
         elif isinstance(intent, ExecuteCommand):
@@ -527,7 +529,7 @@ class TerminalController:
         elif isinstance(intent, OpenWorkbench):
             self._cancel_completion()
             await self._dispatch(CompletionClosed())
-            await self._dispatch(RouteChanged(mode="workbench"), immediate=True)
+            await self._show_workbench()
         elif isinstance(intent, OpenFocus):
             if self._state.overlays and self._state.overlays[-1].kind == "threads":
                 await self._dispatch(OverlayClosed())
@@ -571,7 +573,9 @@ class TerminalController:
         elif isinstance(intent, CancelThreadOperation):
             await self._cancel_thread_operation(intent.thread_id, intent.receipt_id)
         elif isinstance(intent, LoadOlderTranscript):
-            await self._load_older(intent.thread_id)
+            await self._load_transcript(intent.thread_id, older=True)
+        elif isinstance(intent, LoadLatestTranscript):
+            await self._load_transcript(intent.thread_id, older=False)
         elif isinstance(intent, EditDraft):
             await self._dispatch(
                 DraftChanged(
@@ -751,7 +755,7 @@ class TerminalController:
         await self._refresh_workbench()
         focused = self._state.focused_thread_id
         if focused is not None:
-            await self._replace_focus(focused)
+            await self._replace_focus(focused, navigate=False)
 
     async def _handle_invalidation(self, invalidation: SummaryInvalidation) -> None:
         await self._refresh_workbench()
@@ -761,7 +765,7 @@ class TerminalController:
             and invalidation.root_thread_id in {None, focused}
             and invalidation.kind in {"thread", "root_operation", "child_execution", "configuration"}
         ):
-            await self._replace_focus(focused)
+            await self._replace_focus(focused, navigate=False)
 
     async def _refresh_workbench(
         self,
@@ -954,14 +958,25 @@ class TerminalController:
             return self._state.workbench.selected_thread_id or "new"
         return self._state.focused_thread_id or "new"
 
-    async def _replace_focus(self, thread_id: str) -> None:
-        self._cancel_completion()
-        await self._dispatch(CompletionClosed())
+    async def _replace_focus(self, thread_id: str, *, navigate: bool = True) -> None:
+        if navigate:
+            self._cancel_completion()
+            await self._dispatch(CompletionClosed())
         async with self._focus_lock:
+            if not navigate and (
+                self._state.mode is not TerminalMode.FOCUS or self._state.focused_thread_id != thread_id
+            ):
+                return
             await self._stop_focus_locked()
-            await self._dispatch(RouteChanged(mode="focus", thread_id=thread_id), immediate=True)
+            if navigate:
+                await self._dispatch(RouteChanged(mode="focus", thread_id=thread_id), immediate=True)
             task = self._spawn(self._run_focus(thread_id), name=f"terminal-focus-{thread_id}")
             self._focus_task = task
+
+    async def _show_workbench(self) -> None:
+        async with self._focus_lock:
+            await self._dispatch(RouteChanged(mode="workbench"), immediate=True)
+            await self._stop_focus_locked()
 
     async def _stop_focus(self) -> None:
         async with self._focus_lock:
@@ -978,7 +993,9 @@ class TerminalController:
         app = self._app
         if app is None:
             return
-        while not self._closed and self._state.focused_thread_id == thread_id:
+        while (
+            not self._closed and self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == thread_id
+        ):
             version = self._next_version()
             try:
                 async with app.watch_thread(root_thread_id=thread_id) as watch:
@@ -995,6 +1012,12 @@ class TerminalController:
                         ),
                         immediate=True,
                     )
+                    operation = watch.snapshot.root_operation
+                    if operation is not None and operation.status in {
+                        RootOperationStatus.preparing,
+                        RootOperationStatus.running,
+                    }:
+                        self._observe_receipt(operation.receipt)
                     transcript = await app.get_thread_transcript(
                         thread_id=thread_id,
                         expected_continuation_id=continuation,
@@ -1039,17 +1062,17 @@ class TerminalController:
                 )
                 return
 
-    async def _load_older(self, thread_id: str) -> None:
+    async def _load_transcript(self, thread_id: str, *, older: bool) -> None:
         app = self._app
         view = self._state.thread_view(thread_id)
-        if app is None or view is None or view.older_cursor is None:
+        if app is None or view is None or (older and view.older_cursor is None):
             return
         version = view.projection_version
         try:
             page = await app.get_thread_transcript(
                 thread_id=thread_id,
                 expected_continuation_id=view.transcript_continuation_id,
-                cursor=view.older_cursor,
+                cursor=view.older_cursor if older else None,
             )
         except Exception as exc:
             await self._dispatch(OperationFailed(action="history", failure=_failure(exc), thread_id=thread_id))
@@ -1059,9 +1082,11 @@ class TerminalController:
                 request_version=version,
                 thread_id=thread_id,
                 page=page,
-                prepend=True,
+                prepend=older,
             )
         )
+        if not older:
+            await self._dispatch(FollowLatestChanged(thread_id, True), immediate=True)
 
     async def _submit_composer(self, key: str) -> None:
         app = self._app
@@ -1095,7 +1120,7 @@ class TerminalController:
                     ),
                     immediate=True,
                 )
-                self._spawn(self._wait_receipt(receipt), name=f"terminal-receipt-{receipt.receipt_id}")
+                self._observe_receipt(receipt)
             elif mode is ControlMode.IDLE and thread_id is not None:
                 receipt = await app.submit_thread(
                     thread_id=thread_id,
@@ -1110,7 +1135,7 @@ class TerminalController:
                     ),
                     immediate=True,
                 )
-                self._spawn(self._wait_receipt(receipt), name=f"terminal-receipt-{receipt.receipt_id}")
+                self._observe_receipt(receipt)
             elif mode is ControlMode.RUNNING and view is not None and view.root_operation is not None:
                 result = await app.steer_root_operation(
                     receipt_id=view.root_operation.receipt.receipt_id,
@@ -1149,10 +1174,10 @@ class TerminalController:
             return
         text = draft.text
         try:
-            operation = row.latest_operation
-            if operation is not None and "steer" in row.available_actions:
+            activity = row.thread.root_activity
+            if activity.receipt_id is not None and "steer" in activity.available_actions:
                 result = await app.steer_root_operation(
-                    receipt_id=operation.receipt.receipt_id,
+                    receipt_id=activity.receipt_id,
                     message=text,
                     skill_references=draft.skill_references,
                 )
@@ -1167,11 +1192,7 @@ class TerminalController:
                     "Answer the pending decision before sending another prompt.",
                     code="thread_decision_pending",
                 )
-            elif operation is not None and operation.status not in {
-                RootOperationStatus.completed,
-                RootOperationStatus.failed,
-                RootOperationStatus.cancelled,
-            }:
+            elif activity.receipt_id is not None:
                 raise AgentUiError(
                     "This Thread cannot accept input until its current operation changes state.",
                     code="thread_input_unavailable",
@@ -1183,10 +1204,7 @@ class TerminalController:
                     skill_references=draft.skill_references,
                 )
                 await self._dispatch(DraftSubmitted(thread_id))
-                self._spawn(
-                    self._wait_receipt(receipt),
-                    name=f"terminal-receipt-{receipt.receipt_id}",
-                )
+                self._observe_receipt(receipt)
             await self._refresh_workbench()
         except Exception as exc:
             await self._dispatch(
@@ -1232,7 +1250,7 @@ class TerminalController:
                 await self._dispatch(OverlayClosed())
             return
         thread_id = context_key
-        view = self._state.thread_view(thread_id)
+        view = self._state.thread_view(thread_id) if self._state.mode is TerminalMode.FOCUS else None
         if view is not None and view.detail is not None:
             configuration = view.detail.thread.configuration
         else:
@@ -1374,7 +1392,17 @@ class TerminalController:
         await self._refresh_workbench()
         thread_id = self._state.focused_thread_id
         if self._state.mode is TerminalMode.FOCUS and thread_id is not None:
-            await self._replace_focus(thread_id)
+            await self._replace_focus(thread_id, navigate=False)
+
+    def _observe_receipt(self, receipt: RootRunReceipt) -> None:
+        if receipt.receipt_id in self._receipt_tasks:
+            return
+        view = self._state.thread_view(receipt.thread_id)
+        if view is not None and any(item.receipt.receipt_id == receipt.receipt_id for item in view.settled_operations):
+            return
+        task = self._spawn(self._wait_receipt(receipt), name=f"terminal-receipt-{receipt.receipt_id}")
+        self._receipt_tasks[receipt.receipt_id] = task
+        task.add_done_callback(lambda _: self._receipt_tasks.pop(receipt.receipt_id, None))
 
     async def _wait_receipt(self, receipt: RootRunReceipt) -> None:
         app = self._app
@@ -1396,7 +1424,7 @@ class TerminalController:
         await self._dispatch(RootOperationUpdated(operation), immediate=True)
         await self._refresh_workbench()
         if self._state.focused_thread_id == receipt.thread_id:
-            await self._replace_focus(receipt.thread_id)
+            await self._replace_focus(receipt.thread_id, navigate=False)
 
     async def _cancel_focused(self) -> None:
         app = self._app
@@ -1473,7 +1501,7 @@ class TerminalController:
         if result.accepted:
             await self._dispatch(OverlayClosed())
         if self._state.focused_thread_id == parent_thread_id:
-            await self._replace_focus(parent_thread_id)
+            await self._replace_focus(parent_thread_id, navigate=False)
 
     async def _submit_decision_session(self, thread_id: str) -> None:
         view = self._state.thread_view(thread_id)
@@ -1497,9 +1525,9 @@ class TerminalController:
                 OperationFailed(action="decision", failure=_failure(exc), thread_id=intent.thread_id),
                 immediate=True,
             )
-            await self._replace_focus(intent.thread_id)
+            await self._replace_focus(intent.thread_id, navigate=False)
             return
-        await self._dispatch(DecisionSubmitted(intent.thread_id))
+        await self._dispatch(DecisionSubmitted(intent.thread_id, receipt.receipt_id))
         await self._dispatch(
             RootReceiptAccepted(
                 receipt=receipt,
@@ -1510,7 +1538,7 @@ class TerminalController:
             ),
             immediate=True,
         )
-        self._spawn(self._wait_receipt(receipt), name=f"terminal-receipt-{receipt.receipt_id}")
+        self._observe_receipt(receipt)
 
     async def _open_review(self, intent: OpenReview) -> None:
         app = self._app
@@ -1632,7 +1660,7 @@ class TerminalController:
     async def _refresh_configuration_context(self, thread_id: str) -> None:
         await self._refresh_workbench()
         if self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == thread_id:
-            await self._replace_focus(thread_id)
+            await self._replace_focus(thread_id, navigate=False)
 
     async def _archive(self, intent: ArchiveThread) -> None:
         app = self._app
@@ -1650,7 +1678,7 @@ class TerminalController:
             await self._dispatch(OperationFailed(action="archive", failure=_failure(exc), thread_id=intent.thread_id))
             await self._refresh_workbench()
             if self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == intent.thread_id:
-                await self._replace_focus(intent.thread_id)
+                await self._replace_focus(intent.thread_id, navigate=False)
             return
         await self._refresh_workbench()
         if intent.archived and self._state.focused_thread_id == intent.thread_id:

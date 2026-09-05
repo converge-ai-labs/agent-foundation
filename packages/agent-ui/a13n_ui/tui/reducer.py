@@ -12,6 +12,7 @@ from a13n_ui.surfaces import (
     RootOperationStatus,
     RootOperationView,
     SkillReference,
+    TaskPage,
     ThreadDetail,
     ThreadFocusSnapshot,
     TranscriptPage,
@@ -59,6 +60,7 @@ from a13n_ui.tui.events import (
     StartupReady,
     StartupStarted,
     StreamPartEvent,
+    TaskChangedEvent,
     TerminalEvent,
     ThreadPickerLoaded,
     TimelineSelectionChanged,
@@ -316,19 +318,43 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         timeline = () if current is None else current.timeline
         if current is not None and current.epoch not in {None, event.snapshot.epoch}:
             timeline = tuple(block for block in timeline if not block.provisional)
-        timeline = tuple(block for block in timeline if block.kind not in {BlockKind.TASK, BlockKind.CHILD})
-        timeline = _deduplicate((*timeline, *_snapshot_activity_blocks(event.snapshot)))
+        tasks = event.snapshot.tasks
+        operation = event.snapshot.root_operation
+        tasks_run_id = None if operation is None else operation.run_id
+        if (
+            current is not None
+            and current.epoch == event.snapshot.epoch
+            and tasks_run_id is not None
+            and current.tasks_run_id == tasks_run_id
+            and current.detail is not None
+            and current.detail.continuation_id == event.snapshot.thread.continuation_id
+            and current.tasks.version is not None
+            and (tasks.version is None or current.tasks.version > tasks.version)
+        ):
+            tasks = current.tasks
+        timeline = tuple(
+            block
+            for block in timeline
+            if block.kind not in {BlockKind.TASK, BlockKind.CHILD} or block.execution_id is not None
+        )
+        timeline = _deduplicate(
+            (*timeline, *_snapshot_activity_blocks(event.snapshot.model_copy(update={"tasks": tasks})))
+        )
+        timeline = _settle_child_blocks(timeline, event.snapshot)
         decision_session, stale_decision_session = _decision_sessions(
             thread_id,
             current,
             event.decisions,
+            event.snapshot.root_operation,
         )
         view = ThreadViewState(
             thread_id=thread_id,
             detail=event.snapshot.thread,
             snapshot=event.snapshot,
             root_operation=event.snapshot.root_operation,
-            tasks=event.snapshot.tasks,
+            settled_operations=() if current is None else current.settled_operations,
+            tasks=tasks,
+            tasks_run_id=tasks_run_id,
             decisions=event.decisions,
             decision_session=decision_session,
             stale_decision_session=stale_decision_session,
@@ -343,6 +369,7 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             projection_version=event.request_version,
             transcript_continuation_id=(None if current is None else current.transcript_continuation_id),
             older_cursor=None if current is None else current.older_cursor,
+            newer_history_omitted=False if current is None else current.newer_history_omitted,
             follow_latest=True if current is None else current.follow_latest,
             pending_output=0 if current is None else current.pending_output,
             selected_block_id=None if current is None else current.selected_block_id,
@@ -350,16 +377,10 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             cancelling_receipt_id=None if current is None else current.cancelling_receipt_id,
             unretained_output=False if current is None else current.unretained_output,
         )
-        next_state = _with_view(
-            replace(
-                state,
-                focused_thread_id=thread_id,
-                previous_focused_thread_id=thread_id,
-                mode=TerminalMode.FOCUS,
-            ),
-            view,
-        )
-        return _result(next_state, "route", "focus", "composer")
+        next_state = _with_view(state, view)
+        if event.snapshot.root_operation is not None:
+            return _apply_root_operation(next_state, event.snapshot.root_operation)
+        return _result(next_state, "focus", "composer")
 
     if isinstance(event, TranscriptLoaded):
         view = state.thread_view(event.thread_id)
@@ -378,13 +399,21 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             preserve = view.reading_anchor
         else:
             current_activity = tuple(
-                block for block in view.timeline if block.provisional or block.kind in {BlockKind.TASK, BlockKind.CHILD}
+                block
+                for block in view.timeline
+                if (block.provisional or block.kind in {BlockKind.TASK, BlockKind.CHILD})
+                and not (
+                    block.retained_continuation_id is not None
+                    and block.retained_continuation_id == event.page.continuation_id
+                )
             )
             timeline = _deduplicate((*incoming, *current_activity))
             preserve = None
+        bounded = _evict_timeline(timeline, view, from_end=event.prepend)
         view = replace(
             view,
-            timeline=_evict_timeline(timeline, view),
+            timeline=bounded,
+            newer_history_omitted=(event.prepend and (view.newer_history_omitted or len(bounded) < len(timeline))),
             transcript_continuation_id=event.page.continuation_id,
             older_cursor=event.page.next_cursor,
             projection_version=event.request_version,
@@ -530,10 +559,10 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
 
     if isinstance(event, DecisionSubmitted):
         view = state.thread_view(event.thread_id)
-        if view is None:
+        if view is None or view.decision_session is None:
             return Reduction(state, _EMPTY_HINTS)
-        view = replace(view, decision_session=None, stale_decision_session=None)
-        return _result(_with_view(state, view), "focus", "composer")
+        session = replace(view.decision_session, submitted_receipt_id=event.receipt_id)
+        return _result(_with_view(state, replace(view, decision_session=session)), "focus", "composer")
 
     if isinstance(event, ReviewLoaded):
         if state.review is not None and event.request_version < state.review.request_version:
@@ -808,7 +837,7 @@ def _control_mode(
 
 def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
     source = event.event
-    view = state.thread_view(source.thread_id)
+    view = state.thread_view(source.root_thread_id or source.thread_id)
     if view is None:
         return Reduction(state, _EMPTY_HINTS)
     if view.epoch != source.epoch:
@@ -819,7 +848,7 @@ def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
             severity="warning",
             message="Live presentation epoch changed; refreshing the focused Thread.",
             code="live_epoch_changed",
-            thread_id=source.thread_id,
+            thread_id=view.thread_id,
         )
         return _result(next_state, "focus", "composer", "notice")
     if source.sequence <= view.last_sequence:
@@ -836,6 +865,8 @@ def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
             block = TimelineBlock(
                 block_id=block_id,
                 thread_id=source.thread_id,
+                root_thread_id=source.root_thread_id,
+                parent_thread_id=source.parent_thread_id,
                 run_id=source.run_id,
                 execution_id=source.execution_id,
                 kind=kind,
@@ -867,6 +898,8 @@ def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
             block = TimelineBlock(
                 block_id=block_id,
                 thread_id=source.thread_id,
+                root_thread_id=source.root_thread_id,
+                parent_thread_id=source.parent_thread_id,
                 run_id=source.run_id,
                 execution_id=source.execution_id,
                 kind=BlockKind.TOOL,
@@ -897,6 +930,8 @@ def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
             block = TimelineBlock(
                 block_id=f"live:{source.thread_id}:{source.run_id}:run-error",
                 thread_id=source.thread_id,
+                root_thread_id=source.root_thread_id,
+                parent_thread_id=source.parent_thread_id,
                 run_id=source.run_id,
                 execution_id=source.execution_id,
                 kind=BlockKind.FAILURE,
@@ -907,11 +942,74 @@ def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
             )
             timeline = _deduplicate((*timeline, block))
             added = 1
+    elif isinstance(source, TaskChangedEvent):
+        task = source.task
+        block_id = f"task:{source.thread_id}:{source.run_id}:{task.task_id}"
+        existing = next((block for block in timeline if block.block_id == block_id), None)
+        if existing is None or task.version > existing.version:
+            block = TimelineBlock(
+                block_id=block_id,
+                thread_id=source.thread_id,
+                root_thread_id=source.root_thread_id,
+                parent_thread_id=source.parent_thread_id,
+                run_id=source.run_id,
+                execution_id=source.execution_id,
+                kind=BlockKind.TASK,
+                status={
+                    "pending": BlockStatus.PROVISIONAL,
+                    "in_progress": BlockStatus.RUNNING,
+                    "completed": BlockStatus.CLOSED,
+                }[task.status],
+                version=task.version,
+                task_id=task.task_id,
+                summary=task.subject,
+                source_text=task.active_form,
+                detail_available=True,
+                provisional=True,
+            )
+            timeline = _deduplicate((*timeline, block))
+            added = 1
+        active_run_id = None if view.root_operation is None else view.root_operation.run_id
+        if source.thread_id == view.thread_id and active_run_id in {None, source.run_id}:
+            if view.tasks_run_id != source.run_id:
+                baseline = TaskPage() if view.snapshot is None else view.snapshot.tasks
+                view = replace(view, tasks=baseline, tasks_run_id=source.run_id)
+        if (
+            source.thread_id == view.thread_id
+            and view.tasks_run_id == source.run_id
+            and (view.tasks.version is None or source.task_state_version >= view.tasks.version)
+        ):
+            tasks = list(view.tasks.tasks)
+            index = next((index for index, item in enumerate(tasks) if item.task_id == task.task_id), None)
+            total = view.tasks.total
+            if index is not None:
+                if task.version > tasks[index].version:
+                    tasks[index] = task
+            else:
+                if total == len(tasks) or (
+                    source.created and (view.tasks.version is None or source.task_state_version > view.tasks.version)
+                ):
+                    total += 1
+                if len(tasks) < 256:
+                    tasks.append(task)
+            view = replace(
+                view,
+                tasks=view.tasks.model_copy(
+                    update={
+                        "version": source.task_state_version,
+                        "tasks": tuple(tasks),
+                        "total": max(total, len(tasks)),
+                        "omitted": max(0, total - len(tasks)),
+                    }
+                ),
+            )
     elif isinstance(source, UnknownLiveEvent):
         kind = BlockKind.CHILD if source.execution_id is not None else BlockKind.NOTICE
         block = TimelineBlock(
             block_id=f"live:{source.thread_id}:{source.run_id}:event:{source.sequence}",
             thread_id=source.thread_id,
+            root_thread_id=source.root_thread_id,
+            parent_thread_id=source.parent_thread_id,
             run_id=source.run_id,
             execution_id=source.execution_id,
             kind=kind,
@@ -923,6 +1021,15 @@ def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
         timeline = (*timeline, block)
         added = 1
 
+    for operation in view.settled_operations:
+        timeline = _settle_root_blocks(timeline, operation)
+    if view.snapshot is not None:
+        timeline = _settle_child_blocks(timeline, view.snapshot)
+    timeline = tuple(
+        block
+        for block in timeline
+        if block.retained_continuation_id is None or block.retained_continuation_id != view.transcript_continuation_id
+    )
     pending = view.pending_output
     if not view.follow_latest:
         pending += added
@@ -944,13 +1051,22 @@ def _apply_root_operation(state: TerminalState, operation: RootOperationView) ->
     view = state.thread_view(thread_id)
     if view is None:
         return Reduction(state, _EMPTY_HINTS)
+    if operation.status in _TERMINAL_OPERATION_STATUSES:
+        settled = tuple(
+            item for item in view.settled_operations if item.receipt.receipt_id != operation.receipt.receipt_id
+        )
+        view = replace(
+            view,
+            settled_operations=(*settled, operation)[-16:],
+            timeline=_settle_root_blocks(view.timeline, operation),
+        )
     current = view.root_operation
     if (
         current is not None
         and current.status not in _TERMINAL_OPERATION_STATUSES
         and current.receipt.receipt_id != operation.receipt.receipt_id
     ):
-        return Reduction(state, _EMPTY_HINTS)
+        return _result(_with_view(state, view), "focus")
     cancelling = view.cancelling_receipt_id
     if operation.status in _TERMINAL_OPERATION_STATUSES:
         cancelling = None
@@ -961,18 +1077,6 @@ def _apply_root_operation(state: TerminalState, operation: RootOperationView) ->
         mode = ControlMode.CANCELLING
     timeline = view.timeline
     if operation.status in _TERMINAL_OPERATION_STATUSES:
-        status = {
-            RootOperationStatus.completed: BlockStatus.CLOSED,
-            RootOperationStatus.suspended: BlockStatus.CLOSED,
-            RootOperationStatus.failed: BlockStatus.FAILED,
-            RootOperationStatus.cancelled: BlockStatus.CANCELLED,
-        }[operation.status]
-        timeline = tuple(
-            replace(block, status=status, provisional=True)
-            if block.receipt_id == operation.receipt.receipt_id and block.provisional
-            else block
-            for block in timeline
-        )
         if operation.failure is not None:
             failure = TimelineBlock(
                 block_id=f"receipt:{operation.receipt.receipt_id}:failure",
@@ -1007,16 +1111,80 @@ def _apply_root_operation(state: TerminalState, operation: RootOperationView) ->
     return _result(next_state, "focus", "composer", "notice")
 
 
+def _settle_root_blocks(timeline: tuple[TimelineBlock, ...], operation: RootOperationView) -> tuple[TimelineBlock, ...]:
+    status = {
+        RootOperationStatus.completed: BlockStatus.CLOSED,
+        RootOperationStatus.suspended: BlockStatus.CLOSED,
+        RootOperationStatus.failed: BlockStatus.FAILED,
+        RootOperationStatus.cancelled: BlockStatus.CANCELLED,
+    }[operation.status]
+    continuation_id = (
+        operation.outcome.continuation.continuation_id
+        if operation.outcome is not None and operation.outcome.continuation.status == "selected"
+        else None
+    )
+    return tuple(
+        replace(block, status=status, retained_continuation_id=continuation_id)
+        if block.provisional
+        and block.kind not in {BlockKind.FAILURE, BlockKind.TASK, BlockKind.CHILD}
+        and (
+            block.receipt_id == operation.receipt.receipt_id
+            or (
+                operation.run_id is not None
+                and block.run_id == operation.run_id
+                and block.thread_id == operation.receipt.thread_id
+                and block.execution_id is None
+            )
+        )
+        else block
+        for block in timeline
+    )
+
+
+def _settle_child_blocks(
+    timeline: tuple[TimelineBlock, ...], snapshot: ThreadFocusSnapshot
+) -> tuple[TimelineBlock, ...]:
+    statuses: dict[tuple[str | None, str, str | None], BlockStatus] = {
+        (child.execution_id, child.child_thread_id, child.child_run_id): {
+            "succeeded": BlockStatus.CLOSED,
+            "failed": BlockStatus.FAILED,
+            "cancelled": BlockStatus.CANCELLED,
+            "lost": BlockStatus.FAILED,
+        }[child.persisted_status]
+        for child in snapshot.children.executions
+        if child.persisted_status != "running"
+    }
+    return tuple(
+        replace(block, status=statuses[(block.execution_id, block.thread_id, block.run_id)])
+        if block.provisional
+        and block.status in {BlockStatus.RUNNING, BlockStatus.PROVISIONAL}
+        and (block.execution_id, block.thread_id, block.run_id) in statuses
+        else block
+        for block in timeline
+    )
+
+
 def _decision_sessions(
     thread_id: str,
     current: ThreadViewState | None,
     decisions: DecisionBatchView | None,
+    operation: RootOperationView | None,
 ) -> tuple[DecisionSessionState | None, DecisionSessionState | None]:
     if decisions is None:
         return None, None if current is None else current.stale_decision_session
     request_ids = tuple(item.request_id for item in decisions.requests)
     previous = None if current is None else current.decision_session
     stale = None if current is None else current.stale_decision_session
+    if (
+        previous is not None
+        and operation is not None
+        and previous.submitted_receipt_id == operation.receipt.receipt_id
+        and operation.outcome is not None
+        and operation.outcome.continuation.status == "selected"
+        and operation.outcome.continuation.continuation_id != previous.continuation_id
+    ):
+        previous = None
+        stale = None
     if (
         previous is not None
         and previous.continuation_id == decisions.continuation_id
@@ -1058,7 +1226,7 @@ def _snapshot_activity_blocks(snapshot: ThreadFocusSnapshot) -> tuple[TimelineBl
         }[task.status]
         blocks.append(
             TimelineBlock(
-                block_id=f"task:{thread_id}:{task.task_id}",
+                block_id=f"task:{thread_id}:{None if snapshot.root_operation is None else snapshot.root_operation.run_id}:{task.task_id}",
                 thread_id=thread_id,
                 task_id=task.task_id,
                 kind=BlockKind.TASK,
@@ -1200,6 +1368,8 @@ def _deduplicate(blocks: tuple[TimelineBlock, ...]) -> tuple[TimelineBlock, ...]
 def _evict_timeline(
     timeline: tuple[TimelineBlock, ...],
     view: ThreadViewState,
+    *,
+    from_end: bool = False,
 ) -> tuple[TimelineBlock, ...]:
     if len(timeline) <= MAX_TIMELINE_BLOCKS:
         return timeline
@@ -1210,12 +1380,12 @@ def _evict_timeline(
         protected.add(view.reading_anchor.block_id)
     removable = len(timeline) - MAX_TIMELINE_BLOCKS
     kept: list[TimelineBlock] = []
-    for block in timeline:
+    for block in reversed(timeline) if from_end else timeline:
         if removable > 0 and block.block_id not in protected:
             removable -= 1
             continue
         kept.append(block)
-    return tuple(kept)
+    return tuple(reversed(kept)) if from_end else tuple(kept)
 
 
 def _live_part_id(event: StreamPartEvent) -> str:

@@ -334,7 +334,8 @@ async def test_surface_and_controller_failures_remain_at_terminal_boundary(
 
 
 @pytest.mark.anyio
-async def test_timeline_reports_reading_anchor_and_preserves_it_on_projection(tmp_path: Path) -> None:
+@pytest.mark.parametrize("prepend", [False, True])
+async def test_timeline_reports_reading_anchor_and_preserves_it_on_projection(tmp_path: Path, prepend: bool) -> None:
     app, _release = _blocked_terminal_app(tmp_path)
     handled = AsyncMock()
     app.controller.handle = handled
@@ -365,7 +366,8 @@ async def test_timeline_reports_reading_anchor_and_preserves_it_on_projection(tm
         assert intent.block_id in {block.block_id for block in blocks}
 
         anchor = ReadingAnchor(intent.block_id, intent.line_offset)
-        view = replace(state.thread_views[0], reading_anchor=anchor)
+        timeline = (replace(blocks[0], block_id="older"), *blocks) if prepend else blocks
+        view = replace(state.thread_views[0], reading_anchor=anchor, timeline=timeline, follow_latest=False)
         projected = replace(state, thread_views=(view,))
         scroll.scroll_end(animate=False, immediate=True)
         app.post_message(
@@ -377,6 +379,10 @@ async def test_timeline_reports_reading_anchor_and_preserves_it_on_projection(tm
         await pilot.pause(0.05)
         assert scroll.scroll_y < scroll.max_scroll_y
         assert app.terminal_state.thread_view("thread-1").reading_anchor == anchor
+        anchored_widget = next(
+            widget for widget in scroll.query(TimelineBlockWidget) if widget.block.block_id == anchor.block_id
+        )
+        assert abs(scroll.scroll_y - (anchored_widget.virtual_region.y + anchor.line_offset)) <= 1
 
         await pilot.resize_terminal(100, 28)
         await pilot.pause(0.05)

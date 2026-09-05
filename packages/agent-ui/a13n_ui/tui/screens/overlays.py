@@ -11,7 +11,7 @@ from textual.containers import Container
 from textual.timer import Timer
 from textual.widgets import Button, Input, ListItem, ListView, Static
 
-from a13n_ui.surfaces import RootOperationStatus, SelectableResourceSummary, SkillReference
+from a13n_ui.surfaces import SelectableResourceSummary, SkillReference
 from a13n_ui.tui.commands import COMMANDS, command_available
 from a13n_ui.tui.intents import (
     CloseOverlay,
@@ -29,6 +29,7 @@ from a13n_ui.tui.models import (
     ConfigurationResourceKind,
     ControlMode,
     OverlayState,
+    TerminalMode,
     TerminalState,
 )
 from a13n_ui.tui.widgets.messages import IntentRequested
@@ -359,7 +360,7 @@ def _configuration_context(state: TerminalState, context_key: str | None) -> str
     view = None
     row = None
     if context_key is not None and context_key != "new":
-        view = state.thread_view(context_key)
+        view = state.thread_view(context_key) if state.mode is TerminalMode.FOCUS else None
     configuration = None if view is None or view.detail is None else view.detail.thread.configuration
     if configuration is None and context_key is not None and context_key != "new":
         row = next(
@@ -384,16 +385,7 @@ def _configuration_context(state: TerminalState, context_key: str | None) -> str
         ControlMode.AWAITING_DECISION,
         ControlMode.CANCELLING,
     }
-    active_row = (
-        row is not None
-        and row.latest_operation is not None
-        and row.latest_operation.status
-        not in {
-            RootOperationStatus.completed,
-            RootOperationStatus.failed,
-            RootOperationStatus.cancelled,
-        }
-    )
+    active_row = row is not None and row.thread.root_activity.receipt_id is not None
     if active_view or active_row:
         lines.append("Changes apply to the next Run; the active Run keeps its captured configuration.")
     conflict = state.configuration_conflict
@@ -413,7 +405,7 @@ def _configuration_entries(
         return []
     configuration = None
     if context_key is not None and context_key != "new":
-        view = state.thread_view(context_key)
+        view = state.thread_view(context_key) if state.mode is TerminalMode.FOCUS else None
         if view is not None and view.detail is not None:
             configuration = view.detail.thread.configuration
         else:
@@ -530,7 +522,7 @@ def _configuration_marker(
 def _status_text(state: TerminalState, context_key: str | None) -> str:
     view = None
     if context_key is not None and context_key != "new":
-        view = state.thread_view(context_key)
+        view = state.thread_view(context_key) if state.mode is TerminalMode.FOCUS else None
     if view is None or view.detail is None:
         row = next(
             (item for item in state.workbench.rows if context_key is not None and item.thread.thread_id == context_key),
@@ -538,7 +530,7 @@ def _status_text(state: TerminalState, context_key: str | None) -> str:
         )
         if row is not None:
             configuration = row.thread.configuration
-            operation = row.latest_operation
+            activity = row.thread.root_activity
             model_id = "unavailable"
             if state.selectors is not None:
                 agent = next(
@@ -557,7 +549,7 @@ def _status_text(state: TerminalState, context_key: str | None) -> str:
                     f"Model: {model_id} (resolved, read-only)",
                     f"Environment: {configuration.environment_profile_id}",
                     f"Configuration: v{configuration.version}",
-                    f"Operation: {'inactive' if operation is None else operation.status.value}",
+                    f"Operation: {activity.state.value}",
                 )
             )
         return (

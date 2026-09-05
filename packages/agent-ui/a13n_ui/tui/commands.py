@@ -71,7 +71,10 @@ def command_available(
         return state.launch_project_id is not None or state.draft_defaults.project_id is not None
     if command.name == "cancel":
         if row is not None:
-            return row.latest_operation is not None and "cancel" in row.available_actions
+            return (
+                row.thread.root_activity.receipt_id is not None
+                and "cancel" in row.thread.root_activity.available_actions
+            )
         return view is not None and view.control_mode in {ControlMode.PREPARING, ControlMode.RUNNING}
     if command.name == "archive":
         if row is not None:
@@ -121,10 +124,10 @@ def command_intent(
         return OpenExternalEditor(key)
     if name == "cancel":
         row = _context_row(state, key)
-        if row is not None and row.latest_operation is not None:
+        if row is not None and row.thread.root_activity.receipt_id is not None:
             return CancelThreadOperation(
                 thread_id=row.thread.thread_id,
-                receipt_id=row.latest_operation.receipt.receipt_id,
+                receipt_id=row.thread.root_activity.receipt_id,
             )
         return CancelFocusedOperation()
     if name == "archive":

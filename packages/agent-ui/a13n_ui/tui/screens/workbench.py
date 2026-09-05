@@ -176,7 +176,9 @@ class WorkbenchScreen(Container):
         )
         open_button.disabled = False
         open_button.label = "Answer" if "respond" in row.available_actions else "Open"
-        cancel.display = "cancel" in row.available_actions and row.latest_operation is not None
+        cancel.display = (
+            "cancel" in thread.root_activity.available_actions and thread.root_activity.receipt_id is not None
+        )
         archive.display = "archive" in row.available_actions
         draft = state.draft(thread.thread_id) or DraftState(key=thread.thread_id)
         if self._editor_thread_id != thread.thread_id or editor.text != draft.text:
@@ -184,7 +186,7 @@ class WorkbenchScreen(Container):
                 editor.load_text(draft.text)
                 editor.cursor_location = _location_for_offset(draft.text, draft.cursor)
         self._editor_thread_id = thread.thread_id
-        operation_busy = row.latest_operation is not None and row.latest_operation.status not in _TERMINAL_STATUSES
+        operation_busy = thread.root_activity.receipt_id is not None
         editor.disabled = "respond" in row.available_actions or (
             operation_busy and "steer" not in row.available_actions
         )
@@ -335,12 +337,12 @@ class WorkbenchScreen(Container):
         elif event.button.id == "workbench-cancel" and state is not None and selected_id is not None:
             event.stop()
             row = next((item for item in state.workbench.rows if item.thread.thread_id == selected_id), None)
-            if row is not None and row.latest_operation is not None:
+            if row is not None and row.thread.root_activity.receipt_id is not None:
                 self.post_message(
                     IntentRequested(
                         CancelThreadOperation(
                             thread_id=selected_id,
-                            receipt_id=row.latest_operation.receipt.receipt_id,
+                            receipt_id=row.thread.root_activity.receipt_id,
                         )
                     )
                 )
@@ -361,7 +363,9 @@ class WorkbenchScreen(Container):
 def _row_label(row: WorkbenchThreadView) -> Text:
     title = row.thread.title or row.thread.thread_id
     attention = "!" if row.pending_decision is not None or row.children.failed or row.children.lost else " "
-    if row.latest_operation is not None:
+    if row.thread.root_activity.receipt_id is not None:
+        status = row.thread.root_activity.state.value
+    elif row.latest_operation is not None:
         status = row.latest_operation.status.value
     elif row.pending_decision is not None:
         status = "awaiting decision"

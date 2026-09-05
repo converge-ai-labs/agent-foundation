@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Button, Static
 
-from a13n_ui.tui.intents import LoadOlderTranscript, SetFollowLatest, SetReadingAnchor
+from a13n_ui.tui.intents import LoadLatestTranscript, LoadOlderTranscript, SetFollowLatest, SetReadingAnchor
 from a13n_ui.tui.models import ProjectionHints, ReadingAnchor, ThreadViewState, TimelineBlock
 from a13n_ui.tui.widgets.blocks import TimelineBlockWidget
 from a13n_ui.tui.widgets.messages import IntentRequested
@@ -54,6 +54,7 @@ class TimelineView(Container):
     def __init__(self) -> None:
         super().__init__(id="timeline")
         self._focused_thread_id: str | None = None
+        self._newer_history_omitted = False
         self._block_ids: tuple[str, ...] = ()
         self._widgets: dict[str, TimelineBlockWidget] = {}
 
@@ -75,8 +76,13 @@ class TimelineView(Container):
         latest = self.query_one("#timeline-latest", Button)
         scroll = self.query_one(TimelineScroll)
         older.display = view.older_cursor is not None
-        latest.display = not view.follow_latest
-        latest.label = f"Return to latest ({view.pending_output} new)" if view.pending_output else "Return to latest"
+        self._newer_history_omitted = view.newer_history_omitted
+        latest.display = not view.follow_latest or view.newer_history_omitted
+        latest.label = (
+            "Reload latest"
+            if view.newer_history_omitted
+            else (f"Return to latest ({view.pending_output} new)" if view.pending_output else "Return to latest")
+        )
         scroll.thread_id = view.thread_id
         scroll.follow_latest = view.follow_latest
 
@@ -189,7 +195,12 @@ class TimelineView(Container):
             self.post_message(IntentRequested(LoadOlderTranscript(self._focused_thread_id)))
         elif event.button.id == "timeline-latest":
             event.stop()
-            self.post_message(IntentRequested(SetFollowLatest(self._focused_thread_id, True)))
+            intent = (
+                LoadLatestTranscript(self._focused_thread_id)
+                if self._newer_history_omitted
+                else SetFollowLatest(self._focused_thread_id, True)
+            )
+            self.post_message(IntentRequested(intent))
 
 
 __all__ = ["TimelineScroll", "TimelineView"]

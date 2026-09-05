@@ -210,6 +210,294 @@ def _workbench_row(
     )
 
 
+def test_retained_page_replaces_only_correlated_published_live_output() -> None:
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, _snapshot())).state
+    receipt = _operation(RootOperationStatus.preparing).receipt
+    state = reduce_terminal(state, RootReceiptAccepted(receipt, "thread-1", "hello")).state
+    state = reduce_terminal(
+        state,
+        LiveReceived(
+            StreamPartEvent(
+                epoch="live-1",
+                sequence=11,
+                thread_id="thread-1",
+                run_id="run-1",
+                execution_id=None,
+                part_id="part-1",
+                kind="assistant",
+                action="append",
+                text="answer",
+            )
+        ),
+    ).state
+    state = reduce_terminal(state, RootOperationUpdated(_operation(RootOperationStatus.completed))).state
+    snapshot = _snapshot(operation=_operation(RootOperationStatus.completed)).model_copy(
+        update={
+            "thread": _detail().model_copy(update={"continuation_id": "b" * 64}),
+        }
+    )
+    state = reduce_terminal(state, FocusLoaded(2, snapshot)).state
+    page = TranscriptPage(
+        continuation_id="b" * 64,
+        total=2,
+        entries=(
+            TranscriptEntry(position=0, message_kind="request", parts=(TranscriptPart(kind="user", text="hello"),)),
+            TranscriptEntry(
+                position=1, message_kind="response", parts=(TranscriptPart(kind="assistant", text="answer"),)
+            ),
+        ),
+    )
+    state = reduce_terminal(state, TranscriptLoaded(2, "thread-1", page)).state
+    blocks = state.thread_view("thread-1").timeline
+    assert [block.source_text for block in blocks] == ["hello", "answer"]
+    assert not any(block.provisional for block in blocks)
+
+
+@pytest.mark.parametrize("after_transcript", [False, True])
+def test_buffered_output_after_terminal_receipt_is_reconciled(after_transcript: bool) -> None:
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, _snapshot())).state
+    state = reduce_terminal(state, RootOperationUpdated(_operation(RootOperationStatus.completed))).state
+    late = LiveReceived(
+        StreamPartEvent(
+            epoch="live-1",
+            sequence=11,
+            thread_id="thread-1",
+            run_id="run-1",
+            execution_id=None,
+            part_id="late",
+            kind="assistant",
+            action="append",
+            text="answer",
+        )
+    )
+    if not after_transcript:
+        state = reduce_terminal(state, late).state
+        assert state.thread_view("thread-1").timeline[0].status is BlockStatus.CLOSED
+    snapshot = _snapshot().model_copy(
+        update={
+            "thread": _detail().model_copy(update={"continuation_id": "b" * 64}),
+        }
+    )
+    state = reduce_terminal(state, FocusLoaded(2, snapshot)).state
+    page = TranscriptPage(
+        continuation_id="b" * 64,
+        total=1,
+        entries=(
+            TranscriptEntry(
+                position=0, message_kind="response", parts=(TranscriptPart(kind="assistant", text="answer"),)
+            ),
+        ),
+    )
+    state = reduce_terminal(state, TranscriptLoaded(2, "thread-1", page)).state
+    if after_transcript:
+        state = reduce_terminal(state, late).state
+    assert [block.source_text for block in state.thread_view("thread-1").timeline] == ["answer"]
+    assert not state.thread_view("thread-1").timeline[0].provisional
+
+
+def test_new_run_task_versions_do_not_inherit_unretained_task_state() -> None:
+    from a13n_ui.surfaces import TaskView
+    from a13n_ui.tui.events import TaskChangedEvent
+
+    first = _operation(RootOperationStatus.running)
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, _snapshot(operation=first))).state
+    task = TaskView(task_id="task-1", version=2, subject="Review", status="completed")
+    event = TaskChangedEvent(
+        epoch="live-1",
+        sequence=11,
+        thread_id="thread-1",
+        run_id="run-1",
+        execution_id=None,
+        task_state_version=2,
+        task=task,
+    )
+    state = reduce_terminal(state, LiveReceived(event)).state
+    state = reduce_terminal(
+        state, RootOperationUpdated(_operation(RootOperationStatus.completed, retained=False))
+    ).state
+    second = _operation(RootOperationStatus.running, receipt_id="receipt-2").model_copy(update={"run_id": "run-2"})
+    state = reduce_terminal(state, FocusLoaded(2, _snapshot(operation=second, sequence=11))).state
+    state = reduce_terminal(
+        state,
+        LiveReceived(
+            replace(
+                event,
+                sequence=12,
+                run_id="run-2",
+                task_state_version=1,
+                task=task.model_copy(update={"version": 1, "status": "in_progress"}),
+            )
+        ),
+    ).state
+    view = state.thread_view("thread-1")
+    assert view.tasks_run_id == "run-2"
+    assert view.tasks.version == 1
+    assert view.tasks.tasks[0].status == "in_progress"
+    assert [block.status for block in view.timeline if block.kind is BlockKind.TASK] == [BlockStatus.RUNNING]
+
+
+@pytest.mark.parametrize("created, expected_total", [(False, 3), (True, 4)])
+def test_task_delta_distinguishes_new_tasks_from_omitted_existing_tasks(created: bool, expected_total: int) -> None:
+    from a13n_ui.surfaces import TaskPage, TaskView
+    from a13n_ui.tui.events import TaskChangedEvent
+
+    snapshot = _snapshot(operation=_operation(RootOperationStatus.running)).model_copy(
+        update={
+            "tasks": TaskPage(version=1, total=3, omitted=3),
+        }
+    )
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, snapshot)).state
+    event = TaskChangedEvent(
+        epoch="live-1",
+        sequence=11,
+        thread_id="thread-1",
+        run_id="run-1",
+        execution_id=None,
+        task_state_version=2,
+        created=created,
+        task=TaskView(task_id="task-1", version=1, subject="Review", status="in_progress"),
+    )
+    state = reduce_terminal(state, LiveReceived(event)).state
+    assert state.thread_view("thread-1").tasks.total == expected_total
+    assert state.thread_view("thread-1").tasks.omitted == expected_total - 1
+
+
+def test_terminal_child_snapshot_closes_exact_partial_output() -> None:
+    from a13n_ui.surfaces import ChildActivityView, ChildExecutionView
+
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, _snapshot())).state
+    part = StreamPartEvent(
+        epoch="live-1",
+        sequence=11,
+        thread_id="thread-child",
+        run_id="run-child",
+        execution_id="execution-1",
+        root_thread_id="thread-1",
+        parent_thread_id="thread-1",
+        part_id="part",
+        kind="assistant",
+        action="append",
+        text="partial",
+    )
+    state = reduce_terminal(state, LiveReceived(part)).state
+    state = reduce_terminal(state, LiveReceived(replace(part, sequence=12, run_id="run-other"))).state
+    child = ChildExecutionView(
+        execution_id="execution-1",
+        root_thread_id="thread-1",
+        parent_thread_id="thread-1",
+        child_thread_id="thread-child",
+        child_run_id="run-child",
+        segment_index=0,
+        composition_id="c" * 64,
+        subagent_name="reviewer",
+        child_definition_id="reviewer",
+        persisted_status="cancelled",
+        local_status="unavailable",
+        resumable=False,
+        activity=ChildActivityView(sequence=12),
+        created_at=NOW,
+        updated_at=NOW,
+        completed_at=NOW,
+    )
+    snapshot = _snapshot(sequence=12).model_copy(update={"children": ChildExecutionPage(executions=(child,), total=1)})
+    state = reduce_terminal(state, FocusLoaded(2, snapshot)).state
+    state = reduce_terminal(state, LiveReceived(replace(part, sequence=13, part_id="buffered"))).state
+    blocks = [block for block in state.thread_view("thread-1").timeline if block.kind is BlockKind.ASSISTANT]
+    assert [block.status for block in blocks] == [BlockStatus.CANCELLED, BlockStatus.RUNNING, BlockStatus.CANCELLED]
+
+
+def test_history_prepend_evicts_newer_rows_and_keeps_a_latest_reload_path() -> None:
+    def page(start: int, end: int, cursor: str | None) -> TranscriptPage:
+        return TranscriptPage(
+            continuation_id="a" * 64,
+            total=550,
+            next_cursor=cursor,
+            entries=tuple(
+                TranscriptEntry(
+                    position=index, message_kind="response", parts=(TranscriptPart(kind="assistant", text=str(index)),)
+                )
+                for index in range(start, end)
+            ),
+        )
+
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, _snapshot())).state
+    state = reduce_terminal(state, TranscriptLoaded(1, "thread-1", page(50, 550, "older"))).state
+    view = state.thread_view("thread-1")
+    anchor = ReadingAnchor(view.timeline[0].block_id)
+    state = reduce_terminal(state, ReadingAnchorChanged("thread-1", anchor)).state
+    state = reduce_terminal(state, TranscriptLoaded(1, "thread-1", page(0, 50, None), prepend=True)).state
+    view = state.thread_view("thread-1")
+    assert len(view.timeline) == MAX_TIMELINE_BLOCKS
+    assert view.timeline[0].retained_position == 0
+    assert view.reading_anchor == anchor
+    assert view.older_cursor is None
+    assert view.newer_history_omitted
+    state = reduce_terminal(state, TranscriptLoaded(1, "thread-1", page(500, 550, "older"))).state
+    assert not state.thread_view("thread-1").newer_history_omitted
+    assert state.thread_view("thread-1").timeline[-1].retained_position == 549
+
+
+def test_child_live_output_routes_to_root_without_losing_source_identity() -> None:
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, _snapshot())).state
+    raw = LiveEvent(
+        epoch="live-1",
+        sequence=11,
+        run_kind="child",
+        root_thread_id="thread-1",
+        parent_thread_id="thread-1",
+        thread_id="thread-child",
+        run_id="run-child",
+        execution_id="execution-1",
+        event_type="TEXT_MESSAGE_CONTENT",
+        payload={"message_id": "part-1", "delta": "child answer"},
+        payload_omitted=False,
+    )
+    state = reduce_terminal(state, LiveReceived(normalize_live_event(raw))).state
+    block = state.thread_view("thread-1").timeline[-1]
+    assert block.source_text == "child answer"
+    assert block.root_thread_id == "thread-1"
+    assert block.thread_id == "thread-child"
+    assert block.execution_id == "execution-1"
+    assert state.thread_view("thread-child") is None
+
+
+def test_known_task_deltas_update_root_tasks_and_survive_same_continuation_refresh() -> None:
+    running = _operation(RootOperationStatus.running)
+    state = reduce_terminal(TerminalState(), FocusLoaded(1, _snapshot(operation=running))).state
+    for sequence, version, status in ((11, 1, "in_progress"), (12, 2, "completed"), (13, 1, "pending")):
+        raw = LiveEvent(
+            epoch="live-1",
+            sequence=sequence,
+            run_kind="root",
+            root_thread_id="thread-1",
+            thread_id="thread-1",
+            run_id="run-1",
+            event_type="CUSTOM",
+            payload_omitted=False,
+            payload={
+                "name": "a13n.harness.state",
+                "value": {
+                    "event": {
+                        "kind": "state",
+                        "payload": {
+                            "type": "task_changed",
+                            "task_state_version": version,
+                            "task": {"id": "task-1", "version": version, "subject": "Review", "status": status},
+                        },
+                    }
+                },
+            },
+        )
+        state = reduce_terminal(state, LiveReceived(normalize_live_event(raw))).state
+    state = reduce_terminal(state, FocusLoaded(2, _snapshot(operation=running, sequence=13))).state
+    view = state.thread_view("thread-1")
+    assert view.tasks.version == 2
+    assert view.tasks.total == 1
+    assert view.tasks.tasks[0].status == "completed"
+    assert view.timeline[0].kind is BlockKind.TASK
+    assert view.timeline[0].status is BlockStatus.CLOSED
+
+
 def test_closing_clears_transient_surfaces_without_changing_domain_state() -> None:
     state = TerminalState(
         lifecycle=TerminalLifecycle.READY,

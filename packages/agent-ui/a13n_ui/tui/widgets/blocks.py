@@ -115,7 +115,9 @@ class TimelineBlockWidget(Container):
         await self._stop_stream()
 
     def on_focus(self) -> None:
-        self.post_message(IntentRequested(SelectTimelineBlock(self.block.thread_id, self.block.block_id)))
+        self.post_message(
+            IntentRequested(SelectTimelineBlock(self.block.root_thread_id or self.block.thread_id, self.block.block_id))
+        )
 
     def action_open_detail(self) -> None:
         intent = _review_intent(self.block, self.continuation_id)
@@ -135,7 +137,8 @@ def _title(block: TimelineBlock) -> Text:
         BlockKind.FAILURE: "FAILURE",
     }[block.kind]
     suffix = "" if block.status is BlockStatus.CLOSED else f"  {block.status.value}"
-    return Text(f"{label}{suffix}", style="bold")
+    source = f"  child {block.execution_id}" if block.execution_id is not None else ""
+    return Text(f"{label}{source}{suffix}", style="bold")
 
 
 def _safe_body(

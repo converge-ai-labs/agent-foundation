@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from a13n_ui.errors import AgentUiError, LivePresentationError
+from a13n_ui.live import SummaryInvalidation
 from a13n_ui.surfaces import (
     ActiveWorkSummary,
     AgentSourceView,
@@ -25,6 +26,7 @@ from a13n_ui.surfaces import (
     EnvironmentProfileSummary,
     ExternalRequestView,
     ExternalToolResult,
+    FailureView,
     LaunchProjectSelected,
     ProjectPathCompletion,
     ProjectPathCompletionPage,
@@ -35,6 +37,7 @@ from a13n_ui.surfaces import (
     ReviewView,
     RootActivityState,
     RootActivityView,
+    RootControlResult,
     RootOperationStatus,
     RootOperationView,
     RootRunReceipt,
@@ -116,6 +119,7 @@ class _FakeApp:
         self.workbench_requests: list[dict[str, object]] = []
         self.workbench_page = WorkbenchPage(project_id="project-main", rows=(), total=0)
         self.decisions: DecisionBatchView | None = None
+        self.root_operation: RootOperationView | None = None
         self.children: tuple[ChildExecutionView, ...] = ()
         self.continuation_id = "a" * 64
         self.created: list[str] = []
@@ -231,7 +235,7 @@ class _FakeApp:
                     children=self.children,
                     configuration_version=self.configuration_version,
                     agent_id=self.agent_id,
-                ),
+                ).model_copy(update={"root_operation": self.root_operation}),
                 events=stream,
             )
         finally:
@@ -530,6 +534,224 @@ async def test_pilot_palette_preserves_selection_and_accepts_search_enter(tmp_pa
             assert app.controller.state.overlays[-1].kind == "status"
     finally:
         await app.controller.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("previous_run", [False, True])
+async def test_workbench_steers_and_cancels_only_the_current_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    previous_run: bool,
+) -> None:
+    app = _FakeApp()
+    thread = _snapshot("thread-1").thread.thread.model_copy(
+        update={
+            "root_activity": RootActivityView(
+                state=RootActivityState.running,
+                receipt_id="receipt-current",
+                run_id="run-current",
+                available_actions=("wait", "steer", "cancel"),
+            )
+        }
+    )
+    previous = (
+        RootOperationView(
+            receipt=RootRunReceipt(receipt_id="receipt-old", thread_id="thread-1", submitted_at=NOW),
+            status=RootOperationStatus.completed,
+        )
+        if previous_run
+        else None
+    )
+    app.workbench_page = WorkbenchPage(
+        project_id="project-main",
+        total=1,
+        rows=(
+            WorkbenchThreadView(
+                thread=thread,
+                project_name="Main",
+                agent_name="Main",
+                environment_name="Full Control",
+                latest_operation=previous,
+                available_actions=("open", "steer", "wait", "cancel"),
+            ),
+        ),
+    )
+    steered: list[str] = []
+    cancelled: list[str] = []
+
+    async def steer(*, receipt_id: str, message: str, **kwargs: object) -> RootControlResult:
+        steered.append(receipt_id)
+        return RootControlResult(receipt_id=receipt_id, accepted=True)
+
+    async def cancel(receipt_id: str) -> RootControlResult:
+        cancelled.append(receipt_id)
+        return RootControlResult(receipt_id=receipt_id, accepted=True)
+
+    monkeypatch.setattr(app, "steer_root_operation", steer, raising=False)
+    monkeypatch.setattr(app, "cancel_root_operation", cancel, raising=False)
+    controller = TerminalController(
+        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, open_workbench=True
+    )
+    try:
+        await controller.start()
+        await controller.handle(EditDraft("thread-1", "steer", 5))
+        await controller.handle(SubmitThreadDraft("thread-1"))
+        await controller.handle(ExecuteCommand("cancel", context_key="thread-1"))
+        assert steered == ["receipt-current"]
+        assert cancelled == ["receipt-current"]
+        assert app.submitted == []
+    finally:
+        await controller.close()
+
+
+@pytest.mark.anyio
+async def test_workbench_background_refresh_never_navigates_back_to_focus(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
+    )
+    try:
+        await controller.start()
+        await _wait_until(lambda: app.focus_active == 1)
+        await controller.handle(OpenWorkbench())
+        assert app.focus_active == 0
+        await controller._handle_invalidation(
+            SummaryInvalidation(
+                epoch="summary-1",
+                sequence=1,
+                kind="root_operation",
+                root_thread_id="thread-1",
+            )
+        )
+        assert controller.state.mode is TerminalMode.WORKBENCH
+        assert app.focus_active == 0
+        await controller.handle(OpenFocus("thread-1"))
+        await _wait_until(lambda: app.focus_active == 1)
+    finally:
+        await controller.close()
+
+
+@pytest.mark.anyio
+async def test_workbench_configuration_uses_summary_instead_of_stopped_focus_cache(tmp_path: Path) -> None:
+    from a13n_ui.surfaces import ChildStatusCounts
+    from a13n_ui.tui.screens.overlays import _status_text
+
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
+    )
+    try:
+        await controller.start()
+        await _wait_until(lambda: controller.state.thread_view("thread-1") is not None)
+        await controller.handle(OpenWorkbench())
+        app.configuration_version = 2
+        app.workbench_page = WorkbenchPage(
+            project_id="project-main",
+            rows=(
+                WorkbenchThreadView(
+                    thread=_snapshot("thread-1", configuration_version=2).thread.thread,
+                    project_name="Main",
+                    agent_name="Main",
+                    environment_name="Full Control",
+                    children=ChildStatusCounts(running=0, active=0, unavailable=0, failed=0, lost=0),
+                ),
+            ),
+            total=1,
+        )
+        await controller._refresh_workbench()
+        assert "Configuration: v2" in _status_text(controller.state, "thread-1")
+        await controller.handle(OpenOverlay("configuration", key="agent"))
+        await controller.handle(SelectConfigurationResource("agent", "agent-main"))
+        assert app.configuration_mutations[-1].expected_version == 2
+    finally:
+        await controller.close()
+
+
+@pytest.mark.anyio
+async def test_observed_root_receipt_has_one_waiter_and_settles_after_inactive_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _FakeApp()
+    receipt = RootRunReceipt(receipt_id="receipt-observed", thread_id="thread-1", submitted_at=NOW)
+    app.root_operation = RootOperationView(receipt=receipt, status=RootOperationStatus.running, run_id="run-1")
+    settled = asyncio.Event()
+    calls: list[str] = []
+
+    async def wait(receipt_id: str) -> RootOperationView:
+        calls.append(receipt_id)
+        await settled.wait()
+        app.root_operation = None
+        return RootOperationView(receipt=receipt, status=RootOperationStatus.cancelled, run_id="run-1")
+
+    monkeypatch.setattr(app, "wait_root_operation", wait)
+    controller = TerminalController(
+        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
+    )
+    try:
+        await controller.start()
+        await _wait_until(lambda: len(calls) == 1)
+        await controller.handle(OpenFocus("thread-1"))
+        await _wait_until(lambda: len(app.focus_streams) == 2)
+        assert calls == ["receipt-observed"]
+        settled.set()
+        await _wait_until(lambda: len(app.focus_streams) == 3)
+        view = controller.state.thread_view("thread-1")
+        assert view is not None
+        assert view.root_operation is None
+        assert view.settled_operations[0].receipt == receipt
+    finally:
+        await controller.close()
+
+
+@pytest.mark.anyio
+async def test_decision_preparation_failure_restores_the_submitted_answers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _FakeApp()
+    app.decisions = DecisionBatchView(
+        continuation_id="a" * 64,
+        requests=(
+            ApprovalRequestView(
+                request_id="request-1",
+                tool_name="edit_file",
+                arguments={"path": "README.md"},
+            ),
+        ),
+    )
+    settled = asyncio.Event()
+
+    async def wait(receipt_id: str) -> RootOperationView:
+        await settled.wait()
+        return RootOperationView(
+            receipt=RootRunReceipt(receipt_id=receipt_id, thread_id="thread-1", submitted_at=NOW),
+            status=RootOperationStatus.failed,
+            failure=FailureView(code="model_auth_failed", message="Unavailable"),
+        )
+
+    monkeypatch.setattr(app, "wait_root_operation", wait)
+    controller = TerminalController(
+        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
+    )
+    try:
+        await controller.start()
+        await _wait_until(lambda: controller.state.thread_view("thread-1") is not None)
+        await controller.handle(
+            UpdateDecisionDraft(
+                "thread-1",
+                DecisionAnswerDraft(request_id="request-1", action="deny", denial_reason="Keep my explanation"),
+            )
+        )
+        await controller.handle(SubmitDecisionSession("thread-1"))
+        settled.set()
+        await _wait_until(lambda: len(app.focus_streams) == 2)
+        session = controller.state.thread_view("thread-1").decision_session
+        assert session is not None
+        assert session.answer("request-1").denial_reason == "Keep my explanation"
+        assert session.answer("request-1").action == "deny"
+    finally:
+        await controller.close()
 
 
 @pytest.mark.anyio
@@ -1242,15 +1464,19 @@ async def test_workbench_does_not_queue_prompt_behind_preparing_operation(tmp_pa
     thread = _snapshot("thread-1").thread.thread
     receipt = RootRunReceipt(receipt_id="receipt-preparing", thread_id="thread-1", submitted_at=NOW)
     row = WorkbenchThreadView(
-        thread=thread,
+        thread=thread.model_copy(
+            update={
+                "root_activity": RootActivityView(
+                    state=RootActivityState.preparing,
+                    receipt_id=receipt.receipt_id,
+                    available_actions=("wait", "cancel"),
+                )
+            }
+        ),
         project_name="Main",
         agent_name="Main Agent",
         environment_name="Full Control",
-        latest_operation=RootOperationView(
-            receipt=receipt,
-            status=RootOperationStatus.preparing,
-            available_actions=("wait", "cancel"),
-        ),
+        latest_operation=None,
         available_actions=("open", "wait", "cancel"),
     )
     app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)

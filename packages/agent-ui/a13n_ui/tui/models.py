@@ -85,6 +85,8 @@ class TimelineBlock:
     thread_id: str
     kind: BlockKind
     status: BlockStatus
+    root_thread_id: str | None = None
+    parent_thread_id: str | None = None
     version: int = 1
     run_id: str | None = None
     execution_id: str | None = None
@@ -95,6 +97,7 @@ class TimelineBlock:
     summary: str | None = None
     detail_available: bool = False
     retained_position: int | None = None
+    retained_continuation_id: str | None = None
     available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
     provisional: bool = False
 
@@ -135,6 +138,7 @@ class DecisionSessionState:
     question_index: int = 0
     answers: tuple[DecisionAnswerDraft, ...] = ()
     validation_message: str | None = None
+    submitted_receipt_id: str | None = None
 
     def answer(self, request_id: str) -> DecisionAnswerDraft:
         return next(
@@ -209,7 +213,9 @@ class ThreadViewState:
     detail: ThreadDetail | None = None
     snapshot: ThreadFocusSnapshot | None = None
     root_operation: RootOperationView | None = None
+    settled_operations: tuple[RootOperationView, ...] = ()
     tasks: TaskPage = field(default_factory=TaskPage)
+    tasks_run_id: str | None = None
     decisions: DecisionBatchView | None = None
     decision_session: DecisionSessionState | None = None
     stale_decision_session: DecisionSessionState | None = None
@@ -220,6 +226,7 @@ class ThreadViewState:
     projection_version: int = 0
     transcript_continuation_id: str | None = None
     older_cursor: str | None = None
+    newer_history_omitted: bool = False
     follow_latest: bool = True
     pending_output: int = 0
     selected_block_id: str | None = None

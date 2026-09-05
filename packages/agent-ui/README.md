@@ -68,7 +68,7 @@ Wide terminals show the Focus inspector and Workbench preview. Medium terminals 
 
 Run `a13n-ui --help` to discover top-level commands and `a13n-ui COMMAND --help` or `a13n-ui GROUP COMMAND --help` for command-specific options. Management groups cover configuration, imports, Content Plugins, Threads, Projects, Environments, model authentication, and one-shot execution.
 
-Non-interactive commands that return data accept `--format text` for readable labeled output or `--format json` for compact machine-readable output. Successful JSON is emitted on stdout. Validation and application errors use stable text or JSON envelopes on stderr and return a non-zero status. Click rejects invalid options and arguments with command-local usage guidance before application startup.
+Non-interactive commands that return data accept `--format text` for readable labeled output or `--format json` for compact machine-readable output. Successful JSON is emitted on stdout. Validation and application errors return a non-zero status, with text diagnostics on stderr or machine-readable JSON envelopes on stdout. Click rejects invalid options and arguments with command-local usage guidance on stderr before application startup.
 
 ```console
 a13n-ui config validate
