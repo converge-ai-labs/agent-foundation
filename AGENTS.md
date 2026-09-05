@@ -11,7 +11,9 @@ Agent Foundation is a Python-first open-source cloud foundation for building age
 - `docs/` contains Markdown user documentation published with MkDocs Material; `mkdocs.yml` owns site configuration and navigation.
 - [MAINTAINERS.md](MAINTAINERS.md) owns semantic reviewer routing.
 
-Read relevant owners as needed and reuse context already read. This guide and skills summarize operational rules; they do not replace the owning contracts.
+Read relevant owners as needed and reuse context already read. This guide and skills summarize operational rules; they do not replace the owning contracts. Do not turn personal preferences or tool-specific defaults into repository requirements without an explicit project decision.
+
+Write repository content in English, as required by [CONTRIBUTING.md](CONTRIBUTING.md#repository-language).
 
 ## Scope and Authorization
 
@@ -21,7 +23,7 @@ Read relevant owners as needed and reuse context already read. This guide and sk
 - Unresolved product, architecture, security, compatibility, or scope decisions follow the Issue-to-PR workflow. Complete independent, authorized work while those decisions remain open. Routine corrections do not require a new Issue, and the workflow does not authorize posting one on the user's behalf.
 - Explicit user instructions take precedence over skill guidelines, subject to system and developer instructions. Resolve apparent conflicts using the request and existing authorization. If work remains blocked by an applicable skill instruction, link its `SKILL.md`, quote the requirement, and explain the missing decision or authority while continuing independent authorized work.
 
-Keep diffs focused and update affected contracts, implementation, tests, docs, and automation together. Report the outcome, changed files, validation, and material limitations concisely in the user's language.
+Keep diffs focused and update affected contracts, implementation, tests, docs, and automation together. Report the outcome, changed files, validation, and material limitations concisely.
 
 ## Package and Release Boundaries
 
