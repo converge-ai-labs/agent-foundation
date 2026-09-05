@@ -105,6 +105,7 @@ class Settings(BaseSettings):
         "a13n.direct-local",
         "a13n.local-envd",
         "a13n.docker",
+        "a13n.e2b",
     )
     environment_provider_extensions: tuple[str, ...] = ()
     environment_maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)

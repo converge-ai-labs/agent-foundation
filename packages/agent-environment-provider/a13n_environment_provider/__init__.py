@@ -77,6 +77,15 @@ from .docker import (
     DockerShellProfile,
     DockerVolumeMountSource,
 )
+from .e2b import (
+    E2BBackendConfiguration,
+    E2BCredential,
+    E2BEnvironment,
+    E2BEnvironmentProvider,
+    E2BProviderConfiguration,
+    E2BProviderRuntime,
+    E2BProviderStateData,
+)
 from .errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
@@ -205,6 +214,13 @@ __all__ = [
     "DockerSDKEngine",
     "DockerShellProfile",
     "DockerVolumeMountSource",
+    "E2BBackendConfiguration",
+    "E2BCredential",
+    "E2BEnvironment",
+    "E2BEnvironmentProvider",
+    "E2BProviderConfiguration",
+    "E2BProviderRuntime",
+    "E2BProviderStateData",
     "EIPSessionSource",
     "Environment",
     "EnvironmentAction",

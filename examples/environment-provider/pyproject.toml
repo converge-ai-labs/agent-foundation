@@ -6,6 +6,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
+    "pydantic>=2.12,<3",
     "a13n-environment-provider",
 ]
 

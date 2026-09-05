@@ -144,7 +144,7 @@ The built-in catalog keys are:
 | `a13n.direct-local` | One Host-selected local root using direct operating-system access |
 | `a13n.local-envd`   | One Host-selected workspace served by a fresh local envd process  |
 | `a13n.docker`       | One Docker container running envd                                 |
-| `a13n.e2b`          | One E2B sandbox running envd                                      |
+| `a13n.e2b`          | One native E2B sandbox                                            |
 
 Third-party Providers register under the `a13n_environment_provider.providers` entry-point group. One selected entry point must load one concrete `EnvironmentProvider` class with safe no-argument construction. Preconstructed objects are not valid entry-point targets. The entry-point name and constructed `provider.key` must match. Only selected extension keys are imported.
 

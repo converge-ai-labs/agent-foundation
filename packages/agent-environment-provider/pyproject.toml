@@ -9,6 +9,7 @@ requires-python = ">=3.13"
 dependencies = [
     "a13n-envd-client",
     "docker>=7.2,<8",
+    "e2b>=2.46.4,<3",
     "pathspec>=1.1,<2",
     "pydantic>=2.12,<3",
     "pydantic-core>=2.41,<3",

@@ -45,7 +45,7 @@ from .environment_adapters import (
 )
 
 _CAPABILITY_ENTRY_POINT_GROUP = "a13n_ui.capabilities"
-_BUILTIN_PROVIDER_KEYS = frozenset({"a13n.direct-local", "a13n.local-envd", "a13n.docker"})
+_BUILTIN_PROVIDER_KEYS = frozenset({"a13n.direct-local", "a13n.local-envd", "a13n.docker", "a13n.e2b"})
 _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "dynamic_environment": DynamicEnvironmentCapability,
     "documents": DocumentsCapability,

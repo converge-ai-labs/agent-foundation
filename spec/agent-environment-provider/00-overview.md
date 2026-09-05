@@ -107,7 +107,7 @@ The Provider package owns provider-neutral single-Environment contracts for:
 - operation receipts and typed errors;
 - state dump, local close, and explicit destruction.
 
-Direct Local implements these contracts over the embedding operating system. Local Envd, Docker, and E2B implement them through `agent-envd` and EIP after provider-specific preparation. Harness adds mount names, access ceilings, routing, stale-incarnation fencing, aggregate projection, and model Toolsets.
+Direct Local implements these contracts over the embedding operating system. Local Envd and Docker implement them through `agent-envd` and EIP after provider-specific preparation. E2B implements them through its native asynchronous SDK and bounded command-local wrappers. Harness adds mount names, access ceilings, routing, stale-incarnation fencing, aggregate projection, and model Toolsets.
 
 ## Dependency and Release Direction
 

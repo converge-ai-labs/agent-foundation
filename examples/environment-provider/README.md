@@ -102,3 +102,13 @@ Read [`application.py`](src/a13n_environment_provider_example/application.py) fo
 - `close()` releases process-local resources without destroying a backing target.
 - Only explicit Host retention policy should construct a fresh adapter and call `destroy()`.
 - Harness owns multi-mount routing and model-facing tools; this example stays at the lower single-Environment Provider boundary.
+
+## Native E2B
+
+With `E2B_API_KEY` set in the Host environment, run:
+
+```bash
+uv run python -m a13n_environment_provider_example.e2b
+```
+
+This creates a default E2B sandbox, writes and reads a file, closes the adapter and explicitly destroys the sandbox in `finally`. It requires no envd installation or custom E2B template. The library does not load `.env` files.

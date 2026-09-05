@@ -27,6 +27,7 @@ _BUILTIN_PROVIDER_KEYS = frozenset(
         "a13n.direct-local",
         "a13n.local-envd",
         "a13n.docker",
+        "a13n.e2b",
     }
 )
 
@@ -303,6 +304,10 @@ def _load_builtin_provider(
         from .docker.factory import DockerEnvironmentProvider
 
         provider_type = DockerEnvironmentProvider
+    elif provider_key == "a13n.e2b":
+        from .e2b.factory import E2BEnvironmentProvider
+
+        provider_type = E2BEnvironmentProvider
     else:  # pragma: no cover - guarded by catalog preflight
         raise _catalog_error(
             "A selected built-in Environment Provider does not exist.",

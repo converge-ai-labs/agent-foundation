@@ -247,6 +247,10 @@ local-envd-test: sync ## Build agent-envd and run Local Envd provider tests
 	export A13N_AGENT_ENVD_EXECUTABLE; \
 	uv run --locked python -m pytest packages/agent-environment-provider/tests/test_local_envd.py
 
+.PHONY: e2b-provider-test
+e2b-provider-test: sync ## Run native E2B unit and opt-in live integration tests
+	@uv run --locked pytest -q packages/agent-environment-provider/tests/test_e2b*.py packages/agent-harness/tests/test_e2b_environment_live.py
+
 .PHONY: docker-provider-test
 docker-provider-test: sync ## Run Docker Provider tests
 	@uv run --locked python -m pytest packages/agent-environment-provider/tests/test_docker.py
