@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import anyio
 from a13n_harness import SafeFailure
@@ -20,6 +20,7 @@ from a13n_service.lifecycle import (
     fail_lifecycle_projection,
 )
 from a13n_service.storage import transaction
+from a13n_service.temporal import require_aware_utc, utc_now
 
 from .domain import (
     RetainedReplayUnavailable,
@@ -53,7 +54,7 @@ class LifecycleRunStreamProjector:
         max_attempts: int = 20,
         poll_interval_seconds: float = 1,
         claim_limit: int = 16,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if not worker_id:
             raise ValueError("lifecycle projection worker identity is required")
@@ -280,9 +281,10 @@ class LifecycleRunStreamProjector:
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("projection clock must return an offset-aware timestamp")
-    return value.astimezone(UTC)
+    try:
+        return require_aware_utc(value)
+    except ValueError as error:
+        raise ValueError("projection clock must return an offset-aware timestamp") from error
 
 
 def _harness_run_id(event: LifecycleEvent) -> str | None:

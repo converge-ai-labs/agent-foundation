@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import cast
 
 from pydantic import TypeAdapter
@@ -13,6 +13,7 @@ from redis.asyncio.client import Pipeline
 from redis.exceptions import WatchError
 
 from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
+from a13n_service.temporal import require_aware_utc
 
 from .domain import (
     CompleteRunStream,
@@ -376,9 +377,10 @@ def _parse_stream_id(value: str) -> tuple[int, int]:
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("Run Stream timestamp must include a UTC offset")
-    return value.astimezone(UTC)
+    try:
+        return require_aware_utc(value)
+    except ValueError as error:
+        raise ValueError("Run Stream timestamp must include a UTC offset") from error
 
 
 def _as_text(value: object, *, field: str = "value") -> str | None:

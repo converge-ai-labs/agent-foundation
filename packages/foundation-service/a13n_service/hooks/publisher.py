@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import anyio
 import httpx2
@@ -15,6 +15,7 @@ from a13n_service.durable_operations.outbox import OutboxClaim, complete_outbox,
 from a13n_service.endpoint_policy import EndpointPolicyError
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import require_aware_utc, utc_now
 
 from .delivery import signed_request_headers
 from .outbox import (
@@ -74,7 +75,7 @@ class WebhookPublisher:
         self._retry_max_seconds = retry_max_seconds
         self._delivery_timeout_seconds = delivery_timeout_seconds
         self._max_response_bytes = max_response_bytes
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def run(self) -> None:
         while True:
@@ -222,9 +223,10 @@ class WebhookPublisher:
 
     def _now(self) -> datetime:
         value = self._clock()
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("Webhook publisher clock must include a UTC offset")
-        return value.astimezone(UTC)
+        try:
+            return require_aware_utc(value)
+        except ValueError as error:
+            raise ValueError("Webhook publisher clock must include a UTC offset") from error
 
 
 __all__ = ["DeliveryFailure", "EndpointValidator", "WebhookPublisher"]

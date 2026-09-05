@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal
 
 import rfc8785
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from a13n_service.lifecycle.domain import MAX_LIFECYCLE_PAYLOAD_BYTES
+from a13n_service.temporal import require_aware_utc
 
 DELIVERY_ID_HEADER = "X-A13n-Delivery-Id"
 SIGNATURE_HEADER = "X-A13n-Webhook-Signature"
@@ -20,9 +21,10 @@ _MAX_CANONICAL_ENVELOPE_BYTES = MAX_LIFECYCLE_PAYLOAD_BYTES + 16 * 1024
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("timestamp must include a UTC offset")
-    return value.astimezone(UTC)
+    try:
+        return require_aware_utc(value)
+    except ValueError as error:
+        raise ValueError("timestamp must include a UTC offset") from error
 
 
 UtcDateTime = Annotated[datetime, AfterValidator(_utc)]

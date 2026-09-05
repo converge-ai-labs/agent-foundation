@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import CreateHookSubscriptionRequest, HookSubscription, HookSubscriptionRevision, WebhookDestinationConfig
 
@@ -88,11 +89,11 @@ class HookSubscriptionRecord(Base):
             current_revision_id=self.current_revision_id,
             workspace_id=self.workspace_id,
             enabled=self.enabled,
-            deleted_at=_optional_utc(self.deleted_at),
+            deleted_at=optional_assume_utc(self.deleted_at),
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
-            created_at=_utc(self.created_at),
-            updated_at=_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
             current_revision=revision.to_resource(),
         )
 
@@ -203,7 +204,7 @@ class HookSubscriptionRevisionRecord(Base):
                 signature_profile=signature_profile,
             ),
             created_by=_principal(self.created_by_type, self.created_by_id),
-            created_at=_utc(self.created_at),
+            created_at=assume_utc(self.created_at),
         )
 
     def configuration(self) -> CreateHookSubscriptionRequest:
@@ -225,14 +226,6 @@ class HookSubscriptionRevisionRecord(Base):
 
 def _principal(principal_type: str, principal_id: str) -> PrincipalRef:
     return PrincipalRef(principal_type=PrincipalType(principal_type), principal_id=principal_id)
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _optional_utc(value: datetime | None) -> datetime | None:
-    return None if value is None else _utc(value)
 
 
 __all__ = ["HookSubscriptionRecord", "HookSubscriptionRevisionRecord"]

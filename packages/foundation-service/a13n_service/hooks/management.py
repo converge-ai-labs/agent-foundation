@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,6 +13,7 @@ from a13n_service.durable_operations.outbox import redrive_outbox
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import require_aware_utc, utc_now
 
 from .access import authorize_hook, validate_hook_scope
 from .cursors import HookCursorError, decode_hook_cursor, encode_hook_cursor
@@ -58,7 +59,7 @@ class HookSubscriptionService:
             raise ValueError("Hook endpoint validation timeout must be positive")
         self._sessions = sessions
         self._endpoint_policy = endpoint_policy
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
         self._validation_timeout_seconds = validation_timeout_seconds
 
     async def create(
@@ -412,9 +413,10 @@ class HookSubscriptionService:
 
     def _now(self) -> datetime:
         value = self._clock()
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("Hook management clock must include a UTC offset")
-        return value.astimezone(UTC)
+        try:
+            return require_aware_utc(value)
+        except ValueError as error:
+            raise ValueError("Hook management clock must include a UTC offset") from error
 
 
 __all__ = ["HookManagementError", "HookSubscriptionService"]

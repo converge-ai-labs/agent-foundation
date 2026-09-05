@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import ValidationError
@@ -15,6 +15,7 @@ from a13n_service.durable_operations.outbox import OutboxClaim, claim_outbox
 from a13n_service.interactions.models import SessionRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.secrets.models import SecretRecord
+from a13n_service.temporal import assume_utc
 
 from .delivery import DeliveryEnvelope
 from .models import HookSubscriptionRevisionRecord
@@ -145,7 +146,7 @@ async def load_webhook_delivery(
             run_id=event.run_id,
             run_attempt_id=event.run_attempt_id,
             harness_run_id=harness_run_id,
-            occurred_at=_utc(event.occurred_at),
+            occurred_at=assume_utc(event.occurred_at),
             payload=event.payload,
         )
     except ValidationError as error:
@@ -167,10 +168,6 @@ async def load_webhook_delivery(
             encryption_key_id=secret.encryption_key_id,
         ),
     )
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def _resource_type(value: str) -> Literal["run", "run_attempt"]:

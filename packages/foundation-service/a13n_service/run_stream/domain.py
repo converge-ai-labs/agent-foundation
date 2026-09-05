@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal
 
 import rfc8785
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+
+from a13n_service.temporal import require_aware_utc
 
 MAX_RUN_STREAM_PAYLOAD_BYTES = 256 * 1024
 
@@ -21,9 +23,10 @@ JsonObject = dict[str, JsonValue]
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("timestamp must include a UTC offset")
-    return value.astimezone(UTC)
+    try:
+        return require_aware_utc(value)
+    except ValueError as error:
+        raise ValueError("timestamp must include a UTC offset") from error
 
 
 UtcDateTime = Annotated[datetime, AfterValidator(_utc)]

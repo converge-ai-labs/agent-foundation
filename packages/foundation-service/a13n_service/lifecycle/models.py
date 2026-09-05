@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from a13n_harness import SafeFailure
 from pydantic import JsonValue, TypeAdapter
@@ -21,6 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import LifecycleEntityType, LifecycleEvent, LifecycleProjectionState
 
@@ -159,24 +160,16 @@ class LifecycleEventRecord(Base):
             payload=self.payload,
             actor_type=self.actor_type,
             actor_id=self.actor_id,
-            occurred_at=_utc(self.occurred_at),
-            created_at=_utc(self.created_at),
+            occurred_at=assume_utc(self.occurred_at),
+            created_at=assume_utc(self.created_at),
             projection_state=LifecycleProjectionState(self.projection_state),
             projection_attempts=self.projection_attempts,
-            projection_next_attempt_at=_optional_utc(self.projection_next_attempt_at),
+            projection_next_attempt_at=optional_assume_utc(self.projection_next_attempt_at),
             projection_lease_owner=self.projection_lease_owner,
-            projection_lease_expires_at=_optional_utc(self.projection_lease_expires_at),
-            projected_at=_optional_utc(self.projected_at),
+            projection_lease_expires_at=optional_assume_utc(self.projection_lease_expires_at),
+            projected_at=optional_assume_utc(self.projected_at),
             projection_error=_FAILURE_ADAPTER.validate_python(self.projection_error_json),
         )
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _optional_utc(value: datetime | None) -> datetime | None:
-    return None if value is None else _utc(value)
 
 
 __all__ = ["LifecycleEventRecord"]

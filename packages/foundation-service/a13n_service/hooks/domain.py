@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.domain import ObjectId, PrincipalRef
 from a13n_service.secrets.domain import SecretId
+from a13n_service.temporal import require_aware_utc
 
 HookSubscriptionId = Annotated[str, StringConstraints(pattern=r"^hsub_[a-z0-9]{16,64}$")]
 HookSubscriptionRevisionId = Annotated[str, StringConstraints(pattern=r"^hsubr_[a-z0-9]{16,64}$")]
@@ -140,9 +141,10 @@ class HookSubscriptionRevision(_StrictModel):
     @field_validator("created_at")
     @classmethod
     def created_at_is_utc(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("created_at must include a UTC offset")
-        return value.astimezone(UTC)
+        try:
+            return require_aware_utc(value)
+        except ValueError as error:
+            raise ValueError("created_at must include a UTC offset") from error
 
 
 class HookSubscription(_StrictModel):
