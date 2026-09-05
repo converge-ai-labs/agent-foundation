@@ -844,6 +844,28 @@ async def test_command_and_resource_overlays_emit_exact_typed_intents(tmp_path: 
 
 
 @pytest.mark.anyio
+async def test_plain_workbench_content_does_not_interpret_rich_markup(tmp_path: Path) -> None:
+    app, _release = _blocked_terminal_app(tmp_path)
+    app.controller.handle = AsyncMock()
+    state = _workbench_state()
+    row = state.workbench.rows[0]
+    row = row.model_copy(
+        update={
+            "thread": row.thread.model_copy(update={"title": "[red]literal[/red]"}),
+            "latest_activity": ActivitySummary(text="[/not-a-tag]", kind="assistant"),
+        }
+    )
+    state = replace(state, workbench=replace(state.workbench, page=WorkbenchPage(rows=(row,), total=1)))
+    async with app.run_test(size=(130, 36)) as pilot:
+        app.post_message(StateProjected(state, ProjectionHints(changed=frozenset({"workbench"}))))
+        await pilot.pause(0.05)
+        assert not app.query_one("#workbench-render-error").display
+        assert "[red]literal[/red]" in str(app.query_one("#workbench-preview-title", Static).render())
+        assert "[/not-a-tag]" in str(app.query_one("#workbench-preview-body", Static).render())
+    await app.controller.close()
+
+
+@pytest.mark.anyio
 async def test_completion_popup_emits_exact_skill_identity(tmp_path: Path) -> None:
     app, _release = _blocked_terminal_app(tmp_path)
     handled = AsyncMock()
@@ -872,8 +894,8 @@ async def test_completion_popup_emits_exact_skill_identity(tmp_path: Path) -> No
         app.post_message(StateProjected(state, ProjectionHints(changed=frozenset({"overlay"}))))
         await pilot.pause(0.1)
         assert app.query_one("#completion-popup").display
-        assert app.focused is not None and app.focused.id == "completion-list"
-        assert app.query_one("#focus-screen").disabled
+        assert app.focused is not None and app.focused.id == "composer-editor"
+        assert not app.query_one("#focus-screen").disabled
         completion_list = app.query_one("#completion-list", ListView)
         completion_list.index = 0
         await pilot.press("enter")

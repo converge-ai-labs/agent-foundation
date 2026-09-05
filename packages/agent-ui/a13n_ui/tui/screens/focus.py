@@ -34,20 +34,20 @@ class FocusScreen(Container):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="focus-header"):
-            yield Static("New Thread", id="focus-identity")
-            yield Static("Draft", id="focus-activity")
+            yield Static("New Thread", id="focus-identity", markup=False)
+            yield Static("Draft", id="focus-activity", markup=False)
             yield Button("Cancel", id="focus-cancel", variant="error")
             yield Button("Inspect", id="focus-inspect")
             yield Button("Workbench", id="focus-workbench")
-        yield Static(id="focus-operation-summary")
+        yield Static(id="focus-operation-summary", markup=False)
         with Horizontal(id="focus-main"):
-            yield Static("Start a new Thread by sending a prompt.", id="focus-draft-intro")
+            yield Static("Start a new Thread by sending a prompt.", id="focus-draft-intro", markup=False)
             yield TimelineView()
             yield FocusInspector()
         yield DecisionPane()
         yield Composer()
-        yield Static(id="focus-notice")
-        yield Static(id="focus-actions")
+        yield Static(id="focus-notice", markup=False)
+        yield Static(id="focus-actions", markup=False)
 
     async def project(self, state: TerminalState, hints: ProjectionHints) -> None:
         thread_id = state.focused_thread_id
@@ -163,6 +163,18 @@ class FocusScreen(Container):
             and view.control_mode in {ControlMode.PREPARING, ControlMode.RUNNING}
         )
         self._project_footer(state, view, view.control_mode)
+
+    def focus_initial(self) -> None:
+        composer = self.query_one(Composer)
+        if composer.display:
+            composer.query_one("#composer-editor").focus()
+        else:
+            decisions = self.query_one(DecisionPane)
+            if decisions.display:
+                for button in decisions.query(Button):
+                    if button.display and not button.disabled:
+                        button.focus()
+                        break
 
     def apply_width(self, *, wide: bool) -> None:
         self.query_one(FocusInspector).display = self._inspector_available and wide

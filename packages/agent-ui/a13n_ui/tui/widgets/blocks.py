@@ -43,13 +43,14 @@ class TimelineBlockWidget(Container):
         self._stream: MarkdownStream | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static(_title(self.block), classes="block-title")
+        yield Static(_title(self.block), classes="block-title", markup=False)
         if self.block.kind is BlockKind.ASSISTANT:
             yield Markdown(self._rendered_text, classes="block-body", id=f"{self.id}-markdown")
         else:
             yield Static(
                 _safe_body(self.block, self.show_reasoning, self.show_tool_details),
                 classes="block-body",
+                markup=False,
             )
 
     async def project(
@@ -82,6 +83,7 @@ class TimelineBlockWidget(Container):
                     Static(
                         Text("This block could not be rendered safely.", style="bold red"),
                         classes="block-body",
+                        markup=False,
                     )
                 )
 

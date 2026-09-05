@@ -53,6 +53,7 @@ from a13n_ui.surfaces import (
     WorkbenchPage,
     WorkbenchThreadView,
 )
+from a13n_ui.tui.application import AgentUiTerminalApp
 from a13n_ui.tui.controller import TerminalController
 from a13n_ui.tui.intents import (
     ApplyCompletion,
@@ -85,6 +86,7 @@ from a13n_ui.tui.models import (
     TerminalMode,
     TerminalState,
 )
+from textual.widgets import Input, ListView, TextArea
 
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
@@ -423,6 +425,111 @@ async def _wait_until(predicate: Callable[[], bool], *, timeout: float = 1.0) ->
     async with asyncio.timeout(timeout):
         while not predicate():
             await asyncio.sleep(0.01)
+
+
+@pytest.mark.anyio
+async def test_pilot_composer_completion_stays_editable_and_commands_match_buttons(tmp_path: Path) -> None:
+    fake = _FakeApp()
+    app = AgentUiTerminalApp(app_factory=_factory(fake), launch_directory=tmp_path)
+    try:
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause(0.1)
+            await app.controller.handle(OpenFocus("thread-1"))
+            await pilot.pause(0.1)
+            editor = app.query_one("#composer-editor", TextArea)
+            editor.focus()
+            await pilot.press("$")
+            await pilot.pause(0.25)
+            assert app.controller.state.completion is not None
+            assert editor.has_focus
+            await pilot.press("r", "e", "v")
+            await pilot.pause(0.25)
+            completion = app.controller.state.completion
+            assert completion is not None and completion.query == "rev"
+            assert editor.has_focus
+            await pilot.press("enter")
+            await pilot.pause(0.1)
+            assert editor.text == "$review"
+            assert app.controller.state.draft("thread-1").skill_references[0].name == "review"
+
+            await pilot.press("left", "left")
+            await pilot.pause(0.05)
+            assert app.controller.state.draft("thread-1").cursor == 5
+            await app.controller.handle(OpenFocus("thread-2"))
+            await pilot.pause(0.1)
+            await app.controller.handle(OpenFocus("thread-1"))
+            await pilot.pause(0.1)
+            assert editor.cursor_location == (0, 5)
+
+            await app.controller.handle(EditDraft(key="thread-1", text="/status", cursor=7))
+            await pilot.pause(0.1)
+            await pilot.click("#composer-submit")
+            await pilot.pause(0.1)
+            assert app.controller.state.overlays[-1].kind == "status"
+            assert app.controller.state.draft("thread-1").text == ""
+    finally:
+        await app.controller.close()
+
+
+@pytest.mark.anyio
+async def test_pilot_workbench_admission_clears_focused_editor_and_dispatches_commands(tmp_path: Path) -> None:
+    fake = _FakeApp()
+    fake.workbench_page = WorkbenchPage(
+        project_id="project-main",
+        rows=(
+            WorkbenchThreadView(
+                thread=_snapshot("thread-1").thread.thread,
+                project_name="Main",
+                agent_name="Main",
+                environment_name="Full Control",
+                available_actions=("open", "archive"),
+            ),
+        ),
+        total=1,
+    )
+    app = AgentUiTerminalApp(app_factory=_factory(fake), launch_directory=tmp_path, open_workbench=True)
+    try:
+        async with app.run_test(size=(130, 36)) as pilot:
+            await pilot.pause(0.15)
+            editor = app.query_one("#workbench-editor", TextArea)
+            editor.focus()
+            await pilot.press("h", "e", "l", "l", "o", "enter")
+            await pilot.pause(0.2)
+            assert app.controller.state.draft("thread-1").text == ""
+            assert editor.text == ""
+            assert editor.has_focus
+            await app.controller.handle(EditDraft(key="thread-1", text="/status", cursor=7))
+            await pilot.pause(0.1)
+            await pilot.click("#workbench-submit")
+            await pilot.pause(0.1)
+            assert app.controller.state.overlays[-1].kind == "status"
+    finally:
+        await app.controller.close()
+
+
+@pytest.mark.anyio
+async def test_pilot_palette_preserves_selection_and_accepts_search_enter(tmp_path: Path) -> None:
+    fake = _FakeApp()
+    app = AgentUiTerminalApp(app_factory=_factory(fake), launch_directory=tmp_path)
+    try:
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause(0.1)
+            await app.controller.handle(OpenOverlay("commands"))
+            await pilot.pause(0.1)
+            listing = app.query_one("#overlay-list", ListView)
+            listing.index = 3
+            selected = listing.highlighted_child
+            assert selected is not None
+            await app.controller.handle(EditDraft(key="new", text="background draft", cursor=16))
+            await pilot.pause(0.1)
+            assert listing.highlighted_child is selected
+            search = app.query_one("#overlay-search", Input)
+            search.focus()
+            await pilot.press("s", "t", "a", "t", "u", "s", "enter")
+            await pilot.pause(0.1)
+            assert app.controller.state.overlays[-1].kind == "status"
+    finally:
+        await app.controller.close()
 
 
 @pytest.mark.anyio

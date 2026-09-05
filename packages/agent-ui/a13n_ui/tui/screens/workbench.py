@@ -16,6 +16,7 @@ from a13n_ui.tui.intents import (
     AcknowledgeWorkbenchCompletion,
     ArchiveThread,
     CancelThreadOperation,
+    CloseCompletions,
     EditDraft,
     ExecuteCommand,
     LoadMoreWorkbench,
@@ -27,7 +28,7 @@ from a13n_ui.tui.intents import (
     SubmitThreadDraft,
 )
 from a13n_ui.tui.models import DraftState, TerminalState
-from a13n_ui.tui.widgets.composer import PromptTextArea, completion_request
+from a13n_ui.tui.widgets.composer import PromptTextArea, _location_for_offset, completion_request
 from a13n_ui.tui.widgets.messages import IntentRequested
 
 _TERMINAL_STATUSES = {
@@ -47,6 +48,7 @@ class WorkbenchScreen(Container):
         self._row_ids: dict[str, str] = {}
         self._search_timer: Timer | None = None
         self._projecting = False
+        self._editor_thread_id: str | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="workbench-header"):
@@ -54,26 +56,26 @@ class WorkbenchScreen(Container):
             yield Button("Project", id="workbench-project")
             yield Button("Preview", id="workbench-view-toggle")
             yield Button("New", id="workbench-new", variant="primary")
-        yield Static(id="workbench-render-error")
+        yield Static(id="workbench-render-error", markup=False)
         with Horizontal(id="workbench-main"):
             with VerticalScroll(id="workbench-list-pane"):
                 yield ListView(id="workbench-list")
                 yield Button("Load more", id="workbench-more")
             with VerticalScroll(id="workbench-preview"):
-                yield Static(id="workbench-preview-title")
-                yield Static(id="workbench-preview-body")
+                yield Static(id="workbench-preview-title", markup=False)
+                yield Static(id="workbench-preview-body", markup=False)
                 with Horizontal(id="workbench-preview-actions"):
                     yield Button("Open", id="workbench-open", variant="primary")
                     yield Button("Cancel", id="workbench-cancel", variant="error")
                     yield Button("Archive", id="workbench-archive")
-                yield Static(id="workbench-composer-label")
+                yield Static(id="workbench-composer-label", markup=False)
                 yield PromptTextArea(
                     placeholder="Prompt or steer selected Thread",
                     show_line_numbers=False,
                     id="workbench-editor",
                 )
                 yield Button("Send", id="workbench-submit", variant="primary")
-        yield Static(id="workbench-footer")
+        yield Static(id="workbench-footer", markup=False)
 
     async def project(self, state: TerminalState) -> None:
         self._state = state
@@ -121,14 +123,14 @@ class WorkbenchScreen(Container):
         for index, row in enumerate(rows):
             item_id = f"workbench-row-{hashlib.sha256(row.thread.thread_id.encode()).hexdigest()[:12]}"
             self._row_ids[item_id] = row.thread.thread_id
-            items.append(ListItem(Static(_row_label(row)), id=item_id))
+            items.append(ListItem(Static(_row_label(row), markup=False), id=item_id))
             if row.thread.thread_id == selected_id:
                 selected_index = index
         if items:
             await list_view.extend(items)
             list_view.index = selected_index
         else:
-            await list_view.append(ListItem(Static("No Threads match this view."), disabled=True))
+            await list_view.append(ListItem(Static("No Threads match this view.", markup=False), disabled=True))
 
     def _project_preview(self, state: TerminalState, row: WorkbenchThreadView | None) -> None:
         title = self.query_one("#workbench-preview-title", Static)
@@ -140,6 +142,9 @@ class WorkbenchScreen(Container):
         cancel = self.query_one("#workbench-cancel", Button)
         archive = self.query_one("#workbench-archive", Button)
         if row is None:
+            self._editor_thread_id = None
+            with editor.prevent(TextArea.Changed, TextArea.SelectionChanged):
+                editor.load_text("")
             title.update("No Thread selected")
             body.update("Choose a Thread to inspect its latest bounded activity.")
             editor.disabled = True
@@ -174,10 +179,11 @@ class WorkbenchScreen(Container):
         cancel.display = "cancel" in row.available_actions and row.latest_operation is not None
         archive.display = "archive" in row.available_actions
         draft = state.draft(thread.thread_id) or DraftState(key=thread.thread_id)
-        if editor.text != draft.text and not editor.has_focus:
-            self._projecting = True
-            editor.load_text(draft.text)
-            self._projecting = False
+        if self._editor_thread_id != thread.thread_id or editor.text != draft.text:
+            with editor.prevent(TextArea.Changed, TextArea.SelectionChanged):
+                editor.load_text(draft.text)
+                editor.cursor_location = _location_for_offset(draft.text, draft.cursor)
+        self._editor_thread_id = thread.thread_id
         operation_busy = row.latest_operation is not None and row.latest_operation.status not in _TERMINAL_STATUSES
         editor.disabled = "respond" in row.available_actions or (
             operation_busy and "steer" not in row.available_actions
@@ -232,6 +238,10 @@ class WorkbenchScreen(Container):
     def showing_preview(self) -> bool:
         return self.has_class("show-preview")
 
+    def focus_initial(self) -> None:
+        target = "#workbench-open" if self.showing_preview else "#workbench-list"
+        self.query_one(target).focus()
+
     def show_preview(self) -> None:
         self.add_class("show-preview")
         self.query_one("#workbench-view-toggle", Button).label = "Threads"
@@ -277,11 +287,13 @@ class WorkbenchScreen(Container):
             )
         )
         completion = completion_request(text, cursor=cursor, key=thread_id)
-        if completion is not None:
-            self.post_message(IntentRequested(completion))
+        self.post_message(IntentRequested(completion or CloseCompletions()))
 
     def on_prompt_text_area_submit(self, event: PromptTextArea.Submit) -> None:
         event.stop()
+        self._submit()
+
+    def _submit(self) -> None:
         state = self._state
         thread_id = None if state is None else state.workbench.selected_thread_id
         if thread_id is not None:
@@ -316,8 +328,10 @@ class WorkbenchScreen(Container):
             self.post_message(IntentRequested(LoadMoreWorkbench()))
         elif event.button.id in {"workbench-open", "workbench-submit"} and selected_id is not None:
             event.stop()
-            intent = OpenFocus(selected_id) if event.button.id == "workbench-open" else SubmitThreadDraft(selected_id)
-            self.post_message(IntentRequested(intent))
+            if event.button.id == "workbench-open":
+                self.post_message(IntentRequested(OpenFocus(selected_id)))
+            else:
+                self._submit()
         elif event.button.id == "workbench-cancel" and state is not None and selected_id is not None:
             event.stop()
             row = next((item for item in state.workbench.rows if item.thread.thread_id == selected_id), None)

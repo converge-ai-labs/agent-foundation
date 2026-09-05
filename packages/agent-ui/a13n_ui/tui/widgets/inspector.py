@@ -17,14 +17,14 @@ class FocusInspector(VerticalScroll):
         super().__init__(id="focus-inspector")
 
     def compose(self) -> ComposeResult:
-        yield Static("CONTEXT", classes="inspector-heading")
-        yield Static(id="inspector-context")
-        yield Static("SELECTION", classes="inspector-heading")
-        yield Static(id="inspector-selection")
-        yield Static("TASKS", classes="inspector-heading")
-        yield Static(id="inspector-tasks")
-        yield Static("CHILDREN", classes="inspector-heading")
-        yield Static(id="inspector-children")
+        yield Static("CONTEXT", classes="inspector-heading", markup=False)
+        yield Static(id="inspector-context", markup=False)
+        yield Static("SELECTION", classes="inspector-heading", markup=False)
+        yield Static(id="inspector-selection", markup=False)
+        yield Static("TASKS", classes="inspector-heading", markup=False)
+        yield Static(id="inspector-tasks", markup=False)
+        yield Static("CHILDREN", classes="inspector-heading", markup=False)
+        yield Static(id="inspector-children", markup=False)
 
     def project(self, view: ThreadViewState) -> None:
         detail = view.detail

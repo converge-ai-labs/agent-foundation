@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
@@ -9,7 +11,7 @@ from textual.message import Message
 from textual.widgets import Button, Static, TextArea
 
 from a13n_ui.tui.commands import match_slash_command
-from a13n_ui.tui.intents import EditDraft, ExecuteCommand, RequestCompletions, SubmitComposer
+from a13n_ui.tui.intents import CloseCompletions, EditDraft, ExecuteCommand, RequestCompletions, SubmitComposer
 from a13n_ui.tui.models import ControlMode, DraftState, TerminalLifecycle
 from a13n_ui.tui.widgets.messages import IntentRequested
 
@@ -41,7 +43,7 @@ class Composer(Container):
         self._projecting = False
 
     def compose(self) -> ComposeResult:
-        yield Static("Start new Thread", id="composer-label")
+        yield Static("Start new Thread", id="composer-label", markup=False)
         yield PromptTextArea(
             placeholder="Describe what you want the Agent to do",
             soft_wrap=True,
@@ -59,6 +61,7 @@ class Composer(Container):
         mode: ControlMode,
         lifecycle: TerminalLifecycle,
     ) -> None:
+        changed_context = self._key != key
         self._key = key
         self._draft = draft
         label = self.query_one("#composer-label", Static)
@@ -72,14 +75,16 @@ class Composer(Container):
             or not draft.text.strip()
         )
         editor.read_only = lifecycle is TerminalLifecycle.CLOSING
-        if editor.text != draft.text:
-            self._projecting = True
-            editor.load_text(draft.text)
-            editor.cursor_location = _location_for_offset(draft.text, draft.cursor)
-            self._projecting = False
+        if changed_context or editor.text != draft.text:
+            with editor.prevent(TextArea.Changed, TextArea.SelectionChanged):
+                editor.load_text(draft.text)
+                editor.cursor_location = _location_for_offset(draft.text, draft.cursor)
 
     def on_prompt_text_area_submit(self, event: PromptTextArea.Submit) -> None:
         event.stop()
+        self._submit()
+
+    def _submit(self) -> None:
         command = match_slash_command(self._draft.text)
         if command is not None:
             self.post_message(IntentRequested(ExecuteCommand(command.name, draft_key=self._key)))
@@ -112,13 +117,32 @@ class Composer(Container):
             )
         )
         completion = completion_request(text, cursor=cursor, key=self._key)
-        if completion is not None:
-            self.post_message(IntentRequested(completion))
+        self.post_message(IntentRequested(completion or CloseCompletions()))
+
+    def on_text_area_selection_changed(self, event: TextArea.SelectionChanged) -> None:
+        editor = event.text_area
+        if self._projecting or editor.id != "composer-editor" or editor.text != self._draft.text:
+            return
+        cursor = _offset_for_location(editor.text, editor.cursor_location)
+        if cursor == self._draft.cursor:
+            return
+        self._draft = replace(self._draft, cursor=cursor)
+        self.post_message(
+            IntentRequested(
+                EditDraft(
+                    key=self._key,
+                    text=self._draft.text,
+                    cursor=cursor,
+                    project_paths=self._draft.project_paths,
+                    skill_references=self._draft.skill_references,
+                )
+            )
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "composer-submit":
             event.stop()
-            self.post_message(IntentRequested(SubmitComposer(self._key)))
+            self._submit()
 
 
 def _composer_label(mode: ControlMode) -> str:

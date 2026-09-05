@@ -30,10 +30,10 @@ class DecisionPane(Container):
         self._projecting = False
 
     def compose(self) -> ComposeResult:
-        yield Static(id="decision-progress")
-        yield Static(id="decision-stale")
+        yield Static(id="decision-progress", markup=False)
+        yield Static(id="decision-stale", markup=False)
         yield Container(id="decision-body")
-        yield Static(id="decision-validation")
+        yield Static(id="decision-validation", markup=False)
         with Horizontal(id="decision-navigation"):
             yield Button("Back", id="decision-back")
             yield Button("Next", id="decision-next")
@@ -73,8 +73,8 @@ class DecisionPane(Container):
             selected = dict(draft.question_answers).get(question.question, ())
             widgets.extend(
                 (
-                    Static(question.header, classes="decision-header"),
-                    Static(question.question, classes="decision-question"),
+                    Static(question.header, classes="decision-header", markup=False),
+                    Static(question.question, classes="decision-question", markup=False),
                 )
             )
             for index, option in enumerate(question.options):
@@ -92,8 +92,8 @@ class DecisionPane(Container):
         elif request.kind == "approval":
             widgets.extend(
                 (
-                    Static(f"Approval required: {request.tool_name}", classes="decision-header"),
-                    Static(_bounded_value(request.arguments, request.arguments_omitted)),
+                    Static(f"Approval required: {request.tool_name}", classes="decision-header", markup=False),
+                    Static(_bounded_value(request.arguments, request.arguments_omitted), markup=False),
                     Button("Review details", id="decision-review"),
                     Button("Approve original", id="decision-approve", variant="success"),
                 )
@@ -123,8 +123,8 @@ class DecisionPane(Container):
         else:
             widgets.extend(
                 (
-                    Static(f"External result required: {request.tool_name}", classes="decision-header"),
-                    Static(_bounded_value(request.arguments, request.arguments_omitted)),
+                    Static(f"External result required: {request.tool_name}", classes="decision-header", markup=False),
+                    Static(_bounded_value(request.arguments, request.arguments_omitted), markup=False),
                     Button("Review details", id="decision-review"),
                     TextArea(
                         draft.payload_text,

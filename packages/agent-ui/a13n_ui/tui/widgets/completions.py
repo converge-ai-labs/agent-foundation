@@ -21,7 +21,7 @@ class CompletionPopup(Container):
         self._signature: tuple[object, ...] | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static("Completions", id="completion-title")
+        yield Static("Completions", id="completion-title", markup=False)
         yield ListView(id="completion-list")
 
     async def project(self, completion: CompletionState) -> None:
@@ -50,7 +50,7 @@ class CompletionPopup(Container):
                     replacement=replacement,
                     project_path=item.display,
                 )
-                widgets.append(ListItem(Static(f"{item.display}  {item.kind}"), id=item_id))
+                widgets.append(ListItem(Static(f"{item.display}  {item.kind}", markup=False), id=item_id))
         else:
             catalog = completion.skills
             items = () if catalog is None else catalog.items
@@ -81,14 +81,22 @@ class CompletionPopup(Container):
                             name=item.name,
                         ),
                     )
-                    widgets.append(ListItem(Static(f"${item.name}\n  {item.description}"), id=item_id))
+                    widgets.append(ListItem(Static(f"${item.name}\n  {item.description}", markup=False), id=item_id))
         if widgets:
             await list_view.extend(widgets)
+            list_view.index = 0
         else:
-            await list_view.append(ListItem(Static("No matching completions."), disabled=True))
+            await list_view.append(ListItem(Static("No matching completions.", markup=False), disabled=True))
 
-    def focus_initial(self) -> None:
-        self.query_one("#completion-list", ListView).focus()
+    def move_selection(self, direction: int) -> None:
+        list_view = self.query_one("#completion-list", ListView)
+        if direction > 0:
+            list_view.action_cursor_down()
+        else:
+            list_view.action_cursor_up()
+
+    def accept_selection(self) -> None:
+        self.query_one("#completion-list", ListView).action_select_cursor()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         item_id = event.item.id

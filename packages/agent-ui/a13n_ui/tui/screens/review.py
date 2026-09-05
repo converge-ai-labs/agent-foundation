@@ -26,9 +26,9 @@ class ReviewPane(Container):
         self._review: ReviewState | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static("Review", id="review-title")
+        yield Static("Review", id="review-title", markup=False)
         with VerticalScroll(id="review-scroll"):
-            yield Static(id="review-body")
+            yield Static(id="review-body", markup=False)
         with Horizontal(id="review-child-controls"):
             yield Input(placeholder="Steer child execution", id="review-child-message")
             yield Button("Steer", id="review-child-steer", variant="primary")

@@ -119,7 +119,7 @@ class TimelineView(Container):
         if not blocks:
             if self._block_ids:
                 await scroll.remove_children()
-                await scroll.mount(Static("No retained or live activity yet.", id="timeline-empty"))
+                await scroll.mount(Static("No retained or live activity yet.", id="timeline-empty", markup=False))
             self._block_ids = ()
             self._widgets.clear()
             return

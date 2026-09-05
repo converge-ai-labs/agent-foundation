@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Literal
 
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.timer import Timer
@@ -48,14 +49,15 @@ class OverlayPane(Container):
         self._overlay: OverlayState | None = None
         self._query = ""
         self._actions: dict[str, TerminalIntent] = {}
+        self._entries: tuple[tuple[str, str, TerminalIntent, bool], ...] | None = None
         self._thread_search_timer: Timer | None = None
         self._projecting = False
 
     def compose(self) -> ComposeResult:
-        yield Static("", id="overlay-title")
+        yield Static("", id="overlay-title", markup=False)
         yield Input(placeholder="Filter", id="overlay-search")
         yield Button("Scope", id="overlay-scope")
-        yield Static(id="overlay-body")
+        yield Static(id="overlay-body", markup=False)
         yield ListView(id="overlay-list")
         yield Button("Exit and stop work", id="overlay-confirm-exit", variant="error")
         yield Button("Back", id="overlay-close", variant="primary")
@@ -67,12 +69,12 @@ class OverlayPane(Container):
         if self._overlay != overlay:
             self._query = state.thread_picker_query if overlay.kind == "threads" else ""
             self._overlay = overlay
+            self._entries = None
         self._state = state
         search = self.query_one("#overlay-search", Input)
         if not search.has_focus and search.value != self._query:
-            self._projecting = True
-            search.value = self._query
-            self._projecting = False
+            with search.prevent(Input.Changed):
+                search.value = self._query
         await self._rebuild()
 
     def show_render_failure(self) -> None:
@@ -110,8 +112,6 @@ class OverlayPane(Container):
         scope = self.query_one("#overlay-scope", Button)
         list_view = self.query_one("#overlay-list", ListView)
         confirm_exit = self.query_one("#overlay-confirm-exit", Button)
-        self._actions.clear()
-        await list_view.clear()
         body.display = False
         body.update("")
         search.display = overlay.kind not in {"status", "help", "inspector", "exit"}
@@ -220,21 +220,31 @@ class OverlayPane(Container):
             body.display = True
             body.update("This surface has no additional content.")
 
+        if self._entries == tuple(entries):
+            return
+        self._entries = tuple(entries)
+        highlighted = list_view.highlighted_child
+        selected_id = None if highlighted is None else highlighted.id
+        scroll_y = list_view.scroll_y
+        self._actions.clear()
+        await list_view.clear()
         items: list[ListItem] = []
         for index, (label, description, action, enabled) in enumerate(entries):
             item_id = f"overlay-item-{index}-{hashlib.sha256(label.encode()).hexdigest()[:10]}"
             self._actions[item_id] = action
             items.append(
                 ListItem(
-                    Static(f"{label}\n  {description}"),
+                    Static(f"{label}\n  {description}", markup=False),
                     id=item_id,
                     disabled=not enabled,
                 )
             )
         if items:
             await list_view.extend(items)
+            list_view.index = next((index for index, item in enumerate(items) if item.id == selected_id), 0)
+            list_view.scroll_to(y=scroll_y, animate=False)
         elif list_view.display:
-            await list_view.append(ListItem(Static("No matching items."), disabled=True))
+            await list_view.append(ListItem(Static("No matching items.", markup=False), disabled=True))
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         if self._projecting or event.input.id != "overlay-search":
@@ -249,6 +259,16 @@ class OverlayPane(Container):
             )
         else:
             await self._rebuild()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "overlay-search":
+            event.stop()
+            self.query_one("#overlay-list", ListView).action_select_cursor()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "down" and self.query_one("#overlay-search", Input).has_focus:
+            event.stop()
+            self.query_one("#overlay-list", ListView).focus()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         item_id = event.item.id

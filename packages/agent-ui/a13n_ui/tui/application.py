@@ -67,6 +67,9 @@ class AgentUiTerminalApp(App[None]):
         Binding("ctrl+r", "retry", "Retry", show=False),
         Binding("escape", "back", "Back", show=False),
         Binding("ctrl+c", "cancel_or_exit", "Cancel / Exit", show=True, priority=True),
+        Binding("down", "completion_next", show=False, priority=True),
+        Binding("up", "completion_previous", show=False, priority=True),
+        Binding("enter", "completion_accept", show=False, priority=True),
     ]
 
     def __init__(
@@ -82,6 +85,7 @@ class AgentUiTerminalApp(App[None]):
         self.terminal_state = TerminalState(draft_defaults=launch_defaults or NewThreadDefaults())
         self._intent_lock = asyncio.Lock()
         self._modal_key: tuple[object, ...] | None = None
+        self._route_key: tuple[object, ...] | None = None
         self._focus_restore: Widget | None = None
         self.controller = TerminalController(
             app_factory=app_factory,
@@ -95,7 +99,7 @@ class AgentUiTerminalApp(App[None]):
         )
 
     def compose(self) -> ComposeResult:
-        yield Static("Starting Agent UI...", id="terminal-status")
+        yield Static("Starting Agent UI...", id="terminal-status", markup=False)
         yield FocusScreen()
         yield WorkbenchScreen()
         yield ReviewPane()
@@ -135,6 +139,20 @@ class AgentUiTerminalApp(App[None]):
     def on_intent_requested(self, message: IntentRequested) -> None:
         message.stop()
         self._submit_intent(message.intent)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action.startswith("completion_"):
+            return self.terminal_state.completion is not None and not self.terminal_state.overlays
+        return super().check_action(action, parameters)
+
+    def action_completion_next(self) -> None:
+        self.query_one(CompletionPopup).move_selection(1)
+
+    def action_completion_previous(self) -> None:
+        self.query_one(CompletionPopup).move_selection(-1)
+
+    def action_completion_accept(self) -> None:
+        self.query_one(CompletionPopup).accept_selection()
 
     def action_toggle_mode(self) -> None:
         self._submit_intent(ToggleTopLevelMode())
@@ -298,7 +316,6 @@ class AgentUiTerminalApp(App[None]):
         elif completions.display and state.completion is not None:
             modal_key = (
                 "completion",
-                state.completion.request_version,
                 state.completion.key,
             )
         else:
@@ -306,20 +323,32 @@ class AgentUiTerminalApp(App[None]):
         if modal_key != self._modal_key:
             if self._modal_key is None and modal_key is not None:
                 self._focus_restore = self.focused
-            focus.disabled = modal_key is not None
-            workbench.disabled = modal_key is not None
+            focus.disabled = review_open or overlay_open
+            workbench.disabled = review_open or overlay_open
             if review_open:
                 review.focus_initial()
             elif overlay_open:
                 overlay.focus_initial()
-            elif completions.display:
-                completions.focus_initial()
-            else:
+            elif not completions.display:
                 restore = self._focus_restore
                 self._focus_restore = None
                 if restore is not None and restore.is_attached and not restore.disabled:
                     restore.focus()
             self._modal_key = modal_key
+
+        if state.lifecycle is TerminalLifecycle.READY and modal_key is None:
+            thread = None if state.focused_thread_id is None else state.thread_view(state.focused_thread_id)
+            route_key = (
+                state.mode,
+                state.focused_thread_id,
+                thread is not None and thread.control_mode is ControlMode.AWAITING_DECISION,
+            )
+            if self._route_key != route_key:
+                if state.mode is TerminalMode.FOCUS:
+                    self.call_after_refresh(focus.focus_initial)
+                else:
+                    self.call_after_refresh(workbench.focus_initial)
+                self._route_key = route_key
 
     def _apply_width_class(self, width: int) -> None:
         self.remove_class("width-wide", "width-medium", "width-narrow")
