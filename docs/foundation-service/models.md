@@ -1,6 +1,10 @@
 # Configure Models
 
-A Model Provider stores an account or endpoint and its credential. A Model gives an upstream model a stable Workspace key, one calling API, and editable request defaults. Several Models can share a Provider or upstream ID while using different settings.
+A Model Provider stores an account or endpoint and its credential. A Model gives an upstream model a stable key within the models available to a Workspace, one calling API, and editable request defaults. Several Models can share a Provider or upstream ID while using different settings.
+
+Models and Model Providers can belong to an Organization or a Workspace. Organization configuration is automatically available in every child Workspace. Organization Admin manages it through the corresponding `/api/v1/organizations/{organization_id}/models` and `/model-providers` routes using an Organization-scoped session. Workspace lists include both local and Organization resources; Workspace members can use shared configuration but cannot edit it. A Workspace Model can also use an Organization Provider.
+
+Continue selecting models with a bare `model_key`. A key cannot be duplicated between an Organization and any of its Workspaces, or within one scope. Separate Workspaces may reuse a key. Conflicting creates return `409 model_key_conflict`, including concurrent creates.
 
 Use the public HTTP API on a control-plane or all-in-one Foundation Service. The examples below use placeholders for Workspace and resource IDs. Authenticate each request with a Foundation credential authorized for that Workspace; Provider credentials belong only in the Provider's write-only `credential` field. Workspace Viewer can read configuration and request model descriptions. Workspace Builder or Admin can create, edit, discover, and test Models.
 

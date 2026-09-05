@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType, WorkspaceAction, authorize_workspace
+from a13n_service.iam import AuthenticatedActor, PrincipalRef, WorkspaceAction, authorize_workspace
 
 from .accounts.models import AccountRecord
 from .accounts.providers import validate_scope
@@ -40,40 +40,38 @@ class AccountRunContext(_NativeContext):
         return self
 
 
-class IngressRunContext(_NativeContext):
-    kind: Literal["ingress"] = "ingress"
-    ingress_id: str
-    route_id: str | None = None
+class InboundRunContext(_NativeContext):
+    kind: Literal["inbound"] = "inbound"
+    binding_id: str
+    target_id: str | None = None
     provider_context_version: str
     provider_context: JsonObject = Field(repr=False)
     action_policy: JsonObject
 
     @classmethod
-    def from_batch(cls, batch: PreparedIngressBatch) -> "IngressRunContext":
-        """Retain native authority from a trusted, authorized admission batch."""
+    def from_batch(cls, batch: PreparedIngressBatch, *, execution_principal: PrincipalRef) -> "InboundRunContext":
+        config = batch.configuration
         return cls(
-            ingress_id=batch.ingress_id,
-            account_id=batch.account_id,
-            route_id=batch.route_id,
-            execution_principal_ref=PrincipalRef(
-                principal_type=PrincipalType.service_account, principal_id=batch.execution_service_account_id
-            ),
-            provider_key=batch.provider_key,
-            provider_context_version=batch.provider_context_version,
-            provider_context=batch.provider_context,
-            action_policy=batch.provider_policy,
-            allowed_actions=batch.native_actions,
+            binding_id=batch.binding_id,
+            account_id=config.account_id,
+            target_id=config.target_id,
+            execution_principal_ref=execution_principal,
+            provider_key=config.provider_key,
+            provider_context_version=config.provider_context_version,
+            provider_context=config.provider_context,
+            action_policy=config.provider_policy,
+            allowed_actions=config.native_actions,
         )
 
 
-type NativeToolContext = Annotated[AccountRunContext | IngressRunContext, Field(discriminator="kind")]
+type NativeToolContext = Annotated[AccountRunContext | InboundRunContext, Field(discriminator="kind")]
 _CONTEXTS = TypeAdapter(Annotated[tuple[NativeToolContext, ...], Field(max_length=128)])
 
 
 def parse_native_contexts(value: object) -> tuple[NativeToolContext, ...]:
     contexts = _CONTEXTS.validate_python(value)
     sources = [
-        (item.kind, item.ingress_id if isinstance(item, IngressRunContext) else item.account_id) for item in contexts
+        (item.kind, item.binding_id if isinstance(item, InboundRunContext) else item.account_id) for item in contexts
     ]
     if len(sources) != len(set(sources)):
         raise ValueError("duplicate_native_tool_source")

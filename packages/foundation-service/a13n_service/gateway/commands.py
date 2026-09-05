@@ -87,6 +87,7 @@ from a13n_service.interactions.input import (
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectError, RunPayloadStore, RunStateStore
+from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
 from a13n_service.interactions.state import RunPayloadEnvelope
 from a13n_service.public_errors import PublicError
@@ -94,6 +95,8 @@ from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .environment import input_environment_access
+
+_USER_INPUT_ORIGIN = SubmissionOrigin()
 
 
 class GatewayCommandError(PublicError):
@@ -195,8 +198,9 @@ class NativeInteractionCommands:
         request: StartRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
-        if workspace_id != actor.boundary_workspace_id:
+        if workspace_id != actor.workspace_id:
             raise _not_found()
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -283,7 +287,8 @@ class NativeInteractionCommands:
             parent_run_id=None,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.root,
-            trigger_type="user_input",
+            trigger_type=origin.trigger_type,
+            native_tool_contexts=origin.native_tool_contexts,
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
@@ -367,6 +372,7 @@ class NativeInteractionCommands:
         inherit_parent_environment: bool = True,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -378,7 +384,7 @@ class NativeInteractionCommands:
         request_fingerprint = canonical_digest(request)
         replay = await self._start_replay(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=(
                 canonical_digest(
@@ -414,7 +420,7 @@ class NativeInteractionCommands:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
         accepted_input = await self._accept_input_value(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             submitted=request.input,
             frozen=frozen,
             environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
@@ -446,7 +452,8 @@ class NativeInteractionCommands:
             parent_run_id=source.id,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.continue_,
-            trigger_type="user_input",
+            trigger_type=origin.trigger_type,
+            native_tool_contexts=origin.native_tool_contexts,
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
@@ -487,7 +494,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_continue,
                 )
@@ -527,6 +534,7 @@ class NativeInteractionCommands:
         request: ContinueRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -538,7 +546,7 @@ class NativeInteractionCommands:
         request_fingerprint = canonical_digest(request)
         replay = await self._start_replay(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=(
                 canonical_digest(
@@ -573,7 +581,7 @@ class NativeInteractionCommands:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
         accepted_input = await self._accept_input_value(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             submitted=request.input,
             frozen=frozen,
             environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
@@ -600,7 +608,8 @@ class NativeInteractionCommands:
             parent_run_id=None,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.root,
-            trigger_type="user_input",
+            trigger_type=origin.trigger_type,
+            native_tool_contexts=origin.native_tool_contexts,
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
@@ -641,7 +650,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id if source else target_agent_id,
                     action=WorkspaceAction.run_continue,
                 )
@@ -690,7 +699,7 @@ class NativeInteractionCommands:
         request_fingerprint = canonical_digest(request)
         replay = await self._start_replay(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=(
                 canonical_digest(
@@ -743,7 +752,7 @@ class NativeInteractionCommands:
             )
         accepted_input = await self._accept_input_value(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             submitted=request.input,
             frozen=frozen,
             environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
@@ -829,7 +838,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_fork,
                 )
@@ -881,7 +890,7 @@ class NativeInteractionCommands:
         request_fingerprint = canonical_digest(request)
         replay = await self._start_replay(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=request_fingerprint,
             accepted_thread_version=request.expected_thread_version + 1,
@@ -982,7 +991,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_retry,
                 )
@@ -990,7 +999,7 @@ class NativeInteractionCommands:
                     database,
                     principal=source.authority_principal,
                     organization_id=source.tenant_id,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
                 )
@@ -1046,7 +1055,7 @@ class NativeInteractionCommands:
             principal=queued.authority_principal,
             auth_method="stored_queued_submission",
             credential_id=queued.queued_submission_id,
-            boundary_workspace_id=actor.boundary_workspace_id,
+            boundary_workspace_id=actor.workspace_id,
             request_id=actor.request_id,
         )
         target_agent_id = queued.submission.agent_id or (head.agent_id if head is not None else current.agent_id)
@@ -1063,7 +1072,7 @@ class NativeInteractionCommands:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
         accepted_input = await self._accept_input_value(
             actor=retained_actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             submitted=queued.submission.input,
             frozen=frozen,
             environment=queued.submission.environment
@@ -1145,7 +1154,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=target_agent_id,
                     action=WorkspaceAction.queued_submission_consume,
                 )
@@ -1153,7 +1162,7 @@ class NativeInteractionCommands:
                     database,
                     principal=queued.authority_principal,
                     organization_id=current.tenant_id,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=target_agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
                 )
@@ -1238,7 +1247,7 @@ class NativeInteractionCommands:
         )
         replay = await self._start_replay(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=request_fingerprint,
             accepted_thread_version=request.expected_thread_version + 1,
@@ -1314,7 +1323,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_feedback,
                 )
@@ -1322,7 +1331,7 @@ class NativeInteractionCommands:
                     database,
                     principal=source.authority_principal,
                     organization_id=source.tenant_id,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
                 )
@@ -1373,7 +1382,7 @@ class NativeInteractionCommands:
             )
         accepted_input = await self._accept_input_for_effective(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             submitted=request.input,
             effective=source_state.envelope.effective_agent_config,
             environment_access=source.environment_access,
@@ -1404,7 +1413,7 @@ class NativeInteractionCommands:
         )
         replay = await self._start_replay(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=request_fingerprint,
             accepted_thread_version=request.expected_thread_version + 1,
@@ -1481,7 +1490,7 @@ class NativeInteractionCommands:
                     await authorize_agent(
                         database,
                         actor=actor,
-                        workspace_id=actor.boundary_workspace_id,
+                        workspace_id=actor.workspace_id,
                         agent_id=source.agent_id,
                         action=action,
                     )
@@ -1489,7 +1498,7 @@ class NativeInteractionCommands:
                     database,
                     principal=source.authority_principal,
                     organization_id=source.tenant_id,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
                 )
@@ -1527,7 +1536,7 @@ class NativeInteractionCommands:
             )
         identity = _command_identity(idempotency_key, request)
         scope = EvidenceScope(
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             actor_type=actor.principal.principal_type.value,
             actor_id=actor.principal.principal_id,
             operation="run.interrupt",
@@ -1550,7 +1559,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
@@ -1621,6 +1630,7 @@ class NativeInteractionCommands:
         run_id: str,
         idempotency_key: str,
         input: AgentInput,
+        transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
         if self._inbox is None:
             raise GatewayCommandError(
@@ -1630,7 +1640,7 @@ class NativeInteractionCommands:
             )
         identity = _command_identity(idempotency_key, input)
         scope = EvidenceScope(
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             actor_type=actor.principal.principal_type.value,
             actor_id=actor.principal.principal_id,
             operation="run.steer",
@@ -1650,7 +1660,7 @@ class NativeInteractionCommands:
             ) from error
         accepted = await self._accept_input_for_effective(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             submitted=input,
             effective=state.envelope.effective_agent_config,
             environment_access=source.environment_access,
@@ -1662,7 +1672,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_steer,
                 )
@@ -1685,6 +1695,9 @@ class NativeInteractionCommands:
                         now=now,
                     )
                 )
+
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
 
         try:
             return await self._inbox.append_steer(
@@ -1753,7 +1766,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -1764,7 +1777,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_steer,
                 )
@@ -1827,7 +1840,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -1838,7 +1851,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_read if read_only else WorkspaceAction.run_steer,
                 )
@@ -1882,7 +1895,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -1893,7 +1906,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
@@ -1938,7 +1951,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -1949,7 +1962,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
@@ -2080,7 +2093,7 @@ class NativeInteractionCommands:
                     .where(
                         RunRecord.thread_id == thread_id,
                         RunRecord.idempotency_key == stored_key,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -2093,7 +2106,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=target_agent_id,
                     action=WorkspaceAction.queued_submission_consume,
                 )
@@ -2146,7 +2159,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         ThreadRecord.id == thread_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -2175,7 +2188,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=target_agent_id,
                     action=WorkspaceAction.queued_submission_consume,
                 )
@@ -2231,7 +2244,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == source_run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -2242,7 +2255,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source_record.agent_id,
                     action=WorkspaceAction.run_continue,
                 )
@@ -2278,7 +2291,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -2289,7 +2302,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source_record.agent_id,
                     action=WorkspaceAction.run_retry,
                 )
@@ -2334,7 +2347,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         ThreadRecord.id == thread_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -2348,7 +2361,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source_record.agent_id if source_record else target_agent_id,
                     action=WorkspaceAction.run_continue,
                 )
@@ -2383,7 +2396,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).scalar_one_or_none()
@@ -2393,7 +2406,7 @@ class NativeInteractionCommands:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=source_record.agent_id,
                     action=WorkspaceAction.run_fork,
                 )
@@ -2435,7 +2448,7 @@ class NativeInteractionCommands:
                     )
                     .where(
                         RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -2447,7 +2460,7 @@ class NativeInteractionCommands:
                     await authorize_agent(
                         database,
                         actor=actor,
-                        workspace_id=actor.boundary_workspace_id,
+                        workspace_id=actor.workspace_id,
                         agent_id=source_record.agent_id,
                         action=action,
                     )

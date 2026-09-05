@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http.cookiejar import Cookie, CookieJar, DefaultCookiePolicy
 from typing import Any, Protocol
 
 import httpx2
@@ -91,3 +92,16 @@ def retry_after_seconds(value: str | None) -> int | None:
     except ValueError:
         return None
     return parsed if 0 <= parsed <= 3600 else None
+
+
+class _RejectCookies(DefaultCookiePolicy):
+    def set_ok(self, cookie: Cookie, request: object) -> bool:
+        return False
+
+    def return_ok(self, cookie: Cookie, request: object) -> bool:
+        return False
+
+
+def cookie_free_jar() -> CookieJar:
+    """Prevent a shared provider pool from retaining any account's cookies."""
+    return CookieJar(policy=_RejectCookies())

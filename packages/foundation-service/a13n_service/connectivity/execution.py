@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 
+import httpx2
 from a13n_harness import AgentContext
 from anyio import to_thread
 from jsonschema import Draft202012Validator
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.models import SessionRecord
@@ -32,14 +34,13 @@ from .connectors.management import decode_credentials, require_connection, requi
 from .connectors.registry import ConnectorProviderRegistry
 from .connectors.tool_discovery import discover_tools, mcp_tool
 from .domain import JsonObject
-from .mcp.credentials import decode_request_headers
 from .mcp.management import require_connection as require_mcp_connection
-from .mcp.oauth_bundles import decode_oauth_bundle, optional_expiration
+from .mcp.refresh import OAuthCredentialRefresh
 from .mcp.transport import RemoteTransport
 from .native import native_capability
 from .native_context import NativeToolContext, parse_native_contexts
 from .selection_domain import ConnectorConnectionRunSelection, MCPConnectionRunSelection
-from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity, PreparedRevisionConnectivity
+from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity
 from .tool_validation import validate_result
 from .toolsets import local_capability, namespaced, selected_tools, source_key
 
@@ -64,12 +65,16 @@ class ExternalToolRuntime:
         providers: ConnectorProviderRegistry,
         remote: RemoteTransport,
         endpoints: EndpointPolicy,
+        http_client: httpx2.AsyncClient,
+        oauth_refresh: OAuthCredentialRefresh,
     ) -> None:
         self._sessions = sessions
         self._protector = protector
         self._providers = providers
         self._remote = remote
         self._endpoints = endpoints
+        self._http = http_client
+        self._oauth_refresh = oauth_refresh
         self._selections = ConnectivitySelectionResolver(sessions)
 
     async def _scope(self, context: AttemptContext) -> AttemptToolScope:
@@ -114,49 +119,49 @@ class ExternalToolRuntime:
             current = await self._scope(current_context())
             if current != accepted:
                 raise ValueError("external_tool_scope_changed")
-            async with short_session(self._sessions) as session:
-                await self._selections.freeze_revision_creation(
-                    session,
-                    prepared=PreparedRevisionConnectivity(
-                        accepted.actor,
-                        accepted.organization_id,
-                        accepted.workspace_id,
-                        accepted.selections,
-                    ),
-                )
 
-        await guard()
         capabilities: list[MCP[AgentContext]] = []
         async with AsyncExitStack() as stack:
             for selection in accepted.selections.connector_connection_selections:
                 if selection.tools == ():
                     continue
-                capability = await self._connector(selection, guard)
+                capability = await self._connector(selection, guard, accepted)
                 if capability is not None:
                     capabilities.append(capability)
             for selection in accepted.selections.mcp_connection_selections:
                 if selection.tools == ():
                     continue
-                capability = await stack.enter_async_context(self._mcp(selection, guard))
+                capability = await stack.enter_async_context(self._mcp(selection, guard, accepted))
                 if capability is not None:
                     capabilities.append(capability)
             for context in accepted.native_tool_contexts:
                 capability = await native_capability(
-                    self._sessions, self._protector, accepted, context, guard, self._endpoints
+                    self._sessions, self._protector, accepted, context, guard, self._endpoints, self._http
                 )
                 if capability is not None:
                     capabilities.append(capability)
             yield tuple(capabilities)
 
     async def _connector(
-        self, selection: ConnectorConnectionRunSelection, guard: Callable[[], Awaitable[None]]
+        self, selection: ConnectorConnectionRunSelection, guard: Callable[[], Awaitable[None]], scope: AttemptToolScope
     ) -> MCP[AgentContext] | None:
         @asynccontextmanager
         async def connection():
             await guard()
             async with short_session(self._sessions) as session:
+                await self._selections.require_current_source(
+                    session,
+                    actor=scope.actor,
+                    organization_id=scope.organization_id,
+                    workspace_id=scope.workspace_id,
+                    selection=selection,
+                )
                 record = await require_connection(session, selection.connector_connection_id)
-                provider = await require_connector_provider(session, selection.connector_provider_id)
+                provider = await require_connector_provider(
+                    session,
+                    selection.connector_provider_id,
+                    scope=ResourceScope(record.organization_id, record.workspace_id),
+                )
                 binding = await connection_binding(session, record)
                 provider_type, configuration = provider.type, dict(provider.configuration_json)
                 context = provider.credential_snapshot()
@@ -178,7 +183,6 @@ class ExternalToolRuntime:
                 raise ValueError("tool_not_authorized")
             try:
                 async with connection() as connected:
-                    await guard()
                     outcome = await connected.execute_tool(
                         tool_key=name,
                         provider_version=by_name[name].provider_version,
@@ -204,7 +208,7 @@ class ExternalToolRuntime:
 
     @asynccontextmanager
     async def _mcp(
-        self, selection: MCPConnectionRunSelection, guard: Callable[[], Awaitable[None]]
+        self, selection: MCPConnectionRunSelection, guard: Callable[[], Awaitable[None]], scope: AttemptToolScope
     ) -> AsyncIterator[MCP[AgentContext] | None]:
         async with short_session(self._sessions) as session:
             record = await require_mcp_connection(session, selection.mcp_connection_id)
@@ -213,19 +217,32 @@ class ExternalToolRuntime:
         async def headers() -> dict[str, str]:
             await guard()
             async with short_session(self._sessions) as session:
+                await self._selections.require_current_source(
+                    session,
+                    actor=scope.actor,
+                    organization_id=scope.organization_id,
+                    workspace_id=scope.workspace_id,
+                    selection=selection,
+                )
                 record = await require_mcp_connection(session, selection.mcp_connection_id)
                 if record.endpoint_url != endpoint:
                     raise ValueError("mcp_endpoint_changed")
-                if record.auth_mode == "none":
-                    return {}
-                context = record.credential_snapshot()
-                auth_mode = record.auth_mode
-            value = context.decrypt(self._protector)
-            if auth_mode == "oauth":
-                expires_at = optional_expiration(decode_oauth_bundle(value).get("expires_at"))
-                if expires_at is not None and expires_at <= utc_now():
-                    raise ValueError("mcp_credentials_expired")
-            return decode_request_headers(value)
+            current = await self._oauth_refresh.current(selection.mcp_connection_id)
+            await guard()
+            async with short_session(self._sessions) as session:
+                await self._selections.require_current_source(
+                    session,
+                    actor=scope.actor,
+                    organization_id=scope.organization_id,
+                    workspace_id=scope.workspace_id,
+                    selection=selection,
+                )
+                record = await require_mcp_connection(session, selection.mcp_connection_id)
+                if record.version != current.version or record.credential_generation != current.credential_generation:
+                    raise ValueError("mcp_connection_changed")
+            if current.endpoint != endpoint:
+                raise ValueError("mcp_endpoint_changed")
+            return current.headers
 
         async def call(
             ctx: RunContext[AgentContext], call_tool: CallToolFunc, name: str, arguments: JsonObject

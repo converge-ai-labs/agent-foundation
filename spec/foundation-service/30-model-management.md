@@ -2,10 +2,10 @@
 
 ## Design Position
 
-Foundation exposes two Workspace resources for primary generative-model execution:
+Foundation exposes two Organization- or Workspace-owned resources for primary generative-model execution:
 
 - a `ModelProvider` is one configured account or endpoint; and
-- a `Model` is one stable Workspace model alias owned by exactly one Provider, with one calling API and editable default settings.
+- a `Model` is one stable model alias owned by exactly one Provider, with one calling API and editable default settings.
 
 Provider types and calling APIs are deployment registry values, not resources. A Workspace can create any number of Providers of the same type, such as two OpenAI accounts or two Ollama servers. Credentials, endpoint settings, region, project, and authentication mode belong to the Provider. Upstream model identity, one selected calling API, and default request settings belong to the Model.
 
@@ -18,9 +18,9 @@ This contract covers only the primary text or multimodal generative model used b
 | Concept              | Meaning                                                                                    | Durable resource |
 | -------------------- | ------------------------------------------------------------------------------------------ | ---------------- |
 | Provider type        | Trusted implementation family such as `openai`, `openrouter`, `ollama`, or `aws_bedrock`   | No               |
-| Model Provider       | One Workspace-owned configured account or endpoint                                         | Yes              |
+| Model Provider       | One Organization- or Workspace-owned configured account or endpoint                        | Yes              |
 | Calling API          | Request/response contract such as `openai.responses` or `anthropic.messages`               | Registry key     |
-| Model                | Stable Workspace alias for one upstream model under one Provider                           | Yes              |
+| Model                | Stable scoped alias for one upstream model under one Provider                              | Yes              |
 | Model settings       | Serializable native request defaults for the Model's selected calling API                  | Model value      |
 | Model description    | Suggested configuration and parameter schema for an upstream model under a Provider        | No               |
 | Provider integration | Trusted connection, authentication, endpoint, and discovery code selected by Provider type | No               |
@@ -30,7 +30,9 @@ This contract covers only the primary text or multimodal generative model used b
 
 An endpoint owner and a wire format are independent facts. An OpenRouter Provider can expose an OpenAI-compatible calling API without becoming an OpenAI Provider. An Ollama Provider can expose the same general format while retaining Ollama-specific discovery and authentication behavior. An OpenAI Provider can allow both Responses and Chat Completions; each Model selects exactly one. Calling-API keys such as `openrouter.chat_completions` are Foundation registry identifiers retained in public configuration and display, not Pydantic AI enum values.
 
-`ModelProvider` is shortened to Provider within this document when there is no ambiguity. It is not a load-balancing pool, failover policy, model, or generic secret container. `Model` is not an upstream catalog entry: it is a configured Workspace alias.
+`ModelProvider` is shortened to Provider within this document when there is no ambiguity. It is not a load-balancing pool, failover policy, model, or generic secret container. `Model` is not an upstream catalog entry: it is a configured scoped alias.
+
+Ownership and automatic visibility follow [Organization-owned configuration](33-identity-and-access-management.md#organization-owned-configuration). An Organization Model references an Organization Provider; a Workspace Model can reference a local or parent Provider. Provider sharing never changes the consuming Run's Workspace or usage attribution.
 
 ## Trusted Provider-type and calling-API registry
 
@@ -82,7 +84,8 @@ A Provider has one opaque `ModelProviderId` with the `mprov` kind prefix:
 ```python
 class ModelProvider:
     id: ModelProviderId
-    workspace_id: WorkspaceId
+    organization_id: OrganizationId
+    workspace_id: WorkspaceId | None
     type: str
     name: str
     configuration: JsonObject
@@ -94,7 +97,7 @@ class ModelProvider:
     updated_at: datetime
 ```
 
-`name` is a human-readable, case-insensitively unique name within the Workspace. Provider type is not unique: `OpenAI Production` and `OpenAI Personal` can both have `type="openai"`.
+`name` is a human-readable, case-insensitively unique name within the owning scope. Provider type is not unique: `OpenAI Production` and `OpenAI Personal` can both have `type="openai"`.
 
 Provider create and update accept a provider-schema-specific write-only `credential` field. Reads return only `credential_configured`; they never return plaintext, ciphertext, credential shape, masked suffixes, or a reusable Secret identifier. Omitting `credential` on update retains the current value. Supplying null removes it only when the Provider type permits an unauthenticated connection. Supplying another value atomically replaces it.
 
@@ -129,7 +132,8 @@ class ModelLimits:
 
 class Model:
     id: ModelId
-    workspace_id: WorkspaceId
+    organization_id: OrganizationId
+    workspace_id: WorkspaceId | None
     key: str
     provider_id: ModelProviderId
     name: str
@@ -144,7 +148,7 @@ class Model:
     updated_at: datetime
 ```
 
-`key` is normalized and case-insensitively unique within the Workspace. It is the identifier accepted by public Agent configuration, API, and SDK surfaces. The opaque `id` is retained for internal relationships and observations. `key` and `provider_id` are immutable; selecting a different Provider means creating another Model. Updating the existing Provider's account or endpoint follows the live Provider contract. Several Models may share the same Provider, upstream model, and calling API while retaining distinct keys and settings; that tuple is not unique.
+`key` is normalized and case-insensitively unique in every Workspace's visible Model collection: its own Models plus its Organization's Models. Organization Models cannot collide with any Model in a descendant Workspace; Workspace Models cannot collide with a Model in that Workspace or its Organization. Sibling Workspaces can reuse a key. Creation rejects overlap atomically, including concurrent Organization and Workspace creates, with `409 model_key_conflict`. Disabled Models continue reserving their keys. Agent configuration accepts the bare `model_key`, with no scope prefix, precedence, shadowing, or fallback. It is the identifier accepted by public Agent configuration, API, and SDK surfaces. The opaque `id` is retained for internal relationships and observations. `key` and `provider_id` are immutable; selecting a different Provider means creating another Model. Updating the existing Provider's account or endpoint follows the live Provider contract. Several Models may share the same Provider, upstream model, and calling API while retaining distinct keys and settings; that tuple is not unique.
 
 `upstream_model` is an opaque string of 1 through 256 characters passed unchanged to the selected native Pydantic AI Model. It is the invocation identifier required by the configured endpoint, including a model ID, deployment name, or inference endpoint ID. It is not restricted to a bundled or discovered catalog. This lets a Workspace use a newly released upstream model through an existing supported binding before Foundation's metadata is updated. Clients select `Model.key`; they do not substitute it for the upstream invocation identifier.
 
@@ -178,9 +182,9 @@ Description accepts one arbitrary bounded upstream identifier and an optional al
 
 Both operations return suggestions, not evidence of successful model invocation. OpenRouter-style catalogs can supply supported parameters, modalities, limits, and defaults. An ID-only catalog such as OpenAI's can enumerate models without supplying those details. Trusted bundled metadata may supplement missing facts but is never a membership requirement. Provider-level routing parameters are described independently of model-level sampling or reasoning parameters. A catalog's omission of routing fields does not mark those platform fields unsupported, and aggregate model metadata does not guarantee support on every downstream endpoint.
 
-Results are separate from safe Provider definitions and saved Workspace Models. They may be briefly cached within the authorization and configured Provider boundary; connection or credential changes invalidate corresponding cached results. They are not durable resources, do not create or update Models, and never become an execution allowlist.
+Results are separate from safe Provider definitions and saved Models. They may be briefly cached within the authorization and configured Provider boundary; connection or credential changes invalidate corresponding cached results. They are not durable resources, do not create or update Models, and never become an execution allowlist.
 
-Callers select discovered descriptions or request a description for a manually entered upstream ID, then submit the same ordinary Model create request. Clients prefill an editable name and key, one API, and settings; Provider capability information remains read-only reference material. The create request always contains the chosen key and explicit API; optional settings default to an empty object. Manual creation remains possible without calling description or discovery. Only explicit creation adds a Workspace Model, and partial failure when adding several candidates leaves already created Models intact and identifies failed entries.
+Callers select discovered descriptions or request a description for a manually entered upstream ID, then submit the same ordinary Model create request. Clients prefill an editable name and key, one API, and settings; Provider capability information remains read-only reference material. The create request always contains the chosen key and explicit API; optional settings default to an empty object. Manual creation remains possible without calling description or discovery. Only explicit creation adds a Model in the selected scope, and partial failure when adding several candidates leaves already created Models intact and identifies failed entries.
 
 Creation copies the submitted values into the Model. Subsequent discovery, description, or metadata refresh never changes saved values, removes a saved Model, or disables it. Adopting new suggestions is an explicit edit under the Model's ETag. Editing an existing Model requests a description using its current Provider, upstream ID, and API but keeps the saved values as the editor's values.
 
@@ -308,6 +312,8 @@ Provider and Model collections use cursor pagination with deterministic `updated
 
 `describe-model` accepts `upstream_model` and an optional `model_api`, and returns one `ModelDescription` without persisting or invoking a model. This same operation serves manual IDs, discovered candidates whose selected API changes, and existing Model editors. It requires no discovery-result token or Model ID. It can inspect upstream metadata but never performs generative inference. Description works with local trusted defaults when optional metadata is unavailable, including an unconfigured credential; credential and endpoint errors remain visible through discovery, connection testing, or inference. The service never sends credentials to an endpoint that failed policy validation.
 
+Every route above also exists under `/api/v1/organizations/{organization_id}` in place of `/api/v1/workspaces/{workspace_id}`. Organization routes enumerate, create, and manage Organization-owned resources; Workspace reads include parent resources, while Workspace mutations apply only to locally owned resources.
+
 Create is synchronous and retains no separate idempotency record. Duplicate normalized Provider names return `409 model_provider_name_conflict`; duplicate normalized Model keys return `409 model_key_conflict`. All PATCH routes require `If-Match`; stale state returns `412 precondition_failed` and changes nothing.
 
 Provider testing validates its current connection and authentication without requiring a Model request when a safe provider-native operation exists. Model testing uses the Model's saved upstream ID, single API, and default settings; it accepts no separate API selector. A successful list or description is not a successful Model test. Both tests run outside database transactions, retain no provider response or test resource, may consume quota, and record only a bounded audit event. Discovery and description have the same secret and transaction boundaries.
@@ -316,7 +322,7 @@ Provider testing validates its current connection and authentication without req
 
 Foundation exposes disable/re-enable instead of hard delete for both resources. Provider disable blocks every dependent Model at the next outbound request. A Provider with dependent Models cannot be removed by storage maintenance. Model keys and Provider relationships cannot be reused through a public delete path.
 
-`models.read` permits safe Provider-type, Provider, and Model reads and the read-only `describe-model` operation. `models.manage` is required for Provider and Model mutations, credential replacement, connection and Model tests, discovery enumeration, and lifecycle commands. Workspace Viewer receives the read surface; Workspace Builder and Admin receive both surfaces. Remote metadata results and caches retain the configured Provider's authorization boundary, and every discovery or description request reauthorizes access. Agent-scoped grants do not confer Workspace Model-management authority.
+`models.read` permits safe Provider-type, Provider, and Model reads and the read-only `describe-model` operation. `models.manage` is required for Provider and Model mutations, credential replacement, connection and Model tests, discovery enumeration, and lifecycle commands. Workspace Viewer receives the read surface, including Organization resources; Workspace Builder and Admin receive both surfaces for local resources and the existing test/discovery use operations for visible Providers and Models. Only Organization Admin through the Organization management boundary mutates Organization resources. Remote metadata results and caches retain the configured Provider's authorization boundary, and every discovery or description request reauthorizes access. Agent-scoped grants do not confer Workspace Model-management authority.
 
 Create, update, credential replacement/removal, test, discovery, description, enable, and disable actions produce security audit records. Audit details contain identifiers and safe outcome codes only; they never contain plaintext credentials, encrypted credential material, authorization headers, raw provider errors, prompts, or model output.
 

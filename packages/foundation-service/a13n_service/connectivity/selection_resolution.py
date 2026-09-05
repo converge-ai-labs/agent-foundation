@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord, ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
 from .selection_domain import (
@@ -62,7 +63,7 @@ class ConnectivitySelectionResolver:
         mcp_tools: tuple[MCPConnectionToolSelection, ...],
     ) -> PreparedRevisionConnectivity:
         async with short_session(self._sessions) as session:
-            selections = await self._resolve(
+            selections = await self.resolve_in_session(
                 session,
                 actor=actor,
                 organization_id=organization_id,
@@ -73,7 +74,7 @@ class ConnectivitySelectionResolver:
         return PreparedRevisionConnectivity(actor, organization_id, workspace_id, selections)
 
     async def freeze_revision_creation(self, session: AsyncSession, *, prepared: PreparedRevisionConnectivity) -> None:
-        current = await self._resolve(
+        current = await self.resolve_in_session(
             session,
             actor=prepared.actor,
             organization_id=prepared.organization_id,
@@ -83,6 +84,31 @@ class ConnectivitySelectionResolver:
             lock=True,
         )
         if current != prepared.selections:
+            raise ConnectivitySelectionError("connection_changed", path="connectivity")
+
+    async def require_current_source(
+        self,
+        session: AsyncSession,
+        *,
+        actor: AuthenticatedActor,
+        organization_id: str,
+        workspace_id: str,
+        selection: ConnectorConnectionRunSelection | MCPConnectionRunSelection,
+    ) -> None:
+        expected = (
+            FrozenRunConnectivity((selection,), ())
+            if isinstance(selection, ConnectorConnectionRunSelection)
+            else FrozenRunConnectivity((), (selection,))
+        )
+        current = await self.resolve_in_session(
+            session,
+            actor=actor,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            connector_tools=expected.connector_connection_selections,
+            mcp_tools=expected.mcp_connection_selections,
+        )
+        if current != expected:
             raise ConnectivitySelectionError("connection_changed", path="connectivity")
 
     async def prepare_invocation(
@@ -110,8 +136,8 @@ class ConnectivitySelectionResolver:
         await self.freeze_revision_creation(session, prepared=prepared)
         return prepared.selections
 
-    async def _resolve(
-        self,
+    @staticmethod
+    async def resolve_in_session(
         session: AsyncSession,
         *,
         actor: AuthenticatedActor,
@@ -145,7 +171,7 @@ class ConnectivitySelectionResolver:
                     and_(
                         ConnectorProviderRecord.id == ConnectorConnectionRecord.connector_provider_id,
                         ConnectorProviderRecord.organization_id == ConnectorConnectionRecord.organization_id,
-                        ConnectorProviderRecord.workspace_id == ConnectorConnectionRecord.workspace_id,
+                        visible_workspace(ConnectorProviderRecord.workspace_id, workspace_id),
                     ),
                 )
                 .where(
@@ -164,7 +190,6 @@ class ConnectivitySelectionResolver:
                 if row is None:
                     raise ConnectivitySelectionError("connector_connection_unavailable", path=path)
                 connection, provider = row
-                require_source_owner(actor, connection.owner_type, connection.owner_id, path=path)
                 if connection.status != "ready" or provider.status != "active":
                     raise ConnectivitySelectionError("connector_connection_unavailable", path=path)
                 connectors.append(
@@ -194,9 +219,6 @@ class ConnectivitySelectionResolver:
                 connection = by_id.get(selection.mcp_connection_id)
                 if connection is None or connection.status != "ready":
                     raise ConnectivitySelectionError("mcp_connection_unavailable", path=path)
-                require_source_owner(
-                    actor, "user" if connection.owner_user_id else None, connection.owner_user_id, path=path
-                )
                 mcps.append(
                     MCPConnectionRunSelection(
                         mcp_connection_id=connection.id,
@@ -205,10 +227,3 @@ class ConnectivitySelectionResolver:
                     )
                 )
         return FrozenRunConnectivity(tuple(connectors), tuple(mcps))
-
-
-def require_source_owner(actor: AuthenticatedActor, owner_type: str | None, owner_id: str | None, *, path: str) -> None:
-    if owner_type is not None and (
-        actor.principal.principal_type.value != owner_type or actor.principal.principal_id != owner_id
-    ):
-        raise ConnectivitySelectionError("connection_not_eligible", path=path)

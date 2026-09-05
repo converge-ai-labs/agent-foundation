@@ -199,7 +199,6 @@ def _normalize_event(
         refs=refs,
         data=data,
         ordering_key=f"{occurred_at.isoformat() if occurred_at is not None else received_at.isoformat()}:{delivery_id}",
-        retain_raw=True,
     )
 
 

@@ -178,7 +178,7 @@ class A2AService:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=agent_id,
                     action=WorkspaceAction.agent_read,
                 )
@@ -287,7 +287,7 @@ class A2AService:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=agent_id,
                     action=WorkspaceAction.agent_invoke,
                 )
@@ -297,7 +297,7 @@ class A2AService:
                 agent = await database.scalar(
                     select(AgentRecord).where(
                         AgentRecord.id == agent_id,
-                        AgentRecord.workspace_id == actor.boundary_workspace_id,
+                        AgentRecord.workspace_id == actor.workspace_id,
                         AgentRecord.enabled.is_(True),
                         AgentRecord.archived_at.is_(None),
                     )
@@ -325,7 +325,7 @@ class A2AService:
                     AgentRevisionRecord.id == revision_id,
                     AgentRevisionRecord.agent_id == agent_id,
                     AgentRevisionRecord.organization_id == organization_id,
-                    AgentRevisionRecord.workspace_id == actor.boundary_workspace_id,
+                    AgentRevisionRecord.workspace_id == actor.workspace_id,
                 )
             )
             if revision is None:
@@ -398,7 +398,7 @@ class A2AService:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=agent_id,
                     action=WorkspaceAction.run_read,
                 )
@@ -418,7 +418,7 @@ class A2AService:
                     ),
                 )
                 .where(
-                    A2ATaskBindingRecord.workspace_id == actor.boundary_workspace_id,
+                    A2ATaskBindingRecord.workspace_id == actor.workspace_id,
                     A2ATaskBindingRecord.agent_id == agent_id,
                     A2AContextBindingRecord.client_principal_type == actor.principal.principal_type.value,
                     A2AContextBindingRecord.client_principal_id == actor.principal.principal_id,
@@ -557,7 +557,7 @@ class A2AService:
                 select(A2ATaskBindingRecord)
                 .where(
                     A2ATaskBindingRecord.id == task_id,
-                    A2ATaskBindingRecord.workspace_id == actor.boundary_workspace_id,
+                    A2ATaskBindingRecord.workspace_id == actor.workspace_id,
                     A2ATaskBindingRecord.agent_id == agent_id,
                 )
                 .with_for_update()
@@ -655,7 +655,7 @@ class A2AService:
             record = await database.scalar(
                 select(A2APushConfigurationRecord).where(
                     A2APushConfigurationRecord.id == config_id,
-                    A2APushConfigurationRecord.workspace_id == actor.boundary_workspace_id,
+                    A2APushConfigurationRecord.workspace_id == actor.workspace_id,
                     A2APushConfigurationRecord.task_id == task_id,
                     A2APushConfigurationRecord.state == "active",
                 )
@@ -751,7 +751,7 @@ class A2AService:
                 select(A2APushConfigurationRecord)
                 .where(
                     A2APushConfigurationRecord.id == config_id,
-                    A2APushConfigurationRecord.workspace_id == actor.boundary_workspace_id,
+                    A2APushConfigurationRecord.workspace_id == actor.workspace_id,
                     A2APushConfigurationRecord.task_id == task_id,
                 )
                 .with_for_update()
@@ -839,7 +839,7 @@ class A2AService:
             await authorize_agent(
                 database,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 agent_id=agent_id,
                 action=action,
             )
@@ -969,7 +969,7 @@ class A2AService:
                 A2AContextBindingRecord(
                     id=context_binding_id,
                     organization_id=run.tenant_id,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     client_principal_type=actor.principal.principal_type.value,
                     client_principal_id=actor.principal.principal_id,
                     agent_id=agent_id,
@@ -984,7 +984,7 @@ class A2AService:
             task = A2ATaskBindingRecord(
                 id=task_id,
                 organization_id=run.tenant_id,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 context_binding_id=context_binding_id,
                 context_id=context_id,
                 agent_id=agent_id,
@@ -1022,7 +1022,7 @@ class A2AService:
 
         await self._commands.start(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             idempotency_key=f"a2a:{agent_id}:{request.message.message_id}",
             request=StartRunRequest(agent_id=agent_id, input=prepared.input),
             transaction_hook=bind,
@@ -1190,7 +1190,7 @@ class A2AService:
         async with short_session(self._sessions) as database:
             binding = await database.scalar(
                 select(A2AMessageBindingRecord).where(
-                    A2AMessageBindingRecord.workspace_id == actor.boundary_workspace_id,
+                    A2AMessageBindingRecord.workspace_id == actor.workspace_id,
                     A2AMessageBindingRecord.client_principal_type == actor.principal.principal_type.value,
                     A2AMessageBindingRecord.client_principal_id == actor.principal.principal_id,
                     A2AMessageBindingRecord.agent_id == agent_id,
@@ -1215,7 +1215,7 @@ class A2AService:
         async with short_session(self._sessions) as database:
             return await database.scalar(
                 select(A2AContextBindingRecord).where(
-                    A2AContextBindingRecord.workspace_id == actor.boundary_workspace_id,
+                    A2AContextBindingRecord.workspace_id == actor.workspace_id,
                     A2AContextBindingRecord.client_principal_type == actor.principal.principal_type.value,
                     A2AContextBindingRecord.client_principal_id == actor.principal.principal_id,
                     A2AContextBindingRecord.agent_id == agent_id,
@@ -1297,7 +1297,7 @@ class A2AService:
                     )
                     .where(
                         A2ATaskBindingRecord.id == task_id,
-                        A2ATaskBindingRecord.workspace_id == actor.boundary_workspace_id,
+                        A2ATaskBindingRecord.workspace_id == actor.workspace_id,
                         A2ATaskBindingRecord.agent_id == agent_id,
                         A2AContextBindingRecord.client_principal_type == actor.principal.principal_type.value,
                         A2AContextBindingRecord.client_principal_id == actor.principal.principal_id,
@@ -1311,7 +1311,7 @@ class A2AService:
                 await authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=agent_id,
                     action=WorkspaceAction.run_read,
                 )
@@ -1376,7 +1376,7 @@ def _message_record(
     return A2AMessageBindingRecord(
         id=binding_id,
         organization_id=run.tenant_id,
-        workspace_id=actor.boundary_workspace_id,
+        workspace_id=actor.workspace_id,
         client_principal_type=actor.principal.principal_type.value,
         client_principal_id=actor.principal.principal_id,
         agent_id=agent_id,
@@ -1580,7 +1580,7 @@ def _task_cursor_scope(
     include_artifacts: bool,
 ) -> dict[str, object]:
     return {
-        "workspace_id": actor.boundary_workspace_id,
+        "workspace_id": actor.workspace_id,
         "principal_type": actor.principal.principal_type.value,
         "principal_id": actor.principal.principal_id,
         "agent_id": agent_id,
@@ -1598,7 +1598,7 @@ def _artifact_digest(artifact: a2a.Artifact) -> str:
 
 def _push_cursor_scope(*, actor: AuthenticatedActor, agent_id: str, task_id: str) -> dict[str, object]:
     return {
-        "workspace_id": actor.boundary_workspace_id,
+        "workspace_id": actor.workspace_id,
         "principal_type": actor.principal.principal_type.value,
         "principal_id": actor.principal.principal_id,
         "agent_id": agent_id,

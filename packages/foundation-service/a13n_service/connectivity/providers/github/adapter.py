@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.ingress.domain import InputBatchingPolicy
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
-    DefaultRoute,
     InboundEvent,
     ProviderEligibleEventRouting,
     ProviderEventRouting,
@@ -18,9 +17,9 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequest,
     ProviderRequestDecision,
     ProviderRequestError,
+    ReceptionDefaults,
 )
 
-from ..common.mapping import default_event_mapping
 from ..common.origins import (
     normalize_provider_origins,
     provider_url_origin,
@@ -28,7 +27,7 @@ from ..common.origins import (
     require_provider_origin,
 )
 from .token import load_github_private_key
-from .wire import GitHubIdentity, authenticate_and_normalize, event_actions
+from .wire import GitHubIdentity, authenticate_and_normalize
 
 _CONFIG_VERSION = "github_app_http_v1"
 _REQUEST_MAX_BYTES = 8 * 1024 * 1024
@@ -53,48 +52,9 @@ class GitHubAccountConfig(_StrictModel):
     bot_account_id: int = Field(gt=0)
 
 
-class GitHubRouteMatch(_StrictModel):
-    repository_ids: tuple[int, ...] = Field(min_length=1, max_length=256)
-    event_actions: tuple[str, ...] = Field(min_length=1, max_length=32)
-    labels: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=128)
-    base_branches: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=128)
-
-    @field_validator("repository_ids")
-    @classmethod
-    def unique_repository_ids(cls, value: tuple[int, ...]) -> tuple[int, ...]:
-        if len(set(value)) != len(value) or any(item <= 0 for item in value):
-            raise ValueError("GitHub repository scopes must contain unique positive IDs")
-        return tuple(sorted(value))
-
-    @field_validator("event_actions", "labels", "base_branches")
-    @classmethod
-    def unique_strings(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if value is None:
-            return None
-        if len(set(value)) != len(value):
-            raise ValueError("GitHub Route scopes must be unique")
-        if any(not item or len(item) > 1024 for item in value):
-            raise ValueError("GitHub Route scopes must be bounded")
-        return tuple(sorted(value))
-
-    @model_validator(mode="after")
-    def supported_predicates(self) -> GitHubRouteMatch:
-        supported = event_actions()
-        if any(value not in supported for value in self.event_actions):
-            raise ValueError("GitHub Route event/action is unsupported")
-        if self.labels is not None and any(
-            not value.endswith((".labeled", ".unlabeled")) for value in self.event_actions
-        ):
-            raise ValueError("GitHub label predicates require label actions")
-        if self.base_branches is not None and any(not value.startswith("pull_request") for value in self.event_actions):
-            raise ValueError("GitHub base branch predicates require pull-request events")
-        return self
-
-
 class GitHubIngressAdapter:
     provider_key = "github"
     config_versions = frozenset({_CONFIG_VERSION})
-    allows_runtime_ambiguity = False
     max_request_bytes = _REQUEST_MAX_BYTES
     dedup_horizon_seconds = _DEDUP_HORIZON_SECONDS
 
@@ -143,45 +103,38 @@ class GitHubIngressAdapter:
             config.bot_account_id,
         )
 
-    def validate_route(
-        self,
-        *,
-        match: object,
-        provider_policy: object,
-        account_config: JsonObject,
-        config_version: str,
-    ) -> tuple[JsonObject, JsonObject]:
+    def validate_reception_policy(self, value: object, *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        GitHubAccountConfig.model_validate(account_config)
-        if provider_policy != {}:
+        if value != {}:
             raise ValueError("GitHub provider policy must be empty")
-        return _model_json(GitHubRouteMatch.model_validate(match)), {}
+        return {}
 
-    def prove_non_overlap(self, left: JsonObject, right: JsonObject) -> bool | None:
-        left_match = GitHubRouteMatch.model_validate(left)
-        right_match = GitHubRouteMatch.model_validate(right)
-        if set(left_match.repository_ids).isdisjoint(right_match.repository_ids):
-            return True
-        if set(left_match.event_actions).isdisjoint(right_match.event_actions):
-            return True
-        if left_match.labels is not None and right_match.labels is not None:
-            if set(left_match.labels).isdisjoint(right_match.labels):
-                return True
-        if left_match.base_branches is not None and right_match.base_branches is not None:
-            if set(left_match.base_branches).isdisjoint(right_match.base_branches):
-                return True
-        return False
+    def validate_target(self, kind: str, external_id: str) -> str:
+        if (
+            kind != "repository"
+            or not 1 <= len(external_id) <= 128
+            or not external_id.isascii()
+            or not external_id.isdecimal()
+            or str(int(external_id)) != external_id
+            or int(external_id) < 1
+        ):
+            raise ValueError("Invalid github target")
+        return external_id
+
+    def event_target(self, event: InboundEvent) -> tuple[str, str]:
+        identifier = str(event.context["repository_id"])
+        return "repository", self.validate_target("repository", identifier)
 
     async def authenticate_and_normalize(
         self,
         request: ProviderRequest,
         *,
-        ingress_id: str,
+        account_id: str,
         account_config: JsonObject,
         credentials: JsonObject,
         received_at: datetime,
     ) -> ProviderRequestDecision:
-        del ingress_id
+        del account_id
         config = GitHubAccountConfig.model_validate(account_config)
         return authenticate_and_normalize(
             request,
@@ -195,34 +148,17 @@ class GitHubIngressAdapter:
             received_at=received_at,
         )
 
-    def route_matches(self, event: InboundEvent, match: JsonObject, *, config_version: str) -> bool:
-        _require_version(config_version)
-        route = GitHubRouteMatch.model_validate(match)
-        repository_id = event.context.get("repository_id")
-        event_action = event.context.get("event_action")
-        action_label = event.context.get("action_label")
-        base_branch = event.context.get("base_branch")
-        return (
-            type(repository_id) is int
-            and repository_id in route.repository_ids
-            and isinstance(event_action, str)
-            and event_action in route.event_actions
-            and (route.labels is None or (isinstance(action_label, str) and action_label in route.labels))
-            and (route.base_branches is None or (isinstance(base_branch, str) and base_branch in route.base_branches))
-        )
-
-    def default_route(
+    def reception_defaults(
         self,
         event: InboundEvent,
         account_config: JsonObject,
         *,
         config_version: str,
-    ) -> DefaultRoute:
+    ) -> ReceptionDefaults:
         del event
         _require_version(config_version)
         GitHubAccountConfig.model_validate(account_config)
-        return DefaultRoute(
-            input_mapping=default_event_mapping(),
+        return ReceptionDefaults(
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
             provider_policy={},
         )

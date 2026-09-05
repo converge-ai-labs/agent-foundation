@@ -1,41 +1,39 @@
-"""Durable ConnectorConnection revocation and tombstoning."""
-
-from __future__ import annotations
+"""Invalidate locally, then make one bounded remote revocation attempt."""
 
 from contextlib import aclosing
-from datetime import datetime, timedelta
 
+import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.management import canonical_digest, record_command
+from a13n_service.connectivity.models import ConnectivityCommandRecord
 from a13n_service.iam import AuthenticatedActor
-from a13n_service.ids import new_object_id
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.secrets import SecretProtectionError, SecretProtector
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
 from .connection_access import (
     authorize_connection,
     connection_binding,
-    connection_resource,
-    external_error,
     idempotency_digest,
     replay_connection_command,
     require_version,
 )
-from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason, ConnectorOperationReceipt
+from .contracts import ConnectorProviderError
 from .errors import ConnectorError
 from .management import (
+    ProviderSnapshot,
     audit,
     configure_provider,
     decode_credentials,
     require_connection,
     require_connector_provider,
 )
-from .models import ConnectorOperationRecord
+from .models import ConnectorSetupAttemptRecord
+from .registry import ConnectorProviderRegistry
 
 
 class ConnectorRevocationService:
@@ -52,284 +50,123 @@ class ConnectorRevocationService:
         self._protector = protector
         self._clock = clock
 
-    async def revoke(
+    async def invalidate(
         self,
         *,
         actor: AuthenticatedActor,
         connection_id: str,
         expected_version: int,
         idempotency_key: str,
-    ) -> ConnectorOperationReceipt:
-        key_digest = idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version})
-        now = self._clock()
-        operation_id = new_object_id("cop")
+        delete: bool,
+    ) -> ConnectionCleanupReceipt:
+        key = idempotency_digest(idempotency_key)
+        digest = canonical_digest({"expected_version": expected_version})
+        operation = "connector_connection.delete" if delete else "connector_connection.revoke"
+        binding = None
+        credential = None
+        provider = None
         async with transaction(self._sessions) as session:
-            connection = await require_connection(session, connection_id, lock=True)
-            await authorize_connection(session, actor, connection, mode="administrative")
+            connection = await require_connection(session, connection_id, lock=True, include_deleted=True)
+            await authorize_connection(session, actor, connection, mode="manage")
             replay = await replay_connection_command(
                 session,
                 actor=actor,
                 connection=connection,
-                operation="connector_connection.revoke",
-                key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
+                operation=operation,
+                key_digest=key,
+                request_fingerprint=digest,
             )
             if replay is not None:
-                operation_id = replay.resource_id
-            else:
-                require_version(connection.version, expected_version)
-                if connection.external_ref is None:
-                    raise ConnectorError(
-                        "setup_incomplete", "ConnectorConnection setup is incomplete.", status_code=409
-                    )
-                connection.status = ConnectorConnectionStatus.disabled.value
-                connection.status_reason = None
-                connection.revoke_generation += 1
-                connection.version += 1
-                connection.updated_at = now
-                session.add(_new_operation(connection, operation_id=operation_id, now=now))
-                record_command(
-                    session,
-                    actor=actor,
-                    organization_id=connection.organization_id,
-                    workspace_id=connection.workspace_id,
-                    operation="connector_connection.revoke",
-                    scope_id=connection.id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    resource_type="connector_connection_operation",
-                    resource_id=operation_id,
-                    result_version=connection.version,
-                    now=now,
-                )
-                session.add(
-                    audit(
-                        actor,
-                        organization_id=connection.organization_id,
-                        workspace_id=connection.workspace_id,
-                        action="connector_connection.revoke",
-                        resource_type="connector_connection",
-                        resource_id=connection.id,
-                        now=now,
-                    )
-                )
-        try:
-            await self.run(operation_id)
-        except ConnectorError:
-            pass
-        async with short_session(self._sessions) as session:
-            operation = await session.get(ConnectorOperationRecord, operation_id)
-            if operation is None:
-                raise ConnectorError(
-                    "operation_unavailable", "ConnectorProvider operation is unavailable.", status_code=404
-                )
-            return ConnectorOperationReceipt.model_validate(
-                {
-                    "operation_id": operation_id,
-                    "status": operation.status,
-                    "connection": await connection_resource(session, connection_id),
-                }
-            )
-
-    async def delete(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        connection_id: str,
-        expected_version: int,
-        idempotency_key: str,
-    ) -> None:
-        key_digest = idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version})
-        async with transaction(self._sessions) as session:
-            connection = await require_connection(session, connection_id, lock=True)
-            await authorize_connection(session, actor, connection, mode="administrative")
-            replay = await replay_connection_command(
-                session,
-                actor=actor,
-                connection=connection,
-                operation="connector_connection.delete",
-                key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
-            )
-            if replay is not None:
-                return
+                return ConnectionCleanupReceipt.model_validate(replay.result_json)
             require_version(connection.version, expected_version)
-            if connection.external_ref is not None and not await _has_confirmed_revoke(session, connection.id):
-                raise ConnectorError(
-                    "revocation_required",
-                    "ConnectorConnection must be revoked before deletion.",
-                    status_code=409,
-                )
-            deleted_at = self._clock()
-            connection.deleted_at = deleted_at
+            if connection.external_ref is not None:
+                try:
+                    binding = await connection_binding(session, connection)
+                    connector = await require_connector_provider(
+                        session,
+                        connection.connector_provider_id,
+                        scope=ResourceScope(connection.organization_id, connection.workspace_id),
+                    )
+                    credential = connector.credential_snapshot()
+                    provider = ProviderSnapshot.from_record(connector)
+                except (ConnectorError, SecretProtectionError):
+                    # Missing remote prerequisites must never prevent local invalidation.
+                    pass
+            now = self._clock()
+            connection.status = "disabled"
+            connection.status_reason = None
+            connection.setup_generation += 1
             connection.version += 1
-            connection.updated_at = deleted_at
-            record_command(
+            connection.updated_at = now
+            if delete:
+                connection.deleted_at = now
+            attempts = await session.scalars(
+                select(ConnectorSetupAttemptRecord).where(
+                    ConnectorSetupAttemptRecord.connector_connection_id == connection_id,
+                    ConnectorSetupAttemptRecord.status.in_(("pending", "attached", "reserved")),
+                )
+            )
+            for attempt in attempts:
+                attempt.status = "expired"
+                attempt.claim_generation += 1
+                attempt.claim_owner = None
+                attempt.claim_expires_at = None
+                attempt.updated_at = now
+            receipt = ConnectionCleanupReceipt(
+                connection_id=connection_id,
+                local_status="deleted" if delete else "disabled",
+                remote_status="unknown" if connection.external_ref is not None else "not_required",
+            )
+            command = record_command(
                 session,
                 actor=actor,
                 organization_id=connection.organization_id,
                 workspace_id=connection.workspace_id,
-                operation="connector_connection.delete",
-                scope_id=connection.id,
-                idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
+                operation=operation,
+                scope_id=connection_id,
+                idempotency_key_digest=key,
+                fingerprint=digest,
                 resource_type="connector_connection",
-                resource_id=connection.id,
+                resource_id=connection_id,
                 result_version=connection.version,
-                now=deleted_at,
+                now=now,
+                result=receipt.model_dump(mode="json"),
             )
+            command_id = command.id
             session.add(
                 audit(
                     actor,
                     organization_id=connection.organization_id,
                     workspace_id=connection.workspace_id,
-                    action="connector_connection.delete",
+                    action=operation,
                     resource_type="connector_connection",
-                    resource_id=connection.id,
-                    now=deleted_at,
+                    resource_id=connection_id,
+                    now=now,
                 )
             )
-
-    async def run(
-        self,
-        operation_id: str,
-        *,
-        claim_owner: str | None = None,
-        claim_generation: int | None = None,
-    ) -> None:
-        async with short_session(self._sessions) as session:
-            operation = await session.get(ConnectorOperationRecord, operation_id)
-            if operation is None:
-                return
-            connection = await require_connection(session, operation.connector_connection_id)
-            connector = await require_connector_provider(session, connection.connector_provider_id)
-            if connection.external_ref is None:
-                raise ConnectorError("setup_incomplete", "ConnectorConnection setup is incomplete.", status_code=409)
-            binding = await connection_binding(session, connection)
+        if binding is None or credential is None or provider is None:
+            return receipt
+        # A crash after local commit leaves an honest unknown receipt, never a job
+        # that might revoke a replacement authorization on a later retry.
+        outcome = "unknown"
         try:
-            raw = connector.credential_snapshot().decrypt(self._protector)
-            runtime = configure_provider(self._adapters, connector, decode_credentials(raw))
-            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
-                await connection_runtime.revoke(operation_id=operation_id)
-        except (ConnectorProviderError, SecretProtectionError) as error:
-            await self._record_failure(
-                operation_id,
-                error,
-                claim_owner=claim_owner,
-                claim_generation=claim_generation,
-            )
-            if isinstance(error, ConnectorProviderError):
-                raise external_error(error) from error
-            raise ConnectorError(
-                "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
-            ) from error
-        await self._record_success(
-            operation_id,
-            claim_owner=claim_owner,
-            claim_generation=claim_generation,
+            credentials = decode_credentials(credential.decrypt(self._protector))
+            runtime = configure_provider(self._adapters, provider, credentials)
+            with anyio.fail_after(30):
+                async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
+                    await connection_runtime.revoke(operation_id=command_id)
+            outcome = "succeeded"
+        except ConnectorProviderError as error:
+            outcome = "unknown" if error.outcome_unknown else "failed"
+        except SecretProtectionError:
+            outcome = "failed"
+        except Exception:
+            outcome = "unknown"
+        receipt = ConnectionCleanupReceipt(
+            connection_id=connection_id, local_status="deleted" if delete else "disabled", remote_status=outcome
         )
-
-    async def _record_failure(
-        self,
-        operation_id: str,
-        error: ConnectorProviderError | SecretProtectionError,
-        *,
-        claim_owner: str | None,
-        claim_generation: int | None,
-    ) -> None:
-        adapter_error = error if isinstance(error, ConnectorProviderError) else None
-        code = adapter_error.code if adapter_error is not None else "credential_unavailable"
-        if adapter_error is not None and adapter_error.outcome_unknown:
-            status = "unknown"
-        elif adapter_error is not None and not adapter_error.retryable:
-            status = "failed"
-        else:
-            status = "pending"
         async with transaction(self._sessions) as session:
-            operation = await session.get(ConnectorOperationRecord, operation_id, with_for_update=True)
-            if (
-                operation is not None
-                and operation.status in {"pending", "unknown"}
-                and _claim_matches(operation, claim_owner, claim_generation)
-            ):
-                operation.status = status
-                operation.attempt_count += 1
-                operation.last_error_code = code
-                operation.updated_at = self._clock()
-                operation.available_at = operation.updated_at + timedelta(
-                    seconds=(adapter_error.retry_after_seconds if adapter_error is not None else None) or 5
-                )
-                if status == "failed":
-                    operation.completed_at = operation.updated_at
-
-    async def _record_success(
-        self,
-        operation_id: str,
-        *,
-        claim_owner: str | None,
-        claim_generation: int | None,
-    ) -> None:
-        async with transaction(self._sessions) as session:
-            operation = await session.get(ConnectorOperationRecord, operation_id, with_for_update=True)
-            if (
-                operation is None
-                or operation.status not in {"pending", "unknown"}
-                or not _claim_matches(operation, claim_owner, claim_generation)
-            ):
-                return
-            connection = await require_connection(session, operation.connector_connection_id, lock=True)
-            completed_at = self._clock()
-            operation.status = "succeeded"
-            operation.completed_at = completed_at
-            operation.updated_at = completed_at
-            connection.status = ConnectorConnectionStatus.action_required.value
-            connection.status_reason = ConnectorConnectionStatusReason.reauthorization_required.value
-            connection.version += 1
-            connection.updated_at = completed_at
-
-
-def _new_operation(connection, *, operation_id: str, now: datetime) -> ConnectorOperationRecord:
-    return ConnectorOperationRecord(
-        id=operation_id,
-        organization_id=connection.organization_id,
-        workspace_id=connection.workspace_id,
-        connector_connection_id=connection.id,
-        kind="revoke",
-        generation=connection.revoke_generation,
-        status="pending",
-        available_at=now,
-        attempt_count=0,
-        claim_generation=0,
-        claim_owner=None,
-        claim_expires_at=None,
-        last_error_code=None,
-        created_at=now,
-        updated_at=now,
-        completed_at=None,
-    )
-
-
-async def _has_confirmed_revoke(session: AsyncSession, connection_id: str) -> bool:
-    operation = await session.scalar(
-        select(ConnectorOperationRecord.id)
-        .where(
-            ConnectorOperationRecord.connector_connection_id == connection_id,
-            ConnectorOperationRecord.kind == "revoke",
-            ConnectorOperationRecord.status == "succeeded",
-        )
-        .order_by(ConnectorOperationRecord.generation.desc())
-        .limit(1)
-    )
-    return operation is not None
-
-
-def _claim_matches(
-    operation: ConnectorOperationRecord,
-    claim_owner: str | None,
-    claim_generation: int | None,
-) -> bool:
-    if claim_owner is None or claim_generation is None:
-        return claim_owner is None and claim_generation is None and operation.claim_owner is None
-    return operation.claim_owner == claim_owner and operation.claim_generation == claim_generation
+            command = await session.get(ConnectivityCommandRecord, command_id, with_for_update=True)
+            if command is not None:
+                command.result_json = receipt.model_dump(mode="json")
+        return receipt

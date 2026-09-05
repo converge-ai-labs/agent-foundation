@@ -72,7 +72,7 @@ async def allocate_thread(
                     else WorkspaceAction.environment_use,
                 )
                 resolved = await resolve_selection(session, workspace_id=workspace_id, choice=selected)
-                environment_id = allocate_selection(session, resolved, now=now).id
+                environment_id = allocate_selection(session, resolved, workspace_id=workspace_id, now=now).id
             if body.session_id:
                 parent = await session.scalar(
                     select(SessionRecord)

@@ -4,33 +4,31 @@
 
 Connectivity is Foundation-owned configuration and authorization around provider-specific adapters. It preserves provider-native behavior at the edge and standardizes only the minimum concepts required to admit external input, select one Agent, select an authorized tool scope, and dispatch authorized external actions.
 
-Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Account can receive through its Ingress and reply as its Bot identity without a separate Composio ConnectorConnection. A separate ConnectorConnection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
+Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Account can receive when enabled and reply as its Bot identity without a separate Composio ConnectorConnection. A separate ConnectorConnection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
 
 ## Boundaries
 
-| Concern                                          | Owner                                           | Boundary                                                                                |
-| ------------------------------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Native provider identity                         | Application Account                             | One concrete provider identity in one Foundation Workspace                              |
-| Event authentication and normalization           | Ingress adapter                                 | Produces one bounded `InboundEvent`; raw provider data creates no runtime authority     |
-| Event matching, Agent override, and input policy | Route                                           | Selects one allowed Agent and one new or existing Agent Thread destination              |
-| External-to-Agent Thread correlation             | AgentThreadBinding                              | Fixes one adapter-declared stable external reference to one Agent and Agent Thread      |
-| Durable Run acceptance and active input          | [Foundation Service](../README.md)              | Owns Run creation, Ingress Steer, deduplication acceptance, and Thread lifecycle        |
-| General outbound connector service               | ConnectorProvider                               | Configures one Composio or another registered Connector Provider adapter                |
-| Safe externally managed account reference        | ConnectorConnection                             | Refers to one account whose real credentials remain in its external integration service |
-| User-configured remote MCP access                | MCPConnection                                   | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
-| Foundation-owned in-process tool groups          | a13n MCP                                        | Serves Account actions, Ingress replies, and Connector tools for the current RunAttempt |
-| Model-facing discovery and loading               | Harness                                         | Discovers selected sources and uses native capability loading                           |
-| Provider and remote tool names, schemas, result  | Their adapter, ConnectorProvider, or MCP server | Retain source-specific meaning; Foundation creates no universal action vocabulary       |
+| Concern                                         | Owner                                           | Boundary                                                                                |
+| ----------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Native provider identity                        | Application Account                             | One concrete provider identity in one Foundation Workspace                              |
+| Event authentication and normalization          | Ingress adapter                                 | Produces one bounded `InboundEvent`; raw provider data creates no runtime authority     |
+| Exact provider object input configuration       | AccountTarget                                   | Optional Agent and narrow override for one exact provider identity                      |
+| External-to-Thread correlation                  | AgentThreadBinding                              | One Account and stable external reference to one Thread; no fixed Agent                 |
+| Durable Run acceptance and active input         | [Foundation Service](../README.md)              | Owns Run creation, Ingress Steer, deduplication acceptance, and Thread lifecycle        |
+| General outbound connector service              | ConnectorProvider                               | Configures one Composio or another registered Connector Provider adapter                |
+| Safe externally managed account reference       | ConnectorConnection                             | Refers to one account whose real credentials remain in its external integration service |
+| User-configured remote MCP access               | MCPConnection                                   | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
+| Foundation-owned in-process tool groups         | a13n MCP                                        | Serves Account actions, Ingress replies, and Connector tools for the current RunAttempt |
+| Model-facing discovery and loading              | Harness                                         | Discovers selected sources and uses native capability loading                           |
+| Provider and remote tool names, schemas, result | Their adapter, ConnectorProvider, or MCP server | Retain source-specific meaning; Foundation creates no universal action vocabulary       |
 
 ## Core Concepts
 
 [Application Account](01a-application-accounts.md) is one concrete provider user, Bot, or installation identity that Foundation operates directly. It owns credentials and availability independently of reception and can serve several Agents.
 
-`Ingress` is the optional reception configuration of one Account. Each Account has at most one Ingress. It binds a same-Workspace Service Account as the Foundation execution Principal and routes authenticated external input. An external sender remains context, never Foundation authority. Independently authorized Account actions do not require inbound input. The trusted entry supplies default native tools through protected Run contexts; Agents select Connector and Remote MCP tools separately.
+Reception is embedded [Account configuration](01a-application-accounts.md). It selects a same-Workspace execution Service Account and default Agent. Exact AccountTargets provide optional Agent and narrow configuration overrides for canonical provider objects, without a matcher or input language.
 
-`Route` is provider-specific matching plus Foundation-owned Agent override, safe input mapping, input batching, provider policy, and per-Agent capability policy under one Ingress. A Route can match a Slack channel, Lark chat, Gmail label, GitHub repository event, or another provider-native scope without pretending those resources share one universal conversation model.
-
-`AgentThreadBinding` is exact durable correlation from one adapter-declared stable external reference to one fixed Agent and Foundation Thread. It never uses semantic similarity or model inference.
+`AgentThreadBinding` correlates an Account and stable external reference to a nullable Foundation Thread. It fixes no Agent. Event facts own bounded normalized data and deduplication; Batch facts own ordered membership, configuration, scheduling, and exact Run/Steer receipts. [Event reception](01-ingress-and-routing.md) owns this contract.
 
 `ConnectorProvider` is one configured external integration service account or endpoint such as Composio. Its `type` selects an implementation, while its `id` identifies the independent configuration and credential. Several Providers can have the same type. OOMOL OpenConnector personal/self-hosted runtime access is a separate integration without a Foundation owner binding, as defined by its [runtime profile](08-built-in-connector-adapters.md#oomol-openconnector-runtime-v1).
 
@@ -44,19 +42,18 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 Connectivity allocates these Foundation object-ID prefixes under the shared [Platform Data Conventions](../../data-conventions.md#object-identity):
 
-| Object kind                        | Prefix   | Addressability           |
-| ---------------------------------- | -------- | ------------------------ |
-| Application Account                | `acct_`  | Public resource          |
-| Ingress                            | `ing_`   | Public resource          |
-| Route                              | `rte_`   | Public resource          |
-| ConnectorProvider                  | `cnr_`   | Public resource          |
-| ConnectorConnection                | `cconn_` | Public resource          |
-| MCPConnection                      | `mcpc_`  | Public resource          |
-| AgentThreadBinding                 | `atb_`   | Internal durable object  |
-| Inbound event admission            | `iadm_`  | Internal durable object  |
-| Input batch                        | `ibat_`  | Internal durable object  |
-| Connector Connection setup attempt | `csa_`   | Internal expiring object |
-| MCP OAuth authorization session    | `mos_`   | Internal expiring object |
+| Object kind                        | Prefix   | Addressability                |
+| ---------------------------------- | -------- | ----------------------------- |
+| Application Account                | `acct_`  | Public resource               |
+| AccountTarget                      | `tgt_`   | Public Account child resource |
+| ConnectorProvider                  | `cnr_`   | Public resource               |
+| ConnectorConnection                | `cconn_` | Public resource               |
+| MCPConnection                      | `mcpc_`  | Public resource               |
+| AgentThreadBinding                 | `atb_`   | Internal durable object       |
+| Inbound event admission            | `iadm_`  | Internal durable object       |
+| Input batch                        | `ibat_`  | Internal durable object       |
+| Connector Connection setup attempt | `csa_`   | Internal expiring object      |
+| MCP OAuth authorization session    | `mos_`   | Internal expiring object      |
 
 An allocated prefix identifies the object kind only. It conveys no provider, tenant, owner, lifecycle, routing, or authority fact. Connector Provider resources retain the allocated `cnr_` prefix; discovered Connector catalog values have no Foundation object ID.
 
@@ -73,7 +70,7 @@ flowchart LR
     subgraph Inbound[Native inbound]
         Provider[External provider] --> IngressAdapter[Ingress adapter]
         IngressAdapter --> Event[InboundEvent]
-        Event --> Route[Route, Agent, and Thread resolution]
+        Event --> Route[Exact target and Thread resolution]
         Route --> Admission[Durable eligible-event admission and batching]
         Admission --> Input[Foundation Run or Steer acceptance]
     end
@@ -102,8 +99,8 @@ Inbound completion means that an event was rejected safely, ignored by policy, o
 
 1. Provider adapters can differ completely before `InboundEvent`; external integration services and Remote MCP servers can differ completely behind their own boundaries.
 2. Foundation standardizes identity, authorization, routing, input acceptance, and model exposure, not provider business APIs.
-3. Raw external data never creates an Agent, Tool, ConnectorConnection, MCPConnection, Secret, Principal, Route, or Run grant.
-4. One Ingress can route to several allowed Agents; one inbound event activates at most one.
+3. Raw external data never creates an Agent, Tool, ConnectorConnection, MCPConnection, Secret, Principal, AccountTarget, or Run grant.
+4. One Account can select different Agents through exact targets; one inbound event activates at most one.
 5. Agent selection and effective Skills, Tools, MCPConnections, ConnectorConnections, and native actions are independent decisions.
 6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected native tool contexts, ConnectorConnection choices, MCPConnection choices, and tool scopes. Recovery preserves those choices while discovering current external tool definitions.
 7. Connectivity retains only bounded event-admission, deduplication, correlation, and external-resource facts; it persists no transcript, Agent inbox, or execution state beside Foundation Threads, Runs, and the Thread inbox.

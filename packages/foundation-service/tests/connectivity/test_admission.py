@@ -1,518 +1,226 @@
-from __future__ import annotations
-
 import json
 from asyncio import gather
 from datetime import timedelta
 
-import httpx2
-import pytest
-from a13n_service.api import install_api_conventions
-from a13n_service.connectivity.adapters import IngressAdapter
-from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
+from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.ingress.admission import IngressEventService
-from a13n_service.connectivity.ingress.admission_domain import (
-    AcceptedInputOutcome,
-    InputAcceptanceOutcome,
-    PreparedIngressBatch,
-    RetryableInputOutcome,
-)
+from a13n_service.connectivity.ingress.admission_domain import RetryableInputOutcome
 from a13n_service.connectivity.ingress.admission_models import (
+    AgentThreadBindingRecord,
     IngressAdmissionRecord,
-    IngressBatchEventRecord,
     IngressBatchRecord,
 )
-from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
-from a13n_service.connectivity.ingress.domain import IngressStatus, UpdateRouteRequest
 from a13n_service.connectivity.ingress.provider import ProviderRequest
-from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
-from a13n_service.connectivity.ingress.routes import RouteService
-from a13n_service.connectivity.ingress.service import IngressService
+from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
 from a13n_service.secrets import SecretProtector
-from a13n_service.settings import Settings
-from a13n_service.storage.object_store import LocalObjectStore
-from fastapi import FastAPI
+from a13n_service.storage import transaction
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, WORKSPACE_ID, FakeIngressAdapter, actor
-from .test_ingress_service import ingress_request, route_request
+from .conftest import ACCOUNT_ID, NOW, adapter_registry
 
 
-def _request(
-    event_id: str, *, channel: str = "support", text: str = "hello", retain_raw: bool = False
-) -> ProviderRequest:
+def _request(event_id, *, channel="support", text="hello"):
     return ProviderRequest(
         headers={"authorization": "Bearer secret-value", "content-type": "application/json"},
         content_type="application/json",
         body=json.dumps(
-            {
-                "installation_id": "installation-1",
-                "event_id": event_id,
-                "channel": channel,
-                "text": text,
-                "retain_raw": retain_raw,
-            },
+            {"installation_id": "installation-1", "event_id": event_id, "channel": channel, "text": text},
             sort_keys=True,
         ).encode(),
     )
 
 
-def test_provider_contract_repr_omits_sensitive_delivery_content() -> None:
-    request = _request("secret-event", text="secret-message")
-
-    assert "secret-value" not in repr(request)
-    assert "secret-message" not in repr(request)
-    assert request.headers["authorization"] == "Bearer secret-value"
-
-
-async def _create_ingress(service: IngressService) -> str:
-    resource = await service.create_ingress(
-        actor=actor(),
-        workspace_id=WORKSPACE_ID,
-        idempotency_key="admission-ingress",
-        request=ingress_request(),
-    )
-    return resource.id
-
-
-def _event_service(
-    sessions: async_sessionmaker[AsyncSession],
-    secrets: SecretProtector,
-    objects: LocalObjectStore,
-    registry: AdapterRegistry[IngressAdapter],
-    *,
-    pending_max_count: int = 100,
-) -> IngressEventService:
+def _event_service(sessions, protector, *, clock=lambda: NOW, pending_max_count=100):
     return IngressEventService(
         sessions,
-        registry,
-        secrets,
-        IngressRawObjectStore(objects),
+        adapter_registry(),
+        protector,
         request_max_bytes=1024 * 1024,
-        raw_retention_seconds=3600,
         workspace_pending_max_count=pending_max_count,
         workspace_pending_max_bytes=1024 * 1024,
-        ingress_pending_max_count=pending_max_count,
-        ingress_pending_max_bytes=1024 * 1024,
+        account_pending_max_count=pending_max_count,
+        account_pending_max_bytes=1024 * 1024,
         batch_max_bytes=1024 * 1024,
         dedup_horizon_seconds=3600,
-        clock=lambda: NOW,
+        clock=clock,
     )
 
 
-@pytest.mark.anyio
-async def test_provider_event_is_durable_before_ack_and_deduplicated(
-    ingress_service: IngressService,
-    ingress_event_service: IngressEventService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
+class RetryAcceptor:
+    def __init__(self):
+        self.batches = []
 
-    response = await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1"))
-    replay = await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1"))
+    async def accept_ingress_batch(self, batch):
+        self.batches.append(batch)
+        return RetryableInputOutcome(reason_code="transient", available_at=NOW)
 
+
+def reconciler(sessions, acceptor, *, instance="pod-a", clock=lambda: NOW):
+    return IngressAdmissionReconciler(
+        sessions,
+        acceptor,
+        instance_id=instance,
+        poll_interval_seconds=0.01,
+        lease_seconds=5,
+        max_attempts=5,
+        max_backoff_seconds=30,
+        input_max_bytes=1024 * 1024,
+        clock=clock,
+    )
+
+
+def test_provider_repr_omits_secrets():
+    request = _request("event-secret", text="message-secret")
+    assert "secret-value" not in repr(request) and "message-secret" not in repr(request)
+
+
+async def test_durable_admission_dedup_and_direct_batch_reference(ingress_event_service, connectivity_sessions):
+    response = await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("event-1"))
+    replay = await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("event-1"))
     assert response.status_code == replay.status_code == 202
-    assert json.loads(response.body)["status"] == "pending"
     assert json.loads(replay.body)["duplicate"] is True
     async with connectivity_sessions() as session:
-        admissions = tuple((await session.scalars(select(IngressAdmissionRecord))).all())
-        batches = tuple((await session.scalars(select(IngressBatchRecord))).all())
-        links = tuple((await session.scalars(select(IngressBatchEventRecord))).all())
-    assert len(admissions) == len(batches) == len(links) == 1
-    assert admissions[0].id.startswith("iadm_")
-    assert batches[0].id.startswith("ibat_")
-    assert admissions[0].status == batches[0].status == "pending"
-    assert admissions[0].request_digest not in response.body.decode()
+        events = (await session.scalars(select(IngressAdmissionRecord))).all()
+        batches = (await session.scalars(select(IngressBatchRecord))).all()
+        binding = await session.scalar(select(AgentThreadBindingRecord))
+        assert len(events) == len(batches) == 1
+        assert events[0].batch_id == batches[0].id
+        assert binding.thread_id is None
+        assert not hasattr(events[0], "raw_ref_json")
+        assert not hasattr(events[0], "status")
 
 
-@pytest.mark.anyio
-async def test_postgresql_concurrent_duplicate_delivery_creates_one_admission(
-    postgres_connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_objects: LocalObjectStore,
-    ingress_adapter_registry: AdapterRegistry[IngressAdapter],
-) -> None:
-    secrets = SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test")
-    ingress_service = IngressService(
-        postgres_connectivity_sessions,
-        clock=lambda: NOW,
-    )
-    ingress_id = await _create_ingress(ingress_service)
-    event_service = _event_service(
-        postgres_connectivity_sessions,
-        secrets,
-        connectivity_objects,
-        ingress_adapter_registry,
-    )
-
-    responses = await gather(
-        event_service.receive(ingress_id=ingress_id, request=_request("concurrent-event")),
-        event_service.receive(ingress_id=ingress_id, request=_request("concurrent-event")),
-    )
-
-    assert [response.status_code for response in responses] == [202, 202]
-    assert sorted(json.loads(response.body)["duplicate"] for response in responses) == [False, True]
-    async with postgres_connectivity_sessions() as session:
-        admission_count = await session.scalar(select(func.count()).select_from(IngressAdmissionRecord))
-        batch_count = await session.scalar(select(func.count()).select_from(IngressBatchRecord))
-        link_count = await session.scalar(select(func.count()).select_from(IngressBatchEventRecord))
-    assert (admission_count, batch_count, link_count) == (1, 1, 1)
-
-
-@pytest.mark.anyio
-async def test_data_plane_streams_into_provider_adapter_with_bounded_failures(
-    ingress_service: IngressService,
-    ingress_event_service: IngressEventService,
-    process_runtime_factory,
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    app = FastAPI()
-    install_api_conventions(app)
-    app.state.runtime = process_runtime_factory(
-        settings=Settings(_env_file=None, connectivity_provider_request_max_bytes=1024),
-        ingress_events=ingress_event_service,
-    )
-    app.include_router(ingress_data_router)
-    transport = httpx2.ASGITransport(app=app)
-    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        accepted = await client.post(
-            f"/connectivity/v1/ingresses/{ingress_id}/events",
-            content=_request("event-http").body,
-            headers={"authorization": "Bearer secret-value", "content-type": "application/json"},
-        )
-        oversized = await client.post(
-            f"/connectivity/v1/ingresses/{ingress_id}/events",
-            content=b"x" * 1025,
-        )
-
-    assert accepted.status_code == 202
-    assert accepted.json()["status"] == "pending"
-    assert oversized.status_code == 413
-    assert oversized.json()["error"]["code"] == "request_too_large"
-
-
-@pytest.mark.anyio
-async def test_delivery_identity_conflict_keeps_first_admission(
-    ingress_service: IngressService,
-    ingress_event_service: IngressEventService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1"))
-
-    conflict = await ingress_event_service.receive(
-        ingress_id=ingress_id,
-        request=_request("event-1", text="changed"),
-    )
-
-    assert conflict.status_code == 503
-    assert conflict.body == b"delivery_identity_conflict"
-    async with connectivity_sessions() as session:
-        count = await session.scalar(select(func.count()).select_from(IngressAdmissionRecord))
-        admission = await session.scalar(select(IngressAdmissionRecord))
-    assert count == 1
-    assert admission is not None
-    assert admission.event_json["text"] == "hello"
-
-
-@pytest.mark.anyio
-async def test_runtime_route_ambiguity_is_durably_rejected(
-    ingress_service: IngressService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-    credential_protector: SecretProtector,
-    connectivity_objects: LocalObjectStore,
-) -> None:
-    class RuntimeAmbiguousAdapter(FakeIngressAdapter):
-        allows_runtime_ambiguity = True
-
-        def prove_non_overlap(self, left: dict[str, object], right: dict[str, object]) -> bool | None:
-            del left, right
-            return None
-
-    registry = AdapterRegistry[IngressAdapter](
-        (
-            AdapterDefinition[IngressAdapter](
-                key="fake",
-                config_versions=frozenset({"fake_http_v1"}),
-                factory=RuntimeAmbiguousAdapter,
-            ),
-        )
-    )
-    ingress_id = await _create_ingress(ingress_service)
-    routes = RouteService(
-        connectivity_sessions,
-        registry,
-        batch_max_events=100,
-        batch_max_wait_seconds=300,
-        clock=lambda: NOW,
-    )
-    await routes.create_route(
-        actor=actor(), ingress_id=ingress_id, idempotency_key="ambiguous-1", request=route_request()
-    )
-    await routes.create_route(
-        actor=actor(),
-        ingress_id=ingress_id,
-        idempotency_key="ambiguous-2",
-        request=route_request().model_copy(update={"name": "Second matching route"}),
-    )
-    service = _event_service(connectivity_sessions, credential_protector, connectivity_objects, registry)
-
-    response = await service.receive(ingress_id=ingress_id, request=_request("event-1"))
-
-    assert response.status_code == 200
-    assert json.loads(response.body)["status"] == "rejected"
-    assert json.loads(response.body)["reason_code"] == "route_ambiguous"
-    async with connectivity_sessions() as session:
-        admission = await session.scalar(select(IngressAdmissionRecord))
-        batch_count = await session.scalar(select(func.count()).select_from(IngressBatchRecord))
-    assert admission is not None
-    assert admission.status == "rejected"
-    assert batch_count == 0
-
-
-@pytest.mark.anyio
-async def test_compatible_events_batch_and_reconciler_accepts_once(
-    ingress_service: IngressService,
-    ingress_event_service: IngressEventService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-2", text="second"))
-    await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1", text="first"))
-    acceptor = _AcceptingInputAcceptor()
-    reconciler = IngressAdmissionReconciler(
-        connectivity_sessions,
-        acceptor,
-        instance_id="reconciler-1",
-        poll_interval_seconds=1,
-        lease_seconds=30,
-        max_attempts=5,
-        max_backoff_seconds=60,
-        clock=lambda: NOW,
-    )
-
-    assert await reconciler.run_once() is True
-
-    assert len(acceptor.batches) == 1
-    prepared = acceptor.batches[0]
-    assert [event["text"] for event in prepared.agent_input.structured_content] == ["first", "second"]
-    assert prepared.provider_context == {"channel": "support"}
-    assert prepared.provider_context_version == "fake_v1"
-    assert prepared.binding_state == "unbound"
-    async with connectivity_sessions() as session:
-        batch = await session.scalar(select(IngressBatchRecord))
-        statuses = tuple((await session.scalars(select(IngressAdmissionRecord.status))).all())
-    assert batch is not None
-    assert batch.status == "accepted"
-    assert batch.result_kind == "run"
-    assert statuses == ("accepted", "accepted")
-
-
-@pytest.mark.anyio
-async def test_unavailable_input_bridge_releases_claim_without_losing_batch(
-    ingress_service: IngressService,
-    ingress_event_service: IngressEventService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1"))
-    reconciler = IngressAdmissionReconciler(
-        connectivity_sessions,
-        _RetryingInputAcceptor(),
-        instance_id="reconciler-1",
-        poll_interval_seconds=1,
-        lease_seconds=30,
-        max_attempts=5,
-        max_backoff_seconds=60,
-        clock=lambda: NOW,
-    )
-
-    assert await reconciler.run_once() is True
-
-    async with connectivity_sessions() as session:
-        batch = await session.scalar(select(IngressBatchRecord))
-        admission = await session.scalar(select(IngressAdmissionRecord))
-    assert batch is not None and admission is not None
-    assert batch.status == admission.status == "pending"
-    assert batch.claim_owner is None
-    assert batch.claim_expires_at is None
-    assert batch.attempt_count == 1
-    assert batch.available_at == NOW.replace(tzinfo=None) + timedelta(seconds=30)
-
-
-@pytest.mark.anyio
-async def test_changed_route_rejects_frozen_batch_without_rerouting(
-    ingress_service: IngressService,
-    route_service: RouteService,
-    ingress_event_service: IngressEventService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    route = await route_service.create_route(
-        actor=actor(),
-        ingress_id=ingress_id,
-        idempotency_key="frozen-route",
-        request=route_request(),
-    )
-    await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1"))
-    await route_service.update_route(
-        actor=actor(),
-        route_id=route.id,
-        request=UpdateRouteRequest(expected_version=1, name="Changed after admission"),
-    )
-    acceptor = _AcceptingInputAcceptor()
-    reconciler = IngressAdmissionReconciler(
-        connectivity_sessions,
-        acceptor,
-        instance_id="reconciler-1",
-        poll_interval_seconds=1,
-        lease_seconds=30,
-        max_attempts=5,
-        max_backoff_seconds=60,
-        clock=lambda: NOW,
-    )
-
-    assert await reconciler.run_once() is True
-
-    assert acceptor.batches == []
-    async with connectivity_sessions() as session:
-        batch = await session.scalar(select(IngressBatchRecord))
-        admission = await session.scalar(select(IngressAdmissionRecord))
-    assert batch is not None and admission is not None
-    assert batch.status == admission.status == "rejected"
-    assert batch.rejection_reason == admission.rejection_reason == "route_changed"
-
-
-@pytest.mark.anyio
-async def test_acceptor_crash_is_retryable_and_keeps_durable_input(
-    ingress_service: IngressService,
-    ingress_event_service: IngressEventService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1"))
-    reconciler = IngressAdmissionReconciler(
-        connectivity_sessions,
-        _CrashingInputAcceptor(),
-        instance_id="reconciler-1",
-        poll_interval_seconds=2,
-        lease_seconds=30,
-        max_attempts=5,
-        max_backoff_seconds=60,
-        clock=lambda: NOW,
-    )
-
-    assert await reconciler.run_once() is True
-
-    async with connectivity_sessions() as session:
-        batch = await session.scalar(select(IngressBatchRecord))
-        admission = await session.scalar(select(IngressAdmissionRecord))
-    assert batch is not None and admission is not None
-    assert batch.status == admission.status == "pending"
-    assert batch.claim_owner is None
-    assert batch.available_at == NOW.replace(tzinfo=None) + timedelta(seconds=2)
-
-
-@pytest.mark.anyio
-async def test_capacity_exhaustion_never_creates_ack_eligible_state(
-    ingress_service: IngressService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-    credential_protector: SecretProtector,
-    connectivity_objects: LocalObjectStore,
-    ingress_adapter_registry: AdapterRegistry[IngressAdapter],
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    service = _event_service(
-        connectivity_sessions,
-        credential_protector,
-        connectivity_objects,
-        ingress_adapter_registry,
-        pending_max_count=0,
-    )
-
-    response = await service.receive(ingress_id=ingress_id, request=_request("event-1", retain_raw=True))
-
+async def test_identity_conflict_preserves_first_content(ingress_event_service, connectivity_sessions):
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("same", text="first"))
+    response = await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("same", text="changed"))
     assert response.status_code == 503
-    assert response.body == b"admission_capacity_exhausted"
+    assert response.body == b"delivery_identity_conflict"
     async with connectivity_sessions() as session:
-        count = await session.scalar(select(func.count()).select_from(IngressAdmissionRecord))
-    assert count == 0
-    assert (await connectivity_objects.list()).items == ()
+        event = await session.scalar(select(IngressAdmissionRecord))
+        assert event.event_json["text"] == "first"
 
 
-@pytest.mark.anyio
-async def test_irrelevant_event_has_no_receipt_row_or_orphan_raw_object(
-    ingress_service: IngressService,
-    route_service: RouteService,
-    ingress_event_service: IngressEventService,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_objects: LocalObjectStore,
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    route = await route_service.create_route(
-        actor=actor(),
-        ingress_id=ingress_id,
-        idempotency_key="disabled-route",
-        request=route_request(),
-    )
-    await route_service.update_route(
-        actor=actor(),
-        route_id=route.id,
-        request=UpdateRouteRequest(expected_version=1, enabled=False),
-    )
+async def test_first_batch_immediate_ordered_and_claim_freezes_membership(ingress_event_service, connectivity_sessions):
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("event-2", text="second"))
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("event-1", text="first"))
+    acceptor = RetryAcceptor()
+    worker = reconciler(connectivity_sessions, acceptor)
+    assert await worker.run_once()
+    first = acceptor.batches[0]
+    assert [event["text"] for event in first.agent_input.structured_content["events"]] == ["first", "second"]
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("event-3", text="third"))
+    assert await worker.run_once()
+    assert acceptor.batches[1].batch_id == first.batch_id
+    assert acceptor.batches[1].agent_input == first.agent_input
+    async with connectivity_sessions() as session:
+        batches = (await session.scalars(select(IngressBatchRecord).order_by(IngressBatchRecord.sequence))).all()
+        assert [b.event_count for b in batches] == [2, 1]
+        assert batches[0].claim_generation == 2
 
-    response = await ingress_event_service.receive(
-        ingress_id=ingress_id,
-        request=_request("event-1", retain_raw=True),
-    )
 
-    assert response.status_code == 200
+async def test_frequency_barrier_blocks_full_and_later_batches(ingress_event_service, connectivity_sessions):
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("first"))
+    worker = reconciler(connectivity_sessions, RetryAcceptor())
+    claim = await worker._claim()
+    assert claim is not None
+    async with transaction(connectivity_sessions) as session:
+        batch = await session.get(IngressBatchRecord, claim.batch_id)
+        binding = await session.get(AgentThreadBindingRecord, batch.binding_id)
+        batch.status = "accepted"
+        batch.terminal_at = NOW
+        binding.next_submission_at = NOW + timedelta(milliseconds=100)
+    for i in range(12):
+        await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request(f"later-{i}"))
+    assert not await worker.run_once()
+    advanced = reconciler(connectivity_sessions, RetryAcceptor(), clock=lambda: NOW + timedelta(milliseconds=100))
+    assert await advanced.run_once()
+    assert advanced._acceptor.batches[0].agent_input.structured_content["events"]
+
+
+async def test_capacity_rejection_does_not_ack_or_drop_existing(connectivity_sessions, credential_protector):
+    service = _event_service(connectivity_sessions, credential_protector, pending_max_count=1)
+    assert (await service.receive(account_id=ACCOUNT_ID, request=_request("one"))).status_code == 202
+    assert (await service.receive(account_id=ACCOUNT_ID, request=_request("two"))).status_code == 503
+    async with connectivity_sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 1
+
+
+async def test_reception_disable_is_irrelevant_without_new_storage(ingress_event_service, connectivity_sessions):
+    async with transaction(connectivity_sessions) as session:
+        account = await session.get(AccountRecord, ACCOUNT_ID)
+        account.receive_enabled = False
+    response = await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("event"))
     assert json.loads(response.body)["status"] == "irrelevant"
     async with connectivity_sessions() as session:
-        count = await session.scalar(select(func.count()).select_from(IngressAdmissionRecord))
-    assert count == 0
-    assert (await connectivity_objects.list()).items == ()
+        assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 0
 
 
-@pytest.mark.anyio
-async def test_disabled_ingress_is_deterministically_irrelevant(
-    ingress_service: IngressService,
-    ingress_event_service: IngressEventService,
-) -> None:
-    ingress_id = await _create_ingress(ingress_service)
-    await ingress_service.set_status(
-        actor=actor(),
-        ingress_id=ingress_id,
-        status=IngressStatus.disabled,
-        expected_version=1,
-        idempotency_key="disable-ingress",
-    )
-
-    response = await ingress_event_service.receive(ingress_id=ingress_id, request=_request("event-1"))
-
-    assert response.status_code == 200
-    assert json.loads(response.body)["reason_code"] == "ingress_disabled"
+async def test_retention_never_expires_pending_payload(ingress_event_service, connectivity_sessions):
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("one"))
+    retention = IngressRetentionReconciler(connectivity_sessions, clock=lambda: NOW + timedelta(days=2))
+    assert await retention.reconcile_once() == 0
+    async with transaction(connectivity_sessions) as session:
+        batch = await session.scalar(select(IngressBatchRecord))
+        batch.status = "rejected"
+        batch.terminal_at = NOW
+        batch.rejection_reason = "invalid"
+    assert await retention.reconcile_once() == 1
+    async with connectivity_sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 0
 
 
-class _AcceptingInputAcceptor:
-    def __init__(self) -> None:
-        self.batches: list[PreparedIngressBatch] = []
-
-    async def accept_ingress_batch(self, batch: PreparedIngressBatch) -> InputAcceptanceOutcome:
-        self.batches.append(batch)
-        return AcceptedInputOutcome(receipt_kind="run", receipt_id="run_abcdef1234567890")
-
-
-class _RetryingInputAcceptor:
-    async def accept_ingress_batch(self, batch: PreparedIngressBatch) -> InputAcceptanceOutcome:
-        del batch
-        return RetryableInputOutcome(
-            reason_code="input_bridge_unavailable",
-            available_at=NOW + timedelta(seconds=30),
+async def test_postgresql_duplicate_and_claim_ordering(postgres_connectivity_sessions):
+    sessions = postgres_connectivity_sessions
+    service = _event_service(sessions, SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"))
+    responses = await gather(*(service.receive(account_id=ACCOUNT_ID, request=_request("one")) for _ in range(2)))
+    assert sorted(json.loads(r.body)["duplicate"] for r in responses) == [False, True]
+    worker = reconciler(sessions, RetryAcceptor())
+    claim = await worker._claim()
+    assert claim is not None
+    await service.receive(account_id=ACCOUNT_ID, request=_request("two"))
+    other = reconciler(sessions, RetryAcceptor(), instance="pod-b")
+    assert await other._claim() is None
+    async with transaction(sessions) as session:
+        await session.scalar(
+            select(IngressBatchRecord).where(IngressBatchRecord.id == claim.batch_id).with_for_update()
         )
+        # The older in-flight batch remains a barrier even when skip_locked could
+        # otherwise expose the second batch to another Pod.
+        assert await other._claim() is None
+    async with sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(AgentThreadBindingRecord)) == 1
+        assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 2
 
 
-class _CrashingInputAcceptor:
-    async def accept_ingress_batch(self, batch: PreparedIngressBatch) -> InputAcceptanceOutcome:
-        del batch
-        raise RuntimeError("simulated crash")
+async def test_postgresql_append_claim_race_preserves_every_event(postgres_connectivity_sessions):
+    sessions = postgres_connectivity_sessions
+    service = _event_service(sessions, SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"))
+    await service.receive(account_id=ACCOUNT_ID, request=_request("first"))
+    worker = reconciler(sessions, RetryAcceptor())
+    claim, response = await gather(worker._claim(), service.receive(account_id=ACCOUNT_ID, request=_request("racing")))
+    assert claim is not None and response.status_code == 202
+    prepared = await worker._prepare(claim)
+    original = prepared.agent_input
+    await service.receive(account_id=ACCOUNT_ID, request=_request("after-claim"))
+    assert (await worker._prepare(claim)).agent_input == original
+    async with sessions() as session:
+        events = (await session.scalars(select(IngressAdmissionRecord))).all()
+        batches = (await session.scalars(select(IngressBatchRecord))).all()
+        assert len(events) == 3
+        assert sum(batch.event_count for batch in batches) == 3
+        for batch in batches:
+            assert sum(event.batch_id == batch.id for event in events) == batch.event_count
+
+
+async def test_postgresql_concurrent_capacity_never_acknowledges_overflow(postgres_connectivity_sessions):
+    sessions = postgres_connectivity_sessions
+    service = _event_service(
+        sessions, SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"), pending_max_count=1
+    )
+    responses = await gather(
+        *(service.receive(account_id=ACCOUNT_ID, request=_request(str(i), channel=str(i))) for i in range(2))
+    )
+    assert sorted(response.status_code for response in responses) == [202, 503]
+    async with sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 1

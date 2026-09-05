@@ -79,7 +79,7 @@ def new_plugin_evidence(
 
 def _scope(actor: AuthenticatedActor, *, operation: str, scope_id: str) -> EvidenceScope:
     return EvidenceScope(
-        workspace_id=actor.boundary_workspace_id,
+        workspace_id=actor.workspace_id,
         actor_type=actor.principal.principal_type.value,
         actor_id=actor.principal.principal_id,
         operation=operation,

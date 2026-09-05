@@ -19,7 +19,7 @@ from a13n_service.ids import new_object_id
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import short_session, transaction
 
-from .access import authorize_environment_workspace
+from .access import authorize_environment_resource, authorize_environment_workspace, environment_actor_scope
 from .cursors import decode_cursor, encode_cursor
 from .domain import (
     Collection,
@@ -90,7 +90,7 @@ class EnvironmentService:
         )
 
     async def create_provider(
-        self, *, actor: AuthenticatedActor, workspace_id: str, request: CreateProviderRequest
+        self, *, actor: AuthenticatedActor, workspace_id: str | None, request: CreateProviderRequest
     ) -> EnvironmentProvider:
         try:
             provider = self.catalog.require(request.type)
@@ -155,10 +155,19 @@ class EnvironmentService:
             return row.to_resource()
 
     async def create_template(
-        self, *, actor: AuthenticatedActor, workspace_id: str, request: CreateTemplateRequest, idempotency_key: str
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str | None,
+        request: CreateTemplateRequest,
+        idempotency_key: str,
     ) -> EnvironmentTemplate:
         now = datetime.now(UTC)
         identity = request_identity(idempotency_key, request)
+        async with short_session(self.sessions) as session:
+            owner = await authorize_environment_workspace(
+                session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_manage
+            )
         try:
             async with transaction(self.sessions) as session:
                 workspace = await authorize_environment_workspace(
@@ -168,7 +177,7 @@ class EnvironmentService:
                     session,
                     actor=actor,
                     operation="environment_template.create",
-                    scope_id=workspace_id,
+                    scope_id=owner.id,
                     identity=identity,
                     now=now,
                 )
@@ -196,7 +205,7 @@ class EnvironmentService:
                         organization_id=workspace.organization_id,
                         workspace_id=workspace_id,
                         operation="environment_template.create",
-                        scope_id=workspace_id,
+                        scope_id=owner.id,
                         identity=identity,
                         result_kind="environment_template",
                         result_ref=row.id,
@@ -211,7 +220,7 @@ class EnvironmentService:
                         session,
                         actor=actor,
                         operation="environment_template.create",
-                        scope_id=workspace_id,
+                        scope_id=owner.id,
                         identity=identity,
                         now=datetime.now(UTC),
                     )
@@ -220,10 +229,15 @@ class EnvironmentService:
             raise
 
     async def validate_recipe(
-        self, session: AsyncSession, *, actor: AuthenticatedActor, workspace_id: str, recipe: TemplateConfiguration
+        self,
+        session: AsyncSession,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str | None,
+        recipe: TemplateConfiguration,
     ) -> None:
         row = await self._provider(session, actor, recipe.provider_id)
-        if row.workspace_id != workspace_id or not row.enabled:
+        if (row.workspace_id is not None and row.workspace_id != workspace_id) or not row.enabled:
             raise environment_not_found()
         provider = self.catalog.require(row.type)
         if not provider.supports_managed:
@@ -304,7 +318,7 @@ class EnvironmentService:
             session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_use
         )
         selected = await resolve_selection(session, workspace_id=workspace_id, choice=selection)
-        row = allocate_selection(session, selected, now=now)
+        row = allocate_selection(session, selected, workspace_id=workspace_id, now=now)
         await session.flush()
         return row
 
@@ -383,7 +397,7 @@ class EnvironmentService:
         now: datetime,
     ) -> EnvironmentRecord:
         provider = await self._provider(session, actor, request.provider_id)
-        if provider.workspace_id != workspace_id or not provider.enabled:
+        if (provider.workspace_id is not None and provider.workspace_id != workspace_id) or not provider.enabled:
             raise environment_not_found()
         implementation = self.catalog.require(provider.type)
         try:
@@ -433,17 +447,20 @@ class EnvironmentService:
         manage: bool = False,
         lock: bool = False,
     ) -> EnvironmentProviderRecord:
+        boundary = await environment_actor_scope(session, actor)
         query = select(EnvironmentProviderRecord).where(
             EnvironmentProviderRecord.id == resource_id,
-            EnvironmentProviderRecord.workspace_id == actor.boundary_workspace_id,
+            boundary.accessible(EnvironmentProviderRecord.organization_id, EnvironmentProviderRecord.workspace_id),
         )
         row = await session.scalar(query.with_for_update() if lock else query)
         if row is None:
             raise environment_not_found()
-        await authorize_environment_workspace(
+        await authorize_environment_resource(
             session,
             actor=actor,
+            organization_id=row.organization_id,
             workspace_id=row.workspace_id,
+            manage=manage,
             action=WorkspaceAction.environment_provider_manage if manage else WorkspaceAction.environment_provider_read,
         )
         return row
@@ -457,17 +474,20 @@ class EnvironmentService:
         manage: bool = False,
         lock: bool = False,
     ) -> EnvironmentTemplateRecord:
+        boundary = await environment_actor_scope(session, actor)
         query = select(EnvironmentTemplateRecord).where(
             EnvironmentTemplateRecord.id == resource_id,
-            EnvironmentTemplateRecord.workspace_id == actor.boundary_workspace_id,
+            boundary.accessible(EnvironmentTemplateRecord.organization_id, EnvironmentTemplateRecord.workspace_id),
         )
         row = await session.scalar(query.with_for_update() if lock else query)
         if row is None:
             raise environment_not_found()
-        await authorize_environment_workspace(
+        await authorize_environment_resource(
             session,
             actor=actor,
+            organization_id=row.organization_id,
             workspace_id=row.workspace_id,
+            manage=manage,
             action=WorkspaceAction.environment_template_manage if manage else WorkspaceAction.environment_template_read,
         )
         return row
@@ -475,9 +495,11 @@ class EnvironmentService:
     async def require_environment(
         self, session: AsyncSession, actor: AuthenticatedActor, resource_id: str
     ) -> EnvironmentRecord:
+        boundary = await environment_actor_scope(session, actor)
         row = await session.scalar(
             select(EnvironmentRecord).where(
-                EnvironmentRecord.id == resource_id, EnvironmentRecord.workspace_id == actor.boundary_workspace_id
+                EnvironmentRecord.id == resource_id,
+                boundary.accessible(EnvironmentRecord.organization_id, EnvironmentRecord.workspace_id),
             )
         )
         if row is None:
@@ -497,14 +519,20 @@ class EnvironmentService:
             return (await self._provider(session, actor, resource_id)).to_resource()
 
     async def list_providers(
-        self, *, actor: AuthenticatedActor, workspace_id: str, limit: int = 50, cursor: str | None = None
+        self, *, actor: AuthenticatedActor, workspace_id: str | None, limit: int = 50, cursor: str | None = None
     ) -> Collection[EnvironmentProvider]:
-        scope = {"collection": "providers", "workspace_id": workspace_id}
+        scope = {
+            "collection": "providers",
+            "workspace_id": workspace_id,
+            "organization_boundary": actor.boundary_organization_id,
+        }
         async with short_session(self.sessions) as session:
-            await authorize_environment_workspace(
+            owner = await authorize_environment_workspace(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_provider_read
             )
-            query = select(EnvironmentProviderRecord).where(EnvironmentProviderRecord.workspace_id == workspace_id)
+            query = select(EnvironmentProviderRecord).where(
+                owner.visible(EnvironmentProviderRecord.organization_id, EnvironmentProviderRecord.workspace_id)
+            )
             if cursor is not None:
                 query = query.where(EnvironmentProviderRecord.id > decode_cursor(cursor, scope=scope))
             rows = tuple(await session.scalars(query.order_by(EnvironmentProviderRecord.id).limit(limit + 1)))
@@ -518,14 +546,20 @@ class EnvironmentService:
             return (await self._template(session, actor, resource_id)).to_resource()
 
     async def list_templates(
-        self, *, actor: AuthenticatedActor, workspace_id: str, limit: int = 50, cursor: str | None = None
+        self, *, actor: AuthenticatedActor, workspace_id: str | None, limit: int = 50, cursor: str | None = None
     ) -> Collection[EnvironmentTemplate]:
-        scope = {"collection": "templates", "workspace_id": workspace_id}
+        scope = {
+            "collection": "templates",
+            "workspace_id": workspace_id,
+            "organization_boundary": actor.boundary_organization_id,
+        }
         async with short_session(self.sessions) as session:
-            await authorize_environment_workspace(
+            owner = await authorize_environment_workspace(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_read
             )
-            query = select(EnvironmentTemplateRecord).where(EnvironmentTemplateRecord.workspace_id == workspace_id)
+            query = select(EnvironmentTemplateRecord).where(
+                owner.visible(EnvironmentTemplateRecord.organization_id, EnvironmentTemplateRecord.workspace_id)
+            )
             if cursor is not None:
                 query = query.where(EnvironmentTemplateRecord.id > decode_cursor(cursor, scope=scope))
             rows = tuple(await session.scalars(query.order_by(EnvironmentTemplateRecord.id).limit(limit + 1)))

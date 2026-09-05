@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_connectivity_control_runtime, get_process_runtime
@@ -221,18 +222,17 @@ async def change_mcp_connection_lifecycle(
     return resource
 
 
-@router.delete("/api/v1/mcp-connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/api/v1/mcp-connections/{connection_id}", response_model=ConnectionCleanupReceipt)
 async def delete_mcp_connection(
     request: Request,
     actor: Actor,
     connection_id: str,
     expected_version: Annotated[int, Query(ge=1)],
     idempotency_key: IdempotencyKey,
-) -> Response:
-    await _connections(request).delete(
+) -> ConnectionCleanupReceipt:
+    return await _connections(request).delete(
         actor=actor,
         connection_id=connection_id,
         idempotency_key=idempotency_key,
         expected_version=expected_version,
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

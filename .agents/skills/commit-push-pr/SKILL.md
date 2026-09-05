@@ -1,159 +1,70 @@
 ---
 name: commit-push-pr
-description: Prepare a focused, detailed Git commit, push its branch, and create or update a GitHub pull request. Use whenever the user asks to commit changes, push work, open or update a PR, or submit the current work to GitHub.
+description: Prepare focused commits, push branches, and create or update GitHub pull requests when requested. Perform only the stages authorized by the user; a commit-only request does not include pushing or opening a PR.
 ---
 
-# Commit, Push, and Open a Pull Request
+# Commit, Push, and Pull Request
 
-Move the intended changes into a clear GitHub pull request with minimal ceremony. Focus on the commit, push, and PR handoff. Do not create an Issue, start a code review, or request reviewers unless the user explicitly asks.
+Complete the requested Git/GitHub handoff under `AGENTS.md` and `CONTRIBUTING.md`. Preserve existing authorization across follow-ups. Do not add Issue creation, reviewer requests, PR merges, releases, or deployments unless authorized. Do not start a separate code review or review subagent unless the user requests it.
 
-Use Git for local version-control operations and GitHub CLI (`gh`) for GitHub operations.
+## Inspect and Prepare
 
-## Workflow
+- Inspect `git status --short --branch`, the diff, untracked files, and relevant remotes. Separate intended changes from unrelated work, secrets, local configuration, caches, and generated artifacts.
+- Resolve the requested stages from context: commit-only ends after committing; push-only may use an existing commit; opening a PR normally includes the necessary branch, commit, and push. Ask only when the intended content or destination is materially ambiguous.
+- Keep a suitable branch. For detached HEAD, a default branch, or another protected branch, create a descriptive branch using the user's naming convention or `codex/` by default. Do not push directly to a protected base.
+- GitHub operations use `gh`; local Git work does not require it. Before a GitHub operation, determine the host/repository from the remote and check `gh auth status --hostname <host>` and `gh repo view --json nameWithOwner,url,defaultBranchRef`.
+- If `gh` is unavailable or unauthenticated, finish independent authorized local preparation and report the missing prerequisite and applicable login command. Do not silently substitute browser automation, raw APIs, or another hosting CLI.
 
-### 1. Verify access
+Unresolved material design questions follow the contribution workflow; this skill does not settle them or authorize an Issue post.
 
-Before changing branches or committing:
+## Validate the Intended Change
 
-1. Confirm Git and `gh` are installed.
-2. Determine the GitHub hostname from the remote.
-3. Verify authentication with `gh auth status --hostname <host>`.
-4. Resolve the repository and default branch with:
+Use the repository's fast gate, `make check`, and complete additional checks required by `CONTRIBUTING.md`, `AGENTS.md`, and the affected component. The fast gate does not replace `make docs-build` for site changes, `make check-all` for broad changes, or relevant image/migration validation.
 
-```bash
-gh repo view --json nameWithOwner,url,defaultBranchRef
-```
+Reuse successful checks that still cover the same source state. If formatting or fixes alter relevant inputs, review the diff and rerun the affected checks. Record unavailable checks and failures accurately; do not represent them as passing or bypass hooks with `--no-verify`.
 
-If `gh` is missing or unauthenticated, stop and give the user the exact installation or `gh auth login` command required. Do not substitute browser automation, raw API calls, or another hosting CLI.
+Before staging, run `git diff --check`. Stage explicit intended paths and review both the staged diff and `git diff --cached --stat`.
 
-### 2. Inspect the intended change
+## Commit
 
-- Read `AGENTS.md` and the contribution guide when present.
-- Run `git status --short --branch`, inspect the diff, and check remotes.
-- Check untracked files before staging.
-- Exclude unrelated work, credentials, local configuration, caches, and accidental generated artifacts.
-- Ask about scope only when the intended files are materially ambiguous; otherwise proceed directly.
-- Check whether the current branch already has an open PR so the workflow updates rather than duplicates it.
-
-Do not open a GitHub Issue as part of this workflow unless the user specifically requests one.
-
-### 3. Prepare the branch
-
-Keep the current branch when it is already suitable. If it is the default or another protected branch, create a short descriptive branch such as:
-
-```text
-feat/harness-capability-runtime
-fix/session-cancellation
-```
-
-Do not push directly to the protected base branch. Do not rewrite shared history or force-push without explicit approval.
-
-### 4. Run the local gate
-
-Run only the repository's fast PR gate on the final intended working tree:
-
-```bash
-make check
-```
-
-For this workflow, `make check` is the required and sufficient local validation. Do not add `make check-all`, full test suites, documentation builds, image builds, or code-review steps unless the user explicitly requests them.
-
-- If `make check` formats files, review the resulting changes and rerun it.
-- If it fails because of the intended change, fix the failure when feasible and rerun it.
-- If it cannot run, record the exact reason in the PR body.
-- Run `git diff --check` before staging.
-- Never bypass checks or hooks with `--no-verify`.
-
-### 5. Create a detailed commit
-
-Stage explicit intended paths rather than using `git add .` when unrelated files may exist. Review both `git diff --cached --stat` and the staged diff before committing.
-
-Use an English Conventional Commit subject with a required scope:
+Use an English Conventional Commit subject with lowercase type and required scope:
 
 ```text
 type(scope): imperative summary
 ```
 
-Common types are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, and `perf`. Keep the type and scope lowercase, keep the summary concise, and omit the trailing period.
+Keep the subject concise without a trailing period. Describe material completed behavior or boundary changes in the body when needed; do not pad it with routine staging/formatting steps or require a fixed bullet count.
 
-Add a detailed body with two to five concise bullet points describing the material completed behavior or boundary changes:
+Do not create empty or duplicate commits, add agent co-author trailers, or invent attribution. If hooks rewrite files, inspect and stage only intended changes before committing again. Rewrite existing history only when that operation is explicitly authorized.
 
-```text
-feat(harness): expand capability runtime
+## Push
 
-- Add packaged instructions and multimedia-understanding fallbacks.
-- Complete bounded EIP file traversal and search operations.
-- Document observation profiles and runtime configuration.
-```
-
-Commit-message rules:
-
-- Describe completed outcomes, not the editing process.
-- Keep bullets specific and non-overlapping.
-- Do not pad the body with routine mechanics such as staging or formatting.
-- Do not create an empty commit.
-- Do not add `Co-authored-by:` or other agent co-author trailers.
-- Do not invent assistant attribution.
-
-If the relevant commit already exists and only needs pushing, do not create another commit merely to satisfy the workflow.
-
-### 6. Push safely
-
-Push the current branch with upstream tracking:
+Confirm the destination remote and branch, then push with upstream tracking where needed; for a confirmed `origin` destination:
 
 ```bash
 git push -u origin HEAD
 ```
 
-Do not use `--force`. Use `--force-with-lease` only after explicit user approval when history rewriting is necessary.
+Do not force-push by default. Use `--force-with-lease` only when the concrete history rewrite is explicitly authorized. After an uncertain push result, inspect remote state before retrying.
 
-### 7. Create or update the PR
+When local checkout synchronization is part of the user's workflow, inspect that checkout before changing it. Synchronize only a clean checkout with a verified fast-forward; explain the impact and obtain missing authorization if local work, reset, rebase, or merge would be involved. Do not delete branches or worktrees merely to tidy up.
 
-Check for an existing PR first:
+## Create or Update the PR
+
+Check for an existing open PR for the confirmed head/base so updates do not create duplicates:
 
 ```bash
 gh pr view --json number,url,state,isDraft,title
 ```
 
-Update an existing open PR instead of creating a duplicate. Otherwise, create one with explicit base and head branches when needed.
+If no open PR exists, create one with the intended head/base. Preserve an existing PR's draft state; create a ready PR unless the user requests a draft.
 
-The PR title must use the same scoped Conventional Commit format:
+Use the scoped Conventional Commit format for the PR title, summarizing the complete final diff. Read the repository PR template, preferring the base-branch version. Preserve required headings and checklist items, remove placeholders such as `Closes #`, link a relevant Issue when one exists, and mark only verified conditions. Human-review items require evidence from the human author.
 
-```text
-type(scope): imperative summary
-```
+Explain the problem, resulting behavior, material compatibility implications, and exact validation outcomes. If no template exists, a short summary and validation section suffice. Pass multiline content with `--body-file` using a temporary file outside the repository. Do not claim a missing check passed or omit a known blocker.
 
-Usually reuse the commit subject. For a multi-commit branch, write one title that accurately summarizes the complete PR. Do not use a plain prose title such as `Expand Harness capability runtime`; use `feat(harness): expand capability runtime`.
+Inspect `gh pr checks` once after creating or updating the PR. Report CI as pending, passing, or failed; wait or monitor only when requested. Before retrying an uncertain PR creation, query existing PRs again.
 
-Before writing the body, read the repository's PR template, preferring the base-branch version. Preserve required headings and checklist items, remove placeholders, and mark only completed conditions. Never leave an incomplete reference such as `Closes #`. When no Issue exists, write `None` or remove the optional Issue section as the template permits.
+## Handoff
 
-If no template exists, use:
-
-```markdown
-## Summary
-
-- <material change>
-- <material change>
-
-## Validation
-
-- `make check` — passed.
-```
-
-Keep the PR body factual and concise. Use a temporary body file outside the repository. Create a ready PR unless the user asks for a draft.
-
-Do not start a review subagent or request GitHub reviewers by default. Review routing is outside this workflow unless the user explicitly asks for it.
-
-### 8. Report CI and result
-
-Run `gh pr checks` once after creating or updating the PR. Report the current state without waiting for completion unless the user asks.
-
-Return:
-
-- branch name;
-- commit hash, subject, and bullet summary;
-- push result;
-- PR URL and title;
-- `make check` outcome;
-- current CI status;
-- any concrete blocker or remaining follow-up.
+Report only the completed/requested stages: branch and commit, push result, PR link/title, validation and current CI state, plus concrete blockers. Apply reviewer routing from `MAINTAINERS.md` when requesting reviewers is authorized.

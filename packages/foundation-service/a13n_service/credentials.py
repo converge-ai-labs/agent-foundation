@@ -17,7 +17,7 @@ class CredentialSnapshot:
     owner_type: str
     owner_id: str
     organization_id: str
-    workspace_id: str
+    workspace_id: str | None
     generation: int
     ciphertext: bytes | None
     nonce: bytes | None
@@ -40,13 +40,13 @@ class CredentialSnapshot:
         )
 
 
-class ResourceCredential:
+class ResourceCredential[WorkspaceId: str | None]:
     """Columns and protection only; callers own transactions, locks, and use policy."""
 
     credential_owner_type: ClassVar[str]
     id: Mapped[str]
     organization_id: Mapped[str]
-    workspace_id: Mapped[str]
+    workspace_id: Mapped[WorkspaceId]
     credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
     nonce: Mapped[bytes | None] = mapped_column(LargeBinary(12))

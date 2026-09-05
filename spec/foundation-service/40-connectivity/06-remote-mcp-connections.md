@@ -30,7 +30,6 @@ class MCPConnection:
     id: MCPConnectionId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
-    owner_user_id: UserId | None
     name: str
     endpoint_url: str
     auth_mode: MCPAuthMode
@@ -44,19 +43,19 @@ class MCPConnection:
 
 `endpoint_url` is one credential-free absolute Streamable HTTP MCP endpoint validated under the shared [Connectivity outbound-network policy](00-overview.md#outbound-endpoint-policy). It contains no user info, access token, API key, fragment, or model-controlled component. Redirects and resolved destinations are bounded and revalidated on every discovery, authorization, and runtime request.
 
-Endpoint, owner, Workspace, authentication mode, and the normalized static-header name set are immutable. Changing any of them creates another MCPConnection. Name and local disabled state are mutable under exact version preconditions. OAuth token refresh, bearer or static-header value replacement, tool discovery, health observations, and safe status reconciliation do not reinterpret endpoint or owner identity.
+Endpoint, Workspace, authentication mode, and the normalized static-header name set are immutable. Changing any of them creates another MCPConnection. Name and local disabled state are mutable under exact version preconditions. OAuth token refresh, bearer or static-header value replacement, tool discovery, health observations, and safe status reconciliation do not reinterpret endpoint identity.
 
-An absent `owner_user_id` makes the MCPConnection Workspace-shared. A present value makes it personal to that Foundation User. Personal and shared scope is explicit at creation and cannot be inferred from the remote account's email or display name.
+Every MCPConnection belongs to its Workspace. There is no personal owner field; remote account identity is never inferred from email or display names.
 
-`pending` means setup has not produced usable authorization and discovery. `ready` means the latest authorized setup and tool discovery succeeded, not that every later request will succeed. `action_required` blocks use until the user repairs authorization or compatibility. `disabled` is a reversible Foundation decision that blocks new selection and calls. `status_reason` is non-null exactly for `action_required` and is one finite safe code; it never contains remote payloads or credentials. Transient discovery or request failures do not change status. An explicit reconnect can restore `action_required` to `ready` only while the immutable endpoint, owner, Workspace, authentication mode, and header-name identity remain unchanged; otherwise the user creates another MCPConnection.
+`pending` means setup has not produced usable authorization and discovery. `ready` means the latest authorized setup and tool discovery succeeded, not that every later request will succeed. `action_required` blocks use until the user repairs authorization or compatibility. `disabled` is a reversible Foundation decision that blocks new selection and calls. `status_reason` is non-null exactly for `action_required` and is one finite safe code; it never contains remote payloads or credentials. Transient discovery or request failures do not change status. An explicit reconnect can restore `action_required` to `ready` only while the immutable endpoint, Workspace, authentication mode, and header-name identity remain unchanged; otherwise the user creates another MCPConnection.
 
 ## Ownership and Runtime Eligibility
 
-A Workspace-shared MCPConnection can be selected by an Agent default, an authorized direct Run overlay, or an Ingress Route. The Workspace administrator who establishes it explicitly accepts that Runs authorized for those configurations can use the remote account.
+An MCPConnection can be selected by authorized Workspace Agent defaults, direct Run overrides, or exact Account target overrides. Workspace Admin manages its lifecycle and credentials. Workspace membership alone does not grant management authority.
 
-A User-owned MCPConnection is eligible only for a Run whose active invoking Foundation Principal is the same User. An external Slack, Lark, Discord, Teams, GitHub, Gmail, or other provider actor is not a Foundation Principal merely because an ID, username, or email appears to match. Ingress-triggered Runs therefore cannot use User-owned MCPConnections under this contract. Route configuration cannot override this rule.
+Every call checks the Run execution Principal and current Workspace and source eligibility. Inbound Runs use the configured Service Account, never an external sender. Connection identity and accepted tool scope remain exact.
 
-An MCPConnection does not store mutable Agent or Route assignment lists. Agent authoring and the common [`RunCapabilityOverlay`](../28-agent-management.md#run-capability-overlay) reference the MCPConnection ID and choose tool scope and deferred loading. Authorized reads can derive reverse-use projections without creating another assignment authority.
+An MCPConnection does not store mutable Agent or AccountTarget assignment lists. Agent authoring and the common [`RunCapabilityOverlay`](../28-agent-management.md#run-capability-overlay) reference the MCPConnection ID and choose tool scope and deferred loading. Authorized reads can derive reverse-use projections without creating another assignment authority.
 
 The model never receives the endpoint URL, MCPConnection ID, authorization metadata, remote account identifiers, access token, refresh token, client registration credential, or setup handle.
 
@@ -112,11 +111,21 @@ The fixed callback uses short-lived, unpredictable, single-use state bound to th
 
 Foundation requires RFC 9728 Protected Resource Metadata, discovered from the Bearer challenge or the standard endpoint-path then root well-known locations, and verifies that its resource identifies the canonical MCP endpoint. It selects one advertised authorization server, discovers it through RFC 8414 or OpenID Connect metadata, and pins the exact issuer. It uses PKCE `S256` and sends the canonical MCP resource in both authorization and token requests. Scope comes from the authenticated challenge or protected-resource metadata rather than an arbitrary caller field. It never accepts manually supplied authorization, token, registration, or issuer endpoints and never treats self-reported display metadata as authorization identity.
 
-Access tokens, refresh tokens, and any Dynamic Client Registration client ID, secret, registration access token, and registration management URI form one MCPConnection-owned encrypted credential bundle. Bearer and static-header modes likewise retain one current encrypted credential bundle under the same owner. Refresh or replacement swaps the applicable current bundle without exposing it or changing the MCPConnection's endpoint identity. Deletion or replacement of a DCR client attempts standards-defined deletion only at the exact stored registration URI with its stored registration access token and outbound-policy revalidation. Failure or an unknown result leaves bounded cleanup evidence for reconciliation and never restores MCPConnection eligibility. An OAuth refresh failure, invalid grant, insufficient-scope condition requiring interaction, or confirmed revocation moves the MCPConnection to `action_required` with `reauthorization_required`. An issuer, endpoint, protocol, or tool-discovery incompatibility that needs user repair uses `incompatible`. Agent execution never opens an interactive browser flow.
+Access tokens, refresh tokens, and Dynamic Client Registration credentials form one encrypted connection bundle. Deletion first clears local credentials, tombstones the connection, and fences setup/refresh. It takes minimal snapshots and makes one bounded attempt to delete each owned registration at its exact validated management URI. Failure or uncertainty yields an honest persisted cleanup receipt; replay cannot repeat the effect. There is no cleanup scheduler. Agent execution never opens an interactive browser flow.
+
+## Exchange and Refresh Concurrency
+
+The OAuth protocol implementation uses a maintained OAuth library for authorization, PKCE, token endpoint authentication, exchange, and refresh. Foundation adds MCP discovery, exact resource/issuer binding, shared persistence, and bounded endpoint-policy HTTP transport. The process owns a cookie-free HTTP pool; credentials are explicit request values and are never client defaults.
+
+A callback atomically reserves shared single-use state before token exchange. Any control replica can complete it. Current connection version, credential generation, state claim owner/generation, deadline, and initiating User authority are checked again at commit. Expired or interrupted exchange claims become `action_required`; they never replay a possibly consumed authorization code. Failed setup requires an explicit new authorization.
+
+Management discovery and Worker execution obtain current credentials through the same demand-driven refresh boundary. Discovery can refresh a pending connection after reconnect or OAuth completion; it does not require discovery to have already established readiness. Each handshake and paginated discovery request obtains current credentials. Discovery completion checks the latest credential generation used by its requests while retaining the original endpoint and management-version fence. Refresh occurs before authenticated use, never through a refresh-candidate scanner. A short connection transaction checks credential expiry and claims one credential generation. Claim acquisition is atomic for concurrent requests in the SQLite single-process profile and across PostgreSQL Pods; only the winner can exchange the claimed rotating refresh token. Exchange runs outside the transaction and success commits only under the same valid claim, eligible ready or pending connection, Workspace, and credential generation. Replacement, disablement, deletion, or new authorization fences late results.
+
+A live competing claim causes a bounded wait outside any database session, followed by a read of the committed credentials. Waiting callers succeed with the rotated credentials without issuing another refresh; timeout reports temporary unavailability. A definite pre-dispatch connection or pool failure releases its claim and preserves credentials for a later demand-driven attempt. An expired abandoned claim, absent refresh token, invalid grant, or uncertain exchange requires reauthorization; Foundation cannot safely replay a token that may already have rotated. A tool request with an unknown effect is not replayed to repair authentication. Insufficient scope requiring consent also requires interactive reauthorization.
 
 ## Credential Boundary
 
-MCPConnection records store their own ciphertext, nonce, encryption-key identifier, and credential generation using the [shared protection contract](../27-secret-management.md#protection-boundary). There is no internal Secret reference. Generic Secret routes cannot create, enumerate, replace, or delete these credentials. OAuth authorization sessions own separately encrypted setup material, including PKCE verifier and registration credentials, bound to that exact session and tenant. Completion atomically replaces the connection bundle and clears session material; expiration retains setup material only until bounded registration cleanup finishes. Refresh leases and exact credential-generation checks fence concurrent refresh, replacement, disablement, and deletion. Cleanup clears all encryption fields together. MCPConnection setup, reconnect, bearer or static-header replacement, OAuth refresh, disablement, revocation, and deletion own their credential lifecycle.
+MCPConnection records store ciphertext, nonce, key identifier, and credential generation under the [shared protection contract](../27-secret-management.md#protection-boundary). OAuth sessions separately protect PKCE and registration setup material. Completion, expiration, and terminal failure clear session material. Generic Secret routes cannot enumerate or mutate either bundle. Local deletion clears all encryption fields in its initial transaction.
 
 No plaintext credential enters Agent configuration, Run state, discovered tool definitions, model context, Tool arguments, events, Items, errors, logs, traces, or tool results. The Worker resolves only the exact credential required for the current fenced RunAttempt and endpoint request.
 
@@ -139,18 +148,17 @@ The Run stores no OAuth scope string or token snapshot. Each remote operation re
 
 ## Failure Semantics
 
-| Condition                                                       | Outcome                                                                                                    |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Endpoint violates outbound-network or transport policy          | Creation or discovery fails before any credential is sent                                                  |
-| Protected-resource or authorization-server discovery is invalid | OAuth setup fails closed; Foundation does not accept caller-supplied replacement endpoints                 |
-| Neither Client ID Metadata Document nor DCR is supported        | OAuth setup reports an incompatible MCP authorization service                                              |
-| State, issuer, redirect, resource, or PKCE validation fails     | Callback is rejected and no credential or ready transition commits                                         |
-| Callback or token response is lost after a possible commit      | Setup reconciles the same single-use state and MCPConnection; it never creates a second identity blindly   |
-| Refresh token is absent or refresh fails                        | Current call fails; the MCPConnection becomes `action_required` with `reauthorization_required`            |
-| Personal MCPConnection is selected for an Ingress-triggered Run | Run acceptance fails before tool or model work                                                             |
-| Static header name or value violates the bounded policy         | Setup or replacement fails before any credential is stored or sent                                         |
-| Tool definitions change after Run acceptance                    | Current discovery stays within the accepted scope; missing tools or invalid arguments fail explicitly      |
-| Remote effect may have occurred but its result is lost          | Tool outcome follows the remote MCP tool's task, idempotency, reconciliation, or unknown-outcome semantics |
+| Condition                                                       | Outcome                                                                                                                  |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Endpoint violates outbound-network or transport policy          | Creation or discovery fails before any credential is sent                                                                |
+| Protected-resource or authorization-server discovery is invalid | OAuth setup fails closed; Foundation does not accept caller-supplied replacement endpoints                               |
+| Neither Client ID Metadata Document nor DCR is supported        | OAuth setup reports an incompatible MCP authorization service                                                            |
+| State, issuer, redirect, resource, or PKCE validation fails     | Callback is rejected and no credential or ready transition commits                                                       |
+| Callback or token response is lost after a possible commit      | A completed receipt remains authoritative; an interrupted exchange requires new authorization without replaying the code |
+| Refresh token is absent or refresh fails                        | Current call fails; the MCPConnection becomes `action_required` with `reauthorization_required`                          |
+| Static header name or value violates the bounded policy         | Setup or replacement fails before any credential is stored or sent                                                       |
+| Tool definitions change after Run acceptance                    | Current discovery stays within the accepted scope; missing tools or invalid arguments fail explicitly                    |
+| Remote effect may have occurred but its result is lost          | Tool outcome follows the remote MCP tool's task, idempotency, reconciliation, or unknown-outcome semantics               |
 
 ## Compatibility and Invariants
 
@@ -159,6 +167,6 @@ Foundation validates negotiated MCP protocol compatibility through its supported
 1. One MCPConnection combines one Streamable HTTP endpoint and one authorization identity; Foundation defines no separate MCPServer resource.
 2. Foundation Service never launches user-configured MCP processes.
 3. Foundation implements one standards-based MCP OAuth client using a Client ID Metadata Document when supported and DCR otherwise, without provider-specific branches.
-4. Workspace-shared MCPConnections can be delegated through Agent and Route configuration; User-owned MCPConnections require the same active Foundation User and are never authorized by an unmatched external actor.
+4. Workspace MCPConnections require current execution Principal and Workspace authority; external actors cannot confer authority.
 5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned encrypted bundles and never model-visible data.
 6. Discovery and authenticated clients are isolated by MCPConnection identity; accepted Runs retain source selections, not immutable tool catalogs.

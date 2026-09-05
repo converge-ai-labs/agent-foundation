@@ -303,7 +303,7 @@ class A2AMessageBindingRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class A2APushConfigurationRecord(ResourceCredential, Base):
+class A2APushConfigurationRecord(ResourceCredential[str], Base):
     """One protected future-delivery configuration owned by an A2A Task."""
 
     credential_owner_type = "a2a_push_configuration"

@@ -8,14 +8,14 @@ from pathlib import Path
 import pytest
 from a13n_service.agents.models import AgentRecord
 from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.accounts.service import AccountService
+from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.ingress.admission import IngressEventService
-from a13n_service.connectivity.ingress.domain import InputBatchingPolicy
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
-    DefaultRoute,
     ExternalRef,
     InboundEvent,
     ProviderCompleteDecision,
@@ -25,10 +25,8 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequest,
     ProviderRequestDecision,
     ProviderRequestError,
+    ReceptionDefaults,
 )
-from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
-from a13n_service.connectivity.ingress.routes import RouteService
-from a13n_service.connectivity.ingress.service import IngressService
 from a13n_service.connectivity.management import canonical_digest
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
@@ -70,7 +68,6 @@ def github_private_key_pem() -> str:
 class FakeIngressAdapter:
     provider_key = "fake"
     config_versions = frozenset({"fake_http_v1"})
-    allows_runtime_ambiguity = False
     max_request_bytes = 1024 * 1024
     dedup_horizon_seconds = 3600
 
@@ -91,34 +88,29 @@ class FakeIngressAdapter:
         del config_version
         return value["installation_id"]
 
-    def validate_route(
-        self,
-        *,
-        match: object,
-        provider_policy: object,
-        account_config: dict[str, object],
-        config_version: str,
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        del account_config, config_version
-        if not isinstance(match, dict) or set(match) != {"channel"} or not isinstance(match["channel"], str):
-            raise ValueError("invalid match")
-        if provider_policy != {}:
+    def validate_reception_policy(self, value: object, *, config_version: str):
+        if value != {}:
             raise ValueError("invalid policy")
-        return dict(match), {}
+        return {}
 
-    def prove_non_overlap(self, left: dict[str, object], right: dict[str, object]) -> bool | None:
-        return left["channel"] != right["channel"]
+    def validate_target(self, kind: str, external_id: str) -> str:
+        if kind != "conversation" or not external_id or len(external_id) > 128:
+            raise ValueError("invalid target")
+        return external_id
+
+    def event_target(self, event: InboundEvent) -> tuple[str, str]:
+        return "conversation", str(event.context["channel"])
 
     async def authenticate_and_normalize(
         self,
         request: ProviderRequest,
         *,
-        ingress_id: str,
+        account_id: str,
         account_config: dict[str, object],
         credentials: dict[str, object],
         received_at: datetime,
     ) -> ProviderRequestDecision:
-        del ingress_id
+        del account_id
         if request.headers.get("authorization") != f"Bearer {credentials['token']}":
             return ProviderCompleteDecision(
                 response=ProviderHttpResponse(status_code=401, body=b"unauthorized"),
@@ -160,31 +152,18 @@ class FakeIngressAdapter:
                 refs={"conversation": ExternalRef(kind="channel", id=channel)},
                 data={},
                 ordering_key=event_id,
-                retain_raw=payload.get("retain_raw") is True,
             ),
         )
 
-    def route_matches(self, event: InboundEvent, match: dict[str, object], *, config_version: str) -> bool:
-        del config_version
-        return event.context.get("channel") == match.get("channel")
-
-    def default_route(
+    def reception_defaults(
         self,
         event: InboundEvent,
         account_config: dict[str, object],
         *,
         config_version: str,
-    ) -> DefaultRoute:
+    ) -> ReceptionDefaults:
         del account_config, config_version
-        return DefaultRoute(
-            input_mapping={
-                "op": "object",
-                "fields": {
-                    "schema_version": {"op": "static", "value": "2"},
-                    "content": {"op": "static", "value": []},
-                    "structured_content": {"op": "select", "path": ["events"]},
-                },
-            },
+        return ReceptionDefaults(
             input_batching=InputBatchingPolicy(min_interval_ms=100, max_batch_events=10),
             provider_policy={},
         )
@@ -385,6 +364,9 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
             id=ACCOUNT_ID,
             organization_id=ORG_ID,
             workspace_id=WORKSPACE_ID,
+            receive_enabled=True,
+            default_agent_id=AGENT_ID,
+            execution_service_account_id=SERVICE_ACCOUNT_ID,
             name="Default Account",
             normalized_name="default account",
             provider_key="fake",
@@ -411,16 +393,6 @@ def credential_protector(connectivity_sessions: async_sessionmaker[AsyncSession]
 
 
 @pytest.fixture
-def ingress_service(
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> IngressService:
-    return IngressService(
-        connectivity_sessions,
-        clock=lambda: NOW,
-    )
-
-
-@pytest.fixture
 async def connectivity_objects(tmp_path: Path) -> LocalObjectStore:
     return await LocalObjectStore.create(tmp_path / "connectivity-objects")
 
@@ -435,13 +407,11 @@ def ingress_event_service(
         connectivity_sessions,
         adapter_registry(),
         credential_protector,
-        IngressRawObjectStore(connectivity_objects),
         request_max_bytes=1024 * 1024,
-        raw_retention_seconds=3600,
         workspace_pending_max_count=100,
         workspace_pending_max_bytes=1024 * 1024,
-        ingress_pending_max_count=100,
-        ingress_pending_max_bytes=1024 * 1024,
+        account_pending_max_count=100,
+        account_pending_max_bytes=1024 * 1024,
         batch_max_bytes=1024 * 1024,
         dedup_horizon_seconds=3600,
         clock=lambda: NOW,
@@ -449,8 +419,8 @@ def ingress_event_service(
 
 
 @pytest.fixture
-def route_service(connectivity_sessions: async_sessionmaker[AsyncSession]) -> RouteService:
-    return RouteService(
+def target_service(connectivity_sessions: async_sessionmaker[AsyncSession]) -> AccountTargetService:
+    return AccountTargetService(
         connectivity_sessions,
         adapter_registry(),
         batch_max_events=100,
@@ -462,3 +432,31 @@ def route_service(connectivity_sessions: async_sessionmaker[AsyncSession]) -> Ro
 @pytest.fixture
 def account_service(connectivity_sessions, credential_protector):
     return AccountService(connectivity_sessions, adapter_registry(), credential_protector, clock=lambda: NOW)
+
+
+@pytest.fixture
+async def external_runtime_factory(connectivity_sessions, credential_protector):
+    from contextlib import AsyncExitStack
+
+    import httpx2
+    from a13n_service.connectivity.execution import ExternalToolRuntime
+    from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
+    from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
+
+    async with AsyncExitStack() as stack:
+
+        def build(providers, remote, policy, *, transport=None):
+            http = httpx2.AsyncClient(transport=transport)
+            stack.push_async_callback(http.aclose)
+            refresh = OAuthCredentialRefresh(
+                connectivity_sessions,
+                MCPOAuthClient(http, policy),
+                credential_protector,
+                instance_id="test",
+                clock=lambda: NOW,
+            )
+            return ExternalToolRuntime(
+                connectivity_sessions, credential_protector, providers, remote, policy, http, refresh
+            )
+
+        yield build

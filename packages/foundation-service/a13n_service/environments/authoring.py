@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
+from a13n_service.iam.resource_scope import visible_workspace
 
 from .errors import environment_not_found
 from .models import EnvironmentProviderRecord, EnvironmentTemplateRecord, EnvironmentTemplateRevisionRecord
@@ -20,7 +21,7 @@ async def authorize_template(
 ) -> None:
     if template_id is None and revision_id is None:
         return
-    await authorize_workspace(
+    workspace = await authorize_workspace(
         session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_use
     )
     query = (
@@ -28,7 +29,8 @@ async def authorize_template(
         .join(EnvironmentTemplateRecord, EnvironmentTemplateRecord.id == EnvironmentTemplateRevisionRecord.template_id)
         .join(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentTemplateRevisionRecord.provider_id)
         .where(
-            EnvironmentTemplateRecord.workspace_id == workspace_id,
+            EnvironmentTemplateRecord.organization_id == workspace.organization_id,
+            visible_workspace(EnvironmentTemplateRecord.workspace_id, workspace_id),
             EnvironmentTemplateRecord.archived_at.is_(None),
             EnvironmentProviderRecord.enabled.is_(True),
         )

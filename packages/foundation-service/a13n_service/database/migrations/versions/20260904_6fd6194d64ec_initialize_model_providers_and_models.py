@@ -22,7 +22,7 @@ def upgrade() -> None:
         "model_providers",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("type", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("normalized_name", sa.String(length=128), nullable=False),
@@ -53,6 +53,12 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_model_providers_name_bounded")),
         sa.ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_model_providers_organization_id_organizations"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
             name=op.f("fk_model_providers_workspace_id_workspaces"),
@@ -61,11 +67,17 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_model_providers")),
     )
     op.create_index(
-        "ix_model_providers_workspace_updated", "model_providers", ["workspace_id", "updated_at", "id"], unique=False
+        "uq_model_providers_organization_normalized_name",
+        "model_providers",
+        ["organization_id", "normalized_name"],
+        unique=True,
+        postgresql_where=sa.text("workspace_id IS NULL"),
+        sqlite_where=sa.text("workspace_id IS NULL"),
     )
     op.create_index(
-        "uq_model_providers_identity_scope", "model_providers", ["id", "workspace_id", "organization_id"], unique=True
+        "ix_model_providers_workspace_updated", "model_providers", ["workspace_id", "updated_at", "id"], unique=False
     )
+    op.create_index("uq_model_providers_identity_scope", "model_providers", ["id", "organization_id"], unique=True)
     op.create_index(
         "uq_model_providers_workspace_name", "model_providers", ["workspace_id", "normalized_name"], unique=True
     )
@@ -73,7 +85,7 @@ def upgrade() -> None:
         "models",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("key", sa.String(length=128), nullable=False),
         sa.Column("normalized_key", sa.String(length=128), nullable=False),
         sa.Column("provider_id", sa.String(length=72), nullable=False),
@@ -101,8 +113,14 @@ def upgrade() -> None:
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_models_name_bounded")),
         sa.CheckConstraint("length(upstream_model) BETWEEN 1 AND 256", name=op.f("ck_models_upstream_model_bounded")),
         sa.ForeignKeyConstraint(
-            ["provider_id", "workspace_id", "organization_id"],
-            ["model_providers.id", "model_providers.workspace_id", "model_providers.organization_id"],
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_models_organization_id_organizations"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["provider_id", "organization_id"],
+            ["model_providers.id", "model_providers.organization_id"],
             name=op.f("fk_models_provider_id_model_providers"),
             ondelete="RESTRICT",
         ),
@@ -114,9 +132,17 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_models")),
     )
+    op.create_index(
+        "uq_models_organization_normalized_key",
+        "models",
+        ["organization_id", "normalized_key"],
+        unique=True,
+        postgresql_where=sa.text("workspace_id IS NULL"),
+        sqlite_where=sa.text("workspace_id IS NULL"),
+    )
     op.create_index("ix_models_provider", "models", ["provider_id", "id"], unique=False)
     op.create_index("ix_models_workspace_updated", "models", ["workspace_id", "updated_at", "id"], unique=False)
-    op.create_index("uq_models_identity_scope", "models", ["id", "workspace_id", "organization_id"], unique=True)
+    op.create_index("uq_models_identity_scope", "models", ["id", "organization_id"], unique=True)
     op.create_index("uq_models_workspace_key", "models", ["workspace_id", "normalized_key"], unique=True)
 
 

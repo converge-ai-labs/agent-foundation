@@ -2,7 +2,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, String
+from pydantic import JsonValue
+from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
@@ -17,7 +18,6 @@ class ConnectivityCommandRecord(Base):
         CheckConstraint("actor_type IN ('user', 'service_account')", name="actor_type_valid"),
         Index(
             "uq_connectivity_commands_request",
-            "workspace_id",
             "actor_type",
             "actor_id",
             "operation",
@@ -30,7 +30,7 @@ class ConnectivityCommandRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(72), nullable=False)
     operation: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -40,4 +40,5 @@ class ConnectivityCommandRecord(Base):
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(72), nullable=False)
     result_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    result_json: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

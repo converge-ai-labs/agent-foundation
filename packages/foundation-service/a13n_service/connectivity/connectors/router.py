@@ -7,8 +7,10 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from .connections import ConnectorConnectionService
@@ -17,7 +19,6 @@ from .domain import (
     ConnectorConnection,
     ConnectorConnectionCollection,
     ConnectorConnectionCommandRequest,
-    ConnectorOperationReceipt,
     ConnectorProvider,
     ConnectorProviderCollection,
     ConnectorProviderCommandRequest,
@@ -226,7 +227,7 @@ async def create_connector_connection(
 @router.post(
     "/api/v1/connector-connections/{connection_id}/setup",
     response_model=ConnectorSetupLaunch,
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_200_OK,
 )
 async def start_connector_connection_setup(
     request: Request,
@@ -340,8 +341,8 @@ async def reconnect_connector_connection(
 
 @router.post(
     "/api/v1/connector-connections/{connection_id}/revoke",
-    response_model=ConnectorOperationReceipt,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ConnectionCleanupReceipt,
+    status_code=status.HTTP_200_OK,
 )
 async def revoke_connector_connection(
     request: Request,
@@ -349,7 +350,7 @@ async def revoke_connector_connection(
     connection_id: str,
     body: ConnectorConnectionCommandRequest,
     idempotency_key: IdempotencyKey,
-) -> ConnectorOperationReceipt:
+) -> ConnectionCleanupReceipt:
     return await _connections(request).revoke(
         actor=actor,
         connection_id=connection_id,
@@ -360,7 +361,7 @@ async def revoke_connector_connection(
 
 @router.delete(
     "/api/v1/connector-connections/{connection_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=ConnectionCleanupReceipt,
 )
 async def delete_connector_connection(
     request: Request,
@@ -368,14 +369,13 @@ async def delete_connector_connection(
     connection_id: str,
     expected_version: Annotated[int, Query(ge=1)],
     idempotency_key: IdempotencyKey,
-) -> Response:
-    await _connections(request).delete(
+) -> ConnectionCleanupReceipt:
+    return await _connections(request).delete(
         actor=actor,
         connection_id=connection_id,
         expected_version=expected_version,
         idempotency_key=idempotency_key,
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/connectivity/v1/connector-setup/callback", include_in_schema=False)
@@ -389,3 +389,44 @@ async def connector_setup_callback(
     if runtime is None:
         raise ConnectorError("callback_unavailable", "ConnectorProvider callback is unavailable.", status_code=503)
     return RedirectResponse(f"{runtime.public_origin.rstrip('/')}{return_path}", status_code=303)
+
+
+@router.post(
+    "/api/v1/organizations/{organization_id}/connector-providers",
+    response_model=ConnectorProvider,
+    status_code=status.HTTP_201_CREATED,
+)
+async def organization_create_connector_provider(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    organization_id: str,
+    body: CreateConnectorProviderRequest,
+    idempotency_key: IdempotencyKey,
+) -> ConnectorProvider:
+    require_organization_boundary(actor, organization_id)
+    resource = await _connector_providers(request).create(
+        actor=actor,
+        workspace_id=None,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+    _etag(response, resource)
+    return resource
+
+
+@router.get("/api/v1/organizations/{organization_id}/connector-providers", response_model=ConnectorProviderCollection)
+async def organization_list_connector_providers(
+    request: Request,
+    actor: Actor,
+    organization_id: str,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    cursor: Annotated[str | None, Query(max_length=2048)] = None,
+) -> ConnectorProviderCollection:
+    require_organization_boundary(actor, organization_id)
+    return await _connector_providers(request).list(
+        actor=actor,
+        workspace_id=None,
+        limit=limit,
+        cursor=cursor,
+    )

@@ -1,5 +1,5 @@
 """Slack ingress provider."""
 
-from .adapter import SlackAccountConfig, SlackIngressAdapter, SlackRouteMatch
+from .adapter import SlackAccountConfig, SlackIngressAdapter
 
-__all__ = ["SlackAccountConfig", "SlackIngressAdapter", "SlackRouteMatch"]
+__all__ = ["SlackAccountConfig", "SlackIngressAdapter"]

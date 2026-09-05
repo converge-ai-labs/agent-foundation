@@ -6,19 +6,18 @@ from typing import Protocol
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
-    DefaultRoute,
     InboundEvent,
     ProviderEventRouting,
     ProviderHttpResponse,
     ProviderRequest,
     ProviderRequestDecision,
+    ReceptionDefaults,
 )
 
 
 class IngressAdapter(Protocol):
     provider_key: str
     config_versions: frozenset[str]
-    allows_runtime_ambiguity: bool
     max_request_bytes: int
     dedup_horizon_seconds: int
 
@@ -28,32 +27,25 @@ class IngressAdapter(Protocol):
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object: ...
 
-    def validate_route(
-        self,
-        *,
-        match: object,
-        provider_policy: object,
-        account_config: JsonObject,
-        config_version: str,
-    ) -> tuple[JsonObject, JsonObject]: ...
+    def validate_reception_policy(self, value: object, *, config_version: str) -> JsonObject: ...
 
-    def prove_non_overlap(self, left: JsonObject, right: JsonObject) -> bool | None: ...
+    def validate_target(self, kind: str, external_id: str) -> str: ...
+
+    def event_target(self, event: InboundEvent) -> tuple[str, str]: ...
 
     async def authenticate_and_normalize(
         self,
         request: ProviderRequest,
         *,
-        ingress_id: str,
+        account_id: str,
         account_config: JsonObject,
         credentials: JsonObject,
         received_at: datetime,
     ) -> ProviderRequestDecision: ...
 
-    def route_matches(self, event: InboundEvent, match: JsonObject, *, config_version: str) -> bool: ...
-
-    def default_route(
+    def reception_defaults(
         self, event: InboundEvent, account_config: JsonObject, *, config_version: str
-    ) -> DefaultRoute: ...
+    ) -> ReceptionDefaults: ...
 
     def classify(
         self,

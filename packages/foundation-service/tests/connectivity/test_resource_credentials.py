@@ -5,7 +5,6 @@ from dataclasses import replace
 import pytest
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
-from a13n_service.connectivity.ingress.models import IngressRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord, MCPOAuthSessionRecord
 from a13n_service.credentials import ResourceCredential
 from a13n_service.models.models import ModelProviderRecord
@@ -14,8 +13,7 @@ from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import transaction
 from sqlalchemy import func, select
 
-from .conftest import ORG_ID, WORKSPACE_ID, actor
-from .test_ingress_service import ingress_request
+from .conftest import ACCOUNT_ID, ORG_ID, WORKSPACE_ID
 
 
 @pytest.mark.parametrize(
@@ -75,20 +73,11 @@ def test_oauth_setup_cannot_move_to_another_connection() -> None:
         record.credential_snapshot().decrypt(protector)
 
 
-@pytest.mark.anyio
-async def test_ingress_creation_persists_only_resource_owned_material(
-    ingress_service, connectivity_sessions, credential_protector
-) -> None:
-    created = await ingress_service.create_ingress(
-        actor=actor(),
-        workspace_id=WORKSPACE_ID,
-        idempotency_key="owned-material",
-        request=ingress_request(),
-    )
+async def test_account_persists_only_resource_owned_material(connectivity_sessions, credential_protector):
     async with transaction(connectivity_sessions) as session:
-        record = await session.get(IngressRecord, created.id)
-        assert record is not None
-        encrypted = record.account.credential_snapshot()
+        record = await session.get(AccountRecord, ACCOUNT_ID)
+        encrypted = record.credential_snapshot()
+        resource = record.to_resource()
         assert await session.scalar(select(func.count()).select_from(SecretRecord)) == 0
     assert encrypted.decrypt(credential_protector) == '{"token":"secret-value"}'
-    assert "secret-value" not in created.model_dump_json()
+    assert "secret-value" not in resource.model_dump_json()

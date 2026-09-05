@@ -6,8 +6,10 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
     String,
@@ -21,9 +23,10 @@ from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
 
 from .domain import Account, AccountStatus
+from .reception import InputBatchingPolicy
 
 
-class AccountRecord(ResourceCredential, Base):
+class AccountRecord(ResourceCredential[str], Base):
     credential_owner_type = "application_account"
     __tablename__ = "application_accounts"
     __table_args__ = (
@@ -35,6 +38,15 @@ class AccountRecord(ResourceCredential, Base):
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
             ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ("default_agent_id", "organization_id", "workspace_id"),
+            ("agents.id", "agents.organization_id", "agents.workspace_id"),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "NOT receive_enabled OR (default_agent_id IS NOT NULL AND execution_service_account_id IS NOT NULL)",
+            name="receiver_configured",
         ),
         CheckConstraint("status IN ('active', 'disabled')", name="status_valid"),
         CheckConstraint("version >= 1", name="version_positive"),
@@ -63,6 +75,13 @@ class AccountRecord(ResourceCredential, Base):
         Index("ix_application_accounts_provider_status", "provider_key", "status", "id"),
     )
 
+    receive_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    default_agent_id: Mapped[str | None] = mapped_column(String(72))
+    execution_service_account_id: Mapped[str | None] = mapped_column(
+        String(72), ForeignKey("service_accounts.id", ondelete="RESTRICT")
+    )
+    input_batching_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    provider_policy_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     identity_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -82,6 +101,13 @@ class AccountRecord(ResourceCredential, Base):
 
     def to_resource(self) -> Account:
         return Account(
+            receive_enabled=self.receive_enabled,
+            default_agent_id=self.default_agent_id,
+            execution_service_account_id=self.execution_service_account_id,
+            input_batching=InputBatchingPolicy.model_validate(self.input_batching_json)
+            if self.input_batching_json
+            else None,
+            provider_policy=self.provider_policy_json,
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,

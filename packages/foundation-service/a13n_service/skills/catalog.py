@@ -58,7 +58,7 @@ class SkillCatalogService:
             workspace = await authorize_skill_workspace(
                 session,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 action=WorkspaceAction.skill_read,
                 concealed_code="skill_not_found",
             )
@@ -129,7 +129,7 @@ class SkillCatalogService:
         cursor: str | None,
     ) -> SkillRevisionCollection:
         _validate_limit(limit)
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         scope = _cursor_scope(actor=actor, workspace_id=workspace_id, skill_id=skill_id)
         try:
             position = decode_revision_cursor(cursor, scope=scope) if cursor is not None else None
@@ -206,7 +206,7 @@ class SkillCatalogService:
         cursor: str | None,
     ) -> SkillAgentReferenceCollection:
         _validate_limit(limit)
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         scope = _cursor_scope(actor=actor, workspace_id=workspace_id, skill_id=skill_id)
         try:
             position = decode_reference_cursor(cursor, scope=scope) if cursor is not None else None
@@ -270,7 +270,7 @@ class SkillCatalogService:
         if_match: str,
         request: UpdateSkillRequest,
     ) -> Skill:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         try:
             return await self._update(
                 actor=actor,
@@ -342,7 +342,7 @@ class SkillCatalogService:
         skill_id: str,
         if_match: str,
     ) -> None:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         try:
             await self._delete(
                 actor=actor,
@@ -413,7 +413,7 @@ class SkillCatalogService:
         actor: AuthenticatedActor,
         revision_id: str,
     ) -> tuple[SkillRevisionRecord, str]:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         async with transaction(self._sessions) as session:
             workspace = await authorize_skill_workspace(
                 session,

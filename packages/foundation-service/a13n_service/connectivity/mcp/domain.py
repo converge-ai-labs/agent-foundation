@@ -43,7 +43,6 @@ class MCPConnection(StrictModel):
     id: str
     organization_id: str
     workspace_id: str
-    owner_user_id: str | None
     name: BoundedName
     endpoint_url: Endpoint
     auth_mode: MCPAuthMode
@@ -78,7 +77,6 @@ class CreateMCPConnectionRequest(StrictModel):
     name: BoundedName
     endpoint_url: Endpoint
     auth_mode: MCPAuthMode
-    owner_user_id: str | None = Field(default=None, min_length=1, max_length=72)
     static_header_names: tuple[HeaderName, ...] = Field(default=(), max_length=16)
 
 

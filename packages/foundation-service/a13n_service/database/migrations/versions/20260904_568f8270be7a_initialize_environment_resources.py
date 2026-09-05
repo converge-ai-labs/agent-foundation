@@ -30,9 +30,15 @@ def upgrade() -> None:
         sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_environment_providers_organization_id_organizations"),
+            ondelete="CASCADE",
+        ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
@@ -40,7 +46,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environment_providers")),
-        sa.UniqueConstraint("id", "workspace_id", name="uq_environment_providers_scope"),
+        sa.UniqueConstraint("id", "organization_id", name="uq_environment_providers_scope"),
     )
     op.create_index("ix_environment_providers_workspace", "environment_providers", ["workspace_id", "id"], unique=False)
     op.create_table(
@@ -52,10 +58,16 @@ def upgrade() -> None:
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("version >= 1", name=op.f("ck_environment_templates_version_positive")),
+        sa.ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_environment_templates_organization_id_organizations"),
+            ondelete="CASCADE",
+        ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
@@ -63,7 +75,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environment_templates")),
-        sa.UniqueConstraint("id", "workspace_id", name="uq_environment_templates_scope"),
+        sa.UniqueConstraint("id", "organization_id", name="uq_environment_templates_scope"),
     )
     op.create_index("ix_environment_templates_workspace", "environment_templates", ["workspace_id", "id"], unique=False)
     op.create_table(
@@ -71,24 +83,24 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("template_id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("provider_id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("recipe", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("version >= 1", name=op.f("ck_environment_template_revisions_version_positive")),
         sa.ForeignKeyConstraint(
-            ["provider_id", "workspace_id"],
-            ["environment_providers.id", "environment_providers.workspace_id"],
+            ["provider_id", "organization_id"],
+            ["environment_providers.id", "environment_providers.organization_id"],
             name=op.f("fk_environment_template_revisions_provider_id_environment_providers"),
         ),
         sa.ForeignKeyConstraint(
-            ["template_id", "workspace_id"],
-            ["environment_templates.id", "environment_templates.workspace_id"],
+            ["template_id", "organization_id"],
+            ["environment_templates.id", "environment_templates.organization_id"],
             name=op.f("fk_environment_template_revisions_template_id_environment_templates"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environment_template_revisions")),
-        sa.UniqueConstraint("id", "provider_id", "workspace_id", name="uq_environment_template_revisions_provider"),
+        sa.UniqueConstraint("id", "provider_id", "organization_id", name="uq_environment_template_revisions_provider"),
         sa.UniqueConstraint("template_id", "version", name="uq_environment_template_revisions_version"),
     )
     op.create_table(
@@ -121,28 +133,40 @@ def upgrade() -> None:
             name=op.f("ck_environments_ownership_recipe"),
         ),
         sa.CheckConstraint(
-            "status IN ('unprepared','running','stopped','deleted','unavailable')",
-            name=op.f("ck_environments_status_valid"),
+            "retention_condition IN ('active','idle')", name=op.f("ck_environments_retention_condition_valid")
         ),
         sa.CheckConstraint(
-            "retention_condition IN ('active','idle')", name=op.f("ck_environments_retention_condition_valid")
+            "status IN ('unprepared','running','stopped','deleted','unavailable')",
+            name=op.f("ck_environments_status_valid"),
         ),
         sa.CheckConstraint(
             "generation >= 0 AND operation_generation >= 0", name=op.f("ck_environments_generation_nonnegative")
         ),
         sa.ForeignKeyConstraint(
-            ["provider_id", "workspace_id"],
-            ["environment_providers.id", "environment_providers.workspace_id"],
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_environments_organization_id_organizations"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["provider_id", "organization_id"],
+            ["environment_providers.id", "environment_providers.organization_id"],
             name=op.f("fk_environments_provider_id_environment_providers"),
         ),
         sa.ForeignKeyConstraint(
-            ["template_revision_id", "provider_id", "workspace_id"],
+            ["template_revision_id", "provider_id", "organization_id"],
             [
                 "environment_template_revisions.id",
                 "environment_template_revisions.provider_id",
-                "environment_template_revisions.workspace_id",
+                "environment_template_revisions.organization_id",
             ],
             name=op.f("fk_environments_template_revision_id_environment_template_revisions"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "organization_id"],
+            ["workspaces.id", "workspaces.organization_id"],
+            name=op.f("fk_environments_workspace_id_workspaces"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environments")),
         sa.UniqueConstraint("id", "workspace_id", name="uq_environments_scope"),

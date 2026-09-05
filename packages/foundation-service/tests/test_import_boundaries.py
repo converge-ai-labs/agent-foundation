@@ -9,8 +9,8 @@ import pytest
 @pytest.mark.parametrize(
     "modules",
     [
-        ("a13n_service.agents", "a13n_service.connectivity.ingress.domain"),
-        ("a13n_service.connectivity.ingress.domain", "a13n_service.agents"),
+        ("a13n_service.agents", "a13n_service.connectivity.accounts.reception"),
+        ("a13n_service.connectivity.accounts.reception", "a13n_service.agents"),
     ],
 )
 def test_agents_and_connectivity_import_in_either_order(modules: tuple[str, str]) -> None:

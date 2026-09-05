@@ -11,6 +11,12 @@ The substrate exposes capability-specific interfaces instead of one generic stor
 
 Backend selection happens once during process startup. A failed network backend never falls back to local state.
 
+## Shared Configuration
+
+Model Providers, Models, Connector Providers, Environment Providers, and Environment Templates support Organization and Workspace ownership. A null `workspace_id` denotes Organization ownership. Organization collections use `/api/v1/organizations/{organization_id}/...`; Workspace configuration lists include local and parent resources. Organization Admin manages shared configuration, while Workspace roles retain their local management and shared-use permissions. Connections, actual Environments, and Runs remain Workspace-owned.
+
+The Host authenticator supplies exactly one credential boundary: `boundary_workspace_id` for Workspace requests, or `boundary_organization_id` for an Organization-scoped human session. Workspace API keys cannot manage Organization resources. Initial migrations define these scopes directly; recreate local databases initialized from older baseline files.
+
 ## Model Management
 
 Control-plane and all-in-one roles expose the accepted Model Management API at `/api/v1`. The service includes trusted OpenAI, Anthropic, Gemini, Vertex AI, Azure OpenAI, Bedrock, OpenRouter, Ollama, Alibaba Model Studio, DeepSeek, Moonshot, Zhipu, and generic OpenAI-compatible Provider types. A Workspace can create multiple configured Providers of the same type. Provider-scoped discovery is advisory; an unknown bounded upstream model name remains valid.
@@ -42,13 +48,13 @@ Set `FOUNDATION_PRICING_AUTO_UPDATE=false` before startup to disable this proces
 
 The shared executable exposes Connectivity according to its process role:
 
-- `control` and `all` expose authenticated Ingress, Route, Connector Provider, ConnectorConnection, and MCPConnection management below `/api/v1` and run their fenced setup, OAuth, and cleanup reconcilers.
-- `connectivity` and `all` expose provider-authenticated event delivery at `POST /connectivity/v1/ingresses/{ingress_id}/events`, run durable admission processing, and retain no browser or product API surface.
+- `control` and `all` expose authenticated Account, AccountTarget, Connector Provider, ConnectorConnection, and MCPConnection management below `/api/v1` and run fenced Connector setup and local OAuth-state expiration reconcilers.
+- `connectivity` and `all` expose provider-authenticated event delivery at `POST /connectivity/v1/accounts/{account_id}/events`, run durable admission processing, and retain no browser or product API surface.
 - `worker` constructs fresh native Ingress and Connector tool groups in process and connects directly to Remote MCP sources. It has no Connectivity management or provider-event routes.
 
 Control and Connectivity replicas share relational and object-storage facts; they do not call a private cross-pod Foundation API. The `all` role installs the union once. During shutdown readiness fails before new requests receive `503`, and background reconcilers stop under the application lifespan.
 
-Connector Provider types are explicitly registered through `Components.connector_provider_registry`. `GET /api/v1/connector-provider-types` returns safe configuration and credential schemas without upstream requests. Configured accounts live at `/api/v1/workspaces/{workspace_id}/connector-providers` and `/api/v1/connector-providers/{connector_provider_id}`. Create accepts `type`, `configuration` (including its endpoint), and separate write-only `credentials`. Type and configuration are immutable; name, credentials, and administrative status retain management-version preconditions. Credentials are stored directly on the ConnectorProvider as one encrypted bundle using the configured master key. Ingress and MCPConnection credentials follow the same ownership pattern; OAuth sessions own their temporary encrypted setup material. User/Workspace Secrets remain independently managed values, and third-party ConnectorConnection tokens remain with the external integration service.
+Connector Provider types are explicitly registered through `Components.connector_provider_registry`. `GET /api/v1/connector-provider-types` returns safe configuration and credential schemas without upstream requests. Configured accounts use Organization or Workspace collections and `/api/v1/connector-providers/{connector_provider_id}` detail routes. Create accepts `type`, `configuration` (including its endpoint), and separate write-only `credentials`. Type and configuration are immutable; name, credentials, and administrative status retain management-version preconditions. Credentials are stored directly on the ConnectorProvider as one encrypted bundle using the configured master key. Account and MCPConnection credentials follow the same ownership pattern; OAuth sessions own their temporary encrypted setup material. User/Workspace Secrets remain independently managed values, and third-party ConnectorConnection tokens remain with the external integration service.
 
 `POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors` reads the exact account's current directory under `connector_provider.read`. It creates no connections and publishes no tool catalog. Discovery and setup revalidation share a 30-second deadline and bounds of 128 pages, 2,048 directory entries, and 16 MiB across toolkit and auth-config responses. Composio v3.1 combines `/toolkits` with project `/auth_configs` using cursor pagination. Explicit configured allowlists filter the results. Only hosted OAuth supported by both the toolkit and current account is advertised; third-party credential input and upstream secret fields are excluded.
 
@@ -62,7 +68,9 @@ Set `FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN` to the exact externally reachable co
 
 Live tool discovery is bounded to 16 MiB, 128 pages, and 2,048 tools; results are bounded to 1 MiB. Agent and Run configuration use connection-selection lists with optional exact tool names and `defer_loading`. External schemas are discovered per Attempt and are never persisted as catalogs or Run snapshots. See [External tools](../../docs/foundation-service/external-tools.md) for selection semantics and host integration. Initial migrations create the current schema directly; recreate local databases initialized from the previous schema and reauthor Agent selections.
 
-Protected raw provider evidence is disabled by default; when enabled, its independent retention is capped at 24 hours. Terminal event identities remain only through their bounded deduplication horizon. Orphan object cleanup uses the configured grace period and conditional object versions.
+Accounts embed reception, disabled by default, with a default Agent and same-Workspace execution Service Account required when enabled. Exact `/application-accounts/{account_id}/targets` configure object-specific Agent and narrow overrides. The canonical Run/Steer bridge is required at startup. Batch receipts, initial Thread binding, and the input frequency clock commit atomically. Raw webhook bodies are not retained; pending normalized input remains until terminal acceptance or rejection, and terminal identities expire through their deduplication horizon.
+
+OAuth refresh runs on demand under a cross-Pod credential-generation lease. Interrupted exchanges require reauthorization. Connector and MCP deletion invalidate locally before one bounded remote cleanup attempt and return a persisted truthful receipt; command replay never repeats remote cleanup and no revoke/cleanup jobs remain.
 
 Until the canonical Foundation input bridge is supplied by the application composition, eligible provider events are still durably acknowledged and remain `pending`; the Connectivity process stays ready in this deliberately degraded mode. This package does not create another Agent execution path or dispatch Connector/MCP tools directly from model input.
 
