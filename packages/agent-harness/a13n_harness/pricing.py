@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from abc import abstractmethod
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from functools import lru_cache
 from importlib.metadata import version
 from importlib.resources import files
+from threading import Lock
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
+from a13n_logging import get_logger
 from genai_prices.data_snapshot import DataSnapshot, get_snapshot
 from genai_prices.types import (
     ConditionalPrice,
@@ -32,6 +35,8 @@ from a13n_harness.context import AgentContext
 
 if TYPE_CHECKING:
     from pydantic_ai.usage import RequestUsage
+
+logger = get_logger(__name__)
 
 MODEL_COST_CAPABILITY_ID = "a13n.usage.model-cost"
 _PROVIDER_ALIASES = {
@@ -219,12 +224,14 @@ class PricingCatalog(Mapping[str, ModelPricingEntry]):
         entries: Mapping[str, ModelPricingEntry],
         *,
         source_snapshot: DataSnapshot | None = None,
+        fallback_snapshot: DataSnapshot | None = None,
     ) -> None:
         copied = dict(entries)
         if any(key != entry.key for key, entry in copied.items()):
             raise ValueError("pricing catalog keys must match provider-qualified entries")
         self._entries = MappingProxyType(copied)
         self._source_snapshot = source_snapshot
+        self._fallback_snapshot = fallback_snapshot
         self._revision = _catalog_revision(copied)
 
     def __getitem__(self, key: str) -> ModelPricingEntry:
@@ -265,18 +272,21 @@ class PricingCatalog(Mapping[str, ModelPricingEntry]):
             direct = self._entries.get(f"{provider_id}:{model_ref}")
             if direct is not None:
                 return direct
-        if self._source_snapshot is None:
-            return None
-        try:
-            resolved_provider, resolved_model = self._source_snapshot.find_provider_model(
-                model_ref,
-                None,
-                provider_id,
-                provider_url,
-            )
-        except LookupError:
-            return None
-        return self._entries.get(f"{resolved_provider.id}:{resolved_model.id}")
+        for snapshot in (self._source_snapshot, self._fallback_snapshot):
+            if snapshot is None:
+                continue
+            try:
+                resolved_provider, resolved_model = snapshot.find_provider_model(
+                    model_ref,
+                    None,
+                    provider_id,
+                    provider_url,
+                )
+            except LookupError:
+                continue
+            if entry := self._entries.get(f"{resolved_provider.id}:{resolved_model.id}"):
+                return entry
+        return None
 
     def with_updates(self, updates: Mapping[str, ModelPricingEntry]) -> PricingCatalog:
         """Return a snapshot after complete-entry shallow dictionary replacement."""
@@ -289,7 +299,11 @@ class PricingCatalog(Mapping[str, ModelPricingEntry]):
             validated[key] = value
         merged = dict(self._entries)
         merged.update(validated)
-        return PricingCatalog(merged, source_snapshot=self._source_snapshot)
+        return PricingCatalog(
+            merged,
+            source_snapshot=self._source_snapshot,
+            fallback_snapshot=self._fallback_snapshot,
+        )
 
     def model_dump(self, *, mode: Literal["python", "json"] = "python") -> dict[str, Any]:
         """Export the complete catalog through stable Harness-owned schemas."""
@@ -332,10 +346,10 @@ class CatalogModelCostCapability(AbstractModelCostCapability):
         catalog: PricingCatalog | None = None,
         pricing_updates: Mapping[str, ModelPricingEntry] | None = None,
     ) -> None:
-        selected = get_default_pricing_catalog() if catalog is None else catalog
+        selected = get_current_pricing_catalog() if catalog is None else catalog
         if not isinstance(selected, PricingCatalog):
             raise TypeError("catalog must be a PricingCatalog")
-        self.catalog = selected.with_updates(pricing_updates or {})
+        self.catalog = selected.with_updates(pricing_updates) if pricing_updates else selected
 
     @property
     def revision(self) -> str:
@@ -388,20 +402,62 @@ class NoModelCostCapability(AbstractModelCostCapability):
 
 @lru_cache(maxsize=1)
 def get_default_pricing_catalog() -> PricingCatalog:
-    """Return the immutable genai-prices snapshot plus packaged replacements."""
-    snapshot = deepcopy(get_snapshot())
-    entries = _entries_from_snapshot(snapshot)
+    """Return only bundled prices plus packaged replacements, independently of updates."""
+    from genai_prices.data import providers
+
+    snapshot = DataSnapshot(deepcopy(providers), from_auto_update=False)
+    entries = _entries_from_snapshot(snapshot, bundled=True)
     entries.update(_load_packaged_updates())
     return PricingCatalog(entries, source_snapshot=snapshot)
 
 
-def _entries_from_snapshot(snapshot: DataSnapshot) -> dict[str, ModelPricingEntry]:
+_current_lock = Lock()
+_current_snapshot: DataSnapshot | None = None
+_current_catalog: PricingCatalog | None = None
+
+
+def get_current_pricing_catalog() -> PricingCatalog:
+    """Capture current prices without network I/O, retaining the last valid catalog on failure.
+
+    Hosts own the upstream updater. New builds automatically capture its successful updates;
+    existing Capabilities keep their immutable catalogs. Async Hosts should offload this function
+    and pass the returned catalog to ``HarnessBuilder.build(pricing_catalog=...)``.
+    """
+    from genai_prices.data import providers
+
+    global _current_snapshot, _current_catalog
+    with _current_lock:
+        snapshot = get_snapshot()
+        default = get_default_pricing_catalog()
+        if snapshot is _current_snapshot:
+            return _current_catalog or default
+        # Clearing the upstream custom snapshot explicitly returns to bundled prices.
+        if snapshot.providers is providers and not snapshot.from_auto_update:
+            _current_snapshot, _current_catalog = snapshot, default
+            return default
+        try:
+            copied = deepcopy(snapshot)
+            updates = _entries_from_snapshot(copied)
+            if not updates:
+                raise ValueError("updated pricing snapshot contains no usable model prices")
+            candidate = PricingCatalog(
+                {**default, **updates},
+                source_snapshot=copied,
+                fallback_snapshot=default._source_snapshot,
+            )
+        except Exception:
+            # One failed source is attempted once; a later upstream snapshot is eligible again.
+            logger.warning("pricing_catalog_update_failed", exc_info=True)
+        else:
+            _current_catalog = candidate
+        _current_snapshot = snapshot
+        return _current_catalog or default
+
+
+def _entries_from_snapshot(snapshot: DataSnapshot, *, bundled: bool = False) -> dict[str, ModelPricingEntry]:
     package_revision = version("genai-prices")
-    snapshot_revision = (
-        f"genai-prices:{package_revision}:auto:{snapshot.timestamp.isoformat()}"
-        if snapshot.from_auto_update
-        else f"genai-prices:{package_revision}:bundled"
-    )
+    source_kind = "bundled" if bundled else "auto" if snapshot.from_auto_update else "custom"
+    snapshot_revision = f"genai-prices:{package_revision}:{source_kind}"
     entries: dict[str, ModelPricingEntry] = {}
     for provider in snapshot.providers:
         source_url = provider.pricing_urls[0] if provider.pricing_urls else None
@@ -432,6 +488,22 @@ def _entries_from_snapshot(snapshot: DataSnapshot) -> dict[str, ModelPricingEntr
                 source_url=HttpUrl(source_url) if source_url is not None else None,
             )
             entries[entry.key] = entry
+    if not bundled:
+        # Retrieval time is not a pricing revision: identical downloads retain the same identity.
+        lookups = [
+            (
+                provider.id,
+                provider.api_pattern,
+                asdict(provider.model_match) if provider.model_match is not None else None,
+                asdict(provider.provider_match) if provider.provider_match is not None else None,
+                provider.fallback_model_providers,
+                [(model.id, asdict(model.match)) for model in provider.models],
+            )
+            for provider in snapshot.providers
+        ]
+        payload = json.dumps((_catalog_revision(entries), lookups), sort_keys=True).encode("utf-8")
+        source_revision = f"{snapshot_revision}:{hashlib.sha256(payload).hexdigest()[:24]}"
+        entries = {key: entry.model_copy(update={"source_revision": source_revision}) for key, entry in entries.items()}
     return entries
 
 
@@ -506,5 +578,6 @@ __all__ = [
     "PricingCatalog",
     "PricingConstraint",
     "PricingConstraintKind",
+    "get_current_pricing_catalog",
     "get_default_pricing_catalog",
 ]

@@ -72,6 +72,8 @@ One App lifetime:
 
 The shutdown timeout bounds graceful draining before cooperative cancellation. Agent UI retains structured ownership and keeps storage open until its tasks exit, so it does not claim a hard return deadline against arbitrary trusted Python code that ignores cancellation or creates an unbounded shield. Built-in collaborators and extension cleanup paths have their own finite bounds; a process supervisor owns any required hard process-termination deadline.
 
+When `process.pricing_auto_update` is enabled, the App owns Pydantic AI's background price updater for its lifespan. Startup does not wait for the first download; upstream downloads happen immediately and hourly with last-good fallback. Root, async-child, and resumed-child construction capture the current Harness catalog off the event loop and bind it through the public build API. Already constructed Agents and emitted usage remain unchanged under the [Harness cost contract](../agent-harness/12-events-observability-and-usage.md#cost-calculation). Price availability is diagnostic, not an App-readiness dependency. Shutdown releases this App's updater ownership without waiting for an in-flight download or clearing process-global prices. There is no App-owned second scheduler, disk price cache, or historical cost revaluation.
+
 A source change triggers a stable complete-tree candidate load. Invalid intermediate saves do not replace the accepted generation. Module import starts no task, process, listener, or database connection.
 
 ## Root Run Coordination

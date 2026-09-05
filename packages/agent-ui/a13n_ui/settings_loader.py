@@ -91,6 +91,7 @@ async def load_agent_ui_settings(
         storage=StorageSettings(data_root=resolved_data_root),
         log_level=process.log_level,
         log_format=process.log_format,
+        pricing_auto_update=process.pricing_auto_update,
     )
     return AgentUiSettingsSource(
         configuration=configuration,

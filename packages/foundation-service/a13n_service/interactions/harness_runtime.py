@@ -33,6 +33,8 @@ from a13n_harness import (
 )
 from a13n_harness.errors import RunError
 from a13n_harness.model_context import ModelContextMiddleware
+from a13n_harness.pricing import get_current_pricing_catalog
+from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -254,7 +256,8 @@ class HarnessDriver:
         state = self._control.current_state.envelope
         input_source, deferred_resume = _select_attempt_input(invocation, state)
         definition = compose_run_control(invocation.definition, self._control, self)
-        executable = self._builder.build(definition)
+        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
+        executable = self._builder.build(definition, pricing_catalog=pricing_catalog)
         bindings = invocation.collaborators.create_bindings()
         stream = _create_stream(
             executable,

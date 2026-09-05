@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from anyio import create_task_group, move_on_after
+from pydantic_ai import prices
 
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a_push import A2A_PUSH_ENABLED_SESSION_INFO_KEY
@@ -51,6 +52,8 @@ async def open_process_runtime(
     )
     try:
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
+            if owns_worker(settings.role) and settings.pricing_auto_update:
+                stack.enter_context(prices.update_in_background())
             storage.sessions.configure(
                 info={A2A_PUSH_ENABLED_SESSION_INFO_KEY: settings.a2a_enabled},
             )

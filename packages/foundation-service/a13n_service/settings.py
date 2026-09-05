@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     environment_maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     environment_operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)
     environment_maintenance_concurrency: int = Field(default=4, ge=1, le=128)
+    pricing_auto_update: bool = True
     observability_tracing: bool = True
     observability_trace_content: TraceContent = TraceContent.none
     observability_query_provider: str = Field(default="none", pattern=r"^[a-z][a-z0-9_]*$", max_length=64)

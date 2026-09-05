@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -15,6 +15,7 @@ from a13n_harness.model_auth import CodexCredentials, GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai import prices
 from pydantic_ai.capabilities import AbstractCapability
 
 from a13n_ui.composition import (
@@ -1133,7 +1134,9 @@ async def open_agent_ui_app(
     app: AgentUiApp | None = None
     operator: AgentUiSubagentOperator | None = None
     try:
-        async with open_local_store(settings.storage) as store:
+        async with open_local_store(settings.storage) as store, AsyncExitStack() as resources:
+            if settings.pricing_auto_update:
+                resources.enter_context(prices.update_in_background())
             selected_integrations = integrations or AgentUiIntegrations()
             catalog = AgentUiExtensionCatalog(
                 host_capabilities=dict(selected_integrations.capabilities),

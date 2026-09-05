@@ -475,17 +475,46 @@ Recovery never makes uncertain external side effects exactly once. When a tool o
 
 Provider integrations can record stable non-model receipts through `AgentContext.record_provider_usage()`.
 
-Model-cost valuation is enabled by default. `HarnessBuilder` inserts `CatalogModelCostCapability`, which uses an immutable catalog assembled from the pinned `genai-prices` snapshot plus Harness pricing replacements. Read or export the complete snapshot with `get_default_pricing_catalog()`:
+Model-cost valuation is enabled by default. `HarnessBuilder` inserts `CatalogModelCostCapability`, which freezes the current valid pricing catalog for the built Agent. Without Host-enabled updates this is bundled `genai-prices` data plus Harness supplements. `get_default_pricing_catalog()` always reads that bundled baseline; `get_current_pricing_catalog()` additionally adopts successful upstream updates. Both return immutable catalogs without downloading anything. Read or export the current snapshot:
 
 ```python
-from a13n_harness.pricing import get_default_pricing_catalog
+from a13n_harness.pricing import get_current_pricing_catalog
 
-pricing = get_default_pricing_catalog()
+pricing = get_current_pricing_catalog()
 entry = pricing["openai:gpt-5.5"]
 exported = pricing.model_dump(mode="json")
 ```
 
-To replace prices, create complete `ModelPricingEntry` values and pass a shallow update dictionary. Each value replaces the entire entry at that `provider:model` key; nested fields are not merged:
+### Keep Prices Current in a Host
+
+Pydantic AI 2.40 or later exposes `prices.update_in_background()`. Start it once in your final application process, not during import or before forking. The following sketch uses your application's `serve()` function:
+
+```python
+from pydantic_ai import prices
+
+async def main():
+    with prices.update_in_background():
+        await serve()
+```
+
+The upstream updater downloads immediately and then hourly. Startup need not wait for the first download: bundled prices are usable immediately, and failed downloads retain the last good data. Every later `HarnessBuilder.build()` automatically captures validated updates without restarting or clearing a cache. An already built executable keeps its old prices even when reused; rebuild it to adopt updates. The same rule keeps an active run and its inline descendants stable.
+
+In an async Host, capture the catalog off the event loop and pass it to the builder. The explicit snapshot is used for default pricing only; a custom model-cost Capability still wins:
+
+```python
+from anyio import to_thread
+from a13n_harness import HarnessBuilder
+from a13n_harness.pricing import get_current_pricing_catalog
+
+catalog = await to_thread.run_sync(get_current_pricing_catalog)
+executable = HarnessBuilder().build(definition, pricing_catalog=catalog)
+```
+
+Downloaded entries override packaged supplements; missing entries keep bundled coverage. Conversion failures retain the previous valid catalog. Identical downloaded pricing content keeps the same revision regardless of retrieval time. No price history or disk cache is created. Stopping the updater does not erase already downloaded prices; pass `get_default_pricing_catalog()` as `pricing_catalog` when a build must use bundled data regardless of other process activity.
+
+### Override Pricing
+
+To replace prices, create complete `ModelPricingEntry` values and pass a shallow update dictionary. Each value replaces the entire entry at that `provider:model` key and wins over downloaded and bundled prices; nested fields are not merged:
 
 ```python
 from a13n_harness import HarnessBuilder

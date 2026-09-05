@@ -289,7 +289,7 @@ Installed plugins and native objects are trusted in-process code. Harness Plugin
 
 Pydantic AI instrumentation owns Agent/model/tool spans. Harness features add spans only for Harness-owned context, plugins, recovery, state, Environment, and delegation work. Foundation adds durable lifecycle, queue, child, client-delivery, and Connectivity spans.
 
-`RunUsage` is a process-local accumulator. The Harness applies one release-pinned or Host-replaced build-time pricing policy and records its revision; Hosts own durable deduplication, cross-run aggregation, negotiated adjustments, budgets, billing, and payment.
+`RunUsage` is a process-local accumulator. The Harness captures one current or explicitly pinned build-time pricing policy and records its revision under the [cost calculation contract](agent-harness/12-events-observability-and-usage.md#cost-calculation); Hosts own durable deduplication, cross-run aggregation, negotiated adjustments, budgets, billing, and payment.
 
 ## Completion Boundaries
 

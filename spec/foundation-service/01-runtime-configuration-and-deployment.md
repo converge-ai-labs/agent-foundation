@@ -90,6 +90,12 @@ Configuration is immutable after startup. Changing a setting requires a new proc
 
 The observability section contains the tracing switch and Harness content selection owned by the [observability contract](38-observability.md), plus the independent query-provider selection and typed provider configuration owned by [Trace Query](39-trace-query.md). Exporter, endpoint, protocol, headers, TLS, sampler, batch, and timeout settings use standard `OTEL_*` input and do not gain Foundation aliases. Query providers do not inspect or reuse those exporter settings. Static configuration is validated before startup completes. Runtime exporter and query-backend availability are diagnostic and never become readiness dependencies.
 
+### Background Model Prices
+
+`pricing.auto_update` defaults to `true` (`FOUNDATION_PRICING_AUTO_UPDATE`). The execution-owning process starts Pydantic AI's shared background updater during lifespan and releases its ownership during shutdown. `control` and `connectivity` do not start it; `all` installs it once. Updates start immediately and repeat hourly without delaying readiness or Agent work. Download failure retains the latest usable prices and remains diagnostic, not a critical background-component failure. The updater has process-local, not cluster-wide, ownership; fetched prices are not stored in service tables or a disk cache.
+
+Before each Harness build, execution captures the current immutable catalog off the event loop and passes `pricing_catalog` to the public builder. Later builds automatically adopt validated updates, while active Agents and existing usage records retain their original pricing. [Harness Cost Calculation](../agent-harness/12-events-observability-and-usage.md#cost-calculation) owns catalog precedence, revision identity, conversion fallback, and explicit policy overrides. Stopping or disabling one updater does not clear a snapshot previously published in that process. This background data refresh does not hot-reload the immutable process configuration.
+
 ## Deployment Profiles
 
 Foundation supports two profiles:

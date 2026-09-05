@@ -19,6 +19,7 @@ def test_settings_normalize_process_values(tmp_path: Path) -> None:
     assert settings.storage.data_root == (tmp_path / "store").resolve()
     assert settings.log_level == "DEBUG"
     assert settings.log_format == "pretty"
+    assert settings.pricing_auto_update is True
 
 
 def test_settings_reject_unknown_or_invalid_values(tmp_path: Path) -> None:
@@ -45,6 +46,7 @@ async def test_loads_one_strict_full_settings_yaml(tmp_path: Path) -> None:
 schema_version: "2"
 process:
   log_level: debug
+  pricing_auto_update: false
 """.strip()
         + "\n"
     )
@@ -57,6 +59,7 @@ process:
     assert source.candidate_error is None
     assert source.settings.storage.data_root == data_root
     assert source.settings.log_level == "DEBUG"
+    assert source.settings.pricing_auto_update is False
 
 
 async def test_default_settings_use_one_fixed_user_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

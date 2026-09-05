@@ -11,6 +11,7 @@ from a13n_harness import AgentContext, AgentDefinition, AgentSpec, ExecutableAge
 from a13n_harness.capabilities import SubagentCapability, SubagentOperator
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
+from a13n_harness.pricing import PricingCatalog
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
@@ -82,6 +83,7 @@ class AgentReconstructor:
         subagent_operator: SubagentOperator | None,
         root_capabilities: Sequence[AbstractCapability[Any]] = (),
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ReconstructedAgent:
         plugin_keys = tuple(
             dict.fromkeys(
@@ -113,7 +115,9 @@ class AgentReconstructor:
                 path_layout=path_layout,
                 model_recipes=model_recipes,
             )
-            executable = HarnessBuilder(configured_plugins_enabled=False).build(definition)
+            executable = HarnessBuilder(configured_plugins_enabled=False).build(
+                definition, pricing_catalog=pricing_catalog
+            )
         except CompositionError:
             raise
         except (HarnessError, PluginError, ValueError, TypeError) as exc:
