@@ -2,6 +2,10 @@
 
 Contributions to Agent Foundation are welcome. The project uses GitHub Issues for discussion and progress tracking, and pull requests for every reviewed change to specifications, documentation, code, tests, and automation. Repository-wide service engineering requirements are defined in [DEVELOPMENT.md](DEVELOPMENT.md).
 
+## Repository Language
+
+Write all repository content in English.
+
 ## Before You Start
 
 Search the existing [issues](https://github.com/converge-ai-labs/agent-foundation/issues) before opening new work.

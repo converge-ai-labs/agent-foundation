@@ -11,7 +11,7 @@ Complete the requested Git/GitHub handoff under `AGENTS.md` and `CONTRIBUTING.md
 
 - Inspect `git status --short --branch`, the diff, untracked files, and relevant remotes. Separate intended changes from unrelated work, secrets, local configuration, caches, and generated artifacts.
 - Resolve the requested stages from context: commit-only ends after committing; push-only may use an existing commit; opening a PR normally includes the necessary branch, commit, and push. Ask only when the intended content or destination is materially ambiguous.
-- Keep a suitable branch. For detached HEAD, a default branch, or another protected branch, create a descriptive branch using the user's naming convention or `codex/` by default. Do not push directly to a protected base.
+- Keep a suitable branch. For detached HEAD, a default branch, or another protected branch, follow the user's naming convention when provided; otherwise create a short descriptive branch such as `feat/harness-capability-runtime` or `fix/session-cancellation`. Do not push directly to a protected base.
 - GitHub operations use `gh`; local Git work does not require it. Before a GitHub operation, determine the host/repository from the remote and check `gh auth status --hostname <host>` and `gh repo view --json nameWithOwner,url,defaultBranchRef`.
 - If `gh` is unavailable or unauthenticated, finish independent authorized local preparation and report the missing prerequisite and applicable login command. Do not silently substitute browser automation, raw APIs, or another hosting CLI.
 
