@@ -10,10 +10,10 @@ import anyio
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.reconciliation import load_owning_run
-from a13n_service.public_errors import PublicError
 from a13n_service.run_stream import (
     RedisRunStream,
     RetainedReplayUnavailable,
@@ -24,7 +24,7 @@ from a13n_service.run_stream import (
 from a13n_service.storage import short_session
 
 
-class NativeStreamError(PublicError):
+class NativeStreamError(ApplicationError):
     """Safe Native Run Stream failure."""
 
 
@@ -93,7 +93,7 @@ class NativeRunStreamService:
                 raise NativeStreamError(
                     "invalid_cursor",
                     "The Run Stream cursor is invalid.",
-                    status_code=400,
+                    category=ErrorCategory.invalid_request,
                 ) from error
             return await self._attach_replay(
                 actor=actor,
@@ -115,7 +115,7 @@ class NativeRunStreamService:
             raise NativeStreamError(
                 "run_stream_replay_gap",
                 "The retained Run Stream is unavailable.",
-                status_code=409,
+                category=ErrorCategory.conflict,
                 details={
                     "run_id": run_id,
                     "requested_cursor": after_stream_id,
@@ -221,7 +221,7 @@ class NativeRunStreamService:
         raise NativeStreamError(
             "run_stream_replay_gap",
             "The requested Run Stream history is no longer retained.",
-            status_code=409,
+            category=ErrorCategory.conflict,
             details={
                 "run_id": run_id,
                 "requested_cursor": after_stream_id,
@@ -275,7 +275,7 @@ def _resource_not_found() -> NativeStreamError:
     return NativeStreamError(
         "resource_not_found",
         "The requested resource was not found.",
-        status_code=404,
+        category=ErrorCategory.not_found,
     )
 
 

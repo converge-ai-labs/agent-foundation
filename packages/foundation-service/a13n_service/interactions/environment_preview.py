@@ -2,10 +2,11 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.agents.models import AgentRecord
-from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection, NewEnvironmentSelection
+from a13n_service.environments.domain import EnvironmentSelection, NewEnvironmentSelection
 from a13n_service.environments.selection import Omitted, intersect_access, resolve_selection
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
+
+from .environment_selection import resolve_environment_intent
 
 
 async def input_environment_access(
@@ -17,16 +18,7 @@ async def input_environment_access(
     inherited_id: str | Omitted | None = Omitted.UNSET,
     access_ceiling: str | None = None,
 ) -> str | None:
-    if choice is Omitted.UNSET:
-        if inherited_id is Omitted.UNSET:
-            agent = await database.get(AgentRecord, agent_id)
-            choice = (
-                NewEnvironmentSelection(template_id=agent.default_environment_template_id)
-                if agent and agent.default_environment_template_id
-                else None
-            )
-        else:
-            choice = ExistingEnvironmentSelection(environment_id=inherited_id) if inherited_id else None
+    choice = await resolve_environment_intent(database, agent_id=agent_id, choice=choice, inherited_id=inherited_id)
     if choice is None:
         return None
     await authorize_agent(

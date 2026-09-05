@@ -152,12 +152,6 @@ def upgrade() -> None:
         sa.Column("agent_id", sa.String(length=72), nullable=False),
         sa.Column("agent_revision_id", sa.String(length=72), nullable=False),
         sa.Column("effective_agent_config_digest", sa.String(length=64), nullable=False),
-        sa.Column("encrypted_config_object_key", sa.String(length=1024), nullable=True),
-        sa.Column("encrypted_config_ciphertext_digest_sha256", sa.String(length=64), nullable=True),
-        sa.Column("encrypted_config_protected_value_digest_sha256", sa.String(length=64), nullable=True),
-        sa.Column("encrypted_config_size_bytes", sa.BigInteger(), nullable=True),
-        sa.Column("encrypted_config_encryption_key_id", sa.String(length=256), nullable=True),
-        sa.Column("encrypted_config_schema_version", sa.String(length=32), nullable=True),
         sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
         sa.Column("model_execution_observation_json", sa.JSON(), nullable=False),
         sa.Column("connector_connection_selections_json", sa.JSON(), nullable=False),
@@ -256,12 +250,8 @@ def upgrade() -> None:
             name=op.f("ck_runs_wait_reason_valid"),
         ),
         sa.CheckConstraint(
-            "(encrypted_config_ciphertext_digest_sha256 IS NULL OR length(encrypted_config_ciphertext_digest_sha256) = 64) AND (encrypted_config_protected_value_digest_sha256 IS NULL OR length(encrypted_config_protected_value_digest_sha256) = 64) AND (input_object_digest_sha256 IS NULL OR length(input_object_digest_sha256) = 64) AND (output_object_digest_sha256 IS NULL OR length(output_object_digest_sha256) = 64) AND (sealed_state_digest_sha256 IS NULL OR length(sealed_state_digest_sha256) = 64)",
+            "(input_object_digest_sha256 IS NULL OR length(input_object_digest_sha256) = 64) AND (output_object_digest_sha256 IS NULL OR length(output_object_digest_sha256) = 64) AND (sealed_state_digest_sha256 IS NULL OR length(sealed_state_digest_sha256) = 64)",
             name=op.f("ck_runs_optional_digests_sha256"),
-        ),
-        sa.CheckConstraint(
-            "(encrypted_config_object_key IS NULL AND encrypted_config_ciphertext_digest_sha256 IS NULL AND encrypted_config_protected_value_digest_sha256 IS NULL AND encrypted_config_size_bytes IS NULL AND encrypted_config_encryption_key_id IS NULL AND encrypted_config_schema_version IS NULL) OR (encrypted_config_object_key IS NOT NULL AND encrypted_config_ciphertext_digest_sha256 IS NOT NULL AND encrypted_config_protected_value_digest_sha256 IS NOT NULL AND encrypted_config_size_bytes > 0 AND encrypted_config_encryption_key_id IS NOT NULL AND encrypted_config_schema_version IS NOT NULL)",
-            name=op.f("ck_runs_encrypted_config_group_valid"),
         ),
         sa.CheckConstraint(
             "(input_json IS NOT NULL) <> (input_object_key IS NOT NULL)",

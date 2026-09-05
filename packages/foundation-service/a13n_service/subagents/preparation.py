@@ -17,9 +17,7 @@ from a13n_service.connectivity.selection_domain import (
     MCPConnectionRunSelection,
 )
 from a13n_service.interactions.domain import (
-    EncryptedRunConfigPayloadRef,
     RecoveryBudget,
-    RecoveryUsage,
     Run,
     RunInputKind,
     RunLineageKind,
@@ -27,6 +25,7 @@ from a13n_service.interactions.domain import (
     Thread,
     ThreadOriginKind,
     ThreadRole,
+    accepted_run,
 )
 from a13n_service.interactions.initialization import (
     RunStateSeed,
@@ -90,7 +89,6 @@ def prepare_child_run(
     relationship_id: str,
     recovery_budget: RecoveryBudget,
     created_at: datetime,
-    encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread,
 ) -> PreparedChildRunAcceptance:
@@ -167,7 +165,6 @@ def prepare_child_run(
         child_effective_config=child_effective_config,
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
-        encrypted_config_payload=encrypted_config_payload,
         recovery_budget=recovery_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
@@ -207,7 +204,6 @@ def prepare_child_resume(
     relationship_id: str,
     recovery_budget: RecoveryBudget,
     created_at: datetime,
-    encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread,
 ) -> PreparedChildRunResume:
@@ -281,7 +277,6 @@ def prepare_child_resume(
         child_effective_config=child_effective_config,
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
-        encrypted_config_payload=encrypted_config_payload,
         recovery_budget=recovery_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
@@ -348,16 +343,15 @@ def _child_run(
     child_effective_config: EffectiveAgentConfig,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
-    encrypted_config_payload: EncryptedRunConfigPayloadRef | None,
     recovery_budget: RecoveryBudget,
     request_fingerprint: str,
     input_payload: JsonValue,
     delegated_input: str,
     created_at: datetime,
 ) -> Run:
-    return Run(
+    return accepted_run(
+        now=created_at,
         id=child_run_id,
-        version=1,
         tenant_id=parent_run.tenant_id,
         authority_principal=parent_run.authority_principal,
         session_id=parent_run.session_id,
@@ -372,7 +366,6 @@ def _child_run(
         agent_id=child_agent_id,
         agent_revision_id=child_agent_revision_id,
         effective_agent_config_digest=child_effective_config.content_digest,
-        encrypted_config_payload=encrypted_config_payload,
         runtime_lock_digest=child_effective_config.runtime_lock_digest,
         model_execution_observation=child_effective_config.resolved_model.execution.observation(),
         connector_connection_selections=tuple(
@@ -383,20 +376,11 @@ def _child_run(
         ),
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
-        available_at=created_at,
-        next_attempt_fence=1,
         recovery_budget=recovery_budget,
-        attempts_started=0,
-        recovery_attempts_started=0,
-        handoffs_completed=0,
-        usage_charged=RecoveryUsage(),
         request_fingerprint=request_fingerprint,
-        status=RunStatus.accepted,
         input_kind=RunInputKind.agent_input,
         input=input_payload,
         input_text=delegated_input if len(delegated_input) <= 65_536 else None,
-        created_at=created_at,
-        updated_at=created_at,
     )
 
 

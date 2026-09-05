@@ -18,6 +18,7 @@ from a13n_service.connectivity.native import native_capability
 from a13n_service.connectivity.native_context import InboundRunContext, bind_account_tools
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.storage import transaction
 from pydantic import ValidationError
@@ -324,7 +325,7 @@ async def test_account_metadata_does_not_grant_use_or_management(account_service
             idempotency_key="viewer-rotate",
             request=ReplaceAccountCredentialsRequest(expected_version=1, credentials={"token": "replacement"}),
         )
-    assert denied.value.status_code == 404
+    assert application_error_status(denied.value) == 404
     async with transaction(connectivity_sessions) as session:
         with pytest.raises(AuthorizationError):
             await bind_account_tools(

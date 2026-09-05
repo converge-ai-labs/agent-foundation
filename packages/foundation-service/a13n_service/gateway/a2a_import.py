@@ -12,6 +12,7 @@ from a2a.types import a2a_pb2 as a2a
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
 from a13n_service.assets.errors import AssetError
 from a13n_service.assets.service import AssetService, PreparedAssetPublication
@@ -23,10 +24,10 @@ _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 class A2APartImportError(ValueError):
-    def __init__(self, code: str, message: str, *, status_code: int = 422) -> None:
+    def __init__(self, code: str, message: str, *, category: ErrorCategory = ErrorCategory.invalid_input) -> None:
         super().__init__(message)
         self.code = code
-        self.status_code = status_code
+        self.category = category
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +74,9 @@ class A2APartImporter:
                 kind = part.WhichOneof("content")
                 if kind == "text":
                     if not part.text:
-                        raise A2APartImportError("message_invalid", "Text Parts cannot be empty.", status_code=400)
+                        raise A2APartImportError(
+                            "message_invalid", "Text Parts cannot be empty.", category=ErrorCategory.invalid_request
+                        )
                     content.append({"type": "text", "text": part.text})
                 elif kind == "data":
                     data.append(MessageToDict(part)["data"])
@@ -86,7 +89,11 @@ class A2APartImporter:
                     publications.append(publication)
                     content.append(_binary_block(publication))
                 else:
-                    raise A2APartImportError("message_invalid", "The Message Part content is missing.", status_code=400)
+                    raise A2APartImportError(
+                        "message_invalid",
+                        "The Message Part content is missing.",
+                        category=ErrorCategory.invalid_request,
+                    )
             structured = None if not data else data[0] if len(data) == 1 else data
             return PreparedA2AMessage(
                 input=AgentInput.model_validate(
@@ -146,7 +153,9 @@ class A2APartImporter:
         index: int,
     ) -> PreparedAssetPublication:
         if not part.url:
-            raise A2APartImportError("message_invalid", "URL Parts cannot be empty.", status_code=400)
+            raise A2APartImportError(
+                "message_invalid", "URL Parts cannot be empty.", category=ErrorCategory.invalid_request
+            )
         if self._http is None:
             raise A2APartImportError("part_url_fetch_failed", "The URL Part importer is unavailable.")
         current = part.url
@@ -217,7 +226,7 @@ class A2APartImporter:
             raise A2APartImportError(
                 "part_content_invalid",
                 "The Part content could not be imported.",
-                status_code=error.status_code,
+                category=error.category,
             ) from error
 
 

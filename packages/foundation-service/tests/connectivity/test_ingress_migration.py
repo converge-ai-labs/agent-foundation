@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, inspect
 TABLES = {
     "application_accounts",
     "agent_thread_bindings",
-    "connectivity_commands",
+    "idempotency_evidence",
     "ingress_admissions",
     "ingress_batches",
     "account_targets",
@@ -37,8 +37,8 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
             "credential_generation",
             "identity_digest",
         } <= account_columns
-        command_columns = {column["name"] for column in inspector.get_columns("connectivity_commands")}
-        assert "idempotency_key_digest" in command_columns
+        command_columns = {column["name"] for column in inspector.get_columns("idempotency_evidence")}
+        assert "key_digest" in command_columns
         assert "idempotency_key" not in command_columns
         admission_columns = {column["name"] for column in inspector.get_columns("ingress_admissions")}
         assert {"batch_id", "event_json", "dedup_expires_at"} <= admission_columns

@@ -7,6 +7,8 @@ import json
 import logging
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from functools import partial
 from time import monotonic
 from typing import Any, Literal
 
@@ -27,9 +29,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig, AgentRunOverride, ClientToolDefinition, canonical_digest
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
+from a13n_service.interactions.commands import (
+    ContinueRunCommand,
+    ForkRunCommand,
+    InteractionCommands,
+    StartRunCommand,
+    WaitingContinueRunCommand,
+)
 from a13n_service.interactions.control_domain import (
     CompletePendingResolution,
     InterruptRequest,
@@ -40,7 +50,6 @@ from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.input import AgentInput
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.lifecycle import LifecycleEvent
-from a13n_service.public_errors import PublicError
 from a13n_service.run_stream import (
     CompleteRunStream,
     RedisRunStream,
@@ -58,13 +67,6 @@ from .agui_replay import (
     HostedAguiReplaySnapshot,
     HostedAguiReplayStore,
     HostedAguiReplayUnavailable,
-)
-from .commands import (
-    ContinueRunRequest,
-    ForkRunRequest,
-    NativeInteractionCommands,
-    StartRunRequest,
-    WaitingContinueRunRequest,
 )
 from .models import AguiRunBindingRecord, AguiThreadBindingRecord
 
@@ -86,7 +88,7 @@ _VISIBLE_EVENTS = frozenset(
 )
 
 
-class HostedAguiError(PublicError):
+class HostedAguiError(ApplicationError):
     """A bounded Hosted AG-UI adapter failure."""
 
 
@@ -201,7 +203,7 @@ class HostedAguiService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        commands: NativeInteractionCommands,
+        commands: InteractionCommands,
         stream: RedisRunStream,
         replay: RunReplayStore,
         hosted_replay: HostedAguiReplayStore,
@@ -253,7 +255,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_run_id_conflict",
                     "The AG-UI runId was already used with different input.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             await self._authorize_read(actor=actor, binding=existing)
             return await self._attachment(actor=actor, binding=existing, cursor=last_event_id)
@@ -279,7 +281,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_parent_not_found",
                     "The selected AG-UI parent Run is unavailable.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             historical_parent = selected_parent.id != latest.id
             source, foundation_thread = await self._load_continuation_source(
@@ -325,69 +327,19 @@ class HostedAguiService:
         run_binding_id = new_object_id("aguirb")
         now = assume_utc(self._clock())
 
-        async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
-            run = await database.scalar(
-                select(RunRecord).where(RunRecord.id == receipt.run_id, RunRecord.thread_id == receipt.thread_id)
-            )
-            if run is None:
-                raise HostedAguiError(
-                    "agui_binding_failed",
-                    "The accepted Run could not be bound.",
-                    status_code=409,
-                )
-            if thread is None:
-                database.add(
-                    AguiThreadBindingRecord(
-                        id=thread_binding_id,
-                        organization_id=run.tenant_id,
-                        workspace_id=actor.workspace_id,
-                        client_principal_type=actor.principal.principal_type.value,
-                        client_principal_id=actor.principal.principal_id,
-                        agent_id=agent_id,
-                        external_thread_id=request.thread_id,
-                        session_id=receipt.session_id,
-                        root_thread_id=receipt.thread_id,
-                        active_thread_id=receipt.thread_id,
-                        version=1,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-                await database.flush()
-            else:
-                selected = await database.scalar(
-                    select(AguiThreadBindingRecord).where(AguiThreadBindingRecord.id == thread.id).with_for_update()
-                )
-                if (
-                    selected is None
-                    or selected.version != thread.version
-                    or selected.active_thread_id != thread.active_thread_id
-                ):
-                    raise HostedAguiError(
-                        "agui_thread_changed",
-                        "The AG-UI thread binding changed before Run acceptance.",
-                        status_code=409,
-                    )
-                selected.version += 1
-                selected.active_thread_id = receipt.thread_id
-                selected.updated_at = now
-            database.add(
-                AguiRunBindingRecord(
-                    id=run_binding_id,
-                    organization_id=run.tenant_id,
-                    workspace_id=actor.workspace_id,
-                    thread_binding_id=thread_binding_id,
-                    agent_id=agent_id,
-                    agent_revision_id=run.agent_revision_id,
-                    external_thread_id=request.thread_id,
-                    external_run_id=request.run_id,
-                    parent_external_run_id=None if selected_parent is None else selected_parent.external_run_id,
-                    request_digest_sha256=request_digest,
-                    request_json=request_json,
-                    run_id=receipt.run_id,
-                    created_at=now,
-                )
-            )
+        binding = _PreparedAguiBinding(
+            actor=actor,
+            agent_id=agent_id,
+            request=request,
+            request_json=request_json,
+            request_digest=request_digest,
+            thread=thread,
+            thread_binding_id=thread_binding_id,
+            run_binding_id=run_binding_id,
+            selected_parent=selected_parent,
+            now=now,
+        )
+        bind = partial(_persist_agui_binding, prepared=binding)
 
         idempotency_key = f"agui-{hashlib.sha256(request.run_id.encode()).hexdigest()}"
         if thread is None:
@@ -395,13 +347,13 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_parent_not_found",
                     "An initial AG-UI Run cannot select parentRunId.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             await self._commands.start(
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 idempotency_key=idempotency_key,
-                request=StartRunRequest(
+                request=StartRunCommand(
                     agent_id=agent_id,
                     agent_revision_id=mapped.agent_revision_id,
                     config_override=mapped.config_override,
@@ -417,19 +369,19 @@ class HostedAguiService:
                     raise HostedAguiError(
                         "agui_resume_parent_invalid",
                         "AG-UI feedback can target only the active waiting Run.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 if source.status != RunStatus.completed.value:
                     raise HostedAguiError(
                         "agui_parent_not_forkable",
                         "The selected historical AG-UI parent Run is not completed.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 await self._commands.fork(
                     actor=actor,
                     run_id=source.id,
                     idempotency_key=idempotency_key,
-                    request=ForkRunRequest(
+                    request=ForkRunCommand(
                         input=_require_agui_input(mapped),
                         agent_id=agent_id,
                         agent_revision_id=mapped.agent_revision_id,
@@ -442,7 +394,7 @@ class HostedAguiService:
                     raise HostedAguiError(
                         "agui_waiting_state_invalid",
                         "The active AG-UI Run has no complete waiting state.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 if mapped.resolutions is not None:
                     await self._commands.feedback(
@@ -461,7 +413,7 @@ class HostedAguiService:
                         actor=actor,
                         run_id=source.id,
                         idempotency_key=idempotency_key,
-                        request=WaitingContinueRunRequest(
+                        request=WaitingContinueRunCommand(
                             expected_thread_version=foundation_thread.version,
                             sealed_state_digest_sha256=source.sealed_state_digest_sha256,
                             input=_require_agui_input(mapped),
@@ -473,13 +425,13 @@ class HostedAguiService:
                     raise HostedAguiError(
                         "agui_run_not_waiting",
                         "AG-UI feedback requires the active Run to be waiting.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 await self._commands.continue_from(
                     actor=actor,
                     source_run_id=source.id,
                     idempotency_key=idempotency_key,
-                    request=ContinueRunRequest(
+                    request=ContinueRunCommand(
                         expected_thread_version=foundation_thread.version,
                         input=_require_agui_input(mapped),
                         agent_id=agent_id,
@@ -499,13 +451,13 @@ class HostedAguiService:
             raise HostedAguiError(
                 "agui_binding_failed",
                 "The accepted Run binding is unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         if bound.request_digest_sha256 != request_digest:
             raise HostedAguiError(
                 "agui_run_id_conflict",
                 "The AG-UI runId was already used with different input.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         return await self._attachment(actor=actor, binding=bound, cursor=last_event_id)
 
@@ -528,7 +480,7 @@ class HostedAguiService:
             raise HostedAguiError(
                 "resource_not_found",
                 "The requested resource was not found.",
-                status_code=404,
+                category=ErrorCategory.not_found,
             )
         await self._authorize_action(actor=actor, binding=binding, action=WorkspaceAction.run_interrupt)
         run, thread = await self._load_run_and_thread(binding)
@@ -538,7 +490,7 @@ class HostedAguiService:
             raise HostedAguiError(
                 "agui_run_not_interruptible",
                 "The selected AG-UI Run is no longer active.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         key_material = f"{request.thread_id}\0{request.run_id}".encode()
         await self._commands.interrupt(
@@ -663,20 +615,20 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_replay_gap",
                     "The requested Hosted AG-UI delivery history is unavailable.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 ) from error
             retained = None
         except HostedAguiReplayError as error:
             raise HostedAguiError(
                 "agui_replay_unavailable",
                 "Hosted AG-UI delivery history is temporarily unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             ) from error
         if retained is not None and after_ordinal >= len(retained.events):
             raise HostedAguiError(
                 "agui_cursor_invalid",
                 "The Hosted AG-UI cursor is outside the retained delivery history.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         return HostedAguiAttachment(actor, binding, after_ordinal)
 
@@ -758,7 +710,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_tool_surface_changed",
                     "A waiting AG-UI Run must reuse its exact client tool surface.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             config_override = None
         else:
@@ -767,7 +719,7 @@ class HostedAguiService:
             raise HostedAguiError(
                 "agui_resume_not_supported",
                 "The AG-UI resume extension is not available for this Run.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         resolutions = _forwarded_resolutions(request.forwarded_props)
         tool_resolution = _tool_message_resolution(request.messages[-1]) if request.messages else None
@@ -775,14 +727,14 @@ class HostedAguiService:
             raise HostedAguiError(
                 "agui_feedback_ambiguous",
                 "A tool result and forwardedProps.a13n.resume cannot be submitted together.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         if resolutions is not None:
             if thread is None or history is None:
                 raise HostedAguiError(
                     "agui_resume_without_binding",
                     "AG-UI feedback requires an existing waiting Run.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             expected = await self._expected_messages(history)
             supplied = tuple(_message_json(item) for item in request.messages)
@@ -790,7 +742,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_history_conflict",
                     "The AG-UI message snapshot does not match the authorized history.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return _MappedAguiInput(
                 input=None,
@@ -803,7 +755,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_feedback_without_binding",
                     "An AG-UI tool result requires an existing waiting Run.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             expected = await self._expected_messages(history)
             supplied = tuple(_message_json(item) for item in request.messages[:-1])
@@ -811,7 +763,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_history_conflict",
                     "The AG-UI message snapshot does not match the authorized history.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return _MappedAguiInput(
                 input=None,
@@ -823,25 +775,27 @@ class HostedAguiService:
             raise HostedAguiError(
                 "agui_input_invalid",
                 "AG-UI input must append one user message or one waiting tool result.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         if thread is None:
             if len(request.messages) != 1:
                 raise HostedAguiError(
                     "agui_history_import_forbidden",
                     "An initial AG-UI Run cannot import prior message history.",
-                    status_code=400,
+                    category=ErrorCategory.invalid_request,
                 )
         else:
             if history is None:
-                raise HostedAguiError("agui_binding_invalid", "The AG-UI binding has no Run.", status_code=409)
+                raise HostedAguiError(
+                    "agui_binding_invalid", "The AG-UI binding has no Run.", category=ErrorCategory.conflict
+                )
             expected = await self._expected_messages(history)
             supplied = tuple(_message_json(item) for item in request.messages[:-1])
             if supplied != expected:
                 raise HostedAguiError(
                     "agui_history_conflict",
                     "The AG-UI message snapshot does not match the authorized history.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
         return _MappedAguiInput(
             input=_user_input(request.messages[-1]),
@@ -874,14 +828,14 @@ class HostedAguiService:
                     raise HostedAguiError(
                         "resource_not_found",
                         "The requested resource was not found.",
-                        status_code=404,
+                        category=ErrorCategory.not_found,
                     ) from error
                 organization_id = authorized.organization_id
             if organization_id is None:
                 raise HostedAguiError(
                     "resource_not_found",
                     "The requested resource was not found.",
-                    status_code=404,
+                    category=ErrorCategory.not_found,
                 )
             agent = await database.scalar(
                 select(AgentRecord).where(
@@ -894,7 +848,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "resource_not_found",
                     "The requested resource was not found.",
-                    status_code=404,
+                    category=ErrorCategory.not_found,
                 )
             selected_revision_id = revision_id or agent.current_revision_id
             revision = await database.scalar(
@@ -909,14 +863,16 @@ class HostedAguiService:
             raise HostedAguiError(
                 "resource_not_found",
                 "The requested resource was not found.",
-                status_code=404,
+                category=ErrorCategory.not_found,
             )
         return revision.id, AgentConfig.model_validate(revision.config)
 
     async def _expected_messages(self, latest: AguiRunBindingRecord) -> tuple[dict[str, JsonValue], ...]:
         raw_messages = latest.request_json.get("messages")
         if not isinstance(raw_messages, list):
-            raise HostedAguiError("agui_binding_invalid", "The AG-UI message snapshot is invalid.", status_code=409)
+            raise HostedAguiError(
+                "agui_binding_invalid", "The AG-UI message snapshot is invalid.", category=ErrorCategory.conflict
+            )
         prefix = tuple(_JSON_OBJECT.validate_python(item, strict=True) for item in raw_messages)
         entries = await self._all_entries(latest.organization_id, latest.run_id)
         return prefix + _messages_from_entries(entries)
@@ -945,7 +901,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "agui_history_unavailable",
                     "The retained AG-UI message history is unavailable.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 ) from error
             return tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
         return tuple(values)
@@ -1059,7 +1015,7 @@ class HostedAguiService:
             raise HostedAguiError(
                 "agui_run_not_continuable",
                 "The active AG-UI Run is neither completed nor waiting.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         return row[0], row[1]
 
@@ -1086,7 +1042,7 @@ class HostedAguiService:
                 raise HostedAguiError(
                     "resource_not_found",
                     "The requested resource was not found.",
-                    status_code=404,
+                    category=ErrorCategory.not_found,
                 ) from error
 
     async def _load_run_and_thread(self, binding: HostedAguiBinding) -> tuple[RunRecord, ThreadRecord]:
@@ -1108,7 +1064,9 @@ class HostedAguiService:
                 )
             ).one_or_none()
         if row is None:
-            raise HostedAguiError("resource_not_found", "The requested resource was not found.", status_code=404)
+            raise HostedAguiError(
+                "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+            )
         return row[0], row[1]
 
     async def _run_record(self, binding: HostedAguiBinding) -> RunRecord:
@@ -1120,7 +1078,9 @@ class HostedAguiService:
                 )
             )
         if record is None:
-            raise HostedAguiError("resource_not_found", "The requested resource was not found.", status_code=404)
+            raise HostedAguiError(
+                "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+            )
         return record
 
 
@@ -1182,7 +1142,7 @@ def _build_replay_snapshot(
 
 def _validate_external_id(value: str, *, name: str) -> None:
     if not 1 <= len(value.encode("utf-8")) <= 512 or "\x00" in value:
-        raise HostedAguiError("agui_id_invalid", f"{name} is invalid.", status_code=400)
+        raise HostedAguiError("agui_id_invalid", f"{name} is invalid.", category=ErrorCategory.invalid_request)
 
 
 def _empty(value: object) -> bool:
@@ -1195,7 +1155,7 @@ def _validate_request_size(value: dict[str, JsonValue], *, maximum: int) -> None
         raise HostedAguiError(
             "agui_input_too_large",
             "The AG-UI input exceeds this Agent's configured limit.",
-            status_code=413,
+            category=ErrorCategory.size_limit,
         )
 
 
@@ -1214,19 +1174,19 @@ def _validate_protocol_value(
         raise HostedAguiError(
             f"agui_{name}_invalid",
             f"AG-UI {name} is not a valid JSON value.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         ) from error
     if schema is None:
         raise HostedAguiError(
             f"agui_{name}_not_allowed",
             f"This Agent does not accept AG-UI {name}.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     if not Draft202012Validator(schema).is_valid(json_value):
         raise HostedAguiError(
             f"agui_{name}_invalid",
             f"AG-UI {name} does not match the selected Agent Revision schema.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
 
 
@@ -1242,7 +1202,7 @@ def _validated_client_tools(
         raise HostedAguiError(
             "agui_tools_invalid",
             "AG-UI client tool names must be unique.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     unknown = set(supplied_names) - set(policies)
     missing = {name for name, policy in policies.items() if policy.required} - set(supplied_names)
@@ -1250,7 +1210,7 @@ def _validated_client_tools(
         raise HostedAguiError(
             "agui_tools_not_allowed",
             "AG-UI client tools do not match the selected Agent Revision policy.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
 
     normalized: list[ClientToolDefinition] = []
@@ -1259,7 +1219,7 @@ def _validated_client_tools(
             raise HostedAguiError(
                 "agui_tools_invalid",
                 "AG-UI client tool declarations contain unsupported fields.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         declared = definitions.get(tool.name)
         if (
@@ -1270,7 +1230,7 @@ def _validated_client_tools(
             raise HostedAguiError(
                 "agui_tools_not_allowed",
                 "AG-UI client tools do not match the selected Agent Revision policy.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         normalized.append(declared)
     return tuple(normalized)
@@ -1296,7 +1256,7 @@ def _forwarded_resolutions(value: object) -> tuple[SubmittedPendingResolution, .
         raise HostedAguiError(
             "agui_extension_invalid",
             "forwardedProps.a13n is invalid.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         ) from error
 
 
@@ -1313,7 +1273,7 @@ def _tool_message_resolution(message: object) -> CompletePendingResolution | Non
         raise HostedAguiError(
             "agui_tool_result_invalid",
             "AG-UI tool results cannot contain error or encryptedValue fields.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     try:
         return CompletePendingResolution(call_id=message.tool_call_id, result=message.content)
@@ -1321,7 +1281,7 @@ def _tool_message_resolution(message: object) -> CompletePendingResolution | Non
         raise HostedAguiError(
             "agui_tool_result_invalid",
             "The AG-UI tool result is invalid.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         ) from error
 
 
@@ -1330,14 +1290,16 @@ def _require_agui_input(mapped: _MappedAguiInput) -> AgentInput:
         raise HostedAguiError(
             "agui_input_required",
             "This AG-UI operation requires a new user input tail.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     return mapped.input
 
 
 def _user_input(message: UserMessage) -> AgentInput:
     if message.name is not None or message.encrypted_value is not None:
-        raise HostedAguiError("agui_input_invalid", "Unsupported user message metadata.", status_code=400)
+        raise HostedAguiError(
+            "agui_input_invalid", "Unsupported user message metadata.", category=ErrorCategory.invalid_request
+        )
     content = message.content
     blocks: list[dict[str, Any]] = []
     if isinstance(content, str):
@@ -1353,7 +1315,7 @@ def _user_input(message: UserMessage) -> AgentInput:
                     raise HostedAguiError(
                         "agui_binary_source_unsupported",
                         "Inline AG-UI binary data is not supported; use an authorized URL.",
-                        status_code=400,
+                        category=ErrorCategory.invalid_request,
                     )
                 blocks.append(
                     {
@@ -1369,7 +1331,7 @@ def _user_input(message: UserMessage) -> AgentInput:
                 raise HostedAguiError(
                     "agui_binary_source_unsupported",
                     "Inline AG-UI binary data is not supported; use an authorized URL.",
-                    status_code=400,
+                    category=ErrorCategory.invalid_request,
                 )
             metadata = part.metadata if isinstance(part.metadata, dict) else {}
             blocks.append(
@@ -1381,11 +1343,15 @@ def _user_input(message: UserMessage) -> AgentInput:
                 }
             )
     if not blocks:
-        raise HostedAguiError("agui_input_invalid", "The user message is empty.", status_code=400)
+        raise HostedAguiError(
+            "agui_input_invalid", "The user message is empty.", category=ErrorCategory.invalid_request
+        )
     try:
         return AgentInput.model_validate({"schema_version": "2", "content": blocks})
     except ValueError as error:
-        raise HostedAguiError("agui_input_invalid", "The user message is invalid.", status_code=400) from error
+        raise HostedAguiError(
+            "agui_input_invalid", "The user message is invalid.", category=ErrorCategory.invalid_request
+        ) from error
 
 
 def _message_json(message: BaseModel) -> dict[str, JsonValue]:
@@ -1523,13 +1489,19 @@ def _resume_ordinal(binding: HostedAguiBinding, cursor: str | None) -> int:
         return -1
     prefix = _cursor(binding, 0).rsplit("_", maxsplit=1)[0] + "_"
     if not cursor.startswith(prefix):
-        raise HostedAguiError("agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", status_code=400)
+        raise HostedAguiError(
+            "agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", category=ErrorCategory.invalid_request
+        )
     try:
         value = int(cursor.removeprefix(prefix))
     except ValueError as error:
-        raise HostedAguiError("agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", status_code=400) from error
+        raise HostedAguiError(
+            "agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", category=ErrorCategory.invalid_request
+        ) from error
     if value < 0:
-        raise HostedAguiError("agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", status_code=400)
+        raise HostedAguiError(
+            "agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", category=ErrorCategory.invalid_request
+        )
     return value
 
 
@@ -1555,3 +1527,86 @@ __all__ = [
     "HostedAguiService",
     "HostedAguiTerminalProjector",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedAguiBinding:
+    actor: AuthenticatedActor
+    agent_id: str
+    request: RunAgentInput
+    request_json: dict[str, JsonValue]
+    request_digest: str
+    thread: AguiThreadBindingRecord | None
+    thread_binding_id: str
+    run_binding_id: str
+    selected_parent: AguiRunBindingRecord | None
+    now: datetime
+
+
+async def _persist_agui_binding(
+    database: AsyncSession, receipt: RunAcceptanceReceipt, *, prepared: _PreparedAguiBinding
+) -> None:
+    run = await database.scalar(
+        select(RunRecord).where(RunRecord.id == receipt.run_id, RunRecord.thread_id == receipt.thread_id)
+    )
+    if run is None:
+        raise HostedAguiError(
+            "agui_binding_failed",
+            "The accepted Run could not be bound.",
+            category=ErrorCategory.conflict,
+        )
+    if prepared.thread is None:
+        database.add(
+            AguiThreadBindingRecord(
+                id=prepared.thread_binding_id,
+                organization_id=run.tenant_id,
+                workspace_id=prepared.actor.workspace_id,
+                client_principal_type=prepared.actor.principal.principal_type.value,
+                client_principal_id=prepared.actor.principal.principal_id,
+                agent_id=prepared.agent_id,
+                external_thread_id=prepared.request.thread_id,
+                session_id=receipt.session_id,
+                root_thread_id=receipt.thread_id,
+                active_thread_id=receipt.thread_id,
+                version=1,
+                created_at=prepared.now,
+                updated_at=prepared.now,
+            )
+        )
+        await database.flush()
+    else:
+        selected = await database.scalar(
+            select(AguiThreadBindingRecord).where(AguiThreadBindingRecord.id == prepared.thread.id).with_for_update()
+        )
+        if (
+            selected is None
+            or selected.version != prepared.thread.version
+            or selected.active_thread_id != prepared.thread.active_thread_id
+        ):
+            raise HostedAguiError(
+                "agui_thread_changed",
+                "The AG-UI prepared.thread binding changed before Run acceptance.",
+                category=ErrorCategory.conflict,
+            )
+        selected.version += 1
+        selected.active_thread_id = receipt.thread_id
+        selected.updated_at = prepared.now
+    database.add(
+        AguiRunBindingRecord(
+            id=prepared.run_binding_id,
+            organization_id=run.tenant_id,
+            workspace_id=prepared.actor.workspace_id,
+            thread_binding_id=prepared.thread_binding_id,
+            agent_id=prepared.agent_id,
+            agent_revision_id=run.agent_revision_id,
+            external_thread_id=prepared.request.thread_id,
+            external_run_id=prepared.request.run_id,
+            parent_external_run_id=None
+            if prepared.selected_parent is None
+            else prepared.selected_parent.external_run_id,
+            request_digest_sha256=prepared.request_digest,
+            request_json=prepared.request_json,
+            run_id=receipt.run_id,
+            created_at=prepared.now,
+        )
+    )

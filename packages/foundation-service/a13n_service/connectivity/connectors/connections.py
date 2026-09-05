@@ -6,17 +6,18 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import (
-    ConnectivityManagementValueError,
     canonical_digest,
     fingerprint,
     record_command,
     replay_command,
 )
+from a13n_service.durable_operations.idempotency import IdempotencyConflict
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.resource_scope import ResourceScope
@@ -109,7 +110,9 @@ class ConnectorConnectionService:
                 )
                 await authorize_provider(session, actor, connector)
                 if not workspace.contains(connector.organization_id, connector.workspace_id):
-                    raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
+                    raise ConnectorError(
+                        "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+                    )
                 require_implementation(self._adapters, connector.type)
                 request_fingerprint = fingerprint(request)
                 try:
@@ -121,11 +124,12 @@ class ConnectorConnectionService:
                         scope_id=workspace_id,
                         idempotency_key_digest=key_digest,
                         fingerprint=request_fingerprint,
+                        now=self._clock(),
                     )
-                except ConnectivityManagementValueError as error:
+                except IdempotencyConflict as error:
                     raise map_management_value_error(error) from error
                 if replay is not None:
-                    return await connection_resource(session, replay.resource_id)
+                    return replay.restore(ConnectorConnection)
                 connection = ConnectorConnectionRecord(
                     id=connection_id,
                     organization_id=connector.organization_id,
@@ -160,6 +164,7 @@ class ConnectorConnectionService:
                     resource_id=connection.id,
                     result_version=1,
                     now=now,
+                    resource=connection.to_resource(),
                 )
                 session.add(
                     audit(
@@ -178,7 +183,7 @@ class ConnectorConnectionService:
             raise ConnectorError(
                 "connector_connection_conflict",
                 "ConnectorConnection identity or name already exists.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def start_setup(
@@ -192,7 +197,9 @@ class ConnectorConnectionService:
         return_path: str,
     ) -> ConnectorSetupLaunch:
         if actor.principal.principal_type is not PrincipalType.user:
-            raise ConnectorError("interactive_user_required", "Interactive setup requires a User.", status_code=403)
+            raise ConnectorError(
+                "interactive_user_required", "Interactive setup requires a User.", category=ErrorCategory.forbidden
+            )
         key_digest = idempotency_digest(idempotency_key)
         request_fingerprint = canonical_digest(
             {"expected_version": expected_version, "setup": setup, "return_path": return_path}
@@ -209,12 +216,13 @@ class ConnectorConnectionService:
                 operation="connector_connection.setup",
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
+                now=self._clock(),
             )
             if replay is not None:
                 attempt = await session.get(ConnectorSetupAttemptRecord, replay.resource_id)
                 if attempt is None:
                     raise ConnectorError(
-                        "setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404
+                        "setup_unavailable", "ConnectorProvider setup is unavailable.", category=ErrorCategory.not_found
                     )
                 attempt_id = attempt.id
             else:
@@ -225,7 +233,9 @@ class ConnectorConnectionService:
                     scope=ResourceScope(connection.organization_id, connection.workspace_id),
                 )
                 if connector.status != "active":
-                    raise ConnectorError("connector_disabled", "ConnectorProvider is disabled.", status_code=409)
+                    raise ConnectorError(
+                        "connector_disabled", "ConnectorProvider is disabled.", category=ErrorCategory.conflict
+                    )
                 adapter = require_implementation(self._adapters, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(
@@ -235,7 +245,9 @@ class ConnectorConnectionService:
                     )
                 except ValueError as error:
                     raise ConnectorError(
-                        "invalid_connector_setup", "ConnectorProvider setup is invalid.", status_code=400
+                        "invalid_connector_setup",
+                        "ConnectorProvider setup is invalid.",
+                        category=ErrorCategory.invalid_request,
                     ) from error
                 session.add(
                     self._setup.new_attempt(
@@ -261,6 +273,7 @@ class ConnectorConnectionService:
                     resource_id=attempt_id,
                     result_version=connection.version,
                     now=now,
+                    resource=None,
                 )
                 session.add(
                     audit(
@@ -284,12 +297,16 @@ class ConnectorConnectionService:
         cursor: str | None,
     ) -> ConnectorConnectionCollection:
         if not 1 <= limit <= 100:
-            raise ConnectorError("invalid_request", "Collection limit is invalid.", status_code=400)
+            raise ConnectorError(
+                "invalid_request", "Collection limit is invalid.", category=ErrorCategory.invalid_request
+            )
         scope = {"workspace_id": workspace_id, "actor": actor.principal.model_dump(mode="json")}
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="cconn") if cursor else None
         except CursorError as error:
-            raise ConnectorError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise ConnectorError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             await authorize(session, actor, workspace_id, WorkspaceAction.connector_connection_read)
             query = select(ConnectorConnectionRecord).where(
@@ -363,7 +380,7 @@ class ConnectorConnectionService:
             raise ConnectorError(
                 "connector_connection_conflict",
                 "ConnectorConnection name already exists.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def set_enabled(
@@ -393,9 +410,10 @@ class ConnectorConnectionService:
                 operation=operation,
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
+                now=self._clock(),
             )
             if replay is not None:
-                return record.to_resource()
+                return replay.restore(ConnectorConnection)
             require_version(record.version, expected_version)
             completed_setup = (
                 await session.scalar(
@@ -413,7 +431,7 @@ class ConnectorConnectionService:
                 raise ConnectorError(
                     "connection_not_ready",
                     "ConnectorConnection has no verified setup.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             target = ConnectorConnectionStatus.ready.value if enabled else ConnectorConnectionStatus.disabled.value
             if record.status == target or (enabled and record.status != ConnectorConnectionStatus.disabled.value):
@@ -437,6 +455,7 @@ class ConnectorConnectionService:
                 resource_id=record.id,
                 result_version=record.version,
                 now=self._clock(),
+                resource=result,
             )
             session.add(
                 audit(
@@ -462,7 +481,9 @@ class ConnectorConnectionService:
         return_path: str,
     ) -> ConnectorSetupLaunch:
         if actor.principal.principal_type is not PrincipalType.user:
-            raise ConnectorError("interactive_user_required", "Interactive setup requires a User.", status_code=403)
+            raise ConnectorError(
+                "interactive_user_required", "Interactive setup requires a User.", category=ErrorCategory.forbidden
+            )
         key_digest = idempotency_digest(idempotency_key)
         request_fingerprint = canonical_digest(
             {"expected_version": expected_version, "setup": setup, "return_path": return_path}
@@ -479,6 +500,7 @@ class ConnectorConnectionService:
                 operation="connector_connection.reconnect",
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
+                now=self._clock(),
             )
             if replay is not None:
                 attempt_id = replay.resource_id
@@ -490,7 +512,9 @@ class ConnectorConnectionService:
                     ConnectorConnectionStatus.disabled.value,
                 }:
                     raise ConnectorError(
-                        "invalid_connection_state", "ConnectorConnection cannot reconnect.", status_code=409
+                        "invalid_connection_state",
+                        "ConnectorConnection cannot reconnect.",
+                        category=ErrorCategory.conflict,
                     )
                 connector = await require_connector_provider(
                     session,
@@ -506,7 +530,9 @@ class ConnectorConnectionService:
                     )
                 except ValueError as error:
                     raise ConnectorError(
-                        "invalid_connector_setup", "ConnectorProvider setup is invalid.", status_code=400
+                        "invalid_connector_setup",
+                        "ConnectorProvider setup is invalid.",
+                        category=ErrorCategory.invalid_request,
                     ) from error
                 connection.setup_generation += 1
                 connection.status = ConnectorConnectionStatus.pending.value
@@ -537,6 +563,7 @@ class ConnectorConnectionService:
                     resource_id=attempt_id,
                     result_version=connection.version,
                     now=now,
+                    resource=None,
                 )
                 session.add(
                     audit(

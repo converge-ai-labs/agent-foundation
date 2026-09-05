@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from pydantic import BaseModel, JsonValue
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +47,7 @@ class EvidenceScope:
     actor_id: str
     operation: str
     scope_id: str
+    organization_id: str | None = None
 
 
 def digest_visible_ascii_key(value: str) -> str:
@@ -59,16 +62,13 @@ def digest_visible_ascii_key(value: str) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def digest_utf8_key(value: str) -> str:
-    """Digest a non-empty UTF-8 key of at most 512 bytes."""
-
-    try:
-        encoded = value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise InvalidIdempotencyKey from error
-    if not encoded or len(encoded) > IDEMPOTENCY_KEY_MAX_BYTES:
-        raise InvalidIdempotencyKey
-    return hashlib.sha256(encoded).hexdigest()
+def digest_request(value: object) -> str:
+    """Hash normalized ordinary HTTP input; domains own semantic normalization."""
+    if isinstance(value, BaseModel):
+        value = value.model_dump(mode="json", by_alias=True)
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
 
 
 async def load_evidence(
@@ -80,9 +80,21 @@ async def load_evidence(
 ) -> IdempotencyEvidenceRecord | None:
     """Load matching evidence, deleting it atomically once its TTL elapses."""
 
+    boundary_id = scope.workspace_id or scope.organization_id
+    if boundary_id is None:
+        raise ValueError("Idempotency evidence requires a Workspace or Organization boundary")
+    if session.get_bind().dialect.name == "postgresql":
+        # Serialize a key even before its first row exists; expiry replacement
+        # and the mutation use this same transaction and bounded DB timeouts.
+        material = digest_request(
+            (boundary_id, scope.actor_type, scope.actor_id, scope.operation, scope.scope_id, identity.key_digest)
+        )
+        lock_id = int.from_bytes(bytes.fromhex(material)[:8], signed=True)
+        await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_id})
     evidence = await session.scalar(
         select(IdempotencyEvidenceRecord)
         .where(
+            IdempotencyEvidenceRecord.boundary_scope_id == boundary_id,
             IdempotencyEvidenceRecord.actor_type == scope.actor_type,
             IdempotencyEvidenceRecord.actor_id == scope.actor_id,
             IdempotencyEvidenceRecord.operation == scope.operation,
@@ -102,6 +114,25 @@ async def load_evidence(
     return evidence
 
 
+async def delete_expired_evidence(session: AsyncSession, *, now: datetime, limit: int) -> int:
+    """Physically remove one bounded batch without waiting on active commands."""
+    if not 1 <= limit <= 1000:
+        raise ValueError("Evidence cleanup limit must be between 1 and 1000")
+    records = (
+        await session.scalars(
+            select(IdempotencyEvidenceRecord)
+            .where(IdempotencyEvidenceRecord.expires_at <= now)
+            .order_by(IdempotencyEvidenceRecord.expires_at, IdempotencyEvidenceRecord.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+    ).all()
+    for record in records:
+        await session.delete(record)
+    await session.flush()
+    return len(records)
+
+
 def new_evidence(
     *,
     organization_id: str,
@@ -110,6 +141,7 @@ def new_evidence(
     result_kind: str,
     result_ref: str,
     now: datetime,
+    receipt: dict[str, JsonValue] | None = None,
 ) -> IdempotencyEvidenceRecord:
     """Build one bounded replay-evidence row using the canonical lifetime."""
 
@@ -117,6 +149,7 @@ def new_evidence(
         id=new_object_id("idem"),
         organization_id=organization_id,
         workspace_id=scope.workspace_id,
+        boundary_scope_id=scope.workspace_id or organization_id,
         actor_type=scope.actor_type,
         actor_id=scope.actor_id,
         operation=scope.operation,
@@ -125,6 +158,7 @@ def new_evidence(
         request_digest=identity.request_digest,
         result_kind=result_kind,
         result_ref=result_ref,
+        receipt_json=receipt,
         created_at=now,
         expires_at=now + IDEMPOTENCY_EVIDENCE_TTL,
     )
@@ -147,7 +181,8 @@ __all__ = [
     "IdempotencyConflict",
     "IdempotencyIdentity",
     "InvalidIdempotencyKey",
-    "digest_utf8_key",
+    "delete_expired_evidence",
+    "digest_request",
     "digest_visible_ascii_key",
     "is_evidence_unique_race",
     "load_evidence",

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,11 +11,13 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
+    digest_request,
     digest_visible_ascii_key,
     is_evidence_unique_race,
     load_evidence,
@@ -304,7 +304,9 @@ class AssetService:
         try:
             after = decode_asset_cursor(cursor, scope=scope) if cursor is not None else None
         except AssetCursorError as error:
-            raise AssetError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise AssetError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
 
         async with transaction(self._sessions) as session:
             workspace = await _authorize_asset_workspace(
@@ -608,6 +610,7 @@ class AssetService:
                                     actor_id=actor.principal.principal_id,
                                     operation=_UPLOAD_OPERATION,
                                     scope_id=workspace_id,
+                                    organization_id=actor.boundary_organization_id,
                                 ),
                                 identity=identity,
                                 result_kind="asset",
@@ -726,6 +729,7 @@ async def _load_upload_replay(
                 actor_id=actor.principal.principal_id,
                 operation=_UPLOAD_OPERATION,
                 scope_id=workspace_id,
+                organization_id=actor.boundary_organization_id,
             ),
             identity=identity,
             now=now,
@@ -767,7 +771,7 @@ def _authorization_error(error: AuthorizationError, *, not_found_code: str = "re
     return AssetError(
         not_found_code if error.concealed else "permission_denied",
         "The requested resource was not found." if error.concealed else "Permission denied.",
-        status_code=404 if error.concealed else 403,
+        category=ErrorCategory.not_found if error.concealed else ErrorCategory.forbidden,
     )
 
 
@@ -807,7 +811,7 @@ def _invalid_idempotency_key() -> AssetError:
     return AssetError(
         "invalid_request",
         "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
     )
 
 
@@ -833,16 +837,12 @@ def _canonical_upload_digest(
     size_bytes: int,
     content_sha256: str,
 ) -> str:
-    encoded = json.dumps(
+    return digest_request(
         {
             "content_sha256": content_sha256,
             "filename": filename,
             "media_type": media_type,
             "size_bytes": size_bytes,
             "workspace_id": workspace_id,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
+        }
+    )

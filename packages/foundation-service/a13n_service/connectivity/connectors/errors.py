@@ -1,7 +1,7 @@
 """Safe ConnectorProvider management errors."""
 
-from a13n_service.public_errors import PublicError
+from a13n_service.application_errors import ApplicationError
 
 
-class ConnectorError(PublicError):
+class ConnectorError(ApplicationError):
     pass

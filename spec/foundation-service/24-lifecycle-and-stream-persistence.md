@@ -20,6 +20,8 @@ The Thread-scoped Redis control signal Stream is a separate business-payload-fre
 
 Only `lifecycle_events` is introduced here, under the service-wide [Relational Schema Lifecycle](04-relational-schema.md). Run waiting state belongs to [Run Persistence](12-run-persistence.md). Tool observations remain presentation or telemetry unless an owning Capability defines its own durable task protocol; this document introduces no generic tool lifecycle authority.
 
+The process composes the required transactional delivery writers explicitly. Each accepted lifecycle mutation, its lifecycle fact, and enabled Webhook/A2A delivery intents commit in the same short transaction; any writer failure rolls back that bundle. Disabled A2A delivery performs no subscription matching. Delivery publication remains outside the transaction.
+
 ## Lifecycle Event Model
 
 The following conceptual schema defines one durable fact:

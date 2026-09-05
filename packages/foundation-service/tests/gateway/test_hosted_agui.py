@@ -14,6 +14,7 @@ from a13n_service.gateway.hosted_agui import (
     HostedAguiTerminalProjector,
 )
 from a13n_service.gateway.models import AguiRunBindingRecord, AguiThreadBindingRecord
+from a13n_service.http_errors import application_error_status
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.run_stream import (
@@ -323,7 +324,7 @@ async def test_reused_external_run_id_with_different_request_conflicts(
             )
 
     assert captured.value.code == "agui_run_id_conflict"
-    assert captured.value.status_code == 409
+    assert application_error_status(captured.value) == 409
 
 
 async def test_new_user_tail_defaults_active_waiting_run(
@@ -754,7 +755,7 @@ async def test_sealed_hosted_replay_survives_native_stream_loss_and_bounds_curso
     assert b'"type":"RUN_FINISHED"' in frames[-1]
     assert resumed_frames == frames[2:]
     assert captured.value.code == "agui_cursor_invalid"
-    assert captured.value.status_code == 409
+    assert application_error_status(captured.value) == 409
 
 
 async def test_hosted_cancel_resolves_binding_and_interrupts_foundation_run(

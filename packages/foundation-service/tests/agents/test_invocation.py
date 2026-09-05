@@ -25,7 +25,7 @@ def test_absent_override_inherits_complete_agent_config() -> None:
 
     merged = merge_agent_run_override(base, None)
 
-    assert merged.config.model_dump(mode="json", by_alias=True) == base.model_dump(mode="json", by_alias=True)
+    assert merged.model_dump(mode="json", by_alias=True) == base.model_dump(mode="json", by_alias=True)
 
 
 def test_scalar_and_list_overrides_replace_and_clear() -> None:
@@ -44,17 +44,17 @@ def test_scalar_and_list_overrides_replace_and_clear() -> None:
 
     merged = merge_agent_run_override(base, override)
 
-    assert merged.config.model.model_key == base.model.model_key
-    assert merged.config.model.settings == base.model.settings
-    assert merged.config.model.characteristics.context_window == 32000
-    assert merged.config.instructions == ""
-    assert merged.config.plugins == ()
-    assert merged.config.skills == ()
-    assert merged.config.client_tools == ()
-    assert merged.config.output_spec is None
-    assert merged.config.retries is not None
-    assert merged.config.retries.tools == 0
-    assert merged.config.retries.output == 1
+    assert merged.model.model_key == base.model.model_key
+    assert merged.model.settings == base.model.settings
+    assert merged.model.characteristics.context_window == 32000
+    assert merged.instructions == ""
+    assert merged.plugins == ()
+    assert merged.skills == ()
+    assert merged.client_tools == ()
+    assert merged.output_spec is None
+    assert merged.retries is not None
+    assert merged.retries.tools == 0
+    assert merged.retries.output == 1
 
 
 def test_client_tool_override_narrows_optional_protocol_surface() -> None:
@@ -74,8 +74,8 @@ def test_client_tool_override_narrows_optional_protocol_surface() -> None:
         AgentRunOverride(client_tools=(base.client_tools[0],)),
     )
 
-    assert [item.name for item in merged.config.client_tools] == ["required_tool"]
-    assert [item.name for item in merged.config.protocol.client_tools] == ["required_tool"]
+    assert [item.name for item in merged.client_tools] == ["required_tool"]
+    assert [item.name for item in merged.protocol.client_tools] == ["required_tool"]
 
 
 def test_client_tool_override_retains_missing_required_protocol_tool_for_validation() -> None:
@@ -88,8 +88,8 @@ def test_client_tool_override_retains_missing_required_protocol_tool_for_validat
 
     merged = merge_agent_run_override(base, AgentRunOverride(client_tools=()))
 
-    assert merged.config.client_tools == ()
-    assert [item.name for item in merged.config.protocol.client_tools] == ["required_tool"]
+    assert merged.client_tools == ()
+    assert [item.name for item in merged.protocol.client_tools] == ["required_tool"]
 
 
 def test_empty_retry_patch_is_a_noop() -> None:
@@ -97,7 +97,7 @@ def test_empty_retry_patch_is_a_noop() -> None:
 
     merged = merge_agent_run_override(base, AgentRunOverride.model_validate({"retries": {}}))
 
-    assert merged.config.retries is None
+    assert merged.retries is None
 
 
 def test_duplicate_list_override_is_rejected() -> None:
@@ -144,11 +144,11 @@ def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
 
     merged = merge_agent_run_override(base, override)
 
-    assert tuple(merged.config.subagents) == ("researcher", "writer")
-    assert merged.config.subagents["researcher"].version is None
-    assert merged.config.subagents["researcher"].description is None
-    assert merged.config.subagents["writer"].context.history == "none"
-    assert merged.config.subagents["writer"].environment.mode == "none"
+    assert tuple(merged.subagents) == ("researcher", "writer")
+    assert merged.subagents["researcher"].version is None
+    assert merged.subagents["researcher"].description is None
+    assert merged.subagents["writer"].context.history == "none"
+    assert merged.subagents["writer"].environment.mode == "none"
 
 
 def test_connection_tool_overrides_replace_complete_lists() -> None:
@@ -165,12 +165,12 @@ def test_connection_tool_overrides_replace_complete_lists() -> None:
         }
     )
     merged = merge_agent_run_override(base, override)
-    assert len(merged.config.connector_tools) == 1
-    assert merged.config.connector_tools[0].connector_connection_id == "cconn_1111111111111111"
-    assert merged.config.connector_tools[0].tools == ()
-    assert merged.config.connector_tools[0].defer_loading
-    assert merged.config.mcp_tools == ()
-    assert merge_agent_run_override(base, AgentRunOverride()).config.connector_tools == base.connector_tools
+    assert len(merged.connector_tools) == 1
+    assert merged.connector_tools[0].connector_connection_id == "cconn_1111111111111111"
+    assert merged.connector_tools[0].tools == ()
+    assert merged.connector_tools[0].defer_loading
+    assert merged.mcp_tools == ()
+    assert merge_agent_run_override(base, AgentRunOverride()).connector_tools == base.connector_tools
 
 
 @pytest.mark.parametrize(
@@ -430,3 +430,11 @@ def test_native_authority_cannot_be_supplied_through_agent_config_or_override(fi
         AgentRunOverride.model_validate({field: []})
     assert field not in AgentRevision.model_fields
     assert field not in EffectiveAgentConfig.model_fields
+
+
+@pytest.mark.parametrize("field", ["api_key", "credentials", "sensitive_values", "encrypted_config_payload"])
+def test_run_override_rejects_direct_credentials(field: str) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AgentRunOverride.model_validate({field: "private-value"})

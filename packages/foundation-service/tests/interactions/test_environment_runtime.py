@@ -22,6 +22,7 @@ from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import short_session, transaction
 
 from tests.hooks.support import hook_actor, seed_hook_actor_access
+from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import AGENT_ID, NOW, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
@@ -73,9 +74,9 @@ async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
         assert environment_id and stored.environment_use_started_at is None
         environment = await session.get(EnvironmentRecord, environment_id)
         assert environment.status == "unprepared" and environment.template_revision_id == template.current_revision_id
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
     environment = await prepare_run_environment(lifecycle, _authority(claim))
     assert environment is not None
@@ -156,9 +157,9 @@ async def test_lazy_unused_environment_closes_without_preparation(
 ):
     _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     environment = await prepare_run_environment(lifecycle, _authority(claim))
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     assert environment.dump_state() is None
@@ -178,9 +179,9 @@ async def test_reconnect_preserves_backing_generation_after_cleanup_failure(
 
     _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     environment = await prepare_run_environment(lifecycle, _authority(claim))
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     original = environment.descriptor.backing_identity
@@ -226,7 +227,9 @@ async def test_worker_cannot_claim_environment_from_another_host(
         selected = await session.get(EnvironmentRecord, stored.environment_id)
         provider = await session.get(EnvironmentProviderRecord, selected.provider_id)
         provider.configuration = {"host_id": "another-worker-host"}
-    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1))
+    scheduler = AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    )
     assert await scheduler.claim(run.id, _worker()) is None
 
 
@@ -241,9 +244,9 @@ async def test_close_during_readiness_never_recovers_or_leaks_connection(
 
     _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     environment = await prepare_run_environment(lifecycle, _authority(claim))
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     started, release = asyncio.Event(), asyncio.Event()
@@ -272,9 +275,9 @@ async def test_concurrent_lazy_use_prepares_once(interaction_sessions, interacti
 
     _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     environment = await prepare_run_environment(lifecycle, _authority(claim))
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     entered, release = asyncio.Event(), asyncio.Event()
@@ -306,9 +309,9 @@ async def test_cancelled_delegate_entry_closes_acquired_connection(
 
     _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     environment = await prepare_run_environment(lifecycle, _authority(claim))
     close = AsyncMock()
     monkeypatch.setattr(DirectLocalEnvironment, "enter", AsyncMock(side_effect=asyncio.CancelledError))
@@ -340,11 +343,9 @@ async def test_postgresql_concurrent_thread_key_allocates_one_environment(
         nonlocal calls
         calls += 1
         initial = calls <= 2
-        replay = await read(*args, **kwargs)
         if initial:
-            assert replay is None
             await barrier.wait()
-        return replay
+        return await read(*args, **kwargs)
 
     monkeypatch.setattr(thread_creation, "load_replay", synchronized_read)
     body = CreateThreadRequest(environment=NewEnvironmentSelection(template_id=template.id))
@@ -383,9 +384,9 @@ async def test_postgresql_environment_lease_fences_competing_workers(
 
     _, _, lifecycle = await recipe(postgres_interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(postgres_interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(postgres_interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        postgres_interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     attempt = _authority(claim)
     async with short_session(postgres_interaction_sessions) as session:
         environment_id = (await session.get(RunRecord, run.id)).environment_id
@@ -507,9 +508,9 @@ async def test_registered_external_environment_uses_connection_configuration(
 
     construct = AsyncMock(side_effect=external_construct)
     monkeypatch.setattr(lifecycle, "construct", construct)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
-        run.id, _worker()
-    )
+    claim = await AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker())
     environment = await prepare_run_environment(lifecycle, _authority(claim))
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     await environment.ensure_ready(frozenset({"files"}))

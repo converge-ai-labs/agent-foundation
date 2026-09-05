@@ -4,8 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.public_errors import PublicError
 from a13n_service.request_runtime import get_process_runtime
 
 from .domain import Thread
@@ -25,7 +25,9 @@ async def create_thread(
 ) -> Thread:
     runtime = get_process_runtime(request)
     if runtime is None or runtime.control is None:
-        raise PublicError("control_unavailable", "Thread control is unavailable", status_code=503)
+        raise ApplicationError(
+            "control_unavailable", "Thread control is unavailable", category=ErrorCategory.unavailable
+        )
     return await allocate_thread(
         runtime.shared.storage.sessions,
         actor=actor,

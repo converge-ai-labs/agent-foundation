@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
@@ -468,7 +469,7 @@ def _cursor_scope(*, actor: AuthenticatedActor, workspace_id: str, skill_id: str
 
 def _validate_limit(limit: int) -> None:
     if limit < 1 or limit > 100:
-        raise SkillError("invalid_request", "limit must be between 1 and 100.", status_code=400)
+        raise SkillError("invalid_request", "limit must be between 1 and 100.", category=ErrorCategory.invalid_request)
 
 
 def _require_etag(record: SkillRecord, if_match: str) -> None:
@@ -477,6 +478,6 @@ def _require_etag(record: SkillRecord, if_match: str) -> None:
         raise SkillError(
             "precondition_failed",
             "The Skill changed after it was read.",
-            status_code=412,
+            category=ErrorCategory.stale_version,
             details={"current_etag": current},
         )

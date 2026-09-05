@@ -5,18 +5,25 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
+    EvidenceScope,
+    IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
+    digest_request,
     digest_visible_ascii_key,
+    load_evidence,
+    new_evidence,
 )
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -28,12 +35,8 @@ from a13n_service.iam.authorization import (
 from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
-from a13n_service.temporal import assume_utc
 
 from .errors import SkillError
-from .models import SkillIdempotencyRecord
-
-IDEMPOTENCY_LIFETIME = timedelta(hours=24)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +52,7 @@ class IdempotencyScope:
 @dataclass(frozen=True, slots=True)
 class ReplayResult[Result: BaseModel]:
     result: Result
-    status_code: int
+    created: bool
 
 
 def idempotency_identity(key: str, request: bytes | BaseModel) -> IdempotencyIdentity:
@@ -57,10 +60,10 @@ def idempotency_identity(key: str, request: bytes | BaseModel) -> IdempotencyIde
         key_digest = digest_visible_ascii_key(key)
     except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    request_bytes = request if isinstance(request, bytes) else _canonical_json(request.model_dump(mode="json"))
+    normalized = {"archive_sha256": hashlib.sha256(request).hexdigest()} if isinstance(request, bytes) else request
     return IdempotencyIdentity(
         key_digest=key_digest,
-        request_digest=hashlib.sha256(request_bytes).hexdigest(),
+        request_digest=digest_request(normalized),
     )
 
 
@@ -71,56 +74,47 @@ async def load_replay[ResponseModel: BaseModel](
     now: datetime,
     response_model: type[ResponseModel],
 ) -> ReplayResult[ResponseModel] | None:
-    record = await session.scalar(
-        select(SkillIdempotencyRecord).where(
-            SkillIdempotencyRecord.organization_id == scope.organization_id,
-            SkillIdempotencyRecord.workspace_id == scope.workspace_id,
-            SkillIdempotencyRecord.actor_type == scope.actor.principal.principal_type.value,
-            SkillIdempotencyRecord.actor_id == scope.actor.principal.principal_id,
-            SkillIdempotencyRecord.operation == scope.operation,
-            SkillIdempotencyRecord.scope_id == scope.resource_scope_id,
-            SkillIdempotencyRecord.key_digest == scope.identity.key_digest,
-        )
-    )
-    if record is None:
-        return None
-    if assume_utc(record.expires_at) <= assume_utc(now):
-        await session.delete(record)
-        await session.flush()
-        return None
-    if record.request_digest != scope.identity.request_digest:
+    try:
+        record = await load_evidence(session, scope=_evidence_scope(scope), identity=scope.identity, now=now)
+    except IdempotencyConflict as error:
         raise SkillError(
             "idempotency_conflict",
             "The Idempotency-Key was already used with different request content.",
-            status_code=409,
-        )
-    return ReplayResult(
-        result=response_model.model_validate(record.response_body),
-        status_code=record.status_code,
-    )
+            category=ErrorCategory.conflict,
+        ) from error
+    if record is None:
+        return None
+    payload = record.receipt_json
+    if payload is None or not isinstance(payload.get("created"), bool):
+        raise RuntimeError("Skill evidence has no publication receipt")
+    return ReplayResult(result=response_model.model_validate(payload["response"]), created=bool(payload["created"]))
 
 
 def new_replay_evidence(
     *,
     scope: IdempotencyScope,
     response: BaseModel,
-    status_code: int,
+    created: bool,
     now: datetime,
-) -> SkillIdempotencyRecord:
-    return SkillIdempotencyRecord(
-        id=new_object_id("sidm"),
+) -> IdempotencyEvidenceRecord:
+    return new_evidence(
         organization_id=scope.organization_id,
-        workspace_id=scope.workspace_id,
-        actor_type=scope.actor.principal.principal_type.value,
-        actor_id=scope.actor.principal.principal_id,
-        operation=scope.operation,
-        scope_id=scope.resource_scope_id,
-        key_digest=scope.identity.key_digest,
-        request_digest=scope.identity.request_digest,
-        response_body=response.model_dump(mode="json"),
-        status_code=status_code,
-        created_at=now,
-        expires_at=now + IDEMPOTENCY_LIFETIME,
+        scope=_evidence_scope(scope),
+        identity=scope.identity,
+        result_kind="skill_command",
+        result_ref=scope.resource_scope_id,
+        receipt={"response": response.model_dump(mode="json"), "created": created},
+        now=now,
+    )
+
+
+def _evidence_scope(scope: IdempotencyScope) -> EvidenceScope:
+    return EvidenceScope(
+        scope.workspace_id,
+        scope.actor.principal.principal_type.value,
+        scope.actor.principal.principal_id,
+        scope.operation,
+        scope.resource_scope_id,
     )
 
 
@@ -138,7 +132,7 @@ async def authorize_skill_workspace(
         raise SkillError(
             concealed_code if error.concealed else "permission_denied",
             "The requested resource was not found." if error.concealed else "Permission denied.",
-            status_code=404 if error.concealed else 403,
+            category=ErrorCategory.not_found if error.concealed else ErrorCategory.forbidden,
         ) from error
 
 
@@ -165,16 +159,6 @@ def skill_audit_record(
         occurred_at=now,
         details=details,
     )
-
-
-def is_idempotency_race(error: IntegrityError) -> bool:
-    """Return whether an insert lost the unique replay-scope race."""
-
-    constraint_name = getattr(getattr(error, "orig", None), "diag", None)
-    if constraint_name is not None:
-        return getattr(constraint_name, "constraint_name", None) == "uq_skill_idempotency_replay_scope"
-    message = str(error.orig).casefold()
-    return "unique constraint failed" in message and "skill_idempotency.operation" in message
 
 
 def is_skill_key_race(error: IntegrityError) -> bool:
@@ -223,5 +207,5 @@ def _invalid_idempotency_key() -> SkillError:
     return SkillError(
         "invalid_request",
         "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
     )

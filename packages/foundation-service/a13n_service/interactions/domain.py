@@ -121,15 +121,6 @@ class RunPayloadObjectRef(StrictModel):
     schema_version: SchemaVersion
 
 
-class EncryptedRunConfigPayloadRef(StrictModel):
-    object_key: Annotated[str, StringConstraints(min_length=1, max_length=1024)]
-    ciphertext_digest_sha256: Sha256Digest
-    protected_value_digest_sha256: Sha256Digest
-    size_bytes: int = Field(ge=1)
-    encryption_key_id: BoundedName
-    schema_version: SchemaVersion
-
-
 class PendingCallSummary(StrictModel):
     call_id: BoundedName
     kind: PendingCallKind
@@ -284,7 +275,6 @@ class Run(StrictModel):
     environment_access: Literal["read_only", "read_write", "full"] | None = None
     environment_use_started_at: UtcDateTime | None = None
     effective_agent_config_digest: Sha256Digest
-    encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None
     runtime_lock_digest: Sha256Digest
     model_execution_observation: ModelExecutionObservation
     connector_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
@@ -463,7 +453,6 @@ def new_run_attempt_id() -> str:
 
 __all__ = [
     "BoundedKey",
-    "EncryptedRunConfigPayloadRef",
     "JsonObject",
     "ObjectId",
     "PendingCallKind",
@@ -495,3 +484,93 @@ __all__ = [
     "new_session_id",
     "new_thread_id",
 ]
+
+
+def accepted_run(
+    *,
+    now: datetime,
+    id: ObjectId,
+    tenant_id: ObjectId,
+    authority_principal: PrincipalRef,
+    session_id: ObjectId,
+    thread_id: ThreadId,
+    parent_run_id: ObjectId | None = None,
+    retry_of_run_id: ObjectId | None = None,
+    lineage_kind: RunLineageKind,
+    trigger_type: BoundedName,
+    trigger_entity_type: BoundedName | None = None,
+    trigger_entity_id: BoundedName | None = None,
+    parent_agent_instance_id: BoundedName | None = None,
+    delegation_id: BoundedName | None = None,
+    parent_tool_call_id: BoundedName | None = None,
+    agent_id: ObjectId,
+    agent_revision_id: ObjectId,
+    environment_id: ObjectId | None = None,
+    environment_access: Literal["read_only", "read_write", "full"] | None = None,
+    effective_agent_config_digest: Sha256Digest,
+    runtime_lock_digest: Sha256Digest,
+    model_execution_observation: ModelExecutionObservation,
+    connector_connection_selections: tuple[JsonObject, ...] = (),
+    mcp_connection_selections: tuple[JsonObject, ...] = (),
+    native_tool_contexts: tuple[JsonObject, ...] = (),
+    priority: int,
+    queue_name: BoundedName,
+    recovery_budget: RecoveryBudget,
+    idempotency_key: BoundedName | None = None,
+    request_fingerprint: Sha256Digest,
+    input_kind: RunInputKind,
+    input: JsonValue | None = None,
+    input_object: RunPayloadObjectRef | None = None,
+    input_text: Annotated[str, StringConstraints(max_length=65536)] | None = None,
+) -> Run:
+    """Construct fresh execution state from accepted intent, never from prior execution."""
+    values: dict[str, object] = dict(
+        id=id,
+        tenant_id=tenant_id,
+        authority_principal=authority_principal,
+        session_id=session_id,
+        thread_id=thread_id,
+        parent_run_id=parent_run_id,
+        retry_of_run_id=retry_of_run_id,
+        lineage_kind=lineage_kind,
+        trigger_type=trigger_type,
+        trigger_entity_type=trigger_entity_type,
+        trigger_entity_id=trigger_entity_id,
+        parent_agent_instance_id=parent_agent_instance_id,
+        delegation_id=delegation_id,
+        parent_tool_call_id=parent_tool_call_id,
+        agent_id=agent_id,
+        agent_revision_id=agent_revision_id,
+        environment_id=environment_id,
+        environment_access=environment_access,
+        effective_agent_config_digest=effective_agent_config_digest,
+        runtime_lock_digest=runtime_lock_digest,
+        model_execution_observation=model_execution_observation,
+        connector_connection_selections=connector_connection_selections,
+        mcp_connection_selections=mcp_connection_selections,
+        native_tool_contexts=native_tool_contexts,
+        priority=priority,
+        queue_name=queue_name,
+        recovery_budget=recovery_budget,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+        input_kind=input_kind,
+        input_text=input_text,
+        version=1,
+        available_at=now,
+        next_attempt_fence=1,
+        attempts_started=0,
+        recovery_attempts_started=0,
+        handoffs_completed=0,
+        usage_charged=RecoveryUsage(),
+        status=RunStatus.accepted,
+        created_at=now,
+        updated_at=now,
+    )
+    if input_object is None:
+        values["input"] = input
+    else:
+        if input is not None:
+            raise ValueError("object-backed input cannot also contain inline input")
+        values["input_object"] = input_object
+    return Run.model_validate(values)

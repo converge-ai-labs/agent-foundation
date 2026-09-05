@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import redrive_outbox
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -120,12 +121,16 @@ class HookSubscriptionService:
         cursor: str | None,
     ) -> HookSubscriptionCollection:
         if limit < 1 or limit > 100:
-            raise HookManagementError("invalid_request", "limit must be between 1 and 100.", status_code=400)
+            raise HookManagementError(
+                "invalid_request", "limit must be between 1 and 100.", category=ErrorCategory.invalid_request
+            )
         scope = hook_cursor_scope(actor, workspace_id)
         try:
             after = decode_hook_cursor(cursor, scope=scope) if cursor is not None else None
         except HookCursorError as error:
-            raise HookManagementError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise HookManagementError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with short_session(self._sessions) as database:
             workspace = await authorize_hook(
                 database,
@@ -315,7 +320,7 @@ class HookSubscriptionService:
                 raise HookManagementError(
                     "hook_delivery_not_found",
                     "The Hook delivery was not found.",
-                    status_code=404,
+                    category=ErrorCategory.not_found,
                 )
             outbox, revision = row
             if not await redrive_outbox(
@@ -329,14 +334,14 @@ class HookSubscriptionService:
                 raise HookManagementError(
                     "hook_delivery_not_found",
                     "The Hook delivery was not found.",
-                    status_code=404,
+                    category=ErrorCategory.not_found,
                 )
             head = await database.get(HookSubscriptionRecord, subscription_id)
             if head is None:
                 raise HookManagementError(
                     "hook_subscription_not_found",
                     "The Hook subscription was not found.",
-                    status_code=404,
+                    category=ErrorCategory.not_found,
                 )
             database.add(hook_audit(actor, head, "hook_subscription.redrive", now))
 
@@ -375,7 +380,7 @@ class HookSubscriptionService:
             raise HookManagementError(
                 "hook_subscription_not_found",
                 "The Hook subscription was not found.",
-                status_code=404,
+                category=ErrorCategory.not_found,
             )
         return head, await require_hook_revision(database, head.current_revision_id)
 
@@ -408,7 +413,7 @@ class HookSubscriptionService:
             raise HookManagementError(
                 "invalid_webhook_endpoint",
                 "The Webhook endpoint is not allowed.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             ) from error
 
     def _now(self) -> datetime:

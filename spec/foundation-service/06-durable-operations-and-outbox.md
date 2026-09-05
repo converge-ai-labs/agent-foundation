@@ -39,13 +39,17 @@ A create or command that can be retried under the public contract records bounde
 | Idempotency key digest              | Non-reversible identity for the opaque caller key         |
 | Canonical request digest            | Detects reuse with different semantic input               |
 | Result reference or bounded receipt | Reconstructs the original accepted response               |
-| Evidence expiry                     | Finite retention selected by the owning API               |
+| Evidence expiry                     | 24 hours from the original successful commit              |
 
 Raw idempotency keys and secret request content are not stored in logs, events, traces, or diagnostics. The canonical request includes the semantic operation input and excludes transport-only values such as request ID and trace context.
+
+All ordinary HTTP command families use the same evidence authority and deterministic digest of domain-normalized input. Omission and explicit null remain distinct where the owning contract gives them different meaning. Credential fingerprints include the protected input value, never its redacted display, and receipts contain no credential plaintext.
 
 The operation serializes concurrent uses of the same evidence scope. The same key and canonical request return the original result; the same key with different input returns a conflict. Replay resolves before a version or ETag comparison so a successful mutation can return its original result after advancing the resource state.
 
 Idempotency evidence commits in the same relational transaction as the accepted mutation and result reference. An operation does not hold an idempotency reservation or database transaction across external I/O. If acceptance requires an external effect, Foundation first commits durable intent and performs the effect outside the transaction under an owning idempotency or reconciliation contract.
+
+Eligibility ends exactly at expiry. A bounded control-plane retention sweep physically deletes expired HTTP evidence independently of protocol bindings, execution identities, and audit retention. Receipts preserve accepted response facts instead of reconstructing them from later mutable resource state.
 
 Expired or absent evidence does not prove that an earlier operation was never dispatched. Clients do not invent a new key merely because an acknowledgement was lost.
 

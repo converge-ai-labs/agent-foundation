@@ -26,10 +26,10 @@ from ._outcome_transitions import (
 from ._transitions import charge_attempt_usage, terminalize_attempt
 from .acceptance import (
     RunAcceptanceReceipt,
-    _require_session,
-    _validate_advancement,
-    _validate_queued_run_input,
+    require_session,
+    validate_advancement,
     validate_prepared_run,
+    validate_queued_run_input,
 )
 from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority
 from .control_domain import QueuedSubmission, QueuedSubmissionFailure, QueuedSubmissionState
@@ -39,10 +39,7 @@ from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
 from .inline_hooks import InlineHookAcceptance
 from .input import AcceptedAgentInput
-from .lifecycle import (
-    append_accepted_run_lifecycle,
-    append_run_with_attempt_lifecycle,
-)
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter, StoredRunState
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
@@ -78,8 +75,10 @@ class CompletionQueueHandoffService:
         payloads: RunPayloadStore,
         inline_hooks: InlineHookValidator,
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
@@ -134,7 +133,7 @@ class CompletionQueueHandoffService:
                 )
                 _validate_successor_scope(successor_run, thread.tenant_id, thread.session_id, thread.id)
 
-                await _validate_advancement(
+                await validate_advancement(
                     database,
                     thread,
                     source,
@@ -142,7 +141,7 @@ class CompletionQueueHandoffService:
                     candidate_payload=input_payload,
                     next_head_run_id=source.id,
                 )
-                session_record_value = await _require_session(database, successor_run)
+                session_record_value = await require_session(database, successor_run)
                 successor_record = await add_run_with_environment(
                     database,
                     run=successor_run,
@@ -185,7 +184,7 @@ class CompletionQueueHandoffService:
                     now=now,
                 )
                 mutation_id = new_mutation_id()
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     source,
                     "run.completed",
@@ -196,7 +195,7 @@ class CompletionQueueHandoffService:
                     actor_type="worker",
                     actor_id=attempt.worker_id,
                 )
-                await append_accepted_run_lifecycle(
+                await self._lifecycle.append_accepted_run_lifecycle(
                     database,
                     successor_record,
                     mutation_id=mutation_id,
@@ -273,7 +272,7 @@ class CompletionQueueHandoffService:
                 thread.updated_at = now
                 await database.flush()
                 mutation_id = new_mutation_id()
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     source,
                     "run.completed",
@@ -311,7 +310,7 @@ class CompletionQueueHandoffService:
         validate_prepared_run(successor_run, successor_state)
         _validate_combined_successor(authority, source_state, successor_run, successor_state)
         input_payload = await self._verify_input_payload(successor_run)
-        _validate_queued_run_input(successor_run, input_payload, accepted_input)
+        validate_queued_run_input(successor_run, input_payload, accepted_input)
         return candidate, input_payload
 
     async def _verify_source(

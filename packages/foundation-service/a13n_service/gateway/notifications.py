@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -20,7 +21,6 @@ from a13n_service.iam import (
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import short_session
 
 NotificationTopic = Literal[
@@ -31,7 +31,7 @@ NotificationTopic = Literal[
 ]
 
 
-class NotificationError(PublicError):
+class NotificationError(ApplicationError):
     """Safe notification subscription failure."""
 
 
@@ -83,7 +83,7 @@ class NotificationService:
             raise NotificationError(
                 "duplicate_subscription_id",
                 "Subscription IDs must be unique.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         async with short_session(self._sessions) as database:
             return tuple(
@@ -169,7 +169,7 @@ class NotificationService:
             raise NotificationError(
                 "invalid_subscription_topic",
                 "session.updated is not available for Thread subscriptions.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         try:
             if subscription.scope == "workspace":
@@ -235,7 +235,7 @@ class NotificationService:
             raise NotificationError(
                 "resource_not_found",
                 "The requested subscription resource was not found.",
-                status_code=404,
+                category=ErrorCategory.not_found,
             ) from error
         return AuthorizedNotificationSubscription(
             definition=subscription,

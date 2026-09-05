@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
+from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.trace_query import (
     AuthorizedRunAttempt,
@@ -256,7 +257,7 @@ async def test_exact_read_conceals_absent_cross_scope_and_unauthorized_traces() 
 async def test_unavailable_provider_and_unsupported_search_fail_safely() -> None:
     with pytest.raises(TraceQueryError) as unavailable:
         await list_traces(service(None, Authorizer()))
-    assert unavailable.value.status_code == 503
+    assert application_error_status(unavailable.value) == 503
 
     with pytest.raises(TraceQueryError) as unsupported:
         await list_traces(

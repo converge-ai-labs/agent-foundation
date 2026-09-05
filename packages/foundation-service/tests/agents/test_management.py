@@ -15,6 +15,7 @@ from a13n_service.agents.domain import (
 from a13n_service.agents.errors import AgentError
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
+from a13n_service.http_errors import application_error_status
 from a13n_service.storage import transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -182,7 +183,7 @@ async def test_revision_create_rejects_stale_head_version(agent_management: Agen
                 config=agent_config(instructions="Stale"),
             ),
         )
-    assert stale.value.status_code == 409
+    assert application_error_status(stale.value) == 409
     assert stale.value.details == {"current_version": 2}
 
 
@@ -211,7 +212,7 @@ async def test_metadata_and_lifecycle_use_etag_without_incrementing_version(
             if_match='"stale"',
             request=UpdateAgentRequest(name="Rejected"),
         )
-    assert stale.value.status_code == 412
+    assert application_error_status(stale.value) == 412
     disabled = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=created.agent.id,

@@ -66,6 +66,8 @@ Each adapter owns only:
 - protocol-specific event projection and transport encoding; and
 - translation between owning-domain failures and the protocol's error model.
 
+Adapters normalize wire requests into typed interaction commands, including explicit omitted/default versus null Environment intent. HTTP schemas remain at the protocol boundary. Application failures carry explicit categories and safe codes; adapters select HTTP status and headers or the protocol error representation without inferring categories from code suffixes or message text.
+
 Adapters share application use cases instead of calling one another. AG-UI is not reconstructed from a Native envelope, A2A is not reconstructed from an AG-UI event, and no standard protocol handler creates a second Run acceptance path. A request that cannot map exactly to an accepted Foundation operation fails before mutation.
 
 Native `POST /api/v1/threads/{thread_id}/runs` advances a waiting head with defaults only when the caller explicitly supplies `waiting_resolution.mode="defaults"`; omission retains queue-if-busy behavior. Hosted AG-UI and A2A set that application option only for their documented “new message abandons current HITL” mapping. Explicit feedback remains a separate command. No adapter infers default abandonment merely because a Thread is waiting.

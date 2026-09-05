@@ -19,7 +19,6 @@ from a13n_service.connectivity.selection_domain import (
 )
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.domain import (
-    EncryptedRunConfigPayloadRef,
     RecoveryBudget,
     Run,
     new_run_id,
@@ -55,7 +54,6 @@ class ChildRunAdmissionProfile:
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
     recovery_budget: RecoveryBudget
-    encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread
 
@@ -119,7 +117,6 @@ class ProfileChildRunAdmissionPreparer:
             relationship_id=self._relationship_id_factory(),
             recovery_budget=profile.recovery_budget,
             created_at=assume_utc(self._clock()),
-            encrypted_config_payload=profile.encrypted_config_payload,
             cancellation_policy=profile.cancellation_policy,
             result_visibility=profile.result_visibility,
         )
@@ -167,7 +164,6 @@ class ProfileChildRunAdmissionPreparer:
             relationship_id=self._relationship_id_factory(),
             recovery_budget=profile.recovery_budget,
             created_at=assume_utc(self._clock()),
-            encrypted_config_payload=profile.encrypted_config_payload,
             cancellation_policy=profile.cancellation_policy,
             result_visibility=profile.result_visibility,
         )

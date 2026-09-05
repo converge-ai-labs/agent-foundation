@@ -6,6 +6,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
@@ -66,9 +67,11 @@ class AccountTargetService:
                     scope_id=account_id,
                     idempotency_key_digest=key,
                     fingerprint=digest,
+                    now=self._clock(),
                 )
                 if replay is not None:
-                    return (await require_target(session, account_id, replay.resource_id)).to_resource()
+                    await require_target(session, account_id, replay.resource_id)
+                    return replay.restore(AccountTarget)
                 candidate = await self._validate(session, actor, account, request)
                 now = self._clock()
                 record = AccountTargetRecord(
@@ -97,6 +100,7 @@ class AccountTargetService:
                     resource_id=record.id,
                     result_version=1,
                     now=now,
+                    resource=record.to_resource(),
                 )
                 session.add(
                     audit(actor, account.organization_id, account.workspace_id, "account_target.create", record.id, now)
@@ -105,7 +109,7 @@ class AccountTargetService:
                 return record.to_resource()
         except IntegrityError as error:
             raise NativeError(
-                "target_conflict", "This provider object is already configured.", status_code=409
+                "target_conflict", "This provider object is already configured.", category=ErrorCategory.conflict
             ) from error
 
     async def replace(
@@ -126,7 +130,7 @@ class AccountTargetService:
                 raise NativeError(
                     "immutable_target_identity",
                     "Create another target to select a different provider object.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             _apply(record, candidate)
             record.version += 1
@@ -158,7 +162,9 @@ class AccountTargetService:
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="tgt") if cursor else None
         except CursorError as error:
-            raise NativeError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise NativeError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             account = await require_account(session, account_id)
             await authorize(session, actor, account.workspace_id, WorkspaceAction.account_target_read)
@@ -221,7 +227,9 @@ class AccountTargetService:
                 else None
             )
         except ValueError as error:
-            raise NativeError("invalid_target", "Provider target configuration is invalid.", status_code=400) from error
+            raise NativeError(
+                "invalid_target", "Provider target configuration is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         agent_id = request.agent_id or account.default_agent_id
         execution_actor = await validate_reception(
             session,
@@ -251,7 +259,7 @@ async def require_target(
     )
     record = await session.scalar(query.with_for_update() if lock else query)
     if record is None:
-        raise NativeError("resource_not_found", "The requested target was not found.", status_code=404)
+        raise NativeError("resource_not_found", "The requested target was not found.", category=ErrorCategory.not_found)
     return record
 
 

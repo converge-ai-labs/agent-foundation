@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from a13n_service.gateway.queue import DeleteQueuedSubmissionRequest, NativeQueuedSubmissionService
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     InterruptRequest,
@@ -14,6 +13,7 @@ from a13n_service.interactions.control_domain import (
 )
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
+from a13n_service.interactions.submissions import DeleteQueuedSubmissionRequest, QueuedSubmissionService
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import select
@@ -43,10 +43,10 @@ def _intent(text: str) -> ThreadRunSubmissionIntent:
 async def _service(
     sessions: async_sessionmaker[AsyncSession],
     tmp_path,
-) -> NativeQueuedSubmissionService:
+) -> QueuedSubmissionService:
     objects = await LocalObjectStore.create(tmp_path / "queue-service-objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    return NativeQueuedSubmissionService(
+    return QueuedSubmissionService(
         sessions,
         QueuedSubmissionStore(sessions, _inline_hooks(), clock=lambda: NOW),
         commands,
@@ -81,7 +81,7 @@ async def _submission_setup(
         idempotency_key="submission-source",
         request=_request(),
     )
-    service = NativeQueuedSubmissionService(
+    service = QueuedSubmissionService(
         sessions,
         QueuedSubmissionStore(sessions, _inline_hooks(), clock=lambda: NOW),
         commands,

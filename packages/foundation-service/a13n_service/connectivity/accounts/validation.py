@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.agents.skill_resolution import SkillSelectionInvalid, prepare_skill_bindings
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionError, ConnectivitySelectionResolver
 from a13n_service.iam import (
@@ -55,7 +56,11 @@ async def validate_override(
                     )
                 )
                 if model is None:
-                    raise NativeError("invalid_model_selection", "The selected Model is unavailable.", status_code=400)
+                    raise NativeError(
+                        "invalid_model_selection",
+                        "The selected Model is unavailable.",
+                        category=ErrorCategory.invalid_request,
+                    )
         await ConnectivitySelectionResolver.resolve_in_session(
             session,
             actor=actor,
@@ -66,13 +71,17 @@ async def validate_override(
         )
     except (SkillSelectionInvalid, ConnectivitySelectionError) as error:
         raise NativeError(
-            "invalid_capability_selection", "An inbound capability is unavailable.", status_code=400
+            "invalid_capability_selection",
+            "An inbound capability is unavailable.",
+            category=ErrorCategory.invalid_request,
         ) from error
 
 
 def validate_batching(value: InputBatchingPolicy | None, *, max_events: int, max_interval_ms: int) -> None:
     if value and (value.max_batch_events > max_events or value.min_interval_ms > max_interval_ms):
-        raise NativeError("invalid_batching_policy", "Batching exceeds deployment bounds.", status_code=400)
+        raise NativeError(
+            "invalid_batching_policy", "Batching exceeds deployment bounds.", category=ErrorCategory.invalid_request
+        )
 
 
 async def validate_reception(

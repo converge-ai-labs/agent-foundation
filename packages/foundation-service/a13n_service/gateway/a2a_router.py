@@ -15,6 +15,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.routing import APIRoute
 from google.protobuf.json_format import MessageToDict, Parse, ParseError
 
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, AuthenticationError, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
@@ -35,11 +37,13 @@ class _A2ARoute(APIRoute):
                     A2AError(
                         "authentication_required",
                         "Authentication is required.",
-                        status_code=401,
+                        category=ErrorCategory.unauthenticated,
                     )
                 )
             except RequestValidationError:
-                return _error(A2AError("invalid_request", "The A2A request is invalid.", status_code=400))
+                return _error(
+                    A2AError("invalid_request", "The A2A request is invalid.", category=ErrorCategory.invalid_request)
+                )
             except A2AError as error:
                 return _error(error)
 
@@ -56,7 +60,7 @@ def _service(request: Request) -> A2AService:
     control = get_control_runtime(request)
     service = None if control is None else control.gateway.a2a
     if service is None:
-        raise A2AError("a2a_disabled", "A2A is not enabled for this deployment.", status_code=404)
+        raise A2AError("a2a_disabled", "A2A is not enabled for this deployment.", category=ErrorCategory.not_found)
     return service
 
 
@@ -69,7 +73,9 @@ def _base_url(request: Request) -> str:
 async def default_agent_card(request: Request) -> Response:
     agent_id = request.app.state.settings.a2a_default_agent_id
     if agent_id is None:
-        return _error(A2AError("agent_not_found", "No default A2A Agent is configured.", status_code=404))
+        return _error(
+            A2AError("agent_not_found", "No default A2A Agent is configured.", category=ErrorCategory.not_found)
+        )
     return await direct_agent_card(request, agent_id)
 
 
@@ -261,7 +267,9 @@ async def subscribe_task(
             a2a.TASK_STATE_FAILED,
             a2a.TASK_STATE_CANCELED,
         }:
-            raise A2AError("task_not_subscribable", "A terminal Task cannot be subscribed.", status_code=409)
+            raise A2AError(
+                "task_not_subscribable", "A terminal Task cannot be subscribed.", category=ErrorCategory.conflict
+            )
         return _stream(_service(request).stream_task(actor=actor, agent_id=agent_id, task_id=task_id))
     except A2AError as error:
         return _error(error)
@@ -392,21 +400,27 @@ def _validate_wire(
     body_required: bool,
 ) -> None:
     if version != "1.0":
-        raise A2AError("version_not_supported", "A2A-Version must be 1.0.", status_code=400)
+        raise A2AError("version_not_supported", "A2A-Version must be 1.0.", category=ErrorCategory.invalid_request)
     if extensions and extensions.strip():
-        raise A2AError("extension_not_supported", "A2A extensions are not supported.", status_code=400)
+        raise A2AError(
+            "extension_not_supported", "A2A extensions are not supported.", category=ErrorCategory.invalid_request
+        )
     if body_required and (content_type or "").partition(";")[0].strip().lower() != "application/a2a+json":
         raise A2AError(
             "content_type_not_supported",
             "Content-Type must be application/a2a+json.",
-            status_code=415,
+            category=ErrorCategory.unsupported_media,
         )
 
 
 def _require_sse(accept: str | None) -> None:
     media_types = {item.partition(";")[0].strip().lower() for item in (accept or "").split(",")}
     if "text/event-stream" not in media_types:
-        raise A2AError("content_type_not_supported", "Accept must include text/event-stream.", status_code=406)
+        raise A2AError(
+            "content_type_not_supported",
+            "Accept must include text/event-stream.",
+            category=ErrorCategory.not_acceptable,
+        )
 
 
 def _bounded_int(
@@ -422,10 +436,12 @@ def _bounded_int(
     try:
         parsed = int(value)
     except ValueError as error:
-        raise A2AError("invalid_query_parameter", f"{name} must be an integer.", status_code=400) from error
+        raise A2AError(
+            "invalid_query_parameter", f"{name} must be an integer.", category=ErrorCategory.invalid_request
+        ) from error
     if parsed < minimum or (maximum is not None and parsed > maximum):
         boundary = f"between {minimum} and {maximum}" if maximum is not None else f"at least {minimum}"
-        raise A2AError("invalid_query_parameter", f"{name} must be {boundary}.", status_code=400)
+        raise A2AError("invalid_query_parameter", f"{name} must be {boundary}.", category=ErrorCategory.invalid_request)
     return parsed
 
 
@@ -435,9 +451,15 @@ def _task_state(value: str | None) -> a2a.TaskState | None:
     try:
         selected = a2a.TaskState.Value(value)
     except ValueError as error:
-        raise A2AError("invalid_query_parameter", "status is not a valid TaskState.", status_code=400) from error
+        raise A2AError(
+            "invalid_query_parameter", "status is not a valid TaskState.", category=ErrorCategory.invalid_request
+        ) from error
     if selected == a2a.TASK_STATE_UNSPECIFIED:
-        raise A2AError("invalid_query_parameter", "status must select a concrete TaskState.", status_code=400)
+        raise A2AError(
+            "invalid_query_parameter",
+            "status must select a concrete TaskState.",
+            category=ErrorCategory.invalid_request,
+        )
     return cast(a2a.TaskState, selected)
 
 
@@ -450,7 +472,7 @@ def _timestamp(value: str | None) -> datetime | None:
         raise A2AError(
             "invalid_query_parameter",
             "statusTimestampAfter must be an ISO 8601 timestamp.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         ) from error
 
 
@@ -461,7 +483,7 @@ def _boolean(value: str | None, *, name: str, default: bool) -> bool:
         return True
     if value == "false":
         return False
-    raise A2AError("invalid_query_parameter", f"{name} must be true or false.", status_code=400)
+    raise A2AError("invalid_query_parameter", f"{name} must be true or false.", category=ErrorCategory.invalid_request)
 
 
 def _configured_history_length(configuration: a2a.SendMessageConfiguration) -> int | None:
@@ -502,7 +524,7 @@ def _stream(events: AsyncIterator[a2a.StreamResponse]) -> StreamingResponse:
 
 def _error(error: Exception) -> JSONResponse:
     if isinstance(error, A2AError):
-        code = error.status_code
+        code = application_error_status(error)
         reason = error.code.upper()
         message = str(error)
     else:

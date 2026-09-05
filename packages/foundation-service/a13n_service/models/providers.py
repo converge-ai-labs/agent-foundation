@@ -7,6 +7,8 @@ from types import MappingProxyType
 
 from pydantic import BaseModel, ConfigDict
 
+from a13n_service.application_errors import ErrorCategory
+
 from .domain import ModelApi, UpstreamModel
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.base import ProviderIntegration
@@ -79,7 +81,11 @@ class ProviderRegistry:
     def validate_model_api(self, provider_type: str, model_api: str) -> None:
         allowed = self._require(provider_type).supported_model_apis
         if model_api not in allowed:
-            raise ModelError("invalid_model_api", "The Model API is not supported by this Provider.", status_code=400)
+            raise ModelError(
+                "invalid_model_api",
+                "The Model API is not supported by this Provider.",
+                category=ErrorCategory.invalid_request,
+            )
 
     def credential_format(self, provider_type: str) -> CredentialFormat | None:
         return self._require(provider_type).credential_format

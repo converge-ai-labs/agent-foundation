@@ -114,43 +114,6 @@ def upgrade() -> None:
         sqlite_where=sa.text("source_kind = 'run_output'"),
     )
     op.create_table(
-        "skill_idempotency",
-        sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("actor_type", sa.String(length=32), nullable=False),
-        sa.Column("actor_id", sa.String(length=72), nullable=False),
-        sa.Column("operation", sa.String(length=32), nullable=False),
-        sa.Column("scope_id", sa.String(length=72), nullable=False),
-        sa.Column("key_digest", sa.String(length=64), nullable=False),
-        sa.Column("request_digest", sa.String(length=64), nullable=False),
-        sa.Column("response_body", sa.JSON(), nullable=False),
-        sa.Column("status_code", sa.BigInteger(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint(
-            "actor_type IN ('user', 'service_account')", name=op.f("ck_skill_idempotency_actor_type_valid")
-        ),
-        sa.CheckConstraint("status_code IN (200, 201)", name=op.f("ck_skill_idempotency_status_code_valid")),
-        sa.ForeignKeyConstraint(
-            ["workspace_id", "organization_id"],
-            ["workspaces.id", "workspaces.organization_id"],
-            name=op.f("fk_skill_idempotency_workspace_id_workspaces"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_skill_idempotency")),
-        sa.UniqueConstraint(
-            "operation",
-            "workspace_id",
-            "actor_type",
-            "actor_id",
-            "scope_id",
-            "key_digest",
-            name="uq_skill_idempotency_replay_scope",
-        ),
-    )
-    op.create_index("ix_skill_idempotency_expiry", "skill_idempotency", ["expires_at", "id"], unique=False)
-    op.create_table(
         "skills",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
@@ -278,8 +241,6 @@ def downgrade() -> None:
     )
     op.drop_index("ix_skills_listing", table_name="skills")
     op.drop_table("skills")
-    op.drop_index("ix_skill_idempotency_expiry", table_name="skill_idempotency")
-    op.drop_table("skill_idempotency")
     op.drop_index(
         "uq_assets_run_invocation",
         table_name="assets",

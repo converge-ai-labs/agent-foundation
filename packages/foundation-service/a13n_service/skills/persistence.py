@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam.authorization import AuthenticatedActor
 from a13n_service.temporal import assume_utc
 
@@ -43,19 +44,19 @@ async def require_owned_upload(
         raise SkillError(
             "skill_upload_not_found",
             "The staged Skill upload was not found.",
-            status_code=404,
+            category=ErrorCategory.not_found,
         )
     if assume_utc(upload.expires_at) <= assume_utc(now):
         raise SkillError(
             "skill_upload_expired",
             "The staged Skill upload has expired.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         )
     if upload.consumed_by_revision_id is not None:
         raise SkillError(
             "skill_upload_consumed",
             "The staged Skill upload has already been consumed.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         )
     return upload
 

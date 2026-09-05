@@ -307,3 +307,9 @@ uv build --package a13n-service
 ```
 
 Container-owned integration tests exercise PostgreSQL, Redis, and S3 HTTP behavior. The S3 startup-probe test also demonstrates that an endpoint missing required conditional-delete semantics is rejected rather than silently accepted.
+
+## HTTP retries and accepted receipts
+
+Ordinary retryable management commands accept `Idempotency-Key` values containing 1–512 visible ASCII bytes. Reuse the same key and semantic request after a lost response: for 24 hours from the original commit, an authorized replay returns the original accepted result before checking mutable version preconditions. A changed request with the same scoped key conflicts. Replaying does not extend expiry; after expiry, inspect the resource and apply its current preconditions before deciding to repeat a mutation. AG-UI/A2A external IDs and durable execution identities have their own retention contracts.
+
+MCP mutation responses preserve the accepted connection snapshot. Read the connection to observe subsequent discovery readiness. Run overrides select managed resources and reject direct credential fields; the owning resource resolves its current credentials.

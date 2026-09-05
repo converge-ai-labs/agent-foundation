@@ -496,7 +496,7 @@ class DurableRuntimeCandidateResolver:
         catalog: PluginRuntimeCatalogSnapshot,
     ) -> PluginRuntimeLock:
         selected = _selected_versions(command, catalog)
-        request_digest = _resolution_request_digest(command, catalog, selected)
+        request_digest = _resolution_digest_request(command, catalog, selected)
         replay = await self._load_resolution(operation_id, request_digest)
         if replay is not None:
             return replay
@@ -685,7 +685,7 @@ def _artifact_preferences(
     }
 
 
-def _resolution_request_digest(
+def _resolution_digest_request(
     command: PluginRuntimeCommand,
     catalog: PluginRuntimeCatalogSnapshot,
     selected: Sequence[PluginRuntimeVersionSpec],

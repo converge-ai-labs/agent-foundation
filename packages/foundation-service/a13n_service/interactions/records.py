@@ -41,7 +41,6 @@ def thread_record(value: Thread) -> ThreadRecord:
 
 
 def run_record(value: Run) -> RunRecord:
-    encrypted = _fields(value.encrypted_config_payload)
     input_object = _fields(value.input_object)
     output_object = _fields(value.output_object)
     sealed = _fields(value.sealed_state)
@@ -70,12 +69,6 @@ def run_record(value: Run) -> RunRecord:
         environment_id=value.environment_id,
         environment_access=value.environment_access,
         environment_use_started_at=value.environment_use_started_at,
-        encrypted_config_object_key=encrypted.get("object_key"),
-        encrypted_config_ciphertext_digest_sha256=encrypted.get("ciphertext_digest_sha256"),
-        encrypted_config_protected_value_digest_sha256=encrypted.get("protected_value_digest_sha256"),
-        encrypted_config_size_bytes=encrypted.get("size_bytes"),
-        encrypted_config_encryption_key_id=encrypted.get("encryption_key_id"),
-        encrypted_config_schema_version=encrypted.get("schema_version"),
         runtime_lock_digest=value.runtime_lock_digest,
         model_execution_observation_json=_json(value.model_execution_observation),
         connector_connection_selections_json=list(value.connector_connection_selections),

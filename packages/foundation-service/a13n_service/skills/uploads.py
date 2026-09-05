@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -24,7 +26,6 @@ from .support import (
     ReplayResult,
     authorize_skill_workspace,
     idempotency_identity,
-    is_idempotency_race,
     load_replay,
     new_replay_evidence,
 )
@@ -64,7 +65,7 @@ class SkillUploadService:
         try:
             package = await asyncio.to_thread(normalize_skill_zip, archive)
         except SkillPackageError as error:
-            raise SkillError(error.code, str(error), status_code=400) from error
+            raise SkillError(error.code, str(error), category=ErrorCategory.invalid_request) from error
         await self._publish_package(
             organization_id=organization_id,
             workspace_id=workspace_id,
@@ -120,14 +121,14 @@ class SkillUploadService:
                     new_replay_evidence(
                         scope=scope,
                         response=receipt,
-                        status_code=201,
+                        created=True,
                         now=now,
                     )
                 )
                 await session.flush()
-                return ReplayResult(result=receipt, status_code=201)
+                return ReplayResult(result=receipt, created=True)
         except IntegrityError as error:
-            if not is_idempotency_race(error):
+            if not is_evidence_unique_race(error):
                 raise
             return await self._require_committed_replay(
                 actor=actor,
@@ -152,7 +153,7 @@ class SkillUploadService:
                 raise SkillError(
                     "skill_upload_expired",
                     "The staged Skill upload has expired.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return record.to_resource()
 
@@ -173,7 +174,7 @@ class SkillUploadService:
                 raise SkillError(
                     "skill_upload_consumed",
                     "The staged Skill upload has already been consumed.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             await session.delete(record)
 
@@ -222,7 +223,7 @@ class SkillUploadService:
             raise SkillError(
                 "idempotency_conflict",
                 "The idempotent Skill upload could not be reconciled.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         return replay
 
@@ -243,7 +244,9 @@ class SkillUploadService:
             raise SkillError(
                 error.code,
                 str(error),
-                status_code=503 if error.code == "skill_package_unavailable" else 400,
+                category=ErrorCategory.unavailable
+                if error.code == "skill_package_unavailable"
+                else ErrorCategory.invalid_request,
             ) from error
 
 
@@ -277,5 +280,5 @@ def _upload_not_found() -> SkillError:
     return SkillError(
         "skill_upload_not_found",
         "The staged Skill upload was not found.",
-        status_code=404,
+        category=ErrorCategory.not_found,
     )

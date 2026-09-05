@@ -10,6 +10,7 @@ from anyio import sleep
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.management import canonical_json
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.iam.models import WorkspaceRecord
@@ -71,11 +72,15 @@ class OAuthCredentialRefresh:
 
     async def current(self, connection_id: str) -> CurrentConnection:
         if not await self.ensure_current(connection_id):
-            raise MCPConnectionError("mcp_credentials_unavailable", "MCP credentials are unavailable.", status_code=503)
+            raise MCPConnectionError(
+                "mcp_credentials_unavailable", "MCP credentials are unavailable.", category=ErrorCategory.unavailable
+            )
         async with short_session(self._sessions) as session:
             connection = await require_connection(session, connection_id)
             if connection.status not in {"ready", "pending"} or not await _workspace_active(session, connection):
-                raise MCPConnectionError("connection_unavailable", "MCPConnection is unavailable.", status_code=409)
+                raise MCPConnectionError(
+                    "connection_unavailable", "MCPConnection is unavailable.", category=ErrorCategory.conflict
+                )
             value = (
                 connection.credential_snapshot().decrypt(self._protector) if connection.auth_mode != "none" else None
             )
@@ -83,7 +88,9 @@ class OAuthCredentialRefresh:
                 assert value is not None
                 expires_at = optional_expiration(decode_oauth_bundle(value).get("expires_at"))
                 if expires_at is not None and expires_at <= self._clock():
-                    raise MCPConnectionError("mcp_credentials_expired", "MCP credentials expired.", status_code=503)
+                    raise MCPConnectionError(
+                        "mcp_credentials_expired", "MCP credentials expired.", category=ErrorCategory.unavailable
+                    )
             return CurrentConnection(
                 connection.endpoint_url,
                 connection.version,

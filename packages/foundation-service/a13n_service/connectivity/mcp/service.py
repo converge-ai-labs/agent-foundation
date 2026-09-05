@@ -10,17 +10,19 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import (
-    ConnectivityManagementValueError,
+    CommandReceipt,
     canonical_digest,
     fingerprint,
     idempotency_key_digest,
     record_command,
     replay_command,
 )
-from a13n_service.connectivity.models import ConnectivityCommandRecord
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
@@ -100,7 +102,7 @@ class MCPConnectionService:
             raise MCPConnectionError(
                 "invalid_mcp_connection",
                 "MCPConnection configuration is invalid.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             ) from error
         _validate_auth_identity(request.auth_mode, header_names)
         request_fingerprint = fingerprint(
@@ -114,7 +116,7 @@ class MCPConnectionService:
             raise MCPConnectionError(
                 "invalid_mcp_connection",
                 "MCPConnection configuration is invalid.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             ) from error
         now = self._clock()
         connection_id = new_object_id("mcpc")
@@ -132,11 +134,12 @@ class MCPConnectionService:
                         scope_id=workspace_id,
                         idempotency_key_digest=key_digest,
                         fingerprint=request_fingerprint,
+                        now=self._clock(),
                     )
-                except ConnectivityManagementValueError as error:
+                except IdempotencyConflict as error:
                     raise map_management_error(error) from error
                 if replay is not None:
-                    return await self._resource(session, replay.resource_id)
+                    return replay.restore(MCPConnection)
                 record = MCPConnectionRecord(
                     id=connection_id,
                     organization_id=workspace.organization_id,
@@ -173,6 +176,7 @@ class MCPConnectionService:
                     resource_id=connection_id,
                     result_version=1,
                     now=now,
+                    resource=record.to_resource(),
                 )
                 session.add(audit(actor, record, action="mcp_connection.create", now=now))
                 await session.flush()
@@ -180,11 +184,11 @@ class MCPConnectionService:
             raise MCPConnectionError(
                 "mcp_connection_conflict",
                 "MCPConnection identity or name already exists.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         if request.auth_mode is MCPAuthMode.none:
             await self._discovery.discover(connection_id)
-        return await self.get(actor=actor, connection_id=connection_id)
+        return record.to_resource()
 
     async def list(
         self,
@@ -195,12 +199,16 @@ class MCPConnectionService:
         cursor: str | None,
     ) -> MCPConnectionCollection:
         if not 1 <= limit <= 100:
-            raise MCPConnectionError("invalid_request", "Collection limit is invalid.", status_code=400)
+            raise MCPConnectionError(
+                "invalid_request", "Collection limit is invalid.", category=ErrorCategory.invalid_request
+            )
         scope = {"workspace_id": workspace_id, "actor": actor.principal.model_dump(mode="json")}
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="mcpc") if cursor else None
         except CursorError as error:
-            raise MCPConnectionError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise MCPConnectionError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             await authorize_workspace_action(session, actor, workspace_id, WorkspaceAction.mcp_connection_read)
             query = select(MCPConnectionRecord).where(
@@ -259,7 +267,7 @@ class MCPConnectionService:
             raise MCPConnectionError(
                 "mcp_connection_conflict",
                 "MCPConnection name already exists.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def replace_credentials(
@@ -285,7 +293,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
             if replay:
-                return record.to_resource()
+                return replay.restore(MCPConnection)
             require_version(record.version, request.expected_version)
             try:
                 record.replace_credential(credential_value, self._protector)
@@ -293,7 +301,7 @@ class MCPConnectionService:
                 raise MCPConnectionError(
                     "credential_conflict",
                     "MCP credentials could not be stored.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 ) from error
 
             record.status = "pending"
@@ -310,7 +318,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
         await self._discovery.discover(connection_id)
-        return await self.get(actor=actor, connection_id=connection_id)
+        return record.to_resource()
 
     async def reconnect(
         self,
@@ -334,10 +342,12 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
             if replay:
-                return record.to_resource()
+                return replay.restore(MCPConnection)
             require_version(record.version, expected_version)
             if record.auth_mode != "none" and record.ciphertext is None:
-                raise MCPConnectionError("credentials_required", "MCP credentials are required.", status_code=409)
+                raise MCPConnectionError(
+                    "credentials_required", "MCP credentials are required.", category=ErrorCategory.conflict
+                )
             record.status = "pending"
             record.status_reason = None
             record.version += 1
@@ -352,7 +362,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
         await self._discovery.discover(connection_id)
-        return await self.get(actor=actor, connection_id=connection_id)
+        return record.to_resource()
 
     async def set_enabled(
         self,
@@ -382,6 +392,8 @@ class MCPConnectionService:
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
             )
+            if replay is not None:
+                return replay.restore(MCPConnection)
             if not replay:
                 require_version(record.version, expected_version)
                 if enabled:
@@ -389,7 +401,7 @@ class MCPConnectionService:
                         raise MCPConnectionError(
                             "connection_not_ready",
                             "MCPConnection has no eligible credentials.",
-                            status_code=409,
+                            category=ErrorCategory.conflict,
                         )
                     record.status = "ready"
                 else:
@@ -431,11 +443,12 @@ class MCPConnectionService:
                     scope_id=connection_id,
                     idempotency_key_digest=key_digest,
                     fingerprint=request_fingerprint,
+                    now=self._clock(),
                 )
-            except ConnectivityManagementValueError as error:
+            except IdempotencyConflict as error:
                 raise map_management_error(error) from error
             if replay is not None:
-                return ConnectionCleanupReceipt.model_validate(replay.result_json)
+                return replay.restore(ConnectionCleanupReceipt)
             require_version(record.version, expected_version)
             if record.auth_mode == "oauth" and record.ciphertext is not None:
                 credentials.append(record.credential_snapshot())
@@ -479,7 +492,7 @@ class MCPConnectionService:
                 resource_id=connection_id,
                 result_version=record.version,
                 now=now,
-                result=receipt.model_dump(mode="json"),
+                resource=receipt,
             )
             command_id = command.id
             session.add(audit(actor, record, action="mcp_connection.delete", now=now))
@@ -504,14 +517,13 @@ class MCPConnectionService:
         outcome = "unknown" if "unknown" in outcomes else "failed" if "failed" in outcomes else "succeeded"
         receipt = ConnectionCleanupReceipt(connection_id=connection_id, local_status="deleted", remote_status=outcome)
         async with transaction(self._sessions) as session:
-            command = await session.get(ConnectivityCommandRecord, command_id, with_for_update=True)
-            if command is not None:
-                command.result_json = receipt.model_dump(mode="json")
+            command = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
+            if command is not None and command.receipt_json is not None:
+                command.receipt_json = {
+                    "version": command.receipt_json["version"],
+                    "resource": receipt.model_dump(mode="json"),
+                }
         return receipt
-
-    async def _resource(self, session: AsyncSession, connection_id: str) -> MCPConnection:
-        record = await require_connection(session, connection_id, include_deleted=True)
-        return record.to_resource()
 
     async def _replay(
         self,
@@ -522,7 +534,7 @@ class MCPConnectionService:
         operation: str,
         key_digest: str,
         request_fingerprint: str,
-    ) -> bool:
+    ) -> CommandReceipt | None:
         try:
             result = await replay_command(
                 session,
@@ -532,10 +544,11 @@ class MCPConnectionService:
                 scope_id=record.id,
                 idempotency_key_digest=key_digest,
                 fingerprint=request_fingerprint,
+                now=self._clock(),
             )
-        except ConnectivityManagementValueError as error:
+        except IdempotencyConflict as error:
             raise map_management_error(error) from error
-        return result is not None
+        return result
 
     def _record(
         self,
@@ -559,9 +572,10 @@ class MCPConnectionService:
             resource_type="mcp_connection",
             resource_id=record.id,
             result_version=record.version,
-            now=record.updated_at,
+            now=self._clock(),
+            resource=record.to_resource(),
         )
-        session.add(audit(actor, record, action=operation, now=record.updated_at))
+        session.add(audit(actor, record, action=operation, now=self._clock()))
 
 
 def _validate_auth_identity(auth_mode: MCPAuthMode, header_names: tuple[str, ...]) -> None:
@@ -569,13 +583,13 @@ def _validate_auth_identity(auth_mode: MCPAuthMode, header_names: tuple[str, ...
         raise MCPConnectionError(
             "invalid_mcp_connection",
             "static_headers requires a non-empty header name set.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     if auth_mode is not MCPAuthMode.static_headers and header_names:
         raise MCPConnectionError(
             "invalid_mcp_connection",
             "Static header names require static_headers authentication.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
 
 
@@ -597,16 +611,18 @@ def _credential_value(record: MCPConnectionRecord, request: ReplaceMCPCredential
                 expected_names=tuple(record.static_header_names_json),
             )
     except MCPCredentialError as error:
-        raise MCPConnectionError("invalid_credentials", "MCP credentials are invalid.", status_code=400) from error
+        raise MCPConnectionError(
+            "invalid_credentials", "MCP credentials are invalid.", category=ErrorCategory.invalid_request
+        ) from error
     raise MCPConnectionError(
         "invalid_credentials",
         "Credentials do not match the MCPConnection authentication mode.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
     )
 
 
 def _idempotency_digest(value: str) -> str:
     try:
         return idempotency_key_digest(value)
-    except ConnectivityManagementValueError as error:
+    except InvalidIdempotencyKey as error:
         raise map_management_error(error) from error

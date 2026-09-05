@@ -44,6 +44,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import seed_hook_actor_access
+from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import (
     AGENT_ID,
@@ -437,6 +438,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         RunPayloadStore(interaction_object_store),
         inline_hooks,
         clock=lambda: NOW,
+        lifecycle=test_lifecycle_writer(),
     )
     async with transaction(interaction_sessions) as database:
         binding = await database.scalar(
@@ -553,6 +555,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=1),
+        lifecycle=test_lifecycle_writer(),
     ).fail_queued_permanently(
         tenant_id=TENANT_ID,
         thread_id=source.thread_id,
@@ -629,10 +632,13 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_7171717171717171",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(source.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -698,6 +704,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         RunPayloadStore(interaction_object_store),
         inline_hooks,
         clock=lambda: NOW + timedelta(seconds=4),
+        lifecycle=test_lifecycle_writer(),
     ).complete_and_consume(
         authority=authority,
         source_state=stored,
@@ -758,10 +765,13 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_7272727272727272",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(source.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -814,6 +824,7 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=4),
+        lifecycle=test_lifecycle_writer(),
     ).complete_and_fail_permanently(
         authority=authority,
         source_state=stored,
@@ -859,10 +870,13 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_8181818181818181",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(source.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -933,6 +947,7 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
             RunPayloadStore(interaction_object_store),
             _inline_hooks(),
             clock=lambda: NOW + timedelta(seconds=4),
+            lifecycle=test_lifecycle_writer(),
         ).complete_and_consume(
             authority=authority,
             source_state=stored,

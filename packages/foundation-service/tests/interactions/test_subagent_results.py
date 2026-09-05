@@ -39,6 +39,8 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import NOW, TENANT_ID, effective_agent_config
 from .test_attempt_execution import _authority, _worker
 from .test_inbox import _state_with_receipts
@@ -148,8 +150,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
         tuple(item.receipt for item in eligible),
     )
     stored = await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=6),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=6), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
     await reconciler.confirm_checkpoint(authority, stored)
 
@@ -189,8 +190,7 @@ async def test_parent_failure_suppresses_unconsumed_child_result_on_both_race_or
         pending = await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
         assert pending.status is ThreadInboxStatus.pending
     await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=5),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=5), lifecycle=test_lifecycle_writer()
     ).fail(
         authority,
         SafeFailure(code="parent_failed", message="Parent failed."),
@@ -262,6 +262,7 @@ async def test_inline_json_null_result_survives_inbox_and_materialization(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "null-child-lease",
         attempt_id_factory=lambda: "rat_cccccccccccccccc",
+        lifecycle=test_lifecycle_writer(),
     ).claim(child_run_id, _worker())
     assert claim is not None
     async with short_session(interaction_sessions) as database:
@@ -478,6 +479,7 @@ async def _accept_child(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_aaaaaaaaaaaaaaaa",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -528,6 +530,7 @@ async def _complete_object_backed_child(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
+        lifecycle=test_lifecycle_writer(),
     ).claim(child_run_id, _worker())
     assert claim is not None
     async with short_session(sessions) as database:

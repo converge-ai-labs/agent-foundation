@@ -25,6 +25,8 @@ from a13n_service.subagents import (
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import NOW, TENANT_ID, USER_ID, WORKSPACE_ID
 from .test_acceptance import _accepted_run, _inline_hooks
 from .test_subagent_results import RecordingSignals, _accept_child, _fail_child
@@ -212,6 +214,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     ).advance_thread(
         run=manual_run,
         state=manual_state,
@@ -224,6 +227,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
         interaction_sessions,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=7),
+        lifecycle=test_lifecycle_writer(),
     ).cancel(
         tenant_id=TENANT_ID,
         run_id=manual_run_id,

@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.resource_routes import require_organization_boundary
@@ -41,14 +42,18 @@ IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 def _model_service(request: Request) -> ModelService:
     control = get_control_runtime(request)
     if control is None:
-        raise ModelError("model_management_unavailable", "Model Management is unavailable.", status_code=503)
+        raise ModelError(
+            "model_management_unavailable", "Model Management is unavailable.", category=ErrorCategory.unavailable
+        )
     return control.models
 
 
 def _provider_service(request: Request) -> ModelProviderService:
     control = get_control_runtime(request)
     if control is None:
-        raise ModelError("model_management_unavailable", "Model Management is unavailable.", status_code=503)
+        raise ModelError(
+            "model_management_unavailable", "Model Management is unavailable.", category=ErrorCategory.unavailable
+        )
     return control.model_providers
 
 

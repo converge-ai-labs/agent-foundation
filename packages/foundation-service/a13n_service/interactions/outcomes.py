@@ -28,7 +28,7 @@ from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authori
 from .domain import RunAttemptStatus, RunStatus
 from .inbox import ThreadControlSignalPublisher
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
-from .lifecycle import append_run_lifecycle, append_run_with_attempt_lifecycle
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, StoredRunState
 from .state import CompletedOutcomeCandidate, WaitingOutcomeCandidate
@@ -52,9 +52,11 @@ class RunOutcomeService:
         sessions: async_sessionmaker[AsyncSession],
         payloads: RunPayloadStore,
         *,
+        lifecycle: LifecycleWriter,
         control_signals: ThreadControlSignalPublisher | None = None,
         clock: Clock = utc_now,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._payloads = payloads
         self._control_signals = control_signals
@@ -108,7 +110,7 @@ class RunOutcomeService:
             thread.head_run_id = run.id
             thread.version += 1
             thread.updated_at = now
-            await append_run_with_attempt_lifecycle(
+            await self._lifecycle.append_run_with_attempt_lifecycle(
                 database,
                 run,
                 "run.waiting" if status is RunStatus.waiting else "run.completed",
@@ -192,7 +194,7 @@ class RunOutcomeService:
             thread.version += 1
             thread.updated_at = now
             if attempt is None:
-                await append_run_lifecycle(
+                await self._lifecycle.append_run_lifecycle(
                     database,
                     run,
                     "run.cancelled",
@@ -201,7 +203,7 @@ class RunOutcomeService:
                     actor_id=None,
                 )
             else:
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     run,
                     "run.cancelled",

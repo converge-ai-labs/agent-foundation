@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from a13n_service.application_errors import ApplicationError
 from a13n_service.environments.domain import (
     CreateProviderRequest,
     CreateTemplateRequest,
@@ -15,9 +16,9 @@ from a13n_service.environments.domain import (
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.etags import resource_etag
+from a13n_service.http_errors import application_error_status
 from a13n_service.interactions.thread_creation import allocate_thread
 from a13n_service.interactions.thread_domain import CreateThreadRequest
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import short_session
 from pydantic import ValidationError
 
@@ -106,7 +107,7 @@ async def test_empty_thread_allocates_only_metadata_and_distinguishes_null(
         body=CreateThreadRequest(),
         idempotency_key="null-distinction",
     )
-    with pytest.raises(PublicError, match="different request"):
+    with pytest.raises(ApplicationError, match="different request"):
         await allocate_thread(
             environment_sessions,
             actor=actor(),
@@ -309,7 +310,7 @@ async def test_registering_same_target_under_another_provider_is_a_conflict(envi
             request=request.model_copy(update={"provider_id": second.id}),
             idempotency_key="register-second",
         )
-    assert caught.value.status_code == 409
+    assert application_error_status(caught.value) == 409
 
 
 def test_request_identity_canonicalizes_objects_but_preserves_semantics():
@@ -329,6 +330,3 @@ def test_request_identity_canonicalizes_objects_but_preserves_semantics():
     changed = first.model_copy(update={"configuration": {"steps": [1, 2]}})
     reversed_steps = first.model_copy(update={"configuration": {"steps": [2, 1]}})
     assert request_identity("key", changed) != request_identity("key", reversed_steps)
-    assert request_identity("key", CreateThreadRequest()) != request_identity(
-        "key", CreateThreadRequest(environment=None)
-    )

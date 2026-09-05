@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
@@ -20,7 +21,9 @@ def _service(request: Request) -> AccountTargetService:
     runtime = get_connectivity_control_runtime(request)
     if runtime is None:
         raise NativeError(
-            "connectivity_management_unavailable", "Connectivity management is unavailable.", status_code=503
+            "connectivity_management_unavailable",
+            "Connectivity management is unavailable.",
+            category=ErrorCategory.unavailable,
         )
     return runtime.targets
 

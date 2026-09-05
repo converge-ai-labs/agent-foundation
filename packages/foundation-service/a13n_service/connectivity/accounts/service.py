@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import SecretStr
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
@@ -94,9 +97,10 @@ class AccountService:
                     scope_id=workspace_id,
                     idempotency_key_digest=key_digest,
                     fingerprint=request_fingerprint,
+                    now=self._clock(),
                 )
                 if replay is not None:
-                    return (await require_account(session, replay.resource_id)).to_resource()
+                    return replay.restore(Account)
                 reception = _parse_reception(request.model_dump(include=set(Reception.model_fields)))
                 await validate_reception(session, actor, workspace_id, reception)
                 validate_batching(
@@ -150,6 +154,7 @@ class AccountService:
                     resource_id=account_id,
                     result_version=1,
                     now=now,
+                    resource=record.to_resource(),
                 )
                 session.add(
                     audit(actor, workspace.organization_id, workspace_id, "application_account.create", account_id, now)
@@ -158,11 +163,13 @@ class AccountService:
                 return record.to_resource()
         except IntegrityError as error:
             raise NativeError(
-                "account_conflict", "Application Account identity or name already exists.", status_code=409
+                "account_conflict",
+                "Application Account identity or name already exists.",
+                category=ErrorCategory.conflict,
             ) from error
         except SecretProtectionError as error:
             raise NativeError(
-                "credential_conflict", "Account credentials could not be stored.", status_code=409
+                "credential_conflict", "Account credentials could not be stored.", category=ErrorCategory.conflict
             ) from error
 
     async def list_accounts(
@@ -178,7 +185,9 @@ class AccountService:
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="acct") if cursor is not None else None
         except CursorError as error:
-            raise NativeError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise NativeError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             workspace = await authorize(session, actor, workspace_id, WorkspaceAction.application_account_read)
             query = select(AccountRecord).where(
@@ -239,7 +248,7 @@ class AccountService:
                         raise NativeError(
                             "immutable_account_identity",
                             "Application Account identity cannot be changed.",
-                            status_code=409,
+                            category=ErrorCategory.conflict,
                         )
                 if request.name is not None:
                     record.name = request.name
@@ -282,7 +291,7 @@ class AccountService:
                 return record.to_resource()
         except IntegrityError as error:
             raise NativeError(
-                "account_conflict", "Application Account name already exists.", status_code=409
+                "account_conflict", "Application Account name already exists.", category=ErrorCategory.conflict
             ) from error
 
     async def replace_credentials(
@@ -306,13 +315,16 @@ class AccountService:
                 scope_id=account_id,
                 idempotency_key_digest=key_digest,
                 fingerprint=request_fingerprint,
+                now=self._clock(),
             )
             if replay is not None:
                 if replay.resource_id != record.id:
                     raise NativeError(
-                        "idempotency_conflict", "Idempotency key was used for another resource.", status_code=409
+                        "idempotency_conflict",
+                        "Idempotency key was used for another resource.",
+                        category=ErrorCategory.conflict,
                     )
-                return record.to_resource()
+                return replay.restore(Account)
             require_version(record.version, request.expected_version)
             adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
             credentials = _validate_credentials(adapter, request.credentials, record.provider_config_version)
@@ -321,7 +333,13 @@ class AccountService:
             record.version += 1
             record.updated_at = self._clock()
             _record_account_command(
-                session, actor, record, "application_account.credentials", key_digest, request_fingerprint
+                session,
+                actor,
+                record,
+                "application_account.credentials",
+                key_digest,
+                request_fingerprint,
+                now=self._clock(),
             )
             session.add(
                 audit(
@@ -382,15 +400,18 @@ class AccountService:
                 scope_id=account_id,
                 idempotency_key_digest=key_digest,
                 fingerprint=request_fingerprint,
+                now=self._clock(),
             )
             if replay is not None:
-                return record.to_resource()
+                return replay.restore(Account)
             require_version(record.version, expected_version)
             if record.status != status.value:
                 record.status = status.value
                 record.version += 1
                 record.updated_at = self._clock()
-            _record_account_command(session, actor, record, operation, key_digest, request_fingerprint)
+            _record_account_command(
+                session, actor, record, operation, key_digest, request_fingerprint, now=self._clock()
+            )
             session.add(
                 audit(actor, record.organization_id, record.workspace_id, operation, account_id, record.updated_at)
             )
@@ -403,7 +424,9 @@ def _validate_config(adapter: IngressAdapter, value: object, version: str) -> Js
         return adapter.validate_config(value, config_version=version)
     except ValueError as error:
         raise NativeError(
-            "invalid_provider_config", "Account provider configuration is invalid.", status_code=400
+            "invalid_provider_config",
+            "Account provider configuration is invalid.",
+            category=ErrorCategory.invalid_request,
         ) from error
 
 
@@ -411,7 +434,9 @@ def _validate_credentials(adapter: IngressAdapter, value: dict[str, SecretStr], 
     try:
         return adapter.validate_credentials(clear_credentials(value), config_version=version)
     except ValueError as error:
-        raise NativeError("invalid_credentials", "Account credentials are invalid.", status_code=400) from error
+        raise NativeError(
+            "invalid_credentials", "Account credentials are invalid.", category=ErrorCategory.invalid_request
+        ) from error
 
 
 def _record_account_command(
@@ -421,6 +446,8 @@ def _record_account_command(
     operation: str,
     key_digest: str,
     request_fingerprint: str,
+    *,
+    now: datetime,
 ) -> None:
     record_command(
         session,
@@ -434,7 +461,8 @@ def _record_account_command(
         resource_type="application_account",
         resource_id=record.id,
         result_version=record.version,
-        now=record.updated_at,
+        now=now,
+        resource=record.to_resource(),
     )
 
 
@@ -443,7 +471,7 @@ def _parse_reception(value: object) -> Reception:
         return Reception.model_validate(value)
     except ValueError as error:
         raise NativeError(
-            "invalid_reception", "Account reception configuration is invalid.", status_code=400
+            "invalid_reception", "Account reception configuration is invalid.", category=ErrorCategory.invalid_request
         ) from error
 
 
@@ -452,5 +480,5 @@ def _validate_policy(adapter: IngressAdapter, value: JsonObject, version: str) -
         return adapter.validate_reception_policy(value, config_version=version)
     except ValueError as error:
         raise NativeError(
-            "invalid_reception_policy", "Provider reception policy is invalid.", status_code=400
+            "invalid_reception_policy", "Provider reception policy is invalid.", category=ErrorCategory.invalid_request
         ) from error

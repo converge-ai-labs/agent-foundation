@@ -19,7 +19,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
-from .lifecycle import append_run_attempt_lifecycle, append_run_with_attempt_lifecycle
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunStateStore, StoredRunState
 from .state import RunStateEnvelope
@@ -104,8 +104,10 @@ class AttemptExecutionService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._clock = clock
 
@@ -164,7 +166,7 @@ class AttemptExecutionService:
                 run.started_at = now
             run.updated_at = now
             run.version += 1
-            await append_run_attempt_lifecycle(
+            await self._lifecycle.append_run_attempt_lifecycle(
                 database,
                 run,
                 attempt,
@@ -200,7 +202,7 @@ class AttemptExecutionService:
             await schedule_environment_maintenance(database, run=run, now=now)
             await apply_run_outcome(database, run=run, outcome="failed", now=now)
             seal_failed_run(run, thread, failure, now)
-            await append_run_with_attempt_lifecycle(
+            await self._lifecycle.append_run_with_attempt_lifecycle(
                 database,
                 run,
                 "run.failed",
@@ -288,7 +290,7 @@ class AttemptExecutionService:
                 run.available_at = available_at
                 run.updated_at = now
                 run.version += 1
-                await append_run_attempt_lifecycle(
+                await self._lifecycle.append_run_attempt_lifecycle(
                     database,
                     run,
                     attempt,
@@ -300,7 +302,7 @@ class AttemptExecutionService:
                 await schedule_environment_maintenance(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, failure, now)
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     run,
                     "run.failed",
@@ -330,7 +332,7 @@ class AttemptExecutionService:
             run.available_at = now
             run.updated_at = now
             run.version += 1
-            await append_run_attempt_lifecycle(
+            await self._lifecycle.append_run_attempt_lifecycle(
                 database,
                 run,
                 attempt,

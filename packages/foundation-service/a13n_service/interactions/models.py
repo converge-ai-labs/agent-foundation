@@ -28,7 +28,6 @@ from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
-    EncryptedRunConfigPayloadRef,
     JsonObject,
     RecoveryBudget,
     RecoveryUsage,
@@ -57,7 +56,6 @@ _PENDING_ADAPTER = TypeAdapter(RunPendingSummary | None)
 _FAILURE_ADAPTER = TypeAdapter(SafeFailure | None)
 _JSON_OBJECTS_ADAPTER = TypeAdapter(tuple[JsonObject, ...])
 _JSON_OBJECT_ADAPTER = TypeAdapter(JsonObject | None)
-_ENCRYPTED_CONFIG_REF_ADAPTER = TypeAdapter(EncryptedRunConfigPayloadRef)
 _RUN_PAYLOAD_REF_ADAPTER = TypeAdapter(RunPayloadObjectRef)
 _SEALED_STATE_ADAPTER = TypeAdapter(SealedRunState)
 
@@ -270,15 +268,6 @@ class RunRecord(Base):
             name="recovery_counts_valid",
         ),
         CheckConstraint(
-            "(encrypted_config_object_key IS NULL AND encrypted_config_ciphertext_digest_sha256 IS NULL "
-            "AND encrypted_config_protected_value_digest_sha256 IS NULL AND encrypted_config_size_bytes IS NULL "
-            "AND encrypted_config_encryption_key_id IS NULL AND encrypted_config_schema_version IS NULL) OR "
-            "(encrypted_config_object_key IS NOT NULL AND encrypted_config_ciphertext_digest_sha256 IS NOT NULL "
-            "AND encrypted_config_protected_value_digest_sha256 IS NOT NULL AND encrypted_config_size_bytes > 0 "
-            "AND encrypted_config_encryption_key_id IS NOT NULL AND encrypted_config_schema_version IS NOT NULL)",
-            name="encrypted_config_group_valid",
-        ),
-        CheckConstraint(
             "(input_object_key IS NULL AND input_object_digest_sha256 IS NULL AND input_object_size_bytes IS NULL "
             "AND input_object_content_type IS NULL AND input_object_schema_version IS NULL) OR "
             "(input_object_key IS NOT NULL AND input_object_digest_sha256 IS NOT NULL AND input_object_size_bytes > 0 "
@@ -344,10 +333,6 @@ class RunRecord(Base):
         CheckConstraint("length(runtime_lock_digest) = 64", name="runtime_lock_digest_sha256"),
         CheckConstraint("length(request_fingerprint) = 64", name="request_fingerprint_sha256"),
         CheckConstraint(
-            "(encrypted_config_ciphertext_digest_sha256 IS NULL OR "
-            "length(encrypted_config_ciphertext_digest_sha256) = 64) AND "
-            "(encrypted_config_protected_value_digest_sha256 IS NULL OR "
-            "length(encrypted_config_protected_value_digest_sha256) = 64) AND "
             "(input_object_digest_sha256 IS NULL OR length(input_object_digest_sha256) = 64) AND "
             "(output_object_digest_sha256 IS NULL OR length(output_object_digest_sha256) = 64) AND "
             "(sealed_state_digest_sha256 IS NULL OR length(sealed_state_digest_sha256) = 64)",
@@ -440,12 +425,6 @@ class RunRecord(Base):
         String(72), ForeignKey("agent_revisions.id", ondelete="RESTRICT"), nullable=False
     )
     effective_agent_config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    encrypted_config_object_key: Mapped[str | None] = mapped_column(String(1024))
-    encrypted_config_ciphertext_digest_sha256: Mapped[str | None] = mapped_column(String(64))
-    encrypted_config_protected_value_digest_sha256: Mapped[str | None] = mapped_column(String(64))
-    encrypted_config_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
-    encrypted_config_encryption_key_id: Mapped[str | None] = mapped_column(String(256))
-    encrypted_config_schema_version: Mapped[str | None] = mapped_column(String(32))
     runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     connector_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
@@ -526,7 +505,6 @@ class RunRecord(Base):
             "agent_id": self.agent_id,
             "agent_revision_id": self.agent_revision_id,
             "effective_agent_config_digest": self.effective_agent_config_digest,
-            "encrypted_config_payload": self._encrypted_config_ref(),
             "runtime_lock_digest": self.runtime_lock_digest,
             "model_execution_observation": _MODEL_OBSERVATION_ADAPTER.validate_python(
                 self.model_execution_observation_json
@@ -579,20 +557,6 @@ class RunRecord(Base):
             else:
                 values["output_object"] = self._output_object_ref()
         return Run.model_validate(values)
-
-    def _encrypted_config_ref(self) -> EncryptedRunConfigPayloadRef | None:
-        if self.encrypted_config_object_key is None:
-            return None
-        return _ENCRYPTED_CONFIG_REF_ADAPTER.validate_python(
-            {
-                "object_key": self.encrypted_config_object_key,
-                "ciphertext_digest_sha256": self.encrypted_config_ciphertext_digest_sha256,
-                "protected_value_digest_sha256": self.encrypted_config_protected_value_digest_sha256,
-                "size_bytes": self.encrypted_config_size_bytes,
-                "encryption_key_id": self.encrypted_config_encryption_key_id,
-                "schema_version": self.encrypted_config_schema_version,
-            }
-        )
 
     def _input_object_ref(self) -> RunPayloadObjectRef:
         return _RUN_PAYLOAD_REF_ADAPTER.validate_python(

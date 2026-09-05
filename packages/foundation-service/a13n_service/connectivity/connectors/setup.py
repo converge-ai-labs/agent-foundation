@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connectors.contracts import (
     ConnectionInspection,
     ConnectorProviderError,
@@ -135,14 +136,18 @@ class ConnectorSetupCoordinator:
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
-                raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
+                raise ConnectorError(
+                    "setup_unavailable", "ConnectorProvider setup is unavailable.", category=ErrorCategory.not_found
+                )
             if attempt.status in {"completed", "failed", "expired"}:
                 return await self._receipt(session, attempt, connection_id=connection_id, redirect_url=None)
         started = await self.start_attempt(attempt_id)
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
-                raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
+                raise ConnectorError(
+                    "setup_unavailable", "ConnectorProvider setup is unavailable.", category=ErrorCategory.not_found
+                )
             return await self._receipt(
                 session,
                 attempt,
@@ -171,9 +176,15 @@ class ConnectorSetupCoordinator:
 
     async def complete_callback(self, *, actor: AuthenticatedActor, session_uri: str) -> str:
         if actor.principal.principal_type is not PrincipalType.user:
-            raise ConnectorError("interactive_user_required", "Interactive setup requires a User.", status_code=403)
+            raise ConnectorError(
+                "interactive_user_required", "Interactive setup requires a User.", category=ErrorCategory.forbidden
+            )
         if not 1 <= len(session_uri) <= 4096:
-            raise ConnectorError("invalid_callback", "ConnectorProvider setup callback is invalid.", status_code=400)
+            raise ConnectorError(
+                "invalid_callback",
+                "ConnectorProvider setup callback is invalid.",
+                category=ErrorCategory.invalid_request,
+            )
         digest = canonical_digest(session_uri)
         now = self._clock()
         async with transaction(self._sessions) as session:
@@ -193,7 +204,9 @@ class ConnectorSetupCoordinator:
                 or attempt.external_ref is None
             ):
                 raise ConnectorError(
-                    "invalid_callback", "ConnectorProvider setup callback is invalid.", status_code=400
+                    "invalid_callback",
+                    "ConnectorProvider setup callback is invalid.",
+                    category=ErrorCategory.invalid_request,
                 )
             attempt.claim_generation += 1
             attempt.claim_owner = None
@@ -230,7 +243,9 @@ class ConnectorSetupCoordinator:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
                 raise ConnectorError(
-                    "invalid_callback", "ConnectorProvider setup callback is invalid.", status_code=400
+                    "invalid_callback",
+                    "ConnectorProvider setup callback is invalid.",
+                    category=ErrorCategory.invalid_request,
                 )
             return attempt.return_path
 
@@ -266,7 +281,7 @@ class ConnectorSetupCoordinator:
                 or not _claim_matches(attempt, claim_owner, claim_generation, now=self._clock())
             ):
                 raise ConnectorError(
-                    "setup_lost_race", "ConnectorProvider setup changed concurrently.", status_code=409
+                    "setup_lost_race", "ConnectorProvider setup changed concurrently.", category=ErrorCategory.conflict
                 )
             await _require_eligible(session, attempt, connection, now=self._clock())
             if connection.external_ref is not None and connection.external_ref != started.external_ref:
@@ -275,7 +290,7 @@ class ConnectorSetupCoordinator:
                 raise ConnectorError(
                     "connection_substitution",
                     "ConnectorProvider returned another external account.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             now = self._clock()
             connection.external_ref = started.external_ref
@@ -333,7 +348,9 @@ class ConnectorSetupCoordinator:
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
-                raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
+                raise ConnectorError(
+                    "setup_unavailable", "ConnectorProvider setup is unavailable.", category=ErrorCategory.not_found
+                )
             connection = await require_connection(session, attempt.connector_connection_id)
             await _require_eligible(session, attempt, connection, now=self._clock())
             connector = await require_connector_provider(
@@ -356,7 +373,9 @@ class ConnectorSetupCoordinator:
             raw = credential.decrypt(self._protector)
         except SecretProtectionError as error:
             raise ConnectorError(
-                "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
+                "credential_unavailable",
+                "ConnectorProvider credentials are unavailable.",
+                category=ErrorCategory.unavailable,
             ) from error
         return AttemptSnapshot(attempt=setup, connector=provider, credentials=decode_credentials(raw))
 
@@ -399,7 +418,7 @@ class ConnectorSetupCoordinator:
             raise ConnectorError(
                 "setup_unavailable",
                 "ConnectorProvider setup correlation is not configured.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         payload = "\0".join(
             (
@@ -479,7 +498,9 @@ async def _require_eligible(
         or workspace is None
         or workspace.deleted_at is not None
     ):
-        raise ConnectorError("setup_lost_race", "Connector setup is no longer eligible.", status_code=409)
+        raise ConnectorError(
+            "setup_lost_race", "Connector setup is no longer eligible.", category=ErrorCategory.conflict
+        )
 
 
 async def _lock_setup(
@@ -489,7 +510,9 @@ async def _lock_setup(
         select(ConnectorSetupAttemptRecord.connector_connection_id).where(ConnectorSetupAttemptRecord.id == attempt_id)
     )
     if connection_id is None:
-        raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
+        raise ConnectorError(
+            "setup_unavailable", "ConnectorProvider setup is unavailable.", category=ErrorCategory.not_found
+        )
     connection = await require_connection(session, connection_id, lock=True)
     attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id, with_for_update=True)
     return connection, attempt

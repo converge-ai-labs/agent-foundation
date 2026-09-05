@@ -18,6 +18,8 @@ from a13n_service.subagents import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import NOW, TENANT_ID, effective_agent_config
 from .test_attempt_execution import _authority, _worker
 from .test_subagent_acceptance import (
@@ -90,6 +92,7 @@ async def _cancel_parent_with_children(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-cancel-lease",
         attempt_id_factory=lambda: "rat_8989898989898989",
+        lifecycle=test_lifecycle_writer(),
     ).claim(parent.id, _worker())
     assert claim is not None
     authority = _authority(claim)
@@ -129,19 +132,19 @@ async def _cancel_parent_with_children(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "requested-child-lease",
         attempt_id_factory=lambda: "rat_aaaaaaaaaaaaaaaa",
+        lifecycle=test_lifecycle_writer(),
     ).claim(requested.child_run_id, _worker())
     independent_claim = await AttemptScheduler(
         sessions,
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "independent-child-lease",
         attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
+        lifecycle=test_lifecycle_writer(),
     ).claim(independent.child_run_id, _worker())
     assert requested_claim is not None and independent_claim is not None
     running_parent = await _run(sessions, parent.id)
     outcomes = RunOutcomeService(
-        sessions,
-        RunPayloadStore(objects),
-        clock=lambda: NOW + timedelta(seconds=4),
+        sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
     )
     await outcomes.cancel(
         tenant_id=TENANT_ID,

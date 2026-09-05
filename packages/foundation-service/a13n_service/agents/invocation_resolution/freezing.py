@@ -175,24 +175,24 @@ class AgentInvocationFreezer:
             "resolved_model": EffectiveAgentModel(
                 execution=execution,
                 settings=effective_settings(
-                    execution.model_api, prepared.model.resource.settings, prepared.merged.config.model.settings
+                    execution.model_api, prepared.model.resource.settings, prepared.merged.model.settings
                 ),
-                characteristics=prepared.merged.config.model.characteristics,
+                characteristics=prepared.merged.model.characteristics,
             ),
             "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock.digest,
             "skills": skills,
-            "connector_tools": prepared.merged.config.connector_tools,
-            "mcp_tools": prepared.merged.config.mcp_tools,
+            "connector_tools": prepared.merged.connector_tools,
+            "mcp_tools": prepared.merged.mcp_tools,
             "resolved_subagents": resolved_subagents,
-            "instructions": prepared.merged.config.instructions,
-            "input_adapter": prepared.merged.config.input_adapter,
-            "client_tools": prepared.merged.config.client_tools,
-            "output_spec": prepared.merged.config.output_spec,
-            "retries": prepared.merged.config.retries,
-            "secret_requirements": prepared.merged.config.secret_requirements,
-            "asset_publication": prepared.merged.config.asset_publication,
-            "protocol": prepared.merged.config.protocol,
+            "instructions": prepared.merged.instructions,
+            "input_adapter": prepared.merged.input_adapter,
+            "client_tools": prepared.merged.client_tools,
+            "output_spec": prepared.merged.output_spec,
+            "retries": prepared.merged.retries,
+            "secret_requirements": prepared.merged.secret_requirements,
+            "asset_publication": prepared.merged.asset_publication,
+            "protocol": prepared.merged.protocol,
         }
         effective_without_digest = EffectiveAgentConfig(
             **config_payload,
@@ -212,8 +212,6 @@ class AgentInvocationFreezer:
             agent_revision_id=prepared.agent_revision_id,
             selector_kind=prepared.selector_kind,
             effective_config=effective,
-            sensitive_values=prepared.merged.sensitive_values,
-            sensitive_values_digest=canonical_digest(prepared.merged.sensitive_values),
             connector_connection_selections=(
                 connectivity.connector_connection_selections if connectivity is not None else ()
             ),

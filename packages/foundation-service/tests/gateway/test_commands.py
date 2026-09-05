@@ -6,19 +6,21 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
+from a13n_service.durable_operations.idempotency import digest_visible_ascii_key
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.gateway.commands import (
-    ForkRunRequest,
-    GatewayCommandError,
-    NativeInteractionCommands,
-    RetryRunRequest,
-    StartRunRequest,
-    WaitingContinueRunRequest,
-)
+from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
+from a13n_service.interactions.commands import (
+    ForkRunCommand,
+    InteractionCommandError,
+    InteractionCommands,
+    RetryRunCommand,
+    StartRunCommand,
+    WaitingContinueRunCommand,
+)
 from a13n_service.interactions.control_domain import InterruptRequest, WaitingRunFeedbackRequest
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.inbox import ThreadInboxStore
@@ -27,7 +29,7 @@ from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry
-from a13n_service.storage import short_session
+from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -44,6 +46,7 @@ from tests.interactions.conftest import (
 )
 from tests.interactions.test_acceptance import _inline_hooks
 from tests.interactions.test_attempt_execution import _authority, _completed_state, _waiting_state, _worker
+from tests.lifecycle_support import test_lifecycle_writer
 
 pytestmark = pytest.mark.anyio
 
@@ -64,8 +67,6 @@ def _frozen(*, runtime_lock_digest: str = "a" * 64) -> FrozenAgentInvocation:
         agent_revision_id=AGENT_REVISION_ID,
         selector_kind="current",
         effective_config=config,
-        sensitive_values={},
-        sensitive_values_digest="0" * 64,
         connector_connection_selections=(),
         mcp_connection_selections=(),
     )
@@ -92,8 +93,8 @@ class _Freezing:
         return selected
 
 
-def _request(text: str = "hello") -> StartRunRequest:
-    return StartRunRequest.model_validate(
+def _request(text: str = "hello") -> StartRunCommand:
+    return StartRunCommand.model_validate(
         {
             "agent_id": AGENT_ID,
             "input": {"schema_version": "2", "content": [{"type": "text", "text": text}]},
@@ -107,7 +108,7 @@ def _commands(
     preparation: _Preparation,
     freezing: _Freezing,
     assets=None,
-) -> NativeInteractionCommands:
+) -> InteractionCommands:
     resolver = SimpleNamespace(preparation=preparation, freezing=freezing)
     payloads = RunPayloadStore(objects)
     acceptance = RunAcceptanceService(
@@ -116,15 +117,16 @@ def _commands(
         payloads,
         _inline_hooks(),
         clock=lambda: NOW,
+        lifecycle=test_lifecycle_writer(),
     )
-    return NativeInteractionCommands(
+    return InteractionCommands(
         sessions,
         resolver,
         acceptance,
         RunStateStore(objects),
         assets if assets is not None else AsyncMock(),
         EndpointPolicy(),
-        outcomes=RunOutcomeService(sessions, payloads, clock=lambda: NOW),
+        outcomes=RunOutcomeService(sessions, payloads, clock=lambda: NOW, lifecycle=test_lifecycle_writer()),
         inbox=ThreadInboxStore(sessions, clock=lambda: NOW),
         payloads=payloads,
         clock=lambda: NOW,
@@ -138,15 +140,19 @@ async def _complete_run(
     run_id: str,
     expected_thread_version: int = 1,
     consumed_entries: tuple[ConsumedThreadInboxEntry, ...] = (),
+    a2a_enabled: bool = True,
 ) -> None:
     states = RunStateStore(objects)
     claim = await AttemptScheduler(
         sessions,
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "gateway-lease-secret",
+        lifecycle=test_lifecycle_writer(a2a_enabled=a2a_enabled),
     ).claim(run_id, _worker())
     assert isinstance(claim, ClaimedAttempt)
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer(a2a_enabled=a2a_enabled)
+    )
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -175,6 +181,7 @@ async def _complete_run(
         sessions,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=3),
+        lifecycle=test_lifecycle_writer(a2a_enabled=a2a_enabled),
     ).commit_state_outcome(authority, stored, expected_thread_version=expected_thread_version)
 
 
@@ -190,9 +197,12 @@ async def _wait_run(
         sessions,
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "gateway-waiting-lease-secret",
+        lifecycle=test_lifecycle_writer(),
     ).claim(run_id, _worker())
     assert isinstance(claim, ClaimedAttempt)
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -248,9 +258,7 @@ async def _wait_run(
         waiting,
     )
     await RunOutcomeService(
-        sessions,
-        RunPayloadStore(objects),
-        clock=lambda: NOW + timedelta(seconds=3),
+        sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
     return stored.digest_sha256
 
@@ -259,6 +267,7 @@ async def test_start_accepts_root_run_and_replays_before_resolution(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
     interaction_sessions = lifecycle_interaction_sessions
     interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
     preparation = _Preparation()
@@ -305,7 +314,7 @@ async def test_start_rejects_idempotency_key_reuse_with_changed_request(
         request=_request("first"),
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.start(
             actor=_actor(),
             workspace_id=WORKSPACE_ID,
@@ -314,7 +323,7 @@ async def test_start_rejects_idempotency_key_reuse_with_changed_request(
         )
 
     assert captured.value.code == "idempotency_conflict"
-    assert captured.value.status_code == 409
+    assert application_error_status(captured.value) == 409
 
 
 async def test_start_rejects_second_root_thread_in_existing_session(
@@ -335,7 +344,7 @@ async def test_start_rejects_second_root_thread_in_existing_session(
         request=_request(),
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.start(
             actor=_actor(),
             workspace_id=WORKSPACE_ID,
@@ -344,7 +353,7 @@ async def test_start_rejects_second_root_thread_in_existing_session(
         )
 
     assert captured.value.code == "session_root_exists"
-    assert captured.value.status_code == 409
+    assert application_error_status(captured.value) == 409
     async with short_session(lifecycle_interaction_sessions) as database:
         roots = tuple(
             (
@@ -372,7 +381,7 @@ async def test_start_rejects_final_invocation_drift_without_committing_run(
         _Freezing([_frozen(), _frozen(runtime_lock_digest="b" * 64)]),
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.start(
             actor=_actor(),
             workspace_id=WORKSPACE_ID,
@@ -424,7 +433,13 @@ async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(
     async with short_session(lifecycle_interaction_sessions) as database:
         run = await database.scalar(select(RunRecord).where(RunRecord.id == accepted.run_id))
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == accepted.thread_id))
-        evidence = tuple((await database.scalars(select(IdempotencyEvidenceRecord))).all())
+        evidence = tuple(
+            (
+                await database.scalars(
+                    select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation != "run.accept")
+                )
+            ).all()
+        )
     assert run is not None and run.status == "cancelled" and run.version == 2
     assert thread is not None and thread.version == 2
     assert len(evidence) == 1
@@ -455,7 +470,7 @@ async def test_interrupt_idempotency_conflicts_before_terminal_precondition_chec
         request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.interrupt(
             actor=_actor(),
             run_id=accepted.run_id,
@@ -491,7 +506,16 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
     )
 
-    request = RetryRunRequest(expected_thread_version=2)
+    async with transaction(lifecycle_interaction_sessions) as database:
+        terminal = await database.get(RunRecord, source_receipt.run_id)
+        assert terminal is not None
+        terminal.attempts_started = 2
+        terminal.recovery_attempts_started = 1
+        terminal.handoffs_completed = 1
+        terminal.next_attempt_fence = 3
+        terminal.started_at = NOW
+
+    request = RetryRunCommand(expected_thread_version=2)
     first = await commands.retry(
         actor=_actor(),
         run_id=source_receipt.run_id,
@@ -518,6 +542,9 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
     assert retried.input_json == source.input_json
     assert retried.authority_principal_id == source.authority_principal_id
     assert thread.current_run_id == retried.id
+    assert retried.attempts_started == retried.recovery_attempts_started == retried.handoffs_completed == 0
+    assert retried.next_attempt_fence == 1
+    assert retried.started_at is None and retried.sealed_at is None and retried.environment_use_started_at is None
 
 
 async def test_retry_rejects_terminal_run_after_thread_advances(
@@ -548,15 +575,15 @@ async def test_retry_rejects_terminal_run_after_thread_advances(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="stale-retry-first",
-        request=RetryRunRequest(expected_thread_version=2),
+        request=RetryRunCommand(expected_thread_version=2),
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.retry(
             actor=_actor(),
             run_id=source.run_id,
             idempotency_key="stale-retry-second",
-            request=RetryRunRequest(expected_thread_version=3),
+            request=RetryRunCommand(expected_thread_version=3),
         )
 
     assert captured.value.code == "run_not_retryable"
@@ -585,7 +612,7 @@ async def test_fork_creates_child_thread_and_replays(
         interaction_object_store,
         run_id=source.run_id,
     )
-    request = ForkRunRequest(input=_request("fork input").input)
+    request = ForkRunCommand(input=_request("fork input").input)
 
     first = await commands.fork(
         actor=_actor(),
@@ -642,15 +669,15 @@ async def test_fork_idempotency_rejects_changed_input(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="fork-conflict",
-        request=ForkRunRequest(input=_request("first").input),
+        request=ForkRunCommand(input=_request("first").input),
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.fork(
             actor=_actor(),
             run_id=source.run_id,
             idempotency_key="fork-conflict",
-            request=ForkRunRequest(input=_request("different").input),
+            request=ForkRunCommand(input=_request("different").input),
         )
 
     assert captured.value.code == "idempotency_conflict"
@@ -769,7 +796,7 @@ async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
         }
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.feedback(
             actor=_actor(),
             run_id=source.run_id,
@@ -803,7 +830,7 @@ async def test_waiting_continue_defaults_feedback_and_preserves_new_input(
         interaction_object_store,
         run_id=source.run_id,
     )
-    request = WaitingContinueRunRequest(
+    request = WaitingContinueRunCommand(
         expected_thread_version=2,
         sealed_state_digest_sha256=digest,
         input=_request("handle this instead").input,
@@ -882,7 +909,13 @@ async def test_steer_is_atomic_replayable_and_does_not_advance_thread(
     async with short_session(lifecycle_interaction_sessions) as database:
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == accepted.thread_id))
         entries = tuple((await database.scalars(select(ThreadInboxRecord))).all())
-        evidence = tuple((await database.scalars(select(IdempotencyEvidenceRecord))).all())
+        evidence = tuple(
+            (
+                await database.scalars(
+                    select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation != "run.accept")
+                )
+            ).all()
+        )
     assert thread is not None and thread.version == 1 and thread.queue_version == 0
     assert len(entries) == 1
     assert len(evidence) == 1
@@ -913,7 +946,7 @@ async def test_steer_idempotency_rejects_changed_input(
         input=_request("first").input,
     )
 
-    with pytest.raises(GatewayCommandError) as captured:
+    with pytest.raises(InteractionCommandError) as captured:
         await commands.steer(
             actor=_actor(),
             run_id=accepted.run_id,
@@ -922,3 +955,98 @@ async def test_steer_idempotency_rejects_changed_input(
         )
 
     assert captured.value.code == "idempotency_conflict"
+
+
+async def test_http_start_replay_expires_without_expiring_execution_identity(
+    lifecycle_interaction_sessions,
+    tmp_path,
+) -> None:
+    objects = await LocalObjectStore.create(tmp_path / "expiry-objects")
+    commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    request = _request("finite replay")
+    first = await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request)
+    commands._clock = lambda: NOW + timedelta(hours=24, microseconds=-1)
+    assert (
+        await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request)
+        == first
+    )
+    commands._clock = lambda: NOW + timedelta(hours=24)
+    second = await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request)
+    assert second.run_id != first.run_id
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assert await database.get(RunRecord, first.run_id) is not None
+
+
+async def test_binding_failure_rolls_back_run_lifecycle_and_http_receipt(
+    lifecycle_interaction_sessions, tmp_path
+) -> None:
+    from a13n_service.durable_operations.models import OutboxRecord
+    from a13n_service.lifecycle.models import LifecycleEventRecord
+
+    objects = await LocalObjectStore.create(tmp_path / "rollback-objects")
+    commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+
+    async def fail_binding(database, receipt):
+        assert await database.get(RunRecord, receipt.run_id) is not None
+        raise RuntimeError("binding rejected")
+
+    with pytest.raises(RuntimeError, match="binding rejected"):
+        await commands.start(
+            actor=_actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="rollback",
+            request=_request("atomic"),
+            transaction_hook=fail_binding,
+        )
+    async with short_session(lifecycle_interaction_sessions) as database:
+        for model in (RunRecord, LifecycleEventRecord, OutboxRecord, IdempotencyEvidenceRecord):
+            assert (await database.scalars(select(model))).all() == []
+
+
+@pytest.mark.anyio
+async def test_expiry_cleanup_is_bounded_and_does_not_remove_live_evidence(lifecycle_interaction_sessions) -> None:
+    from datetime import timedelta
+
+    from a13n_service.durable_operations.idempotency import (
+        EvidenceScope,
+        IdempotencyIdentity,
+        delete_expired_evidence,
+        load_evidence,
+        new_evidence,
+    )
+    from a13n_service.storage import transaction
+    from sqlalchemy import select
+
+    from tests.hooks.support import seed_hook_actor_access
+    from tests.interactions.conftest import NOW, TENANT_ID, USER_ID, WORKSPACE_ID
+
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    scope = EvidenceScope(WORKSPACE_ID, "user", USER_ID, "test.accept", WORKSPACE_ID)
+    async with transaction(lifecycle_interaction_sessions) as database:
+        for index in range(4):
+            database.add(
+                new_evidence(
+                    organization_id=TENANT_ID,
+                    scope=scope,
+                    identity=IdempotencyIdentity(digest_visible_ascii_key(str(index)), "a" * 64),
+                    result_kind="test",
+                    result_ref="receipt",
+                    now=NOW if index < 3 else NOW + timedelta(hours=1),
+                )
+            )
+    async with transaction(lifecycle_interaction_sessions) as database:
+        assert await delete_expired_evidence(database, now=NOW + timedelta(hours=24), limit=2) == 2
+    async with transaction(lifecycle_interaction_sessions) as database:
+        assert len((await database.scalars(select(IdempotencyEvidenceRecord))).all()) == 2
+        assert (
+            await load_evidence(
+                database,
+                scope=scope,
+                identity=IdempotencyIdentity(digest_visible_ascii_key("3"), "a" * 64),
+                now=NOW + timedelta(hours=24),
+            )
+            is not None
+        )
+        assert await delete_expired_evidence(database, now=NOW + timedelta(hours=24), limit=2) == 1

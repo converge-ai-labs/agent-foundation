@@ -14,8 +14,10 @@ from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.gateway.a2a_push import A2A_PUSH_ENABLED_SESSION_INFO_KEY
+from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
+from a13n_service.hooks.persistence import append_matching_webhook_outbox
+from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.observability import build_observability_runtime
@@ -62,11 +64,13 @@ async def open_process_runtime(
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
             if owns_worker(settings.role) and settings.pricing_auto_update:
                 stack.enter_context(prices.update_in_background())
-            storage.sessions.configure(
-                info={A2A_PUSH_ENABLED_SESSION_INFO_KEY: settings.a2a_enabled},
-            )
             shared = SharedRuntime(
                 storage=storage,
+                lifecycle=LifecycleWriter(
+                    (append_matching_webhook_outbox, append_matching_a2a_push_outbox)
+                    if settings.a2a_enabled
+                    else (append_matching_webhook_outbox,)
+                ),
                 secret_protector=settings.secret_protector(),
             )
             connectivity_selection = ConnectivitySelectionResolver(storage.sessions)

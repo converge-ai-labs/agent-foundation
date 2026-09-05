@@ -36,7 +36,6 @@ from .persistence import (
     authorize_agent_scope,
     copy_revision,
     load_replay,
-    load_revision_create_result,
     lock_agent,
     lock_revision,
     new_revision,
@@ -162,7 +161,7 @@ class AgentRevisions:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return await load_revision_create_result(session, replay_ref)
+                    return replay_ref.restore(AgentRevisionCreateResult)
                 await self._invocation_resolver.freezing.freeze_retained_revision_graph(
                     session,
                     prepared=prepared_graph,
@@ -189,6 +188,7 @@ class AgentRevisions:
                     result_kind="agent_revision",
                     result_ref=restored.id,
                     now=now,
+                    response=AgentRevisionCreateResult(agent=record.to_resource(), revision=restored.to_resource()),
                 )
                 await session.flush()
                 return AgentRevisionCreateResult(agent=record.to_resource(), revision=restored.to_resource())
@@ -249,7 +249,7 @@ class AgentRevisions:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return await load_revision_create_result(session, replay_ref)
+                    return replay_ref.restore(AgentRevisionCreateResult)
                 record = await lock_agent(session, workspace.organization_id, workspace.workspace_id, agent_id)
                 require_custom_mutable(record)
                 require_version(record, expected_version)
@@ -291,6 +291,7 @@ class AgentRevisions:
                     result_kind="agent_revision",
                     result_ref=revision.id,
                     now=now,
+                    response=AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource()),
                 )
                 await session.flush()
                 return AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource())
@@ -331,4 +332,4 @@ class AgentRevisions:
                 identity=identity,
                 now=self._clock(),
             )
-            return None if replay_ref is None else await load_revision_create_result(session, replay_ref)
+            return None if replay_ref is None else replay_ref.restore(AgentRevisionCreateResult)

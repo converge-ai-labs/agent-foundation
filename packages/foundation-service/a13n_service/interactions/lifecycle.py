@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Literal
 
@@ -10,8 +11,6 @@ import rfc8785
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
-from a13n_service.hooks.persistence import append_matching_webhook_outbox
 from a13n_service.lifecycle import (
     LifecycleEntityType,
     LifecycleEventDraft,
@@ -41,142 +40,156 @@ RunAttemptEventType = Literal[
 ]
 
 
-async def append_accepted_run_lifecycle(
-    database: AsyncSession,
-    run: RunRecord,
-    *,
-    mutation_id: str | None = None,
-) -> str:
-    """Record acceptance with the exact authority captured by the Run."""
-
-    authority = run.to_resource().authority_principal
-    return await append_run_lifecycle(
-        database,
-        run,
-        "run.accepted",
-        mutation_id=new_mutation_id() if mutation_id is None else mutation_id,
-        occurred_at=run.created_at,
-        actor_type=authority.principal_type.value,
-        actor_id=authority.principal_id,
-    )
+DeliveryIntentWriter = Callable[[AsyncSession, LifecycleEventRecord], Awaitable[object]]
 
 
-async def append_run_with_attempt_lifecycle(
-    database: AsyncSession,
-    run: RunRecord,
-    run_event_type: RunEventType,
-    *,
-    attempt: RunAttemptRecord,
-    attempt_event_type: RunAttemptEventType,
-    occurred_at: datetime,
-    actor_type: str,
-    actor_id: str | None,
-    mutation_id: str | None = None,
-) -> str:
-    """Record one Run transition and its correlated Attempt transition."""
+class LifecycleWriter:
+    """Write facts and configured delivery intents in the caller's transaction.
 
-    resolved_mutation_id = new_mutation_id() if mutation_id is None else mutation_id
-    run_event_id = new_lifecycle_event_id()
-    await append_run_attempt_lifecycle(
-        database,
-        run,
-        attempt,
-        attempt_event_type,
-        mutation_id=resolved_mutation_id,
-        occurred_at=occurred_at,
-        resulting_run_lifecycle_event_id=run_event_id,
-    )
-    return await append_run_lifecycle(
-        database,
-        run,
-        run_event_type,
-        event_id=run_event_id,
-        mutation_id=resolved_mutation_id,
-        occurred_at=occurred_at,
-        actor_type=actor_type,
-        actor_id=actor_id,
-        final_run_attempt_id=attempt.id,
-    )
+    Writers only perform relational work. A failed writer rolls back the fact
+    and authoritative mutation along with every other required delivery intent.
+    """
 
+    def __init__(self, delivery_writers: tuple[DeliveryIntentWriter, ...] = ()) -> None:
+        self._delivery_writers = delivery_writers
 
-async def append_run_lifecycle(
-    database: AsyncSession,
-    run: RunRecord,
-    event_type: RunEventType,
-    *,
-    event_id: str | None = None,
-    mutation_id: str | None = None,
-    occurred_at: datetime,
-    actor_type: str,
-    actor_id: str | None,
-    final_run_attempt_id: str | None = None,
-) -> str:
-    record = await _append_lifecycle_with_hooks(
-        database,
-        LifecycleEventDraft(
-            id=new_lifecycle_event_id() if event_id is None else event_id,
-            tenant_id=run.tenant_id,
-            entity_type=LifecycleEntityType.run,
-            entity_id=run.id,
-            entity_version=run.version,
-            event_type=event_type,
+    async def append_accepted_run_lifecycle(
+        self,
+        database: AsyncSession,
+        run: RunRecord,
+        *,
+        mutation_id: str | None = None,
+    ) -> str:
+        """Record acceptance with the exact authority captured by the Run."""
+
+        authority = run.to_resource().authority_principal
+        return await self.append_run_lifecycle(
+            database,
+            run,
+            "run.accepted",
             mutation_id=new_mutation_id() if mutation_id is None else mutation_id,
-            session_id=run.session_id,
-            thread_id=run.thread_id,
-            run_id=run.id,
-            payload=_run_payload(run, event_type, final_run_attempt_id=final_run_attempt_id),
+            occurred_at=run.created_at,
+            actor_type=authority.principal_type.value,
+            actor_id=authority.principal_id,
+        )
+
+    async def append_run_with_attempt_lifecycle(
+        self,
+        database: AsyncSession,
+        run: RunRecord,
+        run_event_type: RunEventType,
+        *,
+        attempt: RunAttemptRecord,
+        attempt_event_type: RunAttemptEventType,
+        occurred_at: datetime,
+        actor_type: str,
+        actor_id: str | None,
+        mutation_id: str | None = None,
+    ) -> str:
+        """Record one Run transition and its correlated Attempt transition."""
+
+        resolved_mutation_id = new_mutation_id() if mutation_id is None else mutation_id
+        run_event_id = new_lifecycle_event_id()
+        await self.append_run_attempt_lifecycle(
+            database,
+            run,
+            attempt,
+            attempt_event_type,
+            mutation_id=resolved_mutation_id,
+            occurred_at=occurred_at,
+            resulting_run_lifecycle_event_id=run_event_id,
+        )
+        return await self.append_run_lifecycle(
+            database,
+            run,
+            run_event_type,
+            event_id=run_event_id,
+            mutation_id=resolved_mutation_id,
+            occurred_at=occurred_at,
             actor_type=actor_type,
             actor_id=actor_id,
-            occurred_at=occurred_at,
-        ),
-    )
-    return record.id
+            final_run_attempt_id=attempt.id,
+        )
 
-
-async def append_run_attempt_lifecycle(
-    database: AsyncSession,
-    run: RunRecord,
-    attempt: RunAttemptRecord,
-    event_type: RunAttemptEventType,
-    *,
-    mutation_id: str,
-    occurred_at: datetime,
-    resulting_run_lifecycle_event_id: str | None = None,
-) -> str:
-    record = await _append_lifecycle_with_hooks(
-        database,
-        LifecycleEventDraft(
-            tenant_id=run.tenant_id,
-            entity_type=LifecycleEntityType.run_attempt,
-            entity_id=attempt.id,
-            entity_version=attempt.version,
-            event_type=event_type,
-            mutation_id=mutation_id,
-            session_id=run.session_id,
-            thread_id=run.thread_id,
-            run_id=run.id,
-            run_attempt_id=attempt.id,
-            payload=_attempt_payload(
-                attempt,
-                event_type,
-                resulting_run_lifecycle_event_id=resulting_run_lifecycle_event_id,
+    async def append_run_lifecycle(
+        self,
+        database: AsyncSession,
+        run: RunRecord,
+        event_type: RunEventType,
+        *,
+        event_id: str | None = None,
+        mutation_id: str | None = None,
+        occurred_at: datetime,
+        actor_type: str,
+        actor_id: str | None,
+        final_run_attempt_id: str | None = None,
+    ) -> str:
+        record = await self._append_lifecycle_with_hooks(
+            database,
+            LifecycleEventDraft(
+                id=new_lifecycle_event_id() if event_id is None else event_id,
+                tenant_id=run.tenant_id,
+                entity_type=LifecycleEntityType.run,
+                entity_id=run.id,
+                entity_version=run.version,
+                event_type=event_type,
+                mutation_id=new_mutation_id() if mutation_id is None else mutation_id,
+                session_id=run.session_id,
+                thread_id=run.thread_id,
+                run_id=run.id,
+                payload=_run_payload(run, event_type, final_run_attempt_id=final_run_attempt_id),
+                actor_type=actor_type,
+                actor_id=actor_id,
+                occurred_at=occurred_at,
             ),
-            actor_type="worker",
-            actor_id=attempt.worker_id,
-            occurred_at=occurred_at,
-        ),
-    )
-    return record.id
+        )
+        return record.id
 
+    async def append_run_attempt_lifecycle(
+        self,
+        database: AsyncSession,
+        run: RunRecord,
+        attempt: RunAttemptRecord,
+        event_type: RunAttemptEventType,
+        *,
+        mutation_id: str,
+        occurred_at: datetime,
+        resulting_run_lifecycle_event_id: str | None = None,
+    ) -> str:
+        record = await self._append_lifecycle_with_hooks(
+            database,
+            LifecycleEventDraft(
+                tenant_id=run.tenant_id,
+                entity_type=LifecycleEntityType.run_attempt,
+                entity_id=attempt.id,
+                entity_version=attempt.version,
+                event_type=event_type,
+                mutation_id=mutation_id,
+                session_id=run.session_id,
+                thread_id=run.thread_id,
+                run_id=run.id,
+                run_attempt_id=attempt.id,
+                payload=_attempt_payload(
+                    attempt,
+                    event_type,
+                    resulting_run_lifecycle_event_id=resulting_run_lifecycle_event_id,
+                ),
+                actor_type="worker",
+                actor_id=attempt.worker_id,
+                occurred_at=occurred_at,
+            ),
+        )
+        return record.id
 
-async def _append_lifecycle_with_hooks(
-    database: AsyncSession,
-    draft: LifecycleEventDraft,
-) -> LifecycleEventRecord:
-    record = await append_lifecycle_event(database, draft)
-    await append_matching_webhook_outbox(database, record)
-    await append_matching_a2a_push_outbox(database, record)
-    return record
+    async def _append_lifecycle_with_hooks(
+        self,
+        database: AsyncSession,
+        draft: LifecycleEventDraft,
+    ) -> LifecycleEventRecord:
+        record = await append_lifecycle_event(database, draft)
+        for writer in self._delivery_writers:
+            await writer(database, record)
+        return record
 
 
 def _run_payload(
@@ -289,11 +302,3 @@ def _bounded_value(name: str, value: JsonValue) -> dict[str, JsonValue]:
         f"{name}_digest_sha256": hashlib.sha256(encoded).hexdigest(),
         f"{name}_size_bytes": len(encoded),
     }
-
-
-__all__ = [
-    "append_accepted_run_lifecycle",
-    "append_run_attempt_lifecycle",
-    "append_run_lifecycle",
-    "append_run_with_attempt_lifecycle",
-]

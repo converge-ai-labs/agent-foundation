@@ -124,7 +124,7 @@ class AgentInvocationPreparer:
                     raise agent_revision_not_executable("plugin_runtime_mode_mismatch")
                 merged = merge_agent_run_override(revision.config, config_override)
                 try:
-                    validate_agent_config(merged.config, protocol_policy=self._protocol_policy)
+                    validate_agent_config(merged, protocol_policy=self._protocol_policy)
                 except AgentConfigValidationError as error:
                     raise agent_revision_not_executable(error.reason) from error
                 await authorize_workspace(
@@ -138,16 +138,16 @@ class AgentInvocationPreparer:
                     actor=actor,
                     organization_id=authorized.organization_id,
                     workspace_id=workspace_id,
-                    selections=merged.config.skills,
-                    retained=(revision.resolved_skills if merged.config.skills == revision.config.skills else None),
+                    selections=merged.skills,
+                    retained=(revision.resolved_skills if merged.skills == revision.config.skills else None),
                 )
-                if merged.config.plugins == revision.config.plugins:
+                if merged.plugins == revision.config.plugins:
                     try:
                         plugins = await self._plugin_resolver.prepare_retained(
                             session,
                             actor=actor,
                             workspace_id=workspace_id,
-                            selections=merged.config.plugins,
+                            selections=merged.plugins,
                             resolved=revision.resolved_plugin_versions,
                             runtime_lock_digest=revision.runtime_lock_digest,
                         )
@@ -159,7 +159,7 @@ class AgentInvocationPreparer:
                             session,
                             actor=actor,
                             workspace_id=workspace_id,
-                            selections=merged.config.plugins,
+                            selections=merged.plugins,
                         )
                     except PluginSelectionError as error:
                         raise agent_revision_not_executable(error.reason) from error
@@ -172,7 +172,7 @@ class AgentInvocationPreparer:
                     workspace_id=workspace_id,
                     root_agent_id=agent_id,
                     revision=revision,
-                    config=merged.config,
+                    config=merged,
                 )
             try:
                 model = await self._model_selector.prepare(
@@ -180,15 +180,13 @@ class AgentInvocationPreparer:
                     workspace_id=workspace_id,
                     model_id=(
                         revision.resolved_model.model_id
-                        if merged.config.model.model_key == revision.config.model.model_key
+                        if merged.model.model_key == revision.config.model.model_key
                         else None
                     ),
                     model_key=(
-                        merged.config.model.model_key
-                        if merged.config.model.model_key != revision.config.model.model_key
-                        else None
+                        merged.model.model_key if merged.model.model_key != revision.config.model.model_key else None
                     ),
-                    settings=merged.config.model.settings,
+                    settings=merged.model.settings,
                 )
             except ModelError as error:
                 raise map_model_error(error) from error
@@ -198,7 +196,7 @@ class AgentInvocationPreparer:
                 organization_id=authorized.organization_id,
                 workspace_id=workspace_id,
                 run_id=run_id,
-                config=merged.config,
+                config=merged,
             )
         except AuthorizationError as error:
             raise map_authorization_error(error) from error

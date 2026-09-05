@@ -26,6 +26,8 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import NOW, TENANT_ID, effective_agent_config
 from .test_attempt_execution import _completed_state, _waiting_state
 from .test_subagent_acceptance import CHILD_AGENT_ID, CHILD_DEFINITION_ID, CHILD_REVISION_ID
@@ -383,7 +385,9 @@ async def _seal_parent(
     *,
     outcome: str,
 ) -> Run:
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=3))
+    execution = AttemptExecutionService(
+        sessions, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
+    )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
     authority = replace(
@@ -409,9 +413,7 @@ async def _seal_parent(
     )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
     receipt = await RunOutcomeService(
-        sessions,
-        RunPayloadStore(objects),
-        clock=lambda: NOW + timedelta(seconds=4),
+        sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
     assert receipt.run_status.value == outcome
     async with short_session(sessions) as database:

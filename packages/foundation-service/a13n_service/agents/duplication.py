@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
@@ -36,7 +37,6 @@ from .models import AgentRecord
 from .persistence import (
     authorize_agent_scope,
     copy_revision,
-    load_agent,
     load_replay,
     lock_agent,
     lock_revision,
@@ -110,12 +110,7 @@ class AgentDuplication:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return await load_agent(
-                        session,
-                        organization_id=source_workspace.organization_id,
-                        workspace_id=source_workspace.workspace_id,
-                        agent_id=replay_ref,
-                    )
+                    return replay_ref.restore(Agent)
                 source = await lock_agent(
                     session,
                     source_workspace.organization_id,
@@ -180,6 +175,7 @@ class AgentDuplication:
                         result_kind="agent",
                         result_ref=duplicate.id,
                         now=now,
+                        response=duplicate.to_resource(),
                     )
                 )
                 session.add(
@@ -204,7 +200,7 @@ class AgentDuplication:
             raise AgentError(
                 "agent_name_conflict",
                 "An Agent with this name already exists in the Workspace.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def _duplicate_replay(
@@ -237,9 +233,4 @@ class AgentDuplication:
             )
             if replay_ref is None:
                 return None
-            return await load_agent(
-                session,
-                organization_id=source_workspace.organization_id,
-                workspace_id=source_workspace.workspace_id,
-                agent_id=replay_ref,
-            )
+            return replay_ref.restore(Agent)

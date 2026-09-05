@@ -9,6 +9,8 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
@@ -39,7 +41,6 @@ from .support import (
     ReplayResult,
     authorize_skill_workspace,
     idempotency_identity,
-    is_idempotency_race,
     is_skill_key_race,
     load_replay,
     new_replay_evidence,
@@ -213,14 +214,14 @@ class SkillPublicationService:
                     new_replay_evidence(
                         scope=command.scope(workspace.organization_id),
                         response=result,
-                        status_code=201,
+                        created=True,
                         now=now,
                     )
                 )
                 await session.flush()
-                return ReplayResult(result=result, status_code=201)
+                return ReplayResult(result=result, created=True)
         except IntegrityError as error:
-            if is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 return await self._require_replay(command)
             if is_skill_key_race(error):
                 raise skill_key_conflict() from error
@@ -287,7 +288,7 @@ class SkillPublicationService:
                 prepared=prepared,
             )
         except IntegrityError as error:
-            if not is_idempotency_race(error):
+            if not is_evidence_unique_race(error):
                 raise
             return await self._require_replay(command)
 
@@ -355,7 +356,7 @@ class SkillPublicationService:
                 skill_id=command.resource_scope_id,
                 now=now,
             )
-            selected, outcome, status_code = await _select_revision(
+            selected, outcome, created = await _select_revision(
                 session,
                 context=context,
                 locked=locked,
@@ -389,12 +390,12 @@ class SkillPublicationService:
                 new_replay_evidence(
                     scope=scope,
                     response=result,
-                    status_code=status_code,
+                    created=created,
                     now=now,
                 )
             )
             await session.flush()
-            return ReplayResult(result=result, status_code=status_code)
+            return ReplayResult(result=result, created=created)
 
     async def _preauthorize_replay(
         self, command: _ReplayCommand
@@ -424,7 +425,7 @@ class SkillPublicationService:
             raise SkillError(
                 "idempotency_conflict",
                 "The idempotent Skill publication could not be reconciled.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         return replay
 
@@ -453,7 +454,7 @@ class SkillPublicationService:
             raise SkillError(
                 "skill_package_invalid",
                 "The staged Skill package does not match its receipt.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         return upload
 
@@ -486,9 +487,9 @@ async def _select_revision(
     locked: SkillRecord,
     current: SkillRevisionRecord,
     prepared: PreparedSkillSource,
-) -> tuple[SkillRevisionRecord, Literal["published", "already_current"], Literal[200, 201]]:
+) -> tuple[SkillRevisionRecord, Literal["published", "already_current"], bool]:
     if current.content_digest == prepared.package.manifest.content_digest:
-        return current, "already_current", 200
+        return current, "already_current", False
     selected = _new_revision_record(
         context,
         revision_id=new_skill_revision_id(),
@@ -502,7 +503,7 @@ async def _select_revision(
     locked.updated_by_type = context.actor.principal.principal_type.value
     locked.updated_by_id = context.actor.principal.principal_id
     locked.updated_at = context.now
-    return selected, "published", 201
+    return selected, "published", True
 
 
 def _new_skill_record(context: _PublicationContext, *, key: str, name: str, revision_id: str) -> SkillRecord:

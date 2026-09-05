@@ -32,6 +32,8 @@ from fakeredis.aioredis import FakeRedis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, TENANT_ID, effective_agent_config
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _accept_root, _authority, _waiting_state, _worker
@@ -62,6 +64,7 @@ async def test_steer_accepts_before_or_after_claim_without_advancing_thread(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_1111111111111111",
+        lifecycle=test_lifecycle_writer(),
     )
     assert isinstance(await scheduler.claim(run.id, _worker()), ClaimedAttempt)
     second = await store.append_steer(
@@ -94,6 +97,7 @@ async def test_steer_capacity_rejection_is_atomic(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_1212121212121212",
+        lifecycle=test_lifecycle_writer(),
     )
     assert isinstance(await scheduler.claim(run.id, _worker()), ClaimedAttempt)
     store = ThreadInboxStore(
@@ -196,6 +200,7 @@ async def test_checkpoint_consumes_only_exact_fifo_prefix(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_2222222222222222",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(run.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
@@ -237,8 +242,7 @@ async def test_checkpoint_consumes_only_exact_fifo_prefix(
     current = await states.read(TENANT_ID, run.id)
     successor = _state_with_receipts(current.envelope, authority, tuple(entry.receipt for entry in entries))
     stored = await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=4),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
     await reconciler.confirm_checkpoint(authority, stored)
 
@@ -264,6 +268,7 @@ async def test_interrupt_supersedes_pending_steer_and_releases_budget(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_3333333333333333",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(run.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
@@ -279,6 +284,7 @@ async def test_interrupt_supersedes_pending_steer_and_releases_budget(
         interaction_sessions,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=3),
+        lifecycle=test_lifecycle_writer(),
     ).cancel(
         tenant_id=TENANT_ID,
         run_id=run.id,
@@ -307,10 +313,13 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_4444444444444444",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(source.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -342,6 +351,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         interaction_sessions,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=4),
+        lifecycle=test_lifecycle_writer(),
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
     assert outcome.run_status.value == "waiting"
     rolled = await store.get_steer(tenant_id=TENANT_ID, run_id=source.id, steer_id=steer.steer_id)
@@ -387,6 +397,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         RunPayloadStore(interaction_object_store),
         InlineHookValidator(EndpointPolicy()),
         clock=lambda: NOW + timedelta(seconds=5),
+        lifecycle=test_lifecycle_writer(),
     ).advance_thread(
         run=successor,
         state=successor_state,
@@ -418,8 +429,7 @@ async def _publish_receipts(
     current = await states.read(TENANT_ID, initial.run_id)
     successor = _state_with_receipts(initial, authority, receipts)
     return await AttemptExecutionService(
-        sessions,
-        clock=lambda: NOW + timedelta(seconds=3),
+        sessions, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
 
 

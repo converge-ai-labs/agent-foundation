@@ -16,15 +16,16 @@ from a13n_service.hooks import (
 from a13n_service.hooks.errors import HookManagementError
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.models import HookSubscriptionRevisionRecord
+from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions.lifecycle import append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.interactions.conftest import NOW, USER_ID, WORKSPACE_ID
+from tests.lifecycle_support import test_lifecycle_writer
 
 from .support import RUN_ID, SECRET_ID, hook_actor, seed_hook_actor_access, seed_run_and_secret
 
@@ -118,7 +119,7 @@ async def test_managed_hook_crud_preserves_immutable_revisions_and_etags(
             if_match=changed_etag,
             request=UpdateHookSubscriptionStateRequest(enabled=True),
         )
-    assert stale.value.status_code == 412
+    assert application_error_status(stale.value) == 412
 
     async with short_session(hook_interaction_sessions) as database:
         revisions = await database.scalar(
@@ -191,7 +192,7 @@ async def test_hook_collection_cursor_is_bound_and_runner_cannot_manage(
             workspace_id=WORKSPACE_ID,
             request=_request(endpoint_url="https://127.0.0.1/hooks"),
         )
-    assert denied.value.status_code == 404
+    assert application_error_status(denied.value) == 404
 
     other_boundary = replace(
         hook_actor(),
@@ -217,7 +218,7 @@ async def test_hook_redrive_reuses_delivery_identity_and_original_revision(
     async with transaction(hook_interaction_sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
         assert run is not None
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",

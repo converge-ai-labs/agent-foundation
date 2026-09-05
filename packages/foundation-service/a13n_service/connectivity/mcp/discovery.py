@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic_ai.mcp import MCPToolset
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.storage import transaction
 
 from .domain import MCPTool
@@ -34,7 +35,7 @@ class MCPDiscoveryService:
             current = await self._credentials.current(connection_id)
             if current.endpoint != snapshot.endpoint or current.version != snapshot.version:
                 raise MCPConnectionError(
-                    "connection_changed", "MCPConnection changed during discovery.", status_code=409
+                    "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
                 )
             generation = current.credential_generation
             return current.headers
@@ -59,7 +60,7 @@ class MCPDiscoveryService:
                     )
         except Exception as error:
             raise MCPConnectionError(
-                "mcp_discovery_unavailable", "Remote tool discovery failed.", status_code=503
+                "mcp_discovery_unavailable", "Remote tool discovery failed.", category=ErrorCategory.unavailable
             ) from error
         async with transaction(self._sessions) as session:
             current = await require_connection(session, connection_id, lock=True)
@@ -70,7 +71,7 @@ class MCPDiscoveryService:
                 or current.status not in {"pending", "ready"}
             ):
                 raise MCPConnectionError(
-                    "connection_changed", "MCPConnection changed during discovery.", status_code=409
+                    "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
                 )
             current.status = "ready"
             current.status_reason = None

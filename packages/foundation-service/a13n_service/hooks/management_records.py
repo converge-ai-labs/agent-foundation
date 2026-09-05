@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.models import SecurityAuditRecord
@@ -26,7 +27,7 @@ async def require_hook_revision(
         raise HookManagementError(
             "hook_subscription_invalid",
             "The Hook subscription is invalid.",
-            status_code=500,
+            category=ErrorCategory.internal,
         )
     return revision
 
@@ -70,7 +71,7 @@ def require_hook_etag(head: HookSubscriptionRecord, if_match: str) -> None:
         raise HookManagementError(
             "precondition_failed",
             "The Hook subscription changed after it was read.",
-            status_code=412,
+            category=ErrorCategory.stale_version,
             details={"current_etag": current},
         )
 
@@ -119,24 +120,24 @@ def management_error_from_invariant(error: HookSubscriptionInvariantError) -> Ho
         return HookManagementError(
             "hook_subscription_limit_exceeded",
             "The active Hook subscription limit was exceeded.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         )
     if error.code is HookSubscriptionInvariantCode.secret_unavailable:
         return HookManagementError(
             "hook_signing_secret_unavailable",
             "The selected Hook signing Secret is unavailable.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     if error.code is HookSubscriptionInvariantCode.workspace_unavailable:
         return HookManagementError(
             "resource_not_found",
             "The requested resource was not found.",
-            status_code=404,
+            category=ErrorCategory.not_found,
         )
     return HookManagementError(
         "hook_subscription_invalid",
         "The Hook subscription operation violated a persisted invariant.",
-        status_code=500,
+        category=ErrorCategory.internal,
     )
 
 

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.management import canonical_digest, record_command
-from a13n_service.connectivity.models import ConnectivityCommandRecord
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.secrets import SecretProtectionError, SecretProtector
@@ -75,9 +75,10 @@ class ConnectorRevocationService:
                 operation=operation,
                 key_digest=key,
                 request_fingerprint=digest,
+                now=self._clock(),
             )
             if replay is not None:
-                return ConnectionCleanupReceipt.model_validate(replay.result_json)
+                return replay.restore(ConnectionCleanupReceipt)
             require_version(connection.version, expected_version)
             if connection.external_ref is not None:
                 try:
@@ -130,7 +131,7 @@ class ConnectorRevocationService:
                 resource_id=connection_id,
                 result_version=connection.version,
                 now=now,
-                result=receipt.model_dump(mode="json"),
+                resource=receipt,
             )
             command_id = command.id
             session.add(
@@ -166,7 +167,10 @@ class ConnectorRevocationService:
             connection_id=connection_id, local_status="deleted" if delete else "disabled", remote_status=outcome
         )
         async with transaction(self._sessions) as session:
-            command = await session.get(ConnectivityCommandRecord, command_id, with_for_update=True)
-            if command is not None:
-                command.result_json = receipt.model_dump(mode="json")
+            command = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
+            if command is not None and command.receipt_json is not None:
+                command.receipt_json = {
+                    "version": command.receipt_json["version"],
+                    "resource": receipt.model_dump(mode="json"),
+                }
         return receipt

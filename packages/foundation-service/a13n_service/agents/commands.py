@@ -7,6 +7,7 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
@@ -39,9 +40,7 @@ from .models import AgentRecord
 from .persistence import (
     apply_lifecycle_transition,
     authorize_agent_scope,
-    load_agent,
     load_replay,
-    load_revision_create_result,
     lock_agent,
     new_agent_audit,
     new_agent_evidence,
@@ -103,7 +102,7 @@ class AgentCommands:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return await load_revision_create_result(session, replay_ref)
+                    return replay_ref.restore(AgentRevisionCreateResult)
                 organization_id = workspace.organization_id
         except AuthorizationError as error:
             raise map_authorization_error(error) from error
@@ -134,7 +133,7 @@ class AgentCommands:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return await load_revision_create_result(session, replay_ref)
+                    return replay_ref.restore(AgentRevisionCreateResult)
                 try:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
@@ -187,6 +186,7 @@ class AgentCommands:
                         result_kind="agent_revision",
                         result_ref=revision_id,
                         now=now,
+                        response=AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource()),
                     )
                 )
                 session.add(
@@ -215,11 +215,11 @@ class AgentCommands:
                         now=self._clock(),
                     )
                     if replay_ref is not None:
-                        return await load_revision_create_result(session, replay_ref)
+                        return replay_ref.restore(AgentRevisionCreateResult)
             raise AgentError(
                 "agent_name_conflict",
                 "An Agent with this name already exists in the Workspace.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def patch_metadata(
@@ -275,7 +275,7 @@ class AgentCommands:
             raise AgentError(
                 "agent_name_conflict",
                 "An Agent with this name already exists in the Workspace.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def change_lifecycle(
@@ -305,13 +305,13 @@ class AgentCommands:
                 raise AgentError(
                     "agent_state_conflict",
                     "The Agent cannot be enabled from its current state.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             if action == "unarchive" and (current.archived_at is None or current.source is not AgentSource.custom):
                 raise AgentError(
                     "agent_state_conflict",
                     "The Agent cannot be unarchived from its current state.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             prepared_lifecycle = await self._invocation_resolver.preparation.prepare_retained_revision_graph(
                 actor=actor,
@@ -353,6 +353,7 @@ class AgentCommands:
                         result_kind="agent",
                         result_ref=agent_id,
                         now=now,
+                        response=record.to_resource(),
                     )
                 )
                 session.add(
@@ -392,7 +393,7 @@ class AgentCommands:
         action: WorkspaceAction,
     ) -> Agent | None:
         async with transaction(self._sessions) as session:
-            workspace = await authorize_agent_scope(
+            await authorize_agent_scope(
                 session,
                 actor=actor,
                 agent_id=agent_id,
@@ -408,9 +409,4 @@ class AgentCommands:
             )
             if replay_ref is None:
                 return None
-            return await load_agent(
-                session,
-                organization_id=workspace.organization_id,
-                workspace_id=workspace.workspace_id,
-                agent_id=replay_ref,
-            )
+            return replay_ref.restore(Agent)

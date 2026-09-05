@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -31,7 +32,7 @@ async def authorize_hook(
         raise HookManagementError(
             "resource_not_found" if error.concealed else "permission_denied",
             "The requested resource was not found." if error.concealed else "Permission denied.",
-            status_code=404 if error.concealed else 403,
+            category=ErrorCategory.not_found if error.concealed else ErrorCategory.forbidden,
         ) from error
 
 
@@ -109,7 +110,7 @@ def _invalid_scope() -> HookManagementError:
     return HookManagementError(
         "invalid_hook_scope",
         "The Hook subscription scope is not tenant-consistent.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
     )
 
 

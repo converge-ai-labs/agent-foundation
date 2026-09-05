@@ -17,6 +17,7 @@ from pydantic_ai.settings import ModelSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
@@ -73,7 +74,7 @@ class AcceptedModelSelector:
             )
             row = (await session.execute(query)).one_or_none()
             if row is None:
-                raise ModelError("model_not_found", "The Model was not found.", status_code=404)
+                raise ModelError("model_not_found", "The Model was not found.", category=ErrorCategory.not_found)
             model_record, provider_record = row
             model = model_record.to_resource()
             _require_enabled(model_record, provider_record)
@@ -105,7 +106,7 @@ class AcceptedModelSelector:
             )
         ).one_or_none()
         if row is None:
-            raise ModelError("model_not_found", "The Model was not found.", status_code=404)
+            raise ModelError("model_not_found", "The Model was not found.", category=ErrorCategory.not_found)
         model_record, provider_record = row
         _require_enabled(model_record, provider_record)
         model = model_record.to_resource()
@@ -113,7 +114,7 @@ class AcceptedModelSelector:
             raise ModelError(
                 "model_configuration_changed",
                 "The Model changed during acceptance. Retry the request.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         effective_settings(model.model_api, model.settings, prepared.settings)
         return ModelExecutionSnapshot.freeze(model)
@@ -225,6 +226,8 @@ class SnapshotRunModelResolver:
 
 def _require_enabled(model: ModelRecord, provider: ModelProviderRecord) -> None:
     if not model.enabled:
-        raise ModelError("model_disabled", "The selected Model is disabled.", status_code=409)
+        raise ModelError("model_disabled", "The selected Model is disabled.", category=ErrorCategory.conflict)
     if not provider.enabled:
-        raise ModelError("model_provider_disabled", "The selected Model Provider is disabled.", status_code=409)
+        raise ModelError(
+            "model_provider_disabled", "The selected Model Provider is disabled.", category=ErrorCategory.conflict
+        )

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import (
     CollectionCursorMismatchError,
     InvalidCollectionCursorError,
@@ -27,13 +28,12 @@ from a13n_service.interactions.domain import RunLineageKind, RunStatus
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.reconciliation import load_owning_run
-from a13n_service.public_errors import PublicError
 from a13n_service.run_stream import RetainedReplayUnavailable, RunReplayIntegrityError, RunReplayStore
 from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 
-class NativeQueryError(PublicError):
+class NativeQueryError(ApplicationError):
     """Safe Native interaction query failure."""
 
 
@@ -505,7 +505,7 @@ class NativeInteractionQueries:
             raise NativeQueryError(
                 "items_unavailable",
                 "Retained Items are unavailable for this Run.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         values = snapshot.items[offset : offset + limit + 1]
         page = values[:limit]
@@ -743,7 +743,9 @@ def _cursor_boundary(cursor: str | None, *, scope: dict[str, object], kind: str)
             raise ValueError
         return timestamp, resource_id
     except (InvalidCollectionCursorError, CollectionCursorMismatchError, KeyError, ValueError) as error:
-        raise NativeQueryError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+        raise NativeQueryError(
+            "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+        ) from error
 
 
 def _offset_cursor(cursor: str | None, *, scope: dict[str, object], kind: str) -> int:
@@ -756,7 +758,9 @@ def _offset_cursor(cursor: str | None, *, scope: dict[str, object], kind: str) -
             raise ValueError
         return offset
     except (InvalidCollectionCursorError, CollectionCursorMismatchError, KeyError, ValueError) as error:
-        raise NativeQueryError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+        raise NativeQueryError(
+            "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+        ) from error
 
 
 def _page(
@@ -780,14 +784,16 @@ def _page(
 
 
 def _not_found() -> NativeQueryError:
-    return NativeQueryError("resource_not_found", "The requested resource was not found.", status_code=404)
+    return NativeQueryError(
+        "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+    )
 
 
 def _lineage_invalid(reason: str) -> NativeQueryError:
     return NativeQueryError(
         "run_lineage_invalid",
         "The Run lineage is invalid.",
-        status_code=409,
+        category=ErrorCategory.conflict,
         details={"reason": reason},
     )
 

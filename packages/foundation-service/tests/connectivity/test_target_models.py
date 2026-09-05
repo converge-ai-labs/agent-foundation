@@ -8,6 +8,7 @@ from a13n_service.connectivity.accounts.reception import InputOverride
 from a13n_service.connectivity.accounts.targets import ReplaceTargetRequest, TargetConfig
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.http_errors import application_error_status
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
@@ -118,7 +119,7 @@ async def test_target_create_and_replace_reject_unavailable_model(target_service
         await target_service.create(
             actor=actor(), account_id=ACCOUNT_ID, idempotency_key="invalid-model", request=config
         )
-    assert error.value.code == "invalid_model_selection" and error.value.status_code == 400
+    assert error.value.code == "invalid_model_selection" and application_error_status(error.value) == 400
     target = await target_service.create(
         actor=actor(),
         account_id=ACCOUNT_ID,
@@ -132,4 +133,4 @@ async def test_target_create_and_replace_reject_unavailable_model(target_service
             target_id=target.id,
             request=ReplaceTargetRequest(expected_version=target.version, **config.model_dump(exclude_unset=True)),
         )
-    assert error.value.code == "invalid_model_selection" and error.value.status_code == 400
+    assert error.value.code == "invalid_model_selection" and application_error_status(error.value) == 400

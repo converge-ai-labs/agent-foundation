@@ -13,9 +13,9 @@ import httpx2
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import (
-    ConnectivityManagementValueError,
     canonical_digest,
     canonical_json,
     idempotency_key_digest,
@@ -23,6 +23,7 @@ from a13n_service.connectivity.management import (
     replay_command,
 )
 from a13n_service.credentials import CredentialSnapshot
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import (
@@ -148,13 +149,13 @@ class MCPOAuthService:
                     if incompatible
                     else "Remote MCP OAuth setup is temporarily unavailable."
                 ),
-                status_code=409 if incompatible else 503,
+                category=ErrorCategory.conflict if incompatible else ErrorCategory.unavailable,
             ) from error
         except httpx2.HTTPError as error:
             raise MCPConnectionError(
                 "mcp_oauth_unavailable",
                 "Remote MCP OAuth setup is temporarily unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             ) from error
         try:
             return await self._create_session(
@@ -202,14 +203,14 @@ class MCPOAuthService:
                     if unavailable
                     else "Remote MCP authorization could not be completed."
                 ),
-                status_code=503 if unavailable else 409,
+                category=ErrorCategory.unavailable if unavailable else ErrorCategory.conflict,
             ) from error
         except httpx2.HTTPError as error:
             await self._callback_failed(source, error)
             raise MCPConnectionError(
                 "mcp_oauth_unavailable",
                 "Remote MCP authorization is temporarily unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             ) from error
         await self._discovery.discover(source.connection_id)
         async with transaction(self._sessions) as session:
@@ -233,7 +234,7 @@ class MCPOAuthService:
                 raise MCPConnectionError(
                     "invalid_auth_mode",
                     "MCPConnection does not use OAuth.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             try:
                 replay = await replay_command(
@@ -244,8 +245,9 @@ class MCPOAuthService:
                     scope_id=connection.id,
                     idempotency_key_digest=key_digest,
                     fingerprint=request_fingerprint,
+                    now=self._clock(),
                 )
-            except ConnectivityManagementValueError as error:
+            except IdempotencyConflict as error:
                 raise map_management_error(error) from error
             if replay is not None:
                 oauth_session = await session.get(MCPOAuthSessionRecord, replay.resource_id)
@@ -257,12 +259,14 @@ class MCPOAuthService:
                     raise MCPConnectionError(
                         "oauth_session_unavailable",
                         "OAuth authorization session is no longer available.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 return OAuthSessionSnapshot.from_record(oauth_session)
             require_version(connection.version, expected_version)
             if connection.status == "disabled":
-                raise MCPConnectionError("connection_disabled", "MCPConnection is disabled.", status_code=409)
+                raise MCPConnectionError(
+                    "connection_disabled", "MCPConnection is disabled.", category=ErrorCategory.conflict
+                )
             return OAuthSource(
                 connection_id=connection.id,
                 organization_id=connection.organization_id,
@@ -292,7 +296,7 @@ class MCPOAuthService:
                 raise MCPConnectionError(
                     "version_conflict",
                     "MCPConnection changed during OAuth discovery.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             await session.execute(
                 update(MCPOAuthSessionRecord)
@@ -350,6 +354,7 @@ class MCPOAuthService:
                 resource_id=session_id,
                 result_version=connection.version,
                 now=now,
+                resource=None,
             )
             session.add(audit(actor, connection, action="mcp_connection.authorize", now=now))
             await session.flush()
@@ -396,7 +401,9 @@ class MCPOAuthService:
                 )
             )
             if connection_id is None:
-                raise MCPConnectionError("invalid_oauth_state", "OAuth callback state is invalid.", status_code=400)
+                raise MCPConnectionError(
+                    "invalid_oauth_state", "OAuth callback state is invalid.", category=ErrorCategory.invalid_request
+                )
             connection = await require_connection(session, connection_id, lock=True)
             oauth_session = await session.scalar(
                 select(MCPOAuthSessionRecord)
@@ -404,17 +411,19 @@ class MCPOAuthService:
                 .with_for_update()
             )
             if oauth_session is None or oauth_session.initiating_user_id != actor.principal.principal_id:
-                raise MCPConnectionError("invalid_oauth_state", "OAuth callback state is invalid.", status_code=400)
+                raise MCPConnectionError(
+                    "invalid_oauth_state", "OAuth callback state is invalid.", category=ErrorCategory.invalid_request
+                )
             await authorize_connection(session, actor, connection, mode="manage")
             if assume_utc(oauth_session.expires_at) <= now:
                 oauth_session.status = "expired"
                 oauth_session.updated_at = now
                 raise MCPConnectionError(
-                    "oauth_session_expired", "OAuth authorization session expired.", status_code=409
+                    "oauth_session_expired", "OAuth authorization session expired.", category=ErrorCategory.conflict
                 )
             if oauth_session.status == "completed":
                 raise MCPConnectionError(
-                    "oauth_state_replayed", "OAuth callback state was already used.", status_code=409
+                    "oauth_state_replayed", "OAuth callback state was already used.", category=ErrorCategory.conflict
                 )
             if (
                 oauth_session.status != "pending"
@@ -424,11 +433,13 @@ class MCPOAuthService:
                 raise MCPConnectionError(
                     "oauth_session_unavailable",
                     "Start a new authorization session; the previous session is unavailable.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             snapshot = OAuthSessionSnapshot.from_record(oauth_session)
             if issuer != required_oauth_string(self._resolve_setup(snapshot), "issuer_url"):
-                raise MCPConnectionError("oauth_issuer_mismatch", "OAuth callback issuer is invalid.", status_code=400)
+                raise MCPConnectionError(
+                    "oauth_issuer_mismatch", "OAuth callback issuer is invalid.", category=ErrorCategory.invalid_request
+                )
             oauth_session.status = "exchanging"
             oauth_session.claim_generation += 1
             oauth_session.claim_owner = self._instance_id
@@ -462,7 +473,7 @@ class MCPOAuthService:
             oauth_session = await session.get(MCPOAuthSessionRecord, source.session.id, with_for_update=True)
             if oauth_session is None or not _callback_claim_matches(oauth_session, source):
                 raise MCPConnectionError(
-                    "oauth_callback_lost_race", "OAuth callback changed concurrently.", status_code=409
+                    "oauth_callback_lost_race", "OAuth callback changed concurrently.", category=ErrorCategory.conflict
                 )
             await authorize_connection(session, actor, connection, mode="manage")
             if (
@@ -474,7 +485,9 @@ class MCPOAuthService:
                 or assume_utc(oauth_session.expires_at) <= now
             ):
                 raise MCPConnectionError(
-                    "oauth_callback_lost_race", "Authorization changed during exchange.", status_code=409
+                    "oauth_callback_lost_race",
+                    "Authorization changed during exchange.",
+                    category=ErrorCategory.conflict,
                 )
             value = canonical_json(validate_oauth_bundle(credential))
             connection.replace_credential(value, self._protector)
@@ -555,13 +568,15 @@ def _callback_claim_matches(session: MCPOAuthSessionRecord, source: CallbackSour
 
 def _require_user(actor: AuthenticatedActor) -> None:
     if actor.principal.principal_type is not PrincipalType.user:
-        raise MCPConnectionError("interactive_user_required", "OAuth requires an interactive User.", status_code=403)
+        raise MCPConnectionError(
+            "interactive_user_required", "OAuth requires an interactive User.", category=ErrorCategory.forbidden
+        )
 
 
 def _idempotency_digest(value: str) -> str:
     try:
         return idempotency_key_digest(value)
-    except ConnectivityManagementValueError as error:
+    except InvalidIdempotencyKey as error:
         raise map_management_error(error) from error
 
 

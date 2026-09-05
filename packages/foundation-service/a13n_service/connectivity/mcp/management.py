@@ -8,7 +8,8 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.connectivity.management import ConnectivityManagementValueError
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
@@ -81,19 +82,21 @@ def audit(
     )
 
 
-def map_management_error(error: ConnectivityManagementValueError) -> MCPConnectionError:
-    if str(error) == "idempotency_conflict":
+def map_management_error(error: IdempotencyConflict | InvalidIdempotencyKey) -> MCPConnectionError:
+    if isinstance(error, IdempotencyConflict):
         return MCPConnectionError(
             "idempotency_conflict",
             "Idempotency key was used for another request.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         )
-    return MCPConnectionError("invalid_request", "Idempotency-Key is invalid.", status_code=400)
+    return MCPConnectionError("invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request)
 
 
 def require_version(current: int, expected: int) -> None:
     if current != expected:
-        raise MCPConnectionError("version_conflict", "MCPConnection changed concurrently.", status_code=409)
+        raise MCPConnectionError(
+            "version_conflict", "MCPConnection changed concurrently.", category=ErrorCategory.conflict
+        )
 
 
 def invalidate_refresh_claim(connection: MCPConnectionRecord, *, now: datetime) -> None:
@@ -105,4 +108,6 @@ def invalidate_refresh_claim(connection: MCPConnectionRecord, *, now: datetime) 
 
 
 def not_found() -> MCPConnectionError:
-    return MCPConnectionError("resource_not_found", "The requested resource was not found.", status_code=404)
+    return MCPConnectionError(
+        "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+    )

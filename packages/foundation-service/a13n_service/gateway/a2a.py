@@ -7,8 +7,9 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 
 import anyio
 from a2a.types import a2a_pb2 as a2a
@@ -16,9 +17,11 @@ from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Value
 from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from a13n_service.agents.domain import AgentConfig, canonical_digest
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import (
     CollectionCursorMismatchError,
     InvalidCollectionCursorError,
@@ -30,16 +33,20 @@ from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
+from a13n_service.interactions.commands import (
+    ContinueRunCommand,
+    InteractionCommands,
+    StartRunCommand,
+    WaitingContinueRunCommand,
+)
 from a13n_service.interactions.control_domain import InterruptRequest
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.models import RunRecord, ThreadRecord
-from a13n_service.public_errors import PublicError
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, require_aware_utc, utc_now
 
 from .a2a_import import A2APartImporter, A2APartImportError, PreparedA2AMessage
-from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest, WaitingContinueRunRequest
 from .models import (
     A2AContextBindingRecord,
     A2AMessageBindingRecord,
@@ -69,7 +76,7 @@ class _PreparedPushConfiguration:
     credentials: str | None
 
 
-class A2AError(PublicError):
+class A2AError(ApplicationError):
     """A bounded A2A adapter failure safe for the public binding."""
 
 
@@ -79,7 +86,7 @@ class A2AService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        commands: NativeInteractionCommands,
+        commands: InteractionCommands,
         secret_protector: SecretProtector,
         endpoint_policy: EndpointPolicy,
         part_importer: A2APartImporter,
@@ -189,7 +196,7 @@ class A2AService:
             raise A2AError(
                 "extended_agent_card_not_configured",
                 "The authenticated extended Agent Card is not configured.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         return card
 
@@ -233,11 +240,13 @@ class A2AService:
         try:
             prepared = await self._part_importer.prepare(actor=actor, message=request.message)
         except A2APartImportError as error:
-            raise A2AError(error.code, str(error), status_code=error.status_code) from error
+            raise A2AError(error.code, str(error), category=error.category) from error
         try:
             if context is None:
                 if request.message.task_id:
-                    raise A2AError("task_not_found", "The requested Task was not found.", status_code=404)
+                    raise A2AError(
+                        "task_not_found", "The requested Task was not found.", category=ErrorCategory.not_found
+                    )
                 task = await self._start_task(
                     actor=actor,
                     agent_id=agent_id,
@@ -335,7 +344,7 @@ class A2AService:
             raise A2AError(
                 "output_mode_not_supported",
                 "The Agent cannot produce any accepted output mode.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
 
     async def get_task(
@@ -363,15 +372,21 @@ class A2AService:
         include_artifacts: bool,
     ) -> A2ATaskPage:
         if page_size < 1 or page_size > 100:
-            raise A2AError("invalid_page_size", "pageSize must be between 1 and 100.", status_code=400)
+            raise A2AError(
+                "invalid_page_size", "pageSize must be between 1 and 100.", category=ErrorCategory.invalid_request
+            )
         if history_length is not None and history_length < 0:
-            raise A2AError("invalid_history_length", "historyLength must not be negative.", status_code=400)
+            raise A2AError(
+                "invalid_history_length", "historyLength must not be negative.", category=ErrorCategory.invalid_request
+            )
         status_filter = _task_state_filter(status)
         try:
             after_timestamp = None if status_timestamp_after is None else require_aware_utc(status_timestamp_after)
         except ValueError as error:
             raise A2AError(
-                "invalid_status_timestamp", "statusTimestampAfter must include a timezone offset.", status_code=400
+                "invalid_status_timestamp",
+                "statusTimestampAfter must include a timezone offset.",
+                category=ErrorCategory.invalid_request,
             ) from error
         scope = _task_cursor_scope(
             actor=actor,
@@ -392,7 +407,9 @@ class A2AService:
                     raise InvalidCollectionCursorError
                 after = (require_aware_utc(datetime.fromisoformat(updated_at)), task_id)
             except (CollectionCursorMismatchError, InvalidCollectionCursorError, ValueError) as error:
-                raise A2AError("invalid_page_token", "The page token is invalid.", status_code=400) from error
+                raise A2AError(
+                    "invalid_page_token", "The page token is invalid.", category=ErrorCategory.invalid_request
+                ) from error
         async with short_session(self._sessions) as database:
             try:
                 await authorize_agent(
@@ -446,7 +463,8 @@ class A2AService:
                     )
                 ).all()
             )
-        page = rows[:page_size]
+            page = rows[:page_size]
+            histories = await _load_task_histories(database, tuple(task for task, _ in page), history_length)
         next_page_token = None
         if len(rows) > page_size:
             last_task, last_run = page[-1]
@@ -457,10 +475,10 @@ class A2AService:
             )
         tasks = tuple(
             [
-                await self._project_task(
+                _project_task(
                     task,
                     run,
-                    history_length=history_length,
+                    histories.get(task.id, ()),
                     include_artifacts=include_artifacts,
                 )
                 for task, run in page
@@ -500,7 +518,7 @@ class A2AService:
             raise A2AError(
                 "push_configuration_not_allowed",
                 "A Send Message push configuration can only be registered with a new Task.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         requested = configuration.task_push_notification_config
         _validate_push_configuration(requested, task_id="")
@@ -514,7 +532,7 @@ class A2AService:
         try:
             endpoint_url = await self._endpoint_policy.validate(requested.url)
         except EndpointPolicyError as error:
-            raise A2AError("invalid_push_destination", str(error), status_code=400) from error
+            raise A2AError("invalid_push_destination", str(error), category=ErrorCategory.invalid_request) from error
         return _PreparedPushConfiguration(
             id=new_object_id("a2apush"),
             endpoint_url=endpoint_url,
@@ -543,7 +561,7 @@ class A2AService:
         try:
             endpoint_url = await self._endpoint_policy.validate(requested.url)
         except EndpointPolicyError as error:
-            raise A2AError("invalid_push_destination", str(error), status_code=400) from error
+            raise A2AError("invalid_push_destination", str(error), category=ErrorCategory.invalid_request) from error
         prepared = _PreparedPushConfiguration(
             id=new_object_id("a2apush"),
             endpoint_url=endpoint_url,
@@ -603,7 +621,7 @@ class A2AService:
             raise A2AError(
                 "push_configuration_limit",
                 "The Task has reached its push configuration limit.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         record = A2APushConfigurationRecord(
             id=prepared.id,
@@ -631,7 +649,7 @@ class A2AService:
             raise A2AError(
                 "push_credential_invalid",
                 "The push credential bundle could not be protected.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             ) from error
         database.add(record)
         await database.flush()
@@ -690,7 +708,9 @@ class A2AService:
                     raise InvalidCollectionCursorError
                 after = (datetime.fromisoformat(created_at), config_id)
             except (CollectionCursorMismatchError, InvalidCollectionCursorError, ValueError) as error:
-                raise A2AError("invalid_page_token", "The page token is invalid.", status_code=400) from error
+                raise A2AError(
+                    "invalid_page_token", "The page token is invalid.", category=ErrorCategory.invalid_request
+                ) from error
         statement = select(A2APushConfigurationRecord).where(
             A2APushConfigurationRecord.organization_id == task.organization_id,
             A2APushConfigurationRecord.workspace_id == task.workspace_id,
@@ -805,7 +825,7 @@ class A2AService:
                 raise A2AError(
                     "push_configuration_drain_timeout",
                     "The push configuration is disabled but an earlier delivery is still draining.",
-                    status_code=503,
+                    category=ErrorCategory.unavailable,
                 )
             await anyio.sleep(self._poll_interval_seconds)
 
@@ -957,74 +977,29 @@ class A2AService:
         context_binding_id = new_object_id("a2actx")
         context_id = request.message.context_id or context_binding_id
         task_id = new_object_id("a2atask")
-        message_binding_id = new_object_id("a2amsg")
         now = assume_utc(self._clock())
 
-        async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
-            await self._part_importer.commit_in_transaction(database, actor=actor, prepared=prepared)
-            run = await database.get(RunRecord, receipt.run_id)
-            if run is None:
-                raise RuntimeError("accepted A2A Run is missing")
-            database.add(
-                A2AContextBindingRecord(
-                    id=context_binding_id,
-                    organization_id=run.tenant_id,
-                    workspace_id=actor.workspace_id,
-                    client_principal_type=actor.principal.principal_type.value,
-                    client_principal_id=actor.principal.principal_id,
-                    agent_id=agent_id,
-                    context_id=context_id,
-                    session_id=receipt.session_id,
-                    root_thread_id=receipt.thread_id,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            await database.flush()
-            task = A2ATaskBindingRecord(
-                id=task_id,
-                organization_id=run.tenant_id,
-                workspace_id=actor.workspace_id,
-                context_binding_id=context_binding_id,
-                context_id=context_id,
-                agent_id=agent_id,
-                agent_revision_id=run.agent_revision_id,
-                thread_id=receipt.thread_id,
-                current_run_id=receipt.run_id,
-                run_ids_json=[receipt.run_id],
-                client_tool_surface_digest=_EMPTY_DIGEST,
-                created_at=now,
-                updated_at=now,
-            )
-            database.add(task)
-            await database.flush()
-            if push_configuration is not None:
-                await self._commit_push_configuration(
-                    database,
-                    actor=actor,
-                    task=task,
-                    prepared=push_configuration,
-                    now=now,
-                )
-            database.add(
-                _message_record(
-                    binding_id=message_binding_id,
-                    actor=actor,
-                    agent_id=agent_id,
-                    task_id=task_id,
-                    request=request,
-                    request_json=request_json,
-                    request_digest=request_digest,
-                    run=run,
-                    now=now,
-                )
-            )
+        binding = _PreparedTaskBinding(
+            kind="new_context",
+            actor=actor,
+            agent_id=agent_id,
+            context_binding_id=context_binding_id,
+            context_id=context_id,
+            task_id=task_id,
+            message=prepared,
+            request=request,
+            request_json=request_json,
+            request_digest=request_digest,
+            push_configuration=push_configuration,
+            now=now,
+        )
+        bind = partial(self._persist_task_binding, binding=binding)
 
         await self._commands.start(
             actor=actor,
             workspace_id=actor.workspace_id,
             idempotency_key=f"a2a:{agent_id}:{request.message.message_id}",
-            request=StartRunRequest(agent_id=agent_id, input=prepared.input),
+            request=StartRunCommand(agent_id=agent_id, input=prepared.input),
             transaction_hook=bind,
             prepared_assets=prepared.prepared_assets,
         )
@@ -1043,55 +1018,29 @@ class A2AService:
     ) -> a2a.Task:
         previous, current, thread = await self._latest_context_task(context)
         if previous is not None and current.status not in _TERMINAL:
-            raise A2AError("task_not_terminal", "The Context already has active Task work.", status_code=409)
+            raise A2AError(
+                "task_not_terminal", "The Context already has active Task work.", category=ErrorCategory.conflict
+            )
         task_id = new_object_id("a2atask")
         now = assume_utc(self._clock())
 
-        async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
-            await self._part_importer.commit_in_transaction(database, actor=actor, prepared=prepared)
-            run = await database.get(RunRecord, receipt.run_id)
-            if run is None:
-                raise RuntimeError("accepted A2A continuation Run is missing")
-            task = A2ATaskBindingRecord(
-                id=task_id,
-                organization_id=run.tenant_id,
-                workspace_id=context.workspace_id,
-                context_binding_id=context.id,
-                context_id=context.context_id,
-                agent_id=context.agent_id,
-                agent_revision_id=run.agent_revision_id,
-                thread_id=receipt.thread_id,
-                current_run_id=receipt.run_id,
-                run_ids_json=[receipt.run_id],
-                client_tool_surface_digest=_EMPTY_DIGEST,
-                created_at=now,
-                updated_at=now,
-            )
-            database.add(task)
-            await database.flush()
-            if push_configuration is not None:
-                await self._commit_push_configuration(
-                    database,
-                    actor=actor,
-                    task=task,
-                    prepared=push_configuration,
-                    now=now,
-                )
-            database.add(
-                _message_record(
-                    binding_id=new_object_id("a2amsg"),
-                    actor=actor,
-                    agent_id=context.agent_id,
-                    task_id=task_id,
-                    request=request,
-                    request_json=request_json,
-                    request_digest=request_digest,
-                    run=run,
-                    now=now,
-                )
-            )
+        binding = _PreparedTaskBinding(
+            kind="new_task",
+            actor=actor,
+            agent_id=context.agent_id,
+            context_binding_id=context.id,
+            context_id=context.context_id,
+            task_id=task_id,
+            message=prepared,
+            request=request,
+            request_json=request_json,
+            request_digest=request_digest,
+            push_configuration=push_configuration,
+            now=now,
+        )
+        bind = partial(self._persist_task_binding, binding=binding)
 
-        continuation = ContinueRunRequest(expected_thread_version=thread.version, input=prepared.input)
+        continuation = ContinueRunCommand(expected_thread_version=thread.version, input=prepared.input)
         if thread.head_run_id is None:
             receipt = await self._commands.continue_empty_thread(
                 actor=actor,
@@ -1135,41 +1084,32 @@ class A2AService:
             or run.status != RunStatus.waiting.value
             or sealed_state_digest is None
         ):
-            raise A2AError("task_not_continuable", "The Task is not waiting for input.", status_code=409)
+            raise A2AError(
+                "task_not_continuable", "The Task is not waiting for input.", category=ErrorCategory.conflict
+            )
         now = assume_utc(self._clock())
 
-        async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
-            await self._part_importer.commit_in_transaction(database, actor=actor, prepared=prepared)
-            selected = (
-                await database.execute(
-                    select(A2ATaskBindingRecord).where(A2ATaskBindingRecord.id == task.id).with_for_update()
-                )
-            ).scalar_one()
-            accepted = await database.get(RunRecord, receipt.run_id)
-            if accepted is None:
-                raise RuntimeError("accepted A2A feedback Run is missing")
-            selected.current_run_id = receipt.run_id
-            selected.run_ids_json = [*selected.run_ids_json, receipt.run_id]
-            selected.updated_at = now
-            database.add(
-                _message_record(
-                    binding_id=new_object_id("a2amsg"),
-                    actor=actor,
-                    agent_id=context.agent_id,
-                    task_id=task.id,
-                    request=request,
-                    request_json=request_json,
-                    request_digest=request_digest,
-                    run=accepted,
-                    now=now,
-                )
-            )
+        binding = _PreparedTaskBinding(
+            kind="continue_task",
+            actor=actor,
+            agent_id=context.agent_id,
+            context_binding_id=context.id,
+            context_id=context.context_id,
+            task_id=task_id,
+            message=prepared,
+            request=request,
+            request_json=request_json,
+            request_digest=request_digest,
+            push_configuration=None,
+            now=now,
+        )
+        bind = partial(self._persist_task_binding, binding=binding)
 
         await self._commands.continue_waiting(
             actor=actor,
             run_id=run.id,
             idempotency_key=f"a2a:{context.agent_id}:{request.message.message_id}",
-            request=WaitingContinueRunRequest(
+            request=WaitingContinueRunCommand(
                 expected_thread_version=thread.version,
                 sealed_state_digest_sha256=sealed_state_digest,
                 input=prepared.input,
@@ -1178,6 +1118,85 @@ class A2AService:
             prepared_assets=prepared.prepared_assets,
         )
         return await self.get_task(actor=actor, agent_id=context.agent_id, task_id=task.id)
+
+    async def _persist_task_binding(
+        self,
+        database: AsyncSession,
+        receipt: RunAcceptanceReceipt,
+        *,
+        binding: _PreparedTaskBinding,
+    ) -> None:
+        await self._part_importer.commit_in_transaction(database, actor=binding.actor, prepared=binding.message)
+        run = await database.get(RunRecord, receipt.run_id)
+        if run is None:
+            raise RuntimeError("accepted A2A Run is missing")
+        if binding.kind == "new_context":
+            database.add(
+                A2AContextBindingRecord(
+                    id=binding.context_binding_id,
+                    organization_id=run.tenant_id,
+                    workspace_id=binding.actor.workspace_id,
+                    client_principal_type=binding.actor.principal.principal_type.value,
+                    client_principal_id=binding.actor.principal.principal_id,
+                    agent_id=binding.agent_id,
+                    context_id=binding.context_id,
+                    session_id=receipt.session_id,
+                    root_thread_id=receipt.thread_id,
+                    created_at=binding.now,
+                    updated_at=binding.now,
+                )
+            )
+            await database.flush()
+        if binding.kind == "continue_task":
+            task = await database.scalar(
+                select(A2ATaskBindingRecord)
+                .where(
+                    A2ATaskBindingRecord.id == binding.task_id,
+                    A2ATaskBindingRecord.context_binding_id == binding.context_binding_id,
+                    A2ATaskBindingRecord.organization_id == run.tenant_id,
+                )
+                .with_for_update()
+            )
+            if task is None:
+                raise RuntimeError("continued A2A Task is missing")
+            task.current_run_id = receipt.run_id
+            task.run_ids_json = [*task.run_ids_json, receipt.run_id]
+            task.updated_at = binding.now
+        else:
+            task = A2ATaskBindingRecord(
+                id=binding.task_id,
+                organization_id=run.tenant_id,
+                workspace_id=binding.actor.workspace_id,
+                context_binding_id=binding.context_binding_id,
+                context_id=binding.context_id,
+                agent_id=binding.agent_id,
+                agent_revision_id=run.agent_revision_id,
+                thread_id=receipt.thread_id,
+                current_run_id=receipt.run_id,
+                run_ids_json=[receipt.run_id],
+                client_tool_surface_digest=_EMPTY_DIGEST,
+                created_at=binding.now,
+                updated_at=binding.now,
+            )
+            database.add(task)
+            await database.flush()
+        if binding.push_configuration is not None:
+            await self._commit_push_configuration(
+                database, actor=binding.actor, task=task, prepared=binding.push_configuration, now=binding.now
+            )
+        database.add(
+            _message_record(
+                binding_id=new_object_id("a2amsg"),
+                actor=binding.actor,
+                agent_id=binding.agent_id,
+                task_id=binding.task_id,
+                request=binding.request,
+                request_json=binding.request_json,
+                request_digest=binding.request_digest,
+                run=run,
+                now=binding.now,
+            )
+        )
 
     async def _message_replay(
         self,
@@ -1200,7 +1219,11 @@ class A2AService:
         if binding is None:
             return None
         if binding.request_digest_sha256 != request_digest:
-            raise A2AError("message_id_conflict", "The Message ID was reused with different content.", status_code=409)
+            raise A2AError(
+                "message_id_conflict",
+                "The Message ID was reused with different content.",
+                category=ErrorCategory.conflict,
+            )
         return await self.get_task(actor=actor, agent_id=agent_id, task_id=binding.task_id)
 
     async def _load_context(
@@ -1327,35 +1350,73 @@ class A2AService:
         history_length: int | None = None,
         include_artifacts: bool = True,
     ) -> a2a.Task:
-        history: list[a2a.Message] = []
         async with short_session(self._sessions) as database:
-            messages = tuple(
-                (
-                    await database.scalars(
-                        select(A2AMessageBindingRecord)
-                        .where(A2AMessageBindingRecord.task_id == task.id)
-                        .order_by(A2AMessageBindingRecord.created_at, A2AMessageBindingRecord.id)
-                    )
-                ).all()
-            )
-        selected_messages = messages if history_length is None else messages[-history_length:] if history_length else ()
-        for binding in selected_messages:
-            message = a2a.Message()
-            message_data = binding.request_json.get("message")
-            if isinstance(message_data, dict):
-                from google.protobuf.json_format import ParseDict
+            histories = await _load_task_histories(database, (task,), history_length)
+        return _project_task(task, run, histories.get(task.id, ()), include_artifacts=include_artifacts)
 
-                ParseDict(message_data, message)
-                history.append(message)
-        status = _task_status(run)
-        artifacts = _task_artifacts(task, run) if include_artifacts else []
-        return a2a.Task(
-            id=task.id,
-            context_id=task.context_id,
-            status=status,
-            artifacts=artifacts,
-            history=history,
+
+async def _load_task_histories(
+    database: AsyncSession,
+    tasks: tuple[A2ATaskBindingRecord, ...],
+    history_length: int | None,
+) -> dict[str, tuple[A2AMessageBindingRecord, ...]]:
+    if not tasks or history_length == 0:
+        return {}
+    scope = or_(
+        *(
+            and_(A2AMessageBindingRecord.task_id == task.id, A2AMessageBindingRecord.workspace_id == task.workspace_id)
+            for task in tasks
         )
+    )
+    ranked = (
+        select(
+            A2AMessageBindingRecord,
+            func.row_number()
+            .over(
+                partition_by=A2AMessageBindingRecord.task_id,
+                order_by=(A2AMessageBindingRecord.created_at.desc(), A2AMessageBindingRecord.id.desc()),
+            )
+            .label("history_rank"),
+        )
+        .where(scope)
+        .subquery()
+    )
+    message = aliased(A2AMessageBindingRecord, ranked)
+    query = select(message)
+    if history_length is not None:
+        query = query.where(ranked.c.history_rank <= history_length)
+    rows = await database.scalars(query.order_by(message.task_id, message.created_at, message.id))
+    histories: dict[str, list[A2AMessageBindingRecord]] = {}
+    for row in rows:
+        histories.setdefault(row.task_id, []).append(row)
+    return {task_id: tuple(messages) for task_id, messages in histories.items()}
+
+
+def _project_task(
+    task: A2ATaskBindingRecord,
+    run: RunRecord,
+    messages: tuple[A2AMessageBindingRecord, ...],
+    *,
+    include_artifacts: bool = True,
+) -> a2a.Task:
+    history: list[a2a.Message] = []
+    for binding in messages:
+        message = a2a.Message()
+        message_data = binding.request_json.get("message")
+        if isinstance(message_data, dict):
+            from google.protobuf.json_format import ParseDict
+
+            ParseDict(message_data, message)
+            history.append(message)
+    status = _task_status(run)
+    artifacts = _task_artifacts(task, run) if include_artifacts else []
+    return a2a.Task(
+        id=task.id,
+        context_id=task.context_id,
+        status=status,
+        artifacts=artifacts,
+        history=history,
+    )
 
 
 _EMPTY_DIGEST = hashlib.sha256(b"[]").hexdigest()
@@ -1391,16 +1452,24 @@ def _message_record(
 
 def _validate_send_request(request: a2a.SendMessageRequest) -> None:
     if request.tenant:
-        raise A2AError("tenant_not_supported", "A2A tenant selection is not supported.", status_code=400)
+        raise A2AError(
+            "tenant_not_supported", "A2A tenant selection is not supported.", category=ErrorCategory.invalid_request
+        )
     message = request.message
     if not message.message_id or len(message.message_id.encode("utf-8")) > 512:
-        raise A2AError("message_invalid", "A bounded messageId is required.", status_code=400)
+        raise A2AError("message_invalid", "A bounded messageId is required.", category=ErrorCategory.invalid_request)
     if message.role != a2a.ROLE_USER:
-        raise A2AError("message_invalid", "Only user Messages can be submitted.", status_code=400)
+        raise A2AError(
+            "message_invalid", "Only user Messages can be submitted.", category=ErrorCategory.invalid_request
+        )
     if message.extensions:
-        raise A2AError("extension_not_supported", "A2A extensions are not supported.", status_code=400)
+        raise A2AError(
+            "extension_not_supported", "A2A extensions are not supported.", category=ErrorCategory.invalid_request
+        )
     if not message.parts:
-        raise A2AError("message_invalid", "At least one Message Part is required.", status_code=400)
+        raise A2AError(
+            "message_invalid", "At least one Message Part is required.", category=ErrorCategory.invalid_request
+        )
     _send_history_length(request.configuration)
 
 
@@ -1408,7 +1477,9 @@ def _send_history_length(configuration: a2a.SendMessageConfiguration) -> int | N
     if not configuration.HasField("history_length"):
         return None
     if configuration.history_length < 0:
-        raise A2AError("invalid_history_length", "historyLength must not be negative.", status_code=400)
+        raise A2AError(
+            "invalid_history_length", "historyLength must not be negative.", category=ErrorCategory.invalid_request
+        )
     return configuration.history_length
 
 
@@ -1488,29 +1559,45 @@ def _task_artifacts(task: A2ATaskBindingRecord, run: RunRecord) -> list[a2a.Arti
 
 def _validate_push_configuration(requested: a2a.TaskPushNotificationConfig, *, task_id: str) -> None:
     if requested.tenant:
-        raise A2AError("tenant_not_supported", "A2A tenant selection is not supported.", status_code=400)
+        raise A2AError(
+            "tenant_not_supported", "A2A tenant selection is not supported.", category=ErrorCategory.invalid_request
+        )
     if requested.id:
-        raise A2AError("invalid_push_configuration", "The server assigns the push configuration ID.", status_code=400)
+        raise A2AError(
+            "invalid_push_configuration",
+            "The server assigns the push configuration ID.",
+            category=ErrorCategory.invalid_request,
+        )
     if requested.task_id and requested.task_id != task_id:
         raise A2AError(
-            "invalid_push_configuration", "The push configuration Task does not match the route.", status_code=400
+            "invalid_push_configuration",
+            "The push configuration Task does not match the route.",
+            category=ErrorCategory.invalid_request,
         )
     if not requested.url or len(requested.url) > 2048:
-        raise A2AError("invalid_push_configuration", "The push configuration URL is invalid.", status_code=400)
+        raise A2AError(
+            "invalid_push_configuration",
+            "The push configuration URL is invalid.",
+            category=ErrorCategory.invalid_request,
+        )
     if len(requested.token.encode("utf-8")) > 65_536:
-        raise A2AError("invalid_push_configuration", "The push configuration token is too large.", status_code=400)
+        raise A2AError(
+            "invalid_push_configuration",
+            "The push configuration token is too large.",
+            category=ErrorCategory.invalid_request,
+        )
     authentication = requested.authentication
     if len(authentication.scheme) > 128 or len(authentication.credentials.encode("utf-8")) > 65_536:
         raise A2AError(
             "invalid_push_configuration",
             "The push authentication configuration is invalid.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     if authentication.credentials and not authentication.scheme:
         raise A2AError(
             "invalid_push_configuration",
             "Push authentication credentials require a scheme.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     _credential_bundle(requested.token or None, authentication.credentials or None)
 
@@ -1528,7 +1615,7 @@ def _credential_bundle(token: str | None, credentials: str | None) -> str | None
         raise A2AError(
             "invalid_push_configuration",
             "The push credential bundle is too large.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     return encoded
 
@@ -1565,7 +1652,9 @@ def _task_state_filter(status: a2a.TaskState | None) -> Any | None:
     }
     selected = filters.get(status)
     if selected is None:
-        raise A2AError("invalid_task_status", "The Task status filter is invalid.", status_code=400)
+        raise A2AError(
+            "invalid_task_status", "The Task status filter is invalid.", category=ErrorCategory.invalid_request
+        )
     return selected
 
 
@@ -1607,7 +1696,23 @@ def _push_cursor_scope(*, actor: AuthenticatedActor, agent_id: str, task_id: str
 
 
 def _not_found() -> A2AError:
-    return A2AError("resource_not_found", "The requested A2A resource was not found.", status_code=404)
+    return A2AError("resource_not_found", "The requested A2A resource was not found.", category=ErrorCategory.not_found)
 
 
 __all__ = ["A2AError", "A2AService", "A2ATaskPage"]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedTaskBinding:
+    kind: Literal["new_context", "new_task", "continue_task"]
+    actor: AuthenticatedActor
+    agent_id: str
+    context_binding_id: str
+    context_id: str
+    task_id: str
+    message: PreparedA2AMessage
+    request: a2a.SendMessageRequest
+    request_json: dict[str, Any]
+    request_digest: str
+    push_configuration: _PreparedPushConfiguration | None
+    now: datetime

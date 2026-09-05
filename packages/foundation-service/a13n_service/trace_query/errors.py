@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from a13n_service.public_errors import PublicError
+from a13n_service.application_errors import ApplicationError
 
 ProviderFailure = Literal[
     "unavailable",
@@ -21,5 +21,5 @@ class TraceQueryProviderError(Exception):
         self.failure = failure
 
 
-class TraceQueryError(PublicError):
+class TraceQueryError(ApplicationError):
     pass

@@ -6,7 +6,7 @@ from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
 SKILL_TABLES = {
-    "skill_idempotency",
+    "idempotency_evidence",
     "skill_uploads",
     "skill_revisions",
     "skills",

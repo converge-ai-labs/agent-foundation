@@ -13,6 +13,8 @@ from jsonschema import Draft202012Validator
 from pydantic import ConfigDict, JsonValue, create_model
 from pydantic_ai.models.bedrock import BedrockModelSettings
 
+from a13n_service.application_errors import ErrorCategory
+
 from .model_apis import BUILT_IN_MODEL_APIS
 from .service_common import ModelError
 
@@ -127,7 +129,7 @@ def _field_descriptions(native: Any) -> dict[str, str]:
 def settings_schema(model_api: str) -> dict[str, Any]:
     binding = BUILT_IN_MODEL_APIS.get(model_api)
     if binding is None:
-        raise ModelError("invalid_model_api", "The Model API is invalid.", status_code=400)
+        raise ModelError("invalid_model_api", "The Model API is invalid.", category=ErrorCategory.invalid_request)
     native = binding.settings_type
     if native is BedrockModelSettings:
         from mypy_boto3_bedrock_runtime import type_defs
@@ -177,7 +179,7 @@ def _invalid(path: list[str | int], reason: str) -> ModelError:
     return ModelError(
         "invalid_model_settings",
         "The Model settings are invalid.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
         details={"path": ["settings", *path], "reason": reason},
     )
 

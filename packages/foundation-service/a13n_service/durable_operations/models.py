@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKeyConstraint, Index, String, UniqueConstraint
+from pydantic import JsonValue
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
@@ -22,6 +32,7 @@ class IdempotencyEvidenceRecord(Base):
             ondelete="CASCADE",
         ),
         UniqueConstraint(
+            "boundary_scope_id",
             "actor_type",
             "actor_id",
             "operation",
@@ -29,6 +40,7 @@ class IdempotencyEvidenceRecord(Base):
             "key_digest",
             name="uq_idempotency_evidence_replay_scope",
         ),
+        CheckConstraint("boundary_scope_id = coalesce(workspace_id, organization_id)", name="boundary_scope_valid"),
         CheckConstraint("actor_type IN ('user', 'service_account')", name="actor_type_valid"),
         CheckConstraint("length(key_digest) = 64", name="key_digest_sha256"),
         CheckConstraint("length(request_digest) = 64", name="request_digest_sha256"),
@@ -39,6 +51,7 @@ class IdempotencyEvidenceRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72))
     workspace_id: Mapped[str | None] = mapped_column(String(72))
+    boundary_scope_id: Mapped[str] = mapped_column(String(72))
     actor_type: Mapped[str] = mapped_column(String(32))
     actor_id: Mapped[str] = mapped_column(String(72))
     operation: Mapped[str] = mapped_column(String(64))
@@ -47,6 +60,7 @@ class IdempotencyEvidenceRecord(Base):
     request_digest: Mapped[str] = mapped_column(String(64))
     result_kind: Mapped[str] = mapped_column(String(32))
     result_ref: Mapped[str] = mapped_column(String(72))
+    receipt_json: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

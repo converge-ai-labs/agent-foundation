@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_service.gateway.native_streaming import NativeRunStreamService, NativeStreamError
+from a13n_service.http_errors import application_error_status
 from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEvent, deterministic_run_stream_event_id
 from a13n_service.storage.config import RedisMemoryConfig
 from a13n_service.storage.object_store import LocalObjectStore
@@ -80,7 +81,7 @@ async def test_run_sse_rejects_invalid_cursor(
         await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id="not-a-cursor")
 
     assert captured.value.code == "invalid_cursor"
-    assert captured.value.status_code == 400
+    assert application_error_status(captured.value) == 400
 
 
 async def test_run_sse_conceals_unauthorized_resource(
@@ -111,4 +112,4 @@ async def test_terminal_run_without_retained_replay_reports_gap(
         await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=None)
 
     assert captured.value.code == "run_stream_replay_gap"
-    assert captured.value.status_code == 409
+    assert application_error_status(captured.value) == 409

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import httpx2
 import pytest
 from a13n_service.api import install_api_conventions
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.trace_query import TraceCollection, TraceDetail, TraceQueryError, TraceQueryService, TraceView
 from a13n_service.trace_query.router import router
@@ -34,7 +35,7 @@ class StubTraceQueryService:
 
     async def get(self, **arguments: object) -> TraceDetail:
         self.get_arguments = arguments
-        raise TraceQueryError("trace_not_found", "The Trace was not found.", status_code=404)
+        raise TraceQueryError("trace_not_found", "The Trace was not found.", category=ErrorCategory.not_found)
 
 
 def application(service: object, process_runtime_factory) -> FastAPI:

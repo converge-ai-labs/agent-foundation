@@ -10,9 +10,10 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connectors.registry import ConnectorProviderImplementation, ConnectorProviderRegistry
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.management import ConnectivityManagementValueError
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -35,7 +36,9 @@ def require_implementation(registry: ConnectorProviderRegistry, provider_type: s
         return registry.require(provider_type)
     except ValueError as error:
         raise ConnectorError(
-            "unsupported_connector_provider_type", "Connector Provider type is not registered.", status_code=400
+            "unsupported_connector_provider_type",
+            "Connector Provider type is not registered.",
+            category=ErrorCategory.invalid_request,
         ) from error
 
 
@@ -58,7 +61,9 @@ def configure_provider(
         return implementation.configure(record.configuration_json, credentials)
     except ValueError as error:
         raise ConnectorError(
-            "invalid_connector_provider_configuration", "Connector Provider configuration is invalid.", status_code=409
+            "invalid_connector_provider_configuration",
+            "Connector Provider configuration is invalid.",
+            category=ErrorCategory.conflict,
         ) from error
 
 
@@ -74,7 +79,7 @@ async def authorize(
         raise ConnectorError(
             "resource_not_found",
             "The requested resource was not found.",
-            status_code=404,
+            category=ErrorCategory.not_found,
         ) from error
 
 
@@ -82,7 +87,9 @@ async def connector_actor_scope(session: AsyncSession, actor: AuthenticatedActor
     try:
         return await actor_scope(session, actor)
     except AuthorizationError as error:
-        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404) from error
+        raise ConnectorError(
+            "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+        ) from error
 
 
 async def require_connector_provider(
@@ -96,7 +103,9 @@ async def require_connector_provider(
         query = query.with_for_update()
     record = await session.scalar(query)
     if record is None:
-        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
+        raise ConnectorError(
+            "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+        )
     return record
 
 
@@ -114,7 +123,9 @@ async def require_connection(
         query = query.with_for_update()
     record = await session.scalar(query)
     if record is None:
-        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
+        raise ConnectorError(
+            "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+        )
     return record
 
 
@@ -123,7 +134,9 @@ def decode_credentials(value: str) -> JsonObject:
         return _JSON_OBJECT.validate_python(json.loads(value))
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as error:
         raise ConnectorError(
-            "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
+            "credential_unavailable",
+            "ConnectorProvider credentials are unavailable.",
+            category=ErrorCategory.unavailable,
         ) from error
 
 
@@ -151,19 +164,21 @@ def audit(
     )
 
 
-def map_management_value_error(error: ConnectivityManagementValueError) -> ConnectorError:
-    if str(error) == "idempotency_conflict":
+def map_management_value_error(error: IdempotencyConflict | InvalidIdempotencyKey) -> ConnectorError:
+    if isinstance(error, IdempotencyConflict):
         return ConnectorError(
             "idempotency_conflict",
             "Idempotency key was used for another request.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         )
-    return ConnectorError("invalid_request", "Idempotency-Key is invalid.", status_code=400)
+    return ConnectorError("invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request)
 
 
 def require_active_provider(record: ConnectorProviderRecord | ProviderSnapshot) -> None:
     if record.status != "active":
-        raise ConnectorError("connector_provider_disabled", "Connector Provider is disabled.", status_code=409)
+        raise ConnectorError(
+            "connector_provider_disabled", "Connector Provider is disabled.", category=ErrorCategory.conflict
+        )
 
 
 async def authorize_provider(
@@ -179,4 +194,6 @@ async def authorize_provider(
             manage=manage,
         )
     except AuthorizationError as error:
-        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404) from error
+        raise ConnectorError(
+            "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+        ) from error

@@ -38,6 +38,8 @@ from a13n_service.subagents.models import ChildRunRelationshipRecord
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
@@ -85,13 +87,13 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_2222222222222222",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
     authority = _authority(claim)
     execution = AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=2),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
     )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -170,6 +172,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         clock=lambda: NOW + timedelta(seconds=4),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_2323232323232323",
+        lifecycle=test_lifecycle_writer(),
     ).claim(accepted.child_run_id, _worker())
     assert child_claim is not None
 
@@ -185,6 +188,7 @@ async def test_child_acceptance_rejects_stale_generation_before_publishing_state
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_5555555555555555",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -225,6 +229,7 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_7777777777777777",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -271,6 +276,7 @@ async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postg
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_9999999999999999",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -320,6 +326,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_3434343434343434",
+        lifecycle=test_lifecycle_writer(),
     ).claim(parent.id, _worker())
     assert parent_claim is not None
     parent_authority = _authority(parent_claim)
@@ -350,6 +357,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_4545454545454545",
+        lifecycle=test_lifecycle_writer(),
     ).claim(accepted.child_run_id, _worker())
     assert child_claim is not None
     completed_child = await _complete_run(
@@ -426,7 +434,9 @@ async def _complete_run(
     time_offset_seconds: int = 3,
     expected_thread_version: int = 1,
 ) -> Run:
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=time_offset_seconds))
+    execution = AttemptExecutionService(
+        sessions, clock=lambda: NOW + timedelta(seconds=time_offset_seconds), lifecycle=test_lifecycle_writer()
+    )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
     entered = await execution.enter_harness(
@@ -451,6 +461,7 @@ async def _complete_run(
         sessions,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=time_offset_seconds + 1),
+        lifecycle=test_lifecycle_writer(),
     ).commit_state_outcome(authority, stored, expected_thread_version=expected_thread_version)
     async with short_session(sessions) as database:
         row = await database.get(RunRecord, run.id)
@@ -549,6 +560,7 @@ async def _accept_parent(
         RunPayloadStore(objects),
         _inline_hooks(),
         clock=lambda: NOW,
+        lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(
         session=Session(
             id=SESSION_ID,

@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from asyncio import timeout
 from contextlib import aclosing
+from datetime import datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import (
-    ConnectivityManagementValueError,
+    CommandReceipt,
     canonical_digest,
     canonical_json,
     clear_credentials,
@@ -22,6 +24,7 @@ from a13n_service.connectivity.management import (
     record_command,
     replay_command,
 )
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
@@ -87,7 +90,9 @@ class ConnectorProviderService:
             )
             await authorize_provider(session, actor, record, manage=False)
             if record.status != ConnectorProviderStatus.active.value:
-                raise ConnectorError("connector_provider_disabled", "Connector Provider is disabled.", status_code=409)
+                raise ConnectorError(
+                    "connector_provider_disabled", "Connector Provider is disabled.", category=ErrorCategory.conflict
+                )
             generation = record.credential_generation
         try:
             raw = record.credential_snapshot().decrypt(self._protector)
@@ -99,17 +104,23 @@ class ConnectorProviderService:
             validate_connectors(discovered)
         except TimeoutError as error:
             raise ConnectorError(
-                "connector_provider_unavailable", "Connector Provider discovery timed out.", status_code=503
+                "connector_provider_unavailable",
+                "Connector Provider discovery timed out.",
+                category=ErrorCategory.unavailable,
             ) from error
         except ConnectorProviderError as error:
             raise external_error(error) from error
         except SecretProtectionError as error:
             raise ConnectorError(
-                "credential_unavailable", "Connector Provider credentials are unavailable.", status_code=503
+                "credential_unavailable",
+                "Connector Provider credentials are unavailable.",
+                category=ErrorCategory.unavailable,
             ) from error
         except ValueError as error:
             raise ConnectorError(
-                "invalid_provider_response", "Connector Provider returned an invalid directory.", status_code=502
+                "invalid_provider_response",
+                "Connector Provider returned an invalid directory.",
+                category=ErrorCategory.dependency_failure,
             ) from error
         async with transaction(self._sessions) as session:
             current = await require_connector_provider(
@@ -118,7 +129,9 @@ class ConnectorProviderService:
             await authorize_provider(session, actor, current, manage=False)
             if current.status != ConnectorProviderStatus.active.value or current.credential_generation != generation:
                 raise ConnectorError(
-                    "connector_provider_changed", "Connector Provider changed during discovery.", status_code=409
+                    "connector_provider_changed",
+                    "Connector Provider changed during discovery.",
+                    category=ErrorCategory.conflict,
                 )
         return ConnectorCollection(
             items=tuple(Connector(connector_provider_id=record.id, **item.model_dump()) for item in discovered)
@@ -134,7 +147,7 @@ class ConnectorProviderService:
     ) -> ConnectorProvider:
         try:
             key_digest = idempotency_key_digest(idempotency_key)
-        except ConnectivityManagementValueError as error:
+        except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
         connector_provider_id = new_object_id("cnr")
         now = self._clock()
@@ -151,7 +164,7 @@ class ConnectorProviderService:
                     raise ConnectorError(
                         "invalid_connector_provider_configuration",
                         "ConnectorProvider configuration is invalid.",
-                        status_code=400,
+                        category=ErrorCategory.invalid_request,
                     ) from error
                 request_fingerprint = fingerprint(request, credentials=credentials)
                 try:
@@ -163,13 +176,12 @@ class ConnectorProviderService:
                         scope_id=workspace.id,
                         idempotency_key_digest=key_digest,
                         fingerprint=request_fingerprint,
+                        now=self._clock(),
                     )
-                except ConnectivityManagementValueError as error:
+                except IdempotencyConflict as error:
                     raise map_management_value_error(error) from error
                 if replay is not None:
-                    return (
-                        await require_connector_provider(session, replay.resource_id, scope=workspace)
-                    ).to_resource()
+                    return replay.restore(ConnectorProvider)
                 record = ConnectorProviderRecord(
                     id=connector_provider_id,
                     organization_id=workspace.organization_id,
@@ -202,6 +214,7 @@ class ConnectorProviderService:
                     resource_id=connector_provider_id,
                     result_version=1,
                     now=now,
+                    resource=record.to_resource(),
                 )
                 session.add(
                     audit(
@@ -220,13 +233,13 @@ class ConnectorProviderService:
             raise ConnectorError(
                 "connector_conflict",
                 "ConnectorProvider identity or name already exists.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_conflict",
                 "ConnectorProvider credentials could not be stored.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def list(
@@ -238,7 +251,9 @@ class ConnectorProviderService:
         cursor: str | None,
     ) -> ConnectorProviderCollection:
         if not 1 <= limit <= 100:
-            raise ConnectorError("invalid_request", "Collection limit is invalid.", status_code=400)
+            raise ConnectorError(
+                "invalid_request", "Collection limit is invalid.", category=ErrorCategory.invalid_request
+            )
         scope = {
             "resource_type": "connector_provider",
             "workspace_id": workspace_id,
@@ -248,7 +263,9 @@ class ConnectorProviderService:
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="cnr") if cursor else None
         except CursorError as error:
-            raise ConnectorError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise ConnectorError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             workspace = await authorize(session, actor, workspace_id, WorkspaceAction.connector_provider_read)
             query = select(ConnectorProviderRecord).where(
@@ -323,7 +340,7 @@ class ConnectorProviderService:
                 return record.to_resource()
         except IntegrityError as error:
             raise ConnectorError(
-                "connector_conflict", "ConnectorProvider name already exists.", status_code=409
+                "connector_conflict", "ConnectorProvider name already exists.", category=ErrorCategory.conflict
             ) from error
 
     async def replace_credentials(
@@ -336,7 +353,7 @@ class ConnectorProviderService:
     ) -> ConnectorProvider:
         try:
             key_digest = idempotency_key_digest(idempotency_key)
-        except ConnectivityManagementValueError as error:
+        except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
         credentials = clear_credentials(request.credentials)
         request_fingerprint = fingerprint(request, credentials=credentials)
@@ -352,9 +369,10 @@ class ConnectorProviderService:
                 operation="connector_provider.credentials.replace",
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
+                now=self._clock(),
             )
             if replay:
-                return record.to_resource()
+                return replay.restore(ConnectorProvider)
             _require_version(record.version, request.expected_version)
             adapter = require_implementation(self._adapters, record.type)
             try:
@@ -364,11 +382,15 @@ class ConnectorProviderService:
                 record.replace_credential(canonical_json(credentials), self._protector)
             except SecretProtectionError as error:
                 raise ConnectorError(
-                    "credential_conflict", "ConnectorProvider credentials could not be replaced.", status_code=409
+                    "credential_conflict",
+                    "ConnectorProvider credentials could not be replaced.",
+                    category=ErrorCategory.conflict,
                 ) from error
             except ValueError as error:
                 raise ConnectorError(
-                    "invalid_credentials", "ConnectorProvider credentials are invalid.", status_code=400
+                    "invalid_credentials",
+                    "ConnectorProvider credentials are invalid.",
+                    category=ErrorCategory.invalid_request,
                 ) from error
 
             record.version += 1
@@ -385,7 +407,8 @@ class ConnectorProviderService:
                 resource_type="connector_provider",
                 resource_id=record.id,
                 result_version=record.version,
-                now=record.updated_at,
+                now=self._clock(),
+                resource=record.to_resource(),
             )
             session.add(
                 audit(
@@ -410,7 +433,7 @@ class ConnectorProviderService:
     ) -> ConnectorProviderTestResult:
         try:
             key_digest = idempotency_key_digest(idempotency_key)
-        except ConnectivityManagementValueError as error:
+        except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
         request_fingerprint = canonical_digest({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
@@ -427,8 +450,9 @@ class ConnectorProviderService:
                     scope_id=record.id,
                     idempotency_key_digest=key_digest,
                     fingerprint=request_fingerprint,
+                    now=self._clock(),
                 )
-            except ConnectivityManagementValueError as error:
+            except IdempotencyConflict as error:
                 raise map_management_value_error(error) from error
             if replay is not None:
                 return ConnectorProviderTestResult(
@@ -438,7 +462,9 @@ class ConnectorProviderService:
                 )
             _require_version(record.version, expected_version)
             if record.status != ConnectorProviderStatus.active.value:
-                raise ConnectorError("connector_disabled", "ConnectorProvider is disabled.", status_code=409)
+                raise ConnectorError(
+                    "connector_disabled", "ConnectorProvider is disabled.", category=ErrorCategory.conflict
+                )
             frozen_version = record.version
             frozen_credential_generation = record.credential_generation
         try:
@@ -450,19 +476,35 @@ class ConnectorProviderService:
             raise external_error(error) from error
         except SecretProtectionError as error:
             raise ConnectorError(
-                "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
+                "credential_unavailable",
+                "ConnectorProvider credentials are unavailable.",
+                category=ErrorCategory.unavailable,
             ) from error
         tested_at = self._clock()
         async with transaction(self._sessions) as session:
             current = await require_connector_provider(
                 session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
             )
+            await authorize_provider(session, actor, current, manage=True)
+            replay = await _replay_connector_command(
+                session,
+                actor=actor,
+                record=current,
+                operation="connector_provider.test",
+                key_digest=key_digest,
+                request_fingerprint=request_fingerprint,
+                now=self._clock(),
+            )
+            if replay is not None:
+                return replay.restore(ConnectorProviderTestResult)
             if (
                 current.version != frozen_version
                 or current.credential_generation != frozen_credential_generation
                 or current.status != ConnectorProviderStatus.active.value
             ):
-                raise ConnectorError("connector_changed", "ConnectorProvider changed during its test.", status_code=409)
+                raise ConnectorError(
+                    "connector_changed", "ConnectorProvider changed during its test.", category=ErrorCategory.conflict
+                )
             record_command(
                 session,
                 actor=actor,
@@ -476,6 +518,9 @@ class ConnectorProviderService:
                 resource_id=current.id,
                 result_version=current.version,
                 now=tested_at,
+                resource=ConnectorProviderTestResult(
+                    connector_provider_id=current.id, connector_provider_version=current.version, tested_at=tested_at
+                ),
             )
             session.add(
                 audit(
@@ -505,7 +550,7 @@ class ConnectorProviderService:
     ) -> ConnectorProvider:
         try:
             key_digest = idempotency_key_digest(idempotency_key)
-        except ConnectivityManagementValueError as error:
+        except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
         request_fingerprint = canonical_digest({"expected_version": expected_version, "status": status.value})
         async with transaction(self._sessions) as session:
@@ -520,9 +565,10 @@ class ConnectorProviderService:
                 operation="connector_provider.status.set",
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
+                now=self._clock(),
             )
             if replay:
-                return record.to_resource()
+                return replay.restore(ConnectorProvider)
             _require_version(record.version, expected_version)
             if record.status != status.value:
                 record.status = status.value
@@ -545,7 +591,8 @@ class ConnectorProviderService:
                 resource_type="connector_provider",
                 resource_id=record.id,
                 result_version=record.version,
-                now=record.updated_at,
+                now=self._clock(),
+                resource=record.to_resource(),
             )
             session.add(
                 audit(
@@ -563,7 +610,7 @@ class ConnectorProviderService:
 
 def _require_version(current: int, expected: int) -> None:
     if current != expected:
-        raise ConnectorError("version_conflict", "Resource version has changed.", status_code=409)
+        raise ConnectorError("version_conflict", "Resource version has changed.", category=ErrorCategory.conflict)
 
 
 async def _replay_connector_command(
@@ -574,7 +621,8 @@ async def _replay_connector_command(
     operation: str,
     key_digest: str,
     request_fingerprint: str,
-) -> bool:
+    now: datetime,
+) -> CommandReceipt | None:
     try:
         replay = await replay_command(
             session,
@@ -584,7 +632,8 @@ async def _replay_connector_command(
             scope_id=record.id,
             idempotency_key_digest=key_digest,
             fingerprint=request_fingerprint,
+            now=now,
         )
-    except ConnectivityManagementValueError as error:
+    except IdempotencyConflict as error:
         raise map_management_value_error(error) from error
-    return replay is not None
+    return replay

@@ -3,13 +3,13 @@ from __future__ import annotations
 import pytest
 from a13n_service.environments.domain import NewEnvironmentSelection
 from a13n_service.environments.models import EnvironmentRecord
-from a13n_service.gateway.commands import ForkRunRequest, GatewayCommandError
 from a13n_service.gateway.notifications import NotificationService, NotificationSubscription
 from a13n_service.gateway.queries import NativeInteractionQueries
-from a13n_service.gateway.queue import NativeQueuedSubmissionService
+from a13n_service.interactions.commands import ForkRunCommand, InteractionCommandError
 from a13n_service.interactions.control_domain import ThreadRunSubmissionRequest
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
+from a13n_service.interactions.submissions import QueuedSubmissionService
 from a13n_service.interactions.thread_creation import allocate_thread
 from a13n_service.interactions.thread_domain import CreateThreadRequest
 from a13n_service.run_stream import RunReplayStore
@@ -52,7 +52,7 @@ async def test_start_environment_choice_replays_without_duplicate_allocation(
             environment = await database.get(EnvironmentRecord, run.environment_id)
             assert environment.status == "unprepared"
     altered = request.model_copy(update={"environment": None}) if selection == "default" else _request()
-    with pytest.raises(GatewayCommandError):
+    with pytest.raises(InteractionCommandError):
         await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=altered)
 
 
@@ -89,7 +89,7 @@ async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_nu
     assert (
         await queries.list_runs(actor=_actor(), workspace_id=None, thread_id=thread.id, limit=20, cursor=None)
     ).items == ()
-    queue = NativeQueuedSubmissionService(
+    queue = QueuedSubmissionService(
         lifecycle_interaction_sessions,
         QueuedSubmissionStore(lifecycle_interaction_sessions, _inline_hooks(), clock=lambda: NOW),
         commands,
@@ -116,7 +116,7 @@ async def test_explicit_null_successor_and_fork_preserve_environment_selection(
         actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="source", request=_request()
     )
     await _complete_run(lifecycle_interaction_sessions, objects, run_id=source.run_id)
-    request = ForkRunRequest(input=_request().input, environment=None)
+    request = ForkRunCommand(input=_request().input, environment=None)
     fork = await commands.fork(actor=_actor(), run_id=source.run_id, idempotency_key="fork", request=request)
     assert await commands.fork(actor=_actor(), run_id=source.run_id, idempotency_key="fork", request=request) == fork
     async with short_session(lifecycle_interaction_sessions) as database:

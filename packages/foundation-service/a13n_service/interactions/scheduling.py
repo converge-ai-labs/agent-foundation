@@ -23,7 +23,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
-from .lifecycle import append_run_attempt_lifecycle, append_run_lifecycle, append_run_with_attempt_lifecycle
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .records import run_attempt_record
 
@@ -73,10 +73,12 @@ class AttemptScheduler:
         self,
         sessions: async_sessionmaker[AsyncSession],
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
         token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         attempt_id_factory: Callable[[], str] = new_run_attempt_id,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._clock = clock
         self._token_factory = token_factory
@@ -217,7 +219,7 @@ class AttemptScheduler:
                 seal_failed_run(run, thread, budget_failure, now)
                 if classification == "lease_expired":
                     assert predecessor is not None
-                    await append_run_with_attempt_lifecycle(
+                    await self._lifecycle.append_run_with_attempt_lifecycle(
                         database,
                         run,
                         "run.failed",
@@ -229,7 +231,7 @@ class AttemptScheduler:
                         actor_id=claim.worker_id,
                     )
                 else:
-                    await append_run_lifecycle(
+                    await self._lifecycle.append_run_lifecycle(
                         database,
                         run,
                         "run.failed",
@@ -283,7 +285,7 @@ class AttemptScheduler:
             await database.flush()
             if classification == "lease_expired":
                 assert predecessor is not None
-                await append_run_attempt_lifecycle(
+                await self._lifecycle.append_run_attempt_lifecycle(
                     database,
                     run,
                     predecessor,
@@ -292,7 +294,7 @@ class AttemptScheduler:
                     occurred_at=now,
                 )
             if initially_accepted:
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     run,
                     "run.running",
@@ -304,7 +306,7 @@ class AttemptScheduler:
                     actor_id=claim.worker_id,
                 )
             else:
-                await append_run_attempt_lifecycle(
+                await self._lifecycle.append_run_attempt_lifecycle(
                     database,
                     run,
                     attempt_record_value,
