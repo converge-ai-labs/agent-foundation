@@ -1304,16 +1304,40 @@ fn run_linux_probe_in(
     kill_probe_group(process_group);
     drop(listener);
     if status.code() != Some(PROBE_EXIT_CODE) {
-        return Err(IsolationError::new(format!(
-            "Linux isolation probe failed with status {:?}: {}{}",
+        return Err(linux_probe_failure(
             status.code(),
-            String::from_utf8_lossy(stdout.as_deref().unwrap_or_default()),
-            String::from_utf8_lossy(stderr.as_deref().unwrap_or_default())
-        )));
+            stdout.as_deref().unwrap_or_default(),
+            stderr.as_deref().unwrap_or_default(),
+        ));
     }
     // Bubblewrap returns only after the PID-1 payload exits and the kernel has
     // destroyed every remaining process in the private PID namespace.
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn linux_probe_failure(status: Option<i32>, stdout: &[u8], stderr: &[u8]) -> IsolationError {
+    let stderr = String::from_utf8_lossy(stderr);
+    let namespace_denied = [
+        "setting up uid map",
+        "setting up gid map",
+        "Creating new namespace",
+    ]
+    .iter()
+    .any(|operation| stderr.contains(operation))
+        && ["Permission denied", "Operation not permitted"]
+            .iter()
+            .any(|denial| stderr.contains(denial));
+    let guidance = if namespace_denied {
+        "Unprivileged user namespaces were denied. On Ubuntu 24.04+, check AppArmor: keep its global restriction and allow userns for /usr/bin/bwrap in an administrator-installed profile. Otherwise check kernel or container namespace policy. Do not disable required isolation on a bare host. "
+    } else {
+        ""
+    };
+    IsolationError::new(format!(
+        "Linux isolation probe failed with status {status:?}: {guidance}{}{}",
+        String::from_utf8_lossy(stdout),
+        stderr,
+    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -1931,6 +1955,43 @@ pub(crate) fn run_internal_probe_sleeper(arguments: &[OsString]) -> Result<i32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn denied_namespace_probe_explains_apparmor_without_weakening_isolation() {
+        for diagnostic in [
+            "bwrap: setting up uid map: Permission denied",
+            "bwrap: setting up gid map: Operation not permitted",
+            "bwrap: Creating new namespace failed: Operation not permitted",
+        ] {
+            let error = IsolationError::required_preflight(linux_probe_failure(
+                Some(1),
+                b"",
+                diagnostic.as_bytes(),
+            ));
+            let message = error.to_string();
+            // Local Envd preserves a bounded native diagnostic. Put the action
+            // before the raw output so that Host-side truncation retains it.
+            assert!(message[..512.min(message.len())].contains("allow userns for /usr/bin/bwrap"));
+            assert!(message.contains("keep its global restriction"));
+            assert!(message.contains("Do not disable required isolation on a bare host"));
+            assert!(message.contains(diagnostic));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unrelated_probe_failure_does_not_claim_a_namespace_denial() {
+        let error = linux_probe_failure(
+            Some(1),
+            b"probe output",
+            b"bwrap: mount failed: Permission denied",
+        );
+        let message = error.to_string();
+        assert!(message.contains("probe output"));
+        assert!(message.contains("mount failed: Permission denied"));
+        assert!(!message.contains("AppArmor"));
+    }
 
     #[test]
     fn disabled_posture_truthfully_delegates_to_outer_host() {
