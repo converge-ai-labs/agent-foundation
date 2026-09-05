@@ -196,26 +196,29 @@ The tool surface follows the union of effective actions across current mounts:
 
 - `read_only` exposes `view`, `ls`, `glob`, and `grep`;
 - `read_write` adds `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, and `delete`;
-- `full` adds `shell_exec` when a Provider offers shell execution, and adds `shell_wait`, `shell_input`, and `shell_signal` when the complete process action set is available.
+- `full` adds `shell_exec` when a Provider offers shell execution, and independently adds `shell_info`, `shell_wait`, `shell_input`, and `shell_signal` according to their actions.
 
 When `shell_exec` is present, it supersedes exactly `move`, `copy`, and `delete`; `mkdir` remains available. An empty Environment exposes no Environment tools.
 
-A foreground-only mount exposes `shell_exec` and runs the command to completion. A process-capable mount exposes exactly four tools:
+A foreground-only mount exposes `shell_exec` with bounded inline output; it does not need standalone retained-output permissions. Process-capable mounts can add:
 
-| Tool           | Behavior                                                                                                         |
-| -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `shell_exec`   | Starts a command, waits up to `yield_time_seconds`, and returns a Run-owned process reference only if still live |
-| `shell_wait`   | Waits boundedly, or polls with zero, then reads retained stdout and stderr from explicit caller offsets          |
-| `shell_input`  | Writes UTF-8 stdin and optionally closes stdin without reading output                                            |
-| `shell_signal` | Sends `interrupt`, `terminate`, or `kill` without reading output                                                 |
+| Tool           | Behavior                                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| `shell_exec`   | Starts a command, waits up to `yield_time_seconds`, and returns a Run-local reference when not completed |
+| `shell_info`   | Without an ID, lists discoverable native commands; with an ID, inspects current status only              |
+| `shell_wait`   | Waits boundedly, or polls with zero, then reads available stdout/stderr at explicit offsets              |
+| `shell_input`  | Writes UTF-8 stdin and optionally closes stdin without reading output                                    |
+| `shell_signal` | Requests supported `interrupt`, `terminate`, or `kill` control without reading output                    |
 
-`timeout_seconds` on `shell_exec` is the Provider-enforced total wall-time limit. `yield_time_seconds` bounds only the initial wait. Completion inside that window returns terminal status and bounded output without a process ID. A command that remains live returns a concise reference such as `process-a3f1-1` plus current status and the next stdout and stderr offsets. There is no model-selected background mode, process listing tool, or output-returning kill tool.
+`execution_timeout_seconds` on `shell_exec` requests a Provider-enforced hard execution deadline. Providers such as native E2B reject it before starting when they cannot enforce it. `yield_time_seconds` and `shell_wait.timeout_seconds` only bound waiting. There is no background mode flag and no separate list, status or kill tool.
 
-Every stdout and stderr page reports the caller's `requested_offset`, the actual retained `start_offset`, the first unread `next_offset`, current retained bounds, produced bytes, producer and content completeness, and any unavailable prefix. Reads are non-consuming: repeating the same offsets is valid and Harness keeps no unread cursor. Retention overflow is explicit, and a returned `next_offset` advances only across bytes present in that bounded page.
+Use `shell_info(alias="workspace", limit=50)` to discover recoverable running commands under new references. `shell_info(process_id=...)` only inspects; it does not attach, read, refresh or reset output. Listing and inspection are independently authorized. A conflicting alias fails instead of retargeting a reference. Listing never exposes native PIDs, arbitrary arguments or environment variables.
 
-The private process controller belongs to one logical Harness Run. It keeps only the opaque bound handle, latest bounded observation, control lock, and completion watcher for each published reference. References are not portable state and cannot be rebound in a later Run. A completion watcher may enqueue one best-effort instruction to call `shell_wait`; it contains no process output and does not replace polling.
+Output pages identify `origin` (`native_bytes` or `sdk_text`), coverage, whether observation is closed, and any partial-coverage reason. SDK-text offsets describe UTF-8 encoding of text delivered by the SDK, not original process bytes. Producer counts and completion are null when unknown. `next_offset` advances only over returned bytes; repeat the same offsets to reread, or use the last returned offsets for the next page. Harness keeps no unread cursor.
 
-Run cleanup closes process admission, cancels Harness watcher tasks, kills every still-live Run-owned process, and releases each handle and retained-output object before Environment adapters close. No process handle, reference, output offset, status mirror, or cleanup fact enters `AgentContextState`, `HarnessState`, or Provider `EnvironmentState`.
+References belong to one Run. A reconnect within that Run retains its reference and accumulated log offsets but reports a gap. A later Run starts fresh references and observations; old references in messages are not authority. A completion hint means the native process exited, not that all output was captured or every descendant was cleaned up.
+
+Run cleanup cancels watchers and releases local observations before adapters close; it does not blanket-kill commands. Actual survival and recovery depend on the Provider and Host target lifetime. E2B can discover commands still running in the restored sandbox. Direct Local and Envd-backed Providers retain their own scope cleanup semantics. There is no Harness process database or post-Run notification service.
 
 ```mermaid
 sequenceDiagram
@@ -226,7 +229,7 @@ sequenceDiagram
 
     Agent->>Controller: shell_exec(command, yield window)
     Controller->>Environment: processes.start
-    Environment->>Process: start and retain output
+    Environment->>Process: native start and bounded observation
     alt process completes in yield window
         Controller->>Environment: inspect and read from offset 0
         Controller->>Environment: release
@@ -234,10 +237,10 @@ sequenceDiagram
     else process remains live
         Controller-->>Agent: process ID, status, output, next offsets
         Agent->>Controller: shell_wait(process ID, explicit offsets)
-        Controller->>Environment: bounded wait, inspect, retained read
+        Controller->>Environment: bounded wait and available output
         Controller-->>Agent: non-consuming output page
     end
-    Controller->>Environment: Run cleanup kill and release
+    Controller->>Environment: Run cleanup: release local observations
 ```
 
 `glob` and `grep` send their include pattern, repository-ignore and hidden-name policy, context width, and scan/result ceilings to the selected `FileOperator` in one call. Direct Local performs one worker-thread scan; EIP performs one `file.find` or `file.search` request. Set `include_ignored=True` only when ignored repository paths should be searched.

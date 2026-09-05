@@ -330,15 +330,13 @@ When `WebCapability()` is constructed without an explicit configuration, these e
 
 An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebRunCapability`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
 
-## Run-owned Shell Processes
+## Run-local Shell Observations
 
-`DynamicEnvironmentCapability` derives shell behavior from the entered Environment actions. A shell-only Environment exposes completion-only `shell_exec`. A process-capable Environment exposes exactly `shell_exec`, `shell_wait`, `shell_input`, and `shell_signal`; there is no operator configuration, background flag, process listing tool, or separate kill tool.
+`DynamicEnvironmentCapability` derives shell execution, native discovery/inspection through `shell_info`, explicit-offset `shell_wait`, and supported input/control tools from the current mount actions. The tool surface does not require a Host process operator or all-or-nothing interactive permissions.
 
-A process-capable `shell_exec` starts through the current `BoundEnvironment`, waits for `yield_time_seconds`, and returns terminal output directly when the command finishes quickly. Otherwise it returns a concise `process-*` reference owned by the current logical Run. `shell_wait` takes independent stdout and stderr byte offsets and reads non-consumingly. `shell_input` owns stdin writes and EOF, while `shell_signal` owns `interrupt`, `terminate`, and `kill`; mutation tools never read output.
+Run cleanup releases local observations without blanket command termination. References and buffers are Run-local; a later Run can discover commands actually retained by the Provider under fresh references. Completion hints report native exit, not complete output capture. No process database or post-Run wake service is introduced.
 
-Each published live process has one non-consuming completion watcher while the Run is active. The watcher can enqueue a bounded best-effort instruction to call `shell_wait`, but explicit polling remains authoritative. It does not create a Host event hook, durable completion record, or continuation scheduler.
-
-The Run cleanup boundary kills and releases every owned process before Environment adapters close. Process references and observations do not enter `AgentContextState` or `HarnessState`, and a later continuation Run receives a fresh empty controller with a new reference incarnation. Cross-Run process lifetime, hosted process operators, and post-Run wake are outside this Capability contract.
+See [Environment tools](environments.md) for signatures, output provenance, observation limits, and Provider-specific recovery behavior.
 
 ## Filters
 

@@ -16,6 +16,7 @@ from ..commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessDiscovery,
     ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
@@ -35,6 +36,7 @@ from ..retention import (
     EnvironmentOutputSegment,
     OpaqueProcessHandle,
     _unwrap_opaque,
+    materialize_capture,
 )
 from ._common import (
     convert_receipt,
@@ -79,7 +81,7 @@ def convert_command_request(request: CommandRequest, *, files: EIPFileOperator) 
             kind="shell",
             profile_id=command.profile_id,
             script=command.script,
-            login=command.login,
+            login=command.login or False,
         )
     else:  # pragma: no cover - Pydantic's discriminated union is closed
         raise TypeError("unsupported command type")
@@ -136,8 +138,10 @@ class _ProcessConversions:
     def convert_process(self, process: eip.ProcessInfo, policy: EnvironmentOutputPolicy) -> ProcessInfo:
         self._validate_process_identity(process)
         token = self._ensure_record(process, policy)
-        stdout = self._outputs.capture(process.output.stdout, policy=policy)
-        stderr = self._outputs.capture(process.output.stderr, policy=policy)
+        # Native retention is internal to process observation, not a Harness output permission prerequisite.
+        observation_policy = policy.model_copy(update={"overflow": "retain"})
+        stdout = self._outputs.capture(process.output.stdout, policy=observation_policy)
+        stderr = self._outputs.capture(process.output.stderr, policy=observation_policy)
         info = ProcessInfo(
             handle=BoundProcessHandle(
                 mount_id=self._mount_id,
@@ -155,11 +159,11 @@ class _ProcessConversions:
             output=ProcessOutputSnapshot(stdout=stdout, stderr=stderr),
         )
         record = self._records[token]
-        for raw, capture in (
+        for raw, _capture in (
             (process.output.stdout.reference, stdout),
             (process.output.stderr.reference, stderr),
         ):
-            if capture.reference is None and raw not in record.pending_output_references:
+            if raw not in record.pending_output_references:
                 record.pending_output_references.append(raw)
         return info
 
@@ -278,7 +282,7 @@ class _ProcessConversions:
                 record.release_receipt = receipt
             while record.pending_output_references:
                 reference = record.pending_output_references[0]
-                await self._outputs.release_hidden(reference)
+                await self._outputs.release_raw(reference)
                 record.pending_output_references.pop(0)
             receipt = record.release_receipt
             assert receipt is not None
@@ -334,11 +338,11 @@ class EIPShellOperations:
         try:
             stdout = self._conversions._outputs.capture(
                 raw_outputs[0],
-                policy=request.output_policy,
+                policy=request.output_policy.model_copy(update={"overflow": "retain"}),
             )
             stderr = self._conversions._outputs.capture(
                 raw_outputs[1],
-                policy=request.output_policy,
+                policy=request.output_policy.model_copy(update={"overflow": "retain"}),
             )
         except BaseException:
             for output in raw_outputs:
@@ -348,9 +352,12 @@ class EIPShellOperations:
             except EnvironmentError:
                 pass
             raise
-        for output, capture in zip(raw_outputs, (stdout, stderr), strict=True):
-            if capture.reference is None:
-                self._conversions._outputs.defer_cleanup(output.reference)
+        stdout, stderr = await asyncio.gather(
+            materialize_capture(self._conversions._outputs, stdout, request.output_policy),
+            materialize_capture(self._conversions._outputs, stderr, request.output_policy),
+        )
+        for output in raw_outputs:
+            self._conversions._outputs.defer_cleanup(output.reference)
         await self._conversions._outputs.cleanup_pending()
         return ShellExecResult(
             status=self._conversions.convert_status(result.status),
@@ -362,6 +369,9 @@ class EIPShellOperations:
 class EIPProcessOperations:
     def __init__(self, conversions: _ProcessConversions) -> None:
         self._conversions = conversions
+
+    async def list(self, *, limit: int) -> ProcessDiscovery:
+        raise EnvironmentError("EIP discovery is unsupported.", code="environment_unsupported")
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
         try:
@@ -433,6 +443,7 @@ class EIPProcessOperations:
             )
         )
         process = self._conversions.convert_process(result.process, record.output_policy)
+        assert process.output is not None
         stdout = await self._read_stream(
             process.output.stdout,
             cursor=stdout_cursor,
@@ -573,6 +584,16 @@ class EIPProcessOperations:
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
         token, record = self._conversions.resolve(handle)
+        info = await self.inspect(handle)
+        record.cleanup_owned = True
+        if info.status.phase in {"starting", "running"}:
+            return EnvironmentOperationReceipt(
+                mount_id=handle.mount_id,
+                observed_generation=handle.observed_generation,
+                operation_id="observation-release",
+                stage="completed",
+                outcome="succeeded",
+            )
         return await self._conversions.release_record(token, record)
 
     async def cleanup_owned(self) -> None:

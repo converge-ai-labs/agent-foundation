@@ -88,7 +88,7 @@ A hosted worker constructs Environment instances from Host-authoritative configu
 | Extension selection and serializable configuration               | Host                                                             |
 | Provider operation execution and local cleanup                   | Entered Environment                                              |
 | Model-facing file and shell Toolsets                             | Harness Capabilities                                             |
-| Run-owned process tracking, readiness, and cleanup               | Harness-private Run process controller                           |
+| Run-local process references, readiness, and observation release | Harness-private Run process controller                           |
 | Portable mount-name-to-state continuation                        | `HarnessState.environment_states`                                |
 | State publication and backing-target destruction                 | Host                                                             |
 | Async subagent admission, lifecycle, cleanup, wake               | [Async Subagent Lifecycle](20-async-components-and-lifecycle.md) |
@@ -254,11 +254,11 @@ The model-facing Toolset is standard:
 - read-only actions expose `view`, `ls`, `glob`, and `grep`;
 - file-mutation actions add `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, and `delete` as applicable;
 - command execution adds `shell_exec`;
-- process actions add `shell_wait`, `shell_input`, and `shell_signal` when their complete effective action requirements are present;
+- process actions independently add `shell_info`, `shell_wait`, `shell_input`, and `shell_signal` when their corresponding effective actions are present;
 - no model-facing `background` flag, `shell_status`, or `shell_kill` exists;
 - an empty Environment exposes no Environment tools.
 
-The fixed schema is derived from the union of the initial effective mount actions. Every call re-authorizes the exact selected current mount incarnation and fails without provider effects when that mount lacks an action required by the requested operation. A foreground-only mount keeps completion-only `shell_exec`; a process-capable mount uses the same name with automatic bounded yield.
+The current tool surface is derived from the union of effective mount actions. Every call re-authorizes the exact selected current mount incarnation and fails without provider effects when that mount lacks an action required by the requested operation. A foreground-only mount keeps completion-only `shell_exec`; a process-capable mount uses the same name with automatic bounded yield.
 
 Provider preparation and rebuild remain behind the operation object. When the backing target changes, the object supplies bounded change evidence and refreshed context; Harness fences stale operation leases/handles and publishes a new mount incarnation before later dispatch. No stale process reference or pending readiness observation can cross the change. Unknown outcomes from already dispatched operations are returned as explicit errors rather than replayed against a replacement target. Harness does not construct connections itself.
 
@@ -302,11 +302,11 @@ Provider file arguments remain provider-local after routing. Paths returned by s
 
 Tool results use bounded disclosures and stable model-safe errors. Internal mount identity, generation, state, and receipts are not model-editable arguments.
 
-## Run-owned Shell Processes
+## Run-local Shell Observations
 
-`DynamicEnvironmentCapability` composes one standard Shell Toolset over the current entered `BoundEnvironment`. A foreground-only `shell_exec` runs to completion against the exact selected mount incarnation. A process-capable `shell_exec` starts through `BoundEnvironment.processes`, waits for a bounded yield window, and either returns the completed command result or publishes a live Run-owned process reference. The model never predicts foreground versus background through a launch flag.
+`DynamicEnvironmentCapability` composes the standard Shell Toolset over the current entered `BoundEnvironment`. Foreground-only execution returns a bounded inline/observed command result without requiring standalone output permissions. The Provider owns internal capture materialization and cleanup. Background observation requires start, inspect, wait, read-output and release, not stdin, all signals, native discovery or standalone output resources.
 
-The process-capable surface contains exactly four shell tools:
+The conceptual model-facing surface is:
 
 ```python
 async def shell_exec(
@@ -315,9 +315,17 @@ async def shell_exec(
     cwd: str | None = None,
     environment: Mapping[str, str] | None = None,
     yield_time_seconds: float = 10,
-    timeout_seconds: float | None = None,
+    execution_timeout_seconds: float | None = None,
     alias: str | None = None,
 ) -> ShellExecResult: ...
+
+
+async def shell_info(
+    process_id: str | None = None,
+    *,
+    alias: str | None = None,
+    limit: int = 50,
+) -> ProcessInfoResult: ...
 
 
 async def shell_wait(
@@ -343,70 +351,43 @@ async def shell_signal(
 ) -> ProcessSignalResult: ...
 ```
 
-`yield_time_seconds` bounds only the initial tool wait. `timeout_seconds` on `shell_exec` is the provider-enforced total process wall-time limit. Completion inside the yield window returns terminal status and bounded stdout/stderr directly without exposing a process reference. If the process remains live, Harness returns a concise reference such as `process-k7m2-1`, current status, initial retained output pages, and the next stdout/stderr offsets. A short yield supports known servers and interactive commands without introducing another execution mode.
+`yield_time_seconds` and `shell_wait.timeout_seconds` bound waiting only. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported. There is no generic default deadline for a backend lacking that guarantee. Foreground-only mounts omit the yield argument. There is no model-selected background mode.
 
-`shell_wait` is the sole process status and output observation tool. A zero timeout is an ordinary non-blocking poll; a positive timeout performs one bounded provider wait before inspecting status and retained output. Reads are non-consuming and use the caller's independent stdout and stderr byte offsets. Repeating the same offsets after cancellation, projection failure, or an uncertain client boundary is valid. Harness keeps no model unread cursor.
+Completion inside the yield window returns observed terminal status and bounded output without a process reference. Otherwise Harness publishes a concise Run-local reference such as `process-a3f1-1`. Process completion depends on native terminal evidence, not completed output producers or tree cleanup. Missing or unknown status does not imply successful completion.
 
-`shell_input` owns only stdin mutation. It reports accepted bytes, resulting stdin state, and bounded current status; it reads no output. `shell_signal` sends `interrupt`, `terminate`, or `kill` and reports acceptance plus bounded current status; final output is always read through `shell_wait`. There is no `shell_status`, output-returning `shell_kill`, reservation, commit, abort, acknowledgement, or output-consumption lock.
+### Query, observation and control
 
-### Private Run controller
+`shell_info()` without an ID requests bounded native discovery on the selected alias/default mount and assigns fresh Run-local references. Repeated discovery deduplicates the same bound native identity. It returns status and optional stdin-state evidence, not native PIDs, arbitrary argv or environment variables. `has_more` describes the bounded projection; no generic stable server cursor is promised. Discovery allocates no output stream and installs no watcher for every listed process.
 
-Every published live process belongs to the exact Harness Run that started it. The private controller allocates a random concise incarnation plus monotonic local sequence and retains only:
+`shell_info(process_id=...)` inspects that reference without waiting or reading output. The reference selects its exact bound mount; a conflicting explicit alias fails. List and inspect require separate actions. A Provider can support inspection without listing. Neither query refreshes, resets or reconnects output.
 
-- the model-facing process reference;
-- the opaque `BoundProcessHandle` from the current entered Environment;
-- one control lock for stdin and signal mutations;
-- one active-Run final-completion watcher; and
-- the latest bounded `ProcessInfo` observation.
+`shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](../agent-environment-provider/02-environment-lifecycle.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
 
-The controller owns no portable process state, backend-ID projection, unread cursor, Host hook, adapter factory, rebind operation, cross-Run lookup, delivery ledger, or stable shutdown API. Process references from an earlier or foreign Run fail without retargeting even when a later Run mounts the same backing target.
+A transient native reconnect preserves the reference and accumulated observation offsets, appends newly observed text and reports partial coverage. A new Run creates fresh references and observations at zero. Target replacement invalidates identities rather than reusing a PID against another sandbox. Capped output remains readable but cannot be reset by querying or waiting.
 
-Process admission is one cancellation-safe boundary:
+`shell_input` mutates UTF-8 stdin/EOF without reading output. `shell_signal` requests only a supported native control action and reports acceptance independently from later exit evidence. Kill support does not imply interrupt/terminate support. Mixed mounts compose the union of tools but each call rechecks its exact selected mount and action before effects.
 
-1. validate the command, exact selected mount incarnation, access ceiling, effective process actions, output bounds, yield, and total timeout;
-2. reserve a never-reused reference from the controller incarnation and sequence;
-3. start through the current bound Environment process facade;
-4. create a provisional entry and install its non-consuming final-completion watcher;
-5. publish the entry only after watcher installation succeeds;
-6. wait up to the yield boundary and read initial retained output from offset zero;
-7. if final completion is observed, construct the terminal result and release the unpublished-to-model live reference;
-8. otherwise return the published reference and next offsets;
-9. on failure or cancellation after provider acceptance but before publication, perform shielded bounded kill/release compensation.
+### Run-local controller and failure
 
-Cancellation after publication does not kill the accepted process merely because the current tool return was lost. The entry remains owned and queryable in the same Run, and Run cleanup remains its final owner boundary. Unknown provider acceptance before a usable bound handle remains Environment reconciliation and adapter-close responsibility.
+The controller owns references, authorized routing, latest bounded observations, serialized local control and optional best-effort completion watchers. It owns no execution database, portable process state, native process lifecycle, unread cursor or Host process operator. Canonical process policy resources are scoped to the mount and native identity rather than a bare PID.
 
-### Explicit-offset output
+Admission reserves a fresh reference, starts once through the authorized Provider and publishes the accepted handle cancellation-safely. Failure after native acceptance does not grant permission to kill or repeat the command. A usable but unpublished observation is released; an uncertain start is reported without replay. Provider state and native discovery own any later recovery.
 
-Each stdout and stderr page reports:
-
-- `requested_offset`, the caller selector;
-- `start_offset`, the first returned retained byte;
-- `next_offset`, the first byte after returned content;
-- `available_start` and `available_end`, the current retained byte range;
-- `produced_bytes`, total bytes observed from that producer;
-- `producer_complete`, whether no later bytes can appear;
-- `content_complete`, whether content faithfully represents the selected retained range; and
-- `omitted_before_bytes`, the unavailable prefix between the requested and returned start offsets.
-
-`next_offset` is derived only from the returned page. Repeating a request can observe the same bytes or a later retention view, but the result never claims omitted bytes were delivered. Harness validates handle identity, mount incarnation, monotonic produced-byte observations, retained ranges, page bounds, and aggregate disclosure limits. Retention overflow is explicit rather than a tool failure. Terminal output remains readable under provider retention bounds until the entry is released or the Run closes.
-
-### Active-Run completion readiness
-
-Each published live process has one non-consuming watcher. Final completion requires a terminal process phase, non-pending cleanup, and completed stdout and stderr producers. While the exact Run still accepts native enqueue input, the watcher emits at most one bounded instruction equivalent to:
+An active watcher polls status without reconnecting streams. After native terminal evidence it may enqueue one bounded hint:
 
 ```text
-Background process process-<ref> has finished and final output is ready. Call shell_wait with the last returned stdout_offset and stderr_offset to read it.
+Background process process-<ref> has exited. Call shell_wait for available output.
 ```
 
-The hint contains no output, provider handle, target identity, credential, native exception, or durable-delivery claim. Enqueue failure, closed-turn timing, watcher cancellation, duplicate observation, and notification loss never change process truth. Explicit `shell_wait` polling remains authoritative and complete.
+The hint contains no output, secret, native handle or durable-delivery promise. Missing/unknown status does not emit an exit hint. Notification loss or cancellation does not change process truth. Published terminal references remain readable until local release or Run close; completion alone does not retire them.
 
-### Run cleanup and state
+### Run cleanup and recovery ownership
 
-Run cleanup closes admission and new controller operations, cancels only Harness watcher tasks, kills every still-live process, waits under provider cleanup bounds, and releases every handle and retained-output object before Environment adapters close. Cleanup failures join the normal Run cleanup aggregate. Repeated caller cancellation cannot abandon accepted cleanup, and cleanup never calls provider `destroy()` or chooses backing-target retention.
+Run cleanup fences admission, cancels local watchers and releases observations through Provider operations before adapters close. It never blanket-kills commands or separately coordinates mandatory standalone output references. Cleanup failures join the normal Run cleanup aggregate. Repeated cancellation cannot abandon accepted cleanup, and cleanup never invokes target destruction.
 
-No process handle, reference, output offset, status mirror, watcher, or cleanup fact enters `AgentContextState`, `HarnessState`, or `EnvironmentState`. A continuation Run starts with an empty controller and a new incarnation; process references retained in messages are historical text, not authority. State import rejects the removed `a13n.dynamic-environment.processes` namespace before Environment entry or any other Run effect.
+A released observation no longer pins mount retirement even if its remote command survives. Native scope-close semantics remain Provider-owned. E2B can preserve commands in a surviving sandbox; Direct Local and Envd-backed Providers retain their actual scope cleanup behavior. Harness never infers persistence from the presence of non-null state.
 
-Cross-Run process lifetime, hosted process operators, post-Run wake, durable process/result storage, and Agent UI process integration are outside this contract. Async subagents remain behind their independent Host-owned operator and share no process lifecycle abstraction.
+No model reference, log offset, status mirror or watcher enters Harness Capability state. Provider `EnvironmentState` remains opaque and owns backend-specific recovery evidence. A later Run starts an empty controller, uses native discovery when supported and rejects references copied from old messages. No Service process table, UI process store, durable wake service or automatic command replay is introduced. Async subagents retain their independent Host operator.
 
 ## Ports
 
@@ -444,14 +425,14 @@ Cleanup aggregates failures without changing lifecycle ownership. A close failur
 12. Harness close never destroys a backing target.
 13. Host state publication is independent from successful Harness checkpoint export.
 14. Model-facing context and tools contain no lifecycle administration, credentials, target IDs, or raw PIDs.
-15. Process-capable `shell_exec` automatically yields a Run-owned process reference when the command does not complete inside its initial wait.
+15. Process-capable `shell_exec` automatically yields a Run-local process reference when the command does not complete inside its initial wait.
 16. Process references are Run-incarnation-qualified, never persisted, reused, rebound, or retargeted.
 17. `shell_wait` uses caller-supplied stdout and stderr offsets; Harness stores no model unread cursor.
 18. Retention omission is explicit, and repeating an offset never falsely claims omitted output was delivered.
-19. Active-Run final-completion readiness is standard best-effort behavior; explicit polling remains authoritative and complete.
-20. Run cleanup kills and releases every remaining process before Environment adapters close.
-21. No process projection, backend ID, offset, status, loss marker, watcher, or readiness fact enters portable Harness or Environment state.
-22. Run-owned shell and async subagents share no Manager, store, projection, observer registry, or shutdown lifecycle.
+19. Active-Run final-completion readiness is standard best-effort behavior; explicit polling remains authoritative.
+20. Run cleanup releases local observations without blanket process termination.
+21. No model reference, offset, status mirror or watcher enters portable Harness state; backend recovery state remains Provider-owned.
+22. Shell observations and async subagents share no Manager, store, projection, observer registry, or shutdown lifecycle.
 23. Environment Run Extensions are fresh Host-selected aggregate scopes, not another Plugin, Capability, or Provider plane.
 
 ## Publishing Live Environment Changes

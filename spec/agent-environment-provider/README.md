@@ -18,12 +18,12 @@ The package performs no durable storage and owns no Agent loop, model-facing Too
 
 ## Document Catalog
 
-| Document                                                             | Owns                                                                                                                    |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md)                                     | Package position, architecture, boundaries, end-to-end flow, dependency direction, and stable principles                |
-| [01-provider-specs-and-catalog.md](01-provider-specs-and-catalog.md) | Provider configuration schemas, inert factory contract, catalog, discovery, authorization, and evolution                |
-| [02-environment-lifecycle.md](02-environment-lifecycle.md)           | `Environment`, `EnvironmentState`, eager/lazy preparation, stop/keepalive/destroy, local scope, failure and concurrency |
-| [03-built-in-providers.md](03-built-in-providers.md)                 | Direct Local, Local Envd, Docker, and E2B configuration, state, entry, close, and destruction behavior                  |
+| Document                                                             | Owns                                                                                                                                                 |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                     | Package position, architecture, boundaries, end-to-end flow, dependency direction, and stable principles                                             |
+| [01-provider-specs-and-catalog.md](01-provider-specs-and-catalog.md) | Provider configuration schemas, inert factory contract, catalog, discovery, authorization, and evolution                                             |
+| [02-environment-lifecycle.md](02-environment-lifecycle.md)           | `Environment`, `EnvironmentState`, eager/lazy preparation, stop/keepalive/destroy, local scope, process/output observations, failure and concurrency |
+| [03-built-in-providers.md](03-built-in-providers.md)                 | Direct Local, Local Envd, Docker, and E2B configuration, state, entry, close, and destruction behavior                                               |
 
 | [04-remote-envd.md](04-remote-envd.md) | External HTTP/WebSocket configuration and state, connect-only lifecycle, and Host-owned reverse WebSocket SDK |
 

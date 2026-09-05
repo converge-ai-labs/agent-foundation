@@ -52,16 +52,9 @@ async def test_capability_state_namespaces_are_typed_and_detached() -> None:
     assert (await state.read("counter", CounterState, version="1")) == CounterState(value=2)
 
 
-def test_state_import_rejects_removed_process_namespace() -> None:
-    with pytest.raises(ValidationError, match="no longer supported"):
-        AgentContextStateSnapshot(
-            entries={
-                "a13n.dynamic-environment.processes": CapabilityState(
-                    version="2",
-                    data={"next_sequence": 2, "processes": {}},
-                )
-            }
-        )
+def test_state_import_preserves_unclaimed_namespaces_as_opaque_values() -> None:
+    snapshot = AgentContextStateSnapshot(entries={"plugin.private": CapabilityState(version="1", data={"value": 2})})
+    assert snapshot.entries["plugin.private"].data == {"value": 2}
 
 
 def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:

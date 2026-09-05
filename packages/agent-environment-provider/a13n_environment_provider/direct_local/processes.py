@@ -8,7 +8,7 @@ import itertools
 import math
 import os
 import signal as os_signal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from secrets import token_hex
@@ -21,6 +21,7 @@ from ..commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessDiscovery,
     ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
@@ -42,6 +43,7 @@ from ..retention import (
     EnvironmentOutputSegment,
     OpaqueProcessHandle,
     _unwrap_opaque,
+    materialize_capture,
 )
 from .retention import LocalRetentionStore, LocalRetentionWriter
 
@@ -167,6 +169,7 @@ class _ProcessRecord:
     release_lock: asyncio.Lock
     status: ProcessStatus
     watcher: asyncio.Task[None] | None = None
+    terminal: asyncio.Event = field(default_factory=asyncio.Event)
     output: ProcessOutputSnapshot | None = None
 
 
@@ -219,18 +222,23 @@ class LocalProcessManager:
                 condition="tree_cleaned",
                 timeout_seconds=self._effective_wall_time(request) + self._policy.terminate_grace_seconds * 2 + 1,
             )
+            assert process.output is not None
             assert process.output.stdout.producer_complete and process.output.stderr.producer_complete
             if request.output_policy.overflow == "fail" and any(
-                capture.produced_bytes > request.output_policy.max_output_bytes
+                capture.produced_bytes is not None and capture.produced_bytes > request.output_policy.max_output_bytes
                 for capture in (process.output.stdout, process.output.stderr)
             ):
                 raise EnvironmentError(
                     "Command output exceeds the requested projection limit.",
                     code="environment_too_large",
                 )
+            stdout, stderr = await asyncio.gather(
+                materialize_capture(self._retention, process.output.stdout, request.output_policy),
+                materialize_capture(self._retention, process.output.stderr, request.output_policy),
+            )
             result = ShellExecResult(
                 status=process.status,
-                output=process.output,
+                output=ProcessOutputSnapshot(stdout=stdout, stderr=stderr),
                 receipt=self._receipt(),
             )
         except asyncio.CancelledError:
@@ -252,6 +260,9 @@ class LocalProcessManager:
             await asyncio.shield(self._release_record(handle, release_outputs=True))
             raise
         return result
+
+    async def list(self, *, limit: int) -> ProcessDiscovery:
+        raise EnvironmentError("Direct Local discovery is unsupported.", code="environment_unsupported")
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
         if os.name != "posix":
@@ -425,7 +436,7 @@ class LocalProcessManager:
         assert stdout is not None and stderr is not None
         stdout_task = asyncio.create_task(record.stdout.consume(stdout))
         stderr_task = asyncio.create_task(record.stderr.consume(stderr))
-        wait_task = asyncio.create_task(record.process.wait())
+        wait_task = asyncio.create_task(self._wait_initial_exit(record.process))
         reason: Literal["exit", "signal", "timeout", "backend_lost"] = "exit"
         try:
             done, _ = await asyncio.wait(
@@ -439,12 +450,6 @@ class LocalProcessManager:
             return_code = record.process.returncode
             if return_code is not None and return_code < 0 and reason == "exit":
                 reason = "signal"
-            await self._cleanup_group(record.process.pid)
-            await asyncio.gather(stdout_task, stderr_task)
-            record.output = ProcessOutputSnapshot(
-                stdout=await record.stdout.finish(),
-                stderr=await record.stderr.finish(),
-            )
             ended_at = datetime.now(UTC)
             if reason == "timeout":
                 phase = "timed_out"
@@ -459,9 +464,17 @@ class LocalProcessManager:
                 signal=_signal_name(return_code),
                 started_at=record.started_at,
                 ended_at=ended_at,
-                cleanup="complete",
+                cleanup="pending",
             )
             record.stdin_open = False
+            record.terminal.set()
+            await self._cleanup_group(record.process.pid)
+            await asyncio.gather(stdout_task, stderr_task)
+            record.output = ProcessOutputSnapshot(
+                stdout=await record.stdout.finish(),
+                stderr=await record.stderr.finish(),
+            )
+            record.status = record.status.model_copy(update={"cleanup": "complete"})
         except BaseException:
             if record.process.returncode is None:
                 await asyncio.shield(self._terminate_process(record.process))
@@ -486,7 +499,15 @@ class LocalProcessManager:
             )
             raise
         finally:
+            record.terminal.set()
             self._slots.release()
+
+    @staticmethod
+    async def _wait_initial_exit(process: asyncio.subprocess.Process) -> None:
+        # asyncio Process.wait can also wait for inherited pipe closure. Native
+        # returncode is the independent root-exit fact, even with live descendants.
+        while process.returncode is None:
+            await asyncio.sleep(0.01)
 
     async def rebind(
         self,
@@ -529,6 +550,7 @@ class LocalProcessManager:
             except TimeoutError:
                 pass
         process = self._info(record)
+        assert process.output is not None
         stdout, stderr = await asyncio.gather(
             self._read_stream(
                 process.output.stdout,
@@ -636,17 +658,15 @@ class LocalProcessManager:
         condition: Literal["initial_terminal", "tree_cleaned"],
         timeout_seconds: float,
     ) -> ProcessInfo:
-        if condition != "tree_cleaned":
-            raise EnvironmentError(
-                "Direct Local supports only tree_cleaned process waits.",
-                code="environment_unsupported",
-            )
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise EnvironmentError("Process wait timeout is invalid.", code="environment_request_invalid")
         record = self._record(handle)
         if record.watcher is not None:
             try:
-                await asyncio.wait_for(asyncio.shield(record.watcher), timeout=timeout_seconds)
+                if condition == "initial_terminal":
+                    await asyncio.wait_for(record.terminal.wait(), timeout=timeout_seconds)
+                else:
+                    await asyncio.wait_for(asyncio.shield(record.watcher), timeout=timeout_seconds)
             except TimeoutError as exc:
                 raise EnvironmentError("Process wait timed out.", code="environment_timeout") from exc
         return self._info(record)
@@ -659,7 +679,11 @@ class LocalProcessManager:
         return ProcessControlResult(process=self._info(record), receipt=self._receipt())
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
-        return await self._release_record(handle, release_outputs=False)
+        record = self._record(handle)
+        if record.status.cleanup == "pending" or record.process.returncode is None:
+            # Native scope ownership remains until adapter close; no Harness blanket kill.
+            return self._receipt()
+        return await self._release_record(handle, release_outputs=True)
 
     async def _release_record(
         self,

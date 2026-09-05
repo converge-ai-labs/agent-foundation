@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import secrets
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
@@ -27,7 +26,6 @@ from .commands import GuestCommands
 from .configuration import PROVIDER_KEY, E2BProviderConfiguration, E2BProviderStateData
 from .errors import provider_error, sdk_errors
 from .files import E2BFiles
-from .output import E2BOutputs
 from .ports import E2BPorts
 from .processes import E2BProcesses
 from .runtime import E2BProviderRuntime
@@ -61,7 +59,6 @@ class E2BEnvironment(Environment):
         self._operations = EnvironmentOperations()
         self._commands: GuestCommands | None = None
         self._processes: E2BProcesses | None = None
-        self._process_owner = "scope-" + secrets.token_hex(12)
 
     @property
     def provider_key(self) -> str:
@@ -168,23 +165,18 @@ class E2BEnvironment(Environment):
         await self._open_operations(sandbox, mount_id)
 
     async def _open_operations(self, sandbox: AsyncSandbox, mount_id: str) -> None:
-        root_token = hashlib.sha256(f"{self._native_id}:{self._configuration.fingerprint}".encode()).hexdigest()[:24]
-        commands = GuestCommands(sandbox, self._configuration, f"/tmp/a13n-{root_token}")
-        prepared = await commands.process("prepare", {}, mutation=True)
-        boot_id = prepared.get("boot_id")
-        if not isinstance(boot_id, str) or not boot_id:
-            raise EnvironmentError("E2B boot identity is missing.", code="environment_provider_failure")
-        commands.boot_id = boot_id
-        commands.generation = (
-            "generation-" + hashlib.sha256(f"{sandbox.sandbox_id}:{boot_id}".encode()).hexdigest()[:24]
-        )
+        commands = GuestCommands(sandbox, self._configuration)
+        commands.generation = "generation-" + hashlib.sha256(sandbox.sandbox_id.encode()).hexdigest()[:24]
         commands.mount_id = mount_id
         files = E2BFiles(commands)
         await files.stat("/")
-        outputs = E2BOutputs(commands)
-        processes = E2BProcesses(commands, outputs, self.environment_id, self._process_owner)
-        if self._processes is not None:
-            await self._processes.disconnect()
+        processes = self._processes
+        if processes is not None:
+            await processes.disconnect()
+        if processes is None or processes.commands.generation != commands.generation:
+            processes = E2BProcesses(commands, self.environment_id)
+        else:
+            processes.commands = commands
         if self._commands is not None:
             self._commands.closed = True
         self._commands = commands
@@ -193,7 +185,6 @@ class E2BEnvironment(Environment):
             files=files,
             shell=processes if not self._configuration.read_only else None,
             processes=processes if not self._configuration.read_only else None,
-            outputs=outputs if not self._configuration.read_only else None,
             ports=E2BPorts(commands),
         )
         self._descriptor = descriptor(self._configuration, commands.generation, sandbox.sandbox_id)
@@ -294,6 +285,7 @@ def descriptor(
     configuration: E2BProviderConfiguration, generation: str = "unprepared", identity: str | None = None
 ) -> EnvironmentDescriptor:
     actions = {action for action in EnvironmentAction if not action.value.startswith("environment.state.")}
+    actions -= {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE}
     if configuration.read_only:
         actions = {
             EnvironmentAction.FILE_STAT,
@@ -314,8 +306,8 @@ def descriptor(
         mounts=(EnvironmentMountDescriptor(name="root", path="/", read_only=configuration.read_only),),
         limits={
             "max_value_bytes": configuration.max_file_bytes,
-            "max_output_bytes": configuration.max_output_bytes,
-            "max_processes": configuration.max_processes,
-            "max_wall_time_seconds": configuration.max_wall_time_seconds,
+            "max_observation_bytes": configuration.max_observation_bytes,
+            "max_active_observations": configuration.max_active_observations,
+            "max_retained_output_bytes": configuration.max_retained_output_bytes,
         },
     )

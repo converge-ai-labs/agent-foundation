@@ -154,7 +154,7 @@ These facts are independent. A result candidate retained by `RunCleanupError` is
 | Environment Provider           | Inert trusted factory constructing fresh Environment adapters without I/O                                       | Provider configuration and state codec                                     |
 | Environment adapter            | Fresh process-local single-target operations and re-entry lifecycle                                             | Provider enforcement and local cleanup                                     |
 | Environment mount              | Lightweight Run input combining an adapter with access, provider working directory, and optional aggregate root | Harness routing and operation scope                                        |
-| Dynamic Environment Capability | Optional Agent-loop context, standard Toolsets, Run-owned processes, and hosted dispatch                        | No provider lifecycle, mount mutation authority, or portable process state |
+| Dynamic Environment Capability | Optional Agent-loop context, standard Toolsets, Run-local process observations, and hosted dispatch             | No provider lifecycle, mount mutation authority, or portable process state |
 
 A hosted system can persist the Harness-owned plugin document and maintain artifact locks without implementing plugin reconstruction itself. Artifact trust, durable revisions, and Environment configuration remain Host contracts. Installed Harness plugin entry-point metadata represents availability only, and importing Harness activates no plugin. Provider specifications, catalogs, `EnvironmentProvider`, `Environment`, `EnvironmentState`, single-Environment operations, and built-ins belong to the separate [Environment Provider package](../agent-environment-provider/README.md); Provider selection and adapter construction remain inert until explicitly invoked.
 
@@ -171,7 +171,7 @@ A hosted system can persist the Harness-owned plugin document and maintain artif
 09. Cancellation, usage limits, output retry exhaustion, tool failure, and deferred/HITL boundaries stop semantic recovery.
 10. Provider and external side-effect uncertainty is never rewritten as exactly-once success or rollback.
 11. Model-facing resource references and aggregate Environment paths are non-authoritative selectors; provider-local paths, trusted identities, and durable identities retain their owning representations.
-12. Shell processes are Run-owned and non-portable; Run cleanup kills and releases them before Environment close.
+12. Shell references are Run-local; cleanup releases observations while Provider state owns native recovery.
 13. Terminal delivery occurs only after cleanup.
 14. Host durability, event projection, telemetry export, external delivery, usage accounting, billing, and payment remain separate facts.
 15. [Harness Observation](19-observation-model.md) independently selects traces and metrics: the Harness owns logical-run and focused-operation telemetry, while Pydantic AI owns its native Agent/model/tool spans and model metrics.

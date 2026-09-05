@@ -340,7 +340,11 @@ def _descriptor(configuration: DirectLocalProviderConfiguration, generation: str
         permissions.add(EnvironmentAction.SHELL_EXEC)
         families.add("shell")
     if process_enabled:
-        permissions.update(action for action in EnvironmentAction if action.value.startswith("environment.process."))
+        permissions.update(
+            action
+            for action in EnvironmentAction
+            if action.value.startswith("environment.process.") and action != EnvironmentAction.PROCESS_LIST
+        )
         permissions.update({EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE})
         families.update({"processes", "outputs"})
     if configuration.allowed_ports:

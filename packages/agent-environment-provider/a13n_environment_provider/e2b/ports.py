@@ -17,7 +17,7 @@ class E2BPorts:
     async def inspect(self, target: PortTarget) -> PortObservation:
         if target.address != "loopback" or target.alias is not None:
             raise EnvironmentError("E2B port inspection requires a loopback port.", code="environment_unsupported")
-        result = await self.commands.process("port", {"port": target.port})
+        result = await self.commands.port(target.port)
         return PortObservation(
             target=target, observed_at=datetime.now(UTC), status="listening" if result["listening"] else "not_listening"
         )

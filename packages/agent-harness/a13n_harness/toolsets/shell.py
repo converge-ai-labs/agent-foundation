@@ -16,7 +16,7 @@ from a13n_harness.environment.commands import (
     CommandRequest,
     ShellCommand,
 )
-from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 from a13n_harness.tools.metadata import (
@@ -30,9 +30,10 @@ from a13n_harness.tools.metadata import (
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
-from .process_manager import _RUN_PROCESS_ACTIONS, _project_status, _RunProcessController
+from .process_manager import _PROCESS_OBSERVATION_ACTIONS, _ProcessController, _project_status
 from .shell_results import (
     OutputPageProjection,
+    ProcessInfoResult,
     ProcessInputResult,
     ProcessObservationResult,
     ProcessSignalResult,
@@ -49,27 +50,21 @@ _NonNegativeTimeout = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
 
 class ShellToolset:
-    """Expose foreground shell or the four-tool Run-owned process surface."""
+    """Expose shell execution and independently authorized process observations."""
 
     def __init__(
         self,
         environment: BoundEnvironment,
         *,
-        process_capable: bool,
         resource_resolver: Callable[[str], ToolResourceResolver] | None = None,
         execution_guard: Callable[[], None] | None = None,
     ) -> None:
         if not isinstance(environment, BoundEnvironment):
             raise TypeError("environment must be a BoundEnvironment")
-        if type(process_capable) is not bool:
-            raise TypeError("process_capable must be a boolean")
         self._environment = environment
-        self._process_capable = process_capable
         self._resource_resolver = resource_resolver
         self._execution_guard = execution_guard
-        self._process_controller = (
-            _RunProcessController(environment, execution_guard=execution_guard) if process_capable else None
-        )
+        self._process_controller = _ProcessController(environment, execution_guard=execution_guard)
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         arbitrary_command_effects: set[ToolEffect] = {
@@ -79,29 +74,29 @@ class ShellToolset:
             "execute",
             "external_communication",
         }
-        shell_callable = self.shell_exec if self._process_capable else self.shell_exec_foreground
-        tools: list[HarnessTool] = [
-            self._tool(
-                shell_callable,
-                "environment.shell_exec",
-                arbitrary_command_effects,
-                "none",
-                name="shell_exec",
-            )
-        ]
-        if self._process_capable:
-            tools.extend(
-                (
-                    self._tool(self.shell_wait, "environment.process_wait", {"read"}, "read_only"),
-                    self._tool(self.shell_input, "environment.process_input", {"write"}, "none"),
-                    self._tool(
-                        self.shell_signal,
-                        "environment.process_signal",
-                        {"delete", "execute"},
-                        "none",
-                    ),
+        process_capable = any(
+            _PROCESS_OBSERVATION_ACTIONS <= mount.permission_ceiling.operations
+            for mount in self._environment.snapshot.mounts
+        )
+        shell_callable = self.shell_exec if process_capable else self.shell_exec_foreground
+        actions = frozenset(
+            action for mount in self._environment.snapshot.mounts for action in mount.permission_ceiling.operations
+        )
+        tools: list[HarnessTool] = []
+        if EnvironmentAction.SHELL_EXEC in actions:
+            tools.append(
+                self._tool(
+                    shell_callable, "environment.shell_exec", arbitrary_command_effects, "none", name="shell_exec"
                 )
             )
+        if actions & {EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT}:
+            tools.append(self._tool(self.shell_info, "environment.process_info", {"read"}, "read_only"))
+        if {EnvironmentAction.PROCESS_WAIT, EnvironmentAction.PROCESS_READ_OUTPUT} <= actions:
+            tools.append(self._tool(self.shell_wait, "environment.process_wait", {"read"}, "read_only"))
+        if actions & {EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_CLOSE_STDIN}:
+            tools.append(self._tool(self.shell_input, "environment.process_input", {"write"}, "none"))
+        if actions & {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.PROCESS_KILL}:
+            tools.append(self._tool(self.shell_signal, "environment.process_signal", {"delete", "execute"}, "none"))
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
@@ -136,7 +131,7 @@ class ShellToolset:
         *,
         cwd: str | None = None,
         environment: Mapping[str, str] | None = None,
-        timeout_seconds: _PositiveTimeout | None = None,
+        execution_timeout_seconds: _PositiveTimeout | None = None,
         alias: str | None = None,
     ) -> ShellExecToolResult:
         """Execute one command to completion and return captured output."""
@@ -146,7 +141,7 @@ class ShellToolset:
                 command,
                 cwd=cwd,
                 environment=environment,
-                timeout_seconds=timeout_seconds,
+                execution_timeout_seconds=execution_timeout_seconds,
                 keep_stdin_open=False,
             )
             return await self._execute_foreground_request(
@@ -202,23 +197,29 @@ class ShellToolset:
         cwd: str | None = None,
         environment: Mapping[str, str] | None = None,
         yield_time_seconds: _NonNegativeTimeout = 10,
-        timeout_seconds: _PositiveTimeout | None = None,
+        execution_timeout_seconds: _PositiveTimeout | None = None,
         alias: str | None = None,
     ) -> ShellExecToolResult:
-        """Start a command and automatically yield a Run-owned process when still live."""
+        """Start a command and automatically yield a Run-local process reference when still live."""
         try:
             request = self._command_request(
                 command,
                 cwd=cwd,
                 environment=environment,
-                timeout_seconds=timeout_seconds,
+                execution_timeout_seconds=execution_timeout_seconds,
                 keep_stdin_open=True,
             )
             mount_id, process_capable = self._environment._select_command_actions(
                 request,
                 alias=alias,
-                actions=_RUN_PROCESS_ACTIONS,
+                actions=_PROCESS_OBSERVATION_ACTIONS,
             )
+            _, input_capable = self._environment._select_command_actions(
+                request,
+                alias=alias,
+                actions=frozenset({EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_CLOSE_STDIN}),
+            )
+            request = request.model_copy(update={"keep_stdin_open": input_capable})
             if not process_capable:
                 self._guard_execution()
                 return await self._execute_foreground_request(
@@ -248,6 +249,21 @@ class ShellToolset:
         except EnvironmentError as exc:
             return cast(ShellExecToolResult, _environment_error_result(exc))
 
+    async def shell_info(
+        self,
+        ctx: RunContext[AgentContext],
+        process_id: str | None = None,
+        *,
+        alias: str | None = None,
+        limit: Annotated[int, Field(ge=1, le=1000)] = 50,
+    ) -> ProcessInfoResult:
+        """List native processes, or inspect one reference, without attaching or resetting output."""
+        del ctx
+        try:
+            return await self._require_process_controller().info(process_id, alias=alias, limit=limit)
+        except EnvironmentError as exc:
+            return cast(ProcessInfoResult, _environment_error_result(exc))
+
     async def shell_wait(
         self,
         ctx: RunContext[AgentContext],
@@ -257,7 +273,7 @@ class ShellToolset:
         stderr_offset: _NonNegativeOffset = 0,
         timeout_seconds: _NonNegativeTimeout = 180,
     ) -> ProcessObservationResult:
-        """Wait boundedly, or poll with zero, then read retained output at explicit offsets."""
+        """Wait boundedly, or poll with zero, then read available output at explicit offsets."""
         try:
             result = await self._require_process_controller().wait(
                 process_id,
@@ -346,7 +362,7 @@ class ShellToolset:
         *,
         cwd: str | None,
         environment: Mapping[str, str] | None,
-        timeout_seconds: float | None,
+        execution_timeout_seconds: float | None,
         keep_stdin_open: bool,
     ) -> CommandRequest:
         try:
@@ -354,12 +370,12 @@ class ShellToolset:
                 command=ShellCommand(profile_id="default", script=command),
                 cwd=cwd,
                 environment=CommandEnvironment(set=dict(environment or {})),
-                limits=CommandLimits(wall_time_seconds=timeout_seconds),
+                limits=CommandLimits(wall_time_seconds=execution_timeout_seconds),
                 keep_stdin_open=keep_stdin_open,
                 output_policy=EnvironmentOutputPolicy(
                     max_inline_bytes=_DEFAULT_INLINE_BYTES,
                     max_output_bytes=_MAX_MODEL_OUTPUT_BYTES,
-                    overflow="retain",
+                    overflow="truncate",
                 ),
             )
         except (TypeError, ValueError) as exc:
@@ -372,7 +388,7 @@ class ShellToolset:
         if self._execution_guard is not None:
             self._execution_guard()
 
-    def _require_process_controller(self) -> _RunProcessController:
+    def _require_process_controller(self) -> _ProcessController:
         controller = self._process_controller
         if controller is None:
             raise EnvironmentError(
@@ -398,6 +414,10 @@ def _project_capture(capture: EnvironmentOutputCapture) -> OutputPageProjection:
         "next_offset": start_offset + len(data),
         "available_start": capture.available_start,
         "available_end": capture.available_end,
+        "origin": capture.origin,
+        "coverage": capture.coverage,
+        "observation_closed": capture.observation_closed,
+        "reason": capture.reason,
         "produced_bytes": capture.produced_bytes,
         "producer_complete": capture.producer_complete,
         "content_complete": capture.content_complete,

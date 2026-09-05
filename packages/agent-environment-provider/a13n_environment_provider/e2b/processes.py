@@ -1,127 +1,111 @@
-"""Native E2B process handles with command-local byte capture."""
+"""Best-effort native E2B commands with Run-local bounded observations."""
 
 from __future__ import annotations
 
 import asyncio
 import math
-import secrets
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from dataclasses import dataclass, field
+from typing import Literal
 
 from ..commands import (
-    ArgvCommand,
     BoundProcessHandle,
     CommandRequest,
     ProcessControlResult,
+    ProcessDiscovery,
     ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
     ProcessReadOutputResult,
     ProcessSignalResult,
     ProcessStartResult,
-    ProcessStreamRead,
+    ProcessStatus,
     ProcessWriteStdinResult,
+    ShellCommand,
     ShellExecResult,
 )
 from ..models import EnvironmentError, EnvironmentOperationReceipt
 from ..retention import BoundOutputCursor, EnvironmentOutputPolicy, OpaqueProcessHandle, _unwrap_opaque
 from .commands import GuestCommands
 from .errors import sdk_errors
-from .output import E2BOutputs, ProcessRecord, validate_process_id
+from .output import CommandObservation, ObservationPool
 
-if TYPE_CHECKING:
-    from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
+_MAX_PROCESS_RECORDS = 100_000
 
 
 @dataclass(slots=True)
 class _Process:
-    policy: EnvironmentOutputPolicy
-    native: AsyncCommandHandle | None = None
+    stdin_open: bool | None = None
+    observation: CommandObservation | None = None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class E2BProcesses:
-    def __init__(self, commands: GuestCommands, outputs: E2BOutputs, environment_id: str, owner: str) -> None:
+    def __init__(self, commands: GuestCommands, environment_id: str) -> None:
         self.commands = commands
-        self.outputs = outputs
         self.environment_id = environment_id
         self._processes: dict[str, _Process] = {}
         self._lock = asyncio.Lock()
-        self._owner = owner
+        config = commands.configuration
+        self._observations = ObservationPool(config.max_active_observations, config.max_retained_output_bytes)
+
+    def _check_record_capacity(self, additional: int) -> None:
+        if len(self._processes) + additional > _MAX_PROCESS_RECORDS:
+            raise EnvironmentError("E2B process reference capacity is exhausted.", code="environment_limit_exceeded")
+
+    def _allocate(self, *, reattached: bool = False) -> CommandObservation:
+        config = self.commands.configuration
+        observation = CommandObservation(
+            limit=config.max_observation_bytes, pool=self._observations, reason="reattached" if reattached else None
+        )
+        self._observations.reserve(observation)
+        return observation
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
         config = self.commands.configuration
+        command = request.command
+        if not isinstance(command, ShellCommand) or command.profile_id != "default" or command.login is False:
+            raise EnvironmentError("E2B supports its native login Bash shell only.", code="environment_unsupported")
+        if request.environment.unset or any(value is not None for value in request.limits.model_dump().values()):
+            raise EnvironmentError("E2B cannot enforce these command guarantees.", code="environment_unsupported")
         if request.network == "deny" and config.allow_internet_access:
             raise EnvironmentError("Per-command network denial is unsupported.", code="environment_unsupported")
-        if any(
-            value is not None
-            for value in (request.limits.process_count, request.limits.memory_bytes, request.limits.cpu_time_seconds)
-        ):
-            raise EnvironmentError("Per-command resource limits are unsupported.", code="environment_unsupported")
-        command = request.command
-        if isinstance(command, ArgvCommand):
-            argv = [command.executable, *command.arguments]
-        else:
-            if command.profile_id != "default":
-                raise EnvironmentError("Unknown E2B shell profile.", code="environment_unsupported")
-            argv = [config.shell, *(["-l"] if command.login else []), "-c", command.script]
+        if len(request.initial_stdin or b"") > 1024 * 1024:
+            raise EnvironmentError("Initial stdin exceeds its request limit.", code="environment_too_large")
         cwd = (await self.commands.files("resolve", {"path": request.cwd or "/"}))["path"]
-        token = f"process-{secrets.token_hex(12)}"
-        stdin_limit = min(request.limits.stdin_bytes or 1024 * 1024, 1024 * 1024)
-        if len(request.initial_stdin or b"") > stdin_limit:
-            raise EnvironmentError("Initial stdin exceeds its limit.", code="environment_too_large")
-        plan = {
-            "owner": self._owner,
-            "boot_id": self.commands.boot_id,
-            "directory": f"{self.commands.root}/{token}",
-            "max_processes": config.max_processes,
-            "argv": argv,
-            "cwd": cwd,
-            "environment": request.environment.model_dump(mode="json"),
-            "wall_time_seconds": min(
-                request.limits.wall_time_seconds or config.max_wall_time_seconds, config.max_wall_time_seconds
-            ),
-            "max_output_bytes": min(request.output_policy.max_output_bytes, config.max_output_bytes),
-            "overflow": request.output_policy.overflow,
-            "stdin_bytes": stdin_limit,
-            "keep_stdin_open": request.keep_stdin_open or bool(request.initial_stdin),
-        }
+        if not isinstance(cwd, str):
+            raise EnvironmentError("E2B returned an invalid working directory.", code="environment_provider_failure")
         async with self._lock:
-            if len(self._processes) >= config.max_processes:
-                raise EnvironmentError("E2B process capacity is exhausted.", code="environment_busy")
-            record = _Process(request.output_policy)
+            self._check_record_capacity(1)
+            observation = self._allocate()
+            try:
+                with sdk_errors(mutation=True):
+                    native = await self.commands.sandbox.commands.run(
+                        command.script,
+                        background=True,
+                        stdin=request.keep_stdin_open or bool(request.initial_stdin),
+                        cwd=cwd,
+                        envs=dict(request.environment.set),
+                        user=config.user,
+                        on_stdout=lambda text: observation.append("stdout", text),
+                        on_stderr=lambda text: observation.append("stderr", text),
+                        timeout=0,
+                        request_timeout=config.request_timeout_seconds,
+                    )
+            except BaseException:
+                self._observations.release(observation)
+                raise
+            token = str(native.pid)
+            record = _Process(
+                stdin_open=request.keep_stdin_open or bool(request.initial_stdin), observation=observation
+            )
             self._processes[token] = record
-        try:
-            with sdk_errors(mutation=True):
-                record.native = await self.commands.sandbox.commands.run(
-                    self.commands.command("runner", plan),
-                    background=True,
-                    stdin=bool(plan["keep_stdin_open"]),
-                    user=config.user,
-                    timeout=0,
-                    request_timeout=config.request_timeout_seconds,
-                )
-            handle = self._handle(token)
-            async with asyncio.timeout(config.request_timeout_seconds):
-                while True:
-                    try:
-                        state = await self.outputs.record(token)
-                        if state.phase != "starting":
-                            break
-                    except EnvironmentError as error:
-                        if error.code != "environment_not_found":
-                            raise
-                        if record.native.exit_code is not None:
-                            self._processes.pop(token, None)
-                            raise EnvironmentError("E2B command admission failed.", code="environment_busy") from None
-                    await asyncio.sleep(0.05)
-            if request.initial_stdin:
-                await self.write_stdin(handle, request.initial_stdin, close_after_write=not request.keep_stdin_open)
-            return ProcessStartResult(process=await self._info(token, state), receipt=self.commands.receipt())
-        except BaseException:
-            # Keep the correlation after uncertain dispatch; close can inspect it, and the guest deadline remains effective.
-            if record.native is None:
-                self._processes.pop(token, None)
-            raise
+            observation.attach(native)
+        handle = self._handle(token)
+        if request.initial_stdin:
+            await self.write_stdin(handle, request.initial_stdin, close_after_write=not request.keep_stdin_open)
+        return ProcessStartResult(
+            process=self._info(token, record, ProcessStatus(phase="running")), receipt=self.commands.receipt()
+        )
 
     def _handle(self, token: str) -> BoundProcessHandle:
         return BoundProcessHandle(
@@ -142,121 +126,90 @@ class E2BProcesses:
             raise EnvironmentError("E2B process handle is foreign or stale.", code="environment_stale_mount")
         record = self._processes.get(token)
         if record is None:
-            raise EnvironmentError("E2B process is unavailable.", code="environment_not_found")
+            raise EnvironmentError("E2B observation is unavailable.", code="environment_not_found")
         return token, record
 
-    async def _info(self, token: str, state: ProcessRecord | None = None) -> ProcessInfo:
-        state = state or await self.outputs.record(token)
-        policy = self._processes[token].policy
-        stdout, stderr = await asyncio.gather(
-            self.outputs.capture(token, "stdout", state, policy), self.outputs.capture(token, "stderr", state, policy)
-        )
+    def _info(self, token: str, record: _Process, status: ProcessStatus) -> ProcessInfo:
+        observation = record.observation
+        if observation is not None and observation.terminal is not None:
+            status = observation.terminal
         return ProcessInfo(
             handle=self._handle(token),
-            status=state.status,
-            stdin_open=state.stdin_open,
-            output=ProcessOutputSnapshot(stdout=stdout, stderr=stderr),
+            status=status,
+            stdin_open=False if status.phase == "exited" else record.stdin_open,
         )
+
+    async def list(self, *, limit: int) -> ProcessDiscovery:
+        if limit <= 0 or limit > 1000:
+            raise EnvironmentError("Invalid process list limit.", code="environment_request_invalid")
+        with sdk_errors():
+            native = await self.commands.sandbox.commands.list(
+                request_timeout=self.commands.configuration.request_timeout_seconds
+            )
+        # The SDK does not paginate. Never project envs, native PIDs or arbitrary argv.
+        selected = [process for process in native if process.tag != "pty"]
+        async with self._lock:
+            self._check_record_capacity(sum(str(process.pid) not in self._processes for process in selected[:limit]))
+            infos = []
+            for process in selected[:limit]:
+                token = str(process.pid)
+                record = self._processes.setdefault(token, _Process())
+                infos.append(self._info(token, record, ProcessStatus(phase="running")))
+        return ProcessDiscovery(processes=tuple(infos), has_more=len(selected) > limit)
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
-        token, _ = self._resolve(handle)
-        return await self._info(token)
+        token, record = self._resolve(handle)
+        if record.observation is not None and record.observation.terminal is not None:
+            return self._info(token, record, record.observation.terminal)
+        with sdk_errors():
+            native = await self.commands.sandbox.commands.list(
+                request_timeout=self.commands.configuration.request_timeout_seconds
+            )
+        phase = "running" if any(str(process.pid) == token for process in native) else "missing"
+        if phase == "missing" and record.observation is not None and not record.observation.closed:
+            # A native end event can still be in flight after disappearance from the running inventory.
+            phase = "unknown"
+        status = ProcessStatus(phase=phase)
+        return self._info(token, record, status)
 
     async def rebind(self, identity: ProcessIdentity, *, output_policy: EnvironmentOutputPolicy) -> ProcessInfo:
-        validate_process_id(identity.process_id)
-        if identity != self._handle(identity.process_id).identity:
-            raise EnvironmentError("E2B process identity is stale.", code="environment_stale_mount")
-        state = ProcessRecord.model_validate(await self.commands.process("rebind", {"process_id": identity.process_id}))
-        self._processes.setdefault(identity.process_id, _Process(output_policy))
-        return await self._info(identity.process_id, state)
+        del output_policy
+        if not identity.process_id.isdecimal() or identity != self._handle(identity.process_id).identity:
+            raise EnvironmentError("E2B process identity is foreign or stale.", code="environment_stale_mount")
+        async with self._lock:
+            self._check_record_capacity(int(identity.process_id not in self._processes))
+            self._processes.setdefault(identity.process_id, _Process())
+        return await self.inspect(self._handle(identity.process_id))
 
-    async def _native(self, token: str, record: _Process) -> AsyncCommandHandle:
-        if record.native is None:
-            state = await self.outputs.record(token)
-            if state.terminal:
-                raise EnvironmentError("E2B process has exited.", code="environment_conflict")
-            with sdk_errors():
-                record.native = await self.commands.sandbox.commands.connect(
-                    state.runner_pid, timeout=0, request_timeout=self.commands.configuration.request_timeout_seconds
-                )
-        return record.native
-
-    async def write_stdin(
-        self, handle: BoundProcessHandle, data: bytes, *, close_after_write: bool = False
-    ) -> ProcessWriteStdinResult:
-        token, record = self._resolve(handle)
-        native = await self._native(token, record)
-        # Reserve once across all adapters; uncertain sends consume quota rather than permitting an overrun.
-        await self.commands.process("reserve_stdin", {"process_id": token, "bytes": len(data)}, mutation=True)
-        with sdk_errors(mutation=True):
-            await native.send_stdin(data, request_timeout=self.commands.configuration.request_timeout_seconds)
-        if close_after_write:
-            await self.close_stdin(handle)
-        return ProcessWriteStdinResult(
-            accepted_bytes=len(data), stdin_open=not close_after_write, receipt=self.commands.receipt()
-        )
-
-    async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
-        token, record = self._resolve(handle)
-        native = await self._native(token, record)
-        with sdk_errors(mutation=True):
-            await native.close_stdin(request_timeout=self.commands.configuration.request_timeout_seconds)
-        return self.commands.receipt()
-
-    async def signal(
-        self, handle: BoundProcessHandle, signal: Literal["interrupt", "terminate"]
-    ) -> ProcessSignalResult:
-        token, _ = self._resolve(handle)
-        await self.commands.process("signal", {"process_id": token, "signal": signal}, mutation=True)
-        return ProcessSignalResult(accepted=True, process=await self.inspect(handle), receipt=self.commands.receipt())
-
-    async def kill(self, handle: BoundProcessHandle) -> ProcessControlResult:
-        token, _ = self._resolve(handle)
-        await self.commands.process("signal", {"process_id": token, "signal": "kill"}, mutation=True)
-        state = await self.wait(handle, condition="initial_terminal", timeout_seconds=10)
-        return ProcessControlResult(process=state, receipt=self.commands.receipt())
-
-    async def wait(
-        self,
-        handle: BoundProcessHandle,
-        *,
-        condition: Literal["initial_terminal", "tree_cleaned"],
-        timeout_seconds: float,
-    ) -> ProcessInfo:
-        if condition not in {"initial_terminal", "tree_cleaned"}:
-            raise EnvironmentError("Unknown E2B wait condition.", code="environment_request_invalid")
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-            raise EnvironmentError("Invalid E2B wait timeout.", code="environment_request_invalid")
-        token, _ = self._resolve(handle)
-        try:
-            async with asyncio.timeout(timeout_seconds):
-                while True:
-                    state = await self.outputs.record(token)
-                    if state.terminal:
-                        return await self._info(token, state)
-                    await asyncio.sleep(0.1)
-        except TimeoutError:
-            raise EnvironmentError("E2B wait timed out.", code="environment_timeout") from None
-
-    async def exec(self, request: CommandRequest) -> ShellExecResult:
-        result = await self.start(request)
-        handle = result.process.handle
-        try:
-            process = await self.wait(
-                handle,
-                condition="initial_terminal",
-                timeout_seconds=self.commands.configuration.max_wall_time_seconds + 10,
-            )
-            result = ShellExecResult(status=process.status, output=process.output, receipt=self.commands.receipt())
-        except BaseException as error:
+    async def _observe(self, token: str, record: _Process) -> CommandObservation:
+        async with record.lock:
+            observation = record.observation
+            if observation is not None:
+                if observation.terminal is not None or observation.capped.is_set() or not observation.closed:
+                    return observation
+                await observation.disconnect()
+                self._observations.reserve(observation)
+                if observation.reason != "observation_evicted":
+                    observation.reason = "reattached"
+            else:
+                observation = self._allocate(reattached=True)
+                record.observation = observation
             try:
-                await asyncio.shield(self.kill(handle))
-                await asyncio.shield(self.release(handle))
-            except Exception:
-                error.add_note("E2B command cleanup failed; the sandbox deadline remains effective.")
-            raise
-        await self.release(handle)
-        return result
+                with sdk_errors():
+                    native = await self.commands.sandbox.commands.connect(
+                        int(token),
+                        on_stdout=lambda text: observation.append("stdout", text),
+                        on_stderr=lambda text: observation.append("stderr", text),
+                        timeout=0,
+                        request_timeout=self.commands.configuration.request_timeout_seconds,
+                    )
+            except BaseException:
+                self._observations.finish(observation)
+                if observation.reason != "observation_evicted":
+                    observation.reason = "connection_lost"
+                raise
+            observation.attach(native)
+            return observation
 
     async def read_output(
         self,
@@ -269,73 +222,143 @@ class E2BProcesses:
         wait_seconds: float = 0,
         policy: EnvironmentOutputPolicy,
     ) -> ProcessReadOutputResult:
-        token, _ = self._resolve(handle)
-        if not math.isfinite(wait_seconds) or wait_seconds < 0:
-            raise EnvironmentError("Invalid E2B output wait.", code="environment_request_invalid")
-        if wait_seconds:
-            await asyncio.sleep(min(wait_seconds, self.commands.configuration.request_timeout_seconds))
-        stdout, stderr = await asyncio.gather(
-            self.outputs.read(
-                self.outputs.reference(token, "stdout"),
-                cursor=stdout_cursor,
-                start_offset=stdout_start_offset,
-                policy=policy,
-            ),
-            self.outputs.read(
-                self.outputs.reference(token, "stderr"),
-                cursor=stderr_cursor,
-                start_offset=stderr_start_offset,
-                policy=policy,
-            ),
-        )
-        state = await self.outputs.record(token)
+        if stdout_cursor is not None or stderr_cursor is not None:
+            raise EnvironmentError("E2B observations use explicit offsets.", code="environment_cursor_invalid")
+        token, record = self._resolve(handle)
+        info = await self.inspect(handle)
+        if info.status.phase != "missing":
+            observation = await self._observe(token, record)
+        else:
+            observation = record.observation
+            if observation is None:
+                observation = CommandObservation(
+                    limit=self.commands.configuration.max_observation_bytes,
+                    pool=self._observations,
+                    reason="connection_lost",
+                )
+        if wait_seconds > 0 and not observation.closed:
+            try:
+                async with asyncio.timeout(wait_seconds):
+                    await observation.changed.wait()
+            except TimeoutError:
+                pass
         return ProcessReadOutputResult(
-            process=await self._info(token, state),
-            stdout=ProcessStreamRead(chunks=stdout.chunks, next_cursor=stdout.next_cursor, capture=stdout.capture),
-            stderr=ProcessStreamRead(chunks=stderr.chunks, next_cursor=stderr.next_cursor, capture=stderr.capture),
+            process=info,
+            stdout=observation.read("stdout", stdout_start_offset or 0, policy),
+            stderr=observation.read("stderr", stderr_start_offset or 0, policy),
+        )
+
+    async def wait(
+        self,
+        handle: BoundProcessHandle,
+        *,
+        condition: Literal["initial_terminal", "tree_cleaned"],
+        timeout_seconds: float,
+    ) -> ProcessInfo:
+        if condition != "initial_terminal":
+            raise EnvironmentError("E2B cannot verify process-tree cleanup.", code="environment_unsupported")
+        if not math.isfinite(timeout_seconds) or timeout_seconds < 0:
+            raise EnvironmentError("Invalid wait timeout.", code="environment_request_invalid")
+        token, record = self._resolve(handle)
+        info = await self.inspect(handle)
+        if info.status.phase in {"exited", "missing"}:
+            return info
+        observation = await self._observe(token, record)
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                while not observation.closed:
+                    observation.changed.clear()
+                    await observation.changed.wait()
+        except TimeoutError:
+            pass
+        return await self.inspect(handle)
+
+    async def write_stdin(
+        self, handle: BoundProcessHandle, data: bytes, *, close_after_write: bool = False
+    ) -> ProcessWriteStdinResult:
+        token, record = self._resolve(handle)
+        if len(data) > 1024 * 1024:
+            raise EnvironmentError("Stdin request is too large.", code="environment_too_large")
+        with sdk_errors(mutation=True):
+            await self.commands.sandbox.commands.send_stdin(
+                int(token), data, request_timeout=self.commands.configuration.request_timeout_seconds
+            )
+        if close_after_write:
+            await self.close_stdin(handle)
+        return ProcessWriteStdinResult(
+            accepted_bytes=len(data), stdin_open=record.stdin_open, receipt=self.commands.receipt()
+        )
+
+    async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
+        token, record = self._resolve(handle)
+        with sdk_errors(mutation=True):
+            await self.commands.sandbox.commands.close_stdin(
+                int(token), request_timeout=self.commands.configuration.request_timeout_seconds
+            )
+        record.stdin_open = False
+        return self.commands.receipt()
+
+    async def signal(
+        self, handle: BoundProcessHandle, signal: Literal["interrupt", "terminate"]
+    ) -> ProcessSignalResult:
+        self._resolve(handle)
+        raise EnvironmentError("E2B supports native kill only.", code="environment_unsupported")
+
+    async def kill(self, handle: BoundProcessHandle) -> ProcessControlResult:
+        token, record = self._resolve(handle)
+        with sdk_errors(mutation=True):
+            accepted = await self.commands.sandbox.commands.kill(
+                int(token), request_timeout=self.commands.configuration.request_timeout_seconds
+            )
+        if not accepted:
+            raise EnvironmentError("Native command is missing.", code="environment_not_found")
+        # Native acceptance is known; later status lookup is an independent observation.
+        return ProcessControlResult(
+            process=self._info(token, record, ProcessStatus(phase="unknown")), receipt=self.commands.receipt()
         )
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
         token, record = self._resolve(handle)
-        state = await self.outputs.record(token)
-        if not state.terminal:
-            raise EnvironmentError("Cannot release a running E2B process.", code="environment_conflict")
-        if record.native is not None:
-            await record.native.disconnect()
-        await self.commands.process("release_process", {"process_id": token}, mutation=True)
-        self._processes.pop(token)
+        async with record.lock:
+            if record.observation is not None:
+                await record.observation.disconnect()
+                self._observations.release(record.observation)
+            self._processes.pop(token, None)
         return self.commands.receipt()
 
     async def disconnect(self) -> None:
-        handles = [record.native for record in self._processes.values() if record.native is not None]
-        try:
-            await asyncio.gather(*(handle.disconnect() for handle in handles))
-        finally:
-            self._processes.clear()
+        for record in self._processes.values():
+            if record.observation is not None:
+                await record.observation.disconnect()
+                if (
+                    record.observation.reason not in {"observation_limit", "observation_evicted"}
+                    and record.observation.terminal is None
+                ):
+                    record.observation.reason = "connection_lost"
 
     async def close(self) -> None:
-        failures: list[Exception] = []
+        await self.disconnect()
+        for record in self._processes.values():
+            if record.observation is not None:
+                self._observations.release(record.observation)
+        self._processes.clear()
+
+    async def exec(self, request: CommandRequest) -> ShellExecResult:
+        started = await self.start(request)
+        handle = started.process.handle
         try:
-            owned = await self.commands.process("owned", {"owner": self._owner})
-            tokens = owned.get("process_ids")
-            if not isinstance(tokens, list) or not all(isinstance(token, str) for token in tokens):
-                raise EnvironmentError("E2B ownership response is invalid.", code="environment_provider_failure")
-            for token in tokens:
-                assert isinstance(token, str)
-                try:
-                    state = await self.outputs.record(token)
-                    if not state.terminal:
-                        await self.commands.process("signal", {"process_id": token, "signal": "kill"}, mutation=True)
-                        async with asyncio.timeout(10):
-                            while not (await self.outputs.record(token)).terminal:
-                                await asyncio.sleep(0.1)
-                    await self.commands.process("release", {"process_id": token}, mutation=True)
-                except EnvironmentError as error:
-                    if error.code != "environment_not_found":
-                        failures.append(error)
-                except Exception as error:
-                    failures.append(error)
+            while True:
+                info = await self.wait(handle, condition="initial_terminal", timeout_seconds=1)
+                _, record = self._resolve(handle)
+                observation = record.observation
+                assert observation is not None
+                if info.status.phase != "running" or observation.closed:
+                    stdout = observation.materialize("stdout", request.output_policy)
+                    stderr = observation.materialize("stderr", request.output_policy)
+                    return ShellExecResult(
+                        status=info.status,
+                        output=ProcessOutputSnapshot(stdout=stdout, stderr=stderr),
+                        receipt=started.receipt,
+                    )
         finally:
-            await self.disconnect()
-        if failures:
-            raise ExceptionGroup("E2B process cleanup failed", failures)
+            await self.release(handle)

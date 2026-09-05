@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_environment_provider import (
@@ -17,6 +18,7 @@ from a13n_environment_provider import (
     DirectLocalShellProfile,
     EnvironmentOutputCapture,
     EnvironmentOutputSegment,
+    ProcessDiscovery,
     ProcessStreamRead,
 )
 from a13n_harness import RunBindings
@@ -29,8 +31,8 @@ from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntimeMount
 from a13n_harness.toolsets.process_manager import (
     _await_cleanup_shielded,
+    _ProcessController,
     _project_stream,
-    _RunProcessController,
     _validate_stream,
 )
 from a13n_harness.toolsets.shell import ShellToolset
@@ -76,7 +78,10 @@ def _ctx() -> Any:
 
 
 @asynccontextmanager
-async def _bound_process_environment(root: Path) -> AsyncIterator[BoundEnvironment]:
+async def _bound_process_environment(
+    root: Path,
+    operations: frozenset[EnvironmentAction] | None = None,
+) -> AsyncIterator[BoundEnvironment]:
     runtime = create_environment_runtime(
         mounts={
             "local": EnvironmentRuntimeMount(
@@ -95,7 +100,7 @@ async def _bound_process_environment(root: Path) -> AsyncIterator[BoundEnvironme
                     environment_id="run-process-test",
                 ),
                 permission_ceiling=EnvironmentPermissionSet(
-                    operations=frozenset(EnvironmentAction),
+                    operations=frozenset(EnvironmentAction) if operations is None else operations,
                 ),
                 working_directory="/",
             )
@@ -117,7 +122,7 @@ async def test_shell_exec_returns_no_id_for_quick_completion_and_run_id_for_live
     tmp_path: Path,
 ) -> None:
     async with _bound_process_environment(tmp_path) as environment:
-        toolset = ShellToolset(environment, process_capable=True)
+        toolset = ShellToolset(environment)
         ctx = _ctx()
 
         quick = await toolset.shell_exec(ctx, "printf quick", yield_time_seconds=2)
@@ -154,7 +159,7 @@ async def test_shell_exec_returns_no_id_for_quick_completion_and_run_id_for_live
 
 async def test_shell_wait_repeats_output_for_repeated_explicit_offsets(tmp_path: Path) -> None:
     async with _bound_process_environment(tmp_path) as environment:
-        toolset = ShellToolset(environment, process_capable=True)
+        toolset = ShellToolset(environment)
         ctx = _ctx()
         started = await toolset.shell_exec(
             ctx,
@@ -198,7 +203,7 @@ async def test_shell_wait_repeats_output_for_repeated_explicit_offsets(tmp_path:
 
 async def test_shell_input_and_signal_mutate_without_returning_output(tmp_path: Path) -> None:
     async with _bound_process_environment(tmp_path) as environment:
-        toolset = ShellToolset(environment, process_capable=True)
+        toolset = ShellToolset(environment)
         ctx = _ctx()
         started = await toolset.shell_exec(
             ctx,
@@ -226,7 +231,7 @@ async def test_shell_input_and_signal_mutate_without_returning_output(tmp_path: 
 
 async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_path: Path) -> None:
     async with _bound_process_environment(tmp_path) as environment:
-        toolset = ShellToolset(environment, process_capable=True)
+        toolset = ShellToolset(environment)
         ctx = _ctx()
 
         async def run_commands() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -242,9 +247,7 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
         process_id = cast(str, live["process_id"])
         assert ctx.deps._steering.notifications == [
             (
-                f"Background process {process_id} has finished. "
-                "Call shell_wait with your last returned stdout_offset and stderr_offset "
-                "to inspect its final output.",
+                f"Background process {process_id} has exited. Call shell_wait for available output.",
                 "background_process",
                 (process_id,),
             )
@@ -252,16 +255,16 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
         await toolset.close()
 
 
-async def test_cancellation_after_publication_keeps_process_owned_until_controller_close(
+async def test_cancellation_after_publication_releases_observation_without_killing_process(
     tmp_path: Path,
 ) -> None:
     async with _bound_process_environment(tmp_path) as environment:
-        controller = _RunProcessController(environment)
+        controller = _ProcessController(environment)
         request = ShellToolset._command_request(
             "sleep 30",
             cwd=None,
             environment=None,
-            timeout_seconds=None,
+            execution_timeout_seconds=None,
             keep_stdin_open=True,
         )
         start_task = asyncio.create_task(controller.start(request, alias=None, yield_time_seconds=30))
@@ -279,19 +282,18 @@ async def test_cancellation_after_publication_keeps_process_owned_until_controll
 
         await controller.close()
         assert not controller._entries
-        with pytest.raises(EnvironmentError):
-            await environment.processes.inspect(handle)
+        assert (await environment.processes.inspect(handle)).status.phase == "running"
 
 
 async def test_process_references_are_run_local_and_cleanup_is_idempotent(tmp_path: Path) -> None:
     async with _bound_process_environment(tmp_path) as environment:
-        first = _RunProcessController(environment)
-        second = _RunProcessController(environment)
+        first = _ProcessController(environment)
+        second = _ProcessController(environment)
         request = ShellToolset._command_request(
             "sleep 30",
             cwd=None,
             environment=None,
-            timeout_seconds=None,
+            execution_timeout_seconds=None,
             keep_stdin_open=True,
         )
         started = await first.start(request, alias=None, yield_time_seconds=0)
@@ -311,7 +313,7 @@ async def test_process_references_are_run_local_and_cleanup_is_idempotent(tmp_pa
         await second.close()
 
 
-async def test_admission_failure_after_start_compensates_with_kill_and_release(
+async def test_admission_failure_after_start_releases_without_implying_kill(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -346,13 +348,13 @@ async def test_admission_failure_after_start_compensates_with_kill_and_release(
                 del key, value
                 raise RuntimeError("entry publication failed")
 
-        controller = _RunProcessController(environment)
+        controller = _ProcessController(environment)
         controller._entries = FailingEntries()
         request = ShellToolset._command_request(
             "sleep 30",
             cwd=None,
             environment=None,
-            timeout_seconds=None,
+            execution_timeout_seconds=None,
             keep_stdin_open=True,
         )
 
@@ -360,10 +362,9 @@ async def test_admission_failure_after_start_compensates_with_kill_and_release(
             await controller.start(request, alias=None, yield_time_seconds=0)
 
         assert len(handles) == 1
-        assert killed == handles
+        assert killed == []
         assert released == handles
-        with pytest.raises(EnvironmentError):
-            await processes.inspect(handles[0])
+        assert (await processes.inspect(handles[0])).status.phase == "running"
         await controller.close()
 
 
@@ -461,7 +462,7 @@ async def test_quick_large_output_is_recoverable_through_disclosure(tmp_path: Pa
                 spilled.append(data)
                 return "/workspace/.a13n/tool-results/quick.json"
 
-        toolset = ShellToolset(environment, process_capable=True)
+        toolset = ShellToolset(environment)
         ctx = SimpleNamespace(deps=SpillDeps())
         result = await toolset.shell_exec(
             ctx,
@@ -479,12 +480,12 @@ async def test_quick_large_output_is_recoverable_through_disclosure(tmp_path: Pa
 
 async def test_stale_running_snapshot_cannot_replace_terminal_status(tmp_path: Path) -> None:
     async with _bound_process_environment(tmp_path) as environment:
-        controller = _RunProcessController(environment)
+        controller = _ProcessController(environment)
         request = ShellToolset._command_request(
             "sleep 30",
             cwd=None,
             environment=None,
-            timeout_seconds=None,
+            execution_timeout_seconds=None,
             keep_stdin_open=True,
         )
         started = await controller.start(request, alias=None, yield_time_seconds=0)
@@ -499,3 +500,152 @@ async def test_stale_running_snapshot_cannot_replace_terminal_status(tmp_path: P
         controller._adopt_info(entry, running, baseline=running)
         assert entry.latest is terminal
         await controller.close()
+
+
+async def test_observation_does_not_require_stdin_signals_or_standalone_outputs(tmp_path: Path) -> None:
+    operations = frozenset(
+        {
+            EnvironmentAction.SHELL_EXEC,
+            EnvironmentAction.PROCESS_START,
+            EnvironmentAction.PROCESS_INSPECT,
+            EnvironmentAction.PROCESS_READ_OUTPUT,
+            EnvironmentAction.PROCESS_WAIT,
+            EnvironmentAction.PROCESS_RELEASE,
+        }
+    )
+    async with _bound_process_environment(tmp_path, operations) as environment:
+        toolset = ShellToolset(environment)
+        assert set(toolset.get_toolset().tools) == {"shell_exec", "shell_info", "shell_wait"}
+        result = await toolset.shell_exec(_ctx(), "sleep 0.05; printf observed", yield_time_seconds=0)
+        assert result["ok"]
+        ref = result["process_id"]
+        final = await toolset.shell_wait(_ctx(), ref, timeout_seconds=2)
+        assert final["ok"]
+        assert final["stdout"]["text"] == "observed"
+        inspected = await toolset.shell_info(_ctx(), ref, alias="local")
+        assert inspected["ok"]
+        assert "stdout" not in inspected
+        listing = await toolset.shell_info(_ctx())
+        assert not listing["ok"]
+        await toolset.close()
+
+
+async def test_foreground_capture_requires_only_shell_execution(tmp_path: Path) -> None:
+    async with _bound_process_environment(tmp_path, frozenset({EnvironmentAction.SHELL_EXEC})) as environment:
+        toolset = ShellToolset(environment)
+        assert set(toolset.get_toolset().tools) == {"shell_exec"}
+        result = await toolset.shell_exec_foreground(_ctx(), "printf captured")
+        assert result["ok"]
+        assert result["stdout"]["text"] == "captured"
+        await toolset.close()
+
+
+async def test_native_exit_is_observable_before_tree_cleanup_and_output_completion(tmp_path: Path, monkeypatch) -> None:
+    from a13n_environment_provider.direct_local.processes import LocalProcessManager
+
+    cleanup_started = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    original = LocalProcessManager._cleanup_group
+
+    async def delayed_cleanup(self, pid):
+        cleanup_started.set()
+        await cleanup_release.wait()
+        await original(self, pid)
+
+    monkeypatch.setattr(LocalProcessManager, "_cleanup_group", delayed_cleanup)
+    async with _bound_process_environment(tmp_path) as environment:
+        request = ShellToolset._command_request(
+            "sleep 30 & printf exited",
+            cwd=None,
+            environment=None,
+            execution_timeout_seconds=None,
+            keep_stdin_open=False,
+        )
+        started = await environment.processes.start(request)
+        try:
+            await asyncio.wait_for(cleanup_started.wait(), timeout=2)
+            info = await environment.processes.wait(
+                started.process.handle, condition="initial_terminal", timeout_seconds=1
+            )
+            assert info.status.phase == "exited"
+            assert info.status.exit_code == 0
+            assert info.status.cleanup == "pending"
+            assert info.output is not None
+            assert not info.output.stdout.producer_complete
+        finally:
+            cleanup_release.set()
+        final = await environment.processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=2)
+        assert final.status.cleanup == "complete"
+        await environment.processes.release(started.process.handle)
+
+
+async def test_input_close_permission_is_checked_before_writing(tmp_path: Path, monkeypatch) -> None:
+    from a13n_environment_provider.direct_local.processes import LocalProcessManager
+
+    writes = []
+    original = LocalProcessManager.write_stdin
+
+    async def observe_write(self, handle, data, **kwargs):
+        writes.append(data)
+        return await original(self, handle, data, **kwargs)
+
+    monkeypatch.setattr(LocalProcessManager, "write_stdin", observe_write)
+    operations = frozenset(EnvironmentAction) - {EnvironmentAction.PROCESS_CLOSE_STDIN}
+    async with _bound_process_environment(tmp_path, operations) as environment:
+        toolset = ShellToolset(environment)
+        request = ShellToolset._command_request(
+            "cat",
+            cwd=None,
+            environment=None,
+            execution_timeout_seconds=None,
+            keep_stdin_open=True,
+        )
+        started = await toolset._require_process_controller().start(request, alias=None, yield_time_seconds=0)
+        result = await toolset.shell_input(_ctx(), started["process_id"], "not-written", close_stdin=True)
+        assert not result["ok"]
+        assert result["error"]["code"] == "environment_denied"
+        assert writes == []
+        await toolset.close()
+
+
+async def test_input_acceptance_survives_later_status_lookup_failure(tmp_path: Path, monkeypatch) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        started = await toolset.shell_exec(_ctx(), "cat", yield_time_seconds=0)
+
+        async def unavailable(handle):
+            raise EnvironmentError("Temporarily unavailable.", code="environment_unavailable")
+
+        monkeypatch.setattr(environment.processes, "inspect", unavailable)
+        result = await toolset.shell_input(_ctx(), started["process_id"], "accepted\n")
+        assert result["ok"]
+        assert result["accepted_bytes"] == len(b"accepted\n")
+        assert result["status"]["phase"] == "unknown"
+        await toolset.close()
+
+
+async def test_discovered_reference_cleanup_tolerates_retired_mount_but_inspect_is_stale(
+    tmp_path: Path, monkeypatch
+) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        request = ShellToolset._command_request(
+            "sleep 30",
+            cwd=None,
+            environment=None,
+            execution_timeout_seconds=None,
+            keep_stdin_open=False,
+        )
+        started = await environment.processes.start(request)
+        await environment.processes.release(started.process.handle)
+        monkeypatch.setattr(
+            environment.processes, "list", AsyncMock(return_value=ProcessDiscovery(processes=(started.process,)))
+        )
+        toolset = ShellToolset(environment)
+        listing = await toolset.shell_info(_ctx())
+        reference = listing["processes"][0]["process_id"]
+        await environment._runtime.unmount("local")
+        await asyncio.gather(*environment._retirement_tasks)
+        inspected = await toolset.shell_info(_ctx(), reference)
+        assert not inspected["ok"]
+        assert inspected["error"]["code"] == "environment_stale_mount"
+        await toolset.close()

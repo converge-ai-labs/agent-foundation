@@ -44,6 +44,7 @@ def test_every_model_facing_function_tool_has_an_explicit_result_contract() -> N
         },
         ShellToolset: {
             "shell_exec",
+            "shell_info",
             "shell_wait",
             "shell_input",
             "shell_signal",

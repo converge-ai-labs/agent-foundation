@@ -1,9 +1,10 @@
-"""Private Run-owned process controller over the entered Environment."""
+"""Private Run-local process observation controller over the entered Environment."""
 
 from __future__ import annotations
 
 import asyncio
 import codecs
+import hashlib
 import re
 import secrets
 from collections import OrderedDict
@@ -32,10 +33,13 @@ from a13n_harness.environment.retention import EnvironmentOutputCapture, Environ
 from .output import tool_output_size
 from .shell_results import (
     OutputPageProjection,
+    ProcessInfoSuccess,
     ProcessInputSuccess,
+    ProcessListSuccess,
     ProcessObservationSuccess,
     ProcessSignalSuccess,
     ProcessStatusProjection,
+    ProcessSummaryProjection,
     ShellExecSuccess,
 )
 
@@ -45,19 +49,14 @@ _MAX_REFERENCE_ENTRIES = 100_000
 _MAX_PROJECTED_OUTPUT_CHARS = 10_500
 _REFERENCE_PATTERN = re.compile(r"^process-([0-9a-f]{4})-([1-9][0-9]*)$")
 _TERMINAL_PHASES = frozenset({"exited", "signaled", "timed_out", "cancelled", "failed"})
-_RUN_PROCESS_ACTIONS = frozenset(
+_PROCESS_OBSERVATION_ACTIONS = frozenset(
     {
         EnvironmentAction.SHELL_EXEC,
         EnvironmentAction.PROCESS_START,
         EnvironmentAction.PROCESS_INSPECT,
         EnvironmentAction.PROCESS_READ_OUTPUT,
-        EnvironmentAction.PROCESS_WRITE_STDIN,
-        EnvironmentAction.PROCESS_CLOSE_STDIN,
-        EnvironmentAction.PROCESS_SIGNAL,
         EnvironmentAction.PROCESS_WAIT,
-        EnvironmentAction.PROCESS_KILL,
         EnvironmentAction.PROCESS_RELEASE,
-        EnvironmentAction.OUTPUT_RELEASE,
     }
 )
 
@@ -70,10 +69,11 @@ class _ProcessEntry:
     control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     watcher: asyncio.Task[None] | None = None
     model_visible: asyncio.Event = field(default_factory=asyncio.Event)
+    discovered: bool = False
 
 
-class _RunProcessController:
-    """Own process references and cleanup for one logical Harness Run."""
+class _ProcessController:
+    """Own process references and observations for one logical Harness Run."""
 
     def __init__(
         self,
@@ -104,7 +104,9 @@ class _RunProcessController:
 
     def resource_id(self, process_id: str) -> str:
         """Resolve a model selector to a private provider process identity."""
-        return self._entry(process_id).handle.identity.process_id
+        handle = self._entry(process_id).handle
+        identity = f"{handle.mount_id}:{handle.identity.model_dump_json()}"
+        return "process-" + hashlib.sha256(identity.encode()).hexdigest()[:24]
 
     async def start(
         self,
@@ -123,7 +125,7 @@ class _RunProcessController:
             started = await self._environment.processes.start(
                 request,
                 alias=alias,
-                required_actions=_RUN_PROCESS_ACTIONS,
+                required_actions=_PROCESS_OBSERVATION_ACTIONS,
                 expected_mount_id=expected_mount_id,
             )
             entry = _ProcessEntry(
@@ -139,7 +141,7 @@ class _RunProcessController:
                 self._entries[process_id] = entry
                 published = True
             except BaseException:
-                await _await_cleanup_shielded(self._kill_and_release(entry))
+                await _await_cleanup_shielded(self._release_observation(entry))
                 raise
 
         assert entry is not None
@@ -149,7 +151,7 @@ class _RunProcessController:
                     baseline = entry.latest
                     waited = await self._environment.processes.wait(
                         entry.handle,
-                        condition="tree_cleaned",
+                        condition="initial_terminal",
                         timeout_seconds=yield_time_seconds,
                     )
                     self._adopt_info(entry, waited, baseline=baseline)
@@ -170,7 +172,7 @@ class _RunProcessController:
             return _shell_exec_result(process_id, observation)
         except BaseException:
             if not published:
-                await _await_cleanup_shielded(self._kill_and_release(entry))
+                await _await_cleanup_shielded(self._release_observation(entry))
             raise
 
     async def wait(
@@ -196,6 +198,48 @@ class _RunProcessController:
             stderr_offset=stderr_offset,
         )
 
+    async def info(
+        self, process_id: str | None, *, alias: str | None, limit: int
+    ) -> ProcessInfoSuccess | ProcessListSuccess:
+        self._guard_execution()
+        if process_id is not None:
+            entry = self._entry(process_id)
+            if alias is not None:
+                selected = self._environment.resolve_path(".", alias=alias)
+                if selected.mount_id != entry.handle.mount_id:
+                    raise EnvironmentError(
+                        "Process reference conflicts with alias.", code="environment_request_invalid"
+                    )
+            inspected = await self._environment.processes.inspect(entry.handle)
+            self._adopt_info(entry, inspected)
+            return {
+                "ok": True,
+                "process_id": process_id,
+                "status": _project_status(entry.latest.status),
+                "stdin_open": entry.latest.stdin_open,
+            }
+        async with self._admission_lock:
+            self._assert_open()
+            result = await self._environment.processes.list(alias=alias, limit=limit)
+            items: list[ProcessSummaryProjection] = []
+            for info in result.processes:
+                entry = next((item for item in self._entries.values() if item.handle == info.handle), None)
+                if entry is None:
+                    ref = self._reserve_reference()
+                    entry = _ProcessEntry(process_id=ref, handle=info.handle, latest=info, discovered=True)
+                    entry.model_visible.set()
+                    self._entries[ref] = entry
+                else:
+                    self._adopt_info(entry, info)
+                items.append(
+                    {
+                        "process_id": entry.process_id,
+                        "status": _project_status(entry.latest.status),
+                        "stdin_open": entry.latest.stdin_open,
+                    }
+                )
+            return {"ok": True, "processes": items, "has_more": result.has_more}
+
     async def write_input(
         self,
         process_id: str,
@@ -209,17 +253,26 @@ class _RunProcessController:
             self._require_live(entry)
             encoded = data.encode("utf-8")
             accepted_bytes = 0
+            stdin_open = entry.latest.stdin_open
             if encoded:
                 result = await self._environment.processes.write_stdin(
                     entry.handle,
                     encoded,
-                    close_after_write=False,
+                    close_after_write=close_stdin,
                 )
                 accepted_bytes = result.accepted_bytes
-            if close_stdin:
+                stdin_open = result.stdin_open
+            elif close_stdin:
                 await self._environment.processes.close_stdin(entry.handle)
+                stdin_open = False
             baseline = entry.latest
-            inspected = await self._environment.processes.inspect(entry.handle)
+            try:
+                inspected = await self._environment.processes.inspect(entry.handle)
+            except EnvironmentError:
+                # A later observation failure cannot erase accepted input or invite replay.
+                inspected = baseline.model_copy(
+                    update={"status": ProcessStatus(phase="unknown"), "stdin_open": stdin_open}
+                )
             self._adopt_info(entry, inspected, baseline=baseline)
         return {
             "ok": True,
@@ -268,7 +321,7 @@ class _RunProcessController:
                 baseline = entry.latest
                 waited = await self._environment.processes.wait(
                     entry.handle,
-                    condition="tree_cleaned",
+                    condition="initial_terminal",
                     timeout_seconds=wait_seconds,
                 )
                 self._adopt_info(entry, waited, baseline=baseline)
@@ -286,7 +339,7 @@ class _RunProcessController:
             policy=EnvironmentOutputPolicy(
                 max_inline_bytes=(_MAX_MODEL_OUTPUT_BYTES if _is_final(entry.latest) else _DEFAULT_INLINE_BYTES),
                 max_output_bytes=_MAX_MODEL_OUTPUT_BYTES,
-                overflow="retain",
+                overflow="truncate",
             ),
         )
         self._validate_output(
@@ -309,38 +362,25 @@ class _RunProcessController:
 
     async def _watch(self, entry: _ProcessEntry) -> None:
         try:
-            while True:
-                try:
-                    baseline = entry.latest
-                    waited = await self._environment.processes.wait(
-                        entry.handle,
-                        condition="tree_cleaned",
-                        timeout_seconds=180,
-                    )
-                    self._adopt_info(entry, waited, baseline=baseline)
-                    if _is_final(entry.latest):
-                        break
-                except EnvironmentError as exc:
-                    if exc.code != "environment_timeout":
-                        return
+            while not _is_final(entry.latest):
+                await asyncio.sleep(1)
+                inspected = await self._environment.processes.inspect(entry.handle)
+                self._adopt_info(entry, inspected)
+                if inspected.status.phase in {"unknown", "missing"}:
+                    return
             await entry.model_visible.wait()
             if self._entries.get(entry.process_id) is not entry or self._closed:
                 return
-            context = self._context
-            if context is not None:
-                await context._steering.notify(
-                    (
-                        f"Background process {entry.process_id} has finished. "
-                        "Call shell_wait with your last returned stdout_offset and "
-                        "stderr_offset to inspect its final output."
-                    ),
+            if self._context is not None:
+                await self._context._steering.notify(
+                    f"Background process {entry.process_id} has exited. Call shell_wait for available output.",
                     source="background_process",
                     references=(entry.process_id,),
                 )
         except asyncio.CancelledError:
             raise
         except Exception:
-            # Readiness is advisory. Explicit shell_wait polling remains authoritative.
+            # Readiness is advisory; only explicit wait/output requests may reconnect.
             return
 
     async def _retire(self, entry: _ProcessEntry) -> None:
@@ -368,56 +408,32 @@ class _RunProcessController:
         failures: list[BaseException] = []
         for entry in entries:
             try:
-                await self._kill_and_release(entry)
+                await self._release_observation(entry)
             except BaseException as exc:
                 failures.append(exc)
             finally:
                 if self._entries.get(entry.process_id) is entry:
                     self._entries.pop(entry.process_id, None)
         if failures:
-            raise BaseExceptionGroup("Run-owned process cleanup failed", failures)
+            raise BaseExceptionGroup("Run-local process observation cleanup failed", failures)
 
-    async def _kill_and_release(self, entry: _ProcessEntry) -> None:
+    async def _release_observation(self, entry: _ProcessEntry) -> None:
         watcher = entry.watcher
         if watcher is not None and watcher is not asyncio.current_task() and not watcher.done():
             watcher.cancel()
             await asyncio.gather(watcher, return_exceptions=True)
-        failures: list[BaseException] = []
-        try:
-            if not _is_final(entry.latest):
-                baseline = entry.latest
-                result = await self._environment.processes.kill(entry.handle)
-                self._adopt_info(entry, result.process, baseline=baseline)
-        except EnvironmentError as exc:
-            if exc.code != "environment_not_found":
-                failures.append(exc)
-        try:
-            await self._release_owned_resources(entry)
-        except BaseException as exc:
-            failures.append(exc)
-        if failures:
-            raise BaseExceptionGroup("Run-owned process resource cleanup failed", failures)
+        await self._release_owned_resources(entry)
 
     async def _release_owned_resources(self, entry: _ProcessEntry) -> None:
-        failures: list[BaseException] = []
         try:
             await self._environment.processes.release(entry.handle)
         except EnvironmentError as exc:
+            if exc.code in {"environment_denied", "environment_stale_mount"} and entry.discovered:
+                # Discovery itself creates no output attachment. Provider scope close
+                # owns lazy observations without release authority or after retirement.
+                return
             if exc.code != "environment_not_found":
-                failures.append(exc)
-        references = []
-        for capture in (entry.latest.output.stdout, entry.latest.output.stderr):
-            reference = capture.reference
-            if reference is not None and reference not in references:
-                references.append(reference)
-        for reference in references:
-            try:
-                await self._environment.outputs.release(reference=reference)
-            except EnvironmentError as exc:
-                if exc.code != "environment_not_found":
-                    failures.append(exc)
-        if failures:
-            raise BaseExceptionGroup("Run-owned process release failed", failures)
+                raise
 
     def _adopt_info(
         self,
@@ -431,27 +447,9 @@ class _RunProcessController:
                 "The process provider returned a mismatched handle.",
                 code="environment_provider_failure",
             )
-        expected = (baseline or entry.latest).output
-        current = info.output
-        if (
-            current.stdout.produced_bytes < expected.stdout.produced_bytes
-            or current.stderr.produced_bytes < expected.stderr.produced_bytes
-        ):
-            raise EnvironmentError(
-                "The process provider returned non-monotonic output metadata.",
-                code="environment_provider_failure",
-            )
-        _validate_capture(current.stdout)
-        _validate_capture(current.stderr)
-        latest_info = entry.latest
-        if latest_info.status.phase in _TERMINAL_PHASES and info.status.phase not in _TERMINAL_PHASES:
+        if entry.latest.status.phase in _TERMINAL_PHASES and info.status.phase not in _TERMINAL_PHASES:
             return
-        latest = latest_info.output
-        if (
-            current.stdout.produced_bytes >= latest.stdout.produced_bytes
-            and current.stderr.produced_bytes >= latest.stderr.produced_bytes
-        ):
-            entry.latest = info
+        entry.latest = info
 
     def _validate_output(
         self,
@@ -469,14 +467,6 @@ class _RunProcessController:
             )
         _validate_stream(output.stdout, requested_offset=stdout_offset)
         _validate_stream(output.stderr, requested_offset=stderr_offset)
-        if (
-            output.stdout.capture.produced_bytes < minimum_info.output.stdout.produced_bytes
-            or output.stderr.capture.produced_bytes < minimum_info.output.stderr.produced_bytes
-        ):
-            raise EnvironmentError(
-                "The process provider returned non-monotonic output page metadata.",
-                code="environment_provider_failure",
-            )
         if sum(len(chunk.data) for chunk in (*output.stdout.chunks, *output.stderr.chunks)) > (
             2 * _MAX_MODEL_OUTPUT_BYTES
         ):
@@ -542,12 +532,14 @@ def _project_status(status: ProcessStatus) -> ProcessStatusProjection:
 
 
 def _validate_capture(capture: EnvironmentOutputCapture) -> None:
-    if not (0 <= capture.available_start <= capture.available_end <= capture.produced_bytes):
+    if not (0 <= capture.available_start <= capture.available_end) or (
+        capture.produced_bytes is not None and capture.available_end > capture.produced_bytes
+    ):
         raise EnvironmentError(
             "The process provider returned an invalid retained-output range.",
             code="environment_provider_failure",
         )
-    if capture.captured_bytes > capture.produced_bytes:
+    if capture.produced_bytes is not None and capture.captured_bytes > capture.produced_bytes:
         raise EnvironmentError(
             "The process provider returned invalid captured-output metadata.",
             code="environment_provider_failure",
@@ -592,6 +584,10 @@ def _project_stream(
         "next_offset": start_offset + len(data),
         "available_start": capture.available_start,
         "available_end": capture.available_end,
+        "origin": capture.origin,
+        "coverage": capture.coverage,
+        "observation_closed": capture.observation_closed,
+        "reason": capture.reason,
         "produced_bytes": capture.produced_bytes,
         "producer_complete": capture.producer_complete,
         "content_complete": capture.content_complete and len(data) == full_page_bytes,
@@ -694,12 +690,7 @@ def _shell_exec_result(
 
 
 def _is_final(info: ProcessInfo) -> bool:
-    return (
-        info.status.phase in _TERMINAL_PHASES
-        and info.status.cleanup != "pending"
-        and info.output.stdout.producer_complete
-        and info.output.stderr.producer_complete
-    )
+    return info.status.phase in _TERMINAL_PHASES
 
 
 async def _await_cleanup_shielded(awaitable: Awaitable[object]) -> None:
@@ -720,4 +711,4 @@ async def _await_cleanup_shielded(awaitable: Awaitable[object]) -> None:
         raise cleanup_error
 
 
-__all__ = ["_RUN_PROCESS_ACTIONS", "_RunProcessController", "_fit_stream_prefixes", "_project_status"]
+__all__ = ["_PROCESS_OBSERVATION_ACTIONS", "_ProcessController", "_fit_stream_prefixes", "_project_status"]

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from ._mount import (
-    _capture_contiguous_prefix,
     _EnteredMount,
     _validate_process_result_identity,
     _validate_provider_artifacts,
@@ -19,9 +17,9 @@ from .commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessDiscovery,
     ProcessIdentity,
     ProcessInfo,
-    ProcessOutputSnapshot,
     ProcessReadOutputResult,
     ProcessSignalResult,
     ProcessStartResult,
@@ -36,7 +34,6 @@ from .models import (
 from .retention import (
     BoundOutputCursor,
     BoundOutputReference,
-    EnvironmentOutputCapture,
     EnvironmentOutputPolicy,
     EnvironmentOutputReadResult,
 )
@@ -148,97 +145,44 @@ class _ShellFacade:
         entered, provider_request = self._environment._prepare_command(request, alias=alias)
         if expected_mount_id is not None and entered.mount_id != expected_mount_id:
             raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")
-        for action in (EnvironmentAction.SHELL_EXEC, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE):
-            selected = self._environment.require_action(entered.mount_id, action)
-            if selected is not entered:
-                raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")
         async with self._environment._operation_lease(
             entered,
             EnvironmentAction.SHELL_EXEC,
             "shell",
             timeout_seconds=provider_request.limits.wall_time_seconds,
         ) as entered:
-            async with self._environment._operation_lease(
-                entered,
-                EnvironmentAction.OUTPUT_READ,
-                "outputs",
-            ) as entered:
-                async with self._environment._operation_lease(
-                    entered,
-                    EnvironmentAction.OUTPUT_RELEASE,
-                    "outputs",
-                ) as entered:
-                    shell = entered.operations.shell
-                    if shell is None:
-                        raise EnvironmentError(
-                            "Shell operation facet is unavailable.",
-                            code="environment_unsupported",
-                        )
-                    result = await shell.exec(provider_request)
-                    _validate_provider_artifacts(entered, result)
-                    stdout, stderr = await asyncio.gather(
-                        self._materialize_capture(entered, result.output.stdout, provider_request.output_policy),
-                        self._materialize_capture(entered, result.output.stderr, provider_request.output_policy),
-                    )
-                    return result.model_copy(update={"output": ProcessOutputSnapshot(stdout=stdout, stderr=stderr)})
-
-    @staticmethod
-    async def _materialize_capture(
-        entered: _EnteredMount,
-        capture: EnvironmentOutputCapture,
-        policy: EnvironmentOutputPolicy,
-    ) -> EnvironmentOutputCapture:
-        if capture.reference is None:
-            return capture
-        outputs = entered.operations.outputs
-        if outputs is None:
-            raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
-        read_policy = EnvironmentOutputPolicy(
-            max_inline_bytes=max(1, min(capture.captured_bytes, policy.max_output_bytes)),
-            max_output_bytes=max(1, policy.max_output_bytes),
-            overflow="truncate",
-        )
-        data = _capture_contiguous_prefix(capture)
-        materialized = False
-        try:
-            try:
-                result = await outputs.read(capture.reference, start_offset=0, policy=read_policy)
-                _validate_provider_artifacts(entered, result)
-                data = b"".join(chunk.data for chunk in result.chunks)
-                materialized = True
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                # The command has completed. A provider read failure must not turn
-                # its known outcome and side effects into a retry-shaped failure.
-                pass
-        finally:
-            try:
-                receipt = await outputs.release(reference=capture.reference)
-                _validate_provider_artifacts(entered, receipt)
-            except Exception:
-                # Output cleanup is best effort after the command and materialization
-                # have completed; it cannot replace their known result.
-                pass
-        return capture.model_copy(
-            update={
-                "kind": "empty" if not data else "inline",
-                "content_complete": (materialized and capture.content_complete and len(data) == capture.captured_bytes),
-                "captured_bytes": len(data),
-                "inline": data,
-                "preview": (),
-                "reference": None,
-                "cursor": None,
-                "available_start": 0,
-                "available_end": len(data),
-                "expires_at": None,
-            }
-        )
+            shell = entered.operations.shell
+            if shell is None:
+                raise EnvironmentError("Shell operation facet is unavailable.", code="environment_unsupported")
+            result = await shell.exec(provider_request)
+            _validate_provider_artifacts(entered, result)
+            if any(capture.reference is not None for capture in (result.output.stdout, result.output.stderr)):
+                raise EnvironmentError(
+                    "Captured shell execution returned retained resources.", code="environment_provider_failure"
+                )
+            return result
 
 
 class _ProcessFacade:
     def __init__(self, environment: CompositeBoundEnvironment) -> None:
         self._environment = environment
+
+    async def list(self, *, alias: str | None = None, limit: int = 50) -> ProcessDiscovery:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered,
+            EnvironmentAction.PROCESS_LIST,
+            "processes",
+        ) as entered:
+            processes = entered.operations.processes
+            if processes is None:
+                raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
+            result = await processes.list(limit=limit)
+            _validate_provider_artifacts(entered, result)
+            if len(result.processes) > limit:
+                raise EnvironmentError("Process listing exceeded its limit.", code="environment_provider_failure")
+            # Discovery references do not pin a mount or attach output streams.
+            return result
 
     async def start(
         self,
@@ -306,6 +250,8 @@ class _ProcessFacade:
         return await self._call(handle, EnvironmentAction.PROCESS_READ_OUTPUT, "read_output", **kwargs)
 
     async def write_stdin(self, handle: BoundProcessHandle, data: bytes, **kwargs: Any) -> ProcessWriteStdinResult:
+        if kwargs.get("close_after_write") is True:
+            self._environment.require_action(handle.mount_id, EnvironmentAction.PROCESS_CLOSE_STDIN)
         return await self._call(handle, EnvironmentAction.PROCESS_WRITE_STDIN, "write_stdin", data, **kwargs)
 
     async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:

@@ -255,7 +255,7 @@ Agent Harness applies mount names, access ceilings, routing, operation timeouts,
 
 ## E2B runtime
 
-E2B uses its native asynchronous SDK and command-local Python wrappers. The default `base` template works without installing `agent-envd`, uploading an executable, or building a custom template. Custom templates need Linux, Python 3.11+ with pidfd support, Bash and the configured account/root; Git-ignore queries also need Git.
+E2B executes commands directly through its native asynchronous SDK. Bounded Python helpers implement files and port checks only. The default `base` template works without installing `agent-envd`, uploading an executable, or building a custom template. Custom templates need Linux, Python 3.11+, Bash and the configured account/root; Git-ignore queries also need Git.
 
 ```python
 import os
@@ -269,11 +269,25 @@ environment = E2BEnvironment(
 )
 ```
 
-Pass this Environment to Harness as usual. Persist `environment.dump_state()` on the Host and give it to a fresh adapter for re-entry. `close()` preserves the sandbox and user files; it terminates this adapter's commands and releases their output. Use fresh adapters for `stop()` (pause), `prepare()` (resume) and `destroy()` (kill). Keepalive reports actual expiry and never resumes a paused sandbox. The library never reads `.env`; Foundation Service receives the domain through Provider Backend configuration and `api_key` through its credential reference.
+Pass this Environment to Harness as usual. Persist `environment.dump_state()` on the Host and give it to a fresh adapter for re-entry. `close()` preserves the sandbox and user files; it disconnects this adapter's output observations without killing commands. Use fresh adapters for `stop()` (pause), `prepare()` (resume) and `destroy()` (kill). Keepalive reports actual expiry and never resumes a paused sandbox. The library never reads `.env`; Foundation Service receives the domain through Provider Backend configuration and `api_key` through its credential reference.
 
-Output retains raw bytes with finite per-stream limits, offset/cursor reads and explicit release. Retained records consume the same capacity pool as running commands until released or closed. Stdin limits remain enforced after process rebind. Command deadlines and sandbox TTL remain effective when the Host disconnects.
+A fresh adapter can use native process discovery to find commands still running in the same sandbox. This is best-effort: the sandbox ID is not proof that a particular process survived, and missing commands are never restarted automatically. Native listing is not paginated by the SDK; returned projections are bounded, but the upstream inventory is not.
 
-The isolation boundary is the E2B sandbox. File root mapping does not confine allowed shell commands. Process groups cannot prove that all descendants were removed, so terminal status reports `cleanup="residual_confined"`. Per-command CPU, memory and process-count limits are unsupported. Per-command network denial requires sandbox-wide `allow_internet_access=False`; it cannot be added to an internet-enabled sandbox. Port inspection supports loopback TCP only. Append and patch do not provide concurrent compare-and-swap guarantees.
+Output is SDK-decoded text, not lossless original bytes. The defaults separate command concurrency from history retention:
+
+| Setting                     | Default      | Scope                                                                                                                   |
+| --------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `max_active_observations`   | 128          | Active native attachments, including pending starts/connects; completed or disconnected observations release their slot |
+| `max_observation_bytes`     | 1 MiB        | Cumulative combined stdout/stderr for one observation, including output subsequently evicted                            |
+| `max_retained_output_bytes` | 128 MiB      | Adapter-wide retained output; evicts the oldest closed logs first                                                       |
+| `timeout_seconds`           | 3600 seconds | Whole-sandbox TTL, not a command deadline                                                                               |
+| `request_timeout_seconds`   | 30 seconds   | Native request timeout, not tool waiting time                                                                           |
+
+Discovery alone allocates no output buffer or active slot. A separate 100,000-reference metadata guard requires explicit release before admitting more references; it does not silently invalidate completed handles. Closed output may be evicted under memory pressure, but its reference, known status and cumulative offsets survive. Reads explicitly report `observation_evicted`, partial coverage and the remaining available range. If active buffers exhaust the aggregate budget, or one command reaches its cumulative budget, the adapter disconnects that observation without killing the command. Status queries and repeated waits cannot reset budgets. A transient reconnect before the cap appends text to the same log with partial coverage; eviction does not replenish its allowance, while a fresh Run starts a new observation. Direct application logs to files when complete durable output matters.
+
+E2B uses native login Bash, so direct argv, explicit non-login mode and environment unsets are unsupported. Native stdin has a per-request size bound, not a cross-Run quota. Native kill is supported; interrupt/terminate, process-tree verification and per-command hard deadlines are not. `execution_timeout_seconds` is rejected before command launch. SDK connection/request waits, Harness tool waits and sandbox expiry are different limits. Sandbox TTL still applies while commands run without an observer.
+
+The isolation boundary is the E2B sandbox. File-root mapping does not confine allowed shell commands. Per-command CPU, memory and process-count limits are unsupported. Per-command network denial requires sandbox-wide `allow_internet_access=False`; it cannot be added to an internet-enabled sandbox. Port inspection supports loopback TCP only. Append and patch do not provide concurrent compare-and-swap guarantees.
 
 Run the example with `E2B_API_KEY` set in the Host environment:
 

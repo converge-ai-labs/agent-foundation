@@ -120,9 +120,9 @@ The executable-owned `SubagentCollection` is process-local topology and grants n
 
 Harness supplies no default async manager, execution-store protocol, parent-state mirror, completion observer, or shutdown operation. A successful async spawn is an ordinary tool result, not `DeferredToolRequests`. Completion does not satisfy the original spawn call, mutate an already selected continuation, or itself create another Harness Run. A later Run queries the Host operator using the public execution reference. Parent Run closure neither cancels accepted child work nor closes the operator.
 
-Shell processes follow a separate Environment-owned contract. When an entered Environment exposes process actions, Harness supplies the four standard Run-owned shell tools, active-Run final-completion readiness, explicit-offset polling, and cleanup without any Host operator. These processes cannot survive that Run, contribute no portable state, and are killed and released before Environment adapters close.
+Shell observations follow the separate [Environment contract](08-environment-integration.md#run-local-shell-observations). Harness supplies Run-local references, optional native discovery, explicit-offset observations and best-effort exit hints without a Host process operator. Run close releases observations without blanket termination. Provider state owns recovery of whatever the backend actually retained; a later Run uses fresh references and cannot assume historical output survives.
 
-Foundation Service and embedded callers use this ordinary Run-owned behavior without another process integration layer. Cross-Run process execution, durable result delivery, idle wake, and Agent UI process integration are not current Harness features. Async subagents retain their independent Host operator and share no Manager or lifecycle store with shell processes.
+Foundation Service and Agent UI use this ordinary Environment integration without a process table, durable process mirror or post-Run wake service. Async subagents retain their independent Host operator.
 
 ## Events and Completion
 

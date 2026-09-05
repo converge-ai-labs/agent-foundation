@@ -61,7 +61,7 @@ async def test_harness_shell_uses_native_e2b_and_closes_without_destroying():
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
     )
-    configuration = E2BProviderConfiguration(timeout_seconds=120, max_wall_time_seconds=15)
+    configuration = E2BProviderConfiguration(timeout_seconds=120)
     runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["A13N_TEST_E2B_API_KEY"]))
     identity = "environment-harness-" + secrets.token_hex(8)
     environment = E2BEnvironment(configuration, environment_id=identity, state=None, runtime=runtime)

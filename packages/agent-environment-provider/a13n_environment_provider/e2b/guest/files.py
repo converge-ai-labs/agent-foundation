@@ -154,8 +154,6 @@ def execute(request: dict) -> dict:
     root = Path(config["root"]).resolve(strict=True)
     if not root.is_dir():
         raise NotADirectoryError()
-    if request["boot_id"] != Path("/proc/sys/kernel/random/boot_id").read_text().strip():
-        return {"error": "environment_stale_mount"}
     arguments = request["arguments"]
     path = resolve(root, arguments.get("path", "/"), follow=action not in {"stat", "remove", "move"})
     mutations = {

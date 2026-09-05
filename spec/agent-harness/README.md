@@ -53,7 +53,7 @@ Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](
 
 ### Implement Hosting or Persistence
 
-Read `10`, `12`, `13`, `14`, and `20`, then the Foundation Service catalog. A Host owns all async-child lifecycle authority. Shell processes remain Run-owned, use explicit-offset output observation, and are killed and released before Environment close; no process state enters `HarnessState`.
+Read `10`, `12`, `13`, `14`, and `20`, then the Foundation Service catalog. A Host owns all async-child lifecycle authority. Shell references and observations are Run-local; cleanup releases them without blanket termination. Provider state owns native process recovery. See `08` for the independent process and output completion boundaries.
 
 ### Integrate Observation
 

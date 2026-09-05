@@ -78,7 +78,7 @@ class HarnessToolMetadata:
     shell_review: bool = False
 ```
 
-`HarnessToolMetadata` is stored under a reserved key in Pydantic AI `ToolDefinition.metadata`; there is no parallel tool binding object. Pydantic fields retain ownership of name, schema, kind, strictness, timeout, sequential execution, deferred loading, and the optional runtime `toolset_id`. `tool_id` is the stable policy identity before model-visible renaming or prefixing. It is unique within one prepared candidate surface: a second function-tool definition with the same ID fails before surface resolution, even when visible names differ. Intentional aliases therefore use distinct policy IDs and can share a host-owned implementation reference outside this contract. `shell_review` is a trusted marker for the standard shell-command argument projection; it grants no authority and is valid only when the normalized arguments contain the documented `command`, `cwd`, `environment`, optional `yield_time_seconds`, `timeout_seconds`, and `alias` fields. The first-party `ShellToolset` sets it only on `environment.shell_exec`; process wait, input, and signal calls are not new command launches and are not reviewed.
+`HarnessToolMetadata` is stored under a reserved key in Pydantic AI `ToolDefinition.metadata`; there is no parallel tool binding object. Pydantic fields retain ownership of name, schema, kind, strictness, timeout, sequential execution, deferred loading, and the optional runtime `toolset_id`. `tool_id` is the stable policy identity before model-visible renaming or prefixing. It is unique within one prepared candidate surface: a second function-tool definition with the same ID fails before surface resolution, even when visible names differ. Intentional aliases therefore use distinct policy IDs and can share a host-owned implementation reference outside this contract. `shell_review` is a trusted marker for the standard shell-command argument projection; it grants no authority and is valid only when the normalized arguments contain the documented `command`, `cwd`, `environment`, optional `yield_time_seconds`, `execution_timeout_seconds`, and `alias` fields. The first-party `ShellToolset` sets it only on `environment.shell_exec`; process wait, input, and signal calls are not new command launches and are not reviewed.
 
 `ToolEffect` is a small conservative policy hint, not an execution result or authorization grant. `read` observes state; `write` creates or changes state; `delete` removes state; `execute` starts code or a process; and `external_communication` sends data or a message outside the selected Environment. A tool declares every applicable value, so a shell command commonly declares `execute` plus `write`, and an HTTP-post tool commonly declares `external_communication` plus `write`. The actual provider receipt remains the evidence of what occurred. The former `create` and `update` distinction is intentionally collapsed because generic policy cannot classify upsert, patch, append, and replacement consistently before provider resolution.
 
@@ -148,7 +148,7 @@ class ShellReviewRequest(BaseModel):
     cwd: str | None
     environment_keys: tuple[str, ...]
     yield_time_seconds: float | None
-    timeout_seconds: float | None
+    execution_timeout_seconds: float | None
     alias: str | None
 
 

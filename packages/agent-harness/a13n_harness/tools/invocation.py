@@ -490,7 +490,7 @@ def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellRev
     cwd = arguments.get("cwd")
     environment = arguments.get("environment")
     yield_time_seconds = arguments.get("yield_time_seconds")
-    timeout_seconds = arguments.get("timeout_seconds")
+    execution_timeout_seconds = arguments.get("execution_timeout_seconds")
     alias = arguments.get("alias")
     if not isinstance(command, str):
         raise ValueError("reviewable shell invocation has no string command")
@@ -508,8 +508,8 @@ def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellRev
         or yield_time_seconds < 0
     ):
         raise ValueError("reviewable shell invocation has an invalid yield window")
-    if timeout_seconds is not None and (
-        not isinstance(timeout_seconds, int | float) or isinstance(timeout_seconds, bool)
+    if execution_timeout_seconds is not None and (
+        not isinstance(execution_timeout_seconds, int | float) or isinstance(execution_timeout_seconds, bool)
     ):
         raise ValueError("reviewable shell invocation has an invalid timeout")
     if alias is not None and not isinstance(alias, str):
@@ -521,7 +521,7 @@ def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellRev
         cwd=cwd,
         environment_keys=environment_keys,
         yield_time_seconds=yield_time_seconds,
-        timeout_seconds=timeout_seconds,
+        execution_timeout_seconds=execution_timeout_seconds,
         alias=alias,
     )
 

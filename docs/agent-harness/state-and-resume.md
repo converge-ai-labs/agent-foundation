@@ -164,13 +164,13 @@ await context.state.write(
 
 Unknown namespaces can remain opaque across a run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or `EnvironmentState` in a Capability namespace.
 
-## Run-owned Shell Processes
+## Run-local Shell Observations
 
-Shell process state is deliberately absent from `HarnessState`. A process-capable `shell_exec` can return a concise `process-*` reference, but that reference addresses only the private controller for the exact logical Run that started it. Harness does not persist the reference, sequence, bound handle, output offsets, status mirror, watcher, or cleanup state in a Capability namespace.
+`DynamicEnvironmentCapability` composes shell execution, `shell_info` discovery/inspection, explicit-offset `shell_wait`, and supported stdin/control tools from each mount's actual actions. A reference belongs to one Harness Run, not to a durable process service. Queries do not reset output, and native completion does not imply complete capture.
 
-Within the same Run, `shell_wait` uses caller-supplied stdout and stderr offsets and performs non-consuming retained-output reads. Harness stores no unread cursor. When the Run closes, it kills every still-live owned process and releases its handles before Environment adapters close.
+Run close releases observations without blanket process termination. A fresh adapter restored from Provider state may discover commands the backend retained; a fresh Run assigns new references and cannot use old references from history. No process reference, buffer, watcher or output cursor enters Harness Capability state. Provider state owns native recovery evidence, and the Host owns target lifetime and state publication.
 
-A continuation or fork starts with a fresh empty process controller and a new reference incarnation. A process reference retained in message history is historical text, not authority, and cannot be rebound from a mount, Provider process ID, or `EnvironmentState`. Cross-Run or restart-surviving process execution belongs to a separate Host capability outside the current Harness shell contract. See [Embedding in a Host](hosting.md#run-owned-shell-processes).
+See [Environment tools](environments.md) for usage and Provider-specific limitations. No Host process manager, process database, or durable post-Run wake integration is required.
 
 ## Host Checkpointing
 

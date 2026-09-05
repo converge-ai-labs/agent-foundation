@@ -65,7 +65,6 @@ class CapabilityState(BaseModel):
 
 _CAPABILITY_ENTRIES_ADAPTER = TypeAdapter(dict[str, CapabilityState])
 _EMPTY_ENTRIES_JSON = _CAPABILITY_ENTRIES_ADAPTER.dump_json({})
-_REMOVED_CAPABILITY_STATE_IDS = frozenset({"a13n.dynamic-environment.processes"})
 
 
 class AgentContextStateSnapshot(BaseModel):
@@ -87,8 +86,6 @@ class AgentContextStateSnapshot(BaseModel):
         for capability_id in entries:
             if not capability_id.strip():
                 raise ValueError("Capability state IDs must not be blank.")
-            if capability_id in _REMOVED_CAPABILITY_STATE_IDS:
-                raise ValueError(f"Capability state namespace {capability_id!r} is no longer supported.")
         return _CAPABILITY_ENTRIES_ADAPTER.dump_json(entries)
 
     @computed_field
