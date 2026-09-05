@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/ci-foundation.yml"
       - ".github/workflows/release-foundation.yml"
+      - "conftest.py"
       - "dev/**"
       - "packages/foundation-service/**"
       - "packages/logging/**"
@@ -17,6 +18,7 @@ on:
     paths:
       - ".github/workflows/ci-foundation.yml"
       - ".github/workflows/release-foundation.yml"
+      - "conftest.py"
       - "dev/**"
       - "packages/foundation-service/**"
       - "packages/logging/**"
@@ -30,45 +32,15 @@ env:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Detect Foundation changes
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
-    outputs:
-      python: ${{ steps.filter.outputs.python }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Classify changed paths
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            python:
-              - '.github/workflows/ci-foundation.yml'
-              - '.github/workflows/release-foundation.yml'
-              - 'dev/**'
-              - 'packages/foundation-service/**'
-              - 'packages/logging/**'
-              - 'pyproject.toml'
-              - 'scripts/dev.sh'
-              - 'uv.lock'
-
   python:
     name: Foundation Python
-    needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.python == 'true'
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -99,6 +71,7 @@ jobs:
       - name: Test Foundation Python packages
         run: >-
           uv run --locked python -m pytest
+          -n 2 --dist loadgroup --durations=30
           packages/logging/tests
           packages/foundation-service/tests
 

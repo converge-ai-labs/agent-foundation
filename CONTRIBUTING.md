@@ -89,6 +89,8 @@ make check-all
 
 `foundation-service` integration tests use fixture-owned Testcontainers. Application `FOUNDATION_*` variables never select test infrastructure.
 
+Foundation CI and `make test` distribute Foundation tests across two pytest workers by file, preserving explicit `xdist_group` marks. Each worker owns its session-scoped containers and SQLite template; tests within a file run sequentially. Foundation CI reports the 30 slowest test phases, including fixture setup and teardown, to guide further runtime improvements.
+
 ## Releases
 
 Create a stable release with canonical version `X.Y.Z` or a release candidate with `X.Y.Z-rc.N`, where `N` is a positive integer without leading zeroes. The release tag must point to a commit whose required CI checks have passed. Do not commit release-only version bumps: each release workflow injects the tag version into its known manifests and lock files in the ephemeral checkout, validates the resulting source, and then builds and publishes it. Release workflows do not repeat CI tests or lint checks. The canonical cross-ecosystem RC identity is `X.Y.Z-rc.N`; Python package metadata and artifact names use its standard PEP 440 normalization, `X.Y.ZrcN`.
