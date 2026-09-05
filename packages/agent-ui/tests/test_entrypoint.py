@@ -6,6 +6,10 @@ from pathlib import Path
 
 import pytest
 
+# These are functional smoke tests, not startup benchmarks. Leave room for
+# cold imports and local storage initialization on hosted Windows runners.
+_ENTRYPOINT_TIMEOUT_SECONDS = 60
+
 
 def test_module_entrypoint_exposes_cli_help() -> None:
     result = subprocess.run(
@@ -13,6 +17,7 @@ def test_module_entrypoint_exposes_cli_help() -> None:
         check=False,
         capture_output=True,
         text=True,
+        timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
     )
 
     assert result.returncode == 0
@@ -33,7 +38,7 @@ def test_terminal_frontend_requires_interactive_input_and_output(
         check=False,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
     )
 
     assert result.returncode == 1
@@ -64,7 +69,7 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
     )
     output = bytearray()
     try:
-        startup_deadline = time.monotonic() + 10
+        startup_deadline = time.monotonic() + _ENTRYPOINT_TIMEOUT_SECONDS
         while b"Agent UI" not in output and process.poll() is None:
             if time.monotonic() >= startup_deadline:
                 break
@@ -108,6 +113,8 @@ def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
             "a13n_ui",
             "--config",
             str(settings),
+            "--data-root",
+            str(tmp_path / "state"),
             "environment",
             "list",
             "--format",
@@ -116,7 +123,7 @@ def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
         check=False,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
     )
 
     assert result.returncode == 0, result.stderr
