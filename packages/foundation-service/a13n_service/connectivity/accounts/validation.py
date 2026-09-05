@@ -14,6 +14,7 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 
 from .reception import InputBatchingPolicy, InputOverride, Reception
@@ -46,7 +47,7 @@ async def validate_override(
                     select(ModelRecord)
                     .join(ModelProviderRecord)
                     .where(
-                        ModelRecord.workspace_id == workspace_id,
+                        visible_workspace(ModelRecord.workspace_id, workspace_id),
                         ModelRecord.organization_id == organization_id,
                         ModelRecord.normalized_key == override.model.model_key.casefold(),
                         ModelRecord.enabled.is_(True),
