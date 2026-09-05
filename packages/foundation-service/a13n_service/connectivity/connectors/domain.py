@@ -61,7 +61,6 @@ class ConnectorConnection(StrictModel):
     organization_id: str
     workspace_id: str
     connector_provider_id: str
-    owner_principal_ref: PrincipalRef | None
     name: BoundedName
     connector_key: ConnectorKey
     safe_metadata: JsonObject
@@ -125,7 +124,6 @@ class CreateConnectorConnectionRequest(StrictModel):
     connector_provider_id: str = Field(min_length=1, max_length=72)
     name: BoundedName
     connector_key: ConnectorKey
-    owner_principal_ref: PrincipalRef | None = None
 
 
 class UpdateConnectorConnectionRequest(StrictModel):
@@ -158,12 +156,6 @@ class ConnectorSetupLaunch(StrictModel):
     expires_at: datetime
     connection: ConnectorConnection
     redirect_url: str | None = Field(default=None, max_length=4096, repr=False)
-
-
-class ConnectorOperationReceipt(StrictModel):
-    operation_id: str
-    status: Literal["pending", "unknown", "succeeded", "failed"]
-    connection: ConnectorConnection
 
 
 class ConnectorProviderTestResult(StrictModel):

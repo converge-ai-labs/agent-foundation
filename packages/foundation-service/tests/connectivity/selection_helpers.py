@@ -18,9 +18,6 @@ CONNECTOR_SECRET_ID = "sec_connector12345678"
 
 async def seed_selection_sources(
     sessions: async_sessionmaker[AsyncSession],
-    *,
-    connector_owner_id: str | None = None,
-    mcp_owner_user_id: str | None = None,
 ) -> None:
     async with transaction(sessions) as session:
         session.add(
@@ -51,8 +48,6 @@ async def seed_selection_sources(
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
                 connector_provider_id=CONNECTOR_ID,
-                owner_type="user" if connector_owner_id is not None else None,
-                owner_id=connector_owner_id,
                 name="Orders account",
                 normalized_name="orders account",
                 connector_key="orders",
@@ -62,7 +57,6 @@ async def seed_selection_sources(
                 status_reason=None,
                 version=1,
                 setup_generation=1,
-                revoke_generation=0,
                 deleted_at=None,
                 created_by_type="user",
                 created_by_id=USER_ID,
@@ -77,7 +71,6 @@ async def seed_selection_sources(
                 id=MCP_CONNECTION_ID,
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
-                owner_user_id=mcp_owner_user_id,
                 name="Docs",
                 normalized_name="docs",
                 endpoint_url="https://mcp.example/rpc",
@@ -90,12 +83,6 @@ async def seed_selection_sources(
                 refresh_claim_generation=0,
                 refresh_claim_owner=None,
                 refresh_claim_expires_at=None,
-                refresh_available_at=NOW,
-                refresh_last_error_code=None,
-                cleanup_pending=False,
-                cleanup_attempt_count=0,
-                cleanup_available_at=NOW,
-                cleanup_last_error_code=None,
                 deleted_at=None,
                 created_by_type="user",
                 created_by_id=USER_ID,

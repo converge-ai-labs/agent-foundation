@@ -6,7 +6,6 @@ from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
 TABLES = {
-    "connector_connection_operations",
     "connector_connections",
     "connector_setup_attempts",
     "connector_providers",
@@ -20,15 +19,15 @@ def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
     engine = create_engine(sync_database_url(configuration))
     try:
         inspector = inspect(engine)
-        assert "connector_tool_catalogs" not in inspector.get_table_names()
+        assert {"connector_tool_catalogs", "connector_connection_operations"}.isdisjoint(inspector.get_table_names())
         assert TABLES <= set(inspector.get_table_names())
         connection_columns = {column["name"] for column in inspector.get_columns("connector_connections")}
         assert {
             "external_ref",
             "setup_generation",
-            "revoke_generation",
             "deleted_at",
         } <= connection_columns
+        assert {"owner_type", "owner_id", "revoke_generation"}.isdisjoint(connection_columns)
         attempt_columns = {column["name"] for column in inspector.get_columns("connector_setup_attempts")}
         assert "external_user_correlation" in attempt_columns
         assert "redirect_url" not in attempt_columns

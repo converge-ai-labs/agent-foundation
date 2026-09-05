@@ -21,22 +21,15 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         assert {
             "endpoint_url",
             "auth_mode",
-            "owner_user_id",
             "credential_generation",
             "refresh_claim_generation",
             "refresh_claim_owner",
             "refresh_claim_expires_at",
-            "refresh_available_at",
-            "refresh_last_error_code",
             "deleted_at",
         } <= connection_columns
-        indexes = {index["name"]: index for index in inspector.get_indexes("mcp_connections")}
-        assert indexes["ix_mcp_connections_refresh_reconcile"]["column_names"] == [
-            "status",
-            "refresh_available_at",
-            "refresh_claim_expires_at",
-            "id",
-        ]
+        assert {"owner_user_id", "refresh_available_at", "cleanup_pending", "cleanup_attempt_count"}.isdisjoint(
+            connection_columns
+        )
         constraints = {constraint["name"] for constraint in inspector.get_check_constraints("mcp_connections")}
         assert "ck_mcp_connections_refresh_claim_generation_non_negative" in constraints
         session_columns = {column["name"] for column in inspector.get_columns("mcp_oauth_sessions")}

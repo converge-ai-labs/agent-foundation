@@ -6,6 +6,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.domain import JsonObject
@@ -25,9 +26,7 @@ from a13n_service.temporal import Clock, utc_now
 
 from .connection_access import (
     authorize_connection,
-    authorize_owner_change,
     connection_resource,
-    has_admin_access,
     idempotency_digest,
     replay_connection_command,
     require_version,
@@ -36,7 +35,6 @@ from .domain import (
     ConnectorConnection,
     ConnectorConnectionCollection,
     ConnectorConnectionStatus,
-    ConnectorOperationReceipt,
     ConnectorSetupLaunch,
     CreateConnectorConnectionRequest,
     UpdateConnectorConnectionRequest,
@@ -105,7 +103,7 @@ class ConnectorConnectionService:
                 connector = await require_connector_provider(session, request.connector_provider_id)
                 if connector.workspace_id != workspace_id:
                     raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
-                await authorize_owner_change(session, actor, connector, request.owner_principal_ref)
+                await authorize(session, actor, connector.workspace_id, WorkspaceAction.connector_connection_manage)
                 require_implementation(self._adapters, connector.type)
                 request_fingerprint = fingerprint(request)
                 try:
@@ -127,14 +125,6 @@ class ConnectorConnectionService:
                     organization_id=connector.organization_id,
                     workspace_id=connector.workspace_id,
                     connector_provider_id=connector.id,
-                    owner_type=(
-                        request.owner_principal_ref.principal_type.value
-                        if request.owner_principal_ref is not None
-                        else None
-                    ),
-                    owner_id=(
-                        request.owner_principal_ref.principal_id if request.owner_principal_ref is not None else None
-                    ),
                     name=request.name,
                     normalized_name=request.name.casefold(),
                     connector_key=request.connector_key,
@@ -144,7 +134,6 @@ class ConnectorConnectionService:
                     status_reason=None,
                     version=1,
                     setup_generation=1,
-                    revoke_generation=0,
                     deleted_at=None,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
@@ -178,7 +167,7 @@ class ConnectorConnectionService:
                     )
                 )
                 await session.flush()
-                return await connection_resource(session, connection.id)
+                return connection.to_resource()
         except IntegrityError as error:
             raise ConnectorError(
                 "connector_connection_conflict",
@@ -206,7 +195,7 @@ class ConnectorConnectionService:
         now = self._clock()
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
-            await authorize_connection(session, actor, connection, mode="owner_manage")
+            await authorize_connection(session, actor, connection, mode="manage")
             replay = await replay_connection_command(
                 session,
                 actor=actor,
@@ -293,21 +282,10 @@ class ConnectorConnectionService:
             raise ConnectorError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
         async with transaction(self._sessions) as session:
             await authorize(session, actor, workspace_id, WorkspaceAction.connector_connection_read)
-            admin = await has_admin_access(session, actor, workspace_id)
             query = select(ConnectorConnectionRecord).where(
                 ConnectorConnectionRecord.workspace_id == workspace_id,
                 ConnectorConnectionRecord.deleted_at.is_(None),
             )
-            if not admin:
-                query = query.where(
-                    or_(
-                        ConnectorConnectionRecord.owner_type.is_(None),
-                        and_(
-                            ConnectorConnectionRecord.owner_type == actor.principal.principal_type.value,
-                            ConnectorConnectionRecord.owner_id == actor.principal.principal_id,
-                        ),
-                    )
-                )
             if position is not None:
                 query = query.where(
                     or_(
@@ -329,7 +307,7 @@ class ConnectorConnectionService:
                 ).all()
             )
             page = records[:limit]
-            items = tuple([await connection_resource(session, record.id) for record in page])
+            items = tuple(record.to_resource() for record in page)
             next_cursor = None
             if len(records) > limit:
                 last = page[-1]
@@ -352,7 +330,7 @@ class ConnectorConnectionService:
         try:
             async with transaction(self._sessions) as session:
                 record = await require_connection(session, connection_id, lock=True)
-                await authorize_connection(session, actor, record, mode="owner_manage")
+                await authorize_connection(session, actor, record, mode="manage")
                 require_version(record.version, request.expected_version)
                 if request.name is not None:
                     record.name = request.name
@@ -370,7 +348,7 @@ class ConnectorConnectionService:
                         now=record.updated_at,
                     )
                 )
-                return await connection_resource(session, record.id)
+                return record.to_resource()
         except IntegrityError as error:
             raise ConnectorError(
                 "connector_connection_conflict",
@@ -396,7 +374,7 @@ class ConnectorConnectionService:
                 session,
                 actor,
                 record,
-                mode="owner_manage" if enabled else "administrative",
+                mode="manage",
             )
             replay = await replay_connection_command(
                 session,
@@ -407,9 +385,21 @@ class ConnectorConnectionService:
                 request_fingerprint=request_fingerprint,
             )
             if replay is not None:
-                return await connection_resource(session, record.id)
+                return record.to_resource()
             require_version(record.version, expected_version)
-            if enabled and record.external_ref is None:
+            completed_setup = (
+                await session.scalar(
+                    select(ConnectorSetupAttemptRecord.id).where(
+                        ConnectorSetupAttemptRecord.connector_connection_id == record.id,
+                        ConnectorSetupAttemptRecord.generation == record.setup_generation,
+                        ConnectorSetupAttemptRecord.status == "completed",
+                        ConnectorSetupAttemptRecord.external_ref == record.external_ref,
+                    )
+                )
+                if enabled
+                else None
+            )
+            if enabled and (record.external_ref is None or completed_setup is None):
                 raise ConnectorError(
                     "connection_not_ready",
                     "ConnectorConnection has no verified setup.",
@@ -417,13 +407,13 @@ class ConnectorConnectionService:
                 )
             target = ConnectorConnectionStatus.ready.value if enabled else ConnectorConnectionStatus.disabled.value
             if record.status == target or (enabled and record.status != ConnectorConnectionStatus.disabled.value):
-                result = await connection_resource(session, record.id)
+                result = record.to_resource()
             else:
                 record.status = target
                 record.status_reason = None
                 record.version += 1
                 record.updated_at = self._clock()
-                result = await connection_resource(session, record.id)
+                result = record.to_resource()
             record_command(
                 session,
                 actor=actor,
@@ -471,7 +461,7 @@ class ConnectorConnectionService:
         now = self._clock()
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
-            await authorize_connection(session, actor, connection, mode="owner_manage")
+            await authorize_connection(session, actor, connection, mode="manage")
             replay = await replay_connection_command(
                 session,
                 actor=actor,
@@ -487,6 +477,7 @@ class ConnectorConnectionService:
                 if connection.status not in {
                     ConnectorConnectionStatus.action_required.value,
                     ConnectorConnectionStatus.pending.value,
+                    ConnectorConnectionStatus.disabled.value,
                 }:
                     raise ConnectorError(
                         "invalid_connection_state", "ConnectorConnection cannot reconnect.", status_code=409
@@ -553,8 +544,9 @@ class ConnectorConnectionService:
         connection_id: str,
         expected_version: int,
         idempotency_key: str,
-    ) -> ConnectorOperationReceipt:
-        return await self._revocation.revoke(
+    ) -> ConnectionCleanupReceipt:
+        return await self._revocation.invalidate(
+            delete=False,
             actor=actor,
             connection_id=connection_id,
             expected_version=expected_version,
@@ -568,8 +560,9 @@ class ConnectorConnectionService:
         connection_id: str,
         expected_version: int,
         idempotency_key: str,
-    ) -> None:
-        await self._revocation.delete(
+    ) -> ConnectionCleanupReceipt:
+        return await self._revocation.invalidate(
+            delete=True,
             actor=actor,
             connection_id=connection_id,
             expected_version=expected_version,
@@ -583,16 +576,3 @@ class ConnectorConnectionService:
         session_uri: str,
     ) -> str:
         return await self._setup.complete_callback(actor=actor, session_uri=session_uri)
-
-    async def run_revoke(
-        self,
-        operation_id: str,
-        *,
-        claim_owner: str | None = None,
-        claim_generation: int | None = None,
-    ) -> None:
-        await self._revocation.run(
-            operation_id,
-            claim_owner=claim_owner,
-            claim_generation=claim_generation,
-        )

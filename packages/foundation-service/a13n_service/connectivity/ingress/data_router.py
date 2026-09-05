@@ -21,8 +21,8 @@ def _service(request: Request) -> IngressEventService:
     return runtime.ingress_events
 
 
-@router.post("/ingresses/{ingress_id}/events", include_in_schema=False)
-async def receive_ingress_event(request: Request, ingress_id: str) -> Response:
+@router.post("/accounts/{account_id}/events", include_in_schema=False)
+async def receive_ingress_event(request: Request, account_id: str) -> Response:
     runtime = get_process_runtime(request)
     if runtime is None:
         raise NativeError("ingress_unavailable", "Ingress is unavailable.", status_code=503)
@@ -36,7 +36,7 @@ async def receive_ingress_event(request: Request, ingress_id: str) -> Response:
     except ValidationError as error:
         raise NativeError("invalid_request", "Provider request metadata is invalid.", status_code=400) from error
     provider_response = await _service(request).receive(
-        ingress_id=ingress_id,
+        account_id=account_id,
         request=provider_request,
     )
     return Response(

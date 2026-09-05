@@ -11,7 +11,6 @@ from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.connectivity.ingress.models import IngressRecord
 from a13n_service.connectivity.management import (
     canonical_digest,
     canonical_json,
@@ -47,6 +46,8 @@ from .domain import (
 )
 from .models import AccountRecord
 from .queries import require_account
+from .reception import Reception
+from .validation import validate_batching, validate_reception
 
 
 class AccountService:
@@ -56,12 +57,16 @@ class AccountService:
         adapters: AdapterRegistry[IngressAdapter],
         protector: SecretProtector,
         *,
+        batch_max_events: int = 100,
+        batch_max_wait_seconds: float = 300,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
         self._protector = protector
         self._clock = clock
+        self._batch_max_events = batch_max_events
+        self._batch_max_interval_ms = round(batch_max_wait_seconds * 1000)
 
     async def create_account(
         self,
@@ -92,7 +97,24 @@ class AccountService:
                 )
                 if replay is not None:
                     return (await require_account(session, replay.resource_id)).to_resource()
+                reception = _parse_reception(request.model_dump(include=set(Reception.model_fields)))
+                await validate_reception(session, actor, workspace_id, reception)
+                validate_batching(
+                    reception.input_batching,
+                    max_events=self._batch_max_events,
+                    max_interval_ms=self._batch_max_interval_ms,
+                )
+                policy = (
+                    _validate_policy(adapter, reception.provider_policy, request.provider_config_version)
+                    if reception.provider_policy is not None
+                    else None
+                )
                 record = AccountRecord(
+                    receive_enabled=reception.receive_enabled,
+                    default_agent_id=reception.default_agent_id,
+                    execution_service_account_id=reception.execution_service_account_id,
+                    input_batching_json=reception.input_batching.model_dump() if reception.input_batching else None,
+                    provider_policy_json=policy,
                     id=account_id,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
@@ -222,6 +244,27 @@ class AccountService:
                 if request.name is not None:
                     record.name = request.name
                     record.normalized_name = request.name.casefold()
+                reception = _parse_reception(
+                    {
+                        **record.to_resource().model_dump(include=set(Reception.model_fields)),
+                        **request.model_dump(include=set(Reception.model_fields), exclude_unset=True),
+                    }
+                )
+                await validate_reception(session, actor, record.workspace_id, reception)
+                validate_batching(
+                    reception.input_batching,
+                    max_events=self._batch_max_events,
+                    max_interval_ms=self._batch_max_interval_ms,
+                )
+                record.receive_enabled = reception.receive_enabled
+                record.default_agent_id = reception.default_agent_id
+                record.execution_service_account_id = reception.execution_service_account_id
+                record.input_batching_json = reception.input_batching.model_dump() if reception.input_batching else None
+                record.provider_policy_json = (
+                    _validate_policy(adapter, reception.provider_policy, record.provider_config_version)
+                    if reception.provider_policy is not None
+                    else None
+                )
                 record.provider_config_json = config
                 record.version += 1
                 record.updated_at = self._clock()
@@ -298,13 +341,6 @@ class AccountService:
             record = await require_account(session, account_id, lock=True)
             await authorize(session, actor, record.workspace_id, WorkspaceAction.application_account_manage)
             require_version(record.version, expected_version)
-            if (
-                await session.scalar(select(IngressRecord.id).where(IngressRecord.account_id == account_id).limit(1))
-                is not None
-            ):
-                raise NativeError(
-                    "account_in_use", "Account deletion is blocked while an Ingress references it.", status_code=409
-                )
             record.status = AccountStatus.disabled.value
             record.clear_credential()
             now = self._clock()
@@ -400,3 +436,21 @@ def _record_account_command(
         result_version=record.version,
         now=record.updated_at,
     )
+
+
+def _parse_reception(value: object) -> Reception:
+    try:
+        return Reception.model_validate(value)
+    except ValueError as error:
+        raise NativeError(
+            "invalid_reception", "Account reception configuration is invalid.", status_code=400
+        ) from error
+
+
+def _validate_policy(adapter: IngressAdapter, value: JsonObject, version: str) -> JsonObject:
+    try:
+        return adapter.validate_reception_policy(value, config_version=version)
+    except ValueError as error:
+        raise NativeError(
+            "invalid_reception_policy", "Provider reception policy is invalid.", status_code=400
+        ) from error

@@ -87,6 +87,7 @@ from a13n_service.interactions.input import (
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectError, RunPayloadStore, RunStateStore
+from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
 from a13n_service.interactions.state import RunPayloadEnvelope
 from a13n_service.public_errors import PublicError
@@ -94,6 +95,8 @@ from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .environment import input_environment_access
+
+_USER_INPUT_ORIGIN = SubmissionOrigin()
 
 
 class GatewayCommandError(PublicError):
@@ -195,6 +198,7 @@ class NativeInteractionCommands:
         request: StartRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         if workspace_id != actor.boundary_workspace_id:
             raise _not_found()
@@ -283,7 +287,8 @@ class NativeInteractionCommands:
             parent_run_id=None,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.root,
-            trigger_type="user_input",
+            trigger_type=origin.trigger_type,
+            native_tool_contexts=origin.native_tool_contexts,
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
@@ -367,6 +372,7 @@ class NativeInteractionCommands:
         inherit_parent_environment: bool = True,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -446,7 +452,8 @@ class NativeInteractionCommands:
             parent_run_id=source.id,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.continue_,
-            trigger_type="user_input",
+            trigger_type=origin.trigger_type,
+            native_tool_contexts=origin.native_tool_contexts,
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
@@ -527,6 +534,7 @@ class NativeInteractionCommands:
         request: ContinueRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -600,7 +608,8 @@ class NativeInteractionCommands:
             parent_run_id=None,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.root,
-            trigger_type="user_input",
+            trigger_type=origin.trigger_type,
+            native_tool_contexts=origin.native_tool_contexts,
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
@@ -1621,6 +1630,7 @@ class NativeInteractionCommands:
         run_id: str,
         idempotency_key: str,
         input: AgentInput,
+        transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
         if self._inbox is None:
             raise GatewayCommandError(
@@ -1685,6 +1695,9 @@ class NativeInteractionCommands:
                         now=now,
                     )
                 )
+
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
 
         try:
             return await self._inbox.append_steer(

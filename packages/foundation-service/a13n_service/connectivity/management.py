@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from datetime import datetime
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, JsonValue, SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,24 +60,26 @@ def record_command(
     resource_id: str,
     result_version: int,
     now: datetime,
-) -> None:
-    session.add(
-        ConnectivityCommandRecord(
-            id=new_object_id("idem"),
-            organization_id=organization_id,
-            workspace_id=workspace_id,
-            actor_type=actor.principal.principal_type.value,
-            actor_id=actor.principal.principal_id,
-            operation=operation,
-            scope_id=scope_id,
-            idempotency_key_digest=idempotency_key_digest,
-            request_fingerprint=fingerprint,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            result_version=result_version,
-            created_at=now,
-        )
+    result: dict[str, JsonValue] | None = None,
+) -> ConnectivityCommandRecord:
+    record = ConnectivityCommandRecord(
+        id=new_object_id("idem"),
+        organization_id=organization_id,
+        workspace_id=workspace_id,
+        actor_type=actor.principal.principal_type.value,
+        actor_id=actor.principal.principal_id,
+        operation=operation,
+        scope_id=scope_id,
+        idempotency_key_digest=idempotency_key_digest,
+        request_fingerprint=fingerprint,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        result_version=result_version,
+        created_at=now,
+        result_json=result,
     )
+    session.add(record)
+    return record
 
 
 def clear_credentials(value: dict[str, SecretStr]) -> dict[str, str]:

@@ -1,4 +1,4 @@
-"""Authenticate provider requests and commit durable Ingress admissions."""
+"""Authenticate bounded provider requests and atomically append durable events."""
 
 from __future__ import annotations
 
@@ -7,28 +7,24 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from pydantic import JsonValue
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
+from a13n_service.connectivity.management import canonical_json
 from a13n_service.connectivity.native_management import require_adapter
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from ._management import require_ingress
-from .admission_domain import ProtectedRawRef
-from .admission_models import (
-    IngressAdmissionRecord,
-    IngressBatchEventRecord,
-    IngressBatchRecord,
-)
-from .models import IngressRecord
+from .admission_domain import BatchConfiguration
+from .admission_models import AgentThreadBindingRecord, IngressAdmissionRecord, IngressBatchRecord
 from .provider import (
     AdmissionReceipt,
     DurableAdmissionReceipt,
@@ -38,41 +34,18 @@ from .provider import (
     ProviderRequest,
     ProviderRequestError,
 )
-from .raw_objects import IngressRawObjectStore
-from .routing import EligibleRouting, IrrelevantRouting, RejectedRouting, RoutingResolution, resolve_routing
+from .routing import EligibleRouting, IrrelevantRouting, resolve_routing
 
 
 @dataclass(frozen=True, slots=True)
-class _IngressSnapshot:
+class AccountSnapshot:
     id: str
-    organization_id: str
     workspace_id: str
+    version: int
+    credential_generation: int
     provider_key: str
     provider_config_version: str
-    provider_config_json: JsonObject
-    credential_generation: int
-    account_version: int
-    version: int
-
-
-@dataclass(frozen=True, slots=True)
-class _FrozenRoutingFields:
-    route_id: str | None
-    route_version: int | None
-    selected_agent_id: str | None
-    external_ref_kind: str | None
-    external_ref_id: str | None
-    binding_state: str
-    binding_id: str | None
-    mapping_json: dict[str, JsonValue] | None
-    mapping_digest: str | None
-    min_interval_ms: int
-    max_batch_events: int
-    provider_context_json: dict[str, JsonValue]
-    provider_policy_json: dict[str, JsonValue]
-    native_actions_json: list[str]
-    capability_overlay_json: dict[str, JsonValue] | None
-    compatibility_digest: str
+    provider_config: JsonObject
 
 
 class IngressEventService:
@@ -81,14 +54,12 @@ class IngressEventService:
         sessions: async_sessionmaker[AsyncSession],
         adapters: AdapterRegistry[IngressAdapter],
         protector: SecretProtector,
-        raw_objects: IngressRawObjectStore,
         *,
         request_max_bytes: int,
-        raw_retention_seconds: int,
         workspace_pending_max_count: int,
         workspace_pending_max_bytes: int,
-        ingress_pending_max_count: int,
-        ingress_pending_max_bytes: int,
+        account_pending_max_count: int,
+        account_pending_max_bytes: int,
         batch_max_bytes: int,
         dedup_horizon_seconds: int,
         clock: Clock = utc_now,
@@ -96,242 +67,204 @@ class IngressEventService:
         self._sessions = sessions
         self._adapters = adapters
         self._protector = protector
-        self._raw_objects = raw_objects
         self._request_max_bytes = request_max_bytes
-        self._raw_retention_seconds = raw_retention_seconds
         self._workspace_pending_max_count = workspace_pending_max_count
         self._workspace_pending_max_bytes = workspace_pending_max_bytes
-        self._ingress_pending_max_count = ingress_pending_max_count
-        self._ingress_pending_max_bytes = ingress_pending_max_bytes
+        self._account_pending_max_count = account_pending_max_count
+        self._account_pending_max_bytes = account_pending_max_bytes
         self._batch_max_bytes = batch_max_bytes
         self._dedup_horizon_seconds = dedup_horizon_seconds
         self._clock = clock
 
-    async def receive(self, *, ingress_id: str, request: ProviderRequest) -> ProviderHttpResponse:
-        snapshot, adapter, credentials = await self._load_runtime(ingress_id)
+    async def receive(self, *, account_id: str, request: ProviderRequest) -> ProviderHttpResponse:
+        snapshot, adapter, credentials = await self._load_runtime(account_id)
         if len(request.body) > min(self._request_max_bytes, adapter.max_request_bytes):
             return adapter.failure_response("request_too_large")
-        received_at = self._clock()
         try:
             decision = await adapter.authenticate_and_normalize(
                 request,
-                ingress_id=ingress_id,
-                account_config=snapshot.provider_config_json,
+                account_id=account_id,
+                account_config=snapshot.provider_config,
                 credentials=credentials,
-                received_at=received_at,
+                received_at=self._clock(),
             )
         except ProviderRequestError as error:
             return error.response
         if decision.kind == "complete":
             return decision.response
-        event = decision.event
-        identity_digest = _identity_digest(event)
-        raw_ref = None
         try:
-            if event.retain_raw and self._raw_retention_seconds > 0:
-                raw_ref = await self._raw_objects.retain(
-                    organization_id=snapshot.organization_id,
-                    workspace_id=snapshot.workspace_id,
-                    ingress_id=ingress_id,
-                    identity_digest=identity_digest,
-                    body=request.body,
-                    expires_at=received_at + timedelta(seconds=self._raw_retention_seconds),
-                )
             receipt = await self._admit(
                 snapshot=snapshot,
                 adapter=adapter,
-                event=event,
-                identity_digest=identity_digest,
+                event=decision.event,
                 request_digest=hashlib.sha256(request.body).hexdigest(),
-                raw_ref=raw_ref,
             )
         except NativeError as error:
-            if raw_ref is not None:
-                await self._raw_objects.delete(raw_ref)
             return adapter.failure_response(error.code)
-        if receipt.admission_id is None and raw_ref is not None:
-            await self._raw_objects.delete(raw_ref)
         return adapter.acknowledge(receipt)
 
-    async def _load_runtime(self, ingress_id: str) -> tuple[_IngressSnapshot, IngressAdapter, JsonObject]:
+    async def _load_runtime(self, account_id: str) -> tuple[AccountSnapshot, IngressAdapter, JsonObject]:
         async with short_session(self._sessions) as session:
-            try:
-                record = await require_ingress(session, ingress_id)
-            except NativeError as error:
-                raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404) from error
-            if record.account.status != "active" or record.account.deleted_at is not None:
-                raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404)
-            snapshot = _snapshot(record)
-            credential = record.account.credential_snapshot()
+            account = await require_account(session, account_id)
+            if account.status != "active":
+                raise NativeError("account_unavailable", "Account is unavailable.", status_code=404)
+            snapshot = AccountSnapshot(
+                account.id,
+                account.workspace_id,
+                account.version,
+                account.credential_generation,
+                account.provider_key,
+                account.provider_config_version,
+                dict(account.provider_config_json),
+            )
+            credential = account.credential_snapshot()
         adapter = require_adapter(self._adapters, snapshot.provider_key, snapshot.provider_config_version)
         try:
-            value = credential.decrypt(self._protector)
-            credentials = json.loads(value)
-            if not isinstance(credentials, dict) or any(not isinstance(key, str) for key in credentials):
-                raise ValueError("invalid credential bundle")
-        except (SecretProtectionError, ValueError, json.JSONDecodeError) as error:
-            raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404) from error
+            credentials = json.loads(credential.decrypt(self._protector))
+            if not isinstance(credentials, dict):
+                raise ValueError("invalid credentials")
+        except (SecretProtectionError, ValueError) as error:
+            raise NativeError("account_unavailable", "Account credentials are unavailable.", status_code=503) from error
         return snapshot, adapter, credentials
 
     async def _admit(
-        self,
-        *,
-        snapshot: _IngressSnapshot,
-        adapter: IngressAdapter,
-        event: InboundEvent,
-        identity_digest: str,
-        request_digest: str,
-        raw_ref: ProtectedRawRef | None,
+        self, *, snapshot: AccountSnapshot, adapter: IngressAdapter, event: InboundEvent, request_digest: str
     ) -> AdmissionReceipt:
         now = self._clock()
+        identity = hashlib.sha256(event.external_event_id.encode()).hexdigest()
         async with transaction(self._sessions) as session:
-            await _lock_workspace(session, snapshot.workspace_id)
-            ingress = await require_ingress(session, snapshot.id, lock=True)
-            if (
-                ingress.version != snapshot.version
-                or ingress.account.version != snapshot.account_version
-                or ingress.account.status != "active"
-                or ingress.account.deleted_at is not None
-                or ingress.account.credential_generation != snapshot.credential_generation
-                or ingress.account.provider_config_version != snapshot.provider_config_version
-            ):
-                raise NativeError("ingress_changed", "Ingress changed during authentication.", status_code=503)
+            # The existing Workspace capacity row also serializes same-event first
+            # admission. No session or lock spans provider authentication or I/O.
+            workspace = await session.scalar(
+                select(WorkspaceRecord).where(WorkspaceRecord.id == snapshot.workspace_id).with_for_update()
+            )
+            if workspace is None or workspace.deleted_at is not None:
+                raise NativeError("workspace_unavailable", "Workspace is unavailable.", status_code=409)
+            account = await require_account(session, snapshot.id, lock=True)
+            if account.version != snapshot.version or account.credential_generation != snapshot.credential_generation:
+                raise NativeError("account_changed", "Account changed during authentication.", status_code=503)
             duplicate = await session.scalar(
                 select(IngressAdmissionRecord).where(
-                    IngressAdmissionRecord.ingress_id == ingress.id,
+                    IngressAdmissionRecord.account_id == account.id,
                     IngressAdmissionRecord.event_identity_kind == event.identity_kind,
-                    IngressAdmissionRecord.event_identity_digest == identity_digest,
+                    IngressAdmissionRecord.event_identity_digest == identity,
                 )
             )
             if duplicate is not None:
                 if duplicate.request_digest != request_digest:
                     raise NativeError(
                         "delivery_identity_conflict",
-                        "Provider delivery identity was reused with different content.",
+                        "Delivery identity was reused with different content.",
                         status_code=409,
                     )
-                return _receipt(duplicate, duplicate=True)
-
-            routing = await resolve_routing(session, adapter=adapter, ingress=ingress, event=event)
+                return await _receipt(session, duplicate, duplicate=True)
+            routing = await resolve_routing(session, adapter=adapter, account=account, event=event)
             if isinstance(routing, IrrelevantRouting):
-                return IrrelevantAdmissionReceipt(
-                    reason_code=routing.reason_code,
+                return IrrelevantAdmissionReceipt(reason_code=routing.reason_code)
+            value = event.model_dump(mode="json", exclude={"external_event_id"})
+            size = len(canonical_json(value).encode())
+            if size > self._batch_max_bytes:
+                raise NativeError("event_too_large", "Event exceeds batch capacity.", status_code=413)
+            await self._require_capacity(session, account, size)
+            binding = routing.binding
+            if binding is None:
+                binding = AgentThreadBindingRecord(
+                    id=new_object_id("bind"),
+                    organization_id=account.organization_id,
+                    workspace_id=account.workspace_id,
+                    account_id=account.id,
+                    external_ref_kind=routing.external_ref.kind,
+                    external_ref_id=routing.external_ref.id,
+                    thread_id=None,
+                    next_batch_sequence=1,
+                    next_submission_at=now,
+                    created_at=now,
+                    updated_at=now,
                 )
-            event_json = event.model_dump(mode="json", exclude={"external_event_id", "retain_raw"})
-            event_size = len(_canonical(event_json))
-            frozen_routing = _freeze_routing(routing, fallback_digest=identity_digest)
-            if isinstance(routing, RejectedRouting):
-                rejected = _admission_record(
-                    ingress=ingress,
-                    event=event,
-                    event_json=event_json,
-                    event_size=event_size,
-                    identity_digest=identity_digest,
-                    request_digest=request_digest,
-                    raw_ref=raw_ref,
-                    routing=frozen_routing,
-                    now=now,
-                    status="rejected",
-                    dedup_horizon_seconds=_dedup_horizon(adapter, self._dedup_horizon_seconds),
-                )
-                rejected.rejection_reason = routing.reason_code
-                rejected.terminal_at = now
-                session.add(rejected)
+                session.add(binding)
                 await session.flush()
-                return _receipt(rejected, duplicate=False)
-
-            await self._require_capacity(session, ingress, event_size)
-            admission = _admission_record(
-                ingress=ingress,
-                event=event,
-                event_json=event_json,
-                event_size=event_size,
-                identity_digest=identity_digest,
+            batch = await self._batch(session, binding, routing, size, now)
+            record = IngressAdmissionRecord(
+                id=new_object_id("iadm"),
+                organization_id=account.organization_id,
+                workspace_id=account.workspace_id,
+                account_id=account.id,
+                batch_id=batch.id,
+                event_identity_kind=event.identity_kind,
+                event_identity_digest=identity,
                 request_digest=request_digest,
-                raw_ref=raw_ref,
-                routing=frozen_routing,
-                now=now,
-                status="pending",
-                dedup_horizon_seconds=_dedup_horizon(adapter, self._dedup_horizon_seconds),
+                event_json=value,
+                ordering_key=event.ordering_key,
+                event_size_bytes=size,
+                rejection_reason=None,
+                dedup_expires_at=now
+                + timedelta(seconds=min(adapter.dedup_horizon_seconds, self._dedup_horizon_seconds)),
+                created_at=now,
             )
-            session.add(admission)
+            session.add(record)
             await session.flush()
-            batch = await self._select_batch(session, ingress, routing, frozen_routing, event_size, now)
-            session.add(
-                IngressBatchEventRecord(
-                    batch_id=batch.id,
-                    admission_id=admission.id,
-                    organization_id=ingress.organization_id,
-                    workspace_id=ingress.workspace_id,
-                    ordering_key=event.ordering_key,
-                )
-            )
-            await session.flush()
-            return _receipt(admission, duplicate=False)
+            return DurableAdmissionReceipt(admission_id=record.id, status="pending", duplicate=False)
 
-    async def _require_capacity(self, session: AsyncSession, ingress: IngressRecord, event_size: int) -> None:
-        workspace_count, workspace_bytes = (
-            await session.execute(
-                select(func.count(), func.coalesce(func.sum(IngressAdmissionRecord.event_size_bytes), 0)).where(
-                    IngressAdmissionRecord.workspace_id == ingress.workspace_id,
-                    IngressAdmissionRecord.status == "pending",
-                )
-            )
-        ).one()
-        ingress_count, ingress_bytes = (
-            await session.execute(
-                select(func.count(), func.coalesce(func.sum(IngressAdmissionRecord.event_size_bytes), 0)).where(
-                    IngressAdmissionRecord.ingress_id == ingress.id,
-                    IngressAdmissionRecord.status == "pending",
-                )
-            )
+    async def _require_capacity(self, session: AsyncSession, account: AccountRecord, size: int) -> None:
+        pending = (
+            select(func.count(), func.coalesce(func.sum(IngressAdmissionRecord.event_size_bytes), 0))
+            .join(IngressBatchRecord, IngressBatchRecord.id == IngressAdmissionRecord.batch_id)
+            .where(IngressBatchRecord.status == "pending", IngressAdmissionRecord.workspace_id == account.workspace_id)
+        )
+        workspace_count, workspace_bytes = (await session.execute(pending)).one()
+        account_count, account_bytes = (
+            await session.execute(pending.where(IngressAdmissionRecord.account_id == account.id))
         ).one()
         if (
             workspace_count + 1 > self._workspace_pending_max_count
-            or workspace_bytes + event_size > self._workspace_pending_max_bytes
-            or ingress_count + 1 > self._ingress_pending_max_count
-            or ingress_bytes + event_size > self._ingress_pending_max_bytes
+            or workspace_bytes + size > self._workspace_pending_max_bytes
+            or account_count + 1 > self._account_pending_max_count
+            or account_bytes + size > self._account_pending_max_bytes
         ):
-            raise NativeError("admission_capacity_exhausted", "Ingress admission capacity is full.", status_code=503)
+            raise NativeError("admission_capacity_exhausted", "Account admission capacity is full.", status_code=503)
 
-    async def _select_batch(
+    async def _batch(
         self,
         session: AsyncSession,
-        ingress: IngressRecord,
+        binding: AgentThreadBindingRecord,
         routing: EligibleRouting,
-        frozen_routing: _FrozenRoutingFields,
-        event_size: int,
+        size: int,
         now: datetime,
     ) -> IngressBatchRecord:
-        candidate = await session.scalar(
+        latest = await session.scalar(
             select(IngressBatchRecord)
-            .where(
-                IngressBatchRecord.ingress_id == ingress.id,
-                IngressBatchRecord.compatibility_digest == frozen_routing.compatibility_digest,
-                IngressBatchRecord.status == "pending",
-                IngressBatchRecord.claim_owner.is_(None),
-                IngressBatchRecord.append_until >= now,
-                IngressBatchRecord.event_count < routing.max_batch_events,
-            )
-            .order_by(IngressBatchRecord.created_at.desc(), IngressBatchRecord.id.desc())
+            .where(IngressBatchRecord.binding_id == binding.id)
+            .order_by(IngressBatchRecord.sequence.desc())
+            .limit(1)
             .with_for_update()
         )
-        if candidate is not None and candidate.event_bytes + event_size <= self._batch_max_bytes:
-            candidate.event_count += 1
-            candidate.event_bytes += event_size
-            candidate.updated_at = now
-            return candidate
+        config = routing.configuration
+        if (
+            latest is not None
+            and latest.status == "pending"
+            and latest.claim_generation == 0
+            and assume_utc(latest.append_until) >= now
+            and latest.event_count < config.input_batching.max_batch_events
+            and latest.event_bytes + size <= self._batch_max_bytes
+            and BatchConfiguration.model_validate(latest.configuration_json).same_generation(config)
+        ):
+            latest.event_count += 1
+            latest.event_bytes += size
+            latest.updated_at = now
+            return latest
         batch = IngressBatchRecord(
             id=new_object_id("ibat"),
-            organization_id=ingress.organization_id,
-            workspace_id=ingress.workspace_id,
-            ingress_id=ingress.id,
-            compatibility_digest=frozen_routing.compatibility_digest,
+            organization_id=binding.organization_id,
+            workspace_id=binding.workspace_id,
+            binding_id=binding.id,
+            sequence=binding.next_batch_sequence,
+            configuration_json=config.model_dump(mode="json"),
             status="pending",
             event_count=1,
-            event_bytes=event_size,
-            append_until=now + timedelta(milliseconds=routing.min_interval_ms),
-            available_at=now,
+            event_bytes=size,
+            append_until=max(now, assume_utc(binding.next_submission_at))
+            + timedelta(milliseconds=config.input_batching.min_interval_ms),
+            available_at=max(now, assume_utc(binding.next_submission_at)),
             attempt_count=0,
             claim_generation=0,
             claim_owner=None,
@@ -343,162 +276,20 @@ class IngressEventService:
             updated_at=now,
             terminal_at=None,
         )
+        binding.next_batch_sequence += 1
+        binding.updated_at = now
         session.add(batch)
         await session.flush()
         return batch
 
 
-def _admission_record(
-    *,
-    ingress: IngressRecord,
-    event: InboundEvent,
-    event_json: dict[str, object],
-    event_size: int,
-    identity_digest: str,
-    request_digest: str,
-    raw_ref: ProtectedRawRef | None,
-    routing: _FrozenRoutingFields,
-    now: datetime,
-    status: str,
-    dedup_horizon_seconds: int,
-) -> IngressAdmissionRecord:
-    return IngressAdmissionRecord(
-        id=new_object_id("iadm"),
-        organization_id=ingress.organization_id,
-        workspace_id=ingress.workspace_id,
-        ingress_id=ingress.id,
-        ingress_version=ingress.version,
-        provider_key=ingress.account.provider_key,
-        provider_config_version=ingress.account.provider_config_version,
-        route_id=routing.route_id,
-        route_version=routing.route_version,
-        event_identity_kind=event.identity_kind,
-        event_identity_digest=identity_digest,
-        protected_event_identity=event.external_event_id,
-        request_digest=request_digest,
-        event_type=event.type,
-        normalization_version=event.normalization_version,
-        event_json=event_json,
-        ordering_key=event.ordering_key,
-        raw_ref_json=raw_ref.model_dump(mode="json") if raw_ref is not None else None,
-        selected_agent_id=routing.selected_agent_id,
-        external_ref_kind=routing.external_ref_kind,
-        external_ref_id=routing.external_ref_id,
-        binding_state=routing.binding_state,
-        binding_id=routing.binding_id,
-        mapping_json=routing.mapping_json,
-        mapping_digest=routing.mapping_digest,
-        min_interval_ms=routing.min_interval_ms,
-        max_batch_events=routing.max_batch_events,
-        provider_context_json=routing.provider_context_json,
-        provider_policy_json=routing.provider_policy_json,
-        native_actions_json=routing.native_actions_json,
-        capability_overlay_json=routing.capability_overlay_json,
-        compatibility_digest=routing.compatibility_digest,
-        event_size_bytes=event_size,
-        status=status,
-        result_kind=None,
-        result_id=None,
-        rejection_reason=None,
-        available_at=now,
-        attempt_count=0,
-        claim_generation=0,
-        claim_owner=None,
-        claim_expires_at=None,
-        dedup_expires_at=now + timedelta(seconds=dedup_horizon_seconds),
-        terminal_at=None,
-        created_at=now,
-        updated_at=now,
-    )
-
-
-def _receipt(record: IngressAdmissionRecord, *, duplicate: bool) -> DurableAdmissionReceipt:
+async def _receipt(session: AsyncSession, event: IngressAdmissionRecord, *, duplicate: bool) -> DurableAdmissionReceipt:
+    batch = await session.get(IngressBatchRecord, event.batch_id) if event.batch_id else None
     return DurableAdmissionReceipt.model_validate(
         {
-            "admission_id": record.id,
-            "status": record.status,
+            "admission_id": event.id,
+            "status": batch.status if batch is not None else "rejected",
             "duplicate": duplicate,
-            "reason_code": record.rejection_reason,
+            "reason_code": batch.rejection_reason if batch is not None else event.rejection_reason,
         }
     )
-
-
-def _freeze_routing(routing: RoutingResolution, *, fallback_digest: str) -> _FrozenRoutingFields:
-    if isinstance(routing, EligibleRouting):
-        route = routing.route
-        return _FrozenRoutingFields(
-            route_id=route.id if route is not None else None,
-            route_version=route.version if route is not None else None,
-            selected_agent_id=routing.selected_agent_id,
-            external_ref_kind=routing.external_ref.kind,
-            external_ref_id=routing.external_ref.id,
-            binding_state=routing.binding_state.value,
-            binding_id=routing.binding_id,
-            mapping_json=routing.mapping.value,
-            mapping_digest=routing.mapping.digest,
-            min_interval_ms=routing.min_interval_ms,
-            max_batch_events=routing.max_batch_events,
-            provider_context_json=routing.provider_context,
-            provider_policy_json=routing.provider_policy,
-            native_actions_json=list(routing.native_actions),
-            capability_overlay_json=routing.capability_overlay,
-            compatibility_digest=routing.compatibility_digest,
-        )
-    if isinstance(routing, RejectedRouting):
-        route = routing.route
-        return _FrozenRoutingFields(
-            route_id=route.id if route is not None else None,
-            route_version=route.version if route is not None else None,
-            selected_agent_id=None,
-            external_ref_kind=None,
-            external_ref_id=None,
-            binding_state="unbound",
-            binding_id=None,
-            mapping_json=None,
-            mapping_digest=None,
-            min_interval_ms=1,
-            max_batch_events=1,
-            provider_context_json={},
-            provider_policy_json={},
-            native_actions_json=[],
-            capability_overlay_json=None,
-            compatibility_digest=fallback_digest,
-        )
-    raise TypeError("irrelevant routing decisions are not durable")
-
-
-async def _lock_workspace(session: AsyncSession, workspace_id: str) -> None:
-    workspace = await session.scalar(
-        select(WorkspaceRecord).where(WorkspaceRecord.id == workspace_id).with_for_update()
-    )
-    if workspace is None:
-        raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404)
-
-
-def _identity_digest(event: InboundEvent) -> str:
-    value = f"a13n-ingress-event-v1\0{event.identity_kind}\0{event.external_event_id}".encode()
-    return hashlib.sha256(value).hexdigest()
-
-
-def _canonical(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-
-
-def _snapshot(record: IngressRecord) -> _IngressSnapshot:
-    return _IngressSnapshot(
-        id=record.id,
-        organization_id=record.organization_id,
-        workspace_id=record.workspace_id,
-        provider_key=record.account.provider_key,
-        provider_config_version=record.account.provider_config_version,
-        provider_config_json=dict(record.account.provider_config_json),
-        credential_generation=record.account.credential_generation,
-        account_version=record.account.version,
-        version=record.version,
-    )
-
-
-def _dedup_horizon(adapter: IngressAdapter, deployment_max: int) -> int:
-    if adapter.dedup_horizon_seconds <= 0:
-        raise NativeError("invalid_adapter_contract", "Ingress adapter contract is invalid.", status_code=503)
-    return min(adapter.dedup_horizon_seconds, deployment_max)

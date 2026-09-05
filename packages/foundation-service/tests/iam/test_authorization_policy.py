@@ -8,21 +8,21 @@ def test_workspace_roles_grant_connectivity_actions_explicitly() -> None:
     admin = _WORKSPACE_ROLE_ACTIONS["admin"]
 
     read_actions = {
-        WorkspaceAction.ingress_read,
-        WorkspaceAction.route_read,
+        WorkspaceAction.application_account_read,
+        WorkspaceAction.account_target_read,
         WorkspaceAction.connector_provider_read,
         WorkspaceAction.connector_connection_read,
         WorkspaceAction.mcp_connection_read,
     }
     admin_only = {
-        WorkspaceAction.ingress_manage,
+        WorkspaceAction.application_account_manage,
         WorkspaceAction.connector_provider_manage,
         WorkspaceAction.connector_connection_manage,
         WorkspaceAction.mcp_connection_manage,
     }
 
     assert read_actions <= viewer <= runner <= builder <= admin
-    assert WorkspaceAction.route_manage in builder
+    assert WorkspaceAction.account_target_manage in builder
     assert WorkspaceAction.skill_revision_publish in builder
     assert admin_only.isdisjoint(builder)
     assert admin_only <= admin

@@ -8,18 +8,26 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 from anyio import create_task_group, move_on_after
 
+from a13n_service.agents.invocation_resolution import AgentInvocationResolver
+from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
+from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
+from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a_push import A2A_PUSH_ENABLED_SESSION_INFO_KEY
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.models.providers import ProviderRegistry
+from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.background import BackgroundTask, run_critical_component
 from a13n_service.process.components import Components
 from a13n_service.process.connectivity import build_connectivity_runtime
 from a13n_service.process.control import build_control_runtime
+from a13n_service.process.control.asset import build_asset_bundle
 from a13n_service.process.environment import build_environment_catalog
 from a13n_service.process.resources import build_execution_resources
 from a13n_service.process.roles import owns_connectivity_data, owns_control, owns_worker
 from a13n_service.process.runtime import ProcessRuntime, ProcessStatus, SharedRuntime
+from a13n_service.process.submission import build_input_commands
 from a13n_service.process.worker import build_worker_runtime
 from a13n_service.settings import Settings
 from a13n_service.storage import open_storage
@@ -58,17 +66,7 @@ async def open_process_runtime(
                 storage=storage,
                 secret_protector=settings.secret_protector(),
             )
-            connectivity, connectivity_selection, connectivity_background = await build_connectivity_runtime(
-                settings,
-                storage,
-                shared.secret_protector,
-                stack,
-                ingress_adapters=components.ingress_adapter_registry,
-                connector_providers=components.connector_provider_registry,
-                input_acceptor=components.input_acceptor,
-                control_plane=owns_control(settings.role),
-                data_plane=owns_connectivity_data(settings.role),
-            )
+            connectivity_selection = ConnectivitySelectionResolver(storage.sessions)
             execution = (
                 await build_execution_resources(
                     shared,
@@ -113,6 +111,39 @@ async def open_process_runtime(
                     trace_query_provider_registry,
                     stack,
                 )
+            input_acceptor = components.input_acceptor
+            if owns_connectivity_data(settings.role) and input_acceptor is None:
+                if control is not None:
+                    commands = control.gateway.commands
+                else:
+                    plugins = components.agent_plugin_selection_resolver or AgentPluginSelectionResolver(
+                        storage.sessions,
+                        runtime_mode=settings.plugin_runtime_mode,
+                        worker_release=settings.build_version,
+                    )
+                    invocations = components.agent_invocation_resolver or AgentInvocationResolver(
+                        storage.sessions,
+                        AcceptedModelSelector(storage.sessions, model_provider_registry),
+                        plugin_runtime_mode=settings.plugin_runtime_mode,
+                        plugin_resolver=plugins,
+                        connectivity_resolver=connectivity_selection,
+                    )
+                    assets = await build_asset_bundle(settings, shared)
+                    commands = build_input_commands(
+                        settings, shared, invocations, assets.service, InlineHookValidator(EndpointPolicy())
+                    )
+                input_acceptor = IngressInputAcceptor(storage.sessions, commands)
+            connectivity, connectivity_selection, connectivity_background = await build_connectivity_runtime(
+                settings,
+                storage,
+                shared.secret_protector,
+                stack,
+                ingress_adapters=components.ingress_adapter_registry,
+                connector_providers=components.connector_provider_registry,
+                input_acceptor=input_acceptor,
+                control_plane=owns_control(settings.role),
+                data_plane=owns_connectivity_data(settings.role),
+            )
             runtime = ProcessRuntime(
                 settings=settings,
                 status=status,

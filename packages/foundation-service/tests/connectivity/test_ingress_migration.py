@@ -10,11 +10,8 @@ TABLES = {
     "agent_thread_bindings",
     "connectivity_commands",
     "ingress_admissions",
-    "ingress_agents",
-    "ingress_batch_events",
     "ingress_batches",
-    "ingress_routes",
-    "ingresses",
+    "account_targets",
 }
 
 
@@ -29,18 +26,8 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert "native_tool_contexts_json" in run_columns
         assert not {"account_selections_json", "ingress_context_json"} & run_columns
-        ingress_columns = {column["name"] for column in inspector.get_columns("ingresses")}
-        assert "account_id" in ingress_columns
-        assert (
-            not {
-                "ciphertext",
-                "nonce",
-                "encryption_key_id",
-                "credential_generation",
-                "provider_key",
-                "provider_config_version",
-            }
-            & ingress_columns
+        assert {"ingresses", "ingress_routes", "ingress_agents", "ingress_batch_events"}.isdisjoint(
+            inspector.get_table_names()
         )
         account_columns = {column["name"] for column in inspector.get_columns("application_accounts")}
         assert {
@@ -54,7 +41,8 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         assert "idempotency_key_digest" in command_columns
         assert "idempotency_key" not in command_columns
         admission_columns = {column["name"] for column in inspector.get_columns("ingress_admissions")}
-        assert {"provider_context_json", "mapping_digest", "dedup_expires_at"} <= admission_columns
+        assert {"batch_id", "event_json", "dedup_expires_at"} <= admission_columns
+        assert {"raw_ref_json", "mapping_digest", "status", "available_at"}.isdisjoint(admission_columns)
     finally:
         engine.dispose()
     migrator.downgrade("base")

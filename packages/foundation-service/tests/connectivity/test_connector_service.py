@@ -5,9 +5,6 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
-from a13n_service.connectivity.connectors.contracts import (
-    AdapterConnectionStatus,
-)
 from a13n_service.connectivity.connectors.domain import (
     CreateConnectorConnectionRequest,
     CreateConnectorProviderRequest,
@@ -16,17 +13,16 @@ from a13n_service.connectivity.connectors.domain import (
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import (
     ConnectorConnectionRecord,
-    ConnectorOperationRecord,
     ConnectorSetupAttemptRecord,
 )
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
-from a13n_service.iam import PrincipalRef
+from a13n_service.storage import transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, USER_ID, WORKSPACE_ID, actor
+from .conftest import NOW, ORG_ID, WORKSPACE_ID, actor
 from .connector_helpers import FakeConnectorBackend, fake_registry
 
 
@@ -92,7 +88,6 @@ async def create_connection(
             connector_provider_id=connector_provider_id,
             name="GitHub",
             connector_key="github",
-            owner_principal_ref=PrincipalRef(principal_type="user", principal_id=USER_ID),
         ),
     )
 
@@ -197,7 +192,7 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
 
 
 @pytest.mark.anyio
-async def test_connection_revoke_precedes_tombstone(
+async def test_local_delete_and_one_shot_remote_revoke(
     connector_services,
     connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
@@ -217,38 +212,17 @@ async def test_connection_revoke_precedes_tombstone(
         setup={"scopes": ["read"]},
         return_path="/connections",
     )
-    with pytest.raises(ConnectorError) as premature:
-        await connections.delete(
-            actor=actor(),
-            connection_id=launch.connection.id,
-            expected_version=launch.connection.version,
-            idempotency_key="premature-delete",
-        )
-    assert premature.value.code == "revocation_required"
-
-    revoked = await connections.revoke(
-        actor=actor(),
-        connection_id=launch.connection.id,
-        expected_version=launch.connection.version,
-        idempotency_key="revoke",
+    receipt = await connections.delete(
+        actor=actor(), connection_id=connection.id, expected_version=launch.connection.version, idempotency_key="delete"
     )
-    assert revoked.status == "succeeded"
-    assert revoked.connection.status == "action_required"
-    assert revoked.connection.status_reason == "reauthorization_required"
+    assert receipt.local_status == "deleted" and receipt.remote_status == "succeeded"
     assert len(connector_backend.revoked) == 1
-    await connections.delete(
-        actor=actor(),
-        connection_id=revoked.connection.id,
-        expected_version=revoked.connection.version,
-        idempotency_key="delete",
+    replay = await connections.delete(
+        actor=actor(), connection_id=connection.id, expected_version=launch.connection.version, idempotency_key="delete"
     )
-    with pytest.raises(ConnectorError) as deleted:
-        await connections.get(actor=actor(), connection_id=revoked.connection.id)
-    assert deleted.value.code == "resource_not_found"
-
-    async with connectivity_sessions() as session:
-        operation = await session.scalar(select(ConnectorOperationRecord))
-    assert operation is not None and operation.status == "succeeded"
+    assert replay == receipt and len(connector_backend.revoked) == 1
+    with pytest.raises(ConnectorError):
+        await connections.get(actor=actor(), connection_id=connection.id)
 
 
 @pytest.mark.anyio
@@ -280,7 +254,6 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
         connectivity_sessions,
         registry,
         connections.setup_coordinator,
-        connections,
         instance_id="reconciler-1",
         poll_interval_seconds=1,
         lease_seconds=60,
@@ -293,7 +266,7 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
 
 
 @pytest.mark.anyio
-async def test_unknown_revoke_reconciles_only_from_same_external_reference(
+async def test_unknown_revoke_is_never_retried(
     connector_services,
     connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
@@ -327,24 +300,24 @@ async def test_unknown_revoke_reconciles_only_from_same_external_reference(
         expected_version=ready.version,
         idempotency_key="unknown-revoke",
     )
-    assert receipt.status == "unknown"
+    assert receipt.remote_status == "unknown" and receipt.local_status == "disabled"
 
-    connector_backend.inspection_status = AdapterConnectionStatus.action_required
-    registry = fake_registry(connector_backend)
+    replay = await connections.revoke(
+        actor=actor(), connection_id=connection.id, expected_version=ready.version, idempotency_key="unknown-revoke"
+    )
+    assert replay == receipt
     reconciler = ConnectorReconciler(
         connectivity_sessions,
-        registry,
+        fake_registry(connector_backend),
         connections.setup_coordinator,
-        connections,
-        instance_id="reconciler-2",
+        instance_id="pod",
         poll_interval_seconds=1,
         lease_seconds=60,
         clock=lambda: NOW + timedelta(seconds=6),
     )
-    assert await reconciler.reconcile_once() is True
-    async with connectivity_sessions() as session:
-        operation = await session.get(ConnectorOperationRecord, receipt.operation_id)
-    assert operation is not None and operation.status == "succeeded"
+    assert await reconciler.reconcile_once() is False
+    disabled = await connections.get(actor=actor(), connection_id=connection.id)
+    assert disabled.status == "disabled"
 
 
 @pytest.mark.anyio
@@ -470,11 +443,13 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     connectivity_sessions,
     credential_protector,
     monkeypatch,
+    external_runtime_factory,
 ):
     from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
-    from a13n_service.connectivity.execution import ExternalToolRuntime
+    from a13n_service.connectivity.execution import AttemptToolScope
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection
+    from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
     from a13n_service.endpoint_policy import EndpointPolicy
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
@@ -509,18 +484,111 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
 
     monkeypatch.setattr(FakeConnection, "execute_tool", execute)
     policy = EndpointPolicy()
-    runtime = ExternalToolRuntime(
-        connectivity_sessions, credential_protector, connector_registry, RemoteTransport(policy), policy
-    )
+    runtime = external_runtime_factory(connector_registry, RemoteTransport(policy), policy)
     capability = await runtime._connector(
         ConnectorConnectionRunSelection(
             connector_connection_id=connection.id, connector_provider_id=provider.id, tools=("issues.create",)
         ),
         guard,
+        AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), ()),
     )
     result = await Agent(TestModel(), capabilities=[capability]).run("create issue")
     assert "outcome_unknown" in result.output
-    assert len(calls) == 1 and len(guards) >= 3
+    assert len(calls) == 1 and len(guards) == 2
     assert calls[0][0].external_ref == "external-1"
     assert calls[0][0].external_user_correlation == attempt.external_user_correlation
     assert calls[0][1]["provider_version"] == "fake-1"
+
+
+async def test_disabled_connection_callback_cannot_restore_readiness(connector_services):
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(
+        connections, connector_provider_id=provider.id, idempotency_key="late-callback"
+    )
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        idempotency_key="setup",
+        expected_version=connection.version,
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    disabled = await connections.set_enabled(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=launch.connection.version,
+        idempotency_key="disable",
+        enabled=False,
+    )
+    with pytest.raises(ConnectorError):
+        await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+    assert (await connections.get(actor=actor(), connection_id=connection.id)).status == "disabled"
+    with pytest.raises(ConnectorError):
+        await connections.set_enabled(
+            actor=actor(),
+            connection_id=connection.id,
+            expected_version=disabled.version,
+            idempotency_key="enable-incomplete",
+            enabled=True,
+        )
+
+
+async def test_local_delete_survives_missing_remote_binding(
+    connector_services, connector_backend, connectivity_sessions
+):
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(
+        connections, connector_provider_id=provider.id, idempotency_key="missing-binding"
+    )
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        idempotency_key="setup",
+        expected_version=connection.version,
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    async with transaction(connectivity_sessions) as session:
+        attempt = await session.get(ConnectorSetupAttemptRecord, launch.attempt_id)
+        await session.delete(attempt)
+    receipt = await connections.delete(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=launch.connection.version,
+        idempotency_key="delete-missing-binding",
+    )
+    assert receipt.local_status == "deleted" and receipt.remote_status == "unknown"
+    assert connector_backend.revoked == []
+
+
+async def test_connection_listing_query_count_is_constant(connector_services, connectivity_sessions):
+    from sqlalchemy import event
+
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    engine = connectivity_sessions.kw["bind"].sync_engine
+    counts = []
+    for size in (1, 2, 3):
+        await connections.create(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key=f"list-{size}",
+            request=CreateConnectorConnectionRequest(
+                connector_provider_id=provider.id, name=f"Connection {size}", connector_key="github"
+            ),
+        )
+        statements = []
+
+        def record(_connection, _cursor, statement, _parameters, _context, _executemany, *, recorded=statements):
+            recorded.append(statement)
+
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            page = await connections.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=100, cursor=None)
+            assert len(page.items) == size
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+        counts.append(len(statements))
+    assert counts[0] == counts[1] == counts[2]

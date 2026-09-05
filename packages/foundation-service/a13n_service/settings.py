@@ -202,11 +202,10 @@ class Settings(BaseSettings):
         ge=1,
         le=PROVIDER_REQUEST_MAX_BYTES,
     )
-    connectivity_protected_raw_retention_seconds: int = Field(default=0, ge=0, le=24 * 60 * 60)
     connectivity_workspace_pending_max_count: int = Field(default=10_000, ge=1, le=1_000_000)
     connectivity_workspace_pending_max_bytes: int = Field(default=1024 * 1024 * 1024, ge=1, le=2**63 - 1)
-    connectivity_ingress_pending_max_count: int = Field(default=1_000, ge=1, le=100_000)
-    connectivity_ingress_pending_max_bytes: int = Field(default=128 * 1024 * 1024, ge=1, le=2**63 - 1)
+    connectivity_account_pending_max_count: int = Field(default=1_000, ge=1, le=100_000)
+    connectivity_account_pending_max_bytes: int = Field(default=128 * 1024 * 1024, ge=1, le=2**63 - 1)
     connectivity_batch_max_events: int = Field(default=100, ge=1, le=1_000)
     connectivity_batch_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1, le=64 * 1024 * 1024)
     connectivity_batch_max_wait_seconds: float = Field(default=300, gt=0, le=3600)
@@ -242,8 +241,6 @@ class Settings(BaseSettings):
     connectivity_connector_reconcile_poll_interval_seconds: float = Field(default=2, gt=0, le=300)
     connectivity_connector_reconcile_lease_seconds: int = Field(default=60, ge=10, le=600)
     connectivity_retention_poll_interval_seconds: float = Field(default=60, gt=0, le=3600)
-    connectivity_retention_lease_seconds: float = Field(default=60, ge=10, le=600)
-    connectivity_object_cleanup_grace_seconds: float = Field(default=3600, ge=60, le=24 * 3600)
     connectivity_retention_batch_size: int = Field(default=25, ge=1, le=1000)
 
     redis_backend: RedisBackend = RedisBackend.redis
@@ -286,18 +283,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_connectivity_bounds(self) -> Self:
-        if self.connectivity_ingress_pending_max_count > self.connectivity_workspace_pending_max_count:
+        if self.connectivity_account_pending_max_count > self.connectivity_workspace_pending_max_count:
             raise ValueError("Ingress pending count cannot exceed the Workspace pending count")
-        if self.connectivity_ingress_pending_max_bytes > self.connectivity_workspace_pending_max_bytes:
+        if self.connectivity_account_pending_max_bytes > self.connectivity_workspace_pending_max_bytes:
             raise ValueError("Ingress pending bytes cannot exceed the Workspace pending bytes")
-        if self.connectivity_batch_max_events > self.connectivity_ingress_pending_max_count:
+        if self.connectivity_batch_max_events > self.connectivity_account_pending_max_count:
             raise ValueError("batch event count cannot exceed the Ingress pending count")
-        if self.connectivity_batch_max_bytes > self.connectivity_ingress_pending_max_bytes:
+        if self.connectivity_batch_max_bytes > self.connectivity_account_pending_max_bytes:
             raise ValueError("batch bytes cannot exceed the Ingress pending bytes")
         if self.connectivity_admission_lease_seconds <= self.connectivity_admission_poll_interval_seconds:
             raise ValueError("admission lease must exceed its poll interval")
-        if self.connectivity_object_cleanup_grace_seconds < self.connectivity_retention_lease_seconds:
-            raise ValueError("object cleanup grace cannot be shorter than the retention lease")
         if self.connectivity_total_timeout_seconds < max(
             self.connectivity_connect_timeout_seconds,
             self.connectivity_read_timeout_seconds,

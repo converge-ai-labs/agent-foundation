@@ -8,15 +8,13 @@ import json
 import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
+from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.adapters import JsonObject
-from a13n_service.connectivity.ingress.domain import InputBatchingPolicy
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
-    DefaultRoute,
     ExternalRef,
     InboundEvent,
     ProviderCompleteDecision,
@@ -29,9 +27,9 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequestDecision,
     ProviderRequestError,
     ProviderRequiresBindingRouting,
+    ReceptionDefaults,
 )
 
-from ..common.mapping import default_event_mapping
 from ..common.messaging import MessagingPolicy
 
 CONTEXT_VERSION = "slack_event_v1"
@@ -57,28 +55,9 @@ class SlackAccountConfig(_StrictModel):
     bot_user_id: str = Field(min_length=1, max_length=128)
 
 
-class SlackRouteMatch(_StrictModel):
-    event_kinds: tuple[Literal["app_mention", "message"], ...] = Field(min_length=1, max_length=2)
-    conversation_kinds: tuple[Literal["channel", "group", "im", "mpim"], ...] = Field(
-        min_length=1,
-        max_length=4,
-    )
-    channel_ids: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=128)
-
-    @field_validator("event_kinds", "conversation_kinds", "channel_ids")
-    @classmethod
-    def unique_sorted(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if value is None:
-            return None
-        if len(set(value)) != len(value) or any(not item or len(item) > 128 for item in value):
-            raise ValueError("Slack Route scopes must contain unique bounded values")
-        return tuple(sorted(value))
-
-
 class SlackIngressAdapter:
     provider_key = "slack"
     config_versions = frozenset({_CONFIG_VERSION})
-    allows_runtime_ambiguity = False
     max_request_bytes = _REQUEST_MAX_BYTES
     dedup_horizon_seconds = _DEDUP_HORIZON_SECONDS
 
@@ -108,41 +87,33 @@ class SlackIngressAdapter:
             config.bot_user_id,
         )
 
-    def validate_route(
-        self,
-        *,
-        match: object,
-        provider_policy: object,
-        account_config: JsonObject,
-        config_version: str,
-    ) -> tuple[JsonObject, JsonObject]:
+    def validate_reception_policy(self, value: object, *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        SlackAccountConfig.model_validate(account_config)
-        return _model_json(SlackRouteMatch.model_validate(match)), _model_json(
-            MessagingPolicy.model_validate(provider_policy)
-        )
+        return _model_json(MessagingPolicy.model_validate(value))
 
-    def prove_non_overlap(self, left: JsonObject, right: JsonObject) -> bool | None:
-        left_match = SlackRouteMatch.model_validate(left)
-        right_match = SlackRouteMatch.model_validate(right)
-        if set(left_match.event_kinds).isdisjoint(right_match.event_kinds):
-            return True
-        if set(left_match.conversation_kinds).isdisjoint(right_match.conversation_kinds):
-            return True
-        if left_match.channel_ids is not None and right_match.channel_ids is not None:
-            return set(left_match.channel_ids).isdisjoint(right_match.channel_ids)
-        return False
+    def validate_target(self, kind: str, external_id: str) -> str:
+        if (
+            kind != "conversation"
+            or not 1 <= len(external_id) <= 128
+            or any(character.isspace() for character in external_id)
+        ):
+            raise ValueError("Invalid slack target")
+        return external_id
+
+    def event_target(self, event: InboundEvent) -> tuple[str, str]:
+        identifier = str(event.context["channel_id"])
+        return "conversation", self.validate_target("conversation", identifier)
 
     async def authenticate_and_normalize(
         self,
         request: ProviderRequest,
         *,
-        ingress_id: str,
+        account_id: str,
         account_config: JsonObject,
         credentials: JsonObject,
         received_at: datetime,
     ) -> ProviderRequestDecision:
-        del ingress_id
+        del account_id
         config = SlackAccountConfig.model_validate(account_config)
         secret = _required_string(credentials, "signing_secret")
         _authenticate(request, secret=secret, received_at=received_at)
@@ -168,33 +139,17 @@ class SlackIngressAdapter:
             return ProviderCompleteDecision(response=_acknowledgement())
         return ProviderEventDecision(event=normalized)
 
-    def route_matches(self, event: InboundEvent, match: JsonObject, *, config_version: str) -> bool:
-        _require_version(config_version)
-        route = SlackRouteMatch.model_validate(match)
-        event_kind = event.context.get("event_kind")
-        conversation_kind = event.context.get("conversation_kind")
-        channel_id = event.context.get("channel_id")
-        return (
-            isinstance(event_kind, str)
-            and event_kind in route.event_kinds
-            and isinstance(conversation_kind, str)
-            and conversation_kind in route.conversation_kinds
-            and isinstance(channel_id, str)
-            and (route.channel_ids is None or channel_id in route.channel_ids)
-        )
-
-    def default_route(
+    def reception_defaults(
         self,
         event: InboundEvent,
         account_config: JsonObject,
         *,
         config_version: str,
-    ) -> DefaultRoute:
+    ) -> ReceptionDefaults:
         del event
         _require_version(config_version)
         SlackAccountConfig.model_validate(account_config)
-        return DefaultRoute(
-            input_mapping=default_event_mapping(),
+        return ReceptionDefaults(
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
             provider_policy=_model_json(MessagingPolicy(interaction_mode="mention", reply_mode="thread")),
         )
@@ -342,7 +297,6 @@ def _normalize_event(
         },
         data={},
         ordering_key=f"{message_ts}:{event_id}",
-        retain_raw=True,
     )
 
 

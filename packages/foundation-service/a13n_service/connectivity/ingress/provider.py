@@ -8,7 +8,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from .domain import InputBatchingPolicy, JsonObject
+from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
+from a13n_service.connectivity.domain import JsonObject
 
 BoundedProviderName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")]
 BoundedProviderId = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
@@ -51,11 +52,9 @@ class InboundEvent(_StrictModel):
     refs: dict[str, ExternalRef] = Field(min_length=1, max_length=32, repr=False)
     data: JsonObject = Field(repr=False)
     ordering_key: Annotated[str, StringConstraints(min_length=1, max_length=2048)] = Field(repr=False)
-    retain_raw: bool = False
 
 
-class DefaultRoute(_StrictModel):
-    input_mapping: JsonObject
+class ReceptionDefaults(_StrictModel):
     input_batching: InputBatchingPolicy
     provider_policy: JsonObject
 

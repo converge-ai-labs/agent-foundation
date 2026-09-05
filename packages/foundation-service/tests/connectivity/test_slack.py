@@ -11,8 +11,7 @@ from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.ingress.admission import IngressEventService
-from a13n_service.connectivity.ingress.admission_models import IngressAdmissionRecord
-from a13n_service.connectivity.ingress.domain import CreateIngressRequest
+from a13n_service.connectivity.ingress.admission_models import IngressAdmissionRecord, IngressBatchRecord
 from a13n_service.connectivity.ingress.provider import (
     ExternalRef,
     InboundEvent,
@@ -23,8 +22,6 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequestError,
     ProviderRequiresBindingRouting,
 )
-from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
-from a13n_service.connectivity.ingress.service import IngressService
 from a13n_service.connectivity.providers.registry import built_in_ingress_adapter_registry
 from a13n_service.connectivity.providers.slack import SlackIngressAdapter
 from a13n_service.secrets import SecretProtector
@@ -115,7 +112,7 @@ async def test_slack_hmac_unicode_event_and_correlation_are_normalized() -> None
 
     decision = await adapter.authenticate_and_normalize(
         _signed_request(_event_payload()),
-        ingress_id="ing_test",
+        account_id="ing_test",
         account_config=_config(),
         credentials={"signing_secret": _SIGNING_SECRET, "bot_token": _BOT_TOKEN},
         received_at=NOW,
@@ -140,7 +137,7 @@ async def test_slack_rejects_wrong_or_stale_signature() -> None:
         with pytest.raises(ProviderRequestError) as rejected:
             await adapter.authenticate_and_normalize(
                 request,
-                ingress_id="ing_test",
+                account_id="ing_test",
                 account_config=_config(),
                 credentials={"signing_secret": _SIGNING_SECRET, "bot_token": _BOT_TOKEN},
                 received_at=NOW,
@@ -164,14 +161,14 @@ async def test_slack_challenge_and_self_message_create_no_event() -> None:
 
     challenge = await adapter.authenticate_and_normalize(
         _signed_request(challenge_body),
-        ingress_id="ing_test",
+        account_id="ing_test",
         account_config=_config(),
         credentials={"signing_secret": _SIGNING_SECRET, "bot_token": _BOT_TOKEN},
         received_at=NOW,
     )
     own_message = await adapter.authenticate_and_normalize(
         _signed_request(_event_payload(user="UBOT")),
-        ingress_id="ing_test",
+        account_id="ing_test",
         account_config=_config(),
         credentials={"signing_secret": _SIGNING_SECRET, "bot_token": _BOT_TOKEN},
         received_at=NOW,
@@ -197,6 +194,9 @@ async def test_slack_real_protocol_fixture_is_durable_before_ack(
         workspace_id=WORKSPACE_ID,
         idempotency_key="slack-account",
         request=CreateAccountRequest(
+            receive_enabled=True,
+            default_agent_id=AGENT_ID,
+            execution_service_account_id=SERVICE_ACCOUNT_ID,
             name="slack",
             provider_key="slack",
             provider_config_version="slack_http_v1",
@@ -204,64 +204,39 @@ async def test_slack_real_protocol_fixture_is_durable_before_ack(
             credentials={"signing_secret": _SIGNING_SECRET, "bot_token": _BOT_TOKEN},
         ),
     )
-    ingress_service = IngressService(connectivity_sessions, clock=lambda: NOW)
-    ingress = await ingress_service.create_ingress(
-        actor=actor(),
-        workspace_id=WORKSPACE_ID,
-        idempotency_key="slack-ingress",
-        request=CreateIngressRequest(
-            name="Slack",
-            account_id=account.id,
-            provider_config={"events_transport": "http"},
-            execution_service_account_id=SERVICE_ACCOUNT_ID,
-            agents=(AGENT_ID,),
-            default_agent_id=AGENT_ID,
-        ),
-    )
     event_service = IngressEventService(
         connectivity_sessions,
         registry,
         credential_protector,
-        IngressRawObjectStore(connectivity_objects),
         request_max_bytes=8 * 1024 * 1024,
-        raw_retention_seconds=0,
         workspace_pending_max_count=100,
         workspace_pending_max_bytes=1024 * 1024,
-        ingress_pending_max_count=100,
-        ingress_pending_max_bytes=1024 * 1024,
+        account_pending_max_count=100,
+        account_pending_max_bytes=1024 * 1024,
         batch_max_bytes=1024 * 1024,
         dedup_horizon_seconds=7 * 24 * 60 * 60,
         clock=lambda: NOW,
     )
 
-    response = await event_service.receive(ingress_id=ingress.id, request=_signed_request(_event_payload()))
+    response = await event_service.receive(account_id=account.id, request=_signed_request(_event_payload()))
 
     assert response.status_code == 200
     async with connectivity_sessions() as session:
         admission = await session.scalar(select(IngressAdmissionRecord))
+        batch = await session.get(IngressBatchRecord, admission.batch_id)
     assert admission is not None
-    assert admission.status == "pending"
-    assert admission.provider_key == "slack"
-    assert admission.provider_context_json["channel_id"] == "C123"
+    assert batch.status == "pending"
+    assert batch.configuration_json["provider_key"] == "slack"
+    assert batch.configuration_json["provider_context"]["channel_id"] == "C123"
 
 
 def test_slack_route_overlap_and_interaction_classification() -> None:
     adapter = SlackIngressAdapter()
-    left, discussion = adapter.validate_route(
-        match={"event_kinds": ["message"], "conversation_kinds": ["channel"], "channel_ids": ["C1"]},
-        provider_policy={"interaction_mode": "discussion", "reply_mode": "thread"},
-        account_config=_config(),
-        config_version="slack_http_v1",
-    )
-    right, _policy = adapter.validate_route(
-        match={"event_kinds": ["message"], "conversation_kinds": ["channel"], "channel_ids": ["C2"]},
-        provider_policy={"interaction_mode": "chat", "reply_mode": "main"},
-        account_config=_config(),
-        config_version="slack_http_v1",
+    discussion = adapter.validate_reception_policy(
+        {"interaction_mode": "discussion", "reply_mode": "thread"}, config_version="slack_http_v1"
     )
     event = _normalized_event(mentioned=False)
 
-    assert adapter.prove_non_overlap(left, right) is True
     classified = adapter.classify(event, discussion, _config(), config_version="slack_http_v1")
     assert isinstance(classified, ProviderRequiresBindingRouting)
     assert classified.kind == "requires_binding"

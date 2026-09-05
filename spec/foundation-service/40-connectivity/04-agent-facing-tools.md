@@ -56,7 +56,7 @@ Foundation derives stable, kind-qualified capability keys and collision-safe too
 
 ## Default Native Tool Contexts
 
-Connectivity owns the protected `NativeToolContext` union of `AccountRunContext` and `IngressRunContext`. The trusted entry freezes at most 128 contexts in the accepted Run's `native_tool_contexts`, independently of Agent configuration and connection selection. Each context binds the Run's execution Principal, exact Account identity, provider, and explicit action allowlist. Contexts contain no credentials, tool schemas, or connection IDs. Duplicate contexts for the same kind and source are rejected. Empty contexts contribute no default native tools; Foundation does not discover Accounts by listing Workspace resources.
+Connectivity owns the protected `NativeToolContext` union of `AccountRunContext` and `InboundRunContext`. The trusted entry freezes at most 128 contexts in the accepted Run's `native_tool_contexts`, independently of Agent configuration and connection selection. Each context binds the Run's execution Principal, exact Account identity, provider, and explicit action allowlist. Contexts contain no credentials, tool schemas, or connection IDs. Duplicate contexts for the same kind and source are rejected. Empty contexts contribute no default native tools; Foundation does not discover Accounts by listing Workspace resources.
 
 A non-Ingress trusted entry may bind this conceptual context after validating current Account use authority, resource eligibility, and the entry's target policy:
 
@@ -76,16 +76,16 @@ Account and Ingress contexts produce separate, directly visible native capabilit
 
 Replacement Attempts and continuations that inherit execution preserve the exact contexts. New child Runs receive none by default; resuming a child does not inherit its parent's contexts. Any explicit delegation is a fresh trusted-entry authorization under the child's execution Principal. Proactive actions do not automatically create or change an Ingress Thread binding. Unknown write outcomes retain provider-specific reconciliation semantics.
 
-## IngressRunContext
+## InboundRunContext
 
 Ingress admission contributes this conceptual protected value to `native_tool_contexts`:
 
 ```python
-class IngressRunContext:
-    kind: Literal["ingress"]
-    ingress_id: IngressId
+class InboundRunContext:
+    kind: Literal["inbound"]
+    binding_id: BindingId
     account_id: AccountId
-    route_id: RouteId | None
+    target_id: AccountTargetId | None
     execution_principal_ref: PrincipalRef
     provider_key: str
     provider_context_version: str
@@ -96,7 +96,7 @@ class IngressRunContext:
 
 `provider_context` contains the adapter-defined stable target needed by the selected native actions, such as a Slack Discussion, Lark chat or topic, GitHub pull request, or Gmail thread. It is protected Run metadata, not `AgentInput`, model context, Tool arguments, ordinary events, logs, or trace attributes. `action_policy` holds bounded adapter-validated behavior such as messaging `reply_mode`; it cannot authorize another target. `allowed_actions` is the sole retained native action allowlist after trusted admission and capability policy. A receive-only Ingress has an empty allowlist and contributes no native MCP capability. Reconstruction requires a trusted adapter that supports the retained `provider_context_version` and selected actions. An unsupported context or action fails explicitly; recovery never infers a replacement target from a later event or current provider state.
 
-This context contains no event history or duplicate event identity; durable Ingress admission owns exact Run or Steer acceptance receipts. A compatible Steer preserves the context, target, and accepted capability selections. An event whose Ingress, stable target, Agent, or required capability selection is incompatible remains at the admission boundary until a successor Run can be accepted. An accepted Run's first Attempt reconciles compatible Steers under the ordinary steer contract before its first provider request.
+This context contains no event history or duplicate event identity; Batch receipts own exact Run or Steer acceptance. Steer preserves the current Run's context, target, Agent, and accepted capability selections even after Account or target configuration changes. It never queues input waiting for a configuration-compatible successor. The next ordinary Run resolves current Agent and configuration. The first Attempt reconciles eligible Steers under the ordinary inbox contract.
 
 Only trusted admission creates this context. Direct Run overrides cannot invent an Ingress context, change its target, or add native actions beyond its admitted authority. A child Run does not inherit native target authority merely because its parent has an Ingress capability; any delegation must be explicit under the owning subagent and admission contracts.
 
@@ -104,7 +104,9 @@ Only trusted admission creates this context. Direct Run overrides cannot invent 
 
 For every RunAttempt, the executor constructs fresh local MCP servers, clients, and capabilities with the exact accepted selections and trusted Attempt context. Local handlers bind narrow application collaborators, the selected connection or Ingress context, and the existing Attempt authority. They do not reconstruct authority from model arguments, `AgentContext.metadata`, request headers, or caller-supplied Run IDs. Shared implementation code and transport pools are permitted; mutable authenticated sessions, toolsets, and source bindings are not shared across Attempts or accounts.
 
-Immediately before an external action, Foundation checks that the Attempt remains current, leased, non-terminal, and effect-authorized under [Attempt fencing](../13-run-attempt-scheduling-and-recovery.md), then reauthorizes the selected resource and operation. Inbound reply calls use the protected execution Principal rather than the external provider actor. They resolve credentials from the retained Application Account. Ingress disablement alone does not block accepted replies; Account disablement, Route revocation, or loss of execution authority does. Disablement, revocation, cancellation, replacement, or lease expiry blocks subsequent dispatch. An already dispatched external effect has the source's cancellation and unknown-outcome semantics; a local fence does not roll it back.
+Immediately before an external action, Foundation checks that the Attempt remains current, leased, non-terminal, and effect-authorized under [Attempt fencing](../13-run-attempt-scheduling-and-recovery.md), then reauthorizes the selected resource and operation. Inbound reply calls use the protected execution Principal rather than the external provider actor. They resolve credentials from the retained Application Account. Reception closure alone does not block accepted replies; Account disablement or loss of execution authority does. Disablement, revocation, cancellation, replacement, or lease expiry blocks subsequent dispatch. An already dispatched external effect has the source's cancellation and unknown-outcome semantics; a local fence does not roll it back.
+
+Dispatch reads current Attempt authority and only the invoked source's eligibility. It does not rerun Revision freezing or lock all other selected connections. Native action clients and their token providers are reused within one Attempt, with single-flight token refresh where supported. Each use rereads Account credential generation and provider configuration; changes replace the cached action/token scope. The process owns and closes the shared cookie-free HTTP pool, while authenticated MCP sessions and source bindings remain per Attempt. Lists project already loaded records without per-row resource queries.
 
 The local MCP handlers and remote client call guards enforce the accepted tool scope at invocation as well as discovery. Hiding a tool from the model is not authorization. A call cannot select another connection or endpoint. Current-context actions cannot select another destination; proactive actions enforce their accepted target scope. Credential refresh resolves current eligible values for the bound source without expanding its accepted authority. External I/O and MCP lifetimes never hold a database session or transaction open.
 

@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_connectivity_control_runtime
@@ -17,7 +18,6 @@ from .domain import (
     ConnectorConnection,
     ConnectorConnectionCollection,
     ConnectorConnectionCommandRequest,
-    ConnectorOperationReceipt,
     ConnectorProvider,
     ConnectorProviderCollection,
     ConnectorProviderCommandRequest,
@@ -226,7 +226,7 @@ async def create_connector_connection(
 @router.post(
     "/api/v1/connector-connections/{connection_id}/setup",
     response_model=ConnectorSetupLaunch,
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_200_OK,
 )
 async def start_connector_connection_setup(
     request: Request,
@@ -340,8 +340,8 @@ async def reconnect_connector_connection(
 
 @router.post(
     "/api/v1/connector-connections/{connection_id}/revoke",
-    response_model=ConnectorOperationReceipt,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ConnectionCleanupReceipt,
+    status_code=status.HTTP_200_OK,
 )
 async def revoke_connector_connection(
     request: Request,
@@ -349,7 +349,7 @@ async def revoke_connector_connection(
     connection_id: str,
     body: ConnectorConnectionCommandRequest,
     idempotency_key: IdempotencyKey,
-) -> ConnectorOperationReceipt:
+) -> ConnectionCleanupReceipt:
     return await _connections(request).revoke(
         actor=actor,
         connection_id=connection_id,
@@ -360,7 +360,7 @@ async def revoke_connector_connection(
 
 @router.delete(
     "/api/v1/connector-connections/{connection_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=ConnectionCleanupReceipt,
 )
 async def delete_connector_connection(
     request: Request,
@@ -368,14 +368,13 @@ async def delete_connector_connection(
     connection_id: str,
     expected_version: Annotated[int, Query(ge=1)],
     idempotency_key: IdempotencyKey,
-) -> Response:
-    await _connections(request).delete(
+) -> ConnectionCleanupReceipt:
+    return await _connections(request).delete(
         actor=actor,
         connection_id=connection_id,
         expected_version=expected_version,
         idempotency_key=idempotency_key,
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/connectivity/v1/connector-setup/callback", include_in_schema=False)

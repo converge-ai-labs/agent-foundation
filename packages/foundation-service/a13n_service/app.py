@@ -15,9 +15,9 @@ from a13n_service.agents.router import router as agent_router
 from a13n_service.api import install_api_conventions
 from a13n_service.assets.router import router as asset_router
 from a13n_service.connectivity.accounts.router import router as account_router
+from a13n_service.connectivity.accounts.target_router import router as target_router
 from a13n_service.connectivity.connectors.router import router as connector_router
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
-from a13n_service.connectivity.ingress.router import router as ingress_router
 from a13n_service.connectivity.mcp.router import router as mcp_router
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.router import router as environment_router
@@ -170,7 +170,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(skill_router)
         app.include_router(trace_query_router)
         app.include_router(account_router)
-        app.include_router(ingress_router)
+        app.include_router(target_router)
         app.include_router(connector_router)
         app.include_router(mcp_router)
         app.include_router(hook_router)

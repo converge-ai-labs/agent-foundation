@@ -6,7 +6,7 @@ import base64
 import hashlib
 import secrets as random_secrets
 from dataclasses import asdict, dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx2
@@ -47,7 +47,6 @@ from .oauth_bundles import (
     decode_oauth_bundle,
     oauth_preparation,
     oauth_setup_bundle,
-    optional_expiration,
     required_oauth_string,
     validate_oauth_bundle,
     with_expiration,
@@ -66,14 +65,15 @@ class OAuthSource:
 
 
 @dataclass(frozen=True, slots=True)
-class RefreshSource:
-    connection_id: str
-    organization_id: str
-    workspace_id: str
-    credential_generation: int
-    claim_generation: int
-    claim_owner: str
+class OAuthSessionSnapshot:
+    id: str
+    mcp_connection_id: str
+    expires_at: datetime
     credential: CredentialSnapshot
+
+    @classmethod
+    def from_record(cls, record: MCPOAuthSessionRecord) -> OAuthSessionSnapshot:
+        return cls(record.id, record.mcp_connection_id, assume_utc(record.expires_at), record.credential_snapshot())
 
 
 class MCPOAuthService:
@@ -128,7 +128,7 @@ class MCPOAuthService:
             key_digest=key_digest,
             request_fingerprint=request_fingerprint,
         )
-        if isinstance(source, MCPOAuthSessionRecord):
+        if isinstance(source, OAuthSessionSnapshot):
             return await self._launch_from_session(source)
         try:
             preparation = await self._oauth.prepare(
@@ -183,7 +183,7 @@ class MCPOAuthService:
         source = await self._reserve_callback(actor=actor, state=state, issuer=issuer)
         try:
             setup = self._resolve_setup(source.session)
-            preparation = oauth_preparation(source.session, setup)
+            preparation = oauth_preparation(setup)
             credential = await self._oauth.exchange_code(
                 preparation,
                 code=code,
@@ -211,123 +211,11 @@ class MCPOAuthService:
                 "Remote MCP authorization is temporarily unavailable.",
                 status_code=503,
             ) from error
-        await self._discovery.discover(source.connection.id)
+        await self._discovery.discover(source.connection_id)
         async with transaction(self._sessions) as session:
-            record = await require_connection(session, source.connection.id)
+            record = await require_connection(session, source.connection_id)
             await authorize_connection(session, actor, record, mode="read")
             return record.to_resource()
-
-    async def refresh_credentials(self, connection_id: str) -> bool:
-        source = await self._claim_refresh(connection_id)
-        if source is None:
-            return False
-        try:
-            raw = source.credential.decrypt(self._protector)
-            bundle = decode_oauth_bundle(raw)
-            candidate = with_expiration(await self._oauth.refresh(dict(bundle)), self._clock())
-        except MCPOAuthError as error:
-            await self._finish_refresh(source, action_required=error.action_required, error_code=error.code)
-            return False
-        except (SecretProtectionError, ValueError):
-            await self._finish_refresh(source, action_required=False, error_code="credential_unavailable")
-            return False
-        except httpx2.HTTPError:
-            await self._finish_refresh(source, action_required=False, error_code="oauth_unavailable")
-            return False
-        async with transaction(self._sessions) as session:
-            current = await require_connection(session, connection_id, lock=True)
-            if not _refresh_claim_matches(current, source):
-                return False
-            current.replace_credential(canonical_json(candidate), self._protector)
-
-            current.refresh_claim_owner = None
-            current.refresh_claim_expires_at = None
-            current.refresh_available_at = self._clock()
-            current.refresh_last_error_code = None
-            current.updated_at = current.refresh_available_at
-        return True
-
-    async def refresh_if_due(self, connection_id: str, *, skew_seconds: int = 60) -> bool | None:
-        async with transaction(self._sessions) as session:
-            connection = await require_connection(session, connection_id)
-            if connection.auth_mode != "oauth" or connection.ciphertext is None:
-                return None
-            generation = connection.credential_generation
-        try:
-            raw = connection.credential_snapshot().decrypt(self._protector)
-            expires_at = optional_expiration(decode_oauth_bundle(raw).get("expires_at"))
-        except (SecretProtectionError, ValueError):
-            async with transaction(self._sessions) as session:
-                current = await require_connection(session, connection_id, lock=True)
-                if current.credential_generation == generation:
-                    current.refresh_available_at = self._clock() + timedelta(seconds=60)
-            return False
-        if expires_at is None or expires_at > self._clock() + timedelta(seconds=skew_seconds):
-            async with transaction(self._sessions) as session:
-                current = await require_connection(session, connection_id, lock=True)
-                if current.credential_generation == generation:
-                    current.refresh_available_at = (
-                        (expires_at - timedelta(seconds=skew_seconds))
-                        if expires_at
-                        else self._clock() + timedelta(hours=1)
-                    )
-            return None
-        return await self.refresh_credentials(connection_id)
-
-    async def cleanup_expired_session(self, session_id: str) -> bool:
-        now = self._clock()
-        async with transaction(self._sessions) as session:
-            oauth_session = await session.get(MCPOAuthSessionRecord, session_id, with_for_update=True)
-            if oauth_session is None or oauth_session.status != "expired" or oauth_session.consumed_at is not None:
-                return True
-            if oauth_session.claim_expires_at is not None and assume_utc(oauth_session.claim_expires_at) > now:
-                return False
-            await require_connection(
-                session,
-                oauth_session.mcp_connection_id,
-                include_deleted=True,
-            )
-            oauth_session.claim_generation += 1
-            oauth_session.claim_owner = self._instance_id
-            oauth_session.claim_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
-            claim_generation = oauth_session.claim_generation
-        try:
-            setup = self._resolve_setup(oauth_session)
-            cleaned = await self._oauth.cleanup_registration_bundle(dict(setup))
-            unavailable = False
-        except (SecretProtectionError, ValueError):
-            cleaned = False
-            unavailable = True
-        async with transaction(self._sessions) as session:
-            current = await session.get(MCPOAuthSessionRecord, session_id, with_for_update=True)
-            if (
-                current is None
-                or current.status != "expired"
-                or current.claim_generation != claim_generation
-                or current.claim_owner != self._instance_id
-            ):
-                return False
-            await require_connection(
-                session,
-                current.mcp_connection_id,
-                include_deleted=True,
-            )
-            if cleaned:
-                current.clear_credential()
-                current.consumed_at = self._clock()
-                current.last_error_code = None
-            elif unavailable:
-                current.clear_credential()
-                current.consumed_at = self._clock()
-                current.last_error_code = "oauth_setup_credential_unavailable"
-            else:
-                current.last_error_code = "registration_cleanup_failed"
-            current.claim_owner = None
-            current.claim_expires_at = (
-                None if cleaned or unavailable else self._clock() + timedelta(seconds=self._claim_lease_seconds)
-            )
-            current.updated_at = self._clock()
-            return cleaned
 
     async def _authorize_source(
         self,
@@ -337,10 +225,10 @@ class MCPOAuthService:
         expected_version: int,
         key_digest: str,
         request_fingerprint: str,
-    ) -> OAuthSource | MCPOAuthSessionRecord:
+    ) -> OAuthSource | OAuthSessionSnapshot:
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id)
-            await authorize_connection(session, actor, connection, mode="owner_manage")
+            await authorize_connection(session, actor, connection, mode="manage")
             if connection.auth_mode != "oauth":
                 raise MCPConnectionError(
                     "invalid_auth_mode",
@@ -371,7 +259,7 @@ class MCPOAuthService:
                         "OAuth authorization session is no longer available.",
                         status_code=409,
                     )
-                return oauth_session
+                return OAuthSessionSnapshot.from_record(oauth_session)
             require_version(connection.version, expected_version)
             if connection.status == "disabled":
                 raise MCPConnectionError("connection_disabled", "MCPConnection is disabled.", status_code=409)
@@ -394,7 +282,6 @@ class MCPOAuthService:
     ) -> MCPAuthorizationLaunch:
         state = random_secrets.token_urlsafe(32)
         verifier = random_secrets.token_urlsafe(64)
-        challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
         now = self._clock()
         expires_at = now + timedelta(seconds=self._setup_ttl_seconds)
         setup_value = canonical_json(oauth_setup_bundle(preparation, state=state, verifier=verifier))
@@ -415,6 +302,9 @@ class MCPOAuthService:
                 )
                 .values(
                     status="expired",
+                    ciphertext=None,
+                    nonce=None,
+                    encryption_key_id=None,
                     claim_owner=None,
                     claim_expires_at=None,
                     updated_at=now,
@@ -427,14 +317,8 @@ class MCPOAuthService:
                 workspace_id=source.workspace_id,
                 mcp_connection_id=source.connection_id,
                 initiating_user_id=actor.principal.principal_id,
+                connection_version=connection.version + 1,
                 state_digest=_digest(state),
-                resource_url=preparation.resource_url,
-                issuer_url=preparation.issuer_url,
-                authorization_endpoint=preparation.authorization_endpoint,
-                token_endpoint=preparation.token_endpoint,
-                registration_endpoint=preparation.registration_endpoint,
-                client_id=None,
-                scope=None,
                 credential_generation=0,
                 status="pending",
                 claim_generation=0,
@@ -475,16 +359,16 @@ class MCPOAuthService:
                 preparation,
                 redirect_uri=self.redirect_uri,
                 state=state,
-                code_challenge=challenge,
+                code_verifier=verifier,
             ),
             expires_at=expires_at,
         )
 
-    async def _launch_from_session(self, oauth_session: MCPOAuthSessionRecord) -> MCPAuthorizationLaunch:
+    async def _launch_from_session(self, oauth_session: OAuthSessionSnapshot) -> MCPAuthorizationLaunch:
         async with transaction(self._sessions) as session:
             await require_connection(session, oauth_session.mcp_connection_id)
         setup = self._resolve_setup(oauth_session)
-        preparation = oauth_preparation(oauth_session, setup)
+        preparation = oauth_preparation(setup)
         verifier = required_oauth_string(setup, "verifier")
         return MCPAuthorizationLaunch(
             id=oauth_session.id,
@@ -492,7 +376,7 @@ class MCPOAuthService:
                 preparation,
                 redirect_uri=self.redirect_uri,
                 state=required_oauth_string(setup, "state"),
-                code_challenge=_b64url(hashlib.sha256(verifier.encode()).digest()),
+                code_verifier=verifier,
             ),
             expires_at=assume_utc(oauth_session.expires_at),
         )
@@ -506,6 +390,14 @@ class MCPOAuthService:
     ) -> CallbackSource:
         now = self._clock()
         async with transaction(self._sessions) as session:
+            connection_id = await session.scalar(
+                select(MCPOAuthSessionRecord.mcp_connection_id).where(
+                    MCPOAuthSessionRecord.state_digest == _digest(state)
+                )
+            )
+            if connection_id is None:
+                raise MCPConnectionError("invalid_oauth_state", "OAuth callback state is invalid.", status_code=400)
+            connection = await require_connection(session, connection_id, lock=True)
             oauth_session = await session.scalar(
                 select(MCPOAuthSessionRecord)
                 .where(MCPOAuthSessionRecord.state_digest == _digest(state))
@@ -513,43 +405,49 @@ class MCPOAuthService:
             )
             if oauth_session is None or oauth_session.initiating_user_id != actor.principal.principal_id:
                 raise MCPConnectionError("invalid_oauth_state", "OAuth callback state is invalid.", status_code=400)
-            connection = await require_connection(session, oauth_session.mcp_connection_id, lock=True)
-            await authorize_connection(session, actor, connection, mode="owner_manage")
+            await authorize_connection(session, actor, connection, mode="manage")
             if assume_utc(oauth_session.expires_at) <= now:
                 oauth_session.status = "expired"
                 oauth_session.updated_at = now
                 raise MCPConnectionError(
                     "oauth_session_expired", "OAuth authorization session expired.", status_code=409
                 )
-            if issuer != oauth_session.issuer_url:
-                raise MCPConnectionError("oauth_issuer_mismatch", "OAuth callback issuer is invalid.", status_code=400)
             if oauth_session.status == "completed":
                 raise MCPConnectionError(
                     "oauth_state_replayed", "OAuth callback state was already used.", status_code=409
                 )
-            if oauth_session.status not in {"pending", "exchanging"} or (
-                oauth_session.status == "exchanging"
-                and oauth_session.claim_expires_at is not None
-                and assume_utc(oauth_session.claim_expires_at) > now
+            if (
+                oauth_session.status != "pending"
+                or connection.status != "pending"
+                or connection.version != oauth_session.connection_version
             ):
-                raise MCPConnectionError("oauth_session_unavailable", "OAuth session is unavailable.", status_code=409)
+                raise MCPConnectionError(
+                    "oauth_session_unavailable",
+                    "Start a new authorization session; the previous session is unavailable.",
+                    status_code=409,
+                )
+            snapshot = OAuthSessionSnapshot.from_record(oauth_session)
+            if issuer != required_oauth_string(self._resolve_setup(snapshot), "issuer_url"):
+                raise MCPConnectionError("oauth_issuer_mismatch", "OAuth callback issuer is invalid.", status_code=400)
             oauth_session.status = "exchanging"
             oauth_session.claim_generation += 1
             oauth_session.claim_owner = self._instance_id
             oauth_session.claim_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
             oauth_session.updated_at = now
             return CallbackSource(
-                connection=connection,
-                session=oauth_session,
+                connection_id=connection.id,
+                connection_version=connection.version,
+                credential_generation=connection.credential_generation,
+                session=snapshot,
                 claim_generation=oauth_session.claim_generation,
                 claim_owner=self._instance_id,
             )
 
     def _resolve_setup(
         self,
-        oauth_session: MCPOAuthSessionRecord,
+        oauth_session: OAuthSessionSnapshot,
     ) -> JsonObject:
-        raw = oauth_session.credential_snapshot().decrypt(self._protector)
+        raw = oauth_session.credential.decrypt(self._protector)
         return decode_oauth_bundle(raw)
 
     async def _complete_callback(
@@ -560,11 +458,23 @@ class MCPOAuthService:
     ) -> None:
         now = self._clock()
         async with transaction(self._sessions) as session:
+            connection = await require_connection(session, source.connection_id, lock=True)
             oauth_session = await session.get(MCPOAuthSessionRecord, source.session.id, with_for_update=True)
-            connection = await require_connection(session, source.connection.id, lock=True)
             if oauth_session is None or not _callback_claim_matches(oauth_session, source):
                 raise MCPConnectionError(
                     "oauth_callback_lost_race", "OAuth callback changed concurrently.", status_code=409
+                )
+            await authorize_connection(session, actor, connection, mode="manage")
+            if (
+                connection.status != "pending"
+                or connection.version != source.connection_version
+                or connection.credential_generation != source.credential_generation
+                or oauth_session.claim_expires_at is None
+                or assume_utc(oauth_session.claim_expires_at) <= now
+                or assume_utc(oauth_session.expires_at) <= now
+            ):
+                raise MCPConnectionError(
+                    "oauth_callback_lost_race", "Authorization changed during exchange.", status_code=409
                 )
             value = canonical_json(validate_oauth_bundle(credential))
             connection.replace_credential(value, self._protector)
@@ -583,6 +493,7 @@ class MCPOAuthService:
 
     async def _callback_failed(self, source: CallbackSource, error: Exception) -> None:
         async with transaction(self._sessions) as session:
+            connection = await require_connection(session, source.connection_id, lock=True, include_deleted=True)
             oauth_session = await session.get(MCPOAuthSessionRecord, source.session.id, with_for_update=True)
             if oauth_session is None or not _callback_claim_matches(oauth_session, source):
                 return
@@ -592,10 +503,14 @@ class MCPOAuthService:
             oauth_session.claim_owner = None
             oauth_session.claim_expires_at = None
             oauth_session.updated_at = self._clock()
-            if isinstance(error, MCPOAuthError) and error.action_required:
-                oauth_session.status = "failed"
-                connection = await require_connection(session, source.connection.id, lock=True)
-                oauth_session.clear_credential()
+            oauth_session.status = "failed"
+            oauth_session.clear_credential()
+            if (
+                connection.deleted_at is None
+                and connection.status == "pending"
+                and connection.version == source.connection_version
+                and connection.credential_generation == source.credential_generation
+            ):
                 connection.status = "action_required"
                 connection.status_reason = "reauthorization_required"
                 connection.updated_at = oauth_session.updated_at
@@ -609,59 +524,13 @@ class MCPOAuthService:
             connection.status_reason = "incompatible"
             connection.updated_at = self._clock()
 
-    async def _claim_refresh(self, connection_id: str) -> RefreshSource | None:
-        now = self._clock()
-        async with transaction(self._sessions) as session:
-            connection = await require_connection(session, connection_id, lock=True)
-            if (
-                connection.auth_mode != "oauth"
-                or connection.ciphertext is None
-                or connection.status == "disabled"
-                or (
-                    connection.refresh_claim_expires_at is not None
-                    and assume_utc(connection.refresh_claim_expires_at) > now
-                )
-            ):
-                return None
-            connection.refresh_claim_generation += 1
-            connection.refresh_claim_owner = self._instance_id
-            connection.refresh_claim_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
-            return RefreshSource(
-                connection_id=connection.id,
-                organization_id=connection.organization_id,
-                workspace_id=connection.workspace_id,
-                credential_generation=connection.credential_generation,
-                credential=connection.credential_snapshot(),
-                claim_generation=connection.refresh_claim_generation,
-                claim_owner=self._instance_id,
-            )
-
-    async def _finish_refresh(
-        self,
-        source: RefreshSource,
-        *,
-        action_required: bool,
-        error_code: str,
-    ) -> None:
-        now = self._clock()
-        async with transaction(self._sessions) as session:
-            connection = await require_connection(session, source.connection_id, lock=True)
-            if not _refresh_claim_matches(connection, source):
-                return
-            connection.refresh_claim_owner = None
-            connection.refresh_claim_expires_at = None
-            connection.refresh_available_at = now + timedelta(seconds=60)
-            connection.refresh_last_error_code = error_code[:128]
-            if action_required:
-                connection.status = "action_required"
-                connection.status_reason = "reauthorization_required"
-                connection.updated_at = now
-
 
 @dataclass(frozen=True, slots=True)
 class CallbackSource:
-    connection: MCPConnectionRecord
-    session: MCPOAuthSessionRecord
+    connection_id: str
+    connection_version: int
+    credential_generation: int
+    session: OAuthSessionSnapshot
     claim_generation: int
     claim_owner: str
 
@@ -681,17 +550,6 @@ def _callback_claim_matches(session: MCPOAuthSessionRecord, source: CallbackSour
         session.status == "exchanging"
         and session.claim_generation == source.claim_generation
         and session.claim_owner == source.claim_owner
-    )
-
-
-def _refresh_claim_matches(connection: MCPConnectionRecord, source: RefreshSource) -> bool:
-    return (
-        connection.deleted_at is None
-        and connection.status != "disabled"
-        and connection.auth_mode == "oauth"
-        and connection.credential_generation == source.credential_generation
-        and connection.refresh_claim_generation == source.claim_generation
-        and connection.refresh_claim_owner == source.claim_owner
     )
 
 

@@ -14,9 +14,8 @@ from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.providers import account_actions
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.execution import AttemptToolScope
-from a13n_service.connectivity.ingress.domain import IngressStatus
 from a13n_service.connectivity.native import native_capability
-from a13n_service.connectivity.native_context import IngressRunContext, bind_account_tools
+from a13n_service.connectivity.native_context import InboundRunContext, bind_account_tools
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
@@ -24,7 +23,6 @@ from a13n_service.storage import transaction
 from pydantic import ValidationError
 
 from .conftest import ACCOUNT_ID, ORG_ID, SERVICE_ACCOUNT_ID, WORKSPACE_ID, actor
-from .test_ingress_service import ingress_request
 
 pytestmark = pytest.mark.anyio
 
@@ -83,29 +81,15 @@ async def test_account_credentials_identity_and_idempotency(account_service):
     assert stale.value.code == "version_conflict"
 
 
-async def test_account_has_at_most_one_ingress_and_reference_blocks_deletion(account_service, ingress_service):
-    ingress = await ingress_service.create_ingress(
-        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="first-ingress", request=ingress_request()
+async def test_tool_only_account_needs_no_agent_and_reception_requires_identity(account_service):
+    value = await account_service.create_account(
+        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="tools", request=request()
     )
-    with pytest.raises(NativeError) as duplicate:
-        await ingress_service.create_ingress(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="second-ingress",
-            request=ingress_request().model_copy(update={"name": "Second ingress"}),
+    assert value.receive_enabled is False and value.default_agent_id is None
+    with pytest.raises(NativeError):
+        await account_service.update_account(
+            actor=actor(), account_id=value.id, request=UpdateAccountRequest(expected_version=1, receive_enabled=True)
         )
-    assert duplicate.value.code == "ingress_conflict"
-    await ingress_service.set_status(
-        actor=actor(),
-        ingress_id=ingress.id,
-        status=IngressStatus.disabled,
-        expected_version=1,
-        idempotency_key="pause-input",
-    )
-    assert (await account_service.get_account(actor=actor(), account_id=ACCOUNT_ID)).status == AccountStatus.active
-    with pytest.raises(NativeError) as used:
-        await account_service.delete_account(actor=actor(), account_id=ACCOUNT_ID, expected_version=1)
-    assert used.value.code == "account_in_use"
 
 
 async def test_delete_account_clears_material(account_service, connectivity_sessions):
@@ -152,20 +136,17 @@ async def test_proactive_send_requires_exact_target_and_keeps_unknown_outcome():
 
 
 async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_it(
-    ingress_service, account_service, connectivity_sessions, credential_protector
+    account_service, connectivity_sessions, credential_protector, native_http
 ):
     from a13n_service.connectivity.providers.slack.adapter import CONTEXT_VERSION
 
-    ingress = await ingress_service.create_ingress(
-        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="reply-ingress", request=ingress_request()
-    )
     async with transaction(connectivity_sessions) as session:
         account = await session.get(AccountRecord, ACCOUNT_ID)
         account.provider_key = "slack"
         account.replace_credential('{"bot_token":"private"}', credential_protector)
     principal = PrincipalRef(principal_type="service_account", principal_id=SERVICE_ACCOUNT_ID)
-    context = IngressRunContext(
-        ingress_id=ingress.id,
+    context = InboundRunContext(
+        binding_id="binding-test",
         account_id=ACCOUNT_ID,
         execution_principal_ref=principal,
         provider_key="slack",
@@ -193,16 +174,18 @@ async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_i
     receive_only = context.model_copy(update={"allowed_actions": ()})
     assert (
         await native_capability(
-            connectivity_sessions, credential_protector, scope, receive_only, guard, EndpointPolicy()
+            connectivity_sessions, credential_protector, scope, receive_only, guard, EndpointPolicy(), native_http
         )
         is None
     )
 
-    await ingress_service.set_status(
-        actor=actor(), ingress_id=ingress.id, status=IngressStatus.disabled, expected_version=1, idempotency_key="pause"
-    )
+    async with transaction(connectivity_sessions) as session:
+        account = await session.get(AccountRecord, ACCOUNT_ID)
+        account.receive_enabled = False
     assert (
-        await native_capability(connectivity_sessions, credential_protector, scope, context, guard, EndpointPolicy())
+        await native_capability(
+            connectivity_sessions, credential_protector, scope, context, guard, EndpointPolicy(), native_http
+        )
         is not None
     )
     await account_service.set_status(
@@ -213,19 +196,18 @@ async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_i
         idempotency_key="stop-account",
     )
     with pytest.raises(ValueError, match="native_source_unavailable"):
-        await native_capability(connectivity_sessions, credential_protector, scope, context, guard, EndpointPolicy())
+        await native_capability(
+            connectivity_sessions, credential_protector, scope, context, guard, EndpointPolicy(), native_http
+        )
 
 
 async def test_rotation_changes_webhook_auth_without_changing_admission_identity(
-    account_service, ingress_service, ingress_event_service
+    account_service, ingress_event_service
 ):
     from .test_admission import _request
 
-    ingress = await ingress_service.create_ingress(
-        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="rotation-ingress", request=ingress_request()
-    )
     delivery = _request("same-delivery")
-    first = await ingress_event_service.receive(ingress_id=ingress.id, request=delivery)
+    first = await ingress_event_service.receive(account_id=ACCOUNT_ID, request=delivery)
     assert first.status_code == 202
     await account_service.replace_credentials(
         actor=actor(),
@@ -233,9 +215,9 @@ async def test_rotation_changes_webhook_auth_without_changing_admission_identity
         idempotency_key="rotate-webhook",
         request=ReplaceAccountCredentialsRequest(expected_version=1, credentials={"token": "replacement"}),
     )
-    assert (await ingress_event_service.receive(ingress_id=ingress.id, request=delivery)).status_code == 401
+    assert (await ingress_event_service.receive(account_id=ACCOUNT_ID, request=delivery)).status_code == 401
     delivery = delivery.model_copy(update={"headers": {**delivery.headers, "authorization": "Bearer replacement"}})
-    replay = await ingress_event_service.receive(ingress_id=ingress.id, request=delivery)
+    replay = await ingress_event_service.receive(account_id=ACCOUNT_ID, request=delivery)
     assert replay.status_code == first.status_code
     assert json.loads(replay.body)["admission_id"] == json.loads(first.body)["admission_id"]
     assert json.loads(replay.body)["duplicate"] is True
@@ -246,8 +228,8 @@ async def test_rotation_changes_webhook_auth_without_changing_admission_identity
         expected_version=2,
         idempotency_key="disable-webhook",
     )
-    with pytest.raises(NativeError, match="Ingress was not found"):
-        await ingress_event_service.receive(ingress_id=ingress.id, request=delivery)
+    with pytest.raises(NativeError, match="Account"):
+        await ingress_event_service.receive(account_id=ACCOUNT_ID, request=delivery)
 
 
 async def test_github_proactive_scope_binds_repository_token_and_target(github_private_key_pem):
@@ -368,3 +350,9 @@ async def test_account_metadata_does_not_grant_use_or_management(account_service
                 allowed_actions=("slack.send_message",),
                 target_scope={"channel_ids": ["C1"]},
             )
+
+
+@pytest.fixture
+async def native_http():
+    async with httpx2.AsyncClient() as client:
+        yield client

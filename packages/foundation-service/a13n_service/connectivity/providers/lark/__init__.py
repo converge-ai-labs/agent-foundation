@@ -1,5 +1,5 @@
 """Lark and Feishu ingress provider."""
 
-from .adapter import LarkAccountConfig, LarkIngressAdapter, LarkRouteMatch
+from .adapter import LarkAccountConfig, LarkIngressAdapter
 
-__all__ = ["LarkAccountConfig", "LarkIngressAdapter", "LarkRouteMatch"]
+__all__ = ["LarkAccountConfig", "LarkIngressAdapter"]

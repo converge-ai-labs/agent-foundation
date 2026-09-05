@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import httpx2
 
 from a13n_service.connectivity.accounts.service import AccountService
+from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
@@ -16,16 +17,11 @@ from a13n_service.connectivity.connectors.providers import built_in_connector_pr
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
+from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.admission import IngressEventService
-from a13n_service.connectivity.ingress.admission_domain import (
-    InputAcceptor,
-    UnavailableInputAcceptor,
-)
-from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
+from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
 from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
-from a13n_service.connectivity.ingress.routes import RouteService
-from a13n_service.connectivity.ingress.service import IngressService
 from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
@@ -122,6 +118,7 @@ async def _build_control_runtime(
     if connector_providers is None:
         connector_http_client = await stack.enter_async_context(
             httpx2.AsyncClient(
+                cookies=cookie_free_jar(),
                 follow_redirects=False,
                 timeout=settings.connectivity_total_timeout_seconds,
             )
@@ -141,6 +138,7 @@ async def _build_control_runtime(
     )
     mcp_http_client = await stack.enter_async_context(
         httpx2.AsyncClient(
+            cookies=cookie_free_jar(),
             follow_redirects=False,
             timeout=settings.connectivity_total_timeout_seconds,
         )
@@ -155,9 +153,14 @@ async def _build_control_runtime(
     )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
-        accounts=AccountService(storage.sessions, ingress_adapters, secret_protector),
-        ingresses=IngressService(storage.sessions),
-        routes=RouteService(
+        accounts=AccountService(
+            storage.sessions,
+            ingress_adapters,
+            secret_protector,
+            batch_max_events=settings.connectivity_batch_max_events,
+            batch_max_wait_seconds=settings.connectivity_batch_max_wait_seconds,
+        ),
+        targets=AccountTargetService(
             storage.sessions,
             ingress_adapters,
             batch_max_events=settings.connectivity_batch_max_events,
@@ -197,7 +200,6 @@ def _build_connector_control(
         storage.sessions,
         connector_providers,
         connections.setup_coordinator,
-        connections,
         instance_id=instance_id,
         poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
         lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
@@ -241,10 +243,7 @@ def _build_mcp_control(
     )
     reconciler = MCPReconciler(
         storage.sessions,
-        connections,
-        oauth,
         poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
-        refresh_skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
     )
     return _MCPControl(
         discovery=discovery,
@@ -266,25 +265,16 @@ def _build_data_runtime(
         storage.sessions,
         ingress_adapters,
         secret_protector,
-        IngressRawObjectStore(storage.objects),
         request_max_bytes=settings.connectivity_provider_request_max_bytes,
-        raw_retention_seconds=settings.connectivity_protected_raw_retention_seconds,
         workspace_pending_max_count=settings.connectivity_workspace_pending_max_count,
         workspace_pending_max_bytes=settings.connectivity_workspace_pending_max_bytes,
-        ingress_pending_max_count=settings.connectivity_ingress_pending_max_count,
-        ingress_pending_max_bytes=settings.connectivity_ingress_pending_max_bytes,
+        account_pending_max_count=settings.connectivity_account_pending_max_count,
+        account_pending_max_bytes=settings.connectivity_account_pending_max_bytes,
         batch_max_bytes=settings.connectivity_batch_max_bytes,
         dedup_horizon_seconds=settings.connectivity_dedup_horizon_seconds,
     )
     if input_acceptor is None:
-        logger.warning(
-            "connectivity_input_bridge_unavailable",
-            extra={
-                "event": "connectivity_input_bridge_unavailable",
-                "role": settings.role.value,
-            },
-        )
-        input_acceptor = UnavailableInputAcceptor(retry_seconds=settings.connectivity_admission_poll_interval_seconds)
+        raise RuntimeError("Canonical Connectivity input commands were not constructed")
     admission = IngressAdmissionReconciler(
         storage.sessions,
         input_acceptor,
@@ -293,12 +283,11 @@ def _build_data_runtime(
         lease_seconds=settings.connectivity_admission_lease_seconds,
         max_attempts=settings.connectivity_admission_max_attempts,
         max_backoff_seconds=settings.connectivity_admission_max_backoff_seconds,
+        input_max_bytes=settings.connectivity_batch_max_bytes,
     )
     retention = IngressRetentionReconciler(
         storage.sessions,
-        storage.objects,
         poll_interval_seconds=settings.connectivity_retention_poll_interval_seconds,
-        object_grace_seconds=settings.connectivity_object_cleanup_grace_seconds,
         batch_size=settings.connectivity_retention_batch_size,
     )
     runtime = ConnectivityDataRuntime(ingress_events=ingress_events)

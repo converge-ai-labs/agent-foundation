@@ -107,12 +107,9 @@ class ConnectorConnectionRecord(Base):
             "status IN ('pending', 'disabled') OR external_ref IS NOT NULL",
             name="external_ref_required_when_bound",
         ),
-        CheckConstraint("(owner_type IS NULL) = (owner_id IS NULL)", name="owner_complete"),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("setup_generation >= 1", name="setup_generation_positive"),
-        CheckConstraint("revoke_generation >= 0", name="revoke_generation_non_negative"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
-        CheckConstraint("owner_type IS NULL OR owner_type IN ('user', 'service_account')", name="owner_type_valid"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         Index("uq_connector_connections_id_tenant", "id", "organization_id", "workspace_id", unique=True),
         Index(
@@ -129,15 +126,12 @@ class ConnectorConnectionRecord(Base):
         ),
         Index("ix_connector_connections_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_connector_connections_connector_status", "connector_provider_id", "status", "id"),
-        Index("ix_connector_connections_owner", "workspace_id", "owner_type", "owner_id", "status", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     connector_provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    owner_type: Mapped[str | None] = mapped_column(String(32))
-    owner_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
     connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -147,7 +141,6 @@ class ConnectorConnectionRecord(Base):
     status_reason: Mapped[str | None] = mapped_column(String(32))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     setup_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    revoke_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -155,13 +148,11 @@ class ConnectorConnectionRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     def to_resource(self) -> ConnectorConnection:
-        owner = None if self.owner_type is None or self.owner_id is None else _principal(self.owner_type, self.owner_id)
         return ConnectorConnection(
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
             connector_provider_id=self.connector_provider_id,
-            owner_principal_ref=owner,
             name=self.name,
             connector_key=self.connector_key,
             safe_metadata=self.safe_metadata_json,
@@ -190,8 +181,6 @@ class ConnectorSetupAttemptRecord(Base):
         ),
         CheckConstraint("generation >= 1", name="generation_positive"),
         CheckConstraint("initiating_principal_type = 'user'", name="initiating_user_required"),
-        CheckConstraint("owner_type IS NULL OR owner_type IN ('user', 'service_account')", name="owner_type_valid"),
-        CheckConstraint("(owner_type IS NULL) = (owner_id IS NULL)", name="owner_complete"),
         CheckConstraint("claim_generation >= 0", name="claim_generation_non_negative"),
         Index(
             "uq_connector_setup_attempts_connection_generation", "connector_connection_id", "generation", unique=True
@@ -207,8 +196,6 @@ class ConnectorSetupAttemptRecord(Base):
     generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     initiating_principal_type: Mapped[str] = mapped_column(String(32), nullable=False)
     initiating_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    owner_type: Mapped[str | None] = mapped_column(String(32))
-    owner_id: Mapped[str | None] = mapped_column(String(72))
     type: Mapped[str] = mapped_column(String(64), nullable=False)
     connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
     external_user_correlation: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -230,46 +217,6 @@ class ConnectorSetupAttemptRecord(Base):
     last_error_code: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class ConnectorOperationRecord(Base):
-    __tablename__ = "connector_connection_operations"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ("connector_connection_id", "organization_id", "workspace_id"),
-            ("connector_connections.id", "connector_connections.organization_id", "connector_connections.workspace_id"),
-            ondelete="RESTRICT",
-        ),
-        CheckConstraint("kind IN ('revoke')", name="kind_valid"),
-        CheckConstraint("status IN ('pending', 'succeeded', 'unknown', 'failed')", name="status_valid"),
-        CheckConstraint("generation >= 1", name="generation_positive"),
-        CheckConstraint("claim_generation >= 0", name="claim_generation_valid"),
-        Index(
-            "uq_connector_connection_operations_generation",
-            "connector_connection_id",
-            "kind",
-            "generation",
-            unique=True,
-        ),
-        Index("ix_connector_connection_operations_reconcile", "status", "available_at", "claim_expires_at", "id"),
-    )
-
-    id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    connector_connection_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
-    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    attempt_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    claim_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    claim_owner: Mapped[str | None] = mapped_column(String(128))
-    claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_error_code: Mapped[str | None] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 def _principal(kind: str, identifier: str) -> PrincipalRef:

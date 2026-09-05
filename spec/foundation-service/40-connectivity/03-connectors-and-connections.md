@@ -86,7 +86,6 @@ class ConnectorConnection:
     organization_id: OrganizationId
     workspace_id: WorkspaceId
     connector_provider_id: ConnectorProviderId
-    owner_principal_ref: PrincipalRef | None
     name: str
     connector_key: str
     external_ref: str | None
@@ -108,21 +107,23 @@ class ConnectorConnection:
 
 `external_ref` is absent until setup obtains a verified external connection reference. Once assigned, it is immutable; `ready` requires it. It is protected metadata: public management reads can expose the Foundation ConnectorConnection ID and safe account projection but never disclose this reference to the model. It is not a bearer credential and grants no authority by possession.
 
-A non-null `owner_principal_ref` makes the ConnectorConnection Principal-owned; it can name one same-Workspace User or Service Account. A null value makes the ConnectorConnection Workspace-shared. An external provider actor, username, or account identifier is never a Foundation owner. Ownership, tenant, Connector Provider, and Connector key are immutable. Moving an account between owners or Connector Providers creates another Connector Connection.
+Every ConnectorConnection belongs to its Workspace. Tenant, Connector Provider, Connector key, and verified external reference are immutable. There is no personal owner field or Principal-owned visibility branch. A different external identity requires a different connection.
 
-A Principal-owned ConnectorConnection is eligible only when the Run's active invoking Foundation Principal exactly matches `owner_principal_ref`. An Ingress-triggered Run uses its configured Service Account, not the external provider actor; it can therefore use a Principal-owned ConnectorConnection only when that Service Account owns it. A Workspace-shared ConnectorConnection remains eligible through current Agent, Route, Principal, ConnectorProvider, and ConnectorConnection grants.
+Selection and dispatch require current Workspace, Agent, execution Principal, ConnectorProvider, and ConnectorConnection eligibility. Workspace Admin manages connections; authorized Workspace Runs, including inbound Service Account Runs, can use their accepted selections. External sender identity grants no authority.
 
 ConnectorConnection status is Foundation's safe eligibility projection, not a continuous claim that an external account or token is healthy. `pending` means setup has not produced a usable external ConnectorConnection, `ready` permits authorized selection and dispatch, `action_required` blocks use until a user repairs authorization or compatibility, and `disabled` is a reversible local decision. `status_reason` is non-null exactly for `action_required` and is one finite safe code; it never contains provider payloads or credentials. Transient ConnectorProvider or provider failures do not change status. Reconciliation or explicit reconnect can move `pending` or `action_required` to `ready` only while the immutable ConnectorConnection identity remains the same; otherwise setup creates another ConnectorConnection. Foundation never repairs a ConnectorConnection by choosing a different external account.
 
 ## Credential Custody and Setup
 
-Connector Connection setup begins by committing the pending Foundation resource and its bounded setup attempt before external I/O. The attempt fixes the configured Provider ID, Connector key, intended owner, initiating Principal, and validated non-secret setup options. The external integration service owns the authorization ceremony. Foundation later attaches a verified external reference and safe account metadata and marks the connection ready only on authoritative completion. A timeout retains the same setup identity for inspection or reconciliation rather than blindly creating another account. Interactive setup uses only an external-service-hosted authorization or credential form; no third-party password, API key, cookie, access token, or refresh token passes through a Foundation request.
+Connector Connection setup begins by committing the pending Foundation resource and its bounded setup attempt before external I/O. The attempt fixes the configured Provider ID, Connector key, Workspace, initiating Principal, and validated non-secret setup options. The external integration service owns the authorization ceremony. Foundation later attaches a verified external reference and safe account metadata and marks the connection ready only on authoritative completion. A timeout retains the same setup identity for inspection or reconciliation rather than blindly creating another account. Interactive setup uses only an external-service-hosted authorization or credential form; no third-party password, API key, cookie, access token, or refresh token passes through a Foundation request.
+
+Callback and polling completion share the same checks: a non-deleted pending connection, current setup generation, eligible pending/attached/reserved attempt, unexpired setup, active Provider, and active Workspace. Setup I/O receives immutable values, never ORM records. Completion cannot revive a disabled connection. Administrative enablement requires a completed current setup; reconnect explicitly starts a new generation.
 
 The control role loads the explicitly registered ConnectorProvider client adapter for setup, safe discovery, revocation, and reconciliation. The executing Worker or Runner loads the same registered adapter contract for in-process MCP tool discovery and Agent-facing dispatch. Both operate the same durable ConnectorProvider and ConnectorConnection facts; they do not call one another through a private Foundation API or introduce a durable operation queue merely to cross process roles.
 
 Foundation does not receive, encrypt, proxy, log, or copy the external account's access token, refresh token, cookie, password, or provider API key. OAuth callback state and token refresh remain private to the external integration service. A redirect or setup handle grants no Foundation authority by possession. An implementation that supports verified callback completion uses the exact browser-User and single-use setup-attempt boundary in [Built-in Connector Provider Adapters](08-built-in-connector-adapters.md#common-setup-and-correlation); a polling implementation inspects the same immutable external reference. Neither path accepts account identity from an unverified browser parameter.
 
-Revocation first makes the Foundation ConnectorConnection unusable, then requests ConnectorProvider cleanup under a stable operation identity. Confirmed external revocation leaves the ConnectorConnection in `action_required` with `reauthorization_required` until an identity-preserving reconnect succeeds or the ConnectorConnection is deleted. A lost or unknown ConnectorProvider response never restores local eligibility. Reconciliation inspects that same external reference instead of creating another ConnectorConnection blindly.
+Revocation and deletion first make the local connection disabled and fence in-flight setup generations. Deletion also tombstones the resource. Outside that transaction Foundation makes one bounded best-effort revoke call using a minimal immutable snapshot. Missing remote prerequisites, failure, or an unknown response never block local invalidation or restore eligibility. The command returns a persisted cleanup receipt with local status and `not_required`, `succeeded`, `failed`, or `unknown` remote status. Idempotent replay returns that receipt without another remote effect. There is no revoke operation resource, retry job, or background cleanup; shared Provider credentials remain intact.
 
 ## Provider and connection responsibilities
 
@@ -142,15 +143,9 @@ Runtime connection construction is not account setup and does not prove that the
 
 ## Assignment and Effective Selection
 
-A ConnectorConnection does not carry mutable lists of Agent or Route IDs. The owning Agent or Route capability configuration references the Foundation ConnectorConnection ID; ConnectorConnection reads can expose authorized reverse-assignment projections. This keeps capability configuration authoritative and avoids a second assignment resource that could disagree with it.
+A ConnectorConnection does not carry mutable lists of Agent or AccountTarget IDs. The owning Agent or AccountTarget capability configuration references the Foundation ConnectorConnection ID; ConnectorConnection reads can expose authorized reverse-assignment projections. This keeps capability configuration authoritative and avoids a second assignment resource that could disagree with it.
 
-Agent-wide configuration makes a ConnectorConnection eligible wherever that Agent runs. A Route uses the common [Run Capability Overlay](../28-agent-management.md#run-capability-overlay) to inherit Agent defaults, include another authorized ConnectorConnection-backed tool selection, or exclude one exact selectable key. Reusable capability configuration can also reference ConnectorConnections under its own owning contract. Effective use always intersects:
-
-- the selected Agent and exact Run capability configuration;
-- the current Route when the Run originated from an Ingress;
-- current Principal, Workspace, ConnectorConnection, and ConnectorProvider authorization;
-- current ConnectorConnection and ConnectorProvider status; and
-- the accepted tool scope and current credential-use authority for the call.
+Agent-wide configuration selects default Connector tools. An exact Account target can replace the `connector_tools` category through the canonical narrow Run override. Effective use intersects current execution Principal, Workspace, Agent, connection and Provider eligibility with the accepted source and tool scope. Closing reception does not revoke an accepted Run selection.
 
 The model cannot supply or override a ConnectorProvider ID, external ConnectorConnection reference, or Foundation ConnectorConnection ID in ordinary tool arguments. When two authorized ConnectorConnections expose similar actions, a safe connection display name can be visible so the Agent can distinguish them without seeing either external reference.
 
@@ -213,7 +208,7 @@ Provider creation accepts `type`, `configuration`, and separate write-only servi
 
 Type-definition and Connector discovery reads require the safe-read authority defined by [IAM](../33-identity-and-access-management.md#stable-action-registry); Provider management and testing require `connector_provider.manage`. Discovery additionally checks the exact Provider's Workspace visibility, current active status, and service credential eligibility. A response contains safe metadata only and never a credential value, external account reference, or import target.
 
-Connector Connection collections remain `/workspaces/{workspace_id}/connector-connections` and details remain `/connector-connections/{connector_connection_id}`. Setup selects `connector_provider_id`, `connector_key`, intended owner, and validated non-secret setup options; none is inferred from a display name or Provider type. Connector catalog entries have no independent create, update, or delete API.
+Connector Connection collections remain `/workspaces/{workspace_id}/connector-connections` and details remain `/connector-connections/{connector_connection_id}`. Setup selects `connector_provider_id`, `connector_key`, Workspace, and validated non-secret setup options; none is inferred from a display name or Provider type. Connector catalog entries have no independent create, update, or delete API.
 
 ## Failure and Compatibility
 
@@ -233,7 +228,7 @@ Connector Provider adapters and provider tool contracts version independently fr
 1. No ConnectorProvider implementation is a required Foundation dependency.
 2. Connector Providers protect their own access credentials and never hold an externally managed third-party account credential.
 3. Every Connector Connection fixes one exact Connector Provider and Connector key; setup assigns at most one verified opaque external reference, and the model never receives that reference.
-4. Capability configuration, not a duplicate ConnectorConnection-owned assignment list, is authoritative for Agent and Route use.
+4. Capability configuration, not a duplicate ConnectorConnection-owned assignment list, is authoritative for Agent and AccountTarget use.
 5. All Connector tools reach the Agent through the a13n MCP authorization and result-safety boundary.
 6. Foundation standardizes safe Connector discovery, MCP exposure, and authorization, not cross-Provider equivalence of Connectors or action schemas.
 7. Recovery never substitutes another ConnectorConnection or ConnectorProvider for an accepted Run.

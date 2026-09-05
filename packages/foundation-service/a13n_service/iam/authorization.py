@@ -76,10 +76,8 @@ class WorkspaceAction(StrEnum):
     application_account_read = "application_account.read"
     application_account_manage = "application_account.manage"
     application_account_use = "application_account.use"
-    ingress_read = "ingress.read"
-    ingress_manage = "ingress.manage"
-    route_read = "route.read"
-    route_manage = "route.manage"
+    account_target_read = "account_target.read"
+    account_target_manage = "account_target.manage"
     connector_provider_read = "connector_provider.read"
     connector_provider_manage = "connector_provider.manage"
     connector_connection_read = "connector_connection.read"
@@ -110,8 +108,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.queued_submission_read,
         WorkspaceAction.a2a_push_configuration_read,
         WorkspaceAction.application_account_read,
-        WorkspaceAction.ingress_read,
-        WorkspaceAction.route_read,
+        WorkspaceAction.account_target_read,
         WorkspaceAction.connector_provider_read,
         WorkspaceAction.connector_connection_read,
         WorkspaceAction.mcp_connection_read,
@@ -152,7 +149,6 @@ _PLUGIN_OPERATOR_ACTIONS = frozenset(
 _CONNECTIVITY_ADMIN_ACTIONS = frozenset(
     {
         WorkspaceAction.application_account_manage,
-        WorkspaceAction.ingress_manage,
         WorkspaceAction.connector_provider_manage,
         WorkspaceAction.connector_connection_manage,
         WorkspaceAction.mcp_connection_manage,
