@@ -99,6 +99,85 @@ Set `AGENT_ENVD_EXECUTION_ISOLATION=disabled` only when a trusted outer containe
 
 On Linux, install the distribution's non-setuid Bubblewrap package at `/usr/bin/bwrap`. The kernel and active Linux Security Modules must allow the daemon user to create unprivileged user namespaces. `agent-envd` does not change sysctls, load AppArmor policy, search `PATH` for the helper, or fall back to disabled mode.
 
+### Ubuntu 24.04 and AppArmor user namespaces
+
+Ubuntu 24.04 commonly enables `kernel.apparmor_restrict_unprivileged_userns=1`. Even with `kernel.unprivileged_userns_clone=1`, an unprofiled Bubblewrap process can be denied permission to write its UID/GID map. A typical failure is:
+
+```text
+bwrap: setting up uid map: Permission denied
+```
+
+Envd adds namespace/AppArmor guidance to this failure and still refuses required-isolation startup. A bare-host Local Envd Provider cannot honestly offer its sandbox when that probe fails. HTTP or WebSocket connectivity alone does not solve isolation prerequisites on the machine running the daemon.
+
+Check the relevant policy and kernel evidence:
+
+```bash
+sysctl kernel.apparmor_restrict_unprivileged_userns \\
+  kernel.unprivileged_userns_clone user.max_user_namespaces
+sudo journalctl -k --since '-10 min' | grep -E 'apparmor|userns|uid_map'
+```
+
+**Recommended: keep the global restriction and permit user namespaces for the fixed `/usr/bin/bwrap` executable.** First check for a distribution-provided profile; update that profile rather than installing a second profile matching the same executable. If none exists, an administrator can install the following AppArmor 4 profile on Ubuntu 24.04:
+
+```bash
+sudo tee /etc/apparmor.d/a13n-bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile a13n-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/a13n-bwrap
+```
+
+This gives the previously unconfined executable an explicit profile permitting user namespaces. It is not itself a restrictive sandbox profile; Bubblewrap still establishes the filesystem, process and selected network isolation that envd probes. The permission applies to other users of that executable too. Keep Bubblewrap root-owned, non-setuid and non-writable by ordinary users. Do not apply these commands over a more restrictive existing profile without reviewing that policy.
+
+Validate as the ordinary account that runs envd, **not with sudo**:
+
+```bash
+bwrap --unshare-user --unshare-pid \\
+  --ro-bind / / --proc /proc --dev /dev /bin/true
+agent-envd isolation probe --json
+```
+
+A successful Bubblewrap command is only a quick prerequisite check. The production-equivalent envd probe is the acceptance check. Containers or other LSM policies may impose additional restrictions even after the AppArmor profile is installed. Envd does not change any host policy automatically and never downgrades to Direct Local or disabled isolation.
+
+To remove only the profile installed above:
+
+```bash
+sudo apparmor_parser -R /etc/apparmor.d/a13n-bwrap
+sudo rm /etc/apparmor.d/a13n-bwrap
+```
+
+#### Optional global opt-out
+
+An administrator who explicitly accepts the broader host policy change can disable this AppArmor restriction for **all unprivileged processes**. This is not required when the per-executable profile works, and it is different from disabling envd's command isolation.
+
+Temporary, effective immediately until reboot or another sysctl update:
+
+```bash
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+```
+
+For persistence across reboot:
+
+```bash
+sudo tee /etc/sysctl.d/99-local-userns.conf >/dev/null <<'EOF'
+kernel.apparmor_restrict_unprivileged_userns = 0
+EOF
+sudo sysctl -p /etc/sysctl.d/99-local-userns.conf
+```
+
+This does not disable the rest of AppArmor. To restore the restriction after using the persistent configuration above:
+
+```bash
+sudo rm /etc/sysctl.d/99-local-userns.conf
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+```
+
+For a managed Docker Envd deployment, the outer container normally owns containment and the Docker Provider explicitly disables envd's inner isolation. Do not use that setting as a workaround on an otherwise unsandboxed bare host.
+
 ## Minimal standalone configuration
 
 The default carrier is stdio. A standalone process needs a stable Environment identity and an absolute private runtime parent:

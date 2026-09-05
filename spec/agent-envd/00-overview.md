@@ -6,7 +6,7 @@
 
 The Harness is one EIP requester, not the reason those resources exist. Product gateways, CLIs, IDEs, provider controllers, and trusted background services can use the same generated low-level client. Envd never needs to know whether output becomes model input, a browser preview, an artifact, or another backend operation.
 
-Envd is optional for Harness Environments. Direct Local remains first-class when an embedding process intentionally grants local roots and commands. The [Environment Provider package](../agent-environment-provider/README.md) constructs fresh Direct Local or EIP-backed `Environment` adapters; Local Envd, Docker, and E2B use EIP. Both operation backends satisfy [Harness Environment Integration](../agent-harness/08-environment-integration.md).
+Envd is optional for Harness Environments. Direct Local remains first-class when an embedding process intentionally grants local roots and commands. The [Environment Provider package](../agent-environment-provider/README.md) constructs fresh `Environment` adapters. Local Envd, Docker Envd, HTTP Envd and WebSocket Envd use EIP; Direct Local and native E2B implement operations directly. All operation backends satisfy [Harness Environment Integration](../agent-harness/08-environment-integration.md).
 
 Envd does not provision a container or VM. A fresh provider-specific Environment adapter creates or re-enters the backing target from Host-supplied state and supplies trusted daemon bootstrap. Envd governs operations inside it. In required mode it contains every command with a native Linux, macOS, or Windows backend. In explicit disabled mode an outer sandbox owns containment while all other envd controls remain active.
 

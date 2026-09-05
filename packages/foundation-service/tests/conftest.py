@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import copyfile
@@ -26,6 +26,7 @@ from aiobotocore.config import AioConfig
 from aiobotocore.httpxsession import HttpxSession
 from aiobotocore.session import get_session
 from botocore.exceptions import BotoCoreError, ClientError
+from pydantic_ai import prices
 from redis.asyncio import Redis
 from sqlalchemy import create_engine
 from testcontainers.core.container import DockerContainer
@@ -35,6 +36,11 @@ if TYPE_CHECKING:
     from a13n_service.iam import RequestAuthenticator
 
 MINIO_IMAGE = "quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+
+
+@pytest.fixture(autouse=True)
+def no_background_price_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(prices, "update_in_background", nullcontext)
 
 
 @pytest.fixture(scope="session")

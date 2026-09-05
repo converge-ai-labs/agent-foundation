@@ -42,7 +42,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.plugin_configuration` | Ambient YAML, JSON, and environment configuration plus Build Context                         |
 | `a13n_harness.plugin_factories`     | Plugin factory discovery and catalogs                                                        |
 | `a13n_harness.plugins`              | Complete plugin middleware protocol                                                          |
-| `a13n_harness.pricing`              | Default pricing catalog and model-cost Capability family                                     |
+| `a13n_harness.pricing`              | Bundled/current pricing catalogs and model-cost Capability family                            |
 | `a13n_harness.state`                | Advanced context and Capability state values                                                 |
 | `a13n_harness.tools`                | Managed tool invocation and event helpers                                                    |
 | `a13n_harness.toolsets`             | First-party reusable Toolsets, including the standard async subagent dispatcher              |
@@ -90,6 +90,8 @@ class HarnessBuilder:
         self,
         definition: AgentDefinition[OutputT],
         /,
+        *,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
     @overload
@@ -105,6 +107,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
     @overload
@@ -120,6 +123,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 ```
 
@@ -354,7 +358,7 @@ The base distribution depends on Pydantic, the full Pydantic AI distribution, an
 
 The public Python API, Harness Observation registry, Harness state envelope, Environment provider-state codecs, Pydantic message codec, plugin contract, and model recovery rules evolve independently. The package tracks the repository-selected compatible Pydantic AI release and relies only on documented public Agent, Capability, Model, Toolset, instrumentation, message, deferred, event, output, and usage APIs.
 
-Additional third-party provider factories, hosted adapters, managed-tool policy integrations, media/document converters, web/search Provider clients, the OpenTelemetry SDK/exporters, and Langfuse or Logfire activation remain optional Host composition. Direct Local, Local Envd, Docker, and E2B provider support ships in the required provider package without extras, but importing either distribution initializes no SDK, subprocess, or resource. Local Envd receives one exact Host-resolved executable through its runtime collaborator; neither the provider package nor the low-level EIP client discovers or downloads it. Selecting a concrete optional Capability validates its required dependencies at construction and fails locally with a bounded configuration error; unrelated Harness imports and Agents remain usable.
+Additional third-party provider factories, hosted adapters, managed-tool policy integrations, media/document converters, web/search Provider clients, the OpenTelemetry SDK/exporters, and Langfuse or Logfire activation remain optional Host composition. Native Direct Local/E2B and Envd Local/Docker/HTTP/WebSocket provider support ships in the required provider package without extras, but importing either distribution initializes no SDK, subprocess, or resource. Local Envd receives one exact Host-resolved executable through its runtime collaborator; neither the provider package nor the low-level EIP client discovers or downloads it. Selecting a concrete optional Capability validates its required dependencies at construction and fails locally with a bounded configuration error; unrelated Harness imports and Agents remain usable.
 
 Harness middleware packages may register factory classes under `a13n_harness.plugins`. Environment Providers register under `a13n_environment_provider.providers` and are loaded only through that package's explicit catalog. Explicit catalog APIs import only selected names into immutable catalogs. An opted-in builder constructs its own Harness plugin catalog from enabled document entries; it never scans or applies an Environment catalog. Provider resolution and adapter construction remain explicit Host operations, while every other extension remains direct code-first composition. There is no process-global registration or import-time auto-enable behavior.
 

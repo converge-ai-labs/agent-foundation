@@ -47,6 +47,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.execution import derive_child_identity
 from a13n_harness.input import RunInputValue
+from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_stream_protocol import HarnessAguiObserver
 from ag_ui.core import Event as AguiEvent
 from ag_ui.core.events import (
@@ -62,7 +63,7 @@ from ag_ui.core.events import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after
+from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import ToolDenied, ToolReturn
@@ -373,8 +374,10 @@ class AgentUiSubagentOperator(SubagentOperator):
                 "The child definition changed after parent admission.",
                 code="subagent_plan_invalid",
             )
+        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
         reconstructed = self._agents.reconstruct(
             published.value,
+            pricing_catalog=pricing_catalog,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
         )
@@ -764,8 +767,10 @@ class AgentUiSubagentOperator(SubagentOperator):
             _selection(thread.thread_id, thread.configuration),
             parent_node=scope.composition.root,
         )
+        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
         reconstructed = self._agents.reconstruct(
             published.value,
+            pricing_catalog=pricing_catalog,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
         )

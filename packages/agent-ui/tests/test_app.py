@@ -1120,7 +1120,9 @@ async def _candidate_error(path: Path):
 
 
 class _CompletedReconstructor:
-    def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None):
+    def reconstruct(
+        self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None, pricing_catalog=None
+    ):
         del composition, subagent_operator, subscription_sources
 
         async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -1131,7 +1133,9 @@ class _CompletedReconstructor:
 
 
 class _DeferredReconstructor:
-    def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None):
+    def reconstruct(
+        self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None, pricing_catalog=None
+    ):
         del composition, subagent_operator, subscription_sources
 
         async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -1194,7 +1198,9 @@ class _SlowReconstructor:
     def __init__(self, started: Event) -> None:
         self._started = started
 
-    def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None):
+    def reconstruct(
+        self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None, pricing_catalog=None
+    ):
         del composition, subagent_operator, subscription_sources
 
         async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -1220,3 +1226,28 @@ def _reconstructed(model, root_capabilities) -> ReconstructedAgent:
         model_resolver=AgentUiModelResolver({}),
         definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
     )
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_app_owns_price_updater_and_releases_it_after_failure(tmp_path, monkeypatch, enabled):
+    from contextlib import contextmanager
+
+    from pydantic_ai import prices
+
+    events = []
+
+    @contextmanager
+    def updater():
+        events.append("start")
+        try:
+            yield
+        finally:
+            events.append("stop")
+
+    monkeypatch.setattr(prices, "update_in_background", updater)
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": enabled})
+    with pytest.RaisesGroup(pytest.RaisesExc(RuntimeError, match="surface failed")):
+        async with open_agent_ui_app(settings):
+            assert events == (["start"] if enabled else [])
+            raise RuntimeError("surface failed")
+    assert events == (["start", "stop"] if enabled else [])

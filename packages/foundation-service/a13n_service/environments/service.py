@@ -80,6 +80,7 @@ class EnvironmentService:
                     "credential_schema": provider.credential_model.model_json_schema()
                     if provider.credential_model
                     else None,
+                    "supports_managed": provider.supports_managed,
                     "supports_stop": provider.supports_stop,
                     "supports_destroy": provider.supports_destroy,
                     "requires_keepalive": provider.requires_keepalive,
@@ -225,6 +226,8 @@ class EnvironmentService:
         if row.workspace_id != workspace_id or not row.enabled:
             raise environment_not_found()
         provider = self.catalog.require(row.type)
+        if not provider.supports_managed:
+            raise invalid_environment("the selected Provider supports external registration only")
         try:
             provider.validate_configuration(
                 schema_version=recipe.configuration_schema_version, value=recipe.configuration

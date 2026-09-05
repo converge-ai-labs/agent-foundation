@@ -35,6 +35,7 @@ The root file owns restart-bound process settings and global defaults:
 schema_version: "2"
 
 process:
+  pricing_auto_update: true
   log_level: INFO
   log_format: pretty
 
@@ -46,6 +47,8 @@ defaults:
   environment_run_extensions: []
   mcp_servers: []
 ```
+
+`process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
 
 Web listener binding and process-local API access are intentionally absent from this desired-resource tree. They are executable-bound surface inputs owned by [HTTP Startup and Access](05-runtime-subagents-and-surfaces.md#http-startup-and-access).
 

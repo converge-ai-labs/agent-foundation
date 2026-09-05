@@ -84,6 +84,7 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
         "EnvironmentRunExtensionFactory",
         "RuntimeContextCapability",
         "create_model_http_client",
+        "get_current_pricing_catalog",
         "get_default_pricing_catalog",
     }
     assert specialized.isdisjoint(harness.__all__)
@@ -94,6 +95,7 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
     assert capabilities.RuntimeContextCapability is not None
     assert models.create_model_http_client is not None
     assert pricing.get_default_pricing_catalog is not None
+    assert pricing.get_current_pricing_catalog is not None
     assert "EnvironmentSkillSource" not in capabilities.__all__
     assert not hasattr(capabilities, "EnvironmentSkillSource")
 

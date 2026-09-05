@@ -13,13 +13,13 @@ from .errors import (
     EIPTransportError,
 )
 from .file_transfer import EIPFileReader, EIPFileWriter
-from .http import HttpTransport
+from .http import HttpTransport, normalize_http_endpoint
 from .output import EIPOutputPage, EIPOutputReader
 from .requester import RequestCoordinator
 from .session import EIPSession
 from .stdio import StdioTransport
 from .transport import ControlFrame, EIPTransport, EIPTransportFrame
-from .websocket import AcceptedWebSocketTransport
+from .websocket import AcceptedWebSocketTransport, WebSocketConnection
 
 try:
     __version__ = version("a13n-envd-client")
@@ -47,5 +47,7 @@ __all__ = [
     "HttpTransport",
     "RequestCoordinator",
     "StdioTransport",
+    "WebSocketConnection",
     "__version__",
+    "normalize_http_endpoint",
 ]

@@ -182,15 +182,22 @@ For complete Host-side built-in lifecycles, including Docker state re-entry and 
 
 ## Built-in Providers
 
-| Provider key        | Target and state                                                                | Cleanup boundary                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `a13n.direct-local` | Existing Host directory; stateless                                              | Closes process-local process/output helpers; never removes the directory                                |
-| `a13n.local-envd`   | Fresh private `agent-envd` generation over a Host-selected workspace; stateless | Stops the daemon and removes its private runtime; never removes the workspace                           |
-| `a13n.docker`       | Exact local Docker container identified by `EnvironmentState`                   | Closes EIP sessions on `close()`; explicit `destroy()` removes the container and its bootstrap material |
+There are two operation routes: **Native** uses the host OS or vendor APIs directly; **Envd** uses one shared EIP operation implementation over different deployment and connection arrangements.
 
-Direct Local is appropriate only when sharing the embedding Host account is acceptable. Its operation policy constrains calls through the adapter but is not an operating-system sandbox against an allowed child process.
+| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
+| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
+| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
+| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
+| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
+| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
+| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
 
-Local Envd and Docker expose provider-neutral operations through EIP. The Provider owns daemon or container lifecycle and bootstrap; Harness file, shell, process, retained-output, and port operations do not use Docker exec, copy, archive, or logs.
+Direct Local shares the Host account; E2B uses the native sandbox API and needs no envd installation. Envd-backed Providers use EIP for Agent operations, not Docker exec/copy/logs. Docker Envd retains its existing `a13n.docker` key.
+
+Multi-tenant authorization and container allocation remain Host responsibilities. One daemon admits one active Session; Sessions are not tenant partitions. To work with multiple remote environments, register separate daemon identities and coordinate their use.
+
+Start with the [built-in examples](examples.md) or [run both remote transports locally](remote-envd.md). HTTP/WebSocket Providers require external state, declare `supports_managed=False`, and do not provision or destroy infrastructure. The WebSocket SDK receives authenticated connections from your Host; it never opens a listener.
 
 ## Local Envd runtime
 
@@ -245,3 +252,38 @@ Run the real image and Harness lifecycle check with `make docker-provider-test`,
 The Provider package owns typed files, shell, process, retained-output, and port operation contracts. An entered adapter advertises only the operation families and exact actions it can enforce.
 
 Agent Harness applies mount names, access ceilings, routing, operation timeouts, state aggregation, and optional model-facing tools. Adding an Environment does not automatically expose tools to the model. See [Use Environments from Agent Harness](../agent-harness/environments.md) for Run inputs and `DynamicEnvironmentCapability` configuration.
+
+## E2B runtime
+
+E2B uses its native asynchronous SDK and command-local Python wrappers. The default `base` template works without installing `agent-envd`, uploading an executable, or building a custom template. Custom templates need Linux, Python 3.11+ with pidfd support, Bash and the configured account/root; Git-ignore queries also need Git.
+
+```python
+import os
+from pydantic import SecretStr
+from a13n_environment_provider import E2BEnvironment, E2BProviderConfiguration, E2BProviderRuntime
+
+configuration = E2BProviderConfiguration(template="base", timeout_seconds=300)
+runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["E2B_API_KEY"]))
+environment = E2BEnvironment(
+    configuration, environment_id="environment-example", state=None, runtime=runtime,
+)
+```
+
+Pass this Environment to Harness as usual. Persist `environment.dump_state()` on the Host and give it to a fresh adapter for re-entry. `close()` preserves the sandbox and user files; it terminates this adapter's commands and releases their output. Use fresh adapters for `stop()` (pause), `prepare()` (resume) and `destroy()` (kill). Keepalive reports actual expiry and never resumes a paused sandbox. The library never reads `.env`; Foundation Service receives the domain through Provider Backend configuration and `api_key` through its credential reference.
+
+Output retains raw bytes with finite per-stream limits, offset/cursor reads and explicit release. Retained records consume the same capacity pool as running commands until released or closed. Stdin limits remain enforced after process rebind. Command deadlines and sandbox TTL remain effective when the Host disconnects.
+
+The isolation boundary is the E2B sandbox. File root mapping does not confine allowed shell commands. Process groups cannot prove that all descendants were removed, so terminal status reports `cleanup="residual_confined"`. Per-command CPU, memory and process-count limits are unsupported. Per-command network denial requires sandbox-wide `allow_internet_access=False`; it cannot be added to an internet-enabled sandbox. Port inspection supports loopback TCP only. Append and patch do not provide concurrent compare-and-swap guarantees.
+
+Run the example with `E2B_API_KEY` set in the Host environment:
+
+```bash
+cd examples/environment-provider
+uv run python -m a13n_environment_provider_example.e2b
+```
+
+The example explicitly destroys its sandbox in `finally`. Live integration tests are opt-in and also destroy their targets:
+
+```bash
+A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
+```

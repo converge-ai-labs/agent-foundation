@@ -6,15 +6,18 @@ You do not need an Environment for an Agent that only calls ordinary application
 
 ## Choose a backend
 
-| Need                                        | Start with                  | Important boundary                                                   |
-| ------------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
-| No files or command execution               | No Environment              | Keep the Agent surface minimal                                       |
-| Trusted access to a Host-selected directory | Direct Local                | Shares the Host account; it is not an operating-system sandbox       |
-| Local native command isolation              | Local Envd                  | Launches `agent-envd` and uses EIP over a private stdio carrier      |
-| Local container isolation                   | Docker                      | Provider owns the container; EIP owns Agent-visible operations       |
-| A remote or vendor sandbox                  | Environment Provider plugin | Construct a fresh adapter that exposes the provider-neutral contract |
+Use no Environment when the Agent needs only ordinary tools or remote APIs. Otherwise select a Native or Envd route:
 
-Use Direct Local for development, trusted automation, and tests where sharing the Host account is acceptable. Use Local Envd, Docker, or another EIP-backed Provider when command execution must cross an explicit isolation or remote-execution boundary.
+| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
+| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
+| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
+| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
+| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
+| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
+| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
+
+[Try the remote examples locally](../agent-environment-provider/remote-envd.md) without a model, Docker or cloud account.
 
 ## How the layers fit
 
@@ -24,7 +27,7 @@ flowchart LR
     Provider --> Environment[Fresh Environment adapter]
     Environment --> Harness[Agent Harness Run]
     Harness --> Tools[Selected model-facing tools]
-    Environment --> Direct[Direct Local operations]
+    Environment --> Direct[Native Local or E2B operations]
     Environment --> EIP[EIP operations]
     EIP --> Envd[agent-envd or remote backend]
 ```
@@ -76,7 +79,6 @@ provider = DirectLocalEnvironmentProvider()
 configuration = provider.validate_configuration(
     schema_version="1",
     value=DirectLocalProviderConfiguration(
-        environment_id="workspace",
         root=DirectLocalRootConfiguration(
             path=Path("./workspace").resolve(),
         ),
@@ -84,6 +86,7 @@ configuration = provider.validate_configuration(
 )
 environment = provider.create_environment(
     configuration=configuration,
+    environment_id="workspace",
     state=None,
 )
 
@@ -93,7 +96,7 @@ result = await executable.run(
 )
 ```
 
-The Provider does not inspect the directory until Harness enters the fresh adapter. Harness closes the adapter after the Run but never destroys a target. Direct Local preserves the selected directory on close and explicit destroy.
+The Provider inspects the directory during preparation, not scope entry. Harness closes the adapter after the Run but never destroys a target. Direct Local preserves the directory on close and rejects target destruction.
 
 Direct Local restrictions apply through the current Environment mount. They do not isolate an allowed child process from the Host user account.
 
@@ -119,7 +122,6 @@ provider = catalog.require("a13n.local-envd")
 configuration = provider.validate_configuration(
     schema_version="1",
     value={
-        "environment_id": "sandbox",
         "workspace": LocalEnvdWorkspaceConfiguration(
             path=Path("./workspace").resolve(),
         ).model_dump(mode="json"),
@@ -128,6 +130,7 @@ configuration = provider.validate_configuration(
 )
 environment = provider.create_environment(
     configuration=configuration,
+    environment_id="workspace",
     state=None,
     runtime=LocalEnvdProviderRuntime(
         executable=resolve_agent_envd_executable(),
@@ -153,6 +156,7 @@ A stateful Provider such as Docker returns `EnvironmentState`. The Host persists
 current_state = await state_store.load(environment_key)
 environment = provider.create_environment(
     configuration=configuration,
+    environment_id="workspace",
     state=current_state,
     runtime=fresh_runtime,
 )
@@ -220,6 +224,6 @@ The [Harness Environment guide](../agent-harness/environments.md) covers complet
 
 ## Hosted preparation and recovery
 
-Hosted templates support `on_run` preparation and lazy `on_use` preparation. A later Run can select another Environment, while retry and waiting continuation keep the accepted selection. A broken connection is recovered before the next operation. Rebuilding a missing managed target preserves the Environment ID but creates a new backing generation; lost temporary files and processes are not restored. Approvals for the old target require review again.
+Hosted templates support `on_run` preparation and lazy `on_use` preparation. A later Run can select another Environment, while retry and waiting continuation keep the accepted selection. Provider-supported recovery happens before dispatch. Remote Envd requires a fresh adapter after a failed preparation; HTTP Session admission can remain busy after an abandoned connection. Rebuilding a missing managed target preserves the Environment ID but creates a new backing generation; lost temporary files and processes are not restored. Approvals for the old target require review again.
 
 Host-local Providers record `host_id` when configured. Docker also records `docker_host`, so an existing Provider keeps using the same daemon even if a worker's environment variables change. Run workers and maintenance must run on that host with access to the same protected bootstrap storage. Register an existing target once and reuse its Environment ID; another Provider record does not create a separate owner for that target.

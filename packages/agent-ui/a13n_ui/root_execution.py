@@ -22,8 +22,9 @@ from a13n_harness import (
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
 from a13n_harness.context import AgentContext
+from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_stream_protocol import HarnessAguiObserver
-from anyio import CancelScope
+from anyio import CancelScope, to_thread
 from pydantic_ai import ToolDenied
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, ToolApproved
@@ -139,8 +140,10 @@ class RootRunExecutor:
                 "The selected Thread continuation has unresolved deferred tool requests.",
                 code="thread_deferred_pending",
             )
+        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
         reconstructed = self._agents.reconstruct(
             published.value,
+            pricing_catalog=pricing_catalog,
             subagent_operator=self._subagent_operator,
             root_capabilities=(
                 () if self._root_capability_factory is None else (self._root_capability_factory(thread.thread_id),)

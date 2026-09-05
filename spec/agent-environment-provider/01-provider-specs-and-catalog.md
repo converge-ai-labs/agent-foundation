@@ -60,6 +60,9 @@ class EnvironmentProvider(ABC):
     ) -> BaseModel: ...
 
     @property
+    def supports_managed(self) -> bool: ...
+
+    @property
     def supports_stop(self) -> bool: ...
 
     @property
@@ -84,10 +87,10 @@ The exact language API may use typed generic runtime values, but these semantics
 - `create_environment()` performs no external I/O and returns a fresh single-use adapter.
 - The state is either `None` or has the same `provider_key`. Provider-specific codec validation can occur during construction, but target validation and external observation occur only during explicit Environment operations.
 - Runtime collaborators are fresh process-local trusted values. They can include credential sources, a Docker engine boundary, a bootstrap store, an EIP transport factory, or a local runtime allocator.
-- Runtime collaborators and configuration are retained only by the resulting process-local Environment. They are never copied into `EnvironmentState`.
+- Per-Environment runtime collaborators and configuration are retained by the resulting process-local Environment and never copied into `EnvironmentState`. Explicit Host composition can wire a Provider to a shared Host-lifespan SDK, such as the reverse WebSocket connection SDK; this does not give the Provider durable state or listener ownership.
 - A Provider never stores durable current state, chooses retention, or associates Threads.
 
-A small capability declaration describes supported stop/destruction and whether keepalive is required. A Host rejects unsupported policies before target I/O. The same implementation supplies preparation, resume, connections and target lifecycle operations through its Environment objects; there are no separately registered attachment or retention Providers.
+A small capability declaration describes whether managed recipes are supported, supported stop/destruction and whether keepalive is required. A Host rejects unsupported policies before target I/O. `supports_managed` defaults to true for existing implementations; connect-only Providers set it to false and Hosts reject their use in managed templates. The same implementation supplies preparation, resume, connections and target lifecycle operations through its Environment objects; there are no separately registered attachment or retention Providers.
 
 There is no separate Provider factory entity. Catalog loading creates an `EnvironmentProvider` directly through the trusted entry point. There is no lifecycle Provider, Resource, attachment, or binding layer between Provider and Environment.
 
@@ -139,12 +142,14 @@ def build_environment_provider_catalog(
 
 The built-in catalog keys are:
 
-| Key                 | Target                                                            |
-| ------------------- | ----------------------------------------------------------------- |
-| `a13n.direct-local` | One Host-selected local root using direct operating-system access |
-| `a13n.local-envd`   | One Host-selected workspace served by a fresh local envd process  |
-| `a13n.docker`       | One Docker container running envd                                 |
-| `a13n.e2b`          | One E2B sandbox running envd                                      |
+| Key                   | Target                                                                   |
+| --------------------- | ------------------------------------------------------------------------ |
+| `a13n.direct-local`   | One Host-selected local root using direct operating-system access        |
+| `a13n.local-envd`     | One Host-selected workspace served by a fresh local envd process         |
+| `a13n.docker`         | One Docker container running envd                                        |
+| `a13n.e2b`            | One native E2B sandbox                                                   |
+| `a13n.http-envd`      | One externally operated daemon through HTTP(S)                           |
+| `a13n.websocket-envd` | One externally operated daemon through a Host-accepted reverse WebSocket |
 
 Third-party Providers register under the `a13n_environment_provider.providers` entry-point group. One selected entry point must load one concrete `EnvironmentProvider` class with safe no-argument construction. Preconstructed objects are not valid entry-point targets. The entry-point name and constructed `provider.key` must match. Only selected extension keys are imported.
 

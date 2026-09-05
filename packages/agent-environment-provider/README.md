@@ -10,7 +10,7 @@ The package owns:
 - single-use `Environment` adapters with creation or re-entry, readiness, provider-neutral operations, cached state, non-destructive close, and explicit destruction;
 - portable provider-owned `EnvironmentState` soft references;
 - typed Provider errors with bounded safe projections;
-- the working `a13n.direct-local`, `a13n.local-envd`, and `a13n.docker` built-ins;
+- Native Direct Local/E2B and Envd Local/Docker/HTTP/WebSocket built-ins;
 - EIP session sources and reusable stdio-carrier values shared with managed sandbox Providers.
 
 Embedding code resolves a trusted Provider, validates configuration, supplies current state and fresh runtime collaborators, and constructs one new adapter per independent Harness Run:
@@ -37,7 +37,20 @@ Provider validation and adapter construction perform no external I/O. Harness en
 
 The package does not own durable storage, Host authorization or scheduling, Harness Runs, model-facing tools, mount names, access ceilings, or target retention policy. The Host persists authoritative `EnvironmentState`; Harness owns only Run-local aggregate routing and state mapping.
 
-Direct Local exposes an existing Host directory and never deletes, tags, locks, or claims ownership of it. Local Envd launches one compatible Host-selected `agent-envd` generation for each fresh adapter and removes only its private runtime on close. Docker creates or re-enters one exact local container, exposes authenticated HTTP EIP operations, and preserves the container on close; explicit destruction removes the container and its Provider-owned bootstrap material. Docker never uses exec, archive, copy, or logs for Harness operations. E2B remains deferred to its planned Provider phase. The catalog contains no placeholder or fallback selection.
+Direct Local exposes an existing Host directory and never deletes, tags, locks, or claims ownership of it. Local Envd launches one compatible Host-selected `agent-envd` generation for each fresh adapter and removes only its private runtime on close. Docker creates or re-enters one exact local container, exposes authenticated HTTP EIP operations, and preserves the container on close; explicit destruction removes the container and its Provider-owned bootstrap material. Docker never uses exec, archive, copy, or logs for Harness operations. E2B implements native SDK operations with bounded command-local byte capture, state re-entry, pause/resume, keepalive and explicit destruction; it requires no envd installation or custom template. The catalog contains no placeholder or fallback selection.
+
+## Choose a Provider
+
+| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
+| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
+| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
+| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
+| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
+| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
+| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
+
+See [Remote Envd](../../docs/agent-environment-provider/remote-envd.md) for one-command local demos, external HTTP connection and Host-owned reverse WebSocket integration. The SDK starts no listener; close preserves the external daemon and workspace.
 
 ## Docker development
 

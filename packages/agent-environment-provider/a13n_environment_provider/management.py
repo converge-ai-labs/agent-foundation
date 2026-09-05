@@ -285,6 +285,7 @@ class EnvironmentProvider(ABC):
 
     provider_configuration_model: type[BaseModel] = EmptyProviderConfiguration
     credential_model: type[BaseModel] | None = None
+    supports_managed: bool = True
     supports_stop: bool = False
     supports_destroy: bool = False
     requires_keepalive: bool = False

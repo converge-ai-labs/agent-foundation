@@ -48,6 +48,29 @@ async def _run(arguments: argparse.Namespace) -> None:
         print(f"state version: {result.state_version}")
         print(f"target destroyed: {result.destroyed}")
         return
+    if arguments.provider in {"http-envd", "websocket-envd", "remote-envd-demo"}:
+        from pydantic import SecretStr
+
+        from .remote import run_http, run_websocket
+        from .remote_demo import run_demo
+
+        if arguments.provider == "remote-envd-demo":
+            remote = await run_demo(arguments.executable, arguments.transport)
+        else:
+            token = SecretStr((await asyncio.to_thread(arguments.credential_file.read_text)).strip())
+            if arguments.provider == "http-envd":
+                remote = await run_http(arguments.endpoint, token, arguments.daemon_environment_id)
+            else:
+                remote = await run_websocket(
+                    token=token, daemon_environment_id=arguments.daemon_environment_id, port=arguments.port
+                )
+        print(f"provider: {remote.provider_key}")
+        print(f"re-entry read: {remote.text.strip()}")
+        print(f"same daemon generation: {remote.same_generation}")
+        print("provider close preserved remote daemon and workspace")
+        if arguments.provider == "remote-envd-demo":
+            print("demo operator cleaned up its temporary daemon and workspace")
+        return
     raise ValueError(f"Unsupported Provider example: {arguments.provider}")
 
 
@@ -106,6 +129,28 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_EXAMPLE_DOCKER_IMAGE,
         help="Sandbox image reference; defaults to the image built by make image-sandbox.",
     )
+    for name in ("http-envd", "websocket-envd"):
+        remote = providers.add_parser(name, help="Connect to an externally operated daemon; never destroy its target.")
+        remote.add_argument(
+            "--daemon-environment-id", required=True, help="Exact AGENT_ENVD_ENVIRONMENT_ID configured by the operator."
+        )
+        remote.add_argument(
+            "--credential-file",
+            type=Path,
+            required=True,
+            help="Protected token file; never put credentials on the command line.",
+        )
+        if name == "http-envd":
+            remote.add_argument("--endpoint", required=True, help="EIP HTTP(S) origin without a path.")
+        else:
+            remote.add_argument(
+                "--port", type=int, default=8788, help="Loopback port for this example Host's listener."
+            )
+    demo = providers.add_parser(
+        "remote-envd-demo", help="Try a remote Provider with a temporary local daemon owned by demo Host code."
+    )
+    demo.add_argument("--executable", type=Path, required=True)
+    demo.add_argument("--transport", choices=("http", "websocket"), default="http")
     return parser
 
 

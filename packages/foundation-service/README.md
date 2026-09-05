@@ -32,6 +32,12 @@ Model Providers and Models are mutable resources protected by strong `ETag` and 
 
 Agent configuration selects only `model_key` and optional setting overrides. Run acceptance resolves the latest Model and freezes its upstream identity, single calling API, and the top-level merge of Model defaults, Agent settings, and Run overrides. Profile and limits are read-only discovery information; Model resources store only actual request defaults and never editable capability metadata. `SnapshotRunModelResolver` retains the request-selection fields while `LiveProviderResolver` reloads and decrypts current Provider state for every outbound request, including later calls and replacement attempts within the same Run.
 
+### Automatic Model Prices
+
+`worker` and `all` processes enable Pydantic AI's background price updater by default; `control` and `connectivity` do not start it. Bundled prices are available immediately, and download availability is not a readiness dependency. Subsequent Harness builds adopt validated updates automatically, while existing Agents and emitted usage retain their original prices and revision. Downloads run immediately and hourly; failures retain the latest usable data without a service price table or disk cache.
+
+Set `FOUNDATION_PRICING_AUTO_UPDATE=false` before startup to disable this process's updater. Stopping or disabling an updater does not clear prices already published in the process. Custom build-time costing policies still take precedence. See [Harness pricing](../../docs/agent-harness/agents-and-runs.md#keep-prices-current-in-a-host) for snapshot and override semantics.
+
 ## External Connectivity
 
 The shared executable exposes Connectivity according to its process role:

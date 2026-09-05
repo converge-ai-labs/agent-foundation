@@ -2,16 +2,22 @@
 
 ## Design Position
 
-`a13n-environment-provider` ships four Providers:
+`a13n-environment-provider` supplies two operation routes and six Provider choices:
 
-| Provider key        | Backing target                                   | Operation backend |
-| ------------------- | ------------------------------------------------ | ----------------- |
-| `a13n.direct-local` | One configured existing local root               | Direct Local      |
-| `a13n.local-envd`   | One configured existing workspace and local envd | EIP               |
-| `a13n.docker`       | One Docker container running envd                | EIP               |
-| `a13n.e2b`          | One E2B sandbox running envd                     | EIP               |
+| Route  | Provider key          | Backing target                              | Operation backend            | Lifecycle boundary                              |
+| ------ | --------------------- | ------------------------------------------- | ---------------------------- | ----------------------------------------------- |
+| Native | `a13n.direct-local`   | Existing Host directory                     | Local OS file/process APIs   | Caller-owned directory                          |
+| Native | `a13n.e2b`            | Native E2B sandbox                          | E2B SDK and bounded commands | Sandbox create, pause/resume, renew and destroy |
+| Envd   | `a13n.local-envd`     | Local workspace and private daemon          | EIP over stdio               | Adapter-owned daemon; caller-owned workspace    |
+| Envd   | `a13n.docker`         | Local Docker container running envd         | EIP over HTTP                | Managed container; close preserves target       |
+| Envd   | `a13n.http-envd`      | External daemon at a configured origin      | EIP over HTTP(S)             | Connect-only                                    |
+| Envd   | `a13n.websocket-envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket  | Connect-only; Host-integrated SDK               |
 
-Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Local Envd, Docker, and E2B use EIP for Agent file, shell, process, output, and port operations after preparation. They do not bypass EIP through vendor filesystem, exec, log, or copy APIs.
+Docker Envd retains the serialized key `a13n.docker`. Local Envd serves CLI and local Agent use; Docker Envd supplies container-backed execution for single-node self-hosting. Multi-tenant authorization and allocation remain Host responsibilities. Remote Envd supports network-reachable environments through HTTP or outbound-only environments through reverse WebSocket. A connection Session is not a tenant boundary.
+
+Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Envd-backed Providers use EIP for Agent file, shell, process, output and port operations. Native Providers use their native backends without requiring envd. No Provider emulates an unsupported operation through a different backend.
+
+This document owns native and provider-launched target behavior. [Remote Envd Providers and Host Integration](04-remote-envd.md) owns the external state/configuration codecs, connection lifecycle, and WebSocket SDK.
 
 ## Shared Configuration Rules
 
@@ -278,27 +284,37 @@ Prune policy, candidate persistence, grace periods, sharing checks, and destroy 
 
 ### Configuration and runtime
 
-`a13n.e2b` configuration schema version `1` contains desired sandbox behavior such as provider template, timeout/retention ceiling supported by E2B, strict envd bootstrap configuration, shell profiles, and bounded file/output limits. It contains no API key, sandbox ID, endpoint, EIP credential, or SDK client.
+`a13n.e2b` configuration schema version `1` selects `template` (default `base`), logical filesystem `root` (default `/home/user`), sandbox `user`, Python and Bash executable paths, sandbox and request timeouts, sandbox-wide internet access, read-only access, and finite file, output, process-record, command-duration and traversal limits. It contains no credential, sandbox ID, endpoint or live SDK object.
 
-A fresh `E2BProviderRuntime` supplies the current E2B client/credential source and protected bootstrap material needed to launch envd. Provider construction is inert.
+`E2BProviderRuntime` supplies an explicit secret API key, backend domain, managed/external selection and optional Host operation correlation. Generic Provider Backend configuration contains the domain; its credential contains `api_key`. The library does not load `.env` or acquire credentials. Provider construction, discovery and scope entry are inert.
+
+Operations use the official asynchronous E2B SDK. Bounded Python standard-library commands run through the native command API; no daemon, executable upload, template build, EIP endpoint or daemon version negotiation is required. The selected template must provide Linux, Python 3.11 or later with pidfd support, Bash, the selected account and existing root. Git ignore queries additionally require Git. The default E2B base template satisfies these prerequisites.
 
 ### State and lifecycle
 
-E2B `EnvironmentState` uses `state_version="1"` and contains the provider sandbox identity, immutable template identity when available, configuration fingerprint, and bootstrap correlation needed to validate and reconnect. It contains no API key, endpoint bearer credential, client, live sandbox object, EIP Session, or daemon generation.
+State version `1` contains `sandbox_id`, owning `environment_id` and `configuration_fingerprint`. Target metadata carries the same ownership and fingerprint, plus the optional create operation correlation. State never contains credentials, command handles, endpoints or output bytes.
 
-`prepare()` creates a sandbox when state is absent, resumes a paused matching sandbox or reconnects to an exact compatible running sandbox, and establishes fresh EIP bootstrap/readiness. It creates a replacement only when E2B provides authoritative absence for the selected sandbox and the selected policy allows replacement. Inaccessible, rate-limited or otherwise uncertain evidence fails without speculative create; confirmed expiry/deletion is handled as authoritative absence.
+`prepare()` validates the exact state target, or searches ownership metadata if state has not yet been received. Multiple matches and incompatible metadata are conflicts. It resumes a matching paused sandbox or reconnects to the same running sandbox. Only managed selection with authoritative absence permits creation or replacement. Authorization, transport and rate-limit failures do not permit speculative creation. Host lifecycle serialization remains required; E2B metadata search is not an atomic create-if-absent primitive.
 
-A successful create or replacement updates state before EIP readiness. `close()` releases process-local E2B and EIP clients without terminating the sandbox. `destroy()` explicitly terminates only the exact validated sandbox and cleans provider-owned bootstrap material. Sandbox expiry remains provider/Host policy rather than Harness close behavior.
+A successful create is cached before operation readiness, so subsequent readiness failure preserves its state. Generation combines sandbox identity and the guest boot identity. Fresh adapters bind fresh mount handles; explicit process rebind validates durable process identity. A different boot fences previous handles and clears obsolete capture records.
 
-E2B declares stop, destroy and keepalive support. `stop()` maps to sandbox pause; `prepare()` resumes the same paused sandbox, and `destroy()` maps to kill. Stop preserves provider-supported recoverable state; whether memory is preserved is explicit provider configuration/capability, not a universal stop guarantee. Service-controlled delete deadlines remain effective while paused, even if E2B keeps paused sandboxes indefinitely. Renewal reports actual supported expiry and must not resume paused targets. E2B runtime limits and uncertain mutation outcomes remain explicit failures rather than unlimited retention promises.
+`close()` disconnects native command handles, stops commands started by this adapter, releases its capture records and fences its operation facets. It preserves the sandbox and user files. Rebinding a process borrows it; closing the borrowing adapter does not kill it. `stop()` pauses the exact validated sandbox with memory preservation. `destroy()` kills only the validated sandbox. Neither action prepares or resumes the target. Keepalive rejects paused or missing targets, never shortens an existing deadline and reports the observed expiry. Creation uses finite kill-on-timeout behavior with automatic resume disabled. Host delete deadlines remain effective while paused.
+
+### Operation guarantees and limits
+
+Files support bounded raw reads, streamed SDK transfers, UTF-8 text, shared unified-diff semantics, traversal, search, atomic staged publication, copy, move and deletion. Logical paths resolve beneath the configured root; the root is a file-API boundary, not a confinement boundary for an allowed shell. Copy uses the same streamed publication path as writes. Append and patch are read/modify/write operations, not concurrent compare-and-swap transactions.
+
+Structured argv is passed directly to the command-local child process. Shell requests use the `default` Bash profile. Each command receives the runtime's small inherited environment allowlist plus explicit set/unset changes. A command-local runner retains raw stdout/stderr bytes in private sandbox files rather than relying on SDK-decoded output. Each stream has a finite cap; live and retained records share a bounded admission pool. Output supports offsets, cursors, explicit release and generation/mount fencing. Truncation drains excess bytes and reports loss; retain/fail overflow terminates execution at capacity. Stdin quota reservations are serialized inside the sandbox across adapters and remain consumed after uncertain delivery.
+
+Wall-time limits survive Host disconnection. Signals address a verified runner through Linux pidfds and the runner signals its process group. Completion reports `residual_confined`, because descendants may escape that group while remaining inside the E2B sandbox; it never claims namespace-level tree cleanup. A `tree_cleaned` wait resolves at the final cleanup disposition, including this explicit residual result. Per-command network denial on an internet-enabled sandbox, per-command CPU/memory/process-count limits, unknown shell profiles and non-loopback port targets fail as unsupported before their requested action. Whole-sandbox internet denial remains available through configuration. Port operations only inspect or wait for loopback TCP listeners.
 
 ## Harness Semantics
 
-Harness receives already constructed Direct Local, Local Envd, Docker, or E2B Environment instances. It never receives a Provider, discovers the catalog, acquires an attachment, or owns an ephemeral target lifetime.
+Harness receives already constructed native or Envd-backed Environment instances. It never receives a Provider, discovers the catalog, acquires an attachment, or owns an ephemeral target lifetime.
 
 A singular Environment becomes mount `workspace`. Named mounts can combine built-ins. Harness supplies Run-local access ceilings and working directories, binds local scopes atomically without target I/O, routes operations through ready or lazy objects, snapshots each non-`None` state directly into `HarnessState.environment_states`, and closes adapters non-destructively.
 
-Direct Local and Local Envd normally contribute no state entry. Docker and E2B contribute their provider envelope under the selected mount name. Async child Runs receive fresh adapters selected from Host state; inline children borrow the current entered Harness facade.
+Direct Local and Local Envd normally contribute no state entry. Docker, E2B and Remote Envd contribute their provider envelope under the selected mount name. Async child Runs receive fresh adapters selected from Host state; inline children borrow the current entered Harness facade.
 
 ## Dependencies and Public Surface
 
@@ -309,6 +325,7 @@ The package root exports:
 - `EnvironmentProviderSpec` and the catalog;
 - built-in configuration and runtime collaborator contracts;
 - built-in Provider constructors or catalog instances;
+- Host-owned reverse WebSocket connection SDK and typed runtime collaborators;
 - explicit Host convenience resolvers such as `resolve_agent_envd_executable()`;
 - bounded provider-specific discovery needed for Host-authorized prune where supported.
 

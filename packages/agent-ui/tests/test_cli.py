@@ -108,6 +108,34 @@ def test_click_help_lists_complete_command_tree_without_running_app(monkeypatch:
     assert "--device-code" in auth.output
 
 
+def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text('schema_version: "2"\n')
+
+    # Exercise the real application and JSON boundary without another cold
+    # interpreter startup; test_entrypoint covers the executable boundary.
+    result = CliRunner().invoke(
+        cli,
+        [
+            "--config",
+            str(settings),
+            "--data-root",
+            str(tmp_path / "state"),
+            "environment",
+            "list",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    profiles = json.loads(result.stdout)["environment_profiles"]
+    assert {profile["profile_id"]: profile["mode"] for profile in profiles} == {
+        "environment-native": "full-control",
+        "environment-sandbox": "sandbox",
+    }
+
+
 def test_click_reports_invalid_and_conflicting_options_as_usage_errors() -> None:
     runner = CliRunner()
 

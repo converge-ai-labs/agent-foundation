@@ -2,7 +2,7 @@
 
 The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project shows how Host code uses each built-in Environment Provider directly. It needs no Agent Harness or model credentials.
 
-All three backends follow the same Host-owned sequence:
+Native and Envd backends follow the same Host-owned sequence:
 
 ```mermaid
 sequenceDiagram
@@ -15,7 +15,8 @@ sequenceDiagram
     Host->>Provider: create_environment(configuration, state, runtime)
     Provider-->>Host: fresh inert Environment
     Host->>Environment: enter(correlation)
-    Environment->>Target: create or re-enter and become ready
+    Host->>Environment: prepare or ensure_ready
+    Environment->>Target: create, re-enter or connect and become ready
     Host->>Environment: provider-neutral file operations
     Host->>Environment: dump_state()
     Host->>Environment: close()
@@ -146,3 +147,14 @@ make examples-check-all
 ```
 
 The gate lints, type-checks, tests, and builds the independent project. Its smoke path runs Direct Local only; Local Envd and Docker require explicitly provisioned external runtimes.
+
+## HTTP and WebSocket Envd
+
+For a one-command local trial, connection to an existing daemon, and a minimal Host WebSocket handler, use the [Remote Envd guide](remote-envd.md). Both examples use the same two-Run file round trip and preserve the daemon on Provider close. The local demo separately shows operator-owned startup and cleanup.
+
+```bash
+uv run environment-provider-example remote-envd-demo \
+  --transport http --executable ../../target/debug/agent-envd
+uv run environment-provider-example remote-envd-demo \
+  --transport websocket --executable ../../target/debug/agent-envd
+```

@@ -192,6 +192,8 @@ from a13n_harness.pricing import (
     MODEL_COST_CAPABILITY_ID,
     AbstractModelCostCapability,
     CatalogModelCostCapability,
+    PricingCatalog,
+    get_current_pricing_catalog,
 )
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
@@ -670,6 +672,8 @@ class HarnessBuilder:
         self,
         definition: AgentDefinition[BuildOutputT],
         /,
+        *,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[BuildOutputT]: ...
 
     @overload
@@ -685,6 +689,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[BuildOutputT]: ...
 
     @overload
@@ -700,6 +705,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 
     def build(
@@ -714,8 +720,14 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[Any]:
-        """Construct a reusable executable from a definition or an Agent spec."""
+        """Build with one current or explicitly pinned default pricing snapshot.
+
+        An authored model-cost Capability takes precedence over ``pricing_catalog``.
+        """
+        if pricing_catalog is not None and not isinstance(pricing_catalog, PricingCatalog):
+            raise TypeError("pricing_catalog must be a PricingCatalog")
         if isinstance(definition_or_spec, AgentDefinition):
             if (
                 not isinstance(output_type, _UnsetOutputType)
@@ -727,7 +739,11 @@ class HarnessBuilder:
                 or model_recovery is not None
             ):
                 raise TypeError("AgentDefinition build does not accept AgentSpec construction arguments")
-            return self._build_definition(definition_or_spec, active_definition_ids=())
+            return self._build_definition(
+                definition_or_spec,
+                active_definition_ids=(),
+                pricing_catalog=get_current_pricing_catalog() if pricing_catalog is None else pricing_catalog,
+            )
         if not isinstance(definition_or_spec, AgentSpec):
             raise TypeError("build() requires an AgentDefinition or AgentSpec")
         if isinstance(output_type, _UnsetOutputType):
@@ -742,13 +758,18 @@ class HarnessBuilder:
             subagents=tuple(subagents),
             model_recovery=model_recovery if model_recovery is not None else ModelRecoveryPolicy(),
         )
-        return self._build_definition(definition, active_definition_ids=())
+        return self._build_definition(
+            definition,
+            active_definition_ids=(),
+            pricing_catalog=get_current_pricing_catalog() if pricing_catalog is None else pricing_catalog,
+        )
 
     def _build_definition[BuildOutputT](
         self,
         definition: AgentDefinition[BuildOutputT],
         *,
         active_definition_ids: tuple[int, ...],
+        pricing_catalog: PricingCatalog,
     ) -> ExecutableAgent[BuildOutputT]:
         definition_object_id = id(definition)
         if definition_object_id in active_definition_ids:
@@ -758,7 +779,9 @@ class HarnessBuilder:
             BuiltSubagent(
                 declaration=child,
                 definition=child.agent,
-                executable=self._build_definition(child.agent, active_definition_ids=child_path),
+                executable=self._build_definition(
+                    child.agent, active_definition_ids=child_path, pricing_catalog=pricing_catalog
+                ),
             )
             for child in definition.subagents
         )
@@ -781,7 +804,7 @@ class HarnessBuilder:
                 code="capability_scope_invalid",
             )
         default_model_costs: tuple[AbstractModelCostCapability, ...] = (
-            () if selected_model_costs else (CatalogModelCostCapability(),)
+            () if selected_model_costs else (CatalogModelCostCapability(catalog=pricing_catalog),)
         )
         definition_reserved_ids = _validate_capability_source(authored_capabilities, source="definition")
 

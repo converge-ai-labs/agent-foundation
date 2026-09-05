@@ -294,3 +294,29 @@ async def test_control_lifespan_requires_connectivity_public_origin(tmp_path: Pa
     with pytest.raises(ValueError, match="FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN"):
         async with app.router.lifespan_context(app):
             pytest.fail("lifespan unexpectedly started")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role", list(ProcessRole))
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_price_updater_lifetime_belongs_only_to_enabled_execution_roles(tmp_path, monkeypatch, role, enabled):
+    from contextlib import contextmanager
+
+    from pydantic_ai import prices
+
+    events = []
+
+    @contextmanager
+    def updater():
+        events.append("start")
+        try:
+            yield
+        finally:
+            events.append("stop")
+
+    monkeypatch.setattr(prices, "update_in_background", updater)
+    app = create_app(local_settings(tmp_path, role=role, pricing_auto_update=enabled))
+    expected = enabled and role in {ProcessRole.all, ProcessRole.worker}
+    async with app.router.lifespan_context(app):
+        assert events == (["start"] if expected else [])
+    assert events == (["start", "stop"] if expected else [])

@@ -33,6 +33,7 @@ nav:
       - Environment Provider:
           - Overview: agent-environment-provider/index.md
           - Built-in Examples: agent-environment-provider/examples.md
+          - Remote Envd: agent-environment-provider/remote-envd.md
       - agent-envd: agent-envd/index.md
   - Foundation Service:
       - External Tools: foundation-service/external-tools.md

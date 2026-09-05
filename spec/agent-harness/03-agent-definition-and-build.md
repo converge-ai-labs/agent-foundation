@@ -143,6 +143,8 @@ class HarnessBuilder:
         self,
         definition: AgentDefinition[OutputT],
         /,
+        *,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
     @overload
@@ -160,6 +162,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
     @overload
@@ -177,10 +180,13 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 ```
 
 Builder construction and `build()` are synchronous. `capability_type_catalog=None` selects the canonical empty catalog; a supplied catalog is exact, immutable, and builder-local. The default `instrumentation="environment"` resolves bounded Harness signal/content policy and Host-configured global providers once; explicit `HarnessInstrumentation` supplies exact Host-owned tracer and meter providers, while explicit `None` keeps the complete recursively built executable graph inert regardless of environment. The structural-tracing and content contract is defined by [Harness Observation](19-observation-model.md#instrumentation-contract). An optional `gateway_provider_factory` is captured once for Harness inference of named gateway routes and is reused when recursively building children. An explicit `build_context` bypasses ambient discovery. With `build_context=None`, `configured_plugins_enabled=None` follows the environment enable switch, while `True` or `False` provides a trusted call-site override without reading that switch. Enabled construction performs synchronous JSON/file loading and package discovery. For an explicit context, the override changes only its application state and never consults ambient sources; enabling requires that context to contain a configuration. The detailed source, bounds, run-time immutability, and failure contract belongs to [Harness Plugin System](05-plugin-system.md#build-context-and-source-resolution). The `AgentSpec` overload creates an `AgentDefinition` and enters the same private definition-build path; there is no second construction method.
+
+Every public build captures one current immutable pricing catalog for default valuation across its recursive graph, or accepts `pricing_catalog` as an explicit build-scoped pin. Authored model-cost Capabilities retain precedence. Refresh, fallback, and quote semantics belong to [Cost Calculation](12-events-observability-and-usage.md#cost-calculation); no pricing policy enters Run bindings or continuation state.
 
 The build flow is:
 

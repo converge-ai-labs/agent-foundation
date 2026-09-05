@@ -67,6 +67,7 @@ class StrictModel(BaseModel):
 
 
 class ProcessConfiguration(StrictModel):
+    pricing_auto_update: bool = True
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: Literal["pretty", "json"] = "pretty"
 
