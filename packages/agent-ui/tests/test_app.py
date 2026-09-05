@@ -488,6 +488,13 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    prepared: list[LocalEnvdEnvironment] = []
+
+    async def prepare_local_envd(environment: LocalEnvdEnvironment, **scope: object) -> None:
+        del scope
+        prepared.append(environment)
+
+    monkeypatch.setattr(LocalEnvdEnvironment, "_prepare", prepare_local_envd)
     root = _write_configuration(tmp_path)
     root.write_text(f"{root.read_text()}  environment_profile: {SANDBOX_PROFILE_ID}\n")
     agent = tmp_path / "agents" / "assistant.yaml"
@@ -538,6 +545,7 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         )
         local_envd = plan.environments["workspace"]
         assert isinstance(local_envd, LocalEnvdEnvironment)
+        assert prepared == [local_envd]
         assert local_envd._configuration.workspace.path.as_posix() == project_root
         assert local_envd._configuration.execution_network.value == "deny"
         if os.name == "posix":

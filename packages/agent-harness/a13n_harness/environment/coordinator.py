@@ -1413,6 +1413,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 details={"mount_id": entered.mount_id, "reason_code": availability.reason_code},
                 retry_hint="dependency_change",
             )
+        _validate_operation_facets(entered.public.descriptor, availability, entered.operations)
         if not requested <= availability.ready_families:
             raise EnvironmentError(
                 "Provider returned before the requested families became ready.",
@@ -2103,27 +2104,7 @@ def _validate_entered(
     if not callable(getattr(provider, "dump_state", None)):
         raise EnvironmentError("Provider has no state cache path.", code="environment_provider_failure")
 
-    facet_families = {
-        family
-        for family in ("files", "shell", "processes", "ports", "outputs")
-        if getattr(operations, family) is not None
-    }
-    advertised_facets = set(descriptor.operation_families)
-    if availability.status != "preparing" and facet_families != advertised_facets:
-        raise EnvironmentError(
-            "Provider descriptor and operation facets disagree.",
-            code="environment_provider_failure",
-            details={"name": requested.name},
-        )
-    for action in () if availability.status == "preparing" else descriptor.permissions.operations:
-        dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
-        method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
-        if not callable(method):
-            raise EnvironmentError(
-                "Provider permission has no executable semantic method.",
-                code="environment_provider_failure",
-                details={"action": action.value},
-            )
+    _validate_operation_facets(descriptor, availability, operations)
 
     effective = EnvironmentPermissionSet(
         operations=requested.permission_ceiling.operations & descriptor.permissions.operations
@@ -2142,6 +2123,38 @@ def _validate_entered(
         provider=provider,
         environment_id=provider.environment_id,
     )
+
+
+def _validate_operation_facets(
+    descriptor: EnvironmentDescriptor,
+    availability: EnvironmentAvailability,
+    operations: EnvironmentProviderOperations,
+) -> None:
+    if not isinstance(operations, EnvironmentProviderOperations):
+        raise EnvironmentError("Provider returned invalid operations.", code="environment_provider_failure")
+    facet_families = {
+        family
+        for family in ("files", "shell", "processes", "ports", "outputs")
+        if getattr(operations, family) is not None
+    }
+    advertised_facets = set(descriptor.operation_families)
+    required_facets = availability.ready_families if availability.status == "preparing" else advertised_facets
+    if not facet_families <= advertised_facets or not required_facets <= facet_families:
+        raise EnvironmentError(
+            "Provider descriptor and operation facets disagree.",
+            code="environment_provider_failure",
+        )
+    for action in descriptor.permissions.operations:
+        dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
+        if dispatch.facet not in facet_families:
+            continue
+        method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
+        if not callable(method):
+            raise EnvironmentError(
+                "Provider permission has no executable semantic method.",
+                code="environment_provider_failure",
+                details={"action": action.value},
+            )
 
 
 _SUPERVISED_CLEANUP_TASKS: set[asyncio.Task[Any]] = set()

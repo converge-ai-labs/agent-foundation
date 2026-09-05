@@ -1,7 +1,7 @@
 """initialize interaction execution.
 
 Revision ID: 7de20ce04aa6
-Revises: f20843000572
+Revises: 568f8270be7a
 Create Date: 2026-09-04 08:21:30.895851+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "7de20ce04aa6"
-down_revision: str | Sequence[str] | None = "f20843000572"
+down_revision: str | Sequence[str] | None = "568f8270be7a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -103,16 +103,10 @@ def upgrade() -> None:
             name=op.f("fk_threads_tenant_id_sessions"),
             ondelete="CASCADE",
         ),
-        *(
-            [
-                sa.ForeignKeyConstraint(
-                    ["default_environment_id"],
-                    ["environments.id"],
-                    name="fk_threads_default_environment_id_environments",
-                )
-            ]
-            if op.get_bind().dialect.name == "sqlite"
-            else []
+        sa.ForeignKeyConstraint(
+            ["default_environment_id"],
+            ["environments.id"],
+            name="fk_threads_default_environment_id_environments",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_threads")),
         sa.UniqueConstraint("tenant_id", "id", name="uq_threads_tenant_id"),
@@ -345,15 +339,7 @@ def upgrade() -> None:
             name="fk_runs_retry_same_thread",
             ondelete="RESTRICT",
         ),
-        *(
-            [
-                sa.ForeignKeyConstraint(
-                    ["environment_id"], ["environments.id"], name="fk_runs_environment_id_environments"
-                )
-            ]
-            if op.get_bind().dialect.name == "sqlite"
-            else []
-        ),
+        sa.ForeignKeyConstraint(["environment_id"], ["environments.id"], name="fk_runs_environment_id_environments"),
         sa.CheckConstraint(
             "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
             name=op.f("ck_runs_environment_selection_valid"),

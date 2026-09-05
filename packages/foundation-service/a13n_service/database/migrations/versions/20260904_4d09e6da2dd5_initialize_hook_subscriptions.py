@@ -1,7 +1,7 @@
 """initialize hook subscriptions.
 
 Revision ID: 4d09e6da2dd5
-Revises: 568f8270be7a
+Revises: 69a28e8783ad
 Create Date: 2026-09-04 08:21:59.444459+00:00
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "4d09e6da2dd5"
-down_revision: str | Sequence[str] | None = "568f8270be7a"
+down_revision: str | Sequence[str] | None = "69a28e8783ad"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

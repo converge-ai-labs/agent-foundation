@@ -513,6 +513,7 @@ async def test_descriptor_values_are_recursively_detached_and_immutable() -> Non
 
 async def test_descriptor_facet_mismatch_fails_and_all_candidates_are_owned() -> None:
     invalid = _Binding("invalid", operations=EnvironmentProviderOperations())
+    invalid.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
     never_entered = _Binding("later")
     binding = create_environment_runtime(
         mounts=_request(invalid, never_entered),
@@ -525,6 +526,34 @@ async def test_descriptor_facet_mismatch_fails_and_all_candidates_are_owned() ->
     assert invalid.entered == invalid.exited == 1
     assert never_entered.entered == 0
     assert never_entered.discarded == 1
+
+
+@pytest.mark.parametrize("prepared_facets", ["valid", "missing_facet", "missing_method"])
+async def test_lazy_mount_validates_materialized_operations_before_dispatch(
+    prepared_facets: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _Binding("lazy", operations=EnvironmentProviderOperations())
+
+    async def prepare(operations: frozenset[str]) -> None:
+        provider.bound.ready_calls.append(operations)
+        if prepared_facets == "valid":
+            provider.bound.operations = EnvironmentProviderOperations(files=_Files())
+        elif prepared_facets == "missing_method":
+            provider.bound.operations = EnvironmentProviderOperations(files=cast(Any, object()))
+        provider.bound.availability = EnvironmentAvailability(status="available", ready_families=operations)
+
+    monkeypatch.setattr(provider.bound, "ensure_ready", prepare)
+    runtime = create_environment_runtime(mounts=_request(provider), default_mount="workspace-1")
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        assert provider.bound.ready_calls == []
+        if prepared_facets == "valid":
+            assert (await environment.files.stat("note.txt")).kind == "file"
+        else:
+            with pytest.raises(EnvironmentError) as failure:
+                await environment.files.stat("note.txt")
+            assert failure.value.code == "environment_provider_failure"
+        assert provider.bound.ready_calls == [frozenset({"files"})]
+    assert provider.entered == provider.exited == 1
 
 
 async def test_partial_entry_failure_closes_entered_and_discards_remaining_candidates() -> None:
@@ -1013,6 +1042,7 @@ async def test_dynamic_prepare_failure_is_atomic_and_cleans_candidate() -> None:
         default_mount="initial",
     )
     invalid = _Binding("invalid", operations=EnvironmentProviderOperations())
+    invalid.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
         await aggregate._activate()
         before = environment.snapshot
@@ -1378,6 +1408,7 @@ async def test_dynamic_validation_and_scope_cleanup_errors_are_both_preserved() 
                 raise RuntimeError("scope cleanup failed")
 
     candidate = CleanupFailureBinding("invalid", operations=EnvironmentProviderOperations())
+    candidate.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
     aggregate = create_empty_environment_runtime()
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}):
         await aggregate._activate()

@@ -32,7 +32,7 @@ class _MockEnvironment(DirectLocalEnvironment):
         mount_id: str,
         host_refs: Mapping[str, str],
     ) -> None:
-        self._lifecycle_events.append("enter")
+        self._lifecycle_events.append("prepare")
         await super()._prepare(
             thread_id=thread_id,
             run_id=run_id,
@@ -124,8 +124,8 @@ async def test_conversation_streams_multiple_turns_and_recovers_after_restart(
     assert len(recovered_after_turn.message_history) > len(second_state.message_history)
     assert recovered_history_sizes == [initial_history_sizes[1] + 2]
     assert state_path.read_text(encoding="utf-8").startswith("{\n")
-    assert initial_environment.lifecycle == ["construct", "enter", "close", "construct", "enter", "close"]
-    assert recovered_environment.lifecycle == ["construct", "enter", "close"]
+    assert initial_environment.lifecycle == ["construct", "close", "construct", "close"]
+    assert recovered_environment.lifecycle == ["construct", "close"]
 
 
 async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
@@ -140,11 +140,11 @@ async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
 
     async with application.stream_turn("abandoned turn") as stream:
         assert await anext(stream) == "scoped:"
-        assert environment.lifecycle == ["construct", "enter"]
+        assert environment.lifecycle == ["construct"]
 
-    assert environment.lifecycle == ["construct", "enter", "close"]
+    assert environment.lifecycle == ["construct", "close"]
     assert await _collect_turn(application, "completed turn") == ["scoped:", "turn-1"]
-    assert environment.lifecycle == ["construct", "enter", "close", "construct", "enter", "close"]
+    assert environment.lifecycle == ["construct", "close", "construct", "close"]
 
 
 async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment(
@@ -175,4 +175,4 @@ async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment
 
     assert exc_info.value.code == "agent_run_failed"
     assert state_path.read_text(encoding="utf-8") == completed_payload
-    assert environment.lifecycle == ["construct", "enter", "close", "construct", "enter", "close"]
+    assert environment.lifecycle == ["construct", "close", "construct", "close"]
