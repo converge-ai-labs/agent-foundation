@@ -24,7 +24,7 @@ from a13n_service.temporal import assume_utc
 from .domain import MCPAuthMode, MCPConnection, MCPConnectionStatus, MCPConnectionStatusReason
 
 
-class MCPConnectionRecord(ResourceCredential, Base):
+class MCPConnectionRecord(ResourceCredential[str], Base):
     credential_owner_type = "mcp_connection"
     __tablename__ = "mcp_connections"
     __table_args__ = (
@@ -98,7 +98,7 @@ class MCPConnectionRecord(ResourceCredential, Base):
         )
 
 
-class MCPOAuthSessionRecord(ResourceCredential, Base):
+class MCPOAuthSessionRecord(ResourceCredential[str], Base):
     credential_owner_type = "mcp_oauth_session"
     __tablename__ = "mcp_oauth_sessions"
     __table_args__ = (

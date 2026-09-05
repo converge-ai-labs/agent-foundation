@@ -24,6 +24,7 @@ from a13n_service.connectivity.management import (
 )
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
@@ -46,7 +47,9 @@ from .errors import ConnectorError
 from .management import (
     audit,
     authorize,
+    authorize_provider,
     configure_provider,
+    connector_actor_scope,
     decode_credentials,
     map_management_value_error,
     require_connector_provider,
@@ -79,8 +82,10 @@ class ConnectorProviderService:
         self, *, actor: AuthenticatedActor, connector_provider_id: str
     ) -> ConnectorCollection:
         async with transaction(self._sessions) as session:
-            record = await require_connector_provider(session, connector_provider_id)
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.connector_provider_read)
+            record = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor)
+            )
+            await authorize_provider(session, actor, record, manage=False)
             if record.status != ConnectorProviderStatus.active.value:
                 raise ConnectorError("connector_provider_disabled", "Connector Provider is disabled.", status_code=409)
             generation = record.credential_generation
@@ -107,8 +112,10 @@ class ConnectorProviderService:
                 "invalid_provider_response", "Connector Provider returned an invalid directory.", status_code=502
             ) from error
         async with transaction(self._sessions) as session:
-            current = await require_connector_provider(session, connector_provider_id)
-            await authorize(session, actor, current.workspace_id, WorkspaceAction.connector_provider_read)
+            current = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor)
+            )
+            await authorize_provider(session, actor, current, manage=False)
             if current.status != ConnectorProviderStatus.active.value or current.credential_generation != generation:
                 raise ConnectorError(
                     "connector_provider_changed", "Connector Provider changed during discovery.", status_code=409
@@ -121,7 +128,7 @@ class ConnectorProviderService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         idempotency_key: str,
         request: CreateConnectorProviderRequest,
     ) -> ConnectorProvider:
@@ -153,14 +160,16 @@ class ConnectorProviderService:
                         actor=actor,
                         workspace_id=workspace_id,
                         operation="connector_provider.create",
-                        scope_id=workspace_id,
+                        scope_id=workspace.id,
                         idempotency_key_digest=key_digest,
                         fingerprint=request_fingerprint,
                     )
                 except ConnectivityManagementValueError as error:
                     raise map_management_value_error(error) from error
                 if replay is not None:
-                    return (await require_connector_provider(session, replay.resource_id)).to_resource()
+                    return (
+                        await require_connector_provider(session, replay.resource_id, scope=workspace)
+                    ).to_resource()
                 record = ConnectorProviderRecord(
                     id=connector_provider_id,
                     organization_id=workspace.organization_id,
@@ -186,7 +195,7 @@ class ConnectorProviderService:
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
                     operation="connector_provider.create",
-                    scope_id=workspace_id,
+                    scope_id=workspace.id,
                     idempotency_key_digest=key_digest,
                     fingerprint=request_fingerprint,
                     resource_type="connector_provider",
@@ -224,7 +233,7 @@ class ConnectorProviderService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         limit: int,
         cursor: str | None,
     ) -> ConnectorProviderCollection:
@@ -233,6 +242,7 @@ class ConnectorProviderService:
         scope = {
             "resource_type": "connector_provider",
             "workspace_id": workspace_id,
+            "organization_boundary": actor.boundary_organization_id,
             "actor": actor.principal.model_dump(mode="json"),
         }
         try:
@@ -243,7 +253,7 @@ class ConnectorProviderService:
             workspace = await authorize(session, actor, workspace_id, WorkspaceAction.connector_provider_read)
             query = select(ConnectorProviderRecord).where(
                 ConnectorProviderRecord.organization_id == workspace.organization_id,
-                ConnectorProviderRecord.workspace_id == workspace_id,
+                visible_workspace(ConnectorProviderRecord.workspace_id, workspace_id),
             )
             if position is not None:
                 query = query.where(
@@ -274,8 +284,10 @@ class ConnectorProviderService:
 
     async def get(self, *, actor: AuthenticatedActor, connector_provider_id: str) -> ConnectorProvider:
         async with transaction(self._sessions) as session:
-            record = await require_connector_provider(session, connector_provider_id)
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.connector_provider_read)
+            record = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor)
+            )
+            await authorize_provider(session, actor, record, manage=False)
             return record.to_resource()
 
     async def update(
@@ -287,8 +299,10 @@ class ConnectorProviderService:
     ) -> ConnectorProvider:
         try:
             async with transaction(self._sessions) as session:
-                record = await require_connector_provider(session, connector_provider_id, lock=True)
-                await authorize(session, actor, record.workspace_id, WorkspaceAction.connector_provider_manage)
+                record = await require_connector_provider(
+                    session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
+                )
+                await authorize_provider(session, actor, record, manage=True)
                 _require_version(record.version, request.expected_version)
                 if request.name is not None:
                     record.name = request.name
@@ -327,8 +341,10 @@ class ConnectorProviderService:
         credentials = clear_credentials(request.credentials)
         request_fingerprint = fingerprint(request, credentials=credentials)
         async with transaction(self._sessions) as session:
-            record = await require_connector_provider(session, connector_provider_id, lock=True)
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.connector_provider_manage)
+            record = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
+            )
+            await authorize_provider(session, actor, record, manage=True)
             replay = await _replay_connector_command(
                 session,
                 actor=actor,
@@ -398,8 +414,10 @@ class ConnectorProviderService:
             raise map_management_value_error(error) from error
         request_fingerprint = canonical_digest({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
-            record = await require_connector_provider(session, connector_provider_id)
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.connector_provider_manage)
+            record = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor)
+            )
+            await authorize_provider(session, actor, record, manage=True)
             try:
                 replay = await replay_command(
                     session,
@@ -436,7 +454,9 @@ class ConnectorProviderService:
             ) from error
         tested_at = self._clock()
         async with transaction(self._sessions) as session:
-            current = await require_connector_provider(session, connector_provider_id, lock=True)
+            current = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
+            )
             if (
                 current.version != frozen_version
                 or current.credential_generation != frozen_credential_generation
@@ -489,8 +509,10 @@ class ConnectorProviderService:
             raise map_management_value_error(error) from error
         request_fingerprint = canonical_digest({"expected_version": expected_version, "status": status.value})
         async with transaction(self._sessions) as session:
-            record = await require_connector_provider(session, connector_provider_id, lock=True)
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.connector_provider_manage)
+            record = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
+            )
+            await authorize_provider(session, actor, record, manage=True)
             replay = await _replay_connector_command(
                 session,
                 actor=actor,

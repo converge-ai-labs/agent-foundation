@@ -133,7 +133,7 @@ def _build(
         cwd: str | None = None,
         environment: Mapping[str, str] | None = None,
         yield_time_seconds: float | None = None,
-        timeout_seconds: float | None = None,
+        execution_timeout_seconds: float | None = None,
         alias: str | None = None,
     ) -> dict[str, bool]:
         executed.append(
@@ -142,7 +142,7 @@ def _build(
                 "cwd": cwd,
                 "environment": dict(environment or {}),
                 "yield_time_seconds": yield_time_seconds,
-                "timeout_seconds": timeout_seconds,
+                "execution_timeout_seconds": execution_timeout_seconds,
                 "alias": alias,
             }
         )
@@ -157,7 +157,7 @@ def _build(
                 "cwd": "/workspace",
                 "environment": {"TOKEN": "secret-value", "PATH": "/bin"},
                 "yield_time_seconds": 10,
-                "timeout_seconds": 10,
+                "execution_timeout_seconds": 10,
                 "alias": "primary",
             }
         ),
@@ -375,7 +375,7 @@ async def test_below_threshold_dispatches_without_environment_values_and_attribu
             "cwd": "/workspace",
             "environment": {"TOKEN": "secret-value", "PATH": "/bin"},
             "yield_time_seconds": 10.0,
-            "timeout_seconds": 10.0,
+            "execution_timeout_seconds": 10.0,
             "alias": "primary",
         }
     ]

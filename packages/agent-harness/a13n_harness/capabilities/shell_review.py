@@ -66,7 +66,7 @@ class ShellReviewRequest(BaseModel):
     cwd: str | None = Field(default=None, max_length=16 * 1024)
     environment_keys: tuple[str, ...] = Field(default=(), max_length=4_096)
     yield_time_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    timeout_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    execution_timeout_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     alias: str | None = Field(default=None, max_length=2_048)
 
     @field_validator("command", "cwd", "alias")

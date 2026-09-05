@@ -29,9 +29,22 @@ flowchart TB
     Resource[Agent, Asset, Secret, Session, Thread, Run, RunAttempt, Environment, or other resource]
 
     Deployment --> Organization --> Workspace --> Resource
+    Organization --> Configuration[Shared Providers, Models, and EnvironmentTemplates]
 ```
 
 An Organization is the customer and tenant boundary. A Workspace is the collaboration, role-assignment, resource-isolation, and default usage-attribution boundary. Project is not a product concept. Deployment is an operational topology and trust boundary, not a customer resource, Principal, membership, or RoleBinding scope.
+
+## Organization-owned configuration
+
+ModelProvider, Model, ConnectorProvider, EnvironmentProvider, and EnvironmentTemplate have one immutable Organization owner and an optional immutable Workspace owner. A null `workspace_id` denotes Organization ownership. Organization-owned configuration is automatically available from every Workspace in that Organization; there is no sharing grant, allowlist, activation binding, or local copy. A Workspace-owned resource is available only in its own Workspace. Cross-Organization references and sibling-Workspace references are rejected.
+
+Organization Admin manages Organization-owned configuration. Workspace roles retain their domain-specific read, use, authoring, and management permissions for local resources. Those roles can read and use Organization configuration through the consuming Workspace but cannot mutate it. Organization membership alone does not grant a Workspace role. A Workspace API key remains bounded to its Workspace: it can consume parent configuration there but cannot manage Organization configuration. Organization management requires an Organization-bounded human session and current Organization Admin authority; this does not introduce Organization API keys or Organization Service Accounts.
+
+Workspace Models, Templates, and ConnectorConnections may reference an eligible Provider in the same Workspace or the parent Organization. Organization Models and Templates may reference only Organization Providers. Provider sharing permits the existing domain operations, including creation of Workspace configurations that reference it; it does not grant credential plaintext access. Model naming follows the stronger [visible-key uniqueness contract](30-model-management.md#model).
+
+ConnectorConnections, actual Environments, Threads, Runs, and usage attribution remain Workspace-owned. A shared Template allocates a new Environment in the consuming Workspace, retaining its exact Organization TemplateRevision and Provider references. Sharing a ConnectorProvider does not share authorized ConnectorConnections or their external account identity. Runtime admission and later outbound operations retain current eligibility and credential checks under their owning contracts.
+
+Organization collections enumerate Organization-owned resources. Workspace collections for these five configuration resources enumerate local and parent resources together, expose their actual ownership, and never select a same-name override. Creation paths determine ownership; mutation must address the owning scope. Cursors bind the selected tenant scope and filters. Resource-owned credential protection binds actual ownership independently from the consuming Workspace.
 
 ## Distribution Capability Boundary
 
@@ -408,10 +421,10 @@ Adding a protected operation is compatible only when it reuses a registered acti
 
 ### Organization roles
 
-| Role key | Permissions                                                                                                                                                                                                                |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `member` | Read safe Organization metadata and own Organization binding; list only Workspaces the User can access                                                                                                                     |
-| `admin`  | Member permissions; update Organization settings; manage Organization User RoleBindings and invitations; create and delete Workspaces; inherit Workspace Admin in every active Workspace; read Organization security audit |
+| Role key | Permissions                                                                                                                                                                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `member` | Read safe Organization metadata and own Organization binding; list only Workspaces the User can access                                                                                                                                                              |
+| `admin`  | Member permissions; update Organization settings; manage Organization User RoleBindings and invitations; create and delete Workspaces; inherit Workspace Admin in every active Workspace; manage Organization-owned configuration; read Organization security audit |
 
 An Organization role applies only to a User. The last effective Organization Admin cannot be removed, demoted, disabled by a product operation, or leave. This includes self-disable by the last Admin. Pending invitations and disabled Users do not satisfy this invariant. Deployment break-glass recovery can disable the last Admin only as an explicit operational override and remains responsible for restoring an effective Admin. Organization Member alone grants no Workspace resource access and cannot list the complete Organization user directory.
 
@@ -518,7 +531,7 @@ Authorization changes take effect on the next request or stream continuation. Re
 | Disabled User or Service Account                   | Authentication fails; live RoleBindings remain stored                              |
 | Authenticated but unauthorized Principal           | Operation is denied; policy may conceal resource existence with `404`              |
 | Credential boundary does not contain resource      | Operation is denied before reading or binding the target                           |
-| Cross-Organization or cross-Workspace reference    | Operation fails before target data is returned or mutated                          |
+| Cross-Organization or sibling-Workspace reference  | Operation fails before target data is returned or mutated                          |
 | Stale RoleBinding or resource version              | Current authority and version are re-evaluated; stale client intent grants nothing |
 | Unsupported persisted RoleBinding combination      | Authorization fails closed; no actions are mapped from the invalid row             |
 | Unknown or unregistered protected-route action     | Route registration or authorization fails closed                                   |

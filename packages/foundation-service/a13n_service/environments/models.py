@@ -32,14 +32,14 @@ from .domain import (
 )
 
 
-class WorkspaceResource:
+class ResourceColumns[WorkspaceId: str | None]:
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[WorkspaceId]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    def identity(self) -> dict[str, str | datetime]:
+    def identity(self) -> dict[str, str | datetime | None]:
         return dict(
             id=self.id,
             organization_id=self.organization_id,
@@ -49,14 +49,16 @@ class WorkspaceResource:
         )
 
 
-class EnvironmentProviderRecord(ResourceCredential, WorkspaceResource, Base):
+class EnvironmentProviderRecord(ResourceCredential[str | None], ResourceColumns[str | None], Base):
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     __tablename__ = "environment_providers"
     credential_owner_type: ClassVar[str] = "environment_provider"
     __table_args__ = (
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"), ("workspaces.id", "workspaces.organization_id"), ondelete="CASCADE"
         ),
-        UniqueConstraint("id", "workspace_id", name="uq_environment_providers_scope"),
+        UniqueConstraint("id", "organization_id", name="uq_environment_providers_scope"),
         Index("ix_environment_providers_workspace", "workspace_id", "id"),
     )
     type: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -77,13 +79,15 @@ class EnvironmentProviderRecord(ResourceCredential, WorkspaceResource, Base):
         )
 
 
-class EnvironmentTemplateRecord(WorkspaceResource, Base):
+class EnvironmentTemplateRecord(ResourceColumns[str | None], Base):
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     __tablename__ = "environment_templates"
     __table_args__ = (
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"), ("workspaces.id", "workspaces.organization_id"), ondelete="CASCADE"
         ),
-        UniqueConstraint("id", "workspace_id", name="uq_environment_templates_scope"),
+        UniqueConstraint("id", "organization_id", name="uq_environment_templates_scope"),
         CheckConstraint("version >= 1", name="version_positive"),
         Index("ix_environment_templates_workspace", "workspace_id", "id"),
     )
@@ -110,19 +114,19 @@ class EnvironmentTemplateRevisionRecord(Base):
     __tablename__ = "environment_template_revisions"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("template_id", "workspace_id"), ("environment_templates.id", "environment_templates.workspace_id")
+            ("template_id", "organization_id"), ("environment_templates.id", "environment_templates.organization_id")
         ),
         ForeignKeyConstraint(
-            ("provider_id", "workspace_id"), ("environment_providers.id", "environment_providers.workspace_id")
+            ("provider_id", "organization_id"), ("environment_providers.id", "environment_providers.organization_id")
         ),
         UniqueConstraint("template_id", "version", name="uq_environment_template_revisions_version"),
-        UniqueConstraint("id", "provider_id", "workspace_id", name="uq_environment_template_revisions_provider"),
+        UniqueConstraint("id", "provider_id", "organization_id", name="uq_environment_template_revisions_provider"),
         CheckConstraint("version >= 1", name="version_positive"),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     template_id: Mapped[str] = mapped_column(String(72), nullable=False)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     recipe: Mapped[dict[str, JsonValue]] = mapped_column(JSON, nullable=False)
@@ -143,18 +147,23 @@ class EnvironmentTemplateRevisionRecord(Base):
         )
 
 
-class EnvironmentRecord(WorkspaceResource, Base):
+class EnvironmentRecord(ResourceColumns[str], Base):
     __tablename__ = "environments"
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     __table_args__ = (
         ForeignKeyConstraint(
-            ("provider_id", "workspace_id"), ("environment_providers.id", "environment_providers.workspace_id")
+            ("workspace_id", "organization_id"), ("workspaces.id", "workspaces.organization_id"), ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
+        ForeignKeyConstraint(
+            ("provider_id", "organization_id"), ("environment_providers.id", "environment_providers.organization_id")
         ),
         ForeignKeyConstraint(
-            ("template_revision_id", "provider_id", "workspace_id"),
+            ("template_revision_id", "provider_id", "organization_id"),
             (
                 "environment_template_revisions.id",
                 "environment_template_revisions.provider_id",
-                "environment_template_revisions.workspace_id",
+                "environment_template_revisions.organization_id",
             ),
         ),
         UniqueConstraint("id", "workspace_id", name="uq_environments_scope"),

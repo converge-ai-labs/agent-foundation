@@ -578,7 +578,7 @@ class NativeQueuedSubmissionService:
                     )
                     .where(
                         ThreadRecord.id == thread_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -766,7 +766,7 @@ class NativeQueuedSubmissionService:
     ) -> ReceiptT | None:
         identity = _identity(idempotency_key, request)
         evidence_scope = EvidenceScope(
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             actor_type=actor.principal.principal_type.value,
             actor_id=actor.principal.principal_id,
             operation=operation,
@@ -812,7 +812,7 @@ class NativeQueuedSubmissionService:
                     )
                     .where(
                         ThreadRecord.id == thread_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -867,7 +867,7 @@ class NativeQueuedSubmissionService:
                     )
                     .where(
                         QueuedSubmissionRecord.id == queued_submission_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -966,7 +966,7 @@ def _identity(key: str, request: StrictModel) -> IdempotencyIdentity:
 
 def _evidence_scope(actor: AuthenticatedActor, *, operation: str, scope_id: str) -> EvidenceScope:
     return EvidenceScope(
-        workspace_id=actor.boundary_workspace_id,
+        workspace_id=actor.workspace_id,
         actor_type=actor.principal.principal_type.value,
         actor_id=actor.principal.principal_id,
         operation=operation,

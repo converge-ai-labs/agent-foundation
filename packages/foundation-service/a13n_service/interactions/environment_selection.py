@@ -79,7 +79,7 @@ async def select_run_environment(
         ),
     )
     selected = await resolve_selection(session, workspace_id=workspace_id, choice=choice)
-    environment = allocate_selection(session, selected, now=run.created_at)
+    environment = allocate_selection(session, selected, workspace_id=workspace_id, now=run.created_at)
     access = intersect_access(environment.access, run.environment_access)
     await session.flush()
     return run.model_copy(update={"environment_id": environment.id, "environment_access": access})

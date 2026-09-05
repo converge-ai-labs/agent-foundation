@@ -22,21 +22,18 @@ _OBJECT = TypeAdapter(dict[str, JsonValue])
 
 
 class GuestCommands:
-    def __init__(self, sandbox: AsyncSandbox, configuration: E2BProviderConfiguration, root: str) -> None:
+    def __init__(self, sandbox: AsyncSandbox, configuration: E2BProviderConfiguration) -> None:
         self.sandbox = sandbox
         self.configuration = configuration
-        self.root = root
-        self.boot_id = ""
         self.generation = "unprepared"
         self.mount_id = "mount-prepare"
         self.closed = False
         self._operations = itertools.count(1)
         self._sources = {
-            name: files(__package__).joinpath("guest", f"{name}.py").read_text()
-            for name in ("files", "processes", "runner")
+            name: files(__package__).joinpath("guest", f"{name}.py").read_text() for name in ("files", "ports")
         }
 
-    def command(self, module: Literal["files", "processes", "runner"], arguments: dict[str, JsonValue]) -> str:
+    def command(self, module: Literal["files", "ports"], arguments: dict[str, JsonValue]) -> str:
         if self.closed:
             raise EnvironmentError("E2B operations are closed.", code="environment_closed")
         return shlex.join(
@@ -44,7 +41,7 @@ class GuestCommands:
         )
 
     async def _execute(
-        self, module: Literal["files", "processes"], arguments: dict[str, JsonValue], *, mutation: bool
+        self, module: Literal["files", "ports"], arguments: dict[str, JsonValue], *, mutation: bool
     ) -> dict[str, JsonValue]:
         from e2b.sandbox.commands.command_handle import CommandExitException
 
@@ -77,19 +74,14 @@ class GuestCommands:
             "files",
             {
                 "configuration": self.configuration.model_dump(mode="json"),
-                "boot_id": self.boot_id,
                 "action": action,
                 "arguments": arguments,
             },
             mutation=mutation,
         )
 
-    async def process(
-        self, action: str, arguments: dict[str, JsonValue], *, mutation: bool = False
-    ) -> dict[str, JsonValue]:
-        return await self._execute(
-            "processes", {"root": self.root, "boot_id": self.boot_id, "action": action, **arguments}, mutation=mutation
-        )
+    async def port(self, port: int) -> dict[str, JsonValue]:
+        return await self._execute("ports", {"port": port}, mutation=False)
 
     def receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(

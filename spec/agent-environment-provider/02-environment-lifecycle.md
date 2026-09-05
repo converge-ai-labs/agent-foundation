@@ -19,7 +19,7 @@ class EnvironmentState(BaseModel):
 
 The provider-owned payload is canonical JSON sufficient to validate and reconnect to one target, including recoverable stopped targets. It is not a credential, lease, live client, durable ownership grant or proof of existence. Target identity can be sensitive even when it is not a bearer credential.
 
-State excludes credentials, secret bootstrap material, bearer URLs, transport sessions, callbacks, raw PIDs, pipes, native handles, temporary runtime paths, daemon generations, Harness mount names/IDs, Run access ceilings, working directories and Host persistence/retention fields. Provider-owned stable target correlation is permitted; Host Run authority and database fencing are not.
+State excludes credentials, secret bootstrap material, bearer URLs, transport sessions, callbacks, Host OS process handles, pipes, live SDK handles, temporary runtime paths, daemon generations, Harness mount names/IDs, Run access ceilings, working directories and Host persistence/retention fields. Provider-owned stable target correlation and backend-native process selectors needed by its recovery codec are permitted; Host Run authority and database fencing are not. A remote command PID is a backend selector, not a Host process handle.
 
 Providers validate the exact state version, configuration compatibility and target ownership evidence. A stateless Provider may return `None`; this means its documented deterministic configuration selects the environment, not that an external target is absent. Current Host state always wins over portable Harness observations, including authoritative `None`.
 
@@ -104,6 +104,29 @@ Lifecycle operations run on a trusted object without entering a Harness Run, and
 `close()` fences new local operations and releases clients, sessions, subprocess resources owned by the operation scope and other local handles. It neither stops nor destroys a durable backing target. It remains safe for an unprepared object and does not allocate resources merely to clean up. Provider-specific ephemeral transport processes can be closed without destroying the underlying workspace.
 
 `dump_state()` synchronously returns a detached copy of the last validated cached state or `None`; it performs no I/O and is available after construction, preparation failure, cancellation and close failure. Values are validated before caching. A failed refresh does not erase the last known state. Known stop preserves its reconnect state; confirmed destruction may clear it, with the Host separately retaining generation/history.
+
+## Process and Output Observations
+
+The Provider owns native execution truth and the recovery supported by its `EnvironmentState` codec. State can select a target from which commands are discovered without enumerating every command. Reconnection to the same target permits attempting native lookup; it does not prove that a process survived. A missing command is never automatically restarted. Backend recovery guarantees and local-close behavior are defined by the [built-in Provider contracts](03-built-in-providers.md).
+
+The shared process facet uses `ProcessIdentity` to bind a native selector to one Provider, logical Environment and target generation. `ProcessInfo` carries a bound handle, native status, optional stdin-state evidence and an optional richer output snapshot. Status may be `unknown` or `missing`; neither invents an exit code or a successful terminal outcome. Tree-cleanup evidence is optional. An `initial_terminal` wait observes native completion independently from output completeness and process-tree cleanup; stronger backend wait conditions remain available only where supported.
+
+`process.list` is optional. It returns a bounded `ProcessDiscovery(processes, has_more)` without attaching output streams. `rebind` selects an explicit native identity without creating a command. Start, inspect, wait, output reads, discovery, stdin, signals, kill and release have independent declared actions. Lack of discovery, stdin or arbitrary signals does not remove otherwise supported background observation. Unsupported guarantees are rejected before dispatch.
+
+`release` relinquishes the local observation and its associated output readers. It does not imply command termination. A Provider may retain private native-scope bookkeeping until its documented close boundary. Process survival after local release or close depends on the backend, not on a Harness cleanup policy. Direct Local and EIP-backed Providers retain their native scope cleanup semantics; no universal cross-Run persistence is implied.
+
+Common output observations carry returned segments and available offsets together with:
+
+- `origin`: `native_bytes` or `sdk_text`;
+- `coverage`: `complete`, `partial` or `unknown`;
+- `observation_closed`: whether local collection is stopped;
+- a bounded optional reason such as `reattached`, `connection_lost`, `observation_limit` or `observation_evicted`;
+- optional `produced_bytes`, `dropped_bytes` and `producer_complete` evidence, never fabricated when unavailable;
+- captured length and content completeness independent of process completion.
+
+Native-byte offsets identify the backend's retained range. SDK-text offsets identify UTF-8 encoding of SDK-delivered text, not the original stdout bytes. A transient reattachment retains the accumulated current-scope log and appends later text while marking the gap; it neither resets offsets nor promises replay deduplication. Target replacement invalidates the identity. A fresh scope starts a new observation. Neither state nor discovery implies historical output recovery.
+
+Ordinary `shell.exec` has a bounded inline/observed result contract. A Provider that internally uses native retention materializes that operation's bounded output and releases its own resources before returning; no retained reference escapes the ordinary result. A post-execution read failure preserves known command outcome with incomplete output rather than inviting command replay. The standalone retained-output facet retains its independent read/release authorization and stronger native byte semantics. It is not a prerequisite for Shell execution or process observation.
 
 ## Host State Authority and Concurrency
 

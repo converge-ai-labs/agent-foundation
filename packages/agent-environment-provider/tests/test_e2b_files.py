@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import pytest
 from a13n_environment_provider.e2b.guest import files
@@ -12,16 +11,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Guest filesyste
 
 
 @pytest.fixture
-def filesystem(tmp_path, monkeypatch):
-    original = Path.read_text
-
-    def read_text(path, *args, **kwargs):
-        if str(path) == "/proc/sys/kernel/random/boot_id":
-            return "test-boot"
-        return original(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", read_text)
-
+def filesystem(tmp_path):
     def execute(action, **arguments):
         return files.execute(
             {
@@ -31,7 +21,6 @@ def filesystem(tmp_path, monkeypatch):
                     "max_query_entries": 100,
                     "max_file_bytes": 4096,
                 },
-                "boot_id": "test-boot",
                 "action": action,
                 "arguments": arguments,
             }

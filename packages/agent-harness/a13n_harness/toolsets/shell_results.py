@@ -13,7 +13,7 @@ class ProcessStatusProjection(TypedDict):
     termination_reason: str | None
     exit_code: int | None
     signal: str | None
-    cleanup: str
+    cleanup: str | None
 
 
 class OutputPageProjection(TypedDict):
@@ -22,18 +22,41 @@ class OutputPageProjection(TypedDict):
     next_offset: int
     available_start: int
     available_end: int
-    produced_bytes: int
-    producer_complete: bool
+    origin: Literal["native_bytes", "sdk_text"]
+    coverage: Literal["complete", "partial", "unknown"]
+    observation_closed: bool
+    reason: str | None
+    produced_bytes: int | None
+    producer_complete: bool | None
     content_complete: bool
     omitted_before_bytes: int
     text: str
+
+
+class ProcessSummaryProjection(TypedDict):
+    process_id: str
+    status: ProcessStatusProjection
+    stdin_open: bool | None
+
+
+class ProcessInfoSuccess(ProcessSummaryProjection):
+    ok: Literal[True]
+
+
+class ProcessListSuccess(TypedDict):
+    ok: Literal[True]
+    processes: list[ProcessSummaryProjection]
+    has_more: bool
+
+
+type ProcessInfoResult = ProcessInfoSuccess | ProcessListSuccess | ToolFailure
 
 
 class ProcessObservationSuccess(TypedDict):
     ok: Literal[True]
     process_id: str
     status: ProcessStatusProjection
-    stdin_open: bool
+    stdin_open: bool | None
     stdout: OutputPageProjection
     stderr: OutputPageProjection
     disclosure: NotRequired[ToolOutputDisclosure]
@@ -46,7 +69,7 @@ class ShellExecSuccess(TypedDict):
     ok: Literal[True]
     process_id: NotRequired[str]
     status: ProcessStatusProjection
-    stdin_open: bool
+    stdin_open: bool | None
     stdout: OutputPageProjection
     stderr: OutputPageProjection
     disclosure: NotRequired[ToolOutputDisclosure]
@@ -59,7 +82,7 @@ class ProcessInputSuccess(TypedDict):
     ok: Literal[True]
     process_id: str
     accepted_bytes: int
-    stdin_open: bool
+    stdin_open: bool | None
     status: ProcessStatusProjection
 
 
@@ -70,7 +93,7 @@ class ProcessSignalSuccess(TypedDict):
     ok: Literal[True]
     process_id: str
     accepted: bool
-    stdin_open: bool
+    stdin_open: bool | None
     status: ProcessStatusProjection
 
 
@@ -79,6 +102,7 @@ type ProcessSignalResult = ProcessSignalSuccess | ToolFailure
 
 __all__ = [
     "OutputPageProjection",
+    "ProcessInfoResult",
     "ProcessInputResult",
     "ProcessObservationResult",
     "ProcessSignalResult",

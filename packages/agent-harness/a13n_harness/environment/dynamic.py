@@ -24,7 +24,6 @@ from a13n_harness.toolsets.file_media import (
     NativeInputMediaKind,
 )
 from a13n_harness.toolsets.files import FileToolset
-from a13n_harness.toolsets.process_manager import _RUN_PROCESS_ACTIONS
 from a13n_harness.toolsets.shell import ShellToolset
 
 from ._dynamic_context import _DynamicEnvironmentContext
@@ -116,12 +115,8 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         super().__init__(configuration)
         self._run_id = run_id
         self._environment = environment
-        self._process_capable = any(
-            _RUN_PROCESS_ACTIONS <= mount.permission_ceiling.operations for mount in environment.snapshot.mounts
-        )
         self._shell_toolset = ShellToolset(
             environment,
-            process_capable=self._process_capable,
             resource_resolver=lambda tool_id: self._dynamic_context._resource_resolver(tool_id),
             execution_guard=lambda: self._dynamic_context._assert_authorized_fence(),
         )
@@ -170,7 +165,9 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
                     include_mutations=has_file_mutations,
                 )
             )
-        if has_full_access:
+        if self.configuration.shell_enabled and (
+            has_full_access or any(action.value.startswith("environment.process.") for action in operations)
+        ):
             toolsets.append(self._shell_toolset.get_toolset())
         if not toolsets:
             return None

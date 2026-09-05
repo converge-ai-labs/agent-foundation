@@ -124,11 +124,15 @@ class EnvironmentOutputCapture(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     kind: Literal["empty", "inline", "retained", "truncated"]
-    producer_complete: bool
+    origin: Literal["native_bytes", "sdk_text"] = "native_bytes"
+    coverage: Literal["complete", "partial", "unknown"] = "complete"
+    observation_closed: bool = False
+    reason: Literal["reattached", "connection_lost", "observation_limit", "observation_evicted"] | None = None
+    producer_complete: bool | None
     content_complete: bool
-    produced_bytes: int = Field(ge=0)
+    produced_bytes: int | None = Field(default=None, ge=0)
     captured_bytes: int = Field(ge=0)
-    dropped_bytes: int = Field(ge=0)
+    dropped_bytes: int | None = Field(default=None, ge=0)
     inline: bytes | None = None
     preview: tuple[EnvironmentOutputSegment, ...] = ()
     reference: BoundOutputReference | None = None
@@ -136,6 +140,18 @@ class EnvironmentOutputCapture(BaseModel):
     available_start: int = Field(default=0, ge=0)
     available_end: int = Field(default=0, ge=0)
     expires_at: datetime | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _native_observation_evidence(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("origin", "native_bytes") != "native_bytes":
+            return value
+        value = dict(value)
+        value.setdefault("observation_closed", value.get("producer_complete") is True)
+        dropped = value.get("dropped_bytes")
+        if isinstance(dropped, int) and dropped > 0:
+            value.setdefault("coverage", "partial")
+        return value
 
 
 class EnvironmentOutputReadResult(BaseModel):
@@ -162,3 +178,48 @@ class ProviderOutputOperations(Protocol):
         reference: BoundOutputReference | None = None,
         cursor: BoundOutputCursor | None = None,
     ) -> EnvironmentOperationReceipt: ...
+
+
+async def materialize_capture(
+    outputs: ProviderOutputOperations,
+    capture: EnvironmentOutputCapture,
+    policy: EnvironmentOutputPolicy,
+) -> EnvironmentOutputCapture:
+    """Resolve an operation's own retained output into its bounded inline result."""
+    if capture.reference is None:
+        return capture
+    data = capture.inline or b""
+    complete = False
+    try:
+        page = await outputs.read(
+            capture.reference,
+            start_offset=0,
+            policy=policy.model_copy(update={"max_inline_bytes": policy.max_output_bytes, "overflow": "truncate"}),
+        )
+        data = b"".join(chunk.data for chunk in page.chunks)
+        complete = capture.content_complete and len(data) == capture.captured_bytes
+    except Exception:
+        # Preserve the known execution outcome; never turn a read failure into a retryable command.
+        pass
+    finally:
+        try:
+            await outputs.release(reference=capture.reference)
+        except Exception:
+            # Provider scope cleanup owns retrying unreleased native resources.
+            pass
+    return capture.model_copy(
+        update={
+            "kind": "inline" if data else "empty",
+            "inline": data,
+            "preview": (),
+            "reference": None,
+            "cursor": None,
+            "available_start": 0,
+            "available_end": len(data),
+            "captured_bytes": len(data),
+            "content_complete": complete,
+            "coverage": capture.coverage if complete else "partial",
+            "dropped_bytes": None if capture.produced_bytes is None else max(0, capture.produced_bytes - len(data)),
+            "expires_at": None,
+        }
+    )

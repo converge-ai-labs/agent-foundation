@@ -173,7 +173,7 @@ class HookSubscriptionService:
     ) -> HookSubscription:
         await self._preauthorize_endpoint_change(
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             action=WorkspaceAction.hook_subscription_update,
             endpoint_url=request.webhook.endpoint_url,
         )
@@ -285,7 +285,7 @@ class HookSubscriptionService:
         delivery_id: str,
     ) -> None:
         now = self._now()
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         async with transaction(self._sessions) as database:
             workspace = await authorize_hook(
                 database,
@@ -349,7 +349,7 @@ class HookSubscriptionService:
         action: WorkspaceAction,
         lock: bool = False,
     ) -> tuple[HookSubscriptionRecord, HookSubscriptionRevisionRecord]:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         workspace = await authorize_hook(
             database,
             actor=actor,

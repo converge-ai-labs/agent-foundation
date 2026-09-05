@@ -17,6 +17,7 @@ from pydantic_ai.settings import ModelSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
 from .domain import Model as ModelResource
@@ -67,7 +68,7 @@ class AcceptedModelSelector:
             )
             query = query.where(
                 ModelRecord.organization_id == organization_id,
-                ModelRecord.workspace_id == workspace_id,
+                visible_workspace(ModelRecord.workspace_id, workspace_id),
                 selector,
             )
             row = (await session.execute(query)).one_or_none()
@@ -97,7 +98,7 @@ class AcceptedModelSelector:
                 .join(ModelProviderRecord, ModelProviderRecord.id == ModelRecord.provider_id)
                 .where(
                     ModelRecord.organization_id == prepared.organization_id,
-                    ModelRecord.workspace_id == prepared.workspace_id,
+                    visible_workspace(ModelRecord.workspace_id, prepared.workspace_id),
                     ModelRecord.id == prepared.resource.id,
                 )
                 .with_for_update()

@@ -29,18 +29,17 @@ class E2BProviderConfiguration(BaseModel):
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
     python: str = "/usr/bin/python3"
-    shell: str = "/bin/bash"
-    timeout_seconds: int = Field(default=300, ge=30, le=86_400)
+    timeout_seconds: int = Field(default=3600, ge=30, le=86_400)
     request_timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
     allow_internet_access: bool = True
     read_only: bool = False
     max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
-    max_output_bytes: int = Field(default=8 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
-    max_processes: int = Field(default=16, gt=0, le=256)
-    max_wall_time_seconds: float = Field(default=300, gt=0, le=86_400, allow_inf_nan=False)
+    max_observation_bytes: int = Field(default=1024 * 1024, gt=0, le=16 * 1024 * 1024)
+    max_active_observations: int = Field(default=128, gt=0, le=1024)
+    max_retained_output_bytes: int = Field(default=128 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
     max_query_entries: int = Field(default=10_000, gt=0, le=100_000)
 
-    @field_validator("root", "python", "shell")
+    @field_validator("root", "python")
     @classmethod
     def _absolute_path(cls, value: str) -> str:
         path = PurePosixPath(value)
@@ -50,7 +49,8 @@ class E2BProviderConfiguration(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+        target = self.model_dump_json(include={"template", "root", "user", "allow_internet_access"})
+        return hashlib.sha256(target.encode()).hexdigest()
 
 
 class E2BProviderStateData(BaseModel):

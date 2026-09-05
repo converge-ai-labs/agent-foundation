@@ -50,7 +50,7 @@ class SecretProtector:
         *,
         secret_id: str,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
         owner_type: str,
         owner_id: str,
         key: str,
@@ -84,7 +84,7 @@ class SecretProtector:
         encryption_key_id: str,
         secret_id: str,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
         owner_type: str,
         owner_id: str,
         key: str,
@@ -110,9 +110,12 @@ class SecretProtector:
             raise SecretProtectionError("the managed Secret value could not be authenticated") from error
 
 
-def _additional_data(*values: str) -> bytes:
+def _additional_data(*values: str | None) -> bytes:
     encoded = bytearray()
     for value in values:
+        if value is None:
+            encoded.extend(struct.pack(">I", 0xFFFFFFFF))
+            continue
         item = value.encode("utf-8")
         encoded.extend(struct.pack(">I", len(item)))
         encoded.extend(item)

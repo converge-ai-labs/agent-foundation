@@ -10,6 +10,7 @@ from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.management import canonical_digest, record_command
 from a13n_service.connectivity.models import ConnectivityCommandRecord
 from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
@@ -81,7 +82,11 @@ class ConnectorRevocationService:
             if connection.external_ref is not None:
                 try:
                     binding = await connection_binding(session, connection)
-                    connector = await require_connector_provider(session, connection.connector_provider_id)
+                    connector = await require_connector_provider(
+                        session,
+                        connection.connector_provider_id,
+                        scope=ResourceScope(connection.organization_id, connection.workspace_id),
+                    )
                     credential = connector.credential_snapshot()
                     provider = ProviderSnapshot.from_record(connector)
                 except (ConnectorError, SecretProtectionError):

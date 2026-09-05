@@ -1,6 +1,6 @@
 # External tools
 
-Foundation Service selects external tools by managed ConnectorConnection or MCPConnection. Create the resource in the same Workspace before selecting it in an Agent configuration.
+Foundation Service selects external tools by managed ConnectorConnection or MCPConnection. Create the connection resource in the same Workspace before selecting it in an Agent configuration. Its ConnectorProvider may belong to that Workspace or its parent Organization. Organization Providers are automatically available to child Workspaces, while connections and authorized external accounts remain isolated by Workspace.
 
 ```json
 {

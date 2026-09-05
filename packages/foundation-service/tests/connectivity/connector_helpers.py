@@ -43,6 +43,7 @@ def validate_fake_setup(configuration: JsonObject, connector_key: str, value: ob
 class FakeConnectorBackend:
     def __init__(self) -> None:
         self.started = 0
+        self.external_accounts: dict[str, str] = {}
         self.revoked: list[tuple[str, str]] = []
         self.inspection_status = AdapterConnectionStatus.ready
         self.fail_revoke = False
@@ -88,7 +89,9 @@ class FakeConnectorProvider:
     async def start_setup(self, *, setup: JsonObject, context: SetupContext) -> SetupStarted:
         self.backend.started += 1
         return SetupStarted(
-            external_ref="external-1",
+            external_ref=self.backend.external_accounts.setdefault(
+                context.external_user_correlation, f"external-{len(self.backend.external_accounts) + 1}"
+            ),
             redirect_url="https://connector.example/authorize",
             external_handle=f"session://{context.attempt_id}",
             supports_verified_callback=self.backend.supports_callback,

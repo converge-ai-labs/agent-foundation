@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from .connections import ConnectorConnectionService
@@ -388,3 +389,44 @@ async def connector_setup_callback(
     if runtime is None:
         raise ConnectorError("callback_unavailable", "ConnectorProvider callback is unavailable.", status_code=503)
     return RedirectResponse(f"{runtime.public_origin.rstrip('/')}{return_path}", status_code=303)
+
+
+@router.post(
+    "/api/v1/organizations/{organization_id}/connector-providers",
+    response_model=ConnectorProvider,
+    status_code=status.HTTP_201_CREATED,
+)
+async def organization_create_connector_provider(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    organization_id: str,
+    body: CreateConnectorProviderRequest,
+    idempotency_key: IdempotencyKey,
+) -> ConnectorProvider:
+    require_organization_boundary(actor, organization_id)
+    resource = await _connector_providers(request).create(
+        actor=actor,
+        workspace_id=None,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+    _etag(response, resource)
+    return resource
+
+
+@router.get("/api/v1/organizations/{organization_id}/connector-providers", response_model=ConnectorProviderCollection)
+async def organization_list_connector_providers(
+    request: Request,
+    actor: Actor,
+    organization_id: str,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    cursor: Annotated[str | None, Query(max_length=2048)] = None,
+) -> ConnectorProviderCollection:
+    require_organization_boundary(actor, organization_id)
+    return await _connector_providers(request).list(
+        actor=actor,
+        workspace_id=None,
+        limit=limit,
+        cursor=cursor,
+    )

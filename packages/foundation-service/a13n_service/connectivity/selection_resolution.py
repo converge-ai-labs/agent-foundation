@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord, ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
 from .selection_domain import (
@@ -170,7 +171,7 @@ class ConnectivitySelectionResolver:
                     and_(
                         ConnectorProviderRecord.id == ConnectorConnectionRecord.connector_provider_id,
                         ConnectorProviderRecord.organization_id == ConnectorConnectionRecord.organization_id,
-                        ConnectorProviderRecord.workspace_id == ConnectorConnectionRecord.workspace_id,
+                        visible_workspace(ConnectorProviderRecord.workspace_id, workspace_id),
                     ),
                 )
                 .where(

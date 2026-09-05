@@ -234,7 +234,7 @@ class SkillPublicationService:
         request: CreateSkillRevisionRequest,
         idempotency_key: str,
     ) -> ReplayResult[SkillPublicationReceipt]:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         try:
             return await self._publish_revision(
                 actor=actor,

@@ -460,6 +460,7 @@ async def test_mount_changes_refresh_the_environment_tool_surface_between_model_
                 "glob",
                 "grep",
                 "shell_exec",
+                "shell_info",
                 "shell_wait",
                 "shell_input",
                 "shell_signal",
@@ -625,7 +626,7 @@ async def test_fresh_process_binding_adds_run_owned_process_tools(tmp_path: Path
 
     assert result.output_or_raise() == "done"
     names = {tool.name for tool in calls[0].function_tools}
-    assert {"shell_exec", "shell_wait", "shell_input", "shell_signal"} <= names
+    assert {"shell_exec", "shell_info", "shell_wait", "shell_input", "shell_signal"} <= names
     assert {"shell_status", "shell_kill"}.isdisjoint(names)
     shell_tool = next(tool for tool in calls[0].function_tools if tool.name == "shell_exec")
     assert "background" not in shell_tool.parameters_json_schema["properties"]
@@ -2587,7 +2588,7 @@ async def test_shell_toolset_is_foreground_only_without_process_actions(tmp_path
         host_refs={},
     ) as environment:
         await runtime._activate()
-        toolset = ShellToolset(environment, process_capable=False)
+        toolset = ShellToolset(environment)
         tools = toolset.get_toolset().tools
 
         assert set(tools) == {"shell_exec"}
@@ -2606,10 +2607,10 @@ async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: P
         host_refs={},
     ) as environment:
         await runtime._activate()
-        toolset = ShellToolset(environment, process_capable=True)
+        toolset = ShellToolset(environment)
         tools = toolset.get_toolset().tools
 
-        assert set(tools) == {"shell_exec", "shell_wait", "shell_input", "shell_signal"}
+        assert set(tools) == {"shell_exec", "shell_info", "shell_wait", "shell_input", "shell_signal"}
         properties = tools["shell_exec"].function_schema.json_schema["properties"]
         assert "background" not in properties
         assert "yield_time_seconds" in properties
@@ -2843,7 +2844,7 @@ async def test_direct_mount_path_translates_shell_working_directory(tmp_path: Pa
         host_refs={},
     ) as environment:
         await runtime._activate()
-        toolset = ShellToolset(environment, process_capable=False)
+        toolset = ShellToolset(environment)
         ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace()))
 
         result = await toolset.shell_exec_foreground(
@@ -2890,7 +2891,7 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
         host_refs={},
     ) as environment:
         await runtime._activate()
-        toolset = ShellToolset(environment, process_capable=True)
+        toolset = ShellToolset(environment)
         ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace()))
 
         foreground = await toolset.shell_exec(

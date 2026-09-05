@@ -23,6 +23,7 @@ from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_digest
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.models import WorkspaceRecord
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -98,7 +99,7 @@ class ConnectorSetupCoordinator:
         return_path: str,
         now: datetime,
     ) -> ConnectorSetupAttemptRecord:
-        correlation = self.correlation(connector)
+        correlation = self.correlation(connector, workspace_id=connection.workspace_id)
         return ConnectorSetupAttemptRecord(
             id=attempt_id,
             organization_id=connection.organization_id,
@@ -335,7 +336,11 @@ class ConnectorSetupCoordinator:
                 raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
             connection = await require_connection(session, attempt.connector_connection_id)
             await _require_eligible(session, attempt, connection, now=self._clock())
-            connector = await require_connector_provider(session, connection.connector_provider_id)
+            connector = await require_connector_provider(
+                session,
+                connection.connector_provider_id,
+                scope=ResourceScope(connection.organization_id, connection.workspace_id),
+            )
             credential = connector.credential_snapshot()
             provider = ProviderSnapshot.from_record(connector)
             setup = SetupSnapshot(
@@ -389,7 +394,7 @@ class ConnectorSetupCoordinator:
             attempt.last_error_code = code
             attempt.updated_at = self._clock()
 
-    def correlation(self, connector: ConnectorProviderRecord) -> str:
+    def correlation(self, connector: ConnectorProviderRecord, *, workspace_id: str) -> str:
         if self._correlation_secret is None:
             raise ConnectorError(
                 "setup_unavailable",
@@ -400,9 +405,9 @@ class ConnectorSetupCoordinator:
             (
                 "a13n.connector-user.v1",
                 connector.organization_id,
-                connector.workspace_id,
+                workspace_id,
                 "workspace",
-                connector.workspace_id,
+                workspace_id,
                 connector.id,
             )
         ).encode()
@@ -459,7 +464,11 @@ async def _require_eligible(
     session: AsyncSession, attempt: ConnectorSetupAttemptRecord, connection: ConnectorConnectionRecord, *, now: datetime
 ) -> None:
     workspace = await session.get(WorkspaceRecord, connection.workspace_id)
-    provider = await require_connector_provider(session, connection.connector_provider_id)
+    provider = await require_connector_provider(
+        session,
+        connection.connector_provider_id,
+        scope=ResourceScope(connection.organization_id, connection.workspace_id),
+    )
     require_active_provider(provider)
     if (
         connection.status != "pending"

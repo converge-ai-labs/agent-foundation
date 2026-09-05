@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
@@ -199,3 +200,37 @@ async def delete_environment(
 @router.get("/environment-commands/{command_id}")
 async def get_command(request: Request, actor: Actor, command_id: str) -> EnvironmentCommand:
     return await _service(request).get_command(actor=actor, command_id=command_id)
+
+
+@router.post("/organizations/{organization_id}/environment-providers", status_code=201)
+async def organization_create_provider(
+    request: Request, actor: Actor, organization_id: str, body: CreateProviderRequest
+) -> EnvironmentProvider:
+    require_organization_boundary(actor, organization_id)
+    return await _service(request).create_provider(actor=actor, workspace_id=None, request=body)
+
+
+@router.post("/organizations/{organization_id}/environment-templates", status_code=201)
+async def organization_create_template(
+    request: Request, actor: Actor, organization_id: str, body: CreateTemplateRequest, idempotency_key: IdempotencyKey
+) -> EnvironmentTemplate:
+    require_organization_boundary(actor, organization_id)
+    return await _service(request).create_template(
+        actor=actor, workspace_id=None, request=body, idempotency_key=idempotency_key
+    )
+
+
+@router.get("/organizations/{organization_id}/environment-providers")
+async def organization_list_providers(
+    request: Request, actor: Actor, organization_id: str, limit: Limit = 50, cursor: str | None = None
+) -> Collection[EnvironmentProvider]:
+    require_organization_boundary(actor, organization_id)
+    return await _service(request).list_providers(actor=actor, workspace_id=None, limit=limit, cursor=cursor)
+
+
+@router.get("/organizations/{organization_id}/environment-templates")
+async def organization_list_templates(
+    request: Request, actor: Actor, organization_id: str, limit: Limit = 50, cursor: str | None = None
+) -> Collection[EnvironmentTemplate]:
+    require_organization_boundary(actor, organization_id)
+    return await _service(request).list_templates(actor=actor, workspace_id=None, limit=limit, cursor=cursor)

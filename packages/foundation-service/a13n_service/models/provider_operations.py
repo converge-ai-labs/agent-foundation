@@ -22,7 +22,7 @@ _MAX_DISCOVERY_OUTPUT_BYTES = 32 * 1024 * 1024
 
 class ProviderStateResolver(Protocol):
     async def resolve_provider(
-        self, *, provider_id: str, organization_id: str, workspace_id: str
+        self, *, provider_id: str, organization_id: str, workspace_id: str | None
     ) -> RuntimeProvider: ...
 
 
@@ -34,12 +34,12 @@ class NativeProviderOperations:
         self._registry = registry
         self._http_client = http_client
 
-    async def test(self, *, provider_id: str, organization_id: str, workspace_id: str) -> None:
+    async def test(self, *, provider_id: str, organization_id: str, workspace_id: str | None) -> None:
         provider = await self._resolve(provider_id, organization_id, workspace_id)
         await self._list(provider)
 
     async def discover(
-        self, *, provider_id: str, organization_id: str, workspace_id: str
+        self, *, provider_id: str, organization_id: str, workspace_id: str | None
     ) -> ModelDescriptionCollection:
         provider = await self._resolve(provider_id, organization_id, workspace_id)
         identities = await self._list(provider)
@@ -64,7 +64,7 @@ class NativeProviderOperations:
         *,
         provider_id: str,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
         provider_type: str,
         upstream_model: str,
         model_api: str | None,
@@ -89,7 +89,7 @@ class NativeProviderOperations:
             return local
         return local
 
-    async def _resolve(self, provider_id: str, organization_id: str, workspace_id: str) -> RuntimeProvider:
+    async def _resolve(self, provider_id: str, organization_id: str, workspace_id: str | None) -> RuntimeProvider:
         return await self._provider_resolver.resolve_provider(
             provider_id=provider_id, organization_id=organization_id, workspace_id=workspace_id
         )

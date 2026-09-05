@@ -26,7 +26,7 @@ from .domain import Account, AccountStatus
 from .reception import InputBatchingPolicy
 
 
-class AccountRecord(ResourceCredential, Base):
+class AccountRecord(ResourceCredential[str], Base):
     credential_owner_type = "application_account"
     __tablename__ = "application_accounts"
     __table_args__ = (

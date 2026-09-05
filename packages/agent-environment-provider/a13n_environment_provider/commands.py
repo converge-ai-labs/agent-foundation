@@ -34,7 +34,7 @@ class ShellCommand(BaseModel):
     kind: Literal["shell"] = "shell"
     profile_id: str
     script: str
-    login: bool = False
+    login: bool | None = None
 
 
 type CommandSpec = Annotated[ArgvCommand | ShellCommand, Field(discriminator="kind")]
@@ -116,7 +116,9 @@ class CommandRequest(BaseModel):
         return self
 
 
-type ProcessPhase = Literal["starting", "running", "exited", "signaled", "timed_out", "cancelled", "failed"]
+type ProcessPhase = Literal[
+    "starting", "running", "exited", "signaled", "timed_out", "cancelled", "failed", "unknown", "missing"
+]
 type ProcessCleanupOutcome = Literal["pending", "complete", "residual_confined", "failed"]
 type ProcessTerminationReason = Literal["exit", "signal", "timeout", "cancelled", "output_limit", "backend_lost"]
 type ProcessSignal = Literal["interrupt", "terminate", "kill"]
@@ -131,7 +133,7 @@ class ProcessStatus(BaseModel):
     signal: ProcessSignal | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None
-    cleanup: ProcessCleanupOutcome = "pending"
+    cleanup: ProcessCleanupOutcome | None = None
 
 
 class ProcessOutputSnapshot(BaseModel):
@@ -172,8 +174,17 @@ class ProcessInfo(BaseModel):
 
     handle: BoundProcessHandle
     status: ProcessStatus
-    stdin_open: bool
-    output: ProcessOutputSnapshot
+    stdin_open: bool | None = None
+    output: ProcessOutputSnapshot | None = None
+
+
+class ProcessDiscovery(BaseModel):
+    """Bounded native process observations; listing never attaches output streams."""
+
+    model_config = ConfigDict(frozen=True)
+
+    processes: tuple[ProcessInfo, ...]
+    has_more: bool = False
 
 
 class ShellExecResult(BaseModel):
@@ -218,7 +229,7 @@ class ProcessWriteStdinResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     accepted_bytes: int = Field(ge=0)
-    stdin_open: bool
+    stdin_open: bool | None
     receipt: EnvironmentOperationReceipt
 
 
@@ -251,6 +262,8 @@ class ProviderShellOperations(Protocol):
 
 
 class ProviderProcessOperations(Protocol):
+    async def list(self, *, limit: int) -> ProcessDiscovery: ...
+
     async def start(self, request: CommandRequest) -> ProcessStartResult: ...
 
     async def rebind(

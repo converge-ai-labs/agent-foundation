@@ -64,7 +64,7 @@ async def authorize_agent_scope(
         return await authorize_agent(
             session,
             actor=actor,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             agent_id=agent_id,
             action=action,
         )
@@ -437,7 +437,7 @@ async def load_replay(
         evidence = await load_evidence(
             session,
             scope=EvidenceScope(
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 actor_type=actor.principal.principal_type.value,
                 actor_id=actor.principal.principal_id,
                 operation=operation,

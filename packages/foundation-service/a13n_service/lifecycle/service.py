@@ -128,7 +128,7 @@ class LifecycleEventService:
         limit: int,
     ) -> ResourceLifecycleEventPage:
         _validate_page_request(limit=limit, after_resource_seq=after_resource_seq)
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         async with short_session(self._sessions) as database:
             run = await load_owning_run(
                 database,

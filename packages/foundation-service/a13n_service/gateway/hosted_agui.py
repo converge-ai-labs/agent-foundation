@@ -340,7 +340,7 @@ class HostedAguiService:
                     AguiThreadBindingRecord(
                         id=thread_binding_id,
                         organization_id=run.tenant_id,
-                        workspace_id=actor.boundary_workspace_id,
+                        workspace_id=actor.workspace_id,
                         client_principal_type=actor.principal.principal_type.value,
                         client_principal_id=actor.principal.principal_id,
                         agent_id=agent_id,
@@ -375,7 +375,7 @@ class HostedAguiService:
                 AguiRunBindingRecord(
                     id=run_binding_id,
                     organization_id=run.tenant_id,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     thread_binding_id=thread_binding_id,
                     agent_id=agent_id,
                     agent_revision_id=run.agent_revision_id,
@@ -399,7 +399,7 @@ class HostedAguiService:
                 )
             await self._commands.start(
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 idempotency_key=idempotency_key,
                 request=StartRunRequest(
                     agent_id=agent_id,
@@ -866,7 +866,7 @@ class HostedAguiService:
                     authorized = await authorize_agent(
                         database,
                         actor=actor,
-                        workspace_id=actor.boundary_workspace_id,
+                        workspace_id=actor.workspace_id,
                         agent_id=agent_id,
                         action=WorkspaceAction.agent_invoke,
                     )
@@ -886,7 +886,7 @@ class HostedAguiService:
             agent = await database.scalar(
                 select(AgentRecord).where(
                     AgentRecord.id == agent_id,
-                    AgentRecord.workspace_id == actor.boundary_workspace_id,
+                    AgentRecord.workspace_id == actor.workspace_id,
                     AgentRecord.organization_id == organization_id,
                 )
             )
@@ -902,7 +902,7 @@ class HostedAguiService:
                     AgentRevisionRecord.id == selected_revision_id,
                     AgentRevisionRecord.agent_id == agent_id,
                     AgentRevisionRecord.organization_id == agent.organization_id,
-                    AgentRevisionRecord.workspace_id == actor.boundary_workspace_id,
+                    AgentRevisionRecord.workspace_id == actor.workspace_id,
                 )
             )
         if revision is None:
@@ -963,7 +963,7 @@ class HostedAguiService:
         async with short_session(self._sessions) as database:
             return await database.scalar(
                 select(AguiThreadBindingRecord).where(
-                    AguiThreadBindingRecord.workspace_id == actor.boundary_workspace_id,
+                    AguiThreadBindingRecord.workspace_id == actor.workspace_id,
                     AguiThreadBindingRecord.client_principal_type == actor.principal.principal_type.value,
                     AguiThreadBindingRecord.client_principal_id == actor.principal.principal_id,
                     AguiThreadBindingRecord.agent_id == agent_id,
@@ -988,7 +988,7 @@ class HostedAguiService:
                         AguiThreadBindingRecord.id == AguiRunBindingRecord.thread_binding_id,
                     )
                     .where(
-                        AguiThreadBindingRecord.workspace_id == actor.boundary_workspace_id,
+                        AguiThreadBindingRecord.workspace_id == actor.workspace_id,
                         AguiThreadBindingRecord.client_principal_type == actor.principal.principal_type.value,
                         AguiThreadBindingRecord.client_principal_id == actor.principal.principal_id,
                         AguiRunBindingRecord.agent_id == agent_id,

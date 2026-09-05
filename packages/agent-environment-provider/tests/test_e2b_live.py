@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 from dataclasses import dataclass
@@ -56,9 +57,7 @@ class SandboxFixture:
 
 @pytest.fixture
 async def sandbox():
-    config = E2BProviderConfiguration(
-        timeout_seconds=300, max_output_bytes=65536, max_wall_time_seconds=15, max_processes=4
-    )
+    config = E2BProviderConfiguration(timeout_seconds=300, max_observation_bytes=65536, max_active_observations=4)
     runtime = E2BProviderRuntime(SecretStr(os.environ["A13N_TEST_E2B_API_KEY"]))
     env = E2BEnvironment(config, environment_id="env-test-" + secrets.token_hex(8), state=None, runtime=runtime)
     try:
@@ -71,11 +70,12 @@ async def sandbox():
         try:
             await env.close()
         finally:
-            if env.dump_state() is not None:
-                cleanup = E2BEnvironment(
-                    config, environment_id=env.environment_id, state=env.dump_state(), runtime=runtime
-                )
+            state = env.dump_state()
+            if state is not None:
+                cleanup = E2BEnvironment(config, environment_id=env.environment_id, state=state, runtime=runtime)
                 await cleanup.destroy()
+                probe = E2BEnvironment(config, environment_id=env.environment_id, state=state, runtime=runtime)
+                assert await probe.reconcile() == "absent"
 
 
 def request(script: str, *, maximum=65536, overflow="retain", **kwargs):
@@ -117,60 +117,53 @@ async def test_files_binary_transfer_patch_search_and_conflicts(sandbox):
     await files.remove("/work/moved")
 
 
-async def test_process_bytes_paging_limits_and_release(sandbox):
-    env = sandbox.environment
-    processes, outputs = env.operations.processes, env.operations.outputs
-    assert processes is not None and outputs is not None
+async def test_sdk_text_output_and_observation_limit_without_termination(sandbox):
+    processes = sandbox.environment.operations.processes
+    assert processes is not None
+    assert sandbox.environment.operations.outputs is None
     started = await processes.start(
-        request("python3 -c 'import os; os.write(1,bytes(range(256))*4); os.write(2,b\"stderr\")'")
+        request("python3 -c 'import os; os.write(1, bytes([104, 101, 108, 108, 111, 255]))'")
     )
-    completed = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=15)
+    completed = await processes.wait(started.process.handle, condition="initial_terminal", timeout_seconds=15)
     assert completed.status.exit_code == 0
-    assert completed.status.cleanup == "residual_confined"
-    reference = completed.output.stdout.reference
-    assert reference is not None
-    page = await outputs.read(
-        reference,
-        start_offset=250,
-        policy=EnvironmentOutputPolicy(max_inline_bytes=100, max_output_bytes=65536, overflow="retain"),
-    )
-    assert b"".join(part.data for part in page.chunks) == (bytes(range(256)) * 4)[250:350]
-    assert page.capture.content_complete
-    await processes.release(started.process.handle)
-    with pytest.raises(EnvironmentError):
-        await processes.rebind(started.process.handle.identity, output_policy=request("true").output_policy)
-    await outputs.release(reference=reference)
-    assert completed.output.stderr.reference is not None
-    await outputs.release(reference=completed.output.stderr.reference)
-    with pytest.raises(EnvironmentError):
-        await outputs.read(reference, policy=request("true").output_policy)
-    result = await processes.exec(request("python3 -c 'import os; os.write(1,b\"x\"*200000)'", maximum=128))
-    assert result.status.termination_reason == "output_limit"
-    assert result.output.stdout.captured_bytes == 128
-    assert not result.output.stdout.content_complete
-    result = await processes.exec(request("sleep 10", limits=CommandLimits(wall_time_seconds=0.2)))
-    assert result.status.phase == "timed_out"
+    assert completed.status.cleanup is None
+    page = await processes.read_output(completed.handle, policy=request("true").output_policy)
+    assert b"".join(part.data for part in page.stdout.chunks) == "hello\ufffd".encode()
+    assert page.stdout.capture.origin == "sdk_text"
+    assert page.stdout.capture.produced_bytes is None
+    await processes.release(completed.handle)
+    noisy = await processes.start(request("head -c 200000 /dev/zero; sleep 60"))
+    async with asyncio.timeout(15):
+        while True:
+            page = await processes.read_output(noisy.process.handle, policy=request("true").output_policy)
+            if page.stdout.capture.reason == "observation_limit":
+                break
+            await asyncio.sleep(0.1)
+    assert page.stdout.capture.captured_bytes <= sandbox.configuration.max_observation_bytes
+    assert (await processes.inspect(noisy.process.handle)).status.phase == "running"
+    await processes.kill(noisy.process.handle)
 
 
-async def test_stdin_signal_and_reentry(sandbox):
+async def test_stdin_and_discovery_after_adapter_close(sandbox):
     processes = sandbox.environment.operations.processes
     assert processes is not None
     started = await processes.start(request("cat", keep_stdin_open=True))
-    await processes.write_stdin(started.process.handle, b"hello\x00\xff\n", close_after_write=True)
+    await processes.write_stdin(started.process.handle, b"hello\n", close_after_write=True)
     result = await processes.wait(started.process.handle, condition="initial_terminal", timeout_seconds=10)
-    assert b"".join(segment.data for segment in result.output.stdout.preview) == b"hello\x00\xff\n"
-    long = await processes.start(request("sleep 10"))
+    page = await processes.read_output(result.handle, policy=request("true").output_policy)
+    assert b"".join(segment.data for segment in page.stdout.chunks) == b"hello\n"
+    long = await processes.start(request("sleep 60"))
+    identity = long.process.handle.identity
+    await sandbox.environment.close()
     other = sandbox.fresh()
     try:
         await other.enter(thread_id="t", run_id="r", agent_instance_id="a", mount_id="other-mount")
         await other.prepare()
-        rebound = await other.operations.processes.rebind(
-            long.process.handle.identity, output_policy=request("true").output_policy
-        )
+        listed = await other.operations.processes.list(limit=100)
+        rebound = next(info for info in listed.processes if info.handle.identity == identity)
         assert rebound.handle.mount_id == "other-mount"
-        await other.operations.processes.signal(rebound.handle, "terminate")
-        terminal = await processes.wait(long.process.handle, condition="tree_cleaned", timeout_seconds=10)
-        assert terminal.status.phase == "signaled"
+        assert rebound.status.phase == "running"
+        await other.operations.processes.kill(rebound.handle)
     finally:
         await other.close()
 
@@ -197,67 +190,54 @@ async def test_lifecycle_pause_resume_and_keepalive(sandbox):
         await resumed.close()
 
 
-async def test_unsupported_limits_fail_before_start_and_argv_is_literal(sandbox):
+async def test_unsupported_guarantees_fail_before_start(sandbox):
     processes = sandbox.environment.operations.processes
     assert processes is not None
-    for limits in (CommandLimits(memory_bytes=1024), CommandLimits(process_count=2), CommandLimits(cpu_time_seconds=1)):
-        with pytest.raises(EnvironmentError) as error:
-            await processes.start(request("touch /tmp/should-not-run", limits=limits))
-        assert error.value.code == "environment_unsupported"
-    with pytest.raises(EnvironmentError):
-        await processes.start(request("true", network="deny"))
-    result = await processes.exec(
-        CommandRequest(
-            command=ArgvCommand(executable="/usr/bin/printf", arguments=("%s", "$(touch /tmp/should-not-run);literal")),
-            output_policy=request("true").output_policy,
-            environment=CommandEnvironment(unset=("LANG",)),
-        )
+    limits = (
+        CommandLimits(memory_bytes=1024),
+        CommandLimits(process_count=2),
+        CommandLimits(cpu_time_seconds=1),
+        CommandLimits(wall_time_seconds=1),
+        CommandLimits(stdin_bytes=8),
     )
-    assert b"".join(part.data for part in result.output.stdout.preview).startswith(b"$(touch /tmp/should-not-run)")
+    for limit in limits:
+        with pytest.raises(EnvironmentError) as error:
+            await processes.start(request("touch /tmp/should-not-run", limits=limit))
+        assert error.value.code == "environment_unsupported"
+    for command in (
+        request("true", network="deny"),
+        request("true", environment=CommandEnvironment(unset=("LANG",))),
+        CommandRequest(command=ArgvCommand(executable="/usr/bin/true"), output_policy=request("true").output_policy),
+    ):
+        with pytest.raises(EnvironmentError) as error:
+            await processes.start(command)
+        assert error.value.code == "environment_unsupported"
     port = await sandbox.environment.operations.ports.inspect(PortTarget(port=54321))
     assert port.status == "not_listening"
 
 
-async def test_stdin_quota_survives_rebind_and_initial_input(sandbox):
+async def test_observation_capacity_is_adapter_local(sandbox):
     processes = sandbox.environment.operations.processes
     assert processes is not None
-    started = await processes.start(
-        request("cat", keep_stdin_open=True, initial_stdin=b"first", limits=CommandLimits(stdin_bytes=8))
-    )
+    for _ in range(sandbox.configuration.max_active_observations + 2):
+        started = await processes.start(request("true"))
+        info = await processes.wait(started.process.handle, condition="initial_terminal", timeout_seconds=10)
+        assert info.status.exit_code == 0
+    running = []
     other = sandbox.fresh()
     try:
-        await other.prepare()
-        rebound = await other.operations.processes.rebind(
-            started.process.handle.identity, output_policy=request("true").output_policy
-        )
+        for _ in range(sandbox.configuration.max_active_observations):
+            started = await processes.start(request("sleep 120"))
+            running.append(started.process.handle)
         with pytest.raises(EnvironmentError) as error:
-            await other.operations.processes.write_stdin(rebound.handle, b"four")
-        assert error.value.code == "environment_too_large"
-        await other.operations.processes.write_stdin(rebound.handle, b"end", close_after_write=True)
-        result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=10)
-        assert b"".join(part.data for part in result.output.stdout.preview) == b"firstend"
-    finally:
-        await other.close()
-
-
-async def test_capacity_includes_retained_records_across_adapters(sandbox):
-    environment = sandbox.environment
-    processes = environment.operations.processes
-    assert processes is not None
-    outputs = environment.operations.outputs
-    assert outputs is not None
-    completed = [await processes.exec(request("true")) for _ in range(sandbox.configuration.max_processes)]
-    other = sandbox.fresh()
-    try:
+            await processes.start(request("true"))
+        assert error.value.code == "environment_limit_exceeded"
         await other.prepare()
-        with pytest.raises(EnvironmentError) as error:
-            await other.operations.processes.start(request("true"))
-        assert error.value.code == "environment_busy"
-        first = completed[0]
-        assert first.output.stdout.reference is not None and first.output.stderr.reference is not None
-        await outputs.release(reference=first.output.stdout.reference)
-        await outputs.release(reference=first.output.stderr.reference)
-        result = await other.operations.processes.exec(request("printf freed"))
+        result = await other.operations.shell.exec(request("printf independent"))
         assert result.status.exit_code == 0
+        assert result.output.stdout.inline == b"independent"
+        assert result.output.stdout.reference is None
     finally:
+        for handle in running:
+            await processes.kill(handle)
         await other.close()

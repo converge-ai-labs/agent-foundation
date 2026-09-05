@@ -32,7 +32,7 @@ async def input_environment_access(
     await authorize_agent(
         database,
         actor=actor,
-        workspace_id=actor.boundary_workspace_id,
+        workspace_id=actor.workspace_id,
         agent_id=agent_id,
         action=(
             WorkspaceAction.environment_template_use
@@ -40,5 +40,5 @@ async def input_environment_access(
             else WorkspaceAction.environment_use
         ),
     )
-    selected = await resolve_selection(database, workspace_id=actor.boundary_workspace_id, choice=choice)
+    selected = await resolve_selection(database, workspace_id=actor.workspace_id, choice=choice)
     return intersect_access(selected.to_resource().access, access_ceiling)

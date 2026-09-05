@@ -84,7 +84,7 @@ class AgentInvocationPreparer:
         run_id: str | None = None,
         _root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
     ) -> PreparedAgentInvocation:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         try:
             async with short_session(self._sessions) as session:
                 authorized = await authorize_agent(

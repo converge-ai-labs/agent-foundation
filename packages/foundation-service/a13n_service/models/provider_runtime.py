@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.endpoint_policy import EndpointPolicyError
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session
 
@@ -53,7 +54,7 @@ class LiveProviderResolver:
         self,
         *,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
         snapshot: ModelExecutionSnapshot,
     ) -> RuntimeProvider:
         async with short_session(self._sessions) as session:
@@ -63,7 +64,7 @@ class LiveProviderResolver:
                     .join(ModelProviderRecord, ModelProviderRecord.id == ModelRecord.provider_id)
                     .where(
                         ModelRecord.organization_id == organization_id,
-                        ModelRecord.workspace_id == workspace_id,
+                        visible_workspace(ModelRecord.workspace_id, workspace_id),
                         ModelRecord.id == snapshot.model_id,
                     )
                 )
@@ -80,14 +81,14 @@ class LiveProviderResolver:
         self,
         *,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
         provider_id: str,
     ) -> RuntimeProvider:
         async with short_session(self._sessions) as session:
             provider = await session.scalar(
                 select(ModelProviderRecord).where(
                     ModelProviderRecord.organization_id == organization_id,
-                    ModelProviderRecord.workspace_id == workspace_id,
+                    visible_workspace(ModelProviderRecord.workspace_id, workspace_id),
                     ModelProviderRecord.id == provider_id,
                 )
             )

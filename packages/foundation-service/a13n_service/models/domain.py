@@ -111,7 +111,7 @@ class ModelProvider(BaseModel):
 
     id: ObjectId
     organization_id: ObjectId
-    workspace_id: ObjectId
+    workspace_id: ObjectId | None
     type: str
     name: str
     configuration: dict[str, object]
@@ -168,7 +168,7 @@ class Model(BaseModel):
 
     id: ObjectId
     organization_id: ObjectId
-    workspace_id: ObjectId
+    workspace_id: ObjectId | None
     key: str
     provider_id: ObjectId
     name: str

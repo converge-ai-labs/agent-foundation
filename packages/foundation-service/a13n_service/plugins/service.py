@@ -384,7 +384,7 @@ class PluginService:
             await authorize_workspace(
                 session,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 action=WorkspaceAction.plugin_manage,
             )
             record = await session.scalar(select(PluginRecord).where(PluginRecord.id == plugin_id).with_for_update())
@@ -450,7 +450,7 @@ class PluginService:
         return await dispatcher.activate(
             actor=actor,
             organization_id=organization_id,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             plugin=plugin.to_resource(),
             plugin_version=plugin_version.to_resource(),
             idempotency_key=idempotency_key,
@@ -472,7 +472,7 @@ class PluginService:
         return await dispatcher.deactivate(
             actor=actor,
             organization_id=organization_id,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             plugin=plugin.to_resource(),
             idempotency_key=idempotency_key,
         )
@@ -487,7 +487,7 @@ class PluginService:
         return await dispatcher.get_receipt(
             actor=actor,
             organization_id=organization_id,
-            workspace_id=actor.boundary_workspace_id,
+            workspace_id=actor.workspace_id,
             operation_id=operation_id,
         )
 
@@ -511,7 +511,7 @@ class PluginService:
             await authorize_workspace(
                 session,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 action=WorkspaceAction.plugin_manage,
             )
             plugin = await self._select_upload_plugin(
@@ -787,7 +787,7 @@ class PluginService:
                 workspace = await authorize_workspace(
                     session,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     action=action,
                 )
             return workspace.organization_id
@@ -908,7 +908,7 @@ def _audit(
         audit_id=new_object_id("audit"),
         actor=actor,
         organization_id=organization_id,
-        workspace_id=actor.boundary_workspace_id,
+        workspace_id=actor.workspace_id,
         action=action,
         resource_type="plugin",
         resource_id=resource_id,

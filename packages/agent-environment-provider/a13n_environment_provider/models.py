@@ -59,6 +59,7 @@ class EnvironmentAction(StrEnum):
     FILE_COPY_SOURCE = "environment.file.copy_source"
     FILE_COPY_DESTINATION = "environment.file.copy_destination"
     SHELL_EXEC = "environment.shell.exec"
+    PROCESS_LIST = "environment.process.list"
     PROCESS_START = "environment.process.start"
     PROCESS_INSPECT = "environment.process.inspect"
     PROCESS_READ_OUTPUT = "environment.process.read_output"
@@ -100,6 +101,7 @@ ENVIRONMENT_ACTION_DISPATCH: Mapping[EnvironmentAction, EnvironmentActionDispatc
         EnvironmentAction.FILE_COPY_SOURCE: EnvironmentActionDispatch("files", "files", "copy"),
         EnvironmentAction.FILE_COPY_DESTINATION: EnvironmentActionDispatch("files", "files", "copy"),
         EnvironmentAction.SHELL_EXEC: EnvironmentActionDispatch("shell", "shell", "exec"),
+        EnvironmentAction.PROCESS_LIST: EnvironmentActionDispatch("processes", "processes", "list"),
         EnvironmentAction.PROCESS_START: EnvironmentActionDispatch("processes", "processes", "start"),
         EnvironmentAction.PROCESS_INSPECT: EnvironmentActionDispatch("processes", "processes", "inspect"),
         EnvironmentAction.PROCESS_READ_OUTPUT: EnvironmentActionDispatch("processes", "processes", "read_output"),

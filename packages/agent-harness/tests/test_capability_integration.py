@@ -73,6 +73,7 @@ _EXPECTED_TOOLS = {
     "download",
     "edit",
     "shell_exec",
+    "shell_info",
     "shell_wait",
     "shell_input",
     "shell_signal",

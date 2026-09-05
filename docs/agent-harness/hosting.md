@@ -132,15 +132,13 @@ Harness never calls `destroy()`. When retention selects removal, the Host constr
 
 With several aliases, set `default_environment` explicitly when `/workspace` should route to one of them; mapping order never grants authority. An `EnvironmentRuntime` in `RunBindings.environment` remains the advanced route for exact runtime mounts and Host-retained mutation authority. Do not combine that route with high-level Environment inputs, and never copy credentials, live clients, runtime bindings, or destruction authority into `HarnessState` or model context.
 
-## Run-owned Shell Processes
+## Run-local Shell Observations
 
-Process-capable shell commands belong to the exact logical Harness Run that starts them. Harness retains each bound process handle and its retained output only in a private Run controller. A concise `process-*` reference is model-facing authority for that controller, not portable continuation data or a Provider process ID.
+The Host supplies fresh Environment adapters, current Provider state and permissions. It does not construct another process manager. Harness assigns Run-local references, observes native commands and releases observations before adapter close, without blanket command termination.
 
-The Host does not construct a process manager or operator. It supplies the ordinary fresh Environment adapter and permissions for the Run. Harness starts, observes, controls, kills, and releases processes through that entered `BoundEnvironment`. Before Environment adapters close, Run cleanup cancels completion watchers, kills every still-live process, and releases every handle and retained-output object.
+Provider state owns backend-specific recovery. A fresh E2B adapter can discover commands still running in a retained sandbox through `shell_info`, but neither old references nor historical output are restored. Host state publication and sandbox lifetime remain the ordinary Environment responsibilities.
 
-`HarnessState` contains no process reference, backend ID, unread offset, status mirror, watcher, or cleanup fact. A continuation Run starts with an empty controller and cannot rebind a reference retained in message history. Current-Run completion notices are best-effort native input hints only; they do not wake a later Run or establish durable delivery.
-
-A product that requires cross-Run execution, restart survival, hosted process storage, or post-Run wake must implement that capability outside the current Harness shell contract rather than persisting `BoundProcessHandle` or extending `HarnessState`.
+`HarnessState` contains no process-reference map, output buffer, unread offset or watcher. Completion hints are best-effort while the current Run is active, not durable delivery or a scheduler for later Runs. See [Environment tools](environments.md).
 
 ## Minimal vs. Production Host
 

@@ -1,175 +1,207 @@
-"""Raw-byte output references over sandbox-owned bounded capture files."""
+"""Bounded SDK-text observations, independent of native command lifetime."""
 
 from __future__ import annotations
 
-import re
-from datetime import datetime
-from typing import Literal
+import asyncio
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from ..commands import ProcessStatus, ProcessStreamRead
+from ..models import EnvironmentError
+from ..retention import EnvironmentOutputCapture, EnvironmentOutputPolicy, EnvironmentOutputSegment
 
-from ..commands import ProcessStatus
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import (
-    BoundOutputCursor,
-    BoundOutputReference,
-    EnvironmentOutputCapture,
-    EnvironmentOutputPolicy,
-    EnvironmentOutputReadResult,
-    EnvironmentOutputSegment,
-    OpaqueOutputCursor,
-    OpaqueOutputReference,
-    _unwrap_opaque,
-)
-from .commands import GuestCommands, decoded_bytes
-
-_PROCESS_ID = re.compile(r"^process-[0-9a-f]{24}$")
+if TYPE_CHECKING:
+    from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
 
 
-class ProcessRecord(BaseModel):
-    runner_pid: int = Field(gt=0)
-    runner_start: str
-    started_at: datetime
-    ended_at: datetime | None
-    phase: Literal["starting", "running", "exited", "signaled", "timed_out", "failed"]
-    exit_code: int | None
-    termination_reason: Literal["exit", "signal", "timeout", "output_limit", "backend_lost"] | None
-    signal: Literal["interrupt", "terminate", "kill"] | None
-    stdin_open: bool
-    stdout_produced: int = Field(ge=0)
-    stderr_produced: int = Field(ge=0)
-    stdout_stored: int = Field(ge=0)
-    stderr_stored: int = Field(ge=0)
-    content_complete: bool
-    cleanup: Literal["pending", "complete", "residual_confined", "failed"]
+@dataclass(slots=True)
+class ObservationPool:
+    """Active attachments and retained bytes have independent admission budgets.
+
+    All accounting is synchronous on the adapter's event loop, including callbacks
+    received before the SDK publishes a command handle. Only closed logs are evicted.
+    """
+
+    max_active: int
+    max_bytes: int
+    active: int = 0
+    retained_bytes: int = 0
+    closed: OrderedDict[int, CommandObservation] = field(default_factory=OrderedDict)
+
+    def reserve(self, observation: CommandObservation) -> None:
+        if self.active >= self.max_active:
+            raise EnvironmentError("E2B active observation capacity is exhausted.", code="environment_limit_exceeded")
+        self.closed.pop(id(observation), None)
+        self.active += 1
+        observation.active = True
+        observation.closed = False
+        observation.detached.clear()
+
+    def finish(self, observation: CommandObservation) -> None:
+        if observation.active:
+            self.active -= 1
+            observation.active = False
+        observation.closed = True
+        if observation.retained_bytes:
+            self.closed.setdefault(id(observation), observation)
+
+    def claim(self, size: int) -> int:
+        while self.retained_bytes + size > self.max_bytes and self.closed:
+            _, oldest = self.closed.popitem(last=False)
+            self.retained_bytes -= oldest.retained_bytes
+            oldest.stdout.clear()
+            oldest.stderr.clear()
+            oldest.reason = "observation_evicted"
+            oldest.changed.set()
+        accepted = min(size, self.max_bytes - self.retained_bytes)
+        self.retained_bytes += accepted
+        return accepted
+
+    def release(self, observation: CommandObservation) -> None:
+        self.finish(observation)
+        self.closed.pop(id(observation), None)
+        self.retained_bytes -= observation.retained_bytes
+        observation.stdout.clear()
+        observation.stderr.clear()
+
+
+@dataclass(slots=True)
+class CommandObservation:
+    """One cumulative Run-local log, retained across transient native attachments."""
+
+    limit: int
+    pool: ObservationPool
+    stdout: bytearray = field(default_factory=bytearray)
+    stderr: bytearray = field(default_factory=bytearray)
+    stdout_end: int = 0
+    stderr_end: int = 0
+    native: AsyncCommandHandle | None = None
+    consumer: asyncio.Task[None] | None = None
+    changed: asyncio.Event = field(default_factory=asyncio.Event)
+    capped: asyncio.Event = field(default_factory=asyncio.Event)
+    detached: asyncio.Event = field(default_factory=asyncio.Event)
+    active: bool = False
+    closed: bool = True
+    reason: Literal["reattached", "connection_lost", "observation_limit", "observation_evicted"] | None = None
+    terminal: ProcessStatus | None = None
 
     @property
-    def terminal(self) -> bool:
-        return self.phase not in {"starting", "running"}
+    def retained_bytes(self) -> int:
+        return len(self.stdout) + len(self.stderr)
 
-    @property
-    def status(self) -> ProcessStatus:
-        return ProcessStatus.model_validate(self.model_dump())
+    async def append(self, stream: Literal["stdout", "stderr"], text: str) -> None:
+        remaining = self.limit - self.stdout_end - self.stderr_end
+        data = text.encode("utf-8")
+        accepted = self.pool.claim(min(len(data), remaining))
+        target = self.stdout if stream == "stdout" else self.stderr
+        target.extend(data[:accepted])
+        if stream == "stdout":
+            self.stdout_end += accepted
+        else:
+            self.stderr_end += accepted
+        if len(data) >= remaining or accepted < len(data):
+            self.reason = "observation_limit"
+            self.capped.set()
+        self.changed.set()
+        if self.capped.is_set():
+            # Backpressure stops already-ready SDK events before the separate
+            # owner disconnects. Never disconnect from inside the SDK callback.
+            await self.detached.wait()
 
+    def attach(self, native: AsyncCommandHandle) -> None:
+        self.native = native
+        self.detached.clear()
+        self.consumer = asyncio.create_task(self._consume(native), name="e2b-command-observation")
 
-class E2BOutputs:
-    def __init__(self, commands: GuestCommands) -> None:
-        self.commands = commands
+    async def _consume(self, native: AsyncCommandHandle) -> None:
+        from e2b.sandbox.commands.command_handle import CommandExitException
 
-    async def record(self, process_id: str) -> ProcessRecord:
-        validate_process_id(process_id)
-        return ProcessRecord.model_validate(await self.commands.process("inspect", {"process_id": process_id}))
+        waiting = asyncio.create_task(native.wait())
+        limiting = asyncio.create_task(self.capped.wait())
+        try:
+            await asyncio.wait((waiting, limiting), return_when=asyncio.FIRST_COMPLETED)
+            if waiting.done() and not waiting.cancelled():
+                try:
+                    result = waiting.result()
+                    exit_code = result.exit_code
+                except CommandExitException as error:
+                    exit_code = error.exit_code
+                self.terminal = ProcessStatus(phase="exited", termination_reason="exit", exit_code=exit_code)
+                self.pool.finish(self)
+                self.changed.set()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if not self.capped.is_set():
+                self.reason = "connection_lost"
+        finally:
+            # One owner releases the SDK stream and its duplicated text even at
+            # terminal completion. Closed history retains no SDK handle or waiter.
+            try:
+                await native.disconnect()
+            finally:
+                waiting.cancel()
+                limiting.cancel()
+                await asyncio.gather(waiting, limiting, return_exceptions=True)
+                self.native = None
+                self.consumer = None
+                self.detached.set()
+                self.pool.finish(self)
+                self.changed.set()
 
-    def reference(self, process_id: str, stream: str) -> BoundOutputReference:
-        return BoundOutputReference(
-            mount_id=self.commands.mount_id,
-            observed_generation=self.commands.generation,
-            reference=OpaqueOutputReference._from_payload(f"{process_id}:{stream}"),
+    async def disconnect(self) -> None:
+        consumer = self.consumer
+        if consumer is not None:
+            if self.native is not None:
+                await self.native.disconnect()
+            await asyncio.shield(consumer)
+        self.detached.set()
+        self.pool.finish(self)
+        self.changed.set()
+
+    def read(
+        self, stream: Literal["stdout", "stderr"], offset: int, policy: EnvironmentOutputPolicy
+    ) -> ProcessStreamRead:
+        buffer = self.stdout if stream == "stdout" else self.stderr
+        end = self.stdout_end if stream == "stdout" else self.stderr_end
+        start = end - len(buffer)
+        if offset < 0 or offset > end:
+            raise EnvironmentError("Invalid observation offset.", code="environment_cursor_invalid")
+        offset = max(offset, start)
+        data = bytes(buffer[offset - start : offset - start + min(policy.max_inline_bytes, policy.max_output_bytes)])
+        capture = EnvironmentOutputCapture(
+            kind="inline" if data else "empty",
+            origin="sdk_text",
+            coverage="partial" if self.reason else "complete",
+            observation_closed=self.closed,
+            reason=self.reason,
+            producer_complete=None,
+            content_complete=self.terminal is not None and self.reason is None,
+            produced_bytes=None,
+            captured_bytes=len(buffer),
+            dropped_bytes=None,
+            inline=data,
+            available_start=start,
+            available_end=end,
+        )
+        return ProcessStreamRead(
+            chunks=(EnvironmentOutputSegment(start_offset=offset, data=data),) if data else (),
+            next_cursor=None,
+            capture=capture,
         )
 
-    def _selector(self, reference: BoundOutputReference) -> tuple[str, Literal["stdout", "stderr"]]:
-        self._scope(reference.mount_id, reference.observed_generation)
-        value = _unwrap_opaque(reference.reference, OpaqueOutputReference)
-        process_id, separator, stream = value.partition(":")
-        validate_process_id(process_id)
-        if not separator or stream not in {"stdout", "stderr"}:
-            raise EnvironmentError("Invalid E2B output reference.", code="environment_request_invalid")
-        return process_id, "stdout" if stream == "stdout" else "stderr"
-
-    def _scope(self, mount_id: str, generation: str) -> None:
-        if mount_id != self.commands.mount_id or generation != self.commands.generation:
-            raise EnvironmentError("E2B reference is foreign or stale.", code="environment_stale_mount")
-
-    async def capture(
-        self,
-        process_id: str,
-        stream: Literal["stdout", "stderr"],
-        record: ProcessRecord,
-        policy: EnvironmentOutputPolicy,
-        *,
-        offset: int = 0,
+    def materialize(
+        self, stream: Literal["stdout", "stderr"], policy: EnvironmentOutputPolicy
     ) -> EnvironmentOutputCapture:
-        size = record.stdout_stored if stream == "stdout" else record.stderr_stored
-        produced = record.stdout_produced if stream == "stdout" else record.stderr_produced
-        if offset < 0 or offset > size:
-            raise EnvironmentError("E2B output offset is out of range.", code="environment_cursor_invalid")
-        length = min(size - offset, policy.max_inline_bytes, 65536)
-        data = decoded_bytes(
-            await self.commands.process(
-                "read", {"process_id": process_id, "stream": stream, "offset": offset, "length": length}
-            )
+        capture = self.read(stream, 0, policy.model_copy(update={"max_inline_bytes": policy.max_output_bytes})).capture
+        data = capture.inline or b""
+        omitted = len(data) != capture.captured_bytes
+        return capture.model_copy(
+            update={
+                "captured_bytes": len(data),
+                "available_end": capture.available_start + len(data),
+                "content_complete": capture.content_complete and not omitted,
+                "coverage": "partial" if omitted else capture.coverage,
+            }
         )
-        if len(data) != length:
-            raise EnvironmentError("E2B output changed during read.", code="environment_provider_failure")
-        reference = self.reference(process_id, stream)
-        end = offset + len(data)
-        cursor = (
-            None
-            if record.terminal and end >= size
-            else BoundOutputCursor(
-                mount_id=self.commands.mount_id,
-                observed_generation=self.commands.generation,
-                cursor=OpaqueOutputCursor._from_payload(f"{process_id}:{stream}:{end}"),
-            )
-        )
-        complete = record.content_complete and produced == size
-        return EnvironmentOutputCapture(
-            kind="retained",
-            producer_complete=record.terminal,
-            content_complete=complete,
-            produced_bytes=produced,
-            captured_bytes=size,
-            dropped_bytes=produced - size,
-            preview=(EnvironmentOutputSegment(start_offset=offset, data=data),) if data else (),
-            reference=reference,
-            cursor=cursor,
-            available_end=size,
-        )
-
-    async def read(
-        self,
-        reference: BoundOutputReference,
-        *,
-        cursor: BoundOutputCursor | None = None,
-        start_offset: int | None = None,
-        policy: EnvironmentOutputPolicy,
-    ) -> EnvironmentOutputReadResult:
-        process_id, stream = self._selector(reference)
-        if cursor is not None and start_offset is not None:
-            raise EnvironmentError("Specify cursor or offset.", code="environment_request_invalid")
-        offset = start_offset or 0
-        if cursor is not None:
-            self._scope(cursor.mount_id, cursor.observed_generation)
-            raw = _unwrap_opaque(cursor.cursor, OpaqueOutputCursor)
-            prefix, _, value = raw.rpartition(":")
-            if prefix != f"{process_id}:{stream}" or not value.isdigit():
-                raise EnvironmentError("Invalid E2B output cursor.", code="environment_cursor_invalid")
-            offset = int(value)
-        record = await self.record(process_id)
-        capture = await self.capture(process_id, stream, record, policy, offset=offset)
-        return EnvironmentOutputReadResult(chunks=capture.preview, next_cursor=capture.cursor, capture=capture)
-
-    async def release(
-        self, *, reference: BoundOutputReference | None = None, cursor: BoundOutputCursor | None = None
-    ) -> EnvironmentOperationReceipt:
-        if (reference is None) == (cursor is None):
-            raise EnvironmentError("Release requires one reference or cursor.", code="environment_request_invalid")
-        if reference is None:
-            assert cursor is not None
-            self._scope(cursor.mount_id, cursor.observed_generation)
-            prefix, _, offset = _unwrap_opaque(cursor.cursor, OpaqueOutputCursor).rpartition(":")
-            if not offset.isdigit():
-                raise EnvironmentError("Invalid E2B output cursor.", code="environment_cursor_invalid")
-            reference = BoundOutputReference(
-                mount_id=cursor.mount_id,
-                observed_generation=cursor.observed_generation,
-                reference=OpaqueOutputReference._from_payload(prefix),
-            )
-        process_id, stream = self._selector(reference)
-        await self.commands.process("release_output", {"process_id": process_id, "stream": stream}, mutation=True)
-        return self.commands.receipt()
-
-
-def validate_process_id(value: str) -> None:
-    if not _PROCESS_ID.fullmatch(value):
-        raise EnvironmentError("Invalid E2B process identity.", code="environment_request_invalid")

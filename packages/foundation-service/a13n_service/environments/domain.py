@@ -44,7 +44,7 @@ class RetentionPolicy(DomainModel):
 class EnvironmentProvider(DomainModel):
     id: ObjectId
     organization_id: ObjectId
-    workspace_id: ObjectId
+    workspace_id: ObjectId | None
     type: str
     name: EnvironmentName
     configuration: JsonObject
@@ -69,7 +69,7 @@ class TemplateConfiguration(EnvironmentConfiguration):
 class EnvironmentTemplate(DomainModel):
     id: ObjectId
     organization_id: ObjectId
-    workspace_id: ObjectId
+    workspace_id: ObjectId | None
     name: EnvironmentName
     description: str | None
     version: int
@@ -83,7 +83,7 @@ class EnvironmentTemplateRevision(TemplateConfiguration):
     id: ObjectId
     template_id: ObjectId
     organization_id: ObjectId
-    workspace_id: ObjectId
+    workspace_id: ObjectId | None
     version: int
     created_at: datetime
 

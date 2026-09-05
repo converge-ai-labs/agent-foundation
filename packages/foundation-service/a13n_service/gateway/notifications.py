@@ -164,7 +164,7 @@ class NotificationService:
         actor: AuthenticatedActor,
         subscription: NotificationSubscription,
     ) -> AuthorizedNotificationSubscription:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         if subscription.scope == "thread" and "session.updated" in subscription.topics:
             raise NotificationError(
                 "invalid_subscription_topic",

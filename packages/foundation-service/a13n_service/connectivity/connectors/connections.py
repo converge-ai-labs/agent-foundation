@@ -19,6 +19,7 @@ from a13n_service.connectivity.management import (
 )
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import transaction
@@ -43,6 +44,8 @@ from .errors import ConnectorError
 from .management import (
     audit,
     authorize,
+    authorize_provider,
+    connector_actor_scope,
     map_management_value_error,
     require_connection,
     require_connector_provider,
@@ -100,10 +103,13 @@ class ConnectorConnectionService:
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
-                connector = await require_connector_provider(session, request.connector_provider_id)
-                if connector.workspace_id != workspace_id:
+                workspace = await authorize(session, actor, workspace_id, WorkspaceAction.connector_connection_manage)
+                connector = await require_connector_provider(
+                    session, request.connector_provider_id, scope=await connector_actor_scope(session, actor)
+                )
+                await authorize_provider(session, actor, connector)
+                if not workspace.contains(connector.organization_id, connector.workspace_id):
                     raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
-                await authorize(session, actor, connector.workspace_id, WorkspaceAction.connector_connection_manage)
                 require_implementation(self._adapters, connector.type)
                 request_fingerprint = fingerprint(request)
                 try:
@@ -123,7 +129,7 @@ class ConnectorConnectionService:
                 connection = ConnectorConnectionRecord(
                     id=connection_id,
                     organization_id=connector.organization_id,
-                    workspace_id=connector.workspace_id,
+                    workspace_id=workspace_id,
                     connector_provider_id=connector.id,
                     name=request.name,
                     normalized_name=request.name.casefold(),
@@ -145,7 +151,7 @@ class ConnectorConnectionService:
                     session,
                     actor=actor,
                     organization_id=connector.organization_id,
-                    workspace_id=connector.workspace_id,
+                    workspace_id=workspace_id,
                     operation="connector_connection.create",
                     scope_id=workspace_id,
                     idempotency_key_digest=key_digest,
@@ -159,7 +165,7 @@ class ConnectorConnectionService:
                     audit(
                         actor,
                         organization_id=connector.organization_id,
-                        workspace_id=connector.workspace_id,
+                        workspace_id=workspace_id,
                         action="connector_connection.create",
                         resource_type="connector_connection",
                         resource_id=connection.id,
@@ -213,7 +219,11 @@ class ConnectorConnectionService:
                 attempt_id = attempt.id
             else:
                 require_version(connection.version, expected_version)
-                connector = await require_connector_provider(session, connection.connector_provider_id)
+                connector = await require_connector_provider(
+                    session,
+                    connection.connector_provider_id,
+                    scope=ResourceScope(connection.organization_id, connection.workspace_id),
+                )
                 if connector.status != "active":
                     raise ConnectorError("connector_disabled", "ConnectorProvider is disabled.", status_code=409)
                 adapter = require_implementation(self._adapters, connector.type)
@@ -482,7 +492,11 @@ class ConnectorConnectionService:
                     raise ConnectorError(
                         "invalid_connection_state", "ConnectorConnection cannot reconnect.", status_code=409
                     )
-                connector = await require_connector_provider(session, connection.connector_provider_id)
+                connector = await require_connector_provider(
+                    session,
+                    connection.connector_provider_id,
+                    scope=ResourceScope(connection.organization_id, connection.workspace_id),
+                )
                 adapter = require_implementation(self._adapters, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(

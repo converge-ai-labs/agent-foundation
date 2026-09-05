@@ -45,6 +45,31 @@ def protector() -> SecretProtector:
 async def model_sessions(service_sqlite_database: Path) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
+    await seed_models(sessions)
+    try:
+        yield sessions
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+def provider_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelProviderService:
+    return ModelProviderService(
+        model_sessions,
+        built_in_provider_registry(),
+        EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
+        protector(),
+        clock=lambda: NOW,
+        resolve_dns_on_save=False,
+    )
+
+
+@pytest.fixture
+def model_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelService:
+    return ModelService(model_sessions, built_in_provider_registry(), clock=lambda: NOW)
+
+
+async def seed_models(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
@@ -103,24 +128,3 @@ async def model_sessions(service_sqlite_database: Path) -> AsyncIterator[async_s
                 ),
             )
         )
-    try:
-        yield sessions
-    finally:
-        await engine.dispose()
-
-
-@pytest.fixture
-def provider_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelProviderService:
-    return ModelProviderService(
-        model_sessions,
-        built_in_provider_registry(),
-        EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
-        protector(),
-        clock=lambda: NOW,
-        resolve_dns_on_save=False,
-    )
-
-
-@pytest.fixture
-def model_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelService:
-    return ModelService(model_sessions, built_in_provider_registry(), clock=lambda: NOW)

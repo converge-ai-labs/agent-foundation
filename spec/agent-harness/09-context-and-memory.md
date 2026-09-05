@@ -224,21 +224,21 @@ Structured questions use the native client-side deferred-tool boundary owned by 
 
 Small operational behaviors remain separate when their state and lifecycle differ:
 
-| Capability          | Behavior                                                                       | State                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Enqueue/messaging   | Uses Pydantic enqueue to deliver accepted steering or follow-up input          | Native enqueue owns active-run delivery; user steering is retained only after observation |
-| Shell process       | Uses the current Run Environment and emits bounded final-completion readiness  | No Harness continuation state; process/output truth expires at Run cleanup                |
-| File reference      | Tells the Agent which explicit files require inspection                        | Bounded pending logical paths only                                                        |
-| Workspace outline   | Projects a bounded metadata-only view of one Environment file root             | Recomputed from one mount-incarnation-pinned `BoundEnvironment` scan                      |
-| Dynamic Environment | Composes standard File/Shell tools with current mount context and live notices | No process namespace; current mounts remain in the Environment                            |
-| Skill               | Supplies selected skill instructions and resources                             | Loaded skill IDs only when needed for continuation                                        |
-| Media               | Normalizes media count, size, format, and provider representation              | No raw provider URL credential state                                                      |
+| Capability          | Behavior                                                                       | State                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Enqueue/messaging   | Uses Pydantic enqueue to deliver accepted steering or follow-up input          | Native enqueue owns active-run delivery; user steering is retained only after observation          |
+| Shell process       | Uses the current Run Environment and emits bounded final-completion readiness  | No Harness continuation state; references expire at Run cleanup; native lifetime is Provider-owned |
+| File reference      | Tells the Agent which explicit files require inspection                        | Bounded pending logical paths only                                                                 |
+| Workspace outline   | Projects a bounded metadata-only view of one Environment file root             | Recomputed from one mount-incarnation-pinned `BoundEnvironment` scan                               |
+| Dynamic Environment | Composes standard File/Shell tools with current mount context and live notices | No process namespace; current mounts remain in the Environment                                     |
+| Skill               | Supplies selected skill instructions and resources                             | Loaded skill IDs only when needed for continuation                                                 |
+| Media               | Normalizes media count, size, format, and provider representation              | No raw provider URL credential state                                                               |
 
 These Capabilities use native instructions, history/request hooks, native enqueue, Model Context Projection, or Toolsets. A global projection switch is unnecessary; a Host enables, disables, or configures the owning Capability without rewriting other instruction sources.
 
-`DynamicEnvironmentCapability` derives one fixed standard File/Shell surface from effective Environment actions. A process-capable surface exposes `shell_exec`, `shell_wait`, `shell_input`, and `shell_signal`; `shell_exec` automatically returns a Run-scoped process reference only when the command outlives its bounded yield. The private controller stores no process reference, backend ID, output offset, sequence, status, or loss marker in `AgentContextState`.
+`DynamicEnvironmentCapability` derives one fixed standard File/Shell surface from effective Environment actions. A process-capable surface exposes `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, and `shell_signal`; `shell_exec` automatically returns a Run-scoped process reference only when the command outlives its bounded yield. The private controller stores no process reference, backend ID, output offset, sequence, status, or loss marker in `AgentContextState`.
 
-For every published live process, Harness attaches one non-consuming final-completion watcher while the exact Run remains active. Native enqueue can deliver one bounded instruction to call `shell_wait` with the last returned stdout and stderr offsets; the hint is readiness only, contains no output, and is not persisted. Ending the Run cancels observation, kills and releases remaining processes, and closes the controller before Environment adapters close. Polling is authoritative, and no post-Run process wake or lookup exists.
+For every published live process, Harness attaches one non-consuming final-completion watcher while the exact Run remains active. Native enqueue can deliver one bounded instruction to call `shell_wait` with the last returned stdout and stderr offsets; the hint is readiness only, contains no output, and is not persisted. Ending the Run releases observations and closes the controller before Environment adapters close, without blanket termination. Native discovery in a later Run is Provider-owned; no durable post-Run wake service exists. [Environment Integration](08-environment-integration.md#run-local-shell-observations) owns this contract.
 
 ## Skills and Discovery
 

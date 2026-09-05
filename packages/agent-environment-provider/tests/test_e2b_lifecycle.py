@@ -233,7 +233,18 @@ async def test_absence_replacement_only_for_managed_target(api):
 
 async def test_configuration_and_state_validation_are_inert(api):
     provider = E2BEnvironmentProvider()
-    for value in ({"api_key": "secret"}, {"root": "../other"}, {"max_output_bytes": 0}):
+    for value in (
+        {"api_key": "secret"},
+        {"root": "../other"},
+        {"max_observation_bytes": 0},
+        {"max_active_observations": 0},
+        {"max_retained_output_bytes": 0},
+        {"max_observations": 16},
+        {"shell": "/bin/sh"},
+        {"max_wall_time_seconds": 1},
+        {"max_processes": 1},
+        {"max_output_bytes": 1},
+    ):
         with pytest.raises(EnvironmentProviderError):
             provider.validate_configuration(schema_version="1", value=value)
     with pytest.raises(EnvironmentProviderError):
@@ -275,3 +286,19 @@ async def test_host_runtime_uses_explicit_credentials_and_correlation(api):
     )
     await env.prepare()
     assert next(iter(api.targets.values())).metadata["a13n_operation"] == "operation-1"
+
+
+def test_observer_limits_do_not_change_target_fingerprint():
+    original = E2BProviderConfiguration()
+    assert original.timeout_seconds == 3600
+    assert original.request_timeout_seconds == 30
+    assert original.max_active_observations == 128
+    assert original.max_observation_bytes == 1024 * 1024
+    assert original.max_retained_output_bytes == 128 * 1024 * 1024
+    assert (
+        original.fingerprint
+        == original.model_copy(
+            update={"max_active_observations": 2, "max_observation_bytes": 256, "max_retained_output_bytes": 4096}
+        ).fingerprint
+    )
+    assert original.fingerprint != original.model_copy(update={"template": "other"}).fingerprint
