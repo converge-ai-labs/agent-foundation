@@ -264,8 +264,8 @@ The domain owns `environment_providers`, `environment_templates`, `environment_t
 06. Provider implementations own connections; Harness consumes operation objects.
 07. Confirmed target loss permits managed rebuild, while uncertainty never proves absence.
 08. Backing generation and operation evidence preserve historical truth across rebuilds.
-09. Approval and idle retention each support stop and delete, with explicit inheritance and non-additive deadlines.
-10. Shared users coordinate through one Workspace Environment; no cross-Workspace target authority exists.
+09. One idle retention policy governs stop and delete, with both deadlines measured from entry into idle. Approval waiting counts as idle unless another Run has active use.
+10. Shared users coordinate through one Workspace Environment; aggregate usage includes all active Runs across its Threads. No cross-Workspace target authority exists.
 11. Credentials remain encrypted on Providers and are resolved freshly under current authority.
 12. Local close is non-destructive; unknown Agent effects are never silently replayed.
 

@@ -30,7 +30,7 @@ A Run is the stable logical-work identity and durable recovery boundary for one 
 | Attempt execution, Harness callbacks, and live control | [Foundation–Harness Runtime Integration](14-harness-runtime-integration.md)      | Defines the executor tasks, `RunAttemptControl`, `HarnessDriver`, public Harness calls, mandatory Capability, and private gate |
 | Lifecycle history                                      | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md)       | Records ordered facts without becoming Run or attempt authority                                                                |
 | Thread inbox acceptance and consumption                | [Agent Control: Active Execution](19-agent-control-active-execution.md)          | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption                                 |
-| Environment use and lifecycle maintenance              | [Environment Management](29-environment-management.md)                           | Owns preparation-time use acquisition, active/approval/idle retention and lifecycle coordination                               |
+| Environment use and lifecycle maintenance              | [Environment Management](29-environment-management.md)                           | Owns preparation-time use acquisition, aggregate active/idle retention and lifecycle coordination                              |
 | Agent tool crash behavior                              | Latest complete Run state plus the owning tool or Capability domain              | Defines no generic invocation ledger; effectful tools own cross-crash idempotency or durable task reconciliation               |
 
 ## RunAttempt Allocation Within a Run

@@ -322,7 +322,7 @@ The conceptual `Run` materializes as one row in `runs`; supported relational bac
 
 Object-reference columns form all-or-none groups. Bounded values are validated before relational mutation; object keys and digests grant no authority.
 
-`environment_id` is an optional same-Workspace foreign key to the actual Environment record; `environment_access` is present exactly when it is. Both are immutable after acceptance. `environment_use_started_at` is set once when execution acquires use, not at acceptance, and remains historical evidence after sealing. Retention considers use active only while the Run is running. There is no separate environment-binding table or duplicated target configuration. Indexes support finding current users and approval-waiting Runs for one Environment.
+`environment_id` is an optional same-Workspace foreign key to the actual Environment record; `environment_access` is present exactly when it is. Both are immutable after acceptance. `environment_use_started_at` is set once when execution acquires use, not at acceptance, and remains historical evidence after sealing. Retention considers use active only while the Run is running. There is no separate environment-binding table or duplicated target configuration. Indexes support finding active users across Threads for one Environment.
 
 ## Git-Like Run DAG
 
@@ -597,7 +597,7 @@ A completed outcome with queued intent can instead use the [state-first combined
 
 A transaction that seals a Run as failed or cancelled retains its immutable effective configuration and Environment selection. It releases acquired Environment use and updates retention in the same transaction, and applies the terminal inbox and asynchronous-result disposition owned by [Active Execution](19-agent-control-active-execution.md) and [Async Subagents](34-async-subagents.md). A never-used lazy Run has no use to release.
 
-Transactions that seal a Run and accept a successor release prior acquired use and record the new selection atomically. Acceptance alone does not acquire use; preparation does. Changes follow the canonical Thread/Run/Attempt then stable Environment-ID lock order before inbox/queue locks. Replay cannot release use twice. [Environment retention](29-environment-management.md#retention-policy) owns active, approval-waiting and idle conditions and safe lifecycle reconciliation.
+Transactions that seal a Run and accept a successor release prior acquired use and record the new selection atomically. Acceptance alone does not acquire use; preparation does. Changes follow the canonical Thread/Run/Attempt then stable Environment-ID lock order before inbox/queue locks. Replay cannot release use twice. [Environment retention](29-environment-management.md#retention-policy) owns aggregate active/idle conditions and safe lifecycle reconciliation; approval waiting follows idle policy unless another Run has active use.
 
 If the object write succeeds but the relational transaction does not commit, the Run remains active and the outcome candidate remains a valid resumable state, not a sealed outcome. The current attempt or an authorized later attempt can retry the exact relational commit after reconciliation. Object timestamps or listings never authorize that adoption.
 
