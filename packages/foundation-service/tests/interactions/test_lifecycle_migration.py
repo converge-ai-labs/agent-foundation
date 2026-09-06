@@ -20,7 +20,7 @@ def _assert_lifecycle_schema(config: PostgreSQLConfig | SQLiteConfig, *, present
             "ix_lifecycle_events_projection_due",
             "ix_lifecycle_events_resource",
             "ix_lifecycle_events_run",
-            "ix_lifecycle_events_tenant_seq",
+            "ix_lifecycle_events_organization_seq",
         } <= indexes
         checks = {constraint["name"] for constraint in inspector.get_check_constraints("lifecycle_events")}
         assert {

@@ -203,7 +203,7 @@ class NativeInteractionQueries:
             query = (
                 select(SessionRecord)
                 .where(
-                    SessionRecord.tenant_id == authorization.workspace.organization_id,
+                    SessionRecord.organization_id == authorization.workspace.organization_id,
                     SessionRecord.workspace_id == workspace_id,
                 )
                 .order_by(SessionRecord.updated_at.desc(), SessionRecord.id.desc())
@@ -213,7 +213,7 @@ class NativeInteractionQueries:
                 query = query.where(
                     select(RunRecord.id)
                     .where(
-                        RunRecord.tenant_id == SessionRecord.tenant_id,
+                        RunRecord.organization_id == SessionRecord.organization_id,
                         RunRecord.session_id == SessionRecord.id,
                         RunRecord.agent_id.in_(authorization.visible_agent_ids),
                     )
@@ -273,11 +273,11 @@ class NativeInteractionQueries:
                 .outerjoin(
                     RunRecord,
                     and_(
-                        RunRecord.tenant_id == ThreadRecord.tenant_id,
+                        RunRecord.organization_id == ThreadRecord.organization_id,
                         RunRecord.id == ThreadRecord.current_run_id,
                     ),
                 )
-                .where(ThreadRecord.tenant_id == session.tenant_id, ThreadRecord.session_id == session.id)
+                .where(ThreadRecord.organization_id == session.organization_id, ThreadRecord.session_id == session.id)
                 .order_by(ThreadRecord.updated_at.desc(), ThreadRecord.id.desc())
                 .limit(limit + 1)
             )
@@ -345,7 +345,7 @@ class NativeInteractionQueries:
             query = select(RunRecord).join(
                 SessionRecord,
                 and_(
-                    SessionRecord.tenant_id == RunRecord.tenant_id,
+                    SessionRecord.organization_id == RunRecord.organization_id,
                     SessionRecord.id == RunRecord.session_id,
                 ),
             )
@@ -394,7 +394,7 @@ class NativeInteractionQueries:
             )
             query = (
                 select(RunAttemptRecord)
-                .where(RunAttemptRecord.tenant_id == run.tenant_id, RunAttemptRecord.run_id == run.id)
+                .where(RunAttemptRecord.organization_id == run.organization_id, RunAttemptRecord.run_id == run.id)
                 .order_by(RunAttemptRecord.created_at.desc(), RunAttemptRecord.id.desc())
                 .limit(limit + 1)
             )
@@ -424,14 +424,14 @@ class NativeInteractionQueries:
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == RunAttemptRecord.tenant_id,
+                            RunRecord.organization_id == RunAttemptRecord.organization_id,
                             RunRecord.id == RunAttemptRecord.run_id,
                         ),
                     )
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
@@ -498,9 +498,9 @@ class NativeInteractionQueries:
                 agent_id=run.agent_id,
                 action=WorkspaceAction.run_read,
             )
-            tenant_id = run.tenant_id
+            organization_id = run.organization_id
         try:
-            snapshot = await self._replay.read(tenant_id, run_id)
+            snapshot = await self._replay.read(organization_id, run_id)
         except (ObjectStoreError, RetainedReplayUnavailable, RunReplayIntegrityError) as error:
             raise NativeQueryError(
                 "items_unavailable",
@@ -540,7 +540,7 @@ class NativeInteractionQueries:
                     break
                 parent = await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == current.tenant_id,
+                        RunRecord.organization_id == current.organization_id,
                         RunRecord.id == current.parent_run_id,
                     )
                 )
@@ -589,14 +589,14 @@ async def _load_thread(
             .join(
                 SessionRecord,
                 and_(
-                    SessionRecord.tenant_id == ThreadRecord.tenant_id,
+                    SessionRecord.organization_id == ThreadRecord.organization_id,
                     SessionRecord.id == ThreadRecord.session_id,
                 ),
             )
             .outerjoin(
                 RunRecord,
                 and_(
-                    RunRecord.tenant_id == ThreadRecord.tenant_id,
+                    RunRecord.organization_id == ThreadRecord.organization_id,
                     RunRecord.id == ThreadRecord.current_run_id,
                 ),
             )

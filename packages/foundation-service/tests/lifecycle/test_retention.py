@@ -228,7 +228,7 @@ async def test_retention_sweeps_events_in_bounded_batches(
         assert list(await database.scalars(select(LifecycleEventRecord.id))) == []
 
 
-async def test_retention_preserves_tenant_cursor_prefix_across_resources(
+async def test_retention_preserves_organization_cursor_prefix_across_resources(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await seed_run_and_secret(lifecycle_interaction_sessions)

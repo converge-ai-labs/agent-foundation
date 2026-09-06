@@ -20,13 +20,13 @@ class QueueConsumptionConflict(RuntimeError):
 async def load_live_queued_submission(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     queued_submission_id: str,
     submission_digest_sha256: str,
 ) -> QueuedSubmission:
     row = await database.scalar(
         select(QueuedSubmissionRecord).where(
-            QueuedSubmissionRecord.tenant_id == tenant_id,
+            QueuedSubmissionRecord.organization_id == organization_id,
             QueuedSubmissionRecord.id == queued_submission_id,
             QueuedSubmissionRecord.position.is_not(None),
         )
@@ -39,7 +39,7 @@ async def load_live_queued_submission(
 async def consume_first_submission(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     queued_submission_id: str,
     submission_digest_sha256: str,
@@ -51,7 +51,7 @@ async def consume_first_submission(
 
     selected, remaining = await _lock_selected_head(
         database,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         queued_submission_id=queued_submission_id,
         submission_digest_sha256=submission_digest_sha256,
@@ -74,7 +74,7 @@ async def consume_first_submission(
 async def fail_first_submission(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     queued_submission_id: str,
     submission_digest_sha256: str,
@@ -85,7 +85,7 @@ async def fail_first_submission(
 
     selected, remaining = await _lock_selected_head(
         database,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         queued_submission_id=queued_submission_id,
         submission_digest_sha256=submission_digest_sha256,
@@ -102,7 +102,7 @@ async def fail_first_submission(
 async def _lock_selected_head(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     queued_submission_id: str,
     submission_digest_sha256: str,
@@ -112,7 +112,7 @@ async def _lock_selected_head(
             await database.scalars(
                 select(QueuedSubmissionRecord)
                 .where(
-                    QueuedSubmissionRecord.tenant_id == tenant_id,
+                    QueuedSubmissionRecord.organization_id == organization_id,
                     QueuedSubmissionRecord.thread_id == thread_id,
                     QueuedSubmissionRecord.position.is_not(None),
                 )

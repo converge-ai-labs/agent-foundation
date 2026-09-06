@@ -84,7 +84,7 @@ class HostedAguiReplayStore:
 
     async def publish(
         self,
-        tenant_id: str,
+        organization_id: str,
         snapshot: HostedAguiReplaySnapshot,
     ) -> HostedAguiReplaySnapshot:
         if len(snapshot.events) > self._max_events:
@@ -93,7 +93,7 @@ class HostedAguiReplayStore:
         if len(body) > self._max_bytes:
             raise HostedAguiReplayUnavailable("Hosted AG-UI replay exceeds its encoded size bound")
         digest = hashlib.sha256(body).hexdigest()
-        key = hosted_agui_replay_key(tenant_id, snapshot.binding_id)
+        key = hosted_agui_replay_key(organization_id, snapshot.binding_id)
         metadata = _metadata(snapshot, digest=digest)
         try:
             info = await self._objects.put(
@@ -104,7 +104,7 @@ class HostedAguiReplayStore:
                 if_none_match=True,
             )
         except ObjectConflict as error:
-            existing = await self.read(tenant_id, snapshot.binding_id)
+            existing = await self.read(organization_id, snapshot.binding_id)
             if existing != snapshot:
                 raise HostedAguiReplayError(
                     "existing Hosted AG-UI replay does not match the complete delivery"
@@ -113,8 +113,8 @@ class HostedAguiReplayStore:
         _verify_info(info, key=key, body=body, metadata=metadata)
         return snapshot
 
-    async def read(self, tenant_id: str, binding_id: str) -> HostedAguiReplaySnapshot:
-        key = hosted_agui_replay_key(tenant_id, binding_id)
+    async def read(self, organization_id: str, binding_id: str) -> HostedAguiReplaySnapshot:
+        key = hosted_agui_replay_key(organization_id, binding_id)
         body, info = await _read_object(self._objects, key, max_bytes=self._max_bytes)
         try:
             snapshot = decode_canonical_model(body, _SNAPSHOT)
@@ -129,8 +129,8 @@ class HostedAguiReplayStore:
         return snapshot
 
 
-def hosted_agui_replay_key(tenant_id: str, binding_id: str) -> str:
-    return f"tenants/{tenant_id}/gateway/hosted-agui/{binding_id}/replay/version-1.json"
+def hosted_agui_replay_key(organization_id: str, binding_id: str) -> str:
+    return f"organizations/{organization_id}/gateway/hosted-agui/{binding_id}/replay/version-1.json"
 
 
 def _metadata(snapshot: HostedAguiReplaySnapshot, *, digest: str) -> dict[str, str]:

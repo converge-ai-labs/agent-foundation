@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
 
-from .conftest import NOW, TENANT_ID, effective_agent_config
+from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_attempt_execution import _authority, _worker
 from .test_subagent_acceptance import (
     _accept_parent,
@@ -42,17 +42,17 @@ async def test_parent_cancellation_propagates_only_to_requested_child_threads(
     reconciler = ChildCancellationReconciler(interaction_sessions, outcomes)
 
     first = await reconciler.reconcile_parent(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         parent_run_id=parent.id,
         limit=1,
     )
     second = await reconciler.reconcile_parent(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         parent_run_id=parent.id,
         after_child_thread_id=first.next_after_child_thread_id,
         limit=1,
     )
-    replay = await reconciler.reconcile_parent(tenant_id=TENANT_ID, parent_run_id=parent.id)
+    replay = await reconciler.reconcile_parent(organization_id=ORGANIZATION_ID, parent_run_id=parent.id)
 
     assert (first.scanned, first.cancelled, first.conflicted) == (1, 1, 0)
     assert first.next_after_child_thread_id is not None
@@ -73,8 +73,8 @@ async def test_concurrent_parent_cancellation_reconciliation_is_idempotent_on_po
     reconciler = ChildCancellationReconciler(sessions, outcomes)
 
     batches = await asyncio.gather(
-        reconciler.reconcile_parent(tenant_id=TENANT_ID, parent_run_id=parent.id),
-        reconciler.reconcile_parent(tenant_id=TENANT_ID, parent_run_id=parent.id),
+        reconciler.reconcile_parent(organization_id=ORGANIZATION_ID, parent_run_id=parent.id),
+        reconciler.reconcile_parent(organization_id=ORGANIZATION_ID, parent_run_id=parent.id),
     )
 
     assert sum(batch.cancelled for batch in batches) == 1
@@ -147,7 +147,7 @@ async def _cancel_parent_with_children(
         sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
     )
     await outcomes.cancel(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=parent.id,
         expected_run_version=running_parent.version,
         expected_thread_version=1,

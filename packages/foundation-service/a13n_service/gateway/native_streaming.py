@@ -41,7 +41,7 @@ class ReplayGapEvent(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class RunStreamAttachment:
-    tenant_id: str
+    organization_id: str
     run_id: str
     actor: AuthenticatedActor
     initial_entries: tuple[RunStreamEntry, ...]
@@ -80,10 +80,10 @@ class NativeRunStreamService:
         run_id: str,
         after_stream_id: str | None,
     ) -> RunStreamAttachment:
-        tenant_id, terminal = await self._authorize(actor=actor, run_id=run_id)
+        organization_id, terminal = await self._authorize(actor=actor, run_id=run_id)
         try:
             page = await self._stream.read(
-                tenant_id,
+                organization_id,
                 run_id,
                 after_stream_id=after_stream_id,
                 limit=self._page_size,
@@ -97,7 +97,7 @@ class NativeRunStreamService:
                 ) from error
             return await self._attach_replay(
                 actor=actor,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 run_id=run_id,
                 after_stream_id=after_stream_id,
                 gap=error,
@@ -106,7 +106,7 @@ class NativeRunStreamService:
         if terminal and page.high_watermark is None:
             replay = await self._try_replay(
                 actor=actor,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 run_id=run_id,
                 after_stream_id=after_stream_id,
             )
@@ -124,7 +124,7 @@ class NativeRunStreamService:
                 },
             )
         return RunStreamAttachment(
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             run_id=run_id,
             actor=actor,
             initial_entries=page.items,
@@ -152,7 +152,7 @@ class NativeRunStreamService:
                 last_authorized = now
             try:
                 page = await self._stream.read(
-                    attachment.tenant_id,
+                    attachment.organization_id,
                     attachment.run_id,
                     after_stream_id=cursor,
                     limit=self._page_size,
@@ -199,20 +199,20 @@ class NativeRunStreamService:
                 )
             except AuthorizationError as error:
                 raise _resource_not_found() from error
-            return run.tenant_id, run.status in {"completed", "failed", "cancelled"}
+            return run.organization_id, run.status in {"completed", "failed", "cancelled"}
 
     async def _attach_replay(
         self,
         *,
         actor: AuthenticatedActor,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         after_stream_id: str | None,
         gap: RunStreamReplayGap,
     ) -> RunStreamAttachment:
         replay = await self._try_replay(
             actor=actor,
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             run_id=run_id,
             after_stream_id=after_stream_id,
         )
@@ -234,12 +234,12 @@ class NativeRunStreamService:
         self,
         *,
         actor: AuthenticatedActor,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         after_stream_id: str | None,
     ) -> RunStreamAttachment | None:
         try:
-            snapshot = await self._replay.read(tenant_id, run_id)
+            snapshot = await self._replay.read(organization_id, run_id)
         except RetainedReplayUnavailable:
             return None
         events = snapshot.events
@@ -252,7 +252,7 @@ class NativeRunStreamService:
             start = index + 1
         entries = tuple(RunStreamEntry(entry.stream_id, entry.event) for entry in events[start:])
         return RunStreamAttachment(
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             run_id=run_id,
             actor=actor,
             initial_entries=entries,

@@ -147,7 +147,7 @@ class RunEnvironment(Environment):
 async def prepare_run_environment(lifecycle: EnvironmentLifecycle, attempt: AttemptContext) -> RunEnvironment | None:
     async with short_session(lifecycle.sessions) as session:
         run = await session.get(RunRecord, attempt.run_id)
-        if run is None or run.tenant_id != attempt.tenant_id:
+        if run is None or run.organization_id != attempt.organization_id:
             raise ValueError("Run is unavailable")
         if run.environment_id is None:
             return None

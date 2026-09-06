@@ -137,7 +137,7 @@ class ProfileChildRunAdmissionPreparer:
         profile = self._profile(plan)
         parent, parent_state = await self._parent(authority)
         source_state = await self._states.read(
-            source.run.tenant_id,
+            source.run.organization_id,
             source.run.id,
             expected_thread_id=source.thread.id,
         )
@@ -188,7 +188,7 @@ class ProfileChildRunAdmissionPreparer:
             parent, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             parent_resource = parent.to_resource()
         stored = await self._states.read(
-            authority.tenant_id,
+            authority.organization_id,
             authority.run_id,
             expected_thread_id=authority.thread_id,
         )

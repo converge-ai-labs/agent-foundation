@@ -210,14 +210,14 @@ class InteractionCommands:
             now = self._clock()
             session = Session(
                 id=session_id,
-                tenant_id=prepared.organization_id,
+                organization_id=prepared.organization_id,
                 workspace_id=workspace_id,
                 created_at=now,
                 updated_at=now,
             )
         else:
             await self._require_session(
-                tenant_id=prepared.organization_id,
+                organization_id=prepared.organization_id,
                 workspace_id=workspace_id,
                 session_id=session_id,
             )
@@ -236,7 +236,7 @@ class InteractionCommands:
         run = accepted_run(
             now=now,
             id=run_id,
-            tenant_id=prepared.organization_id,
+            organization_id=prepared.organization_id,
             authority_principal=actor.principal,
             session_id=session_id,
             thread_id=thread_id,
@@ -271,7 +271,7 @@ class InteractionCommands:
             id=thread_id,
             version=1,
             queue_version=0,
-            tenant_id=prepared.organization_id,
+            organization_id=prepared.organization_id,
             session_id=session_id,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -348,7 +348,7 @@ class InteractionCommands:
 
         source, thread = await self._load_continue_source(actor=actor, source_run_id=source_run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -390,7 +390,7 @@ class InteractionCommands:
         run = accepted_run(
             now=now,
             id=run_id,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=actor.principal,
             session_id=source.session_id,
             thread_id=source.thread_id,
@@ -535,7 +535,7 @@ class InteractionCommands:
         run = accepted_run(
             now=now,
             id=run_id,
-            tenant_id=thread.tenant_id,
+            organization_id=thread.organization_id,
             authority_principal=actor.principal,
             session_id=thread.session_id,
             thread_id=thread.id,
@@ -641,7 +641,7 @@ class InteractionCommands:
 
         source = await self._load_fork_source(actor=actor, run_id=run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -696,7 +696,7 @@ class InteractionCommands:
         forked_run = accepted_run(
             now=now,
             id=new_run_id_value,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=actor.principal,
             session_id=source.session_id,
             thread_id=new_thread_id_value,
@@ -730,7 +730,7 @@ class InteractionCommands:
             id=new_thread_id_value,
             version=1,
             queue_version=0,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             session_id=source.session_id,
             role=ThreadRole.child,
             origin_kind=ThreadOriginKind.fork,
@@ -818,7 +818,7 @@ class InteractionCommands:
 
         source, thread = await self._load_retry_source(actor=actor, run_id=run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -826,7 +826,7 @@ class InteractionCommands:
         if source.parent_run_id is not None:
             parent_state = (
                 await self._states.read(
-                    source.tenant_id,
+                    source.organization_id,
                     source.parent_run_id,
                 )
             ).envelope
@@ -834,13 +834,13 @@ class InteractionCommands:
         copied_input_object = None
         if source.input_object is not None:
             source_payload = await self._payloads.verify_reference(
-                source.tenant_id,
+                source.organization_id,
                 source.id,
                 "input",
                 source.input_object,
             )
             copied_input_object = await self._payloads.create(
-                source.tenant_id,
+                source.organization_id,
                 RunPayloadEnvelope(
                     run_id=new_run_id_value,
                     payload_kind="input",
@@ -867,7 +867,7 @@ class InteractionCommands:
             retry_of_run_id=source.id,
             idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=source.authority_principal,
             session_id=source.session_id,
             thread_id=source.thread_id,
@@ -910,7 +910,7 @@ class InteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=source.authority_principal,
-                    organization_id=source.tenant_id,
+                    organization_id=source.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1013,7 +1013,7 @@ class InteractionCommands:
             next_head_run_id = None
         else:
             head_state = await self._states.read(
-                head.tenant_id,
+                head.organization_id,
                 head.id,
                 expected_thread_id=head.thread_id,
             )
@@ -1026,7 +1026,7 @@ class InteractionCommands:
         run = accepted_run(
             now=now,
             id=run_id,
-            tenant_id=current.tenant_id,
+            organization_id=current.organization_id,
             authority_principal=queued.authority_principal,
             session_id=current.session_id,
             thread_id=current.thread_id,
@@ -1069,7 +1069,7 @@ class InteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=queued.authority_principal,
-                    organization_id=current.tenant_id,
+                    organization_id=current.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=target_agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1087,7 +1087,7 @@ class InteractionCommands:
         async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
             database.add(
                 new_evidence(
-                    organization_id=run.tenant_id,
+                    organization_id=run.organization_id,
                     scope=run_command_scope(actor),
                     identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
                     result_kind="queue_consumption",
@@ -1135,7 +1135,7 @@ class InteractionCommands:
         _require_idempotency_key(idempotency_key)
         source, thread = await self._load_feedback_source(actor=actor, run_id=run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -1210,7 +1210,7 @@ class InteractionCommands:
         feedback_run = accepted_run(
             now=now,
             id=new_run_id_value,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=source.authority_principal,
             session_id=source.session_id,
             thread_id=source.thread_id,
@@ -1247,7 +1247,7 @@ class InteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=source.authority_principal,
-                    organization_id=source.tenant_id,
+                    organization_id=source.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1297,7 +1297,7 @@ class InteractionCommands:
             actions=frozenset({WorkspaceAction.run_continue, WorkspaceAction.run_feedback}),
         )
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -1373,7 +1373,7 @@ class InteractionCommands:
         successor = accepted_run(
             now=now,
             id=successor_id,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=source.authority_principal,
             session_id=source.session_id,
             thread_id=source.thread_id,
@@ -1411,7 +1411,7 @@ class InteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=source.authority_principal,
-                    organization_id=source.tenant_id,
+                    organization_id=source.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1498,7 +1498,7 @@ class InteractionCommands:
             if existing is None:
                 database.add(
                     new_evidence(
-                        organization_id=source.tenant_id,
+                        organization_id=source.organization_id,
                         scope=scope,
                         identity=identity,
                         result_kind="run_interrupt",
@@ -1509,7 +1509,7 @@ class InteractionCommands:
 
         try:
             await self._outcomes.cancel(
-                tenant_id=source.tenant_id,
+                organization_id=source.organization_id,
                 run_id=run_id,
                 expected_run_version=request.expected_run_version,
                 expected_thread_version=request.expected_thread_version,
@@ -1575,7 +1575,7 @@ class InteractionCommands:
             return replay
         source, _thread = await self._load_steer_source(actor=actor, run_id=run_id)
         try:
-            state = await self._states.read(source.tenant_id, source.id, expected_thread_id=source.thread_id)
+            state = await self._states.read(source.organization_id, source.id, expected_thread_id=source.thread_id)
         except (ObjectStoreError, RunObjectError) as error:
             raise InteractionCommandError(
                 "run_state_unavailable",
@@ -1611,7 +1611,7 @@ class InteractionCommands:
             if existing is None:
                 database.add(
                     new_evidence(
-                        organization_id=source.tenant_id,
+                        organization_id=source.organization_id,
                         scope=scope,
                         identity=identity,
                         result_kind="run_steer",
@@ -1625,7 +1625,7 @@ class InteractionCommands:
 
         try:
             return await self._inbox.append_steer(
-                tenant_id=source.tenant_id,
+                organization_id=source.organization_id,
                 run_id=source.id,
                 input=accepted,
                 final_validator=validate_final,
@@ -1663,7 +1663,7 @@ class InteractionCommands:
             )
         source, _thread = await self._load_steer_source(actor=actor, run_id=run_id, read_only=True)
         try:
-            return await self._inbox.get_steer(tenant_id=source.tenant_id, run_id=run_id, steer_id=steer_id)
+            return await self._inbox.get_steer(organization_id=source.organization_id, run_id=run_id, steer_id=steer_id)
         except ThreadInboxConflict as error:
             raise _not_found() from error
 
@@ -1684,7 +1684,7 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
@@ -1719,9 +1719,9 @@ class InteractionCommands:
                     category=ErrorCategory.unavailable,
                 )
             steer_id = evidence.result_ref
-            tenant_id = run.tenant_id
+            organization_id = run.organization_id
         try:
-            status = await self._inbox.get_steer(tenant_id=tenant_id, run_id=run_id, steer_id=steer_id)
+            status = await self._inbox.get_steer(organization_id=organization_id, run_id=run_id, steer_id=steer_id)
         except ThreadInboxConflict as error:
             raise InteractionCommandError(
                 "idempotency_evidence_invalid",
@@ -1751,14 +1751,14 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -1813,7 +1813,7 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
@@ -1862,14 +1862,14 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -2006,7 +2006,7 @@ class InteractionCommands:
                 if evidence is None:
                     return None
                 run = await database.get(RunRecord, evidence.result_ref)
-                if run is None or run.thread_id != thread_id or run.tenant_id != evidence.organization_id:
+                if run is None or run.thread_id != thread_id or run.organization_id != evidence.organization_id:
                     raise RuntimeError("Queue command evidence references a missing Run")
                 await authorize_agent(
                     database,
@@ -2034,14 +2034,14 @@ class InteractionCommands:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )
@@ -2057,7 +2057,7 @@ class InteractionCommands:
             queued_record = await database.scalar(
                 select(QueuedSubmissionRecord)
                 .where(
-                    QueuedSubmissionRecord.tenant_id == thread_record.tenant_id,
+                    QueuedSubmissionRecord.organization_id == thread_record.organization_id,
                     QueuedSubmissionRecord.thread_id == thread_record.id,
                     QueuedSubmissionRecord.position.is_not(None),
                 )
@@ -2087,7 +2087,7 @@ class InteractionCommands:
                 if thread_record.head_run_id is None
                 else await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == thread_record.tenant_id,
+                        RunRecord.organization_id == thread_record.organization_id,
                         RunRecord.id == thread_record.head_run_id,
                     )
                 )
@@ -2119,14 +2119,14 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -2166,14 +2166,14 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -2222,14 +2222,14 @@ class InteractionCommands:
                     .outerjoin(
                         RunRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.current_run_id == RunRecord.id,
                         ),
                     )
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == ThreadRecord.tenant_id,
+                            SessionRecord.organization_id == ThreadRecord.organization_id,
                             SessionRecord.id == ThreadRecord.session_id,
                         ),
                     )
@@ -2280,7 +2280,7 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
@@ -2325,14 +2325,14 @@ class InteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -2365,7 +2365,7 @@ class InteractionCommands:
                 )
             return source, thread_record.to_resource()
 
-    async def _require_session(self, *, tenant_id: str, workspace_id: str, session_id: str) -> None:
+    async def _require_session(self, *, organization_id: str, workspace_id: str, session_id: str) -> None:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
@@ -2373,14 +2373,14 @@ class InteractionCommands:
                     .outerjoin(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                             ThreadRecord.role == ThreadRole.root.value,
                         ),
                     )
                     .where(
                         SessionRecord.id == session_id,
-                        SessionRecord.tenant_id == tenant_id,
+                        SessionRecord.organization_id == organization_id,
                         SessionRecord.workspace_id == workspace_id,
                     )
                 )

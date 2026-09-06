@@ -278,7 +278,7 @@ class RunLineage:
 
 `items` is ordered from root to head. The head has `depth_from_head=0`; each ancestor's depth is its number of parent edges from the head. The path can cross Session and Thread boundaries through retained parent edges and never includes siblings or descendants.
 
-The service authorizes the head and every ancestor under current tenant, principal, visibility, archival, and retention policy. An absent or concealed head returns `404 run_not_found`. A missing or unauthorized ancestor, cycle, or path deeper than 1,000 Runs returns `409 run_lineage_invalid` with safe reason `missing_parent`, `cycle`, or `max_depth`; the route never returns a complete-looking prefix. The complete bounded path is one response and is not cursor-paginated.
+The service authorizes the head and every ancestor under current organization, principal, visibility, archival, and retention policy. An absent or concealed head returns `404 run_not_found`. A missing or unauthorized ancestor, cycle, or path deeper than 1,000 Runs returns `409 run_lineage_invalid` with safe reason `missing_parent`, `cycle`, or `max_depth`; the route never returns a complete-looking prefix. The complete bounded path is one response and is not cursor-paginated.
 
 ## Pagination, Filtering, and Replay
 

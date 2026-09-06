@@ -28,13 +28,13 @@ class SecretOwnerRef:
 
 `SecretOwnerType` is a string enum serialized as lowercase `snake_case`. It contains `workspace` and `user`, the owners of independently managed values. Resource-owned credentials do not extend this enum.
 
-`owner_id` is interpreted according to `owner_type`. A Workspace-owned Secret uses the stored `workspace_id` as `owner_id`. A User-owned Secret uses the User ID and remains bounded to the stored Organization and Workspace. The pair determines ownership and key uniqueness, while the explicit tenant fields determine isolation and routing. Foundation validates the owner, Organization, Workspace, current RoleBindings, and lifecycle before accepting a mutation. An owner reference grants no authority, and the service infers no tenant or routing fact from the identifier string.
+`owner_id` is interpreted according to `owner_type`. A Workspace-owned Secret uses the stored `workspace_id` as `owner_id`. A User-owned Secret uses the User ID and remains bounded to the stored Organization and Workspace. The pair determines ownership and key uniqueness, while the explicit Organization and Workspace fields determine isolation and routing. Foundation validates the owner, Organization, Workspace, current RoleBindings, and lifecycle before accepting a mutation. An owner reference grants no authority, and the service infers no organization or routing fact from the identifier string.
 
-A Workspace Builder or Admin manages Workspace-owned Secrets. Only the owning User manages a User-owned Secret; another Builder or Admin cannot list, inspect, replace, transfer, or delete it. Workspace deletion still performs tenant-owned cleanup. A User-owned Secret is eligible for run-time use only when the active invoking Principal is that User, the User currently has access to the Workspace, and the selected Agent input declares the matching User Secret key. A Service Account cannot use a User-owned Secret.
+A Workspace Builder or Admin manages Workspace-owned Secrets. Only the owning User manages a User-owned Secret; another Builder or Admin cannot list, inspect, replace, transfer, or delete it. Workspace deletion still performs organization-owned cleanup. A User-owned Secret is eligible for run-time use only when the active invoking Principal is that User, the User currently has access to the Workspace, and the selected Agent input declares the matching User Secret key. A Service Account cannot use a User-owned Secret.
 
 Resource-owned credential formats, operations, and use authorization belong to [Model Management](30-model-management.md), [Connectivity](40-connectivity/README.md), and [A2A push delivery](23-a2a.md#push-notifications). Their owning records retain current ciphertext, nonce, encryption-key identifier, and credential version or generation. Replacements advance that version atomically with the owner mutation under its exact version precondition. Deletion clears the material in the owner lifecycle; an ineligible owner can retain encrypted material only for bounded authorized cleanup. Public managed Secret routes never manage these credentials.
 
-The common protection primitive owns encryption, authenticated binding, and key handling only. It does not resolve resources, authorize operations, interpret credential bundles, refresh tokens, or manage resource lifecycles. Each domain loads its exact tenant-scoped owner, verifies current operation-specific eligibility, and captures encrypted material in a closed short session before external I/O. Runtime values remain outside Agent input and ordinary logs, traces, events, and public reads.
+The common protection primitive owns encryption, authenticated binding, and key handling only. It does not resolve resources, authorize operations, interpret credential bundles, refresh tokens, or manage resource lifecycles. Each domain loads its exact organization-scoped owner, verifies current operation-specific eligibility, and captures encrypted material in a closed short session before external I/O. Runtime values remain outside Agent input and ordinary logs, traces, events, and public reads.
 
 Secret keys, owner references, timestamps, and versions are protected metadata even though they are not plaintext Secret values. Management operations disclose them only after current authorization. Management authority and runtime resolution authority remain separate.
 
@@ -60,7 +60,7 @@ type SecretCredentialSource = (
 )
 ```
 
-The source records lookup intent rather than a Secret value or authorization grant. The consuming contract decides which variants it permits and where the source is stored. Every resolution still applies the current owner, tenant, Principal, lifecycle, and use-eligibility rules from this contract.
+The source records lookup intent rather than a Secret value or authorization grant. The consuming contract decides which variants it permits and where the source is stored. Every resolution still applies the current owner, organization, Principal, lifecycle, and use-eligibility rules from this contract.
 
 ## Secret Resource
 
@@ -117,7 +117,7 @@ Content-Type: application/json
 }
 ```
 
-The first route derives `owner_type = workspace` and `owner_id = workspace_id`. The second derives `owner_type = user` and the authenticated User ID. Both derive Organization from the stored Workspace and reject owner or tenant fields in the request body. Creation resolves and authorizes the owner and returns the metadata-only Secret resource with `201`. Reusing an active key under the same owner and boundary returns `409 secret_key_conflict`; the API does not provide create-or-replace upsert behavior.
+The first route derives `owner_type = workspace` and `owner_id = workspace_id`. The second derives `owner_type = user` and the authenticated User ID. Both derive Organization from the stored Workspace and reject owner or scope fields in the request body. Creation resolves and authorizes the owner and returns the metadata-only Secret resource with `201`. Reusing an active key under the same owner and boundary returns `409 secret_key_conflict`; the API does not provide create-or-replace upsert behavior.
 
 ### Read Metadata
 
@@ -129,7 +129,7 @@ GET /api/v1/workspaces/{workspace_id}/users/me/secrets?limit=50&cursor=opaque
 GET /api/v1/workspaces/{workspace_id}/users/me/secrets?key=openai_api_key
 ```
 
-Each collection fixes one owner from its route and never enumerates Secrets across owners or Workspaces. It includes only active resources, supports an optional exact `key` filter, orders unfiltered results by `(key, id)`, and uses the shared opaque cursor contract. Because active key uniqueness holds within one owner and boundary, an exact-key query returns zero or one item. The single-resource route resolves the stored tenant and owner before authorization. Absence, unsupported owner type, owner absence, and concealed denial return the same `404 secret_not_found` result when revealing the distinction is not authorized.
+Each collection fixes one owner from its route and never enumerates Secrets across owners or Workspaces. It includes only active resources, supports an optional exact `key` filter, orders unfiltered results by `(key, id)`, and uses the shared opaque cursor contract. Because active key uniqueness holds within one owner and boundary, an exact-key query returns zero or one item. The single-resource route resolves the stored organization and owner before authorization. Absence, unsupported owner type, owner absence, and concealed denial return the same `404 secret_not_found` result when revealing the distinction is not authorized.
 
 There is no public value-read, value-export, value-comparison, or bulk-copy route.
 
@@ -166,7 +166,7 @@ The logical relational model is normative for persisted meaning and constraints;
 | Column              | Durable meaning and constraint                                                                                                            |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                | Primary key; immutable `sec_` Foundation object ID                                                                                        |
-| `organization_id`   | Immutable owning Organization; foreign-keyed tenant boundary                                                                              |
+| `organization_id`   | Immutable owning Organization; foreign-keyed organization boundary                                                                        |
 | `workspace_id`      | Immutable owning Workspace; constrained to the same Organization                                                                          |
 | `owner_type`        | Immutable `SecretOwnerType` enum value                                                                                                    |
 | `owner_id`          | Immutable opaque owner identifier                                                                                                         |
@@ -201,9 +201,9 @@ Secret creation, replacement, deletion, master-key re-encryption, and denied man
 
 Every active Secret value is encrypted directly under one operator-configured 256-bit master key using the fixed `aes_256_gcm_v1` storage profile. Each create or replacement generates a fresh unpredictable 96-bit nonce, and the stored ciphertext includes the 128-bit authentication tag. The service configuration supplies the master-key bytes together with a non-secret `encryption_key_id`; the row records only that identifier. There is no per-Secret data key, key wrapping, or external protector in this contract.
 
-Authenticated additional data uses a stable length-prefixed encoding that binds the exact `id`, `organization_id`, `workspace_id`, `owner_type`, `owner_id`, `key`, `version`, and `encryption_key_id`. Copying ciphertext to another tenant, row, owner, key, version, or key identifier therefore fails authentication rather than returning another Secret's plaintext.
+Authenticated additional data uses a stable length-prefixed encoding that binds the exact `id`, `organization_id`, `workspace_id`, `owner_type`, `owner_id`, `key`, `version`, and `encryption_key_id`. Copying ciphertext to another organization, row, owner, key, version, or key identifier therefore fails authentication rather than returning another Secret's plaintext.
 
-Resource-owned credentials use the same AES-256-GCM profile and key configuration. Authenticated additional data binds resource kind, exact resource identity, Organization, nullable owning Workspace, credential slot, credential version or generation, and encryption-key identifier. A null owning Workspace binds Organization scope distinctly from every Workspace value; the consuming Workspace never replaces that owner during decryption. Resource kind separates otherwise identical IDs across domains. OAuth setup binds the exact authorization session independently from its connection's current credential. Copying encrypted material across owners, tenants, versions, or slots fails authentication. Master-key replacement must cover both public Secrets and resource-owned encrypted material without changing their domain versions.
+Resource-owned credentials use the same AES-256-GCM profile and key configuration. Authenticated additional data binds resource kind, exact resource identity, Organization, nullable owning Workspace, credential slot, credential version or generation, and encryption-key identifier. A null owning Workspace binds Organization scope distinctly from every Workspace value; the consuming Workspace never replaces that owner during decryption. Resource kind separates otherwise identical IDs across domains. OAuth setup binds the exact authorization session independently from its connection's current credential. Copying encrypted material across owners, organizations, versions, or slots fails authentication. Master-key replacement must cover both public Secrets and resource-owned encrypted material without changing their domain versions.
 
 Every role that includes Secret management or runtime Secret resolution loads the configured master key. A `control` process uses it for accepted Secret writes, MCP OAuth setup and refresh, exact ConnectorProvider credentials required by authorized management adapter operations, and key migration. An executing Worker or Runner uses it only to resolve authorized Agent inputs and exact Application Account, ConnectorProvider, or MCPConnection credentials for the current fenced RunAttempt. A `connectivity` process uses it only for exact authorized Application Account credentials for inbound authentication. In-process a13n MCP requires no separate service credential or MCP grant Secret. An `all` process owns all three paths. Worker and Connectivity processes expose no Secret management route, and no role receives decryption authority merely from a public API permission.
 
@@ -286,7 +286,7 @@ The public OpenAPI document marks `value` as `writeOnly` but includes no example
 
 ## Compatibility
 
-Adding a `SecretOwnerType` enum value is additive. Removing, renaming, repurposing, or weakening the tenant, validation, authorization, or public-visibility semantics of a value is incompatible while any durable row, tombstone, or cursor refers to it.
+Adding a `SecretOwnerType` enum value is additive. Removing, renaming, repurposing, or weakening the organization, validation, authorization, or public-visibility semantics of a value is incompatible while any durable row, tombstone, or cursor refers to it.
 
 The Secret domain `version` is independent from HTTP `v1`, `encryption_key_id`, the `aes_256_gcm_v1` storage profile, and database schema revision. Public clients treat additive response fields and new owner types according to the shared API compatibility rules. No compatible change can add plaintext to an existing response, error, event, SDK debug representation, or management permission.
 
@@ -294,7 +294,7 @@ The `aes_256_gcm_v1` ciphertext layout, nonce size, authentication-tag size, add
 
 ## Trade-offs
 
-Polymorphic `(owner_type, owner_id)` ownership supports Workspace-shared and User-personal values with an independent management and reference lifecycle. Explicit Organization and Workspace columns preserve tenant filtering and relational tenant consistency, while Foundation domain logic and each owner lifecycle enforce polymorphic owner existence, visibility, cleanup, and reconciliation.
+Polymorphic `(owner_type, owner_id)` ownership supports Workspace-shared and User-personal values with an independent management and reference lifecycle. Explicit Organization and Workspace columns preserve organization filtering and relational organization consistency, while Foundation domain logic and each owner lifecycle enforce polymorphic owner existence, visibility, cleanup, and reconciliation.
 
 Write-only management sharply limits accidental human and API disclosure but cannot prove that a process or operator holding the master key never accesses the value. Direct AES-256-GCM encryption avoids an external key-service dependency and keeps the row and write path small. In exchange, compromise of both the database and master key exposes every active Secret, a compromised process holding the key can decrypt stored values, and master-key replacement requires decrypting and re-encrypting all active rows rather than rewrapping small per-Secret keys.
 

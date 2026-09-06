@@ -128,7 +128,7 @@ class LifecycleWriter:
             database,
             LifecycleEventDraft(
                 id=new_lifecycle_event_id() if event_id is None else event_id,
-                tenant_id=run.tenant_id,
+                organization_id=run.organization_id,
                 entity_type=LifecycleEntityType.run,
                 entity_id=run.id,
                 entity_version=run.version,
@@ -159,7 +159,7 @@ class LifecycleWriter:
         record = await self._append_lifecycle_with_hooks(
             database,
             LifecycleEventDraft(
-                tenant_id=run.tenant_id,
+                organization_id=run.organization_id,
                 entity_type=LifecycleEntityType.run_attempt,
                 entity_id=attempt.id,
                 entity_version=attempt.version,

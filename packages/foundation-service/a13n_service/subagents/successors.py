@@ -85,23 +85,23 @@ class AsyncSubagentSuccessorReconciler:
     async def reconcile_thread(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
     ) -> AsyncSubagentSuccessorReceipt:
         now = assume_utc(self._clock())
-        selected = await self._select_or_route(tenant_id=tenant_id, thread_id=thread_id, now=now)
+        selected = await self._select_or_route(organization_id=organization_id, thread_id=thread_id, now=now)
         if isinstance(selected, AsyncSubagentSuccessorReceipt):
-            await self._signal_if_bound(tenant_id=tenant_id, receipt=selected)
+            await self._signal_if_bound(organization_id=organization_id, receipt=selected)
             return selected
         terminal_item = await load_async_subagent_terminal_item(
             self._replays,
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             child=selected.result_authority.child,
             expected_item_id=selected.result_authority.payload.terminal_result_item_id,
         )
         validate_async_subagent_result_authority(selected.result_authority, terminal_item)
         parent_state = await self._states.read(
-            tenant_id,
+            organization_id,
             selected.selected_parent.id,
             expected_thread_id=thread_id,
         )
@@ -112,7 +112,7 @@ class AsyncSubagentSuccessorReconciler:
             origin_run=selected.result_authority.parent,
             inbox_entry=selected.entry,
             successor_run_id=self._run_id_factory(
-                tenant_id,
+                organization_id,
                 selected.entry.id,
                 selected.selected_parent.id,
             ),
@@ -120,7 +120,7 @@ class AsyncSubagentSuccessorReconciler:
         )
         initial_state = await self._publish_initial(prepared)
         receipt = await self._accept(
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             thread_id=thread_id,
             prepared=prepared,
             parent_state=parent_state,
@@ -128,7 +128,7 @@ class AsyncSubagentSuccessorReconciler:
             terminal_item=terminal_item,
             now=now,
         )
-        await self._signal_if_bound(tenant_id=tenant_id, receipt=receipt)
+        await self._signal_if_bound(organization_id=organization_id, receipt=receipt)
         return receipt
 
     async def reconcile_once(self, *, limit: int = 64) -> int:
@@ -141,7 +141,7 @@ class AsyncSubagentSuccessorReconciler:
                 (
                     await database.execute(
                         select(
-                            ThreadInboxRecord.tenant_id,
+                            ThreadInboxRecord.organization_id,
                             ThreadInboxRecord.thread_id,
                             func.min(ThreadInboxRecord.delivery_sequence).label("first_sequence"),
                         )
@@ -151,7 +151,7 @@ class AsyncSubagentSuccessorReconciler:
                             ThreadInboxRecord.target_run_id.is_(None),
                             ThreadInboxRecord.source_waiting_run_id.is_(None),
                         )
-                        .group_by(ThreadInboxRecord.tenant_id, ThreadInboxRecord.thread_id)
+                        .group_by(ThreadInboxRecord.organization_id, ThreadInboxRecord.thread_id)
                         .order_by("first_sequence", ThreadInboxRecord.thread_id)
                         .limit(limit)
                     )
@@ -160,9 +160,9 @@ class AsyncSubagentSuccessorReconciler:
                 .all()
             )
         reconciled = 0
-        for tenant_id, thread_id, _ in candidates:
+        for organization_id, thread_id, _ in candidates:
             try:
-                await self.reconcile_thread(tenant_id=tenant_id, thread_id=thread_id)
+                await self.reconcile_thread(organization_id=organization_id, thread_id=thread_id)
             except AsyncSubagentResultItemUnavailable:
                 logger.info(
                     "async_subagent_successor_item_deferred",
@@ -175,14 +175,14 @@ class AsyncSubagentSuccessorReconciler:
     async def _select_or_route(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         now: datetime,
     ) -> AsyncSubagentSuccessorReceipt | _PreparedSelection:
         async with transaction(self._sessions) as database:
             selected = await lock_and_route_async_result(
                 database,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 thread_id=thread_id,
                 now=now,
             )
@@ -203,10 +203,10 @@ class AsyncSubagentSuccessorReconciler:
 
     async def _publish_initial(self, prepared: PreparedAsyncResultSuccessor) -> StoredRunState:
         try:
-            return await self._states.create(prepared.run.tenant_id, prepared.state)
+            return await self._states.create(prepared.run.organization_id, prepared.state)
         except StaleStateWriter:
             existing = await self._states.read(
-                prepared.run.tenant_id,
+                prepared.run.organization_id,
                 prepared.run.id,
                 expected_thread_id=prepared.run.thread_id,
             )
@@ -219,7 +219,7 @@ class AsyncSubagentSuccessorReconciler:
     async def _accept(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         prepared: PreparedAsyncResultSuccessor,
         parent_state: StoredRunState,
@@ -231,7 +231,7 @@ class AsyncSubagentSuccessorReconciler:
             async with transaction(self._sessions) as database:
                 selected = await lock_and_route_async_result(
                     database,
-                    tenant_id=tenant_id,
+                    organization_id=organization_id,
                     thread_id=thread_id,
                     now=now,
                 )
@@ -293,13 +293,13 @@ class AsyncSubagentSuccessorReconciler:
     async def _signal_if_bound(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         receipt: AsyncSubagentSuccessorReceipt,
     ) -> None:
         if self._signals is None or receipt.outcome != "bound_active":
             return
         try:
-            await self._signals.publish(tenant_id=tenant_id, thread_id=receipt.thread_id)
+            await self._signals.publish(organization_id=organization_id, thread_id=receipt.thread_id)
         except Exception:
             logger.warning(
                 "async_subagent_successor_signal_failed",
@@ -341,13 +341,13 @@ async def _authorize_successor(
 ) -> SessionRecord:
     session = await database.scalar(
         select(SessionRecord).where(
-            SessionRecord.tenant_id == selected.thread.tenant_id,
+            SessionRecord.organization_id == selected.thread.organization_id,
             SessionRecord.id == selected.thread.session_id,
         )
     )
     child = await database.scalar(
         select(RunRecord).where(
-            RunRecord.tenant_id == selected.thread.tenant_id,
+            RunRecord.organization_id == selected.thread.organization_id,
             RunRecord.id == child_run_id,
         )
     )
@@ -420,8 +420,8 @@ def _verify_selected_parent_state(parent: Run, state: StoredRunState) -> None:
         raise AsyncSubagentSuccessorError("selected parent state does not match its sealed reference")
 
 
-def _successor_run_id(tenant_id: str, entry_id: str, parent_run_id: str) -> str:
-    digest = hashlib.sha256(f"{tenant_id}:{entry_id}:{parent_run_id}".encode()).hexdigest()
+def _successor_run_id(organization_id: str, entry_id: str, parent_run_id: str) -> str:
+    digest = hashlib.sha256(f"{organization_id}:{entry_id}:{parent_run_id}".encode()).hexdigest()
     return f"run_{digest[:24]}"
 
 

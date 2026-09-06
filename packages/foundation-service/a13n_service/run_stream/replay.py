@@ -50,7 +50,7 @@ class RunReplayStore:
 
     async def publish(
         self,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         source: CompleteRunStream,
     ) -> RunReplaySnapshot:
@@ -59,7 +59,7 @@ class RunReplayStore:
         first = source.entries[0].event
         if first.run_id != run_id:
             raise RunReplayIntegrityError("Run Stream source identity does not match the selected Run")
-        expected_stream_digest = run_stream_key_digest_sha256(tenant_id, run_id)
+        expected_stream_digest = run_stream_key_digest_sha256(organization_id, run_id)
         if source.stream_key_digest_sha256 != expected_stream_digest:
             raise RunReplayIntegrityError("Run Stream source key does not match the selected Run")
         items = project_retained_items(source.entries)
@@ -83,7 +83,7 @@ class RunReplayStore:
         if len(body) > self._max_bytes:
             raise RetainedReplayUnavailable("retained replay exceeds its encoded size bound")
         digest = hashlib.sha256(body).hexdigest()
-        key = run_replay_key(tenant_id, run_id)
+        key = run_replay_key(organization_id, run_id)
         metadata = {"schema-version": "1", "run-id": run_id, "digest-sha256": digest}
         try:
             info = await self._objects.put(
@@ -94,7 +94,7 @@ class RunReplayStore:
                 if_none_match=True,
             )
         except ObjectConflict as error:
-            existing = await self.read(tenant_id, run_id)
+            existing = await self.read(organization_id, run_id)
             if existing != snapshot:
                 raise RunReplayIntegrityError("existing retained replay does not match the complete source") from error
             return existing
@@ -103,12 +103,12 @@ class RunReplayStore:
 
     async def read(
         self,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         *,
         expected_thread_id: str | None = None,
     ) -> RunReplaySnapshot:
-        key = run_replay_key(tenant_id, run_id)
+        key = run_replay_key(organization_id, run_id)
         try:
             body, info = await _read_object(self._objects, key, max_bytes=self._max_bytes)
         except ObjectNotFound as error:
@@ -124,14 +124,14 @@ class RunReplayStore:
             raise RunReplayIntegrityError("retained replay body is invalid") from error
         if snapshot.run_id != run_id or (expected_thread_id is not None and snapshot.thread_id != expected_thread_id):
             raise RunReplayIntegrityError("retained replay body belongs to another Run")
-        if snapshot.stream_key_digest_sha256 != run_stream_key_digest_sha256(tenant_id, run_id):
+        if snapshot.stream_key_digest_sha256 != run_stream_key_digest_sha256(organization_id, run_id):
             raise RunReplayIntegrityError("retained replay Stream identity is invalid")
         _validate_snapshot_body(snapshot)
         return snapshot
 
 
-def run_replay_key(tenant_id: str, run_id: str) -> str:
-    return f"tenants/{tenant_id}/runs/{run_id}/replay/version-1.json"
+def run_replay_key(organization_id: str, run_id: str) -> str:
+    return f"organizations/{organization_id}/runs/{run_id}/replay/version-1.json"
 
 
 def project_retained_items(entries: tuple[RunStreamEntry, ...]) -> tuple[RetainedItem, ...]:

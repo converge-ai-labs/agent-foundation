@@ -15,27 +15,27 @@ from .persistence import LifecycleReplayGap, LifecycleWorkspacePage
 async def read_workspace_events(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     workspace_id: str,
     visible_agent_ids: frozenset[str] | None,
     after_seq: int | None,
     limit: int,
 ) -> LifecycleWorkspacePage:
     session_join = and_(
-        SessionRecord.tenant_id == LifecycleEventRecord.tenant_id,
+        SessionRecord.organization_id == LifecycleEventRecord.organization_id,
         SessionRecord.id == LifecycleEventRecord.session_id,
     )
     boundary = select(func.min(LifecycleEventRecord.seq), func.max(LifecycleEventRecord.seq)).where(
-        LifecycleEventRecord.tenant_id == tenant_id
+        LifecycleEventRecord.organization_id == organization_id
     )
     events = select(LifecycleEventRecord).join(SessionRecord, session_join)
     filters = (
-        LifecycleEventRecord.tenant_id == tenant_id,
+        LifecycleEventRecord.organization_id == organization_id,
         SessionRecord.workspace_id == workspace_id,
     )
     if visible_agent_ids is not None:
         run_join = and_(
-            RunRecord.tenant_id == LifecycleEventRecord.tenant_id,
+            RunRecord.organization_id == LifecycleEventRecord.organization_id,
             RunRecord.id == LifecycleEventRecord.run_id,
         )
         events = events.join(RunRecord, run_join).where(RunRecord.agent_id.in_(visible_agent_ids))
@@ -68,7 +68,7 @@ async def load_owning_run(
         select(RunRecord)
         .join(
             SessionRecord,
-            (SessionRecord.tenant_id == RunRecord.tenant_id) & (SessionRecord.id == RunRecord.session_id),
+            (SessionRecord.organization_id == RunRecord.organization_id) & (SessionRecord.id == RunRecord.session_id),
         )
         .where(SessionRecord.workspace_id == workspace_id)
     )
@@ -77,7 +77,7 @@ async def load_owning_run(
     return await database.scalar(
         query.join(
             RunAttemptRecord,
-            (RunAttemptRecord.tenant_id == RunRecord.tenant_id) & (RunAttemptRecord.run_id == RunRecord.id),
+            (RunAttemptRecord.organization_id == RunRecord.organization_id) & (RunAttemptRecord.run_id == RunRecord.id),
         ).where(RunAttemptRecord.id == resource_id)
     )
 

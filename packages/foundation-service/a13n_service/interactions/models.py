@@ -64,17 +64,17 @@ class SessionRecord(Base):
     __tablename__ = "sessions"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("workspace_id", "tenant_id"),
+            ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
             ondelete="CASCADE",
         ),
-        UniqueConstraint("tenant_id", "id", name="uq_sessions_tenant_id"),
-        Index("ix_sessions_workspace_created", "tenant_id", "workspace_id", "created_at", "id"),
-        Index("ix_sessions_workspace_updated", "tenant_id", "workspace_id", "updated_at", "id"),
+        UniqueConstraint("organization_id", "id", name="uq_sessions_organization_id"),
+        Index("ix_sessions_workspace_created", "organization_id", "workspace_id", "created_at", "id"),
+        Index("ix_sessions_workspace_updated", "organization_id", "workspace_id", "updated_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -82,7 +82,7 @@ class SessionRecord(Base):
     def to_resource(self) -> Session:
         return Session(
             id=self.id,
-            tenant_id=self.tenant_id,
+            organization_id=self.organization_id,
             workspace_id=self.workspace_id,
             created_at=assume_utc(self.created_at),
             updated_at=assume_utc(self.updated_at),
@@ -93,18 +93,18 @@ class ThreadRecord(Base):
     __tablename__ = "threads"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "session_id"),
-            ("sessions.tenant_id", "sessions.id"),
+            ("organization_id", "session_id"),
+            ("sessions.organization_id", "sessions.id"),
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "origin_thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("organization_id", "origin_thread_id"),
+            ("threads.organization_id", "threads.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "origin_thread_id", "origin_run_id"),
-            ("runs.tenant_id", "runs.thread_id", "runs.id"),
+            ("organization_id", "origin_thread_id", "origin_run_id"),
+            ("runs.organization_id", "runs.thread_id", "runs.id"),
             name="fk_threads_origin_run_same_thread",
             ondelete="RESTRICT",
             deferrable=True,
@@ -112,8 +112,8 @@ class ThreadRecord(Base):
             use_alter=True,
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "session_id", "id", "head_run_id"),
-            ("runs.tenant_id", "runs.session_id", "runs.thread_id", "runs.id"),
+            ("organization_id", "session_id", "id", "head_run_id"),
+            ("runs.organization_id", "runs.session_id", "runs.thread_id", "runs.id"),
             name="fk_threads_head_run_same_thread",
             ondelete="RESTRICT",
             deferrable=True,
@@ -121,8 +121,8 @@ class ThreadRecord(Base):
             use_alter=True,
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "session_id", "id", "current_run_id"),
-            ("runs.tenant_id", "runs.session_id", "runs.thread_id", "runs.id"),
+            ("organization_id", "session_id", "id", "current_run_id"),
+            ("runs.organization_id", "runs.session_id", "runs.thread_id", "runs.id"),
             name="fk_threads_current_run_same_thread",
             ondelete="RESTRICT",
             deferrable=True,
@@ -140,26 +140,26 @@ class ThreadRecord(Base):
             "AND origin_run_id IS NOT NULL)",
             name="origin_shape_valid",
         ),
-        UniqueConstraint("tenant_id", "id", name="uq_threads_tenant_id"),
-        UniqueConstraint("tenant_id", "session_id", "id", name="uq_threads_session_id"),
+        UniqueConstraint("organization_id", "id", name="uq_threads_organization_id"),
+        UniqueConstraint("organization_id", "session_id", "id", name="uq_threads_session_id"),
         Index(
             "uq_threads_session_root",
-            "tenant_id",
+            "organization_id",
             "session_id",
             unique=True,
             postgresql_where=text("role = 'root'"),
             sqlite_where=text("role = 'root'"),
         ),
-        Index("ix_threads_session_created", "tenant_id", "session_id", "created_at", "id"),
-        Index("ix_threads_session_updated", "tenant_id", "session_id", "updated_at", "id"),
-        Index("ix_threads_origin_run", "tenant_id", "origin_run_id", "id"),
-        Index("ix_threads_origin_thread", "tenant_id", "origin_thread_id", "id"),
+        Index("ix_threads_session_created", "organization_id", "session_id", "created_at", "id"),
+        Index("ix_threads_session_updated", "organization_id", "session_id", "updated_at", "id"),
+        Index("ix_threads_origin_run", "organization_id", "origin_run_id", "id"),
+        Index("ix_threads_origin_thread", "organization_id", "origin_thread_id", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     queue_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     session_id: Mapped[str] = mapped_column(String(72), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     origin_kind: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -176,7 +176,7 @@ class ThreadRecord(Base):
             id=self.id,
             version=self.version,
             queue_version=self.queue_version,
-            tenant_id=self.tenant_id,
+            organization_id=self.organization_id,
             session_id=self.session_id,
             role=ThreadRole(self.role),
             origin_kind=ThreadOriginKind(self.origin_kind),
@@ -198,27 +198,27 @@ class RunRecord(Base):
             name="environment_selection_valid",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "session_id", "thread_id"),
-            ("threads.tenant_id", "threads.session_id", "threads.id"),
+            ("organization_id", "session_id", "thread_id"),
+            ("threads.organization_id", "threads.session_id", "threads.id"),
             ondelete="RESTRICT",
             deferrable=True,
             initially="DEFERRED",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "parent_run_id"),
-            ("runs.tenant_id", "runs.id"),
-            name="fk_runs_parent_same_tenant",
+            ("organization_id", "parent_run_id"),
+            ("runs.organization_id", "runs.id"),
+            name="fk_runs_parent_same_organization",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "thread_id", "retry_of_run_id"),
-            ("runs.tenant_id", "runs.thread_id", "runs.id"),
+            ("organization_id", "thread_id", "retry_of_run_id"),
+            ("runs.organization_id", "runs.thread_id", "runs.id"),
             name="fk_runs_retry_same_thread",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "id", "current_run_attempt_id"),
-            ("run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"),
+            ("organization_id", "id", "current_run_attempt_id"),
+            ("run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"),
             name="fk_runs_current_attempt_same_run",
             ondelete="RESTRICT",
             deferrable=True,
@@ -226,8 +226,8 @@ class RunRecord(Base):
             use_alter=True,
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "id", "sealed_state_committed_by_run_attempt_id"),
-            ("run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"),
+            ("organization_id", "id", "sealed_state_committed_by_run_attempt_id"),
+            ("run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"),
             name="fk_runs_sealed_attempt_same_run",
             ondelete="RESTRICT",
             deferrable=True,
@@ -338,11 +338,11 @@ class RunRecord(Base):
             "(sealed_state_digest_sha256 IS NULL OR length(sealed_state_digest_sha256) = 64)",
             name="optional_digests_sha256",
         ),
-        UniqueConstraint("tenant_id", "id", name="uq_runs_tenant_id"),
-        UniqueConstraint("tenant_id", "thread_id", "id", name="uq_runs_tenant_thread_id"),
+        UniqueConstraint("organization_id", "id", name="uq_runs_organization_id"),
+        UniqueConstraint("organization_id", "thread_id", "id", name="uq_runs_organization_thread_id"),
         Index(
             "uq_runs_thread_authority",
-            "tenant_id",
+            "organization_id",
             "thread_id",
             "id",
             "authority_principal_type",
@@ -350,7 +350,7 @@ class RunRecord(Base):
             unique=True,
         ),
         UniqueConstraint(
-            "tenant_id",
+            "organization_id",
             "session_id",
             "thread_id",
             "id",
@@ -358,7 +358,7 @@ class RunRecord(Base):
         ),
         Index(
             "uq_runs_idempotency",
-            "tenant_id",
+            "organization_id",
             "idempotency_key",
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
@@ -366,7 +366,7 @@ class RunRecord(Base):
         ),
         Index(
             "uq_runs_active_thread",
-            "tenant_id",
+            "organization_id",
             "thread_id",
             unique=True,
             postgresql_where=text("status IN ('accepted', 'running')"),
@@ -374,7 +374,7 @@ class RunRecord(Base):
         ),
         Index(
             "uq_runs_live_root_thread",
-            "tenant_id",
+            "organization_id",
             "thread_id",
             unique=True,
             postgresql_where=text(
@@ -384,7 +384,7 @@ class RunRecord(Base):
         ),
         Index(
             "ix_runs_worker_scan",
-            "tenant_id",
+            "organization_id",
             "queue_name",
             "status",
             "available_at",
@@ -394,10 +394,10 @@ class RunRecord(Base):
             postgresql_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
             sqlite_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
         ),
-        Index("ix_runs_session_created", "tenant_id", "session_id", "created_at", "id"),
-        Index("ix_runs_thread_created", "tenant_id", "thread_id", "created_at", "id"),
-        Index("ix_runs_parent", "tenant_id", "parent_run_id", "id"),
-        Index("ix_runs_retry", "tenant_id", "retry_of_run_id", "id"),
+        Index("ix_runs_session_created", "organization_id", "session_id", "created_at", "id"),
+        Index("ix_runs_thread_created", "organization_id", "thread_id", "created_at", "id"),
+        Index("ix_runs_parent", "organization_id", "parent_run_id", "id"),
+        Index("ix_runs_retry", "organization_id", "retry_of_run_id", "id"),
     )
 
     environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"), index=True)
@@ -406,7 +406,7 @@ class RunRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     authority_principal_type: Mapped[str] = mapped_column(String(32), nullable=False)
     authority_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
     session_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -483,7 +483,7 @@ class RunRecord(Base):
         values: dict[str, Any] = {
             "id": self.id,
             "version": self.version,
-            "tenant_id": self.tenant_id,
+            "organization_id": self.organization_id,
             "authority_principal": PrincipalRef(
                 principal_type=PrincipalType(self.authority_principal_type),
                 principal_id=self.authority_principal_id,
@@ -600,15 +600,15 @@ class RunAttemptRecord(Base):
     __tablename__ = "run_attempts"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "run_id"),
-            ("runs.tenant_id", "runs.id"),
+            ("organization_id", "run_id"),
+            ("runs.organization_id", "runs.id"),
             ondelete="RESTRICT",
             deferrable=True,
             initially="DEFERRED",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "run_id", "replaces_run_attempt_id"),
-            ("run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"),
+            ("organization_id", "run_id", "replaces_run_attempt_id"),
+            ("run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint("version >= 1", name="version_positive"),
@@ -650,21 +650,21 @@ class RunAttemptRecord(Base):
             "OR status = 'cancelled'",
             name="failure_lifecycle_valid",
         ),
-        Index("uq_run_attempts_tenant_id", "tenant_id", "id", unique=True),
-        UniqueConstraint("tenant_id", "run_id", "id", name="uq_run_attempts_run_id"),
+        Index("uq_run_attempts_organization_id", "organization_id", "id", unique=True),
+        UniqueConstraint("organization_id", "run_id", "id", name="uq_run_attempts_run_id"),
         Index(
             "uq_run_attempts_generation_identity",
-            "tenant_id",
+            "organization_id",
             "run_id",
             "id",
             "fence",
             unique=True,
         ),
-        Index("uq_run_attempts_number", "tenant_id", "run_id", "attempt_number", unique=True),
-        Index("uq_run_attempts_fence", "tenant_id", "run_id", "fence", unique=True),
+        Index("uq_run_attempts_number", "organization_id", "run_id", "attempt_number", unique=True),
+        Index("uq_run_attempts_fence", "organization_id", "run_id", "fence", unique=True),
         Index(
             "ix_run_attempts_live_lease",
-            "tenant_id",
+            "organization_id",
             "status",
             "lease_expires_at",
             "run_id",
@@ -675,7 +675,7 @@ class RunAttemptRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     fence: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -704,7 +704,7 @@ class RunAttemptRecord(Base):
         return RunAttempt(
             id=self.id,
             version=self.version,
-            tenant_id=self.tenant_id,
+            organization_id=self.organization_id,
             run_id=self.run_id,
             attempt_number=self.attempt_number,
             fence=self.fence,

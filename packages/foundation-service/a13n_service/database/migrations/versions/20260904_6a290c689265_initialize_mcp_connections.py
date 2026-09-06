@@ -86,7 +86,7 @@ def upgrade() -> None:
         "ix_mcp_connections_workspace_updated", "mcp_connections", ["workspace_id", "updated_at", "id"], unique=False
     )
     op.create_index(
-        "uq_mcp_connections_id_tenant", "mcp_connections", ["id", "organization_id", "workspace_id"], unique=True
+        "uq_mcp_connections_id_organization", "mcp_connections", ["id", "organization_id", "workspace_id"], unique=True
     )
     op.create_index(
         "uq_mcp_connections_workspace_name", "mcp_connections", ["workspace_id", "normalized_name"], unique=True
@@ -156,6 +156,6 @@ def downgrade() -> None:
     op.drop_index("ix_mcp_oauth_sessions_connection", table_name="mcp_oauth_sessions")
     op.drop_table("mcp_oauth_sessions")
     op.drop_index("uq_mcp_connections_workspace_name", table_name="mcp_connections")
-    op.drop_index("uq_mcp_connections_id_tenant", table_name="mcp_connections")
+    op.drop_index("uq_mcp_connections_id_organization", table_name="mcp_connections")
     op.drop_index("ix_mcp_connections_workspace_updated", table_name="mcp_connections")
     op.drop_table("mcp_connections")

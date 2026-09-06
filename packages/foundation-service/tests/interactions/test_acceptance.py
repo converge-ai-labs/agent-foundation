@@ -43,8 +43,8 @@ from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
+    ORGANIZATION_ID,
     SESSION_ID,
-    TENANT_ID,
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
@@ -70,7 +70,7 @@ def _accepted_run(
     return Run(
         id=run_id,
         version=1,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         authority_principal=PrincipalRef(
             principal_type=PrincipalType.user,
             principal_id=USER_ID,
@@ -145,7 +145,7 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
     )
     session = Session(
         id=SESSION_ID,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         workspace_id=WORKSPACE_ID,
         created_at=NOW,
         updated_at=NOW,
@@ -154,7 +154,7 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         id=state.thread_id,
         version=1,
         queue_version=0,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         session_id=SESSION_ID,
         role=ThreadRole.root,
         origin_kind=ThreadOriginKind.new,
@@ -177,7 +177,7 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
     receipt = await service.accept_new_thread(session=session, thread=thread, run=run, state=state)
 
     assert receipt.thread_version == 1
-    assert await states.read(TENANT_ID, run.id, expected_thread_id=thread.id)
+    assert await states.read(ORGANIZATION_ID, run.id, expected_thread_id=thread.id)
     async with short_session(interaction_sessions) as database:
         record = await database.get(RunRecord, run.id)
         assert record is not None
@@ -204,7 +204,7 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
         database.add(
             SecretRecord(
                 id=secret_id,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 owner_type="workspace",
                 owner_id=WORKSPACE_ID,
@@ -241,7 +241,7 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
     )
     session = Session(
         id=SESSION_ID,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         workspace_id=WORKSPACE_ID,
         created_at=NOW,
         updated_at=NOW,
@@ -250,7 +250,7 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
         id=THREAD_ID,
         version=1,
         queue_version=0,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         session_id=SESSION_ID,
         role=ThreadRole.root,
         origin_kind=ThreadOriginKind.new,
@@ -345,7 +345,7 @@ async def test_acceptance_rejects_input_payload_owned_by_another_run(
     run = _with_input_object(
         inline,
         RunPayloadObjectRef(
-            object_key=(f"tenants/{TENANT_ID}/runs/run_bbbbbbbbbbbbbbbb/payloads/input/{'b' * 64}.json"),
+            object_key=(f"organizations/{ORGANIZATION_ID}/runs/run_bbbbbbbbbbbbbbbb/payloads/input/{'b' * 64}.json"),
             digest_sha256="b" * 64,
             size_bytes=123,
             content_type="application/vnd.converge.run-payload+json",
@@ -357,7 +357,7 @@ async def test_acceptance_rejects_input_payload_owned_by_another_run(
         await service.accept_new_thread(
             session=Session(
                 id=SESSION_ID,
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 created_at=NOW,
                 updated_at=NOW,
@@ -366,7 +366,7 @@ async def test_acceptance_rejects_input_payload_owned_by_another_run(
                 id=state.thread_id,
                 version=1,
                 queue_version=0,
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 session_id=SESSION_ID,
                 role=ThreadRole.root,
                 origin_kind=ThreadOriginKind.new,
@@ -424,7 +424,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
     first = _with_input_object(
         first_inline,
         await payloads.create(
-            TENANT_ID,
+            ORGANIZATION_ID,
             RunPayloadEnvelope(
                 run_id=first_inline.id,
                 payload_kind="input",
@@ -436,7 +436,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
     await service.accept_new_thread(
         session=Session(
             id=SESSION_ID,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             created_at=NOW,
             updated_at=NOW,
@@ -445,7 +445,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
             id=first_state.thread_id,
             version=1,
             queue_version=0,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             session_id=SESSION_ID,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -494,7 +494,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
     second = _with_input_object(
         second_inline,
         await payloads.create(
-            TENANT_ID,
+            ORGANIZATION_ID,
             RunPayloadEnvelope(
                 run_id=second_inline.id,
                 payload_kind="input",
@@ -503,7 +503,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
             ),
         ),
     ).model_copy(update={"retry_of_run_id": first.id, "native_tool_contexts": first.native_tool_contexts})
-    await states.create(TENANT_ID, second_state)
+    await states.create(ORGANIZATION_ID, second_state)
 
     with pytest.raises(RunAcceptanceError, match="preserve its source"):
         await service.advance_thread(
@@ -586,7 +586,7 @@ async def test_new_session_cannot_begin_with_a_child_thread(
         id=state.thread_id,
         version=1,
         queue_version=0,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         session_id=SESSION_ID,
         role=ThreadRole.child,
         origin_kind=ThreadOriginKind.child,
@@ -601,7 +601,7 @@ async def test_new_session_cannot_begin_with_a_child_thread(
         await service.accept_new_thread(
             session=Session(
                 id=SESSION_ID,
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 created_at=NOW,
                 updated_at=NOW,
@@ -642,7 +642,7 @@ async def test_existing_session_cannot_accept_another_root_thread(
         id=state.thread_id,
         version=1,
         queue_version=0,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         session_id=SESSION_ID,
         role=ThreadRole.root,
         origin_kind=ThreadOriginKind.new,

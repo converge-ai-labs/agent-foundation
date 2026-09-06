@@ -38,7 +38,7 @@ from tests.interactions.conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
-    TENANT_ID,
+    ORGANIZATION_ID,
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
@@ -77,7 +77,7 @@ class _Preparation:
 
     async def prepare(self, **_kwargs):
         self.calls += 1
-        return SimpleNamespace(organization_id=TENANT_ID)
+        return SimpleNamespace(organization_id=ORGANIZATION_ID)
 
 
 class _Freezing:
@@ -165,7 +165,7 @@ async def _complete_run(
         run_version=entered.run_version,
         attempt_version=entered.attempt_version,
     )
-    current = await states.read(TENANT_ID, run_id)
+    current = await states.read(ORGANIZATION_ID, run_id)
     candidate = _completed_state(
         current.envelope,
         claim.attempt.id,
@@ -215,7 +215,7 @@ async def _wait_run(
         run_version=entered.run_version,
         attempt_version=entered.attempt_version,
     )
-    current = await states.read(TENANT_ID, run_id)
+    current = await states.read(ORGANIZATION_ID, run_id)
     waiting = _waiting_state(current.envelope, claim.attempt.id, claim.attempt.fence)
     if pending_kind == "client_tool":
         payload = waiting.model_dump(mode="python", by_alias=True)

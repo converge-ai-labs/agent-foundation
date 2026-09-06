@@ -15,7 +15,7 @@ from a13n_service.storage.redis import open_redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import RUN_ID, hook_actor, seed_hook_actor_access, seed_run_and_secret
-from tests.interactions.conftest import NOW, TENANT_ID, THREAD_ID
+from tests.interactions.conftest import NOW, ORGANIZATION_ID, THREAD_ID
 
 pytestmark = pytest.mark.anyio
 
@@ -59,9 +59,9 @@ async def test_run_sse_replays_exclusively_after_cursor_and_closes(
     native_stream_service: tuple[NativeRunStreamService, RedisRunStream],
 ) -> None:
     service, stream = native_stream_service
-    first = await stream.append(TENANT_ID, event(1))
-    second = await stream.append(TENANT_ID, event(2))
-    await stream.close(TENANT_ID, RUN_ID, closed_at=NOW + timedelta(seconds=3))
+    first = await stream.append(ORGANIZATION_ID, event(1))
+    second = await stream.append(ORGANIZATION_ID, event(2))
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW + timedelta(seconds=3))
 
     attachment = await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=first)
     frames = [value async for value in service.events(attachment)]
@@ -106,7 +106,7 @@ async def test_terminal_run_without_retained_replay_reports_gap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service, _stream = native_stream_service
-    monkeypatch.setattr(service, "_authorize", AsyncMock(return_value=(TENANT_ID, True)))
+    monkeypatch.setattr(service, "_authorize", AsyncMock(return_value=(ORGANIZATION_ID, True)))
 
     with pytest.raises(NativeStreamError) as captured:
         await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=None)

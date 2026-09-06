@@ -77,7 +77,7 @@ class LifecycleEventDraft(_StrictModel):
     """One fact prepared by the transaction that owns the state mutation."""
 
     id: LifecycleEventId = Field(default_factory=lambda: new_object_id("lev"))
-    tenant_id: ResourceId
+    organization_id: ResourceId
     entity_type: LifecycleEntityType
     entity_id: ResourceId
     entity_version: int = Field(ge=1)
@@ -112,7 +112,7 @@ class LifecycleEventDraft(_StrictModel):
 class LifecycleEvent(_StrictModel):
     seq: int = Field(ge=1)
     id: LifecycleEventId
-    tenant_id: ResourceId
+    organization_id: ResourceId
     entity_type: LifecycleEntityType
     entity_id: ResourceId
     resource_seq: int = Field(ge=1)

@@ -15,7 +15,7 @@ from .inbox_persistence import ThreadInboxCapacityExceeded, lock_inbox_counter
 async def allocate_steer(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     accepted_against_run_id: str,
     target_run_id: str | None,
@@ -34,7 +34,7 @@ async def allocate_steer(
         max_pending_count=max_pending_count,
         max_pending_bytes=max_pending_bytes,
     )
-    counter = await lock_inbox_counter(database, tenant_id, thread_id)
+    counter = await lock_inbox_counter(database, organization_id, thread_id)
     _require_capacity(
         pending_count=counter.pending_count,
         pending_bytes=counter.pending_bytes,
@@ -44,7 +44,7 @@ async def allocate_steer(
     )
     entry = ThreadInboxEntry(
         id=entry_id,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         kind=ThreadInboxKind.steer,
         delivery_sequence=counter.next_delivery_sequence,
@@ -66,7 +66,7 @@ async def allocate_steer(
 async def allocate_async_result(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     origin_run_id: str,
     relationship_id: str,
@@ -87,7 +87,7 @@ async def allocate_async_result(
         max_pending_count=max_pending_count,
         max_pending_bytes=max_pending_bytes,
     )
-    counter = await lock_inbox_counter(database, tenant_id, thread_id)
+    counter = await lock_inbox_counter(database, organization_id, thread_id)
     if not suppressed:
         _require_capacity(
             pending_count=counter.pending_count,
@@ -98,7 +98,7 @@ async def allocate_async_result(
         )
     entry = ThreadInboxEntry(
         id=entry_id,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         kind=ThreadInboxKind.async_subagent_result,
         delivery_sequence=counter.next_delivery_sequence,

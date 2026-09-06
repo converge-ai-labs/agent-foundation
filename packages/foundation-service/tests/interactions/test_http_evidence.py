@@ -18,7 +18,7 @@ from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.storage import transaction
 from sqlalchemy import select
 
-from tests.interactions.conftest import NOW, TENANT_ID, USER_ID, WORKSPACE_ID
+from tests.interactions.conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
 
 pytestmark = pytest.mark.anyio
 
@@ -34,13 +34,13 @@ async def test_postgresql_expired_key_replacement_has_one_winner(
         USER_ID,
         "test.command",
         WORKSPACE_ID,
-        organization_id=TENANT_ID if organization_scope else None,
+        organization_id=ORGANIZATION_ID if organization_scope else None,
     )
     key = digest_visible_ascii_key("expiry-race")
     async with transaction(postgres_interaction_sessions) as database:
         database.add(
             new_evidence(
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 scope=scope,
                 identity=IdempotencyIdentity(key, "0" * 64),
                 result_kind="test",
@@ -60,7 +60,7 @@ async def test_postgresql_expired_key_replacement_has_one_winner(
             result = f"winner-{index}"
             database.add(
                 new_evidence(
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     scope=scope,
                     identity=identity,
                     result_kind="test",

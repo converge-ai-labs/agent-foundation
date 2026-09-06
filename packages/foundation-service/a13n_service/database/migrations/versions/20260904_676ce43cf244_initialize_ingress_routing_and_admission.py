@@ -95,7 +95,7 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_index(
-        "uq_application_accounts_id_tenant",
+        "uq_application_accounts_id_organization",
         "application_accounts",
         ["id", "organization_id", "workspace_id"],
         unique=True,
@@ -155,7 +155,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_account_targets_listing", "account_targets", ["account_id", "updated_at", "id"], unique=False)
     op.create_index(
-        "uq_account_targets_id_tenant", "account_targets", ["id", "organization_id", "workspace_id"], unique=True
+        "uq_account_targets_id_organization", "account_targets", ["id", "organization_id", "workspace_id"], unique=True
     )
     op.create_table(
         "agent_thread_bindings",
@@ -179,7 +179,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "thread_id"],
-            ["threads.tenant_id", "threads.id"],
+            ["threads.organization_id", "threads.id"],
             name=op.f("fk_agent_thread_bindings_organization_id_threads"),
             ondelete="RESTRICT",
         ),
@@ -192,7 +192,7 @@ def upgrade() -> None:
         "ix_agent_thread_bindings_thread", "agent_thread_bindings", ["organization_id", "thread_id", "id"], unique=False
     )
     op.create_index(
-        "uq_agent_thread_bindings_id_tenant",
+        "uq_agent_thread_bindings_id_organization",
         "agent_thread_bindings",
         ["id", "organization_id", "workspace_id"],
         unique=True,
@@ -244,7 +244,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_ingress_batches_retention", "ingress_batches", ["status", "terminal_at", "id"], unique=False)
     op.create_index(
-        "uq_ingress_batches_id_tenant", "ingress_batches", ["id", "organization_id", "workspace_id"], unique=True
+        "uq_ingress_batches_id_organization", "ingress_batches", ["id", "organization_id", "workspace_id"], unique=True
     )
     op.create_table(
         "ingress_admissions",
@@ -299,14 +299,14 @@ def downgrade() -> None:
     op.drop_index("ix_ingress_admissions_order", table_name="ingress_admissions")
     op.drop_index("ix_ingress_admissions_capacity", table_name="ingress_admissions")
     op.drop_table("ingress_admissions")
-    op.drop_index("uq_ingress_batches_id_tenant", table_name="ingress_batches")
+    op.drop_index("uq_ingress_batches_id_organization", table_name="ingress_batches")
     op.drop_index("ix_ingress_batches_retention", table_name="ingress_batches")
     op.drop_index("ix_ingress_batches_claim", table_name="ingress_batches")
     op.drop_table("ingress_batches")
-    op.drop_index("uq_agent_thread_bindings_id_tenant", table_name="agent_thread_bindings")
+    op.drop_index("uq_agent_thread_bindings_id_organization", table_name="agent_thread_bindings")
     op.drop_index("ix_agent_thread_bindings_thread", table_name="agent_thread_bindings")
     op.drop_table("agent_thread_bindings")
-    op.drop_index("uq_account_targets_id_tenant", table_name="account_targets")
+    op.drop_index("uq_account_targets_id_organization", table_name="account_targets")
     op.drop_index("ix_account_targets_listing", table_name="account_targets")
     op.drop_table("account_targets")
     op.drop_index(
@@ -321,7 +321,7 @@ def downgrade() -> None:
         postgresql_where=sa.text("deleted_at IS NULL"),
         sqlite_where=sa.text("deleted_at IS NULL"),
     )
-    op.drop_index("uq_application_accounts_id_tenant", table_name="application_accounts")
+    op.drop_index("uq_application_accounts_id_organization", table_name="application_accounts")
     op.drop_index("ix_application_accounts_workspace_updated", table_name="application_accounts")
     op.drop_index("ix_application_accounts_provider_status", table_name="application_accounts")
     op.drop_table("application_accounts")

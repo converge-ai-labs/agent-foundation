@@ -46,7 +46,7 @@ def visible_workspace(column: InstrumentedAttribute[str | None], workspace_id: s
 
 
 async def actor_scope(session: AsyncSession, actor: AuthenticatedActor) -> ResourceScope:
-    """Resolve the credential boundary before querying tenant-owned resources."""
+    """Resolve the credential boundary before querying organization-owned resources."""
     if actor.boundary_workspace_id is not None:
         workspace = await session.get(WorkspaceRecord, actor.boundary_workspace_id)
         if workspace is None or workspace.deleted_at is not None:

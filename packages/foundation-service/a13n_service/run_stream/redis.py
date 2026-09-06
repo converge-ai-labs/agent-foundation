@@ -50,16 +50,18 @@ class RedisRunStream:
         self._closed_ttl_seconds = closed_ttl_seconds
         self._transaction_retries = transaction_retries
 
-    async def append(self, tenant_id: str, event: RunStreamEvent) -> str:
+    async def append(self, organization_id: str, event: RunStreamEvent) -> str:
         body = canonical_model_bytes(event)
         if len(body) > self._max_event_bytes:
             raise RunStreamError("encoded Run Stream event exceeds the configured size limit")
-        stream_key, metadata_key = _keys(tenant_id, event.run_id)
+        stream_key, metadata_key = _keys(organization_id, event.run_id)
         for _ in range(self._transaction_retries):
             async with self._redis.pipeline(transaction=True) as pipeline:
                 try:
                     await pipeline.watch(stream_key, metadata_key)
-                    await _require_identity(pipeline, metadata_key, tenant_id=tenant_id, run_id=event.run_id)
+                    await _require_identity(
+                        pipeline, metadata_key, organization_id=organization_id, run_id=event.run_id
+                    )
                     entries = _entry_rows(await pipeline.xrange(stream_key, min=b"-", max=b"+"))
                     duplicate = _find_event(entries, event.event_id, body)
                     if duplicate is not None:
@@ -70,7 +72,7 @@ class RedisRunStream:
                     pipeline.multi()
                     pipeline.hset(
                         metadata_key,
-                        mapping={b"tenant_id": tenant_id.encode(), b"run_id": event.run_id.encode()},
+                        mapping={b"organization_id": organization_id.encode(), b"run_id": event.run_id.encode()},
                     )
                     pipeline.xadd(
                         stream_key,
@@ -88,14 +90,14 @@ class RedisRunStream:
                     continue
         raise RunStreamError("Run Stream append contention exceeded the retry limit")
 
-    async def close(self, tenant_id: str, run_id: str, *, closed_at: datetime) -> None:
+    async def close(self, organization_id: str, run_id: str, *, closed_at: datetime) -> None:
         closed_value = _utc(closed_at).isoformat()
-        stream_key, metadata_key = _keys(tenant_id, run_id)
+        stream_key, metadata_key = _keys(organization_id, run_id)
         for _ in range(self._transaction_retries):
             async with self._redis.pipeline(transaction=True) as pipeline:
                 try:
                     await pipeline.watch(stream_key, metadata_key)
-                    await _require_identity(pipeline, metadata_key, tenant_id=tenant_id, run_id=run_id)
+                    await _require_identity(pipeline, metadata_key, organization_id=organization_id, run_id=run_id)
                     existing = _as_text(await pipeline.hget(metadata_key, b"closed_at"))
                     if existing is not None:
                         if existing != closed_value:
@@ -105,7 +107,7 @@ class RedisRunStream:
                     pipeline.hset(
                         metadata_key,
                         mapping={
-                            b"tenant_id": tenant_id.encode(),
+                            b"organization_id": organization_id.encode(),
                             b"run_id": run_id.encode(),
                             b"closed_at": closed_value.encode(),
                         },
@@ -118,21 +120,21 @@ class RedisRunStream:
                     continue
         raise RunStreamError("Run Stream close contention exceeded the retry limit")
 
-    async def mark_incomplete(self, tenant_id: str, run_id: str) -> None:
+    async def mark_incomplete(self, organization_id: str, run_id: str) -> None:
         """Permanently record that a live publisher lost at least one source event."""
 
-        stream_key, metadata_key = _keys(tenant_id, run_id)
+        stream_key, metadata_key = _keys(organization_id, run_id)
         for _ in range(self._transaction_retries):
             async with self._redis.pipeline(transaction=True) as pipeline:
                 try:
                     await pipeline.watch(metadata_key)
-                    await _require_identity(pipeline, metadata_key, tenant_id=tenant_id, run_id=run_id)
+                    await _require_identity(pipeline, metadata_key, organization_id=organization_id, run_id=run_id)
                     closed = _as_text(await pipeline.hget(metadata_key, b"closed_at")) is not None
                     pipeline.multi()
                     pipeline.hset(
                         metadata_key,
                         mapping={
-                            b"tenant_id": tenant_id.encode(),
+                            b"organization_id": organization_id.encode(),
                             b"run_id": run_id.encode(),
                             b"incomplete": b"1",
                         },
@@ -148,7 +150,7 @@ class RedisRunStream:
 
     async def complete_attempt_projection(
         self,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         *,
         run_attempt_id: str,
@@ -156,13 +158,13 @@ class RedisRunStream:
     ) -> None:
         """Certify that one Attempt's bounded live publisher drained without loss."""
 
-        stream_key, metadata_key = _keys(tenant_id, run_id)
+        stream_key, metadata_key = _keys(organization_id, run_id)
         field = _attempt_projection_field(run_attempt_id)
         for _ in range(self._transaction_retries):
             async with self._redis.pipeline(transaction=True) as pipeline:
                 try:
                     await pipeline.watch(metadata_key)
-                    await _require_identity(pipeline, metadata_key, tenant_id=tenant_id, run_id=run_id)
+                    await _require_identity(pipeline, metadata_key, organization_id=organization_id, run_id=run_id)
                     existing = _as_text(await pipeline.hget(metadata_key, field))
                     if existing is not None and existing != harness_run_id:
                         raise RunStreamError("RunAttempt live projection identity changed")
@@ -171,7 +173,7 @@ class RedisRunStream:
                     pipeline.hset(
                         metadata_key,
                         mapping={
-                            b"tenant_id": tenant_id.encode(),
+                            b"organization_id": organization_id.encode(),
                             b"run_id": run_id.encode(),
                             field: harness_run_id.encode(),
                         },
@@ -187,7 +189,7 @@ class RedisRunStream:
 
     async def read(
         self,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         *,
         after_stream_id: str | None,
@@ -197,7 +199,7 @@ class RedisRunStream:
             raise ValueError("Run Stream read limit must be between 1 and 1000")
         if after_stream_id is not None:
             _parse_stream_id(after_stream_id)
-        stream_key, metadata_key = _keys(tenant_id, run_id)
+        stream_key, metadata_key = _keys(organization_id, run_id)
         minimum = b"-" if after_stream_id is None else f"({after_stream_id}".encode()
         async with self._redis.pipeline(transaction=True) as pipeline:
             pipeline.hgetall(metadata_key)
@@ -206,7 +208,7 @@ class RedisRunStream:
             pipeline.xrange(stream_key, min=minimum, max=b"+", count=limit)
             metadata_value, boundary_value, tail_value, page_value = await pipeline.execute()
         metadata = _metadata(metadata_value)
-        _validate_identity(metadata, tenant_id=tenant_id, run_id=run_id)
+        _validate_identity(metadata, organization_id=organization_id, run_id=run_id)
         boundary_rows = _entry_rows(boundary_value)
         tail_rows = _entry_rows(tail_value)
         floor = None if not boundary_rows else boundary_rows[0][0]
@@ -227,10 +229,10 @@ class RedisRunStream:
             trimmed=trimmed,
         )
 
-    async def complete_source(self, tenant_id: str, run_id: str) -> CompleteRunStream:
-        stream_key, metadata_key = _keys(tenant_id, run_id)
+    async def complete_source(self, organization_id: str, run_id: str) -> CompleteRunStream:
+        stream_key, metadata_key = _keys(organization_id, run_id)
         metadata = _metadata(await self._redis.hgetall(metadata_key))
-        _validate_identity(metadata, tenant_id=tenant_id, run_id=run_id)
+        _validate_identity(metadata, organization_id=organization_id, run_id=run_id)
         closed_at = metadata.get("closed_at")
         if closed_at is None or metadata.get("trimmed") == "1" or metadata.get("incomplete") == "1":
             raise RetainedReplayUnavailable("Run Stream is open, incomplete, or its prefix was trimmed")
@@ -249,30 +251,30 @@ class RedisRunStream:
             stream_key_digest_sha256=hashlib.sha256(stream_key).hexdigest(),
         )
 
-    async def untrimmed_entries(self, tenant_id: str, run_id: str) -> tuple[RunStreamEntry, ...]:
+    async def untrimmed_entries(self, organization_id: str, run_id: str) -> tuple[RunStreamEntry, ...]:
         """Return the complete retained prefix used to seal Item projections."""
 
-        stream_key, metadata_key = _keys(tenant_id, run_id)
+        stream_key, metadata_key = _keys(organization_id, run_id)
         async with self._redis.pipeline(transaction=True) as pipeline:
             pipeline.hgetall(metadata_key)
             pipeline.xrange(stream_key, min=b"-", max=b"+")
             metadata_value, rows_value = await pipeline.execute()
         metadata = _metadata(metadata_value)
-        _validate_identity(metadata, tenant_id=tenant_id, run_id=run_id)
+        _validate_identity(metadata, organization_id=organization_id, run_id=run_id)
         if metadata.get("trimmed") == "1" or metadata.get("incomplete") == "1":
             raise RetainedReplayUnavailable("Run Stream prefix is incomplete or was trimmed")
         rows = _entry_rows(rows_value)
         return tuple(_decode_entry(row, expected_run_id=run_id) for row in rows)
 
 
-def _keys(tenant_id: str, run_id: str) -> tuple[bytes, bytes]:
-    locator = hashlib.sha256(f"{tenant_id}\0{run_id}".encode()).hexdigest()
+def _keys(organization_id: str, run_id: str) -> tuple[bytes, bytes]:
+    locator = hashlib.sha256(f"{organization_id}\0{run_id}".encode()).hexdigest()
     slot = f"{{{locator}}}"
     return f"a13n:run-stream:{slot}:events".encode(), f"a13n:run-stream:{slot}:metadata".encode()
 
 
-def run_stream_key_digest_sha256(tenant_id: str, run_id: str) -> str:
-    stream_key, _ = _keys(tenant_id, run_id)
+def run_stream_key_digest_sha256(organization_id: str, run_id: str) -> str:
+    stream_key, _ = _keys(organization_id, run_id)
     return hashlib.sha256(stream_key).hexdigest()
 
 
@@ -297,19 +299,19 @@ def _require_attempt_projections(
             raise RetainedReplayUnavailable("RunAttempt live presentation projection is incomplete")
 
 
-async def _require_identity(pipeline: Pipeline, metadata_key: bytes, *, tenant_id: str, run_id: str) -> None:
-    values = await pipeline.hmget(metadata_key, b"tenant_id", b"run_id")
-    existing_tenant, existing_run = cast(Sequence[bytes | str | None], values)
-    if existing_tenant is None and existing_run is None:
+async def _require_identity(pipeline: Pipeline, metadata_key: bytes, *, organization_id: str, run_id: str) -> None:
+    values = await pipeline.hmget(metadata_key, b"organization_id", b"run_id")
+    existing_organization, existing_run = cast(Sequence[bytes | str | None], values)
+    if existing_organization is None and existing_run is None:
         return
-    if _as_text(existing_tenant) != tenant_id or _as_text(existing_run) != run_id:
+    if _as_text(existing_organization) != organization_id or _as_text(existing_run) != run_id:
         raise RunStreamError("Run Stream locator resolved to another resource")
 
 
-def _validate_identity(metadata: Mapping[str, str], *, tenant_id: str, run_id: str) -> None:
+def _validate_identity(metadata: Mapping[str, str], *, organization_id: str, run_id: str) -> None:
     if not metadata:
         return
-    if metadata.get("tenant_id") != tenant_id or metadata.get("run_id") != run_id:
+    if metadata.get("organization_id") != organization_id or metadata.get("run_id") != run_id:
         raise RunStreamError("Run Stream metadata belongs to another resource")
 
 

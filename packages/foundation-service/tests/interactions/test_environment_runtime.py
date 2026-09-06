@@ -430,7 +430,7 @@ async def test_postgresql_shared_approval_wait_is_idle_only_after_last_active_us
         parent_session = await session.get(SessionRecord, thread.session_id)
         shared_session = SessionRecord(
             id="session_shared12345678",
-            tenant_id=parent_session.tenant_id,
+            organization_id=parent_session.organization_id,
             workspace_id=parent_session.workspace_id,
             created_at=now,
             updated_at=now,

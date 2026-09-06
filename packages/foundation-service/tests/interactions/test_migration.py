@@ -26,6 +26,9 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             assert INTERACTION_TABLES.isdisjoint(tables)
             return
         assert INTERACTION_TABLES <= tables
+        for table in INTERACTION_TABLES:
+            columns = {column["name"] for column in inspector.get_columns(table)}
+            assert "organization_id" in columns, table
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert {
             "connector_connection_selections_json",
@@ -43,8 +46,8 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         } <= run_indexes
         run_unique = {constraint["name"] for constraint in inspector.get_unique_constraints("runs")}
         assert {
-            "uq_runs_tenant_id",
-            "uq_runs_tenant_thread_id",
+            "uq_runs_organization_id",
+            "uq_runs_organization_thread_id",
             "uq_runs_scope_identity",
         } <= run_unique
         run_checks = {constraint["name"] for constraint in inspector.get_check_constraints("runs")}
@@ -75,7 +78,7 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             "fk_threads_current_run_same_thread",
         } <= thread_foreign_keys.keys()
         assert thread_foreign_keys["fk_threads_origin_run_same_thread"] == (
-            "tenant_id",
+            "organization_id",
             "origin_thread_id",
             "origin_run_id",
         )
@@ -129,7 +132,7 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         assert "spawn_operation_id" not in child_relationship_columns
         assert "uq_child_run_relationships_spawn_operation" not in child_relationship_unique
         assert {
-            "uq_child_run_relationships_tenant_id",
+            "uq_child_run_relationships_organization_id",
             "uq_child_run_relationships_child_run",
         } <= child_relationship_unique
         with engine.connect() as connection:

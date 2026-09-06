@@ -47,7 +47,7 @@ class NotificationSubscription(BaseModel):
 @dataclass(frozen=True, slots=True)
 class AuthorizedNotificationSubscription:
     definition: NotificationSubscription
-    tenant_id: str
+    organization_id: str
     workspace_id: str
     visible_agent_ids: frozenset[str] | None
     after_seq: int
@@ -103,19 +103,19 @@ class NotificationService:
                 .join(
                     SessionRecord,
                     and_(
-                        SessionRecord.tenant_id == LifecycleEventRecord.tenant_id,
+                        SessionRecord.organization_id == LifecycleEventRecord.organization_id,
                         SessionRecord.id == LifecycleEventRecord.session_id,
                     ),
                 )
                 .join(
                     RunRecord,
                     and_(
-                        RunRecord.tenant_id == LifecycleEventRecord.tenant_id,
+                        RunRecord.organization_id == LifecycleEventRecord.organization_id,
                         RunRecord.id == LifecycleEventRecord.run_id,
                     ),
                 )
                 .where(
-                    LifecycleEventRecord.tenant_id == subscription.tenant_id,
+                    LifecycleEventRecord.organization_id == subscription.organization_id,
                     SessionRecord.workspace_id == subscription.workspace_id,
                     LifecycleEventRecord.seq > subscription.after_seq,
                 )
@@ -188,7 +188,7 @@ class NotificationService:
                         workspace_id=workspace_id,
                         action=action,
                     )
-                tenant_id = notification_scope.workspace.organization_id
+                organization_id = notification_scope.workspace.organization_id
                 visible_agent_ids = notification_scope.visible_agent_ids
             else:
                 thread = await database.scalar(
@@ -196,7 +196,7 @@ class NotificationService:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == ThreadRecord.tenant_id,
+                            SessionRecord.organization_id == ThreadRecord.organization_id,
                             SessionRecord.id == ThreadRecord.session_id,
                         ),
                     )
@@ -209,7 +209,7 @@ class NotificationService:
                     raise AuthorizationError("thread_not_found", concealed=True)
                 run = await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == thread.tenant_id,
+                        RunRecord.organization_id == thread.organization_id,
                         RunRecord.id == thread.current_run_id,
                     )
                 )
@@ -226,10 +226,12 @@ class NotificationService:
                             agent_id=run.agent_id,
                             action=action,
                         )
-                tenant_id = thread.tenant_id
+                organization_id = thread.organization_id
                 visible_agent_ids = frozenset({run.agent_id}) if run else None
             high = await database.scalar(
-                select(func.max(LifecycleEventRecord.seq)).where(LifecycleEventRecord.tenant_id == tenant_id)
+                select(func.max(LifecycleEventRecord.seq)).where(
+                    LifecycleEventRecord.organization_id == organization_id
+                )
             )
         except AuthorizationError as error:
             raise NotificationError(
@@ -239,7 +241,7 @@ class NotificationService:
             ) from error
         return AuthorizedNotificationSubscription(
             definition=subscription,
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             workspace_id=workspace_id,
             visible_agent_ids=visible_agent_ids,
             after_seq=high or 0,

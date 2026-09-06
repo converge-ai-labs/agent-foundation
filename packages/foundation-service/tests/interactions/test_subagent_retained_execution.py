@@ -42,7 +42,7 @@ from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
-    TENANT_ID,
+    ORGANIZATION_ID,
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
@@ -210,7 +210,7 @@ async def test_later_parent_roster_revision_can_resume_retained_child_checkpoint
         delegated.child_run_id,
         attempt_id="rat_7373737373737373",
     )
-    parent_state = await states.read(TENANT_ID, context.parent_run_id)
+    parent_state = await states.read(ORGANIZATION_ID, context.parent_run_id)
     await _seed_replacement_child_revision(interaction_sessions)
     later_operator, later_context = await _continue_parent(
         interaction_sessions,
@@ -284,7 +284,7 @@ async def _continue_parent(
 ) -> tuple[DurableSubagentOperator, SubagentOperatorContext]:
     parent = await _run(sessions, prior_context.parent_run_id)
     completed = await _complete_run(sessions, objects, states, parent, prior_authority.current_context)
-    completed_state = await states.read(completed.tenant_id, completed.id, expected_thread_id=completed.thread_id)
+    completed_state = await states.read(completed.organization_id, completed.id, expected_thread_id=completed.thread_id)
     next_config = parent_config or completed_state.envelope.effective_agent_config
     next_run_id = "run_7070707070707070"
     next_state = initialize_completed_continuation_state(
@@ -364,7 +364,7 @@ async def _additional_parent_thread(
         await _run(sessions, source_context.parent_run_id),
         source_authority.current_context,
     )
-    source_state = await states.read(source.tenant_id, source.id, expected_thread_id=source.thread_id)
+    source_state = await states.read(source.organization_id, source.id, expected_thread_id=source.thread_id)
     config = source_state.envelope.effective_agent_config
     state = initialize_fork_state(
         RunStateSeed(
@@ -396,7 +396,7 @@ async def _additional_parent_thread(
             id=thread_id,
             version=1,
             queue_version=0,
-            tenant_id=run.tenant_id,
+            organization_id=run.organization_id,
             session_id=run.session_id,
             role=ThreadRole.child,
             origin_kind=ThreadOriginKind.fork,
@@ -508,7 +508,7 @@ async def _seed_replacement_child_revision(sessions: async_sessionmaker[AsyncSes
         database.add(
             AgentRevisionRecord(
                 id=REPLACEMENT_CHILD_REVISION_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 agent_id=CHILD_AGENT_ID,
                 version=2,

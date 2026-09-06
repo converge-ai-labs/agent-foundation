@@ -44,13 +44,13 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "root_thread_id"],
-            ["threads.tenant_id", "threads.id"],
+            ["threads.organization_id", "threads.id"],
             name=op.f("fk_a2a_context_bindings_organization_id_threads"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "session_id"],
-            ["sessions.tenant_id", "sessions.id"],
+            ["sessions.organization_id", "sessions.id"],
             name=op.f("fk_a2a_context_bindings_organization_id_sessions"),
             ondelete="RESTRICT",
         ),
@@ -102,18 +102,18 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "current_run_id"],
-            ["runs.tenant_id", "runs.id"],
+            ["runs.organization_id", "runs.id"],
             name=op.f("fk_a2a_task_bindings_organization_id_runs"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "thread_id"],
-            ["threads.tenant_id", "threads.id"],
+            ["threads.organization_id", "threads.id"],
             name=op.f("fk_a2a_task_bindings_organization_id_threads"),
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_a2a_task_bindings")),
-        sa.UniqueConstraint("organization_id", "id", name="uq_a2a_tasks_tenant_id"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_a2a_tasks_organization_id"),
     )
     op.create_index(
         "ix_a2a_tasks_context_created", "a2a_task_bindings", ["context_binding_id", "created_at", "id"], unique=False
@@ -150,7 +150,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "run_id"],
-            ["runs.tenant_id", "runs.id"],
+            ["runs.organization_id", "runs.id"],
             name=op.f("fk_a2a_message_bindings_organization_id_runs"),
             ondelete="RESTRICT",
         ),

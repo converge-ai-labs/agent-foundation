@@ -59,7 +59,7 @@ class LifecycleEventService:
             try:
                 page = await read_workspace_events(
                     database,
-                    tenant_id=authorization.workspace.organization_id,
+                    organization_id=authorization.workspace.organization_id,
                     workspace_id=workspace_id,
                     visible_agent_ids=authorization.visible_agent_ids,
                     after_seq=after_seq,
@@ -151,7 +151,7 @@ class LifecycleEventService:
             try:
                 page = await read_resource_events(
                     database,
-                    tenant_id=run.tenant_id,
+                    organization_id=run.organization_id,
                     entity_type=resource_type,
                     entity_id=resource_id,
                     after_resource_seq=after_resource_seq,

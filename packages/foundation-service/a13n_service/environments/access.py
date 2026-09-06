@@ -1,4 +1,4 @@
-"""Tenant-scoped authorization and relational Environment lookups."""
+"""Organization-scoped authorization and relational Environment lookups."""
 
 from __future__ import annotations
 

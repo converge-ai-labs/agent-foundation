@@ -130,7 +130,7 @@ class LifecycleRetentionReconciler:
             OutboxRecord.source_id == prior.id,
         )
         blocking_prior = exists().where(
-            prior.tenant_id == LifecycleEventRecord.tenant_id,
+            prior.organization_id == LifecycleEventRecord.organization_id,
             prior.seq < LifecycleEventRecord.seq,
             or_(
                 prior.created_at >= event_cutoff,

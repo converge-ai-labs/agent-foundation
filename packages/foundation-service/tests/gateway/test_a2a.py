@@ -11,6 +11,7 @@ import pytest
 from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.api import install_api_conventions
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets.models import AssetRecord
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.service import AssetService
@@ -148,6 +149,35 @@ async def test_initial_message_atomically_binds_task_and_replays(
     assert run is not None
     assert task.run_ids_json == [run.id]
     assert message.run_id == run.id
+
+
+@pytest.mark.parametrize("operation", ["send", "push"])
+async def test_protocol_tenant_selection_is_rejected_before_mutation(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+    operation: str,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+
+    with pytest.raises(A2AError) as captured:
+        if operation == "send":
+            request = _request()
+            request.tenant = "external-tenant"
+            await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+        else:
+            await service.create_push_configuration(
+                actor=_actor(),
+                agent_id=AGENT_ID,
+                task_id="unselected-task",
+                requested=a2a.TaskPushNotificationConfig(tenant="external-tenant"),
+            )
+
+    assert captured.value.code == "tenant_not_supported"
+    assert captured.value.category is ErrorCategory.invalid_request
+    async with short_session(lifecycle_interaction_sessions) as database:
+        for record_type in (A2ATaskBindingRecord, RunRecord, A2APushConfigurationRecord):
+            assert await database.scalar(select(record_type.id)) is None
 
 
 async def test_send_rejects_unavailable_accepted_output_modes_before_mutation(

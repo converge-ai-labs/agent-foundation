@@ -430,7 +430,7 @@ class A2AService:
                 .join(
                     RunRecord,
                     and_(
-                        RunRecord.tenant_id == A2ATaskBindingRecord.organization_id,
+                        RunRecord.organization_id == A2ATaskBindingRecord.organization_id,
                         RunRecord.id == A2ATaskBindingRecord.current_run_id,
                     ),
                 )
@@ -1134,7 +1134,7 @@ class A2AService:
             database.add(
                 A2AContextBindingRecord(
                     id=binding.context_binding_id,
-                    organization_id=run.tenant_id,
+                    organization_id=run.organization_id,
                     workspace_id=binding.actor.workspace_id,
                     client_principal_type=binding.actor.principal.principal_type.value,
                     client_principal_id=binding.actor.principal.principal_id,
@@ -1153,7 +1153,7 @@ class A2AService:
                 .where(
                     A2ATaskBindingRecord.id == binding.task_id,
                     A2ATaskBindingRecord.context_binding_id == binding.context_binding_id,
-                    A2ATaskBindingRecord.organization_id == run.tenant_id,
+                    A2ATaskBindingRecord.organization_id == run.organization_id,
                 )
                 .with_for_update()
             )
@@ -1165,7 +1165,7 @@ class A2AService:
         else:
             task = A2ATaskBindingRecord(
                 id=binding.task_id,
-                organization_id=run.tenant_id,
+                organization_id=run.organization_id,
                 workspace_id=binding.actor.workspace_id,
                 context_binding_id=binding.context_binding_id,
                 context_id=binding.context_id,
@@ -1259,7 +1259,7 @@ class A2AService:
             )
             thread = await database.scalar(
                 select(ThreadRecord).where(
-                    ThreadRecord.tenant_id == context.organization_id,
+                    ThreadRecord.organization_id == context.organization_id,
                     ThreadRecord.id == context.root_thread_id,
                 )
             )
@@ -1267,7 +1267,7 @@ class A2AService:
                 raise _not_found()
             current = await database.scalar(
                 select(RunRecord).where(
-                    RunRecord.tenant_id == context.organization_id,
+                    RunRecord.organization_id == context.organization_id,
                     RunRecord.id == thread.current_run_id,
                 )
             )
@@ -1307,14 +1307,14 @@ class A2AService:
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == A2ATaskBindingRecord.organization_id,
+                            RunRecord.organization_id == A2ATaskBindingRecord.organization_id,
                             RunRecord.id == A2ATaskBindingRecord.current_run_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == A2ATaskBindingRecord.organization_id,
+                            ThreadRecord.organization_id == A2ATaskBindingRecord.organization_id,
                             ThreadRecord.id == A2ATaskBindingRecord.thread_id,
                         ),
                     )
@@ -1436,7 +1436,7 @@ def _message_record(
 ) -> A2AMessageBindingRecord:
     return A2AMessageBindingRecord(
         id=binding_id,
-        organization_id=run.tenant_id,
+        organization_id=run.organization_id,
         workspace_id=actor.workspace_id,
         client_principal_type=actor.principal.principal_type.value,
         client_principal_id=actor.principal.principal_id,

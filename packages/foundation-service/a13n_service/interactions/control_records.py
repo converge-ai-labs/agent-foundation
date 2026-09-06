@@ -13,7 +13,7 @@ from .domain import Thread
 
 def inbox_counter_record(thread: Thread) -> ThreadInboxCounterRecord:
     return ThreadInboxCounterRecord(
-        tenant_id=thread.tenant_id,
+        organization_id=thread.organization_id,
         thread_id=thread.id,
         next_delivery_sequence=1,
         pending_count=0,
@@ -26,7 +26,7 @@ def thread_inbox_record(value: ThreadInboxEntry) -> ThreadInboxRecord:
     inline = "payload" in value.model_fields_set
     return ThreadInboxRecord(
         id=value.id,
-        tenant_id=value.tenant_id,
+        organization_id=value.organization_id,
         thread_id=value.thread_id,
         kind=value.kind.value,
         delivery_sequence=value.delivery_sequence,
@@ -52,11 +52,11 @@ def thread_inbox_record(value: ThreadInboxEntry) -> ThreadInboxRecord:
     )
 
 
-def queued_submission_record(value: QueuedSubmission, *, tenant_id: str) -> QueuedSubmissionRecord:
+def queued_submission_record(value: QueuedSubmission, *, organization_id: str) -> QueuedSubmissionRecord:
     return QueuedSubmissionRecord(
         id=value.queued_submission_id,
         version=value.version,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=value.thread_id,
         authority_principal_type=value.authority_principal.principal_type.value,
         authority_principal_id=value.authority_principal.principal_id,

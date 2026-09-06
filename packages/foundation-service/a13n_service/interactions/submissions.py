@@ -117,7 +117,7 @@ class QueuedSubmissionService:
                 live_queue = await database.scalar(
                     select(QueuedSubmissionRecord.id)
                     .where(
-                        QueuedSubmissionRecord.tenant_id == scope.organization_id,
+                        QueuedSubmissionRecord.organization_id == scope.organization_id,
                         QueuedSubmissionRecord.thread_id == thread.id,
                         QueuedSubmissionRecord.position.is_not(None),
                     )
@@ -253,7 +253,7 @@ class QueuedSubmissionService:
         )
         try:
             return await self._store.list(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread_id,
                 state=state,
                 limit=limit,
@@ -284,7 +284,7 @@ class QueuedSubmissionService:
         )
         try:
             return await self._store.get(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 queued_submission_id=queued_submission_id,
             )
         except QueuedSubmissionConflict as error:
@@ -330,7 +330,7 @@ class QueuedSubmissionService:
                 (target_agent_id, WorkspaceAction.agent_invoke),
             ),
             invoke=lambda replay, commit: self._store.enqueue(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread_id,
                 expected_thread_version=expected_thread_version,
                 authority_principal=actor.principal,
@@ -377,7 +377,7 @@ class QueuedSubmissionService:
                 (target_agent_id, WorkspaceAction.agent_invoke),
             ),
             invoke=lambda replay, commit: self._store.update(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 queued_submission_id=queued_submission_id,
                 expected_version=request.expected_version,
                 actor_principal=actor.principal,
@@ -419,7 +419,7 @@ class QueuedSubmissionService:
             response_type=ThreadQueueMutationReceipt,
             final_authorizations=((scope.agent_id, WorkspaceAction.queued_submission_delete),),
             invoke=lambda replay, commit: self._store.delete(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 queued_submission_id=queued_submission_id,
                 expected_version=request.expected_version,
                 replay=replay,
@@ -459,7 +459,7 @@ class QueuedSubmissionService:
             response_type=ThreadQueueMutationReceipt,
             final_authorizations=((scope.agent_id, WorkspaceAction.queued_submission_reorder),),
             invoke=lambda replay, commit: self._store.reorder(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread_id,
                 expected_queue_version=request.expected_queue_version,
                 queued_submission_ids=request.queued_submission_ids,
@@ -536,7 +536,7 @@ class QueuedSubmissionService:
 
         try:
             queued = await self._store.enqueue(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread.id,
                 expected_thread_version=request.expected_thread_version,
                 authority_principal=actor.principal,
@@ -568,14 +568,14 @@ class QueuedSubmissionService:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .outerjoin(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )
@@ -593,7 +593,7 @@ class QueuedSubmissionService:
                 if thread_record.head_run_id is None
                 else await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == thread_record.tenant_id,
+                        RunRecord.organization_id == thread_record.organization_id,
                         RunRecord.id == thread_record.head_run_id,
                     )
                 )
@@ -602,7 +602,7 @@ class QueuedSubmissionService:
                 await database.scalar(
                     select(
                         exists().where(
-                            QueuedSubmissionRecord.tenant_id == thread_record.tenant_id,
+                            QueuedSubmissionRecord.organization_id == thread_record.organization_id,
                             QueuedSubmissionRecord.thread_id == thread_record.id,
                             QueuedSubmissionRecord.position.is_not(None),
                         )
@@ -633,7 +633,7 @@ class QueuedSubmissionService:
                     "agent_required", "First input requires an Agent selection.", category=ErrorCategory.invalid_request
                 )
             scope = _QueueScope(
-                session_record.tenant_id,
+                session_record.organization_id,
                 session_record.workspace_id,
                 thread.id,
                 current.agent_id if current else target_agent_id,
@@ -791,18 +791,18 @@ class QueuedSubmissionService:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(SessionRecord.tenant_id, SessionRecord.workspace_id, RunRecord.agent_id)
+                    select(SessionRecord.organization_id, SessionRecord.workspace_id, RunRecord.agent_id)
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )
@@ -835,7 +835,7 @@ class QueuedSubmissionService:
             row = (
                 await database.execute(
                     select(
-                        SessionRecord.tenant_id,
+                        SessionRecord.organization_id,
                         SessionRecord.workspace_id,
                         ThreadRecord.id,
                         RunRecord.agent_id,
@@ -843,21 +843,21 @@ class QueuedSubmissionService:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .join(
                         QueuedSubmissionRecord,
                         and_(
-                            QueuedSubmissionRecord.tenant_id == ThreadRecord.tenant_id,
+                            QueuedSubmissionRecord.organization_id == ThreadRecord.organization_id,
                             QueuedSubmissionRecord.thread_id == ThreadRecord.id,
                         ),
                     )
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )

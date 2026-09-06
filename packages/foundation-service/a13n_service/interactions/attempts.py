@@ -37,7 +37,7 @@ class AttemptMutationError(RuntimeError):
 class AttemptContext:
     """Claim-derived process-local correlation, authority, and fixed execution policy."""
 
-    tenant_id: str
+    organization_id: str
     thread_id: str
     run_id: str
     run_attempt_id: str
@@ -364,7 +364,7 @@ async def lock_attempt_lease(
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     thread_id = await database.scalar(
         select(RunRecord.thread_id).where(
-            RunRecord.tenant_id == authority.tenant_id,
+            RunRecord.organization_id == authority.organization_id,
             RunRecord.id == authority.run_id,
         )
     )
@@ -372,13 +372,13 @@ async def lock_attempt_lease(
         raise AttemptAuthorityError("Run authority was not found")
     thread = await database.scalar(
         select(ThreadRecord)
-        .where(ThreadRecord.tenant_id == authority.tenant_id, ThreadRecord.id == thread_id)
+        .where(ThreadRecord.organization_id == authority.organization_id, ThreadRecord.id == thread_id)
         .with_for_update()
     )
     if lock_inbox_origins:
         locked_runs = await lock_inbox_related_runs(
             database,
-            tenant_id=authority.tenant_id,
+            organization_id=authority.organization_id,
             thread_id=thread_id,
             required_run_ids=(authority.run_id,),
         )
@@ -387,7 +387,7 @@ async def lock_attempt_lease(
             (
                 await database.scalars(
                     select(RunRecord)
-                    .where(RunRecord.tenant_id == authority.tenant_id, RunRecord.id == authority.run_id)
+                    .where(RunRecord.organization_id == authority.organization_id, RunRecord.id == authority.run_id)
                     .with_for_update()
                 )
             ).all()
@@ -396,7 +396,7 @@ async def lock_attempt_lease(
     attempt = await database.scalar(
         select(RunAttemptRecord)
         .where(
-            RunAttemptRecord.tenant_id == authority.tenant_id,
+            RunAttemptRecord.organization_id == authority.organization_id,
             RunAttemptRecord.run_id == authority.run_id,
             RunAttemptRecord.id == authority.run_attempt_id,
         )
@@ -416,15 +416,15 @@ async def read_attempt_authority(
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
             RunAttemptRecord,
-            (RunAttemptRecord.tenant_id == RunRecord.tenant_id)
+            (RunAttemptRecord.organization_id == RunRecord.organization_id)
             & (RunAttemptRecord.run_id == RunRecord.id)
             & (RunAttemptRecord.id == authority.run_attempt_id),
         )
         .join(
             ThreadRecord,
-            (ThreadRecord.tenant_id == RunRecord.tenant_id) & (ThreadRecord.id == RunRecord.thread_id),
+            (ThreadRecord.organization_id == RunRecord.organization_id) & (ThreadRecord.id == RunRecord.thread_id),
         )
-        .where(RunRecord.tenant_id == authority.tenant_id, RunRecord.id == authority.run_id)
+        .where(RunRecord.organization_id == authority.organization_id, RunRecord.id == authority.run_id)
     )
     row = result.one_or_none()
     if row is None:

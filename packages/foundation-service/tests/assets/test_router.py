@@ -324,7 +324,7 @@ async def test_concurrent_same_key_uploads_reconcile_one_asset_and_object(api: A
         records = tuple((await session.scalars(select(AssetRecord))).all())
     assert [record.id for record in records] == [first.json()["id"]]
     objects = await api.app.state.runtime.shared.storage.objects.list(
-        prefix=f"tenants/{ORG_ID}/workspaces/{WORKSPACE_ID}/assets/version-1/"
+        prefix=f"organizations/{ORG_ID}/workspaces/{WORKSPACE_ID}/assets/version-1/"
     )
     assert [item.key for item in objects.items] == [
         asset_content_key(
@@ -388,4 +388,4 @@ async def test_content_integrity_failure_returns_safe_typed_error(api: Api) -> N
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "asset_content_unavailable"
-    assert "tenants/" not in response.text
+    assert "organizations/" not in response.text

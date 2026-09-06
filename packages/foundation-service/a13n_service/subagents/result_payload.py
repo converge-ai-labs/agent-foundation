@@ -139,13 +139,13 @@ async def read_async_subagent_result_authority(
     payload = parse_async_subagent_result_entry(entry)
     relationship = await database.scalar(
         select(ChildRunRelationshipRecord).where(
-            ChildRunRelationshipRecord.tenant_id == entry.tenant_id,
+            ChildRunRelationshipRecord.organization_id == entry.organization_id,
             ChildRunRelationshipRecord.id == payload.relationship_id,
         )
     )
     child = await database.scalar(
         select(RunRecord).where(
-            RunRecord.tenant_id == entry.tenant_id,
+            RunRecord.organization_id == entry.organization_id,
             RunRecord.id == payload.child_run_id,
         )
     )
@@ -153,7 +153,7 @@ async def read_async_subagent_result_authority(
     if relationship is not None:
         parent = await database.scalar(
             select(RunRecord).where(
-                RunRecord.tenant_id == entry.tenant_id,
+                RunRecord.organization_id == entry.organization_id,
                 RunRecord.id == relationship.parent_run_id,
             )
         )
@@ -199,7 +199,7 @@ def validate_async_subagent_result_authority(
 async def load_async_subagent_terminal_item(
     replays: RunReplayStore,
     *,
-    tenant_id: str,
+    organization_id: str,
     child: Run,
     expected_item_id: str | None,
 ) -> RetainedItem | None:
@@ -212,7 +212,7 @@ async def load_async_subagent_terminal_item(
         return None
     try:
         snapshot = await replays.read(
-            tenant_id,
+            organization_id,
             child.id,
             expected_thread_id=child.thread_id,
         )

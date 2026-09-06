@@ -44,8 +44,8 @@ from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
+    ORGANIZATION_ID,
     SESSION_ID,
-    TENANT_ID,
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
@@ -215,7 +215,7 @@ async def test_child_acceptance_rejects_stale_generation_before_publishing_state
         ).accept(prepared, authority)
 
     with pytest.raises(ObjectNotFound):
-        await states.read(TENANT_ID, prepared.run.id)
+        await states.read(ORGANIZATION_ID, prepared.run.id)
 
 
 async def test_child_acceptance_reauthorizes_persisted_parent_principal(
@@ -261,7 +261,7 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
         await service.accept(prepared, authority)
 
     with pytest.raises(ObjectNotFound):
-        await states.read(TENANT_ID, prepared.run.id)
+        await states.read(ORGANIZATION_ID, prepared.run.id)
 
 
 async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postgresql(
@@ -367,7 +367,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         first.run,
         _authority(child_claim),
     )
-    source_state = await states.read(TENANT_ID, completed_child.id, expected_thread_id=first.thread.id)
+    source_state = await states.read(ORGANIZATION_ID, completed_child.id, expected_thread_id=first.thread.id)
     async with short_session(interaction_sessions) as database:
         source_thread_record = await database.get(ThreadRecord, first.thread.id)
         source_relationship_record = await database.get(ChildRunRelationshipRecord, accepted.relationship.id)
@@ -404,7 +404,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
 
     assert receipt.child_thread_id == source_thread.id
     assert receipt.child_run_id == resumed.run.id
-    resumed_state = await states.read(TENANT_ID, resumed.run.id, expected_thread_id=source_thread.id)
+    resumed_state = await states.read(ORGANIZATION_ID, resumed.run.id, expected_thread_id=source_thread.id)
     assert resumed_state.envelope.checkpoint_seq == 0
     assert resumed_state.envelope.harness.message_history == source_state.envelope.harness.message_history
     async with short_session(interaction_sessions) as database:
@@ -449,7 +449,7 @@ async def _complete_run(
         expected_run_version=entered.run_version,
         expected_attempt_version=entered.attempt_version,
     )
-    current = await states.read(TENANT_ID, run.id)
+    current = await states.read(ORGANIZATION_ID, run.id)
     candidate = _completed_state(
         current.envelope,
         authority.run_attempt_id,
@@ -564,7 +564,7 @@ async def _accept_parent(
     ).accept_new_thread(
         session=Session(
             id=SESSION_ID,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             created_at=NOW,
             updated_at=NOW,
@@ -573,7 +573,7 @@ async def _accept_parent(
             id=THREAD_ID,
             version=1,
             queue_version=0,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             session_id=SESSION_ID,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -605,12 +605,12 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             RoleBindingRecord(
                 id="rbac_2222222222222222",
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=None,
                 principal_type="user",
                 principal_id=USER_ID,
                 resource_type="organization",
-                resource_id=TENANT_ID,
+                resource_id=ORGANIZATION_ID,
                 role_key="member",
                 created_by_user_id=USER_ID,
                 created_at=NOW,
@@ -620,7 +620,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             RoleBindingRecord(
                 id="rbac_3333333333333333",
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 principal_type="user",
                 principal_id=USER_ID,
@@ -635,7 +635,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             AgentRecord(
                 id=CHILD_AGENT_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Child Agent",
@@ -659,7 +659,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             AgentRevisionRecord(
                 id=CHILD_REVISION_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 agent_id=CHILD_AGENT_ID,
                 version=1,

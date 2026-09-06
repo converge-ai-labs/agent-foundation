@@ -70,7 +70,7 @@ def prepare_async_result_successor(
     run = accepted_run(
         now=created_at,
         id=successor_run_id,
-        tenant_id=selected_parent.tenant_id,
+        organization_id=selected_parent.organization_id,
         authority_principal=origin_run.authority_principal,
         session_id=selected_parent.session_id,
         thread_id=selected_parent.thread_id,
@@ -122,7 +122,7 @@ def _validate_authority(
     ):
         raise ValueError("selected parent state does not match its sealed Run")
     if (
-        origin_run.tenant_id != selected_parent.tenant_id
+        origin_run.organization_id != selected_parent.organization_id
         or origin_run.session_id != selected_parent.session_id
         or origin_run.thread_id != selected_parent.thread_id
         or origin_run.status in {RunStatus.failed, RunStatus.cancelled}
@@ -131,7 +131,7 @@ def _validate_authority(
     if (
         inbox_entry.kind is not ThreadInboxKind.async_subagent_result
         or inbox_entry.status is not ThreadInboxStatus.pending
-        or inbox_entry.tenant_id != selected_parent.tenant_id
+        or inbox_entry.organization_id != selected_parent.organization_id
         or inbox_entry.thread_id != selected_parent.thread_id
         or inbox_entry.origin_run_id != origin_run.id
         or inbox_entry.target_run_id is not None

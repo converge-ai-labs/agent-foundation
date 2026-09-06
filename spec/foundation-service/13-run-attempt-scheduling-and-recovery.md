@@ -72,7 +72,7 @@ type RunAttemptYieldReason = Literal[
 class RunAttempt:
     id: str
     version: int
-    tenant_id: str
+    organization_id: str
     run_id: str
     attempt_number: int
     fence: int
@@ -143,7 +143,7 @@ Each worker generation is one `run_attempts` row:
 
 | Column group      | Columns                                                                                      | Contract                                                                                                                             |
 | ----------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Identity          | `id`, `version`, `tenant_id`, `run_id`, `attempt_number`, `fence`, `status`                  | Unique attempt identity, positive CAS version, and monotonically increasing generation within the Run                                |
+| Identity          | `id`, `version`, `organization_id`, `run_id`, `attempt_number`, `fence`, `status`            | Unique attempt identity, positive CAS version, and monotonically increasing generation within the Run                                |
 | Recovery lineage  | `replaces_run_attempt_id`, `recovery_reason`                                                 | Names the immediately superseded attempt and bounded recovery reason                                                                 |
 | Worker and run    | `worker_id`, `worker_generation`, `worker_build_id`, `runtime_lock_digest`, `harness_run_id` | Execution-process and immutable service-build correlation, exact Run-pinned Runtime lock, and at most one Harness Run ID after entry |
 | Model observation | `model_execution_observation_json`                                                           | Immutable safe model ID, provider type, and model name copied from the Run at claim                                                  |
@@ -227,11 +227,11 @@ sequenceDiagram
     end
 ```
 
-After commit, the winning execution loop schedules the executor as its next local action and resumes scanning only according to its remaining capacity. `AttemptContext` is a claim-derived process-local context. Its immutable correlation includes tenant, Thread, Run, Attempt, Worker identity and generation, build identity, Runtime lock, fence, lease proof, and fixed policy deadlines; it initializes the expected relational versions and lease deadline that the executor advances only from successful fenced operations or authoritative rereads. It contains no database session, transaction, Harness object, credential, or independent authority; every authoritative operation still revalidates PostgreSQL.
+After commit, the winning execution loop schedules the executor as its next local action and resumes scanning only according to its remaining capacity. `AttemptContext` is a claim-derived process-local context. Its immutable correlation includes organization, Thread, Run, Attempt, Worker identity and generation, build identity, Runtime lock, fence, lease proof, and fixed policy deadlines; it initializes the expected relational versions and lease deadline that the executor advances only from successful fenced operations or authoritative rereads. It contains no database session, transaction, Harness object, credential, or independent authority; every authoritative operation still revalidates PostgreSQL.
 
 The executor performs state and dependency preparation outside database transactions while its child renewal activity keeps the lease current. When Service tracing is enabled, that committed claim starts the parentless RunAttempt root defined by [Observability](38-observability.md). Before model or tool work, the executor conditionally claims the Run's current state object version for its fence. It then enters the Harness Run through another short fenced transaction: it verifies the current leased attempt and the expected Attempt version returned by the preparation decision, records `harness_run_id` and `started_at`, changes the attempt to `running`, sets the Run's `started_at` if this is its first Harness Run, and appends the attempt lifecycle fact. The Run remains `running`.
 
-Heartbeat and lease renewal update only the selected attempt, but their conditional update verifies the authority rule above in the same relational transaction. Like every worker-originated durable mutation, they supply `tenant_id`, `run_id`, `run_attempt_id`, fence, lease proof, and expected Run version. They cannot revive a terminal or deselected generation. A state write additionally supplies the current opaque object version and conditionally replaces the same deterministic state key.
+Heartbeat and lease renewal update only the selected attempt, but their conditional update verifies the authority rule above in the same relational transaction. Like every worker-originated durable mutation, they supply `organization_id`, `run_id`, `run_attempt_id`, fence, lease proof, and expected Run version. They cannot revive a terminal or deselected generation. A state write additionally supplies the current opaque object version and conditionally replaces the same deterministic state key.
 
 The same fence covers Attempt preparation and outcome, Run state replacement and sealing, lifecycle and retained-Item publication, waiting feedback, child acceptance or result incorporation, and terminal Thread updates. Lease renewal proves only that the selected Worker generation remains alive and authorized to publish; it does not commit Agent progress, extend credential lifetime, or make process memory recoverable. An executor that cannot confirm current ownership terminally fences its process-local control gate, stops model and tool work, cancels its Harness stream, and suppresses authoritative publication. It may still emit bounded non-authoritative telemetry naming its stale Attempt.
 
@@ -357,10 +357,10 @@ sequenceDiagram
 
 After any new attempt owns the lease, its executor reads the exact state, attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a database transaction and satisfies the [active-control recovery contract](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
 
-- the latest complete state object passes key, tenant, Run, Thread, digest, size, envelope, checkpoint, AgentRevision, Runtime lock, and required Harness, Capability, and Host codec validation;
+- the latest complete state object passes key, organization, Run, Thread, digest, size, envelope, checkpoint, AgentRevision, Runtime lock, and required Harness, Capability, and Host codec validation;
 - the applicable fixed recovery or handoff count, elapsed-time, and known-usage ceilings still permit this already-created attempt after all durable usage charges;
 - the exact AgentRevision, `EffectiveAgentConfig`, Runtime lock, managed Harness Plugin and Skill artifacts, accepted Connectivity selections and protected Ingress context, the accepted Environment ID/access and compatible template/Provider schemas, and other frozen dependency locks are present, digest-valid, and compatible; and
-- the Run's persisted authority Principal remains active in the same tenant, and its current Workspace and principal policy, RoleBindings, Agent invocation authority, ConnectorConnection and MCPConnection ownership or eligibility, Ingress action authority, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
+- the Run's persisted authority Principal remains active in the same organization, and its current Workspace and principal policy, RoleBindings, Agent invocation authority, ConnectorConnection and MCPConnection ownership or eligibility, Ingress action authority, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
 
 External tool preparation follows [Agent-Facing External Tools](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery): current schemas are discovered under the retained source selections, without a durable tool snapshot compatibility gate. This external I/O occurs outside the claim and preparation-decision transactions.
 
@@ -430,9 +430,9 @@ Backoff uses the Run's exact durable `available_at`; Worker or process restart d
 
 The `run_attempts` table follows the [Relational Schema Lifecycle](04-relational-schema.md) and preserves these constraints:
 
-01. `(tenant_id, id)` is unique, and the attempt tenant equals its Run tenant.
+01. `(organization_id, id)` is unique, and the attempt organization equals its Run organization.
 02. Attempt number, fence, and row version are positive.
-03. `(tenant_id, run_id, attempt_number)` and `(tenant_id, run_id, fence)` are unique.
+03. `(organization_id, run_id, attempt_number)` and `(organization_id, run_id, fence)` are unique.
 04. `replaces_run_attempt_id`, when present, belongs to the same Run and has a smaller attempt number.
 05. `current_run_attempt_id`, when present on a Run, names that Run's only selected non-terminal attempt; only an unexpired matching lease authorizes work.
 06. Worker scan and takeover use `(status, lease_expires_at, run_id)` on non-terminal attempts and the Run's scheduling index.
@@ -452,7 +452,7 @@ Keeping attempts as immutable audit rows increases relational retention but pres
 
 01. One `RunAttempt` is one worker generation and starts at most one Harness Run.
 02. Attempt number and fence increase monotonically, are never reused, and at most one attempt is current and lease-authorized for a Run.
-03. Every worker-originated durable write validates the current attempt, fence, lease, tenant, Run status, and expected Run version.
+03. Every worker-originated durable write validates the current attempt, fence, lease, organization, Run status, and expected Run version.
 04. The current Attempt fence authorizes state and outcome writes that carry Thread-inbox evidence; the active-control and asynchronous-subagent contracts own exact consumption, rollover, suppression, and supersession semantics.
 05. Only a Worker's short Run claim or takeover transaction can authorize a later attempt; after the first claim the same Run remains `running`, and its budget must permit the new generation.
 06. A later attempt receives fresh worker and Harness identities while resuming the same Run state under the Run persistence contract.

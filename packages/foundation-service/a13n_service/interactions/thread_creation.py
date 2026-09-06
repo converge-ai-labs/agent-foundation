@@ -84,7 +84,7 @@ async def allocate_thread(
                     .where(
                         SessionRecord.id == body.session_id,
                         SessionRecord.workspace_id == workspace_id,
-                        SessionRecord.tenant_id == workspace.organization_id,
+                        SessionRecord.organization_id == workspace.organization_id,
                     )
                     .with_for_update()
                 )
@@ -98,7 +98,7 @@ async def allocate_thread(
             else:
                 parent = SessionRecord(
                     id=new_object_id("session"),
-                    tenant_id=workspace.organization_id,
+                    organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
                     created_at=now,
                     updated_at=now,
@@ -109,7 +109,7 @@ async def allocate_thread(
                 id=new_thread_id(),
                 version=1,
                 queue_version=0,
-                tenant_id=workspace.organization_id,
+                organization_id=workspace.organization_id,
                 session_id=parent.id,
                 role=ThreadRole.root,
                 origin_kind=ThreadOriginKind.new,

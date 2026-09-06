@@ -29,7 +29,7 @@ AGENT_REVISION_ID = "agtr_1234567890abcdef"
 MODEL_ID = "mdl_1234567890abcdef"
 MODEL_KEY = "primary"
 ATTEMPT_ID = "rat_1234567890abcdef"
-TENANT_ID = "org_1234567890abcdef"
+ORGANIZATION_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
 SESSION_ID = "sess_1234567890abcdef"
 THREAD_ID = "thread-1234567890abcdef1234567890abcdef"
@@ -162,11 +162,11 @@ async def postgres_interaction_sessions(
 
 async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as database:
-        database.add(OrganizationRecord(id=TENANT_ID, name="Test", created_at=NOW, updated_at=NOW))
+        database.add(OrganizationRecord(id=ORGANIZATION_ID, name="Test", created_at=NOW, updated_at=NOW))
         database.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 name="Test",
                 normalized_name="test",
                 created_at=NOW,
@@ -178,7 +178,7 @@ async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession])
         database.add(
             AgentRecord(
                 id=AGENT_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Test Agent",
@@ -202,7 +202,7 @@ async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession])
         database.add(
             AgentRevisionRecord(
                 id=AGENT_REVISION_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 agent_id=AGENT_ID,
                 version=1,

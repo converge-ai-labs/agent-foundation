@@ -13,19 +13,19 @@ from .models import SessionRecord
 async def read_workspace_lifecycle_events(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     workspace_id: str,
     after_seq: int | None,
     limit: int,
 ) -> LifecycleWorkspacePage:
-    """Read one authorized Workspace projection over the tenant event cursor."""
+    """Read one authorized Workspace projection over the organization event cursor."""
 
     if after_seq is not None and after_seq < 1:
         raise ValueError("after_seq must be positive when supplied")
     if limit < 1 or limit > 200:
         raise ValueError("limit must be between 1 and 200")
-    tenant_floor = await database.scalar(
-        select(func.min(LifecycleEventRecord.seq)).where(LifecycleEventRecord.tenant_id == tenant_id)
+    organization_floor = await database.scalar(
+        select(func.min(LifecycleEventRecord.seq)).where(LifecycleEventRecord.organization_id == organization_id)
     )
     workspace_boundary = await database.execute(
         select(
@@ -34,21 +34,21 @@ async def read_workspace_lifecycle_events(
         )
         .join(
             SessionRecord,
-            (SessionRecord.tenant_id == LifecycleEventRecord.tenant_id)
+            (SessionRecord.organization_id == LifecycleEventRecord.organization_id)
             & (SessionRecord.id == LifecycleEventRecord.session_id),
         )
         .where(
-            LifecycleEventRecord.tenant_id == tenant_id,
+            LifecycleEventRecord.organization_id == organization_id,
             SessionRecord.workspace_id == workspace_id,
         )
     )
     workspace_floor, workspace_high = workspace_boundary.one()
-    if workspace_floor is None or workspace_high is None or tenant_floor is None:
+    if workspace_floor is None or workspace_high is None or organization_floor is None:
         return LifecycleWorkspacePage((), None, 0, 0)
-    if after_seq is not None and after_seq < tenant_floor:
-        raise LifecycleReplayGap(retained_floor=tenant_floor, high_watermark=workspace_high)
+    if after_seq is not None and after_seq < organization_floor:
+        raise LifecycleReplayGap(retained_floor=organization_floor, high_watermark=workspace_high)
     filters = [
-        LifecycleEventRecord.tenant_id == tenant_id,
+        LifecycleEventRecord.organization_id == organization_id,
         SessionRecord.workspace_id == workspace_id,
     ]
     if after_seq is not None:
@@ -58,7 +58,7 @@ async def read_workspace_lifecycle_events(
             select(LifecycleEventRecord)
             .join(
                 SessionRecord,
-                (SessionRecord.tenant_id == LifecycleEventRecord.tenant_id)
+                (SessionRecord.organization_id == LifecycleEventRecord.organization_id)
                 & (SessionRecord.id == LifecycleEventRecord.session_id),
             )
             .where(*filters)
@@ -70,7 +70,7 @@ async def read_workspace_lifecycle_events(
     return LifecycleWorkspacePage(
         items=items,
         next_seq=None if not items else items[-1].seq,
-        retained_floor=tenant_floor,
+        retained_floor=organization_floor,
         high_watermark=workspace_high,
     )
 

@@ -224,7 +224,7 @@ def normalize_skill_files(files: Iterable[tuple[str, bytes]]) -> NormalizedSkill
 
 
 def skill_package_object_key(organization_id: str, workspace_id: str, content_digest: str) -> str:
-    """Derive the private version-1 package key after an authorized tenant lookup."""
+    """Derive the private version-1 package key after an authorized organization lookup."""
 
     if re.fullmatch(r"org_[a-z0-9]{16,64}", organization_id) is None:
         raise ValueError("organization_id must be an Organization ID")
@@ -232,7 +232,7 @@ def skill_package_object_key(organization_id: str, workspace_id: str, content_di
         raise ValueError("workspace_id must be a Workspace ID")
     if re.fullmatch(r"[0-9a-f]{64}", content_digest) is None:
         raise ValueError("content_digest must be a lowercase SHA-256 value")
-    return f"tenants/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{content_digest}.zip"
+    return f"organizations/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{content_digest}.zip"
 
 
 def normalize_skill_path(raw_path: str) -> str:

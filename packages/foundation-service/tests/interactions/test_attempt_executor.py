@@ -50,7 +50,7 @@ from anyio import Event, create_task_group, sleep_forever
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from .conftest import ATTEMPT_ID, NOW, RUN_ID, TENANT_ID, initial_state
+from .conftest import ATTEMPT_ID, NOW, ORGANIZATION_ID, RUN_ID, initial_state
 
 pytestmark = pytest.mark.anyio
 
@@ -300,12 +300,12 @@ async def _stored_state(
     envelope: RunStateEnvelope,
 ) -> tuple[RunStateStore, StoredRunState]:
     states = RunStateStore(objects)
-    return states, await states.create(TENANT_ID, envelope)
+    return states, await states.create(ORGANIZATION_ID, envelope)
 
 
 def _context(thread_id: str, *, renewal_interval: timedelta = timedelta(milliseconds=1)) -> AttemptContext:
     return AttemptContext(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=thread_id,
         run_id=RUN_ID,
         run_attempt_id=ATTEMPT_ID,

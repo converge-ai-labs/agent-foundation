@@ -99,9 +99,9 @@ The conceptual model materializes as one `assets` row per publication. The table
 
 The table preserves these constraints:
 
-1. `(workspace_id, organization_id)` references `workspaces(id, organization_id)`, proving that both tenant columns describe the same immutable owner.
+1. `(workspace_id, organization_id)` references `workspaces(id, organization_id)`, proving that the Workspace belongs to the same immutable Organization owner.
 2. One row satisfies exactly one source shape. `upload` requires both Principal columns and requires both Run-output columns to be null. `run_output` requires both Run-output columns and requires both Principal columns to be null. Unknown `source_kind` and `source_principal_type` values fail closed.
-3. `(workspace_id, source_run_attempt_id)` for a Run output references `run_attempts(tenant_id, id)`. Run persistence uses `tenant_id` for this Workspace scope. The immutable Attempt supplies its `run_id`, so `assets` does not duplicate `source_run_id`; the domain projection and `source_run_id` filter join through that Attempt. The fenced create transaction requires the current trusted `AssetCapability` runtime to supply `source_invocation_id` together with the selected Attempt's lease and fence; the invocation identity is not accepted from model arguments and is not looked up in a generic RunAttempt ledger.
+3. `(organization_id, source_run_attempt_id)` for a Run output references `run_attempts(organization_id, id)`. The source Run must belong to the Asset’s Workspace. The immutable Attempt supplies its `run_id`, so `assets` does not duplicate `source_run_id`; the domain projection and `source_run_id` filter join through that Attempt. The fenced create transaction requires the current trusted `AssetCapability` runtime to supply `source_invocation_id` together with the selected Attempt's lease and fence; the invocation identity is not accepted from model arguments and is not looked up in a generic RunAttempt ledger.
 4. A partial unique index on `(source_run_attempt_id, source_invocation_id)` for `source_kind = 'run_output'` admits at most one Asset for one invocation within that Attempt. Logical deletion does not release this identity. Reconciliation returns the existing row only when its immutable metadata and content evidence match; a different candidate under the same invocation fails closed and never replaces the original.
 5. `filename`, `media_type`, `size_bytes`, and `content_sha256` satisfy the Asset-model bounds. `deleted_at`, when present, is not earlier than `created_at`.
 6. Every column except `deleted_at` is immutable. The table has no `version` or `updated_at`: content and metadata do not support compare-and-swap mutation, and deletion is a conditional update constrained by `deleted_at IS NULL`.
@@ -110,14 +110,14 @@ Principal provenance deliberately uses the same polymorphic reference shape as I
 
 The accepted access paths are:
 
-| Access path                      | Index or uniqueness contract                                                                                                                                                             |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Exact authorized read or delete  | Primary-key lookup by `id` with mandatory `organization_id`, `workspace_id`, and active-row predicates in the authoritative query                                                        |
-| Active Workspace listing         | Partial index on `(organization_id, workspace_id, created_at desc, id desc)` where `deleted_at is null`                                                                                  |
-| Active source-kind listing       | Partial index on `(organization_id, workspace_id, source_kind, created_at desc, id desc)` where `deleted_at is null`                                                                     |
-| Active source-Run listing        | `run_attempts(tenant_id, run_id, attempt_number)` joined to a partial index on `(organization_id, workspace_id, source_run_attempt_id, created_at desc, id desc)` for active Run outputs |
-| Agent-publication reconciliation | Partial unique `(source_run_attempt_id, source_invocation_id)` for every Run-output row, including tombstones                                                                            |
-| Bounded tombstone-retention scan | Partial index on `(deleted_at, id)` where `deleted_at is not null`                                                                                                                       |
+| Access path                      | Index or uniqueness contract                                                                                                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exact authorized read or delete  | Primary-key lookup by `id` with mandatory `organization_id`, `workspace_id`, and active-row predicates in the authoritative query                                                              |
+| Active Workspace listing         | Partial index on `(organization_id, workspace_id, created_at desc, id desc)` where `deleted_at is null`                                                                                        |
+| Active source-kind listing       | Partial index on `(organization_id, workspace_id, source_kind, created_at desc, id desc)` where `deleted_at is null`                                                                           |
+| Active source-Run listing        | `run_attempts(organization_id, run_id, attempt_number)` joined to a partial index on `(organization_id, workspace_id, source_run_attempt_id, created_at desc, id desc)` for active Run outputs |
+| Agent-publication reconciliation | Partial unique `(source_run_attempt_id, source_invocation_id)` for every Run-output row, including tombstones                                                                                  |
+| Bounded tombstone-retention scan | Partial index on `(deleted_at, id)` where `deleted_at is not null`                                                                                                                             |
 
 `content_sha256` is neither unique nor an identity lookup index, and `filename` is not unique. Equal content or equal display names remain independent Assets and never cause relational or physical adoption.
 
@@ -175,7 +175,7 @@ Stable domain errors include `asset_not_found`, `asset_content_unavailable`, `as
 Foundation derives the content key only after allocating an Asset ID:
 
 ```text
-tenants/{organization_id}/workspaces/{workspace_id}/assets/version-1/{asset_id}/content
+organizations/{organization_id}/workspaces/{workspace_id}/assets/version-1/{asset_id}/content
 ```
 
 The object content type is `application/octet-stream`. Object metadata records `asset-id`, `workspace-id`, `size-bytes`, and `content-sha256`. The key and metadata are internal layout, not public identity or authority. Two Assets with equal content use distinct logical keys; an implementation can optimize physical storage internally only when it preserves independent deletion, integrity, and observable Asset identity.

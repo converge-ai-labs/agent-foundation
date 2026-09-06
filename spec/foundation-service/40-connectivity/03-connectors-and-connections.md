@@ -109,7 +109,7 @@ class ConnectorConnection:
 
 `external_ref` is absent until setup obtains a verified external connection reference. Once assigned, it is immutable; `ready` requires it. It is protected metadata: public management reads can expose the Foundation ConnectorConnection ID and safe account projection but never disclose this reference to the model. It is not a bearer credential and grants no authority by possession.
 
-Every ConnectorConnection belongs to its Workspace. Tenant, Connector Provider, Connector key, and verified external reference are immutable. There is no personal owner field or Principal-owned visibility branch. A different external identity requires a different connection.
+Every ConnectorConnection belongs to its Workspace. Organization, Connector Provider, Connector key, and verified external reference are immutable. There is no personal owner field or Principal-owned visibility branch. A different external identity requires a different connection.
 
 Selection and dispatch require current Workspace, Agent, execution Principal, ConnectorProvider, and ConnectorConnection eligibility. Workspace Admin manages connections; authorized Workspace Runs, including inbound Service Account Runs, can use their accepted selections. External sender identity grants no authority.
 

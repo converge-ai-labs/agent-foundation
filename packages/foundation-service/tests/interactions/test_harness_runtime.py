@@ -60,7 +60,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from .conftest import ATTEMPT_ID, NOW, TENANT_ID, initial_state, progress_state
+from .conftest import ATTEMPT_ID, NOW, ORGANIZATION_ID, initial_state, progress_state
 
 pytestmark = pytest.mark.anyio
 
@@ -166,7 +166,7 @@ class _EventProjector:
 
 
 async def _stored_state(objects, envelope) -> StoredRunState:
-    return await RunStateStore(objects).create(TENANT_ID, envelope)
+    return await RunStateStore(objects).create(ORGANIZATION_ID, envelope)
 
 
 def _instance() -> AgentInstanceContext:

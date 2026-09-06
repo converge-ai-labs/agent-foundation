@@ -1,4 +1,4 @@
-"""Authorization and tenant-consistent scope checks for managed Hooks."""
+"""Authorization and organization-consistent scope checks for managed Hooks."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ async def validate_hook_scope(
     if thread_id is not None:
         thread = await database.scalar(
             select(ThreadRecord).where(
-                ThreadRecord.tenant_id == organization_id,
+                ThreadRecord.organization_id == organization_id,
                 ThreadRecord.id == thread_id,
             )
         )
@@ -73,7 +73,7 @@ async def validate_hook_scope(
             raise _invalid_scope()
     if run_id is not None:
         run = await database.scalar(
-            select(RunRecord).where(RunRecord.tenant_id == organization_id, RunRecord.id == run_id)
+            select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id)
         )
         if (
             run is None
@@ -98,7 +98,7 @@ async def _session_is_in_workspace(
 ) -> bool:
     found = await database.scalar(
         select(SessionRecord.id).where(
-            SessionRecord.tenant_id == organization_id,
+            SessionRecord.organization_id == organization_id,
             SessionRecord.id == session_id,
             SessionRecord.workspace_id == workspace_id,
         )
@@ -109,7 +109,7 @@ async def _session_is_in_workspace(
 def _invalid_scope() -> HookManagementError:
     return HookManagementError(
         "invalid_hook_scope",
-        "The Hook subscription scope is not tenant-consistent.",
+        "The Hook subscription scope is not organization-consistent.",
         category=ErrorCategory.invalid_request,
     )
 

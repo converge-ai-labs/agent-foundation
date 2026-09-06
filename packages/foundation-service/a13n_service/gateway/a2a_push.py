@@ -95,7 +95,7 @@ async def append_matching_a2a_push_outbox(
                     ),
                 )
                 .where(
-                    A2APushConfigurationRecord.organization_id == event.tenant_id,
+                    A2APushConfigurationRecord.organization_id == event.organization_id,
                     A2APushConfigurationRecord.state == "active",
                     A2ATaskBindingRecord.current_run_id == event.run_id,
                 )
@@ -303,7 +303,7 @@ class A2APushPublisher:
             if (
                 task is None
                 or task.organization_id != configuration.organization_id
-                or event.tenant_id != configuration.organization_id
+                or event.organization_id != configuration.organization_id
                 or event.run_id not in task.run_ids_json
                 or event.event_type not in _SIGNIFICANT_EVENT_TYPES
             ):

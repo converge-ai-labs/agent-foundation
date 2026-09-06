@@ -226,7 +226,7 @@ flowchart TB
 | Native, Hosted AG-UI, and A2A public protocols                          | [Protocol Gateway](15-protocol-gateway.md)                                                            | Map distinct wire protocols to the same application and IAM authority                                              |
 | Client-side effects                                                     | External client                                                                                       | Foundation authenticates feedback but does not claim the effect                                                    |
 
-Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Run/RunAttempt kernel.
+Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation organization ownership, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Run/RunAttempt kernel.
 
 ## Process Roles
 

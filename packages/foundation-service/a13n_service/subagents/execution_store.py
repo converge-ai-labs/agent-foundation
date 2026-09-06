@@ -144,7 +144,7 @@ class SubagentExecutionStore:
             session = await _require_session(database, parent)
             origin_parent = aliased(RunRecord)
             filters = [
-                ChildRunRelationshipRecord.tenant_id == authority.tenant_id,
+                ChildRunRelationshipRecord.organization_id == authority.organization_id,
                 origin_parent.session_id == parent.session_id,
                 or_(
                     origin_parent.thread_id == parent.thread_id,
@@ -154,7 +154,7 @@ class SubagentExecutionStore:
             if execution_id is not None:
                 filters.append(ChildRunRelationshipRecord.id == execution_id)
             relationship_scope = and_(
-                origin_parent.tenant_id == ChildRunRelationshipRecord.tenant_id,
+                origin_parent.organization_id == ChildRunRelationshipRecord.organization_id,
                 origin_parent.id == ChildRunRelationshipRecord.parent_run_id,
             )
             total = int(
@@ -202,12 +202,12 @@ async def _load_executions(
 ) -> tuple[RetainedChildExecution, ...]:
     if not relationships:
         return ()
-    tenant_id = relationships[0].tenant_id
+    organization_id = relationships[0].organization_id
     parent_ids = tuple({row.parent_run_id for row in relationships})
     parent_runs = tuple(
         (
             await database.scalars(
-                select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id.in_(parent_ids))
+                select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id.in_(parent_ids))
             )
         ).all()
     )
@@ -215,7 +215,7 @@ async def _load_executions(
     child_runs = tuple(
         (
             await database.scalars(
-                select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id.in_(child_ids))
+                select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id.in_(child_ids))
             )
         ).all()
     )
@@ -223,7 +223,9 @@ async def _load_executions(
     threads = tuple(
         (
             await database.scalars(
-                select(ThreadRecord).where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id.in_(thread_ids))
+                select(ThreadRecord).where(
+                    ThreadRecord.organization_id == organization_id, ThreadRecord.id.in_(thread_ids)
+                )
             )
         ).all()
     )
@@ -232,7 +234,7 @@ async def _load_executions(
         (
             await database.scalars(
                 select(ChildRunRelationshipRecord).where(
-                    ChildRunRelationshipRecord.tenant_id == tenant_id,
+                    ChildRunRelationshipRecord.organization_id == organization_id,
                     ChildRunRelationshipRecord.child_run_id.in_(source_child_ids),
                 )
             )
@@ -240,13 +242,13 @@ async def _load_executions(
         if source_child_ids
         else ()
     )
-    segment_by_child = await _load_segment_indexes(database, tenant_id=tenant_id, child_ids=child_ids)
+    segment_by_child = await _load_segment_indexes(database, organization_id=organization_id, child_ids=child_ids)
     revision_ids = tuple({row.agent_revision_id for row in child_runs})
     revisions = tuple(
         (
             await database.scalars(
                 select(AgentRevisionRecord).where(
-                    AgentRevisionRecord.organization_id == tenant_id,
+                    AgentRevisionRecord.organization_id == organization_id,
                     AgentRevisionRecord.id.in_(revision_ids),
                 )
             )
@@ -294,7 +296,7 @@ async def _load_executions(
 async def _load_segment_indexes(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     child_ids: tuple[str, ...],
 ) -> dict[str, int]:
     lineage = select(
@@ -303,7 +305,7 @@ async def _load_segment_indexes(
         RunRecord.parent_run_id.label("parent_run_id"),
         RunRecord.thread_id.label("thread_id"),
         literal(0).label("depth"),
-    ).where(RunRecord.tenant_id == tenant_id, RunRecord.id.in_(child_ids))
+    ).where(RunRecord.organization_id == organization_id, RunRecord.id.in_(child_ids))
     ancestors = lineage.cte("subagent_execution_lineage", recursive=True)
     parent = aliased(RunRecord)
     ancestors = ancestors.union_all(
@@ -316,7 +318,7 @@ async def _load_segment_indexes(
         ).join(
             parent,
             and_(
-                parent.tenant_id == tenant_id,
+                parent.organization_id == organization_id,
                 parent.id == ancestors.c.parent_run_id,
                 parent.thread_id == ancestors.c.thread_id,
             ),
@@ -337,7 +339,7 @@ async def _load_segment_indexes(
 async def _require_session(database: AsyncSession, parent: RunRecord) -> SessionRecord:
     session = await database.scalar(
         select(SessionRecord).where(
-            SessionRecord.tenant_id == parent.tenant_id,
+            SessionRecord.organization_id == parent.organization_id,
             SessionRecord.id == parent.session_id,
         )
     )

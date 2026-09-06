@@ -53,7 +53,7 @@ async def select_run_environment(
         source_id = source_id or run.parent_run_id
     if source_id is not None:
         source = await session.get(RunRecord, source_id)
-        if source is None or source.tenant_id != run.tenant_id or source.thread_id != run.thread_id:
+        if source is None or source.organization_id != run.organization_id or source.thread_id != run.thread_id:
             raise invalid_environment("Environment source Run is unavailable")
         inherited = (
             ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
@@ -65,7 +65,7 @@ async def select_run_environment(
     if choice is Omitted.UNSET:
         if thread is not None and thread.origin_run_id is not None and thread.current_run_id == run.id:
             source = await session.get(RunRecord, thread.origin_run_id)
-            if source is None or source.tenant_id != run.tenant_id:
+            if source is None or source.organization_id != run.organization_id:
                 raise invalid_environment("Fork source Run is unavailable")
             choice = (
                 ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
@@ -86,7 +86,7 @@ async def select_run_environment(
     await authorize_persisted_agent_principal_actions(
         session,
         principal=run.authority_principal,
-        organization_id=run.tenant_id,
+        organization_id=run.organization_id,
         workspace_id=workspace_id,
         agent_id=run.agent_id,
         actions=frozenset(

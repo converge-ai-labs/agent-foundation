@@ -1,4 +1,4 @@
-"""Owner and tenant authentication applies to material on each resource record."""
+"""Owner and organization authentication applies to material on each resource record."""
 
 from dataclasses import replace
 
@@ -20,7 +20,9 @@ from .conftest import ACCOUNT_ID, ORG_ID, WORKSPACE_ID
     "record_type",
     [ModelProviderRecord, ConnectorProviderRecord, AccountRecord, MCPConnectionRecord, MCPOAuthSessionRecord],
 )
-def test_resource_material_authenticates_owner_tenant_generation_and_key(record_type: type[ResourceCredential]) -> None:
+def test_resource_material_authenticates_owner_organization_generation_and_key(
+    record_type: type[ResourceCredential],
+) -> None:
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
     record = record_type()
     record.id = "resource-one"

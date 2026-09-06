@@ -17,7 +17,7 @@ from a13n_service.storage import transaction
 from sqlalchemy import func, select
 
 from tests.gateway.test_commands import _commands, _complete_run, _Freezing, _frozen, _Preparation, _wait_run
-from tests.interactions.conftest import AGENT_ID, NOW, TENANT_ID, WORKSPACE_ID, _seed_interaction_database
+from tests.interactions.conftest import AGENT_ID, NOW, ORGANIZATION_ID, WORKSPACE_ID, _seed_interaction_database
 
 from .conftest import USER_ID as ADMIN_ID
 from .test_admission import _event_service, _request, reconciler
@@ -32,7 +32,7 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
         session.add(
             ServiceAccountRecord(
                 id=EXECUTOR,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 name="Inbound",
                 normalized_name="inbound",
@@ -45,7 +45,7 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
         session.add(
             RoleBindingRecord(
                 id="rb_submission",
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 principal_type="service_account",
                 principal_id=EXECUTOR,
@@ -59,7 +59,7 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
         )
         account = AccountRecord(
             id=ACCOUNT,
-            organization_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             name="Inbound",
             normalized_name="inbound",
@@ -216,7 +216,7 @@ async def test_admitted_batch_retains_reception_but_checks_execution(
                 session.add(
                     AccountTargetRecord(
                         id="target_closed",
-                        organization_id=TENANT_ID,
+                        organization_id=ORGANIZATION_ID,
                         workspace_id=WORKSPACE_ID,
                         account_id=ACCOUNT,
                         target_kind=prepared.configuration.target_kind,

@@ -217,7 +217,7 @@ async def append_matching_webhook_outbox(
             HookSubscriptionRevisionRecord.id == HookSubscriptionRecord.current_revision_id,
         )
         .where(
-            HookSubscriptionRecord.organization_id == event.tenant_id,
+            HookSubscriptionRecord.organization_id == event.organization_id,
             HookSubscriptionRecord.workspace_id == workspace.id,
             HookSubscriptionRecord.enabled.is_(True),
             HookSubscriptionRecord.deleted_at.is_(None),
@@ -328,10 +328,10 @@ async def _lock_event_workspace(
         .join(
             SessionRecord,
             (SessionRecord.workspace_id == WorkspaceRecord.id)
-            & (SessionRecord.tenant_id == WorkspaceRecord.organization_id),
+            & (SessionRecord.organization_id == WorkspaceRecord.organization_id),
         )
         .where(
-            SessionRecord.tenant_id == event.tenant_id,
+            SessionRecord.organization_id == event.organization_id,
             SessionRecord.id == event.session_id,
             WorkspaceRecord.deleted_at.is_(None),
         )

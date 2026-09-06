@@ -50,7 +50,7 @@ from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
-    TENANT_ID,
+    ORGANIZATION_ID,
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
@@ -111,7 +111,7 @@ def test_existing_thread_submission_admission_order_is_explicit() -> None:
         id=source.thread_id,
         version=3,
         queue_version=0,
-        tenant_id=source.tenant_id,
+        organization_id=source.organization_id,
         session_id=source.session_id,
         role="root",
         origin_kind="new",
@@ -193,7 +193,7 @@ async def test_queue_crud_reorder_and_versions_are_independent_from_thread_advan
     for index, entry_id in enumerate(ids, start=1):
         receipts.append(
             await queue.enqueue(
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 thread_id=run.thread_id,
                 expected_thread_version=1,
                 authority_principal=_principal(),
@@ -205,21 +205,22 @@ async def test_queue_crud_reorder_and_versions_are_independent_from_thread_advan
     assert [item.queued_submission.position for item in receipts] == [1, 2, 3]
 
     unchanged = await queue.reorder(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=run.thread_id,
         expected_queue_version=3,
         queued_submission_ids=ids,
     )
     assert unchanged.queue_version == 3
     reordered = await queue.reorder(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=run.thread_id,
         expected_queue_version=3,
         queued_submission_ids=(ids[2], ids[0], ids[1]),
     )
     assert reordered.queue_version == 4
     assert [
-        item.queued_submission_id for item in (await queue.list(tenant_id=TENANT_ID, thread_id=run.thread_id)).items
+        item.queued_submission_id
+        for item in (await queue.list(organization_id=ORGANIZATION_ID, thread_id=run.thread_id)).items
     ] == [
         ids[2],
         ids[0],
@@ -227,7 +228,7 @@ async def test_queue_crud_reorder_and_versions_are_independent_from_thread_advan
     ]
 
     updated = await queue.update(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         queued_submission_id=ids[0],
         expected_version=1,
         actor_principal=_principal(),
@@ -238,12 +239,12 @@ async def test_queue_crud_reorder_and_versions_are_independent_from_thread_advan
     assert updated.queued_submission.submission == _intent("updated")
 
     deleted = await queue.delete(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         queued_submission_id=ids[2],
         expected_version=1,
     )
     assert deleted.queue_version == 6
-    remaining = (await queue.list(tenant_id=TENANT_ID, thread_id=run.thread_id)).items
+    remaining = (await queue.list(organization_id=ORGANIZATION_ID, thread_id=run.thread_id)).items
     assert [(item.queued_submission_id, item.position) for item in remaining] == [
         (ids[0], 1),
         (ids[1], 2),
@@ -262,7 +263,7 @@ async def test_queue_update_requires_stored_principal_and_exact_version(
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
     accepted = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=run.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -272,7 +273,7 @@ async def test_queue_update_requires_stored_principal_and_exact_version(
 
     with pytest.raises(QueuedSubmissionConflict, match="authority Principal"):
         await queue.update(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             queued_submission_id=accepted.queued_submission.queued_submission_id,
             expected_version=1,
             actor_principal=_principal("usr_9999999999999999"),
@@ -280,7 +281,7 @@ async def test_queue_update_requires_stored_principal_and_exact_version(
         )
     with pytest.raises(QueuedSubmissionConflict, match="version"):
         await queue.update(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             queued_submission_id=accepted.queued_submission.queued_submission_id,
             expected_version=2,
             actor_principal=_principal(),
@@ -298,7 +299,7 @@ async def test_enqueue_rejects_thread_that_can_accept_immediately(
     queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
     with pytest.raises(QueuedSubmissionConflict, match="immediate Run acceptance"):
         await queue.enqueue(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             thread_id=run.thread_id,
             expected_thread_version=2,
             authority_principal=_principal(),
@@ -306,7 +307,7 @@ async def test_enqueue_rejects_thread_that_can_accept_immediately(
             queued_submission_id="qsub_4545454545454545",
         )
 
-    assert (await queue.list(tenant_id=TENANT_ID, thread_id=run.thread_id)).items == ()
+    assert (await queue.list(organization_id=ORGANIZATION_ID, thread_id=run.thread_id)).items == ()
     async with short_session(interaction_sessions) as database:
         thread = await database.get(ThreadRecord, run.thread_id)
         assert thread is not None
@@ -322,7 +323,7 @@ async def test_postgresql_concurrent_enqueues_allocate_distinct_fifo_positions(
 
     receipts = await asyncio.gather(
         queue.enqueue(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             thread_id=run.thread_id,
             expected_thread_version=1,
             authority_principal=_principal(),
@@ -330,7 +331,7 @@ async def test_postgresql_concurrent_enqueues_allocate_distinct_fifo_positions(
             queued_submission_id="qsub_4646464646464646",
         ),
         queue.enqueue(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             thread_id=run.thread_id,
             expected_thread_version=1,
             authority_principal=_principal(),
@@ -340,7 +341,7 @@ async def test_postgresql_concurrent_enqueues_allocate_distinct_fifo_positions(
     )
 
     assert sorted(receipt.queue_version for receipt in receipts) == [1, 2]
-    queued = (await queue.list(tenant_id=TENANT_ID, thread_id=run.thread_id)).items
+    queued = (await queue.list(organization_id=ORGANIZATION_ID, thread_id=run.thread_id)).items
     assert [item.position for item in queued] == [1, 2]
     assert {item.queued_submission_id for item in queued} == {
         "qsub_4646464646464646",
@@ -368,7 +369,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         database.add(
             SecretRecord(
                 id=secret_id,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 owner_type="workspace",
                 owner_id=WORKSPACE_ID,
@@ -384,7 +385,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         )
     queue = QueuedSubmissionStore(interaction_sessions, inline_hooks, clock=lambda: NOW)
     first = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -395,7 +396,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         queued_submission_id="qsub_5555555555555555",
     )
     second = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -406,7 +407,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         update={"webhook": hook.webhook.model_copy(update={"endpoint_url": "https://hooks.example.com/updated"})}
     )
     first = await queue.update(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         queued_submission_id=first.queued_submission.queued_submission_id,
         expected_version=1,
         actor_principal=_principal(),
@@ -415,7 +416,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     async with short_session(interaction_sessions) as database:
         assert await database.scalar(select(HookSubscriptionRecord.id)) is None
     await _fail_current_run(interaction_sessions, run_id=source.id, thread_id=source.thread_id)
-    assert await queue.scan_drainable(tenant_id=TENANT_ID) == (source.thread_id,)
+    assert await queue.scan_drainable(organization_id=ORGANIZATION_ID) == (source.thread_id,)
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="first"),))
     config = effective_agent_config()
     seed = RunStateSeed(
@@ -494,12 +495,12 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     assert receipt.run.hook_subscription_id is not None
     assert receipt.queued_submission.state is QueuedSubmissionState.consumed
     consumed = await queue.get(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         queued_submission_id=first.queued_submission.queued_submission_id,
     )
     assert consumed.state is QueuedSubmissionState.consumed
     assert consumed.consumed_run_id == run.id
-    remaining = (await queue.list(tenant_id=TENANT_ID, thread_id=source.thread_id)).items
+    remaining = (await queue.list(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)).items
     assert [(item.queued_submission_id, item.position) for item in remaining] == [
         (second.queued_submission.queued_submission_id, 1)
     ]
@@ -518,7 +519,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         "https://hooks.example.com/updated",
         "https://hooks.example.com/updated",
     ]
-    assert await queue.scan_drainable(tenant_id=TENANT_ID) == ()
+    assert await queue.scan_drainable(organization_id=ORGANIZATION_ID) == ()
 
 
 async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
@@ -528,7 +529,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
     _, source, _ = await _accept_root(interaction_sessions, interaction_object_store)
     queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
     first = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -536,7 +537,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
         queued_submission_id="qsub_6767676767676767",
     )
     second = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -557,7 +558,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
         clock=lambda: NOW + timedelta(seconds=1),
         lifecycle=test_lifecycle_writer(),
     ).fail_queued_permanently(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         queued_submission_id=first.queued_submission.queued_submission_id,
         submission_digest_sha256=first.queued_submission.submission_digest_sha256,
@@ -577,13 +578,13 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
         item.queued_submission_id
         for item in (
             await queue.list(
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 thread_id=source.thread_id,
                 state=QueuedSubmissionState.failed,
             )
         ).items
     ] == [first.queued_submission.queued_submission_id]
-    remaining = (await queue.list(tenant_id=TENANT_ID, thread_id=source.thread_id)).items
+    remaining = (await queue.list(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)).items
     assert [(item.queued_submission_id, item.position) for item in remaining] == [
         (second.queued_submission.queued_submission_id, 1)
     ]
@@ -604,7 +605,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         database.add(
             SecretRecord(
                 id=secret_id,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 owner_type="workspace",
                 owner_id=WORKSPACE_ID,
@@ -656,7 +657,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
     stored = await execution.publish_checkpoint(
         authority,
         states,
-        await states.read(TENANT_ID, source.id),
+        await states.read(ORGANIZATION_ID, source.id),
         completed,
     )
     queue = QueuedSubmissionStore(
@@ -665,7 +666,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         clock=lambda: NOW + timedelta(seconds=3),
     )
     queued = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -789,7 +790,7 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
     stored = await execution.publish_checkpoint(
         authority,
         states,
-        await states.read(TENANT_ID, source.id),
+        await states.read(ORGANIZATION_ID, source.id),
         completed,
     )
     queue = QueuedSubmissionStore(
@@ -798,7 +799,7 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         clock=lambda: NOW + timedelta(seconds=3),
     )
     first = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -806,7 +807,7 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         queued_submission_id="qsub_7272727272727272",
     )
     second = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -841,7 +842,7 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
     assert receipt.queued_submission.state is QueuedSubmissionState.failed
     assert receipt.queued_submission.failure == failure
     assert receipt.queue_version == 3
-    remaining = (await queue.list(tenant_id=TENANT_ID, thread_id=source.thread_id)).items
+    remaining = (await queue.list(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)).items
     assert [(item.queued_submission_id, item.position) for item in remaining] == [
         (second.queued_submission.queued_submission_id, 1)
     ]
@@ -894,11 +895,11 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
     stored = await execution.publish_checkpoint(
         authority,
         states,
-        await states.read(TENANT_ID, source.id),
+        await states.read(ORGANIZATION_ID, source.id),
         completed,
     )
     await ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3)).append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=source.id,
         input=AcceptedAgentInput(
             schema_version="1",
@@ -912,7 +913,7 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
         clock=lambda: NOW + timedelta(seconds=3),
     )
     queued = await queue.enqueue(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
@@ -973,7 +974,7 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
         assert (thread.version, thread.queue_version, thread.current_run_id) == (1, 1, source.id)
     assert (
         await queue.get(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             queued_submission_id=queued.queued_submission.queued_submission_id,
         )
     ).state is QueuedSubmissionState.queued

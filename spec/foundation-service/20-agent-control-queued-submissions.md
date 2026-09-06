@@ -158,7 +158,7 @@ The admission branch is decided against locked authoritative Thread and queue st
 
 Queue-only mutations lock no Run and change neither `Thread.version` nor its current/head references. They advance `Thread.queue_version`; because this is an authoritative Thread-adjacent mutation, they also update `Thread.updated_at`. A stale entry version or queue version conflicts without applying a partial edit or order.
 
-The queue count, individual submission size, reorder body, and retained terminal history are bounded by deployment policy. Capacity rejection creates no row. Queued intent remains sensitive tenant data and follows the same disclosure and retention protection as accepted Run input and invocation configuration.
+The queue count, individual submission size, reorder body, and retained terminal history are bounded by deployment policy. Capacity rejection creates no row. Queued intent remains sensitive organization data and follows the same disclosure and retention protection as accepted Run input and invocation configuration.
 
 ## Atomic Consumption
 
@@ -291,7 +291,7 @@ Pending delivery and queued submissions use separate orders. Delivery already bo
 
 | Column group       | Columns                                              | Contract                                                                                                                |
 | ------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Identity and scope | `id`, `version`, `tenant_id`, `thread_id`            | Same-tenant Thread ownership; positive entry version                                                                    |
+| Identity and scope | `id`, `version`, `organization_id`, `thread_id`      | Same-organization Thread ownership; positive entry version                                                              |
 | Run authority      | `authority_principal_type`, `authority_principal_id` | Immutable submitting User or Service Account copied to the accepted Run; never the consumer or worker                   |
 | Order              | `position`                                           | Positive and unique among queued entries; null after consumption or failure                                             |
 | Submitted intent   | `submission_json`, `submission_digest_sha256`        | Bounded canonical submission; no resolved delivery, selected Revision, effective config, Hook resource, or binary bytes |
@@ -301,12 +301,12 @@ Pending delivery and queued submissions use separate orders. Delivery already bo
 
 The `threads` table adds non-negative `queue_version`, initialized to zero. Public state is derived from consumption and failure fields; no separate queue-status, lease, owner, attempt, retry, or scheduling column is added. `failure_json` is bounded, safe-to-disclose evidence and is not an exception dump or object locator. The queue table preserves these constraints and access paths:
 
-1. `(tenant_id, id)` is unique, and every entry references one same-tenant Thread.
-2. `authority_principal_type` is `user` or `service_account`; admission validates the polymorphic Principal in the Thread tenant, and consumption repeats current domain referential and authorization validation.
+1. `(organization_id, id)` is unique, and every entry references one same-organization Thread.
+2. `authority_principal_type` is `user` or `service_account`; admission validates the polymorphic Principal in the Thread organization, and consumption repeats current domain referential and authorization validation.
 3. A queued row has a non-null position and no consumption or failure fields; a consumed row has null position, both consumption fields, and no failure fields; a failed row has null position, both failure fields, and no consumption fields.
-4. A present `consumed_run_id` is unique and references one Run in the same tenant and Thread whose authority Principal equals the queue row's Principal.
-5. A partial unique index on `(tenant_id, thread_id, position)` where `position IS NOT NULL` enforces live queued order.
-6. `(tenant_id, thread_id, consumed_at, id)` and `(tenant_id, thread_id, failed_at, id)` support retained terminal reads; `(tenant_id, thread_id, position, id)` supports the live queue.
+4. A present `consumed_run_id` is unique and references one Run in the same organization and Thread whose authority Principal equals the queue row's Principal.
+5. A partial unique index on `(organization_id, thread_id, position)` where `position IS NOT NULL` enforces live queued order.
+6. `(organization_id, thread_id, consumed_at, id)` and `(organization_id, thread_id, failed_at, id)` support retained terminal reads; `(organization_id, thread_id, position, id)` supports the live queue.
 
 The submitted intent remains relational because `AgentInput` contains no inline binary body and every invocation option is bounded configuration or a resource reference. The queue's limit is chosen for safe row mutation. At consumption, the accepted Run uses its existing inline-or-object-backed input representation and an inline HookSubscription becomes its own resource. Run state, payload objects, and Hook resources remain owned by their respective domains and never by the queue row.
 

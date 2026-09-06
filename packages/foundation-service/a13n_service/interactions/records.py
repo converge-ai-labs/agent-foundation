@@ -14,7 +14,7 @@ from .models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 def session_record(value: Session) -> SessionRecord:
     return SessionRecord(
         id=value.id,
-        tenant_id=value.tenant_id,
+        organization_id=value.organization_id,
         workspace_id=value.workspace_id,
         created_at=value.created_at,
         updated_at=value.updated_at,
@@ -26,7 +26,7 @@ def thread_record(value: Thread) -> ThreadRecord:
         id=value.id,
         version=value.version,
         queue_version=value.queue_version,
-        tenant_id=value.tenant_id,
+        organization_id=value.organization_id,
         session_id=value.session_id,
         role=value.role.value,
         origin_kind=value.origin_kind.value,
@@ -49,7 +49,7 @@ def run_record(value: Run) -> RunRecord:
     return RunRecord(
         id=value.id,
         version=value.version,
-        tenant_id=value.tenant_id,
+        organization_id=value.organization_id,
         authority_principal_type=value.authority_principal.principal_type.value,
         authority_principal_id=value.authority_principal.principal_id,
         session_id=value.session_id,
@@ -129,7 +129,7 @@ def run_attempt_record(value: RunAttempt) -> RunAttemptRecord:
     return RunAttemptRecord(
         id=value.id,
         version=value.version,
-        tenant_id=value.tenant_id,
+        organization_id=value.organization_id,
         run_id=value.run_id,
         attempt_number=value.attempt_number,
         fence=value.fence,

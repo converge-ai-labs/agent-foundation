@@ -125,7 +125,7 @@ class RunOutcomeService:
     async def cancel(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         expected_run_version: int,
         expected_thread_version: int,
@@ -138,18 +138,18 @@ class RunOutcomeService:
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             thread_id = await database.scalar(
-                select(RunRecord.thread_id).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id)
+                select(RunRecord.thread_id).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id)
             )
             if thread_id is None:
                 raise RunOutcomeError("Run was not found")
             thread = await database.scalar(
                 select(ThreadRecord)
-                .where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == thread_id)
+                .where(ThreadRecord.organization_id == organization_id, ThreadRecord.id == thread_id)
                 .with_for_update()
             )
             locked_runs = await lock_inbox_related_runs(
                 database,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 thread_id=thread_id,
                 required_run_ids=(run_id,),
             )
@@ -170,7 +170,7 @@ class RunOutcomeService:
                 attempt = await database.scalar(
                     select(RunAttemptRecord)
                     .where(
-                        RunAttemptRecord.tenant_id == tenant_id,
+                        RunAttemptRecord.organization_id == organization_id,
                         RunAttemptRecord.run_id == run.id,
                         RunAttemptRecord.id == run.current_run_attempt_id,
                     )
@@ -222,7 +222,7 @@ class RunOutcomeService:
             if transaction_hook is not None:
                 await transaction_hook(database)
             cancelled_thread_id = thread.id
-        await self._best_effort_signal(tenant_id=tenant_id, thread_id=cancelled_thread_id)
+        await self._best_effort_signal(organization_id=organization_id, thread_id=cancelled_thread_id)
         return receipt
 
     async def _verify_output_payload(
@@ -241,17 +241,17 @@ class RunOutcomeService:
                 raise RunOutcomeError("Thread outcome precondition changed")
             validate_outcome_candidate_scope(state, run, thread)
         await self._payloads.verify_reference(
-            authority.tenant_id,
+            authority.organization_id,
             authority.run_id,
             "output",
             candidate.output_object,
         )
 
-    async def _best_effort_signal(self, *, tenant_id: str, thread_id: str) -> None:
+    async def _best_effort_signal(self, *, organization_id: str, thread_id: str) -> None:
         if self._control_signals is None:
             return
         try:
-            await self._control_signals.publish(tenant_id=tenant_id, thread_id=thread_id)
+            await self._control_signals.publish(organization_id=organization_id, thread_id=thread_id)
         except Exception:
             logger.warning(
                 "thread_control_signal_failed",

@@ -81,7 +81,9 @@ def upgrade() -> None:
         ["workspace_id", "updated_at", "id"],
         unique=False,
     )
-    op.create_index("uq_connector_providers_id_tenant", "connector_providers", ["id", "organization_id"], unique=True)
+    op.create_index(
+        "uq_connector_providers_id_organization", "connector_providers", ["id", "organization_id"], unique=True
+    )
     op.create_index(
         "uq_connector_providers_workspace_name", "connector_providers", ["workspace_id", "normalized_name"], unique=True
     )
@@ -157,7 +159,7 @@ def upgrade() -> None:
         unique=True,
     )
     op.create_index(
-        "uq_connector_connections_id_tenant",
+        "uq_connector_connections_id_organization",
         "connector_connections",
         ["id", "organization_id", "workspace_id"],
         unique=True,
@@ -241,13 +243,13 @@ def downgrade() -> None:
     op.drop_index("ix_connector_setup_attempts_expiry", table_name="connector_setup_attempts")
     op.drop_table("connector_setup_attempts")
     op.drop_index("uq_connector_connections_workspace_name", table_name="connector_connections")
-    op.drop_index("uq_connector_connections_id_tenant", table_name="connector_connections")
+    op.drop_index("uq_connector_connections_id_organization", table_name="connector_connections")
     op.drop_index("uq_connector_connections_external_ref", table_name="connector_connections")
     op.drop_index("ix_connector_connections_workspace_updated", table_name="connector_connections")
     op.drop_index("ix_connector_connections_connector_status", table_name="connector_connections")
     op.drop_table("connector_connections")
     op.drop_index("uq_connector_providers_workspace_name", table_name="connector_providers")
-    op.drop_index("uq_connector_providers_id_tenant", table_name="connector_providers")
+    op.drop_index("uq_connector_providers_id_organization", table_name="connector_providers")
     op.drop_index("ix_connector_providers_workspace_updated", table_name="connector_providers")
     op.drop_index("ix_connector_providers_driver_status", table_name="connector_providers")
     op.drop_table("connector_providers")

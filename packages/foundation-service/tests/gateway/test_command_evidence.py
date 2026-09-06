@@ -83,7 +83,7 @@ async def test_expiry_cleanup_is_bounded_and_does_not_remove_live_evidence(lifec
     from sqlalchemy import select
 
     from tests.hooks.support import seed_hook_actor_access
-    from tests.interactions.conftest import NOW, TENANT_ID, USER_ID, WORKSPACE_ID
+    from tests.interactions.conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
 
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     scope = EvidenceScope(WORKSPACE_ID, "user", USER_ID, "test.accept", WORKSPACE_ID)
@@ -91,7 +91,7 @@ async def test_expiry_cleanup_is_bounded_and_does_not_remove_live_evidence(lifec
         for index in range(4):
             database.add(
                 new_evidence(
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     scope=scope,
                     identity=IdempotencyIdentity(digest_visible_ascii_key(str(index)), "a" * 64),
                     result_kind="test",

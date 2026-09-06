@@ -173,12 +173,12 @@ class HostedAguiTerminalProjector:
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == AguiRunBindingRecord.organization_id,
+                            RunRecord.organization_id == AguiRunBindingRecord.organization_id,
                             RunRecord.id == AguiRunBindingRecord.run_id,
                         ),
                     )
                     .where(
-                        AguiRunBindingRecord.organization_id == event.tenant_id,
+                        AguiRunBindingRecord.organization_id == event.organization_id,
                         AguiRunBindingRecord.run_id == event.run_id,
                     )
                 )
@@ -1004,7 +1004,7 @@ class HostedAguiService:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -1053,12 +1053,12 @@ class HostedAguiService:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
                     .where(
-                        RunRecord.tenant_id == binding.organization_id,
+                        RunRecord.organization_id == binding.organization_id,
                         RunRecord.id == binding.run_id,
                     )
                 )
@@ -1073,7 +1073,7 @@ class HostedAguiService:
         async with short_session(self._sessions) as database:
             record = await database.scalar(
                 select(RunRecord).where(
-                    RunRecord.tenant_id == binding.organization_id,
+                    RunRecord.organization_id == binding.organization_id,
                     RunRecord.id == binding.run_id,
                 )
             )
@@ -1559,7 +1559,7 @@ async def _persist_agui_binding(
         database.add(
             AguiThreadBindingRecord(
                 id=prepared.thread_binding_id,
-                organization_id=run.tenant_id,
+                organization_id=run.organization_id,
                 workspace_id=prepared.actor.workspace_id,
                 client_principal_type=prepared.actor.principal.principal_type.value,
                 client_principal_id=prepared.actor.principal.principal_id,
@@ -1594,7 +1594,7 @@ async def _persist_agui_binding(
     database.add(
         AguiRunBindingRecord(
             id=prepared.run_binding_id,
-            organization_id=run.tenant_id,
+            organization_id=run.organization_id,
             workspace_id=prepared.actor.workspace_id,
             thread_binding_id=prepared.thread_binding_id,
             agent_id=prepared.agent_id,

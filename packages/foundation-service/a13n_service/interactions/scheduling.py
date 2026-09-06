@@ -34,7 +34,7 @@ class AttemptSchedulingError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class WorkerClaim:
-    tenant_id: str
+    organization_id: str
     worker_id: str
     worker_generation: str
     worker_build_id: str
@@ -132,13 +132,13 @@ class AttemptScheduler:
             .outerjoin(
                 predecessor,
                 and_(
-                    predecessor.tenant_id == RunRecord.tenant_id,
+                    predecessor.organization_id == RunRecord.organization_id,
                     predecessor.run_id == RunRecord.id,
                     predecessor.attempt_number == RunRecord.attempts_started,
                 ),
             )
             .where(
-                RunRecord.tenant_id == claim.tenant_id,
+                RunRecord.organization_id == claim.organization_id,
                 local_backend_eligible(),
                 RunRecord.queue_name == queue_name,
                 RunRecord.runtime_lock_digest == claim.runtime_lock_digest,
@@ -164,7 +164,7 @@ class AttemptScheduler:
         async with transaction(self._sessions) as database:
             scope = await database.scalar(
                 select(RunRecord.thread_id).where(
-                    RunRecord.tenant_id == claim.tenant_id,
+                    RunRecord.organization_id == claim.organization_id,
                     RunRecord.id == run_id,
                 )
             )
@@ -172,12 +172,12 @@ class AttemptScheduler:
                 return None
             thread = await database.scalar(
                 select(ThreadRecord)
-                .where(ThreadRecord.tenant_id == claim.tenant_id, ThreadRecord.id == scope)
+                .where(ThreadRecord.organization_id == claim.organization_id, ThreadRecord.id == scope)
                 .with_for_update()
             )
             locked_runs = await lock_inbox_related_runs(
                 database,
-                tenant_id=claim.tenant_id,
+                organization_id=claim.organization_id,
                 thread_id=scope,
                 required_run_ids=(run_id,),
             )
@@ -248,7 +248,7 @@ class AttemptScheduler:
             attempt = RunAttempt(
                 id=self._attempt_id_factory(),
                 version=1,
-                tenant_id=run.tenant_id,
+                organization_id=run.organization_id,
                 run_id=run.id,
                 attempt_number=run.attempts_started + 1,
                 fence=run.next_attempt_fence,
@@ -330,7 +330,7 @@ class AttemptScheduler:
             return await database.scalar(
                 select(RunAttemptRecord)
                 .where(
-                    RunAttemptRecord.tenant_id == run.tenant_id,
+                    RunAttemptRecord.organization_id == run.organization_id,
                     RunAttemptRecord.run_id == run.id,
                     RunAttemptRecord.id == run.current_run_attempt_id,
                 )
@@ -341,7 +341,7 @@ class AttemptScheduler:
         return await database.scalar(
             select(RunAttemptRecord)
             .where(
-                RunAttemptRecord.tenant_id == run.tenant_id,
+                RunAttemptRecord.organization_id == run.organization_id,
                 RunAttemptRecord.run_id == run.id,
                 RunAttemptRecord.attempt_number == run.attempts_started,
             )

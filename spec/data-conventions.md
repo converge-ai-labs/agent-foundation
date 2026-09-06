@@ -45,7 +45,7 @@ Every independently addressable Foundation-owned object has one stable opaque id
 - The random suffix contains only lowercase ASCII letters and digits and is generated with sufficient unpredictable randomness by the shared platform generator.
 - Prefixes are allocated as object kinds are introduced. The set is open, but an allocated prefix is never renamed, reused, or assigned another meaning.
 - An identifier is immutable and is not reused after its object is removed.
-- An identifier encodes no tenant, region, time, ordering, parentage, storage, or routing information.
+- An identifier encodes no organization, region, time, ordering, parentage, storage, or routing information.
 - Possession or recognition of an identifier grants no authority.
 
 First-party Python code uses one shared object-ID generator rather than reimplementing prefix validation, alphabet selection, or randomness. Other languages follow the same observable format when they are responsible for creating Foundation-owned objects. Consumers treat IDs as opaque strings and do not derive behavior from their prefix or suffix.

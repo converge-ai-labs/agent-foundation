@@ -23,8 +23,8 @@ from tests.interactions.conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
+    ORGANIZATION_ID,
     SESSION_ID,
-    TENANT_ID,
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
@@ -68,12 +68,12 @@ async def seed_hook_actor_access(
             (
                 RoleBindingRecord(
                     id="rb_hookorg71717171",
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     workspace_id=None,
                     principal_type="user",
                     principal_id=USER_ID,
                     resource_type="organization",
-                    resource_id=TENANT_ID,
+                    resource_id=ORGANIZATION_ID,
                     role_key="member",
                     created_by_user_id=USER_ID,
                     created_at=NOW,
@@ -81,7 +81,7 @@ async def seed_hook_actor_access(
                 ),
                 RoleBindingRecord(
                     id="rb_hookws717171717",
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     workspace_id=WORKSPACE_ID,
                     principal_type="user",
                     principal_id=USER_ID,
@@ -102,7 +102,7 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
         database.add(
             SecretRecord(
                 id=SECRET_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 owner_type="workspace",
                 owner_id=WORKSPACE_ID,
@@ -120,7 +120,7 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
             session_record(
                 Session(
                     id=SESSION_ID,
-                    tenant_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     workspace_id=WORKSPACE_ID,
                     created_at=NOW,
                     updated_at=NOW,
@@ -133,7 +133,7 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
                     id=THREAD_ID,
                     version=1,
                     queue_version=0,
-                    tenant_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     session_id=SESSION_ID,
                     role=ThreadRole.root,
                     origin_kind=ThreadOriginKind.new,
@@ -148,7 +148,7 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
                 Run(
                     id=RUN_ID,
                     version=1,
-                    tenant_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     authority_principal={"principal_type": "user", "principal_id": USER_ID},
                     session_id=SESSION_ID,
                     thread_id=THREAD_ID,

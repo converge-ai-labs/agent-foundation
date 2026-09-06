@@ -50,7 +50,7 @@ class MCPConnectionRecord(ResourceCredential[str], Base):
         CheckConstraint("refresh_claim_generation >= 0", name="refresh_claim_generation_non_negative"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
-        Index("uq_mcp_connections_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_mcp_connections_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("uq_mcp_connections_workspace_name", "workspace_id", "normalized_name", unique=True),
         Index("ix_mcp_connections_workspace_updated", "workspace_id", "updated_at", "id"),
     )

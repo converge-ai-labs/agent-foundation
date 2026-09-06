@@ -61,7 +61,7 @@ def child_relationship_is_visible(
 
     return (
         relationship.parent_run_id == origin_parent.id
-        and origin_parent.tenant_id == requesting_parent.tenant_id
+        and origin_parent.organization_id == requesting_parent.organization_id
         and origin_parent.session_id == requesting_parent.session_id
         and (
             origin_parent.thread_id == requesting_parent.thread_id

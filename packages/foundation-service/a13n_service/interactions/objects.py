@@ -51,13 +51,13 @@ class RunStateStore:
         self._objects = objects
         self._max_state_bytes = max_state_bytes
 
-    async def create(self, tenant_id: str, envelope: RunStateEnvelope) -> StoredRunState:
+    async def create(self, organization_id: str, envelope: RunStateEnvelope) -> StoredRunState:
         if envelope.checkpoint_kind != "initial":
             raise ValueError("Run state creation requires an initial envelope")
         body = canonical_model_bytes(envelope)
         self._require_bounded(body)
         digest = hashlib.sha256(body).hexdigest()
-        key = run_state_key(tenant_id, envelope.run_id)
+        key = run_state_key(organization_id, envelope.run_id)
         try:
             info = await self._objects.put(
                 key,
@@ -74,12 +74,12 @@ class RunStateStore:
 
     async def read(
         self,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         *,
         expected_thread_id: str | None = None,
     ) -> StoredRunState:
-        key = run_state_key(tenant_id, run_id)
+        key = run_state_key(organization_id, run_id)
         body, info = await _read_object(self._objects, key, max_bytes=self._max_state_bytes)
         _verify_info(info, key=key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
         try:
@@ -139,12 +139,12 @@ class RunPayloadStore:
         self._objects = objects
         self._max_payload_bytes = max_payload_bytes
 
-    async def create(self, tenant_id: str, envelope: RunPayloadEnvelope) -> RunPayloadObjectRef:
+    async def create(self, organization_id: str, envelope: RunPayloadEnvelope) -> RunPayloadObjectRef:
         body = canonical_model_bytes(envelope)
         if len(body) > self._max_payload_bytes:
             raise RunObjectError("Run payload exceeds the configured size limit")
         digest = hashlib.sha256(body).hexdigest()
-        key = run_payload_key(tenant_id, envelope.run_id, envelope.payload_kind, digest)
+        key = run_payload_key(organization_id, envelope.run_id, envelope.payload_kind, digest)
         metadata = {
             "schema-version": envelope.schema_version,
             "run-id": envelope.run_id,
@@ -161,7 +161,7 @@ class RunPayloadStore:
             )
         except ObjectConflict as error:
             existing = await self.read(
-                tenant_id,
+                organization_id,
                 RunPayloadObjectRef(
                     object_key=key,
                     digest_sha256=digest,
@@ -184,10 +184,10 @@ class RunPayloadStore:
             schema_version=envelope.schema_version,
         )
 
-    async def read(self, tenant_id: str, reference: RunPayloadObjectRef) -> RunPayloadEnvelope:
+    async def read(self, organization_id: str, reference: RunPayloadObjectRef) -> RunPayloadEnvelope:
         _validate_run_payload_reference_format(reference)
-        if not reference.object_key.startswith(f"tenants/{tenant_id}/runs/"):
-            raise RunObjectIntegrityError("Run payload reference is outside the authorized tenant")
+        if not reference.object_key.startswith(f"organizations/{organization_id}/runs/"):
+            raise RunObjectIntegrityError("Run payload reference is outside the authorized organization")
         body, info = await _read_object(self._objects, reference.object_key, max_bytes=self._max_payload_bytes)
         _verify_info(info, key=reference.object_key, body=body, content_type=RUN_PAYLOAD_CONTENT_TYPE)
         digest = hashlib.sha256(body).hexdigest()
@@ -198,7 +198,7 @@ class RunPayloadStore:
         except DurableObjectCodecError as error:
             raise RunObjectIntegrityError("Run payload body is invalid") from error
         validate_run_payload_reference(
-            tenant_id,
+            organization_id,
             envelope.run_id,
             envelope.payload_kind,
             reference,
@@ -215,30 +215,30 @@ class RunPayloadStore:
 
     async def verify_reference(
         self,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         payload_kind: Literal["input", "output"],
         reference: RunPayloadObjectRef,
     ) -> RunPayloadEnvelope:
         """Read and verify one exact Run-owned payload reference."""
 
-        validate_run_payload_reference(tenant_id, run_id, payload_kind, reference)
-        envelope = await self.read(tenant_id, reference)
+        validate_run_payload_reference(organization_id, run_id, payload_kind, reference)
+        envelope = await self.read(organization_id, reference)
         if envelope.run_id != run_id or envelope.payload_kind != payload_kind:
             raise RunObjectIntegrityError("Run payload envelope does not match its selected owner and kind")
         return envelope
 
 
-def run_state_key(tenant_id: str, run_id: str) -> str:
-    return f"tenants/{tenant_id}/runs/{run_id}/state.json"
+def run_state_key(organization_id: str, run_id: str) -> str:
+    return f"organizations/{organization_id}/runs/{run_id}/state.json"
 
 
-def run_payload_key(tenant_id: str, run_id: str, payload_kind: str, digest_sha256: str) -> str:
-    return f"tenants/{tenant_id}/runs/{run_id}/payloads/{payload_kind}/{digest_sha256}.json"
+def run_payload_key(organization_id: str, run_id: str, payload_kind: str, digest_sha256: str) -> str:
+    return f"organizations/{organization_id}/runs/{run_id}/payloads/{payload_kind}/{digest_sha256}.json"
 
 
 def validate_run_payload_reference(
-    tenant_id: str,
+    organization_id: str,
     run_id: str,
     payload_kind: Literal["input", "output"],
     reference: RunPayloadObjectRef,
@@ -246,7 +246,7 @@ def validate_run_payload_reference(
     """Require a payload reference to name the exact supported Run-owned object."""
 
     _validate_run_payload_reference_format(reference)
-    expected_key = run_payload_key(tenant_id, run_id, payload_kind, reference.digest_sha256)
+    expected_key = run_payload_key(organization_id, run_id, payload_kind, reference.digest_sha256)
     if reference.object_key != expected_key:
         raise RunObjectIntegrityError("Run payload reference is not owned by the selected Run")
 

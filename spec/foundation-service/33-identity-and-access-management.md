@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation Service owns one Identity and Access Management (IAM) contract for Organization and Workspace tenancy, human and service identities, authentication credentials, built-in roles, RoleBindings, and security audit. The [OSS distribution](02-distribution-composition-and-extensions.md#oss-composition) presents one Organization while retaining real Organization identifiers and tenant constraints in the common data model. Deployment topology, process role, license, and edition are not IAM resources or authorization shortcuts.
+Foundation Service owns one Identity and Access Management (IAM) contract for Organization isolation and Workspace ownership, human and service identities, authentication credentials, built-in roles, RoleBindings, and security audit. The [OSS distribution](02-distribution-composition-and-extensions.md#oss-composition) presents one Organization while retaining real Organization identifiers and organization constraints in the common data model. Deployment topology, process role, license, and edition are not IAM resources or authorization shortcuts.
 
 IAM authorizes a caller to inspect, change, invoke, or administer Foundation resources. Harness run authority separately constrains what an executing Agent may do through tools, Secrets, and Environments. Allowing a User or Service Account to invoke an Agent does not grant the resulting model arbitrary side effects.
 
@@ -32,7 +32,9 @@ flowchart TB
     Organization --> Configuration[Shared Providers, Models, and EnvironmentTemplates]
 ```
 
-An Organization is the customer and tenant boundary. A Workspace is the collaboration, role-assignment, resource-isolation, and default usage-attribution boundary. Project is not a product concept. Deployment is an operational topology and trust boundary, not a customer resource, Principal, membership, or RoleBinding scope.
+An Organization is the customer isolation boundary. A Workspace is the collaboration, role-assignment, resource-isolation, and default usage-attribution boundary. Project is not a product concept. Deployment is an operational topology and trust boundary, not a customer resource, Principal, membership, or RoleBinding scope.
+
+Organization is the canonical name for Foundation customer isolation in domain identifiers, persistence, and storage keys. Upstream protocol fields and provider-specific configuration retain their original names, including `tenant` where defined by that external contract. Host-defined claims and generic multi-tenant concepts in the embeddable Harness, Environment Provider, and EIP contracts do not imply a Foundation Organization model.
 
 ## Organization-owned configuration
 
@@ -44,7 +46,7 @@ Workspace Models, Templates, and ConnectorConnections may reference an eligible 
 
 ConnectorConnections, actual Environments, Threads, Runs, and usage attribution remain Workspace-owned. A shared Template allocates a new Environment in the consuming Workspace, retaining its exact Organization TemplateRevision and Provider references. Sharing a ConnectorProvider does not share authorized ConnectorConnections or their external account identity. Runtime admission and later outbound operations retain current eligibility and credential checks under their owning contracts.
 
-Organization collections enumerate Organization-owned resources. Workspace collections for these five configuration resources enumerate local and parent resources together, expose their actual ownership, and never select a same-name override. Creation paths determine ownership; mutation must address the owning scope. Cursors bind the selected tenant scope and filters. Resource-owned credential protection binds actual ownership independently from the consuming Workspace.
+Organization collections enumerate Organization-owned resources. Workspace collections for these five configuration resources enumerate local and parent resources together, expose their actual ownership, and never select a same-name override. Creation paths determine ownership; mutation must address the owning scope. Cursors bind the selected organization scope and filters. Resource-owned credential protection binds actual ownership independently from the consuming Workspace.
 
 ## Distribution Capability Boundary
 
@@ -60,15 +62,15 @@ OSS supplies local email-and-password authentication, invitations, browser sessi
 
 Native, Hosted AG-UI, and A2A use these same credential and Principal kinds. Hosted AG-UI can use the current browser session or bearer API key. A2A runtime security schemes resolve to a User or Service Account through the existing credential boundary. Foundation defines no AG-UI or A2A Principal, role, API key, or implicit Agent identity. Public A2A Agent Card reads are the deliberate anonymous discovery exception and return only the safe projection owned by the [A2A contract](23-a2a.md#agent-card-projection).
 
-EE and Cloud distributions add capabilities through the explicit composition contract while preserving the identifiers, tenant fields, Principal meaning, credential boundary, and authorizer contract defined here. Core rows contain no `edition`, `plan`, `license`, or deployment-placement field.
+EE and Cloud distributions add capabilities through the explicit composition contract while preserving the identifiers, Organization and Workspace scope fields, Principal meaning, credential boundary, and authorizer contract defined here. Core rows contain no `edition`, `plan`, `license`, or deployment-placement field.
 
-## Tenant and Identity Model
+## Organization and Identity Model
 
-Every Foundation-owned ID follows [Platform Data Conventions](../data-conventions.md). IDs are globally unique, immutable, and encode no tenant, parent, authorization, region, or deployment information. Names are mutable labels and never replace IDs in a durable reference or policy decision.
+Every Foundation-owned ID follows [Platform Data Conventions](../data-conventions.md). IDs are globally unique, immutable, and encode no organization, parent, authorization, region, or deployment information. Names are mutable labels and never replace IDs in a durable reference or policy decision.
 
-Every tenant-owned row stores `organization_id`. Every ordinary Workspace-owned row also stores `workspace_id`, and a database constraint or composite foreign key proves that the Workspace belongs to the same Organization. The API-key table is the deliberate exception: it stores `organization_id`, `boundary_type`, and `boundary_id` so a later boundary kind does not require a schema rewrite. The service derives tenant fields from the selected parent and stored resource; it ignores or rejects client-supplied duplicates. Tenant ownership is immutable for an existing resource.
+Every resource row scoped to an Organization stores `organization_id`. Every ordinary Workspace-owned row also stores `workspace_id`, and a database constraint or composite foreign key proves that the Workspace belongs to the same Organization. The API-key table is the deliberate exception: it stores `organization_id`, `boundary_type`, and `boundary_id` so a later boundary kind does not require a schema rewrite. The service derives Organization and Workspace scope fields from the selected parent and stored resource; it ignores or rejects client-supplied duplicates. Organization ownership is immutable for an existing resource.
 
-The Workspace table exposes a unique `(id, organization_id)` key for composite references. Tenant-scoped repository operations receive an explicit Organization and optional Workspace scope and include those predicates in the authoritative query. A later authorization check does not justify an unscoped tenant read.
+The Workspace table exposes a unique `(id, organization_id)` key for composite references. Organization-scoped repository operations receive an explicit Organization and optional Workspace scope and include those predicates in the authoritative query. A later authorization check does not justify an unscoped organization read.
 
 Foundation recognizes exactly these OSS Principal kinds:
 
@@ -201,7 +203,7 @@ The plaintext token appears only in an `HttpOnly`, `Secure` cookie. Sessions do 
 | `resource_id`              | Exact target resource ID                                               |
 | `role_key`                 | Valid built-in role for the target resource                            |
 
-One grant exists per `(invitation_id, resource_type, resource_id)`. The stored tenant fields must match both the Invitation and target resource.
+One grant exists per `(invitation_id, resource_type, resource_id)`. The stored Organization and Workspace scope fields must match both the Invitation and target resource.
 
 An invitation is pending exactly when it is unaccepted, unrevoked, and unexpired. Resend keeps the invitation ID, rotates `token_hash`, and invalidates the old link. Pending invitations create neither a User nor a RoleBinding.
 
@@ -240,23 +242,23 @@ Active Service Accounts are unique by `(workspace_id, normalized_name)`. A Servi
 
 ### `role_bindings`
 
-| Column               | Durable meaning and constraint                          |
-| -------------------- | ------------------------------------------------------- |
-| `id`                 | Primary key; immutable RoleBinding ID                   |
-| `organization_id`    | Tenant owning both Principal relationship and resource  |
-| `workspace_id`       | Target Workspace; null only for an Organization binding |
-| `principal_type`     | `user` or `service_account`                             |
-| `principal_id`       | Exact User or Service Account ID                        |
-| `resource_type`      | `organization`, `workspace`, or `agent`                 |
-| `resource_id`        | Exact authorization target ID                           |
-| `role_key`           | Valid built-in role for this target and Principal kind  |
-| `created_by_user_id` | User whose authority created the binding                |
-| `created_at`         | Immutable creation time                                 |
-| `updated_at`         | Latest role replacement time                            |
+| Column               | Durable meaning and constraint                               |
+| -------------------- | ------------------------------------------------------------ |
+| `id`                 | Primary key; immutable RoleBinding ID                        |
+| `organization_id`    | Organization owning both Principal relationship and resource |
+| `workspace_id`       | Target Workspace; null only for an Organization binding      |
+| `principal_type`     | `user` or `service_account`                                  |
+| `principal_id`       | Exact User or Service Account ID                             |
+| `resource_type`      | `organization`, `workspace`, or `agent`                      |
+| `resource_id`        | Exact authorization target ID                                |
+| `role_key`           | Valid built-in role for this target and Principal kind       |
+| `created_by_user_id` | User whose authority created the binding                     |
+| `created_at`         | Immutable creation time                                      |
+| `updated_at`         | Latest role replacement time                                 |
 
 One direct binding exists per `(principal_type, principal_id, resource_type, resource_id)`. A role change updates `role_key`; removal deletes the row. RoleBinding has no status. There is no OrganizationMembership or WorkspaceMembership table; member views are authorized projections of current RoleBindings. Durable security audit retains history independently from the live grant.
 
-The relational model uses polymorphic Principal and resource references without a universal Principal or Resource registry table. The service validates existence, kind, tenant, lifecycle, and allowed role before insert. Resource deletion removes descendant bindings. A missing or mismatched reference never grants authority.
+The relational model uses polymorphic Principal and resource references without a universal Principal or Resource registry table. The service validates existence, kind, organization, lifecycle, and allowed role before insert. Resource deletion removes descendant bindings. A missing or mismatched reference never grants authority.
 
 The finite `(principal_type, resource_type, role_key)` compatibility set is also a portable relational `CHECK` constraint rather than application validation alone:
 
@@ -268,9 +270,9 @@ The finite `(principal_type, resource_type, role_key)` compatibility set is also
 | `service_account` | `workspace`    | `viewer`, `runner`, `builder`          |
 | `service_account` | `agent`        | `viewer`, `runner`, `builder`          |
 
-Every other combination is invalid, including every Service Account `admin` binding and every Service Account Organization binding. The database constraint prevents direct writes and application defects from persisting such a row. Tenant ancestry, Principal existence, Service Account owning-Workspace equality, User Organization membership, and resource lifecycle still require transactional domain validation because they depend on other rows.
+Every other combination is invalid, including every Service Account `admin` binding and every Service Account Organization binding. The database constraint prevents direct writes and application defects from persisting such a row. Organization ancestry, Principal existence, Service Account owning-Workspace equality, User Organization membership, and resource lifecycle still require transactional domain validation because they depend on other rows.
 
-The service enforces these tenant constraints:
+The service enforces these organization constraints:
 
 - Organization bindings target a User, have `workspace_id = null`, and use `admin` or `member`;
 - Workspace bindings target a User or same-Workspace Service Account and carry that Workspace ID;
@@ -288,7 +290,7 @@ Role loading validates every persisted binding against the same finite compatibi
 | `id`              | Stable public key identifier retained across rotation                   |
 | `principal_type`  | `user` or `service_account`                                             |
 | `principal_id`    | Owning Principal                                                        |
-| `organization_id` | Tenant containing the credential boundary                               |
+| `organization_id` | Organization containing the credential boundary                         |
 | `boundary_type`   | `workspace` in OSS; extension enum owned by IAM                         |
 | `boundary_id`     | Exact Workspace ID for an OSS key                                       |
 | `name`            | Mutable non-blank display label                                         |
@@ -315,24 +317,24 @@ An OSS API Key carries no per-key capability or permission toggles. It authentic
 
 ### `security_audit_events`
 
-| Column            | Durable meaning and constraint                                                     |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| `id`              | Primary key; immutable event ID                                                    |
-| `organization_id` | Tenant for Organization or Workspace activity; null for platform identity activity |
-| `workspace_id`    | Workspace for Workspace activity; otherwise null                                   |
-| `actor_type`      | `anonymous`, `user`, `service_account`, or `system`                                |
-| `actor_id`        | Actor identity when known; otherwise null                                          |
-| `action`          | Stable namespaced security action                                                  |
-| `resource_type`   | Affected resource kind when known                                                  |
-| `resource_id`     | Affected resource ID when known                                                    |
-| `auth_method`     | `password`, `session`, `api_key`, `bootstrap`, or `system`                         |
-| `credential_id`   | Safe credential ID when applicable; never secret material                          |
-| `outcome`         | `success` or `failure`                                                             |
-| `occurred_at`     | Immutable event time                                                               |
-| `request_id`      | Safe request correlation ID when applicable                                        |
-| `details`         | Optional bounded action-specific safe JSON under the rules below                   |
+| Column            | Durable meaning and constraint                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `id`              | Primary key; immutable event ID                                                          |
+| `organization_id` | Organization for Organization or Workspace activity; null for platform identity activity |
+| `workspace_id`    | Workspace for Workspace activity; otherwise null                                         |
+| `actor_type`      | `anonymous`, `user`, `service_account`, or `system`                                      |
+| `actor_id`        | Actor identity when known; otherwise null                                                |
+| `action`          | Stable namespaced security action                                                        |
+| `resource_type`   | Affected resource kind when known                                                        |
+| `resource_id`     | Affected resource ID when known                                                          |
+| `auth_method`     | `password`, `session`, `api_key`, `bootstrap`, or `system`                               |
+| `credential_id`   | Safe credential ID when applicable; never secret material                                |
+| `outcome`         | `success` or `failure`                                                                   |
+| `occurred_at`     | Immutable event time                                                                     |
+| `request_id`      | Safe request correlation ID when applicable                                              |
+| `details`         | Optional bounded action-specific safe JSON under the rules below                         |
 
-Security audit events are append-only and distinct from Run and RunAttempt lifecycle events, application logs, traces, and UsageRecords. Login, password, email, User status, invitation, RoleBinding, API key, Service Account, Workspace, Secret, Skill, Asset, Model Provider, and Model security mutations and management commands emit events. `details` uses an action-owned allowlist. It can record tenant-scoped related resource IDs, stable enum outcomes, and changed field names needed to correlate an operation; those identifiers grant no authority. A Model Provider or Model update can record only changed field names. Events contain no secret material, credential verifier, old or new resource value, endpoint, or raw provider error.
+Security audit events are append-only and distinct from Run and RunAttempt lifecycle events, application logs, traces, and UsageRecords. Login, password, email, User status, invitation, RoleBinding, API key, Service Account, Workspace, Secret, Skill, Asset, Model Provider, and Model security mutations and management commands emit events. `details` uses an action-owned allowlist. It can record organization-scoped related resource IDs, stable enum outcomes, and changed field names needed to correlate an operation; those identifiers grant no authority. A Model Provider or Model update can record only changed field names. Events contain no secret material, credential verifier, old or new resource value, endpoint, or raw provider error.
 
 A successful security-sensitive mutation commits its audit event in the same short transaction as the authoritative state change under [Durable Operations and Outbox](06-durable-operations-and-outbox.md#atomic-durable-commit). Authentication failures and denied attempts emit through a separate bounded path because no resource mutation transaction exists; audit unavailability never converts a denial into an allow.
 
@@ -379,7 +381,7 @@ Every protected public route declares exactly one primary action from this regis
 
 Unknown action strings, a protected route without a registered primary action, an action without a built-in or exact-subject mapping, and an unsupported resource/action pair fail closed. Distribution assembly validates that every protected Management API, Native stream, native provider ingress, Hosted AG-UI, and A2A operation selects a registered action before the surface becomes ready. Login, bootstrap, password-reset-token use, and invitation-token acceptance authenticate their exact pre-Principal credentials rather than inventing anonymous roles. Worker lifecycle writes and outbound tool dispatch use trusted in-process capabilities and still reauthorize any persisted product Principal required by the owning operation.
 
-The tenant, identity, and operator actions are:
+The organization, identity, and operator actions are:
 
 | Stable actions                                                               | Target and OSS grant                                                                                                                                                                                              |
 | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -484,7 +486,7 @@ async def authorize(request: AuthorizationInput) -> AuthorizationDecision:
 
         require_same_principal(credential, principal)
         require_boundary_contains(credential.boundary, resource)
-        require_tenant_consistency(principal, resource)
+        require_organization_consistency(principal, resource)
 
         bindings = await session.load_applicable_role_bindings(principal, resource)
         require_supported_binding_combinations(bindings)
@@ -499,7 +501,7 @@ async def authorize(request: AuthorizationInput) -> AuthorizationDecision:
 
 The code is semantic pseudocode for a credential-authenticated request. Implementations centralize these checks but use canonical short-session helpers and never retain a database session across streaming, agent execution, or external I/O.
 
-An internal Worker, queue drain, Ingress admission, feedback continuation, retry, or asynchronous-result reconciliation does not possess or replay the original caller credential. Its owning application capability loads the persisted `PrincipalRef`, validates active Principal and tenant consistency, validates every applicable RoleBinding combination, and evaluates the same registered product actions and resource predicates. Internal caller authentication authorizes use of that application path but never replaces the stored product Principal or bypasses its current grants.
+An internal Worker, queue drain, Ingress admission, feedback continuation, retry, or asynchronous-result reconciliation does not possess or replay the original caller credential. Its owning application capability loads the persisted `PrincipalRef`, validates active Principal and organization consistency, validates every applicable RoleBinding combination, and evaluates the same registered product actions and resource predicates. Internal caller authentication authorizes use of that application path but never replaces the stored product Principal or bypasses its current grants.
 
 No credential contains a role snapshot. Identifier possession, an earlier allow, a cursor, an idempotency key, a queue message, or an existing Harness checkpoint never preserves authority for another operation.
 
@@ -543,7 +545,7 @@ Passwords, session tokens, invitation and reset tokens, API key secrets, Secret 
 
 ## Compatibility
 
-User, Service Account, Organization, Workspace, and RoleBinding IDs; Principal kind; resource identity; tenant ownership; credential boundary; the finite built-in Principal/resource/role compatibility set; and registered action meanings are durable compatibility facts. Email, name, and display labels are mutable. OSS rejects unknown persisted Principal kinds, boundary kinds, role keys, resource types, action strings, and RoleBinding combinations rather than guessing their meaning. A selected distribution may add values and behavior but cannot reinterpret existing rows or broaden an existing action.
+User, Service Account, Organization, Workspace, and RoleBinding IDs; Principal kind; resource identity; organization ownership; credential boundary; the finite built-in Principal/resource/role compatibility set; and registered action meanings are durable compatibility facts. Email, name, and display labels are mutable. OSS rejects unknown persisted Principal kinds, boundary kinds, role keys, resource types, action strings, and RoleBinding combinations rather than guessing their meaning. A selected distribution may add values and behavior but cannot reinterpret existing rows or broaden an existing action.
 
 ## Application Account Authority
 

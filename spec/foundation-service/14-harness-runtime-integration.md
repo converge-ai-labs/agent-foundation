@@ -85,7 +85,7 @@ class ModelContextMiddleware(Protocol):
 
 ## RunAttempt Executor Lifetime
 
-`RunAttemptExecutor` is the process-local lifetime owner that converts one successful claim into at most one Harness Run. It is a conceptual component name, not a durable `Execution` resource, wire schema, or commitment to one exact Python class or task library. Its claim-derived `AttemptContext` carries immutable tenant, Thread, Run, Attempt, Worker, build, Runtime-lock, fence, lease-proof, and fixed-policy correlation plus the current expected relational versions and lease deadline advanced from successful fenced operations. The context contains no open database session, credential, Harness object, or authority independent of PostgreSQL revalidation.
+`RunAttemptExecutor` is the process-local lifetime owner that converts one successful claim into at most one Harness Run. It is a conceptual component name, not a durable `Execution` resource, wire schema, or commitment to one exact Python class or task library. Its claim-derived `AttemptContext` carries immutable organization, Thread, Run, Attempt, Worker, build, Runtime-lock, fence, lease-proof, and fixed-policy correlation plus the current expected relational versions and lease deadline advanced from successful fenced operations. The context contains no open database session, credential, Harness object, or authority independent of PostgreSQL revalidation.
 
 ```mermaid
 flowchart TB

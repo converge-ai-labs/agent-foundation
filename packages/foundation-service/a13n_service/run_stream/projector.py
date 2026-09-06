@@ -161,9 +161,9 @@ class LifecycleRunStreamProjector:
 
     async def _record_incomplete_projection(self, event: LifecycleEvent) -> bool:
         try:
-            await self._stream.mark_incomplete(event.tenant_id, event.run_id)
+            await self._stream.mark_incomplete(event.organization_id, event.run_id)
             if event.event_type in _TERMINAL_RUN_EVENTS:
-                await self._stream.close(event.tenant_id, event.run_id, closed_at=event.occurred_at)
+                await self._stream.close(event.organization_id, event.run_id, closed_at=event.occurred_at)
         except Exception:
             logger.exception(
                 "Run Stream incomplete boundary could not be recorded",
@@ -193,7 +193,7 @@ class LifecycleRunStreamProjector:
                 content=output.model_dump(mode="json", by_alias=True),
             )
         await self._stream.append(
-            event.tenant_id,
+            event.organization_id,
             RunStreamEvent(
                 event_id=deterministic_run_stream_event_id("lifecycle", event.id),
                 event_type=event.event_type,
@@ -212,9 +212,9 @@ class LifecycleRunStreamProjector:
         if event.event_type not in _TERMINAL_RUN_EVENTS:
             return
         await self._interrupt_open_items(event)
-        await self._stream.close(event.tenant_id, event.run_id, closed_at=event.occurred_at)
+        await self._stream.close(event.organization_id, event.run_id, closed_at=event.occurred_at)
         try:
-            source = await self._stream.complete_source(event.tenant_id, event.run_id)
+            source = await self._stream.complete_source(event.organization_id, event.run_id)
         except RetainedReplayUnavailable:
             logger.info(
                 "Run Stream closed without retained replay",
@@ -222,7 +222,7 @@ class LifecycleRunStreamProjector:
             )
             return
         try:
-            await self._replay.publish(event.tenant_id, event.run_id, source)
+            await self._replay.publish(event.organization_id, event.run_id, source)
         except RetainedReplayUnavailable:
             logger.info(
                 "Run Stream closed without retained replay",
@@ -240,7 +240,7 @@ class LifecycleRunStreamProjector:
         if event.thread_id is None:  # pragma: no cover - guarded by the caller
             raise ValueError("Run lifecycle projection requires Thread correlation")
         try:
-            entries = await self._stream.untrimmed_entries(event.tenant_id, event.run_id)
+            entries = await self._stream.untrimmed_entries(event.organization_id, event.run_id)
         except RetainedReplayUnavailable:
             logger.info(
                 "Run Stream closed without complete Item interruption projection",
@@ -267,7 +267,7 @@ class LifecycleRunStreamProjector:
             if item.parent_item_id is not None:
                 payload["parent_item_id"] = item.parent_item_id
             await self._stream.append(
-                event.tenant_id,
+                event.organization_id,
                 RunStreamEvent(
                     event_id=deterministic_run_stream_event_id(
                         "item",

@@ -239,7 +239,7 @@ class IngressInputAcceptor:
         if binding is None or binding.account_id != account.id:
             raise _Ineligible("binding_unavailable")
         thread = await session.get(ThreadRecord, binding.thread_id) if binding.thread_id is not None else None
-        if binding.thread_id is not None and (thread is None or thread.tenant_id != batch.organization_id):
+        if binding.thread_id is not None and (thread is None or thread.organization_id != batch.organization_id):
             raise _Ineligible("thread_unavailable")
         run_id = (thread.current_run_id or thread.head_run_id) if thread is not None else None
         run = await session.get(RunRecord, run_id) if run_id is not None else None

@@ -90,7 +90,7 @@ Run acceptance freezes the exact `agent_revision_id`—whose content includes th
 
 ## Security and Admission
 
-Native browser sessions, bearer API keys, AG-UI credentials, and A2A security schemes all resolve to the existing Foundation `PrincipalRef` and credential context. Foundation defines no protocol-specific Principal or credential type. Protocol compatibility never bypasses tenant predicates, resource actions, credential boundaries, CSRF or Origin requirements, or current revocation.
+Native browser sessions, bearer API keys, AG-UI credentials, and A2A security schemes all resolve to the existing Foundation `PrincipalRef` and credential context. Foundation defines no protocol-specific Principal or credential type. Protocol compatibility never bypasses organization predicates, resource actions, credential boundaries, CSRF or Origin requirements, or current revocation.
 
 All public requests and streams are bounded by deployment configuration and safe common defaults for body size, uploaded content, metadata, nesting, connections, subscriptions, duration, queue depth, event size, and rate. Distribution policy can reduce or raise documented operational bounds without changing protocol identity or weakening hard safety ceilings.
 

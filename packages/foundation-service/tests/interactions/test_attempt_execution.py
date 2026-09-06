@@ -57,8 +57,8 @@ from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
+    ORGANIZATION_ID,
     SESSION_ID,
-    TENANT_ID,
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
@@ -118,7 +118,7 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     output_reference: RunPayloadObjectRef | None = None
     if object_backed:
         output_reference = await payloads.create(
-            TENANT_ID,
+            ORGANIZATION_ID,
             RunPayloadEnvelope(
                 run_id=run.id,
                 payload_kind="output",
@@ -132,7 +132,9 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         claim.attempt.fence,
         outcome=(CompletedOutcomeCandidate(output_object=output_reference) if output_reference is not None else None),
     )
-    stored = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), candidate)
+    stored = await execution.publish_checkpoint(
+        authority, states, await states.read(ORGANIZATION_ID, run.id), candidate
+    )
     outcome = await RunOutcomeService(
         interaction_sessions, payloads, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
@@ -175,7 +177,7 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         assert completed.payload["final_run_attempt_id"] == claim.attempt.id
         assert succeeded.payload["resulting_run_lifecycle_event_id"] == completed.id
     if output_reference is not None:
-        assert await payloads.read(TENANT_ID, output_reference) == RunPayloadEnvelope(
+        assert await payloads.read(ORGANIZATION_ID, output_reference) == RunPayloadEnvelope(
             run_id=run.id,
             payload_kind="output",
             payload_schema_version="1",
@@ -215,7 +217,9 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
         claim.attempt.fence,
         outcome=CompletedOutcomeCandidate(
             output_object=RunPayloadObjectRef(
-                object_key=(f"tenants/{TENANT_ID}/runs/run_eeeeeeeeeeeeeeee/payloads/output/{'e' * 64}.json"),
+                object_key=(
+                    f"organizations/{ORGANIZATION_ID}/runs/run_eeeeeeeeeeeeeeee/payloads/output/{'e' * 64}.json"
+                ),
                 digest_sha256="e" * 64,
                 size_bytes=123,
                 content_type="application/vnd.converge.run-payload+json",
@@ -226,7 +230,7 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
     stored = await execution.publish_checkpoint(
         authority,
         states,
-        await states.read(TENANT_ID, run.id),
+        await states.read(ORGANIZATION_ID, run.id),
         candidate,
     )
 
@@ -481,7 +485,7 @@ async def test_cancel_seals_without_state_replacement(
     interaction_object_store: ObjectStore,
 ) -> None:
     states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    before = await states.read(TENANT_ID, run.id)
+    before = await states.read(ORGANIZATION_ID, run.id)
     failure = SafeFailure(code="cancelled_by_user", message="The Run was cancelled.")
 
     receipt = await RunOutcomeService(
@@ -490,14 +494,14 @@ async def test_cancel_seals_without_state_replacement(
         clock=lambda: NOW + timedelta(seconds=1),
         lifecycle=test_lifecycle_writer(),
     ).cancel(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         expected_run_version=1,
         expected_thread_version=1,
         failure=failure,
     )
 
-    after = await states.read(TENANT_ID, run.id)
+    after = await states.read(ORGANIZATION_ID, run.id)
     assert receipt.run_status is RunStatus.cancelled
     assert after.info.version == before.info.version
     async with short_session(interaction_sessions) as database:
@@ -584,7 +588,7 @@ async def _wait_for_approval(
     )
     authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
     waiting = _waiting_state(state, claim.attempt.id, claim.attempt.fence)
-    stored = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), waiting)
+    stored = await execution.publish_checkpoint(authority, states, await states.read(ORGANIZATION_ID, run.id), waiting)
 
     receipt = await RunOutcomeService(
         interaction_sessions,
@@ -665,7 +669,7 @@ async def _accept_root(
     run = Run(
         id=seed.run_id,
         version=1,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         authority_principal=PrincipalRef(principal_type=PrincipalType.user, principal_id=USER_ID),
         session_id=SESSION_ID,
         thread_id=state.thread_id,
@@ -708,7 +712,7 @@ async def _accept_root(
     ).accept_new_thread(
         session=Session(
             id=SESSION_ID,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             created_at=NOW,
             updated_at=NOW,
@@ -717,7 +721,7 @@ async def _accept_root(
             id=state.thread_id,
             version=1,
             queue_version=0,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             session_id=SESSION_ID,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -738,7 +742,7 @@ def _worker(
     build_id: str = "build-1",
 ) -> WorkerClaim:
     return WorkerClaim(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         worker_id=worker_id,
         worker_generation=f"{worker_id}-generation",
         worker_build_id=build_id,
@@ -758,7 +762,7 @@ def _authority(
     lease_expires_at = claim.attempt.lease_expires_at
     lease_duration = lease_expires_at - claim.attempt.heartbeat_at
     return AttemptContext(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=claim.thread_id,
         run_id=claim.attempt.run_id,
         run_attempt_id=claim.attempt.id,
@@ -873,11 +877,14 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
             )
         )
         await database.flush()
-        for kind, identifier, role in (("organization", TENANT_ID, "member"), ("workspace", WORKSPACE_ID, "admin")):
+        for kind, identifier, role in (
+            ("organization", ORGANIZATION_ID, "member"),
+            ("workspace", WORKSPACE_ID, "admin"),
+        ):
             database.add(
                 RoleBindingRecord(
                     id=f"rb_tools_{kind}",
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     workspace_id=WORKSPACE_ID if kind == "workspace" else None,
                     principal_type="user",
                     principal_id=USER_ID,
@@ -922,7 +929,7 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
         await RunOutcomeService(
             interaction_sessions, states, clock=lambda: NOW, lifecycle=test_lifecycle_writer()
         ).cancel(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             run_id=run.id,
             expected_run_version=context.expected_run_version,
             expected_thread_version=thread.version,

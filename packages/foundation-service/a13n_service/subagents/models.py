@@ -21,20 +21,20 @@ class ChildRunRelationshipRecord(Base):
     __tablename__ = "child_run_relationships"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "parent_run_id"),
-            ("runs.tenant_id", "runs.id"),
+            ("organization_id", "parent_run_id"),
+            ("runs.organization_id", "runs.id"),
             name="fk_child_run_relationships_parent_run",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             (
-                "tenant_id",
+                "organization_id",
                 "parent_run_id",
                 "parent_run_attempt_id",
                 "parent_run_attempt_generation",
             ),
             (
-                "run_attempts.tenant_id",
+                "run_attempts.organization_id",
                 "run_attempts.run_id",
                 "run_attempts.id",
                 "run_attempts.fence",
@@ -43,14 +43,14 @@ class ChildRunRelationshipRecord(Base):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "child_thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("organization_id", "child_thread_id"),
+            ("threads.organization_id", "threads.id"),
             name="fk_child_run_relationships_child_thread",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "child_thread_id", "child_run_id"),
-            ("runs.tenant_id", "runs.thread_id", "runs.id"),
+            ("organization_id", "child_thread_id", "child_run_id"),
+            ("runs.organization_id", "runs.thread_id", "runs.id"),
             name="fk_child_run_relationships_child_run",
             ondelete="RESTRICT",
         ),
@@ -65,14 +65,14 @@ class ChildRunRelationshipRecord(Base):
             name="result_visibility_valid",
         ),
         CheckConstraint("parent_run_id <> child_run_id", name="child_run_distinct"),
-        UniqueConstraint("tenant_id", "id", name="uq_child_run_relationships_tenant_id"),
-        UniqueConstraint("tenant_id", "child_run_id", name="uq_child_run_relationships_child_run"),
-        Index("ix_child_run_relationships_parent", "tenant_id", "parent_run_id", "created_at", "id"),
-        Index("ix_child_run_relationships_child_thread", "tenant_id", "child_thread_id", "created_at", "id"),
+        UniqueConstraint("organization_id", "id", name="uq_child_run_relationships_organization_id"),
+        UniqueConstraint("organization_id", "child_run_id", name="uq_child_run_relationships_child_run"),
+        Index("ix_child_run_relationships_parent", "organization_id", "parent_run_id", "created_at", "id"),
+        Index("ix_child_run_relationships_child_thread", "organization_id", "child_thread_id", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_attempt_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_attempt_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)

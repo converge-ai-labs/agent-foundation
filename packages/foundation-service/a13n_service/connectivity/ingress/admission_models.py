@@ -27,13 +27,13 @@ class AgentThreadBindingRecord(Base):
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
-            ("organization_id", "thread_id"), ("threads.tenant_id", "threads.id"), ondelete="RESTRICT"
+            ("organization_id", "thread_id"), ("threads.organization_id", "threads.id"), ondelete="RESTRICT"
         ),
         UniqueConstraint(
             "account_id", "external_ref_kind", "external_ref_id", name="uq_agent_thread_bindings_external_ref"
         ),
         CheckConstraint("next_batch_sequence >= 1", name="sequence_positive"),
-        Index("uq_agent_thread_bindings_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_agent_thread_bindings_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("ix_agent_thread_bindings_thread", "organization_id", "thread_id", "id"),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -63,7 +63,7 @@ class IngressBatchRecord(Base):
         CheckConstraint("event_bytes >= 0", name="event_bytes_non_negative"),
         CheckConstraint("claim_generation >= 0", name="claim_generation_non_negative"),
         CheckConstraint("attempt_count >= 0", name="attempt_count_non_negative"),
-        Index("uq_ingress_batches_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_ingress_batches_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("ix_ingress_batches_claim", "status", "available_at", "claim_expires_at", "id"),
         Index("ix_ingress_batches_retention", "status", "terminal_at", "id"),
     )

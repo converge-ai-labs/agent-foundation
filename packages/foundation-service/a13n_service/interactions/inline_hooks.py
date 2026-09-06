@@ -37,7 +37,7 @@ class InlineHookAcceptance:
     async def validate_queued_destination(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         queued_submission_id: str,
         submission_digest_sha256: str,
     ) -> None:
@@ -45,7 +45,7 @@ class InlineHookAcceptance:
             try:
                 queued = await load_live_queued_submission(
                     database,
-                    tenant_id=tenant_id,
+                    organization_id=organization_id,
                     queued_submission_id=queued_submission_id,
                     submission_digest_sha256=submission_digest_sha256,
                 )
@@ -68,7 +68,7 @@ class InlineHookAcceptance:
             await self._validator.authorize(
                 database,
                 principal=run.authority_principal,
-                organization_id=run.tenant_id,
+                organization_id=run.organization_id,
                 workspace_id=workspace_id,
                 agent_id=run.agent_id,
                 subscription=subscription,
@@ -89,7 +89,7 @@ class InlineHookAcceptance:
             return None
         record = await create_inline_hook_subscription(
             database,
-            organization_id=run.tenant_id,
+            organization_id=run.organization_id,
             workspace_id=workspace_id,
             session_id=run.session_id,
             thread_id=run.thread_id,
@@ -110,7 +110,7 @@ class InlineHookAcceptance:
     ) -> bool:
         persisted = await load_inline_hook_subscription(
             database,
-            organization_id=run.tenant_id,
+            organization_id=run.organization_id,
             run_id=run.id,
         )
         if persisted is None:

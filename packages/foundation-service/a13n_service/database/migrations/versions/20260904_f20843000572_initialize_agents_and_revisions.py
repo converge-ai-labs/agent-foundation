@@ -64,7 +64,7 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_index("ix_agents_workspace_updated", "agents", ["workspace_id", "updated_at", "id"], unique=False)
-    op.create_index("uq_agents_id_tenant", "agents", ["id", "organization_id", "workspace_id"], unique=True)
+    op.create_index("uq_agents_id_organization", "agents", ["id", "organization_id", "workspace_id"], unique=True)
     op.create_index("uq_agents_workspace_name", "agents", ["workspace_id", "normalized_name"], unique=True)
     op.create_table(
         "agent_revisions",
@@ -112,17 +112,17 @@ def upgrade() -> None:
     )
     op.create_index("ix_agent_revisions_agent_desc", "agent_revisions", ["agent_id", "version", "id"], unique=False)
     op.create_index(
-        "uq_agent_revisions_id_tenant", "agent_revisions", ["id", "organization_id", "workspace_id"], unique=True
+        "uq_agent_revisions_id_organization", "agent_revisions", ["id", "organization_id", "workspace_id"], unique=True
     )
 
 
 def downgrade() -> None:
     """Remove the domain schema in reverse dependency order."""
-    op.drop_index("uq_agent_revisions_id_tenant", table_name="agent_revisions")
+    op.drop_index("uq_agent_revisions_id_organization", table_name="agent_revisions")
     op.drop_index("ix_agent_revisions_agent_desc", table_name="agent_revisions")
     op.drop_table("agent_revisions")
     op.drop_index("uq_agents_workspace_name", table_name="agents")
-    op.drop_index("uq_agents_id_tenant", table_name="agents")
+    op.drop_index("uq_agents_id_organization", table_name="agents")
     op.drop_index("ix_agents_workspace_updated", table_name="agents")
     op.drop_index("ix_agents_workspace_availability", table_name="agents")
     op.drop_table("agents")

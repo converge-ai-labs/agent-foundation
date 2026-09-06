@@ -100,12 +100,12 @@ async def load_webhook_delivery(
         raise WebhookMaterialError("webhook_destination_missing")
     workspace_id = await database.scalar(
         select(SessionRecord.workspace_id).where(
-            SessionRecord.tenant_id == event.tenant_id,
+            SessionRecord.organization_id == event.organization_id,
             SessionRecord.id == event.session_id,
         )
     )
     if (
-        event.tenant_id != revision.organization_id
+        event.organization_id != revision.organization_id
         or workspace_id != revision.workspace_id
         or event.event_type not in revision.hook_names
     ):

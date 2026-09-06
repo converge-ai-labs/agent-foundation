@@ -32,30 +32,30 @@ class LifecycleEventRecord(Base):
     __tablename__ = "lifecycle_events"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "session_id"),
-            ("sessions.tenant_id", "sessions.id"),
+            ("organization_id", "session_id"),
+            ("sessions.organization_id", "sessions.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "run_id"),
-            ("runs.tenant_id", "runs.id"),
+            ("organization_id", "run_id"),
+            ("runs.organization_id", "runs.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "run_id", "run_attempt_id"),
-            ("run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"),
+            ("organization_id", "run_id", "run_attempt_id"),
+            ("run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"),
             ondelete="RESTRICT",
         ),
         UniqueConstraint("id", name="uq_lifecycle_events_id"),
         UniqueConstraint(
-            "tenant_id",
+            "organization_id",
             "entity_type",
             "entity_id",
             "resource_seq",
             name="uq_lifecycle_events_resource_seq",
         ),
         UniqueConstraint(
-            "tenant_id",
+            "organization_id",
             "mutation_id",
             "event_type",
             "entity_type",
@@ -96,10 +96,10 @@ class LifecycleEventRecord(Base):
             "AND projected_at IS NULL)",
             name="projection_shape_valid",
         ),
-        Index("ix_lifecycle_events_tenant_seq", "tenant_id", "seq"),
-        Index("ix_lifecycle_events_resource", "tenant_id", "entity_type", "entity_id", "seq"),
-        Index("ix_lifecycle_events_run", "tenant_id", "run_id", "seq"),
-        Index("ix_lifecycle_events_attempt", "tenant_id", "run_attempt_id", "seq"),
+        Index("ix_lifecycle_events_organization_seq", "organization_id", "seq"),
+        Index("ix_lifecycle_events_resource", "organization_id", "entity_type", "entity_id", "seq"),
+        Index("ix_lifecycle_events_run", "organization_id", "run_id", "seq"),
+        Index("ix_lifecycle_events_attempt", "organization_id", "run_attempt_id", "seq"),
         Index(
             "ix_lifecycle_events_projection_due",
             "projection_state",
@@ -116,7 +116,7 @@ class LifecycleEventRecord(Base):
         autoincrement=True,
     )
     id: Mapped[str] = mapped_column(String(72), nullable=False)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
     entity_id: Mapped[str] = mapped_column(String(72), nullable=False)
     resource_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -145,7 +145,7 @@ class LifecycleEventRecord(Base):
         return LifecycleEvent(
             seq=self.seq,
             id=self.id,
-            tenant_id=self.tenant_id,
+            organization_id=self.organization_id,
             entity_type=LifecycleEntityType(self.entity_type),
             entity_id=self.entity_id,
             resource_seq=self.resource_seq,

@@ -74,7 +74,7 @@ Publishing content whose normalized digest differs from the current Revision app
 Foundation stores each normalized package as one immutable ZIP object. For package contract version `1`, its internal object key is derived exactly as follows:
 
 ```text
-tenants/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{content_digest}.zip
+organizations/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{content_digest}.zip
 ```
 
 The ZIP contains only files named by the Revision manifest. ZIP byte encoding is not content identity; every read verifies the expanded files against the manifest. Foundation derives the object key only after an authorized Workspace and Revision lookup. It is not stored in `SkillRevision`, accepted from a caller, exposed by the API, or treated as access authority. `imported_from` records one acquisition only and is never used to locate package content.
@@ -96,7 +96,7 @@ Foundation retains `Idempotency-Key` evidence for ZIP staging, Skill creation, a
 
 ## Persistence
 
-The `skills` relation stores stable identity and tenancy, immutable `key`, mutable `name`, `version`, `current_revision_id`, actors, timestamps, and the tombstone. It enforces exact `(workspace_id, key)` uniqueness only where `deleted_at` is null. The `skill_revisions` relation stores immutable manifest, safe provenance, actor, and creation time with unique `(skill_id, version)`. The Skill head and a newly published Revision advance atomically.
+The `skills` relation stores stable identity and organization ownership, immutable `key`, mutable `name`, `version`, `current_revision_id`, actors, timestamps, and the tombstone. It enforces exact `(workspace_id, key)` uniqueness only where `deleted_at` is null. The `skill_revisions` relation stores immutable manifest, safe provenance, actor, and creation time with unique `(skill_id, version)`. The Skill head and a newly published Revision advance atomically.
 
 AgentRevision storage contains the ordered `ResolvedSkillBinding` values defined below. Run state contains exact `SkillRevisionLock` values. Package object keys and source credentials stay outside both structures.
 

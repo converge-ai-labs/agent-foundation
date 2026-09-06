@@ -76,16 +76,16 @@ class AsyncSubagentResultPublisher:
     async def publish(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         child_run_id: str,
     ) -> ThreadInboxEntry:
         authority = await self._read_publication_authority(
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             child_run_id=child_run_id,
         )
         terminal_item = await load_async_subagent_terminal_item(
             self._replays,
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             child=authority.child,
             expected_item_id=None,
         )
@@ -95,25 +95,30 @@ class AsyncSubagentResultPublisher:
             async with transaction(self._sessions) as database:
                 thread = await database.scalar(
                     select(ThreadRecord)
-                    .where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == authority.parent_thread_id)
+                    .where(
+                        ThreadRecord.organization_id == organization_id, ThreadRecord.id == authority.parent_thread_id
+                    )
                     .with_for_update()
                 )
                 parent = await database.scalar(
                     select(RunRecord)
-                    .where(RunRecord.tenant_id == tenant_id, RunRecord.id == authority.relationship.parent_run_id)
+                    .where(
+                        RunRecord.organization_id == organization_id,
+                        RunRecord.id == authority.relationship.parent_run_id,
+                    )
                     .with_for_update()
                 )
                 locked_relationship = await database.scalar(
                     select(ChildRunRelationshipRecord)
                     .where(
-                        ChildRunRelationshipRecord.tenant_id == tenant_id,
+                        ChildRunRelationshipRecord.organization_id == organization_id,
                         ChildRunRelationshipRecord.id == authority.relationship.id,
                     )
                     .with_for_update()
                 )
                 child = await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == tenant_id,
+                        RunRecord.organization_id == organization_id,
                         RunRecord.id == child_run_id,
                     )
                 )
@@ -140,7 +145,7 @@ class AsyncSubagentResultPublisher:
                 )
                 existing = await _load_inbox_entry(
                     database,
-                    tenant_id=tenant_id,
+                    organization_id=organization_id,
                     relationship_id=authority.relationship.id,
                 )
                 if existing is not None:
@@ -158,7 +163,7 @@ class AsyncSubagentResultPublisher:
                     )
                 entry = await allocate_async_result(
                     database,
-                    tenant_id=tenant_id,
+                    organization_id=organization_id,
                     thread_id=thread.id,
                     origin_run_id=parent.id,
                     relationship_id=authority.relationship.id,
@@ -175,7 +180,7 @@ class AsyncSubagentResultPublisher:
                 created = True
         except IntegrityError as error:
             replay = await self._read_existing(
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 relationship_id=authority.relationship.id,
             )
             if replay is None:
@@ -189,7 +194,7 @@ class AsyncSubagentResultPublisher:
                 raise AsyncSubagentResultError("concurrent child result does not match sealed authority") from error
             entry = replay
         if created and entry.status is ThreadInboxStatus.pending:
-            await self._best_effort_signal(tenant_id=tenant_id, thread_id=entry.thread_id)
+            await self._best_effort_signal(organization_id=organization_id, thread_id=entry.thread_id)
         return entry
 
     async def reconcile_once(self, *, limit: int = 64) -> int:
@@ -202,17 +207,17 @@ class AsyncSubagentResultPublisher:
                 (
                     await database.execute(
                         select(
-                            ChildRunRelationshipRecord.tenant_id,
+                            ChildRunRelationshipRecord.organization_id,
                             ChildRunRelationshipRecord.child_run_id,
                         )
                         .join(
                             RunRecord,
-                            (RunRecord.tenant_id == ChildRunRelationshipRecord.tenant_id)
+                            (RunRecord.organization_id == ChildRunRelationshipRecord.organization_id)
                             & (RunRecord.id == ChildRunRelationshipRecord.child_run_id),
                         )
                         .outerjoin(
                             ThreadInboxRecord,
-                            (ThreadInboxRecord.tenant_id == ChildRunRelationshipRecord.tenant_id)
+                            (ThreadInboxRecord.organization_id == ChildRunRelationshipRecord.organization_id)
                             & (ThreadInboxRecord.async_subagent_relationship_id == ChildRunRelationshipRecord.id),
                         )
                         .where(
@@ -227,9 +232,9 @@ class AsyncSubagentResultPublisher:
                 .all()
             )
         published = 0
-        for tenant_id, child_run_id in candidates:
+        for organization_id, child_run_id in candidates:
             try:
-                await self.publish(tenant_id=tenant_id, child_run_id=child_run_id)
+                await self.publish(organization_id=organization_id, child_run_id=child_run_id)
             except ThreadInboxCapacityExceeded:
                 logger.info(
                     "async_subagent_result_capacity_deferred",
@@ -248,13 +253,13 @@ class AsyncSubagentResultPublisher:
     async def _read_publication_authority(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         child_run_id: str,
     ) -> _PublicationAuthority:
         async with short_session(self._sessions) as database:
             relationship = await database.scalar(
                 select(ChildRunRelationshipRecord).where(
-                    ChildRunRelationshipRecord.tenant_id == tenant_id,
+                    ChildRunRelationshipRecord.organization_id == organization_id,
                     ChildRunRelationshipRecord.child_run_id == child_run_id,
                 )
             )
@@ -262,13 +267,13 @@ class AsyncSubagentResultPublisher:
                 raise AsyncSubagentResultError("child Run relationship was not found")
             parent = await database.scalar(
                 select(RunRecord).where(
-                    RunRecord.tenant_id == tenant_id,
+                    RunRecord.organization_id == organization_id,
                     RunRecord.id == relationship.parent_run_id,
                 )
             )
             child = await database.scalar(
                 select(RunRecord).where(
-                    RunRecord.tenant_id == tenant_id,
+                    RunRecord.organization_id == organization_id,
                     RunRecord.id == child_run_id,
                 )
             )
@@ -291,16 +296,16 @@ class AsyncSubagentResultPublisher:
                 child=child.to_resource(),
             )
 
-    async def _read_existing(self, *, tenant_id: str, relationship_id: str) -> ThreadInboxEntry | None:
+    async def _read_existing(self, *, organization_id: str, relationship_id: str) -> ThreadInboxEntry | None:
         async with short_session(self._sessions) as database:
-            record = await _load_inbox_entry(database, tenant_id=tenant_id, relationship_id=relationship_id)
+            record = await _load_inbox_entry(database, organization_id=organization_id, relationship_id=relationship_id)
             return None if record is None else record.to_resource()
 
-    async def _best_effort_signal(self, *, tenant_id: str, thread_id: str) -> None:
+    async def _best_effort_signal(self, *, organization_id: str, thread_id: str) -> None:
         if self._signals is None:
             return
         try:
-            await self._signals.publish(tenant_id=tenant_id, thread_id=thread_id)
+            await self._signals.publish(organization_id=organization_id, thread_id=thread_id)
         except Exception:
             logger.warning(
                 "async_subagent_result_signal_failed",
@@ -312,12 +317,12 @@ class AsyncSubagentResultPublisher:
 async def _load_inbox_entry(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     relationship_id: str,
 ) -> ThreadInboxRecord | None:
     return await database.scalar(
         select(ThreadInboxRecord).where(
-            ThreadInboxRecord.tenant_id == tenant_id,
+            ThreadInboxRecord.organization_id == organization_id,
             ThreadInboxRecord.async_subagent_relationship_id == relationship_id,
         )
     )
@@ -332,7 +337,7 @@ async def _authorize_publication(
 ) -> None:
     session = await database.scalar(
         select(SessionRecord).where(
-            SessionRecord.tenant_id == parent.tenant_id,
+            SessionRecord.organization_id == parent.organization_id,
             SessionRecord.id == parent.session_id,
         )
     )
@@ -365,7 +370,7 @@ async def _initial_binding(
 ) -> tuple[str | None, str | None]:
     current = await database.scalar(
         select(RunRecord)
-        .where(RunRecord.tenant_id == thread.tenant_id, RunRecord.id == thread.current_run_id)
+        .where(RunRecord.organization_id == thread.organization_id, RunRecord.id == thread.current_run_id)
         .with_for_update()
     )
     if current is None:
@@ -377,7 +382,7 @@ async def _initial_binding(
     if current.status in {RunStatus.failed.value, RunStatus.cancelled.value} and thread.head_run_id is not None:
         head = await database.scalar(
             select(RunRecord)
-            .where(RunRecord.tenant_id == thread.tenant_id, RunRecord.id == thread.head_run_id)
+            .where(RunRecord.organization_id == thread.organization_id, RunRecord.id == thread.head_run_id)
             .with_for_update()
         )
         if head is None:

@@ -1,4 +1,4 @@
-"""Identity, tenant, authorization, and security-audit persistence."""
+"""Identity, organization, authorization, and security-audit persistence."""
 
 from .authentication import AuthenticationError, RequestAuthenticator, authenticate_request
 from .authorization import (

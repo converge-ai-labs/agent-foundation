@@ -4,19 +4,19 @@
 
 Foundation Service is a modular monolith assembled explicitly at the executable boundary. A product distribution is the complete application composition embedded in one build artifact: it determines which APIs, role components, authorization contributions, configuration namespaces, relational models, and migration revisions exist in that service. The OSS distribution combines the common Foundation kernel with the capabilities accepted for OSS. EE and Cloud distributions combine the same common contracts with additional private capabilities without introducing edition conditionals into shared domain behavior or replacing the common authorization and durable Run/RunAttempt kernels.
 
-A distribution identifies the product release composition, not where or for whom one process runs. It is not a tenant resource, deployment environment, license decision, runtime plugin marketplace, row-level product plan, or process role. The distribution determines which capabilities exist; the runtime role determines whether one process runs the distribution's control, worker, or connectivity components, or their `all` union. Package presence alone never changes the running service.
+A distribution identifies the product release composition, not where or for whom one process runs. It is not an organization resource, deployment environment, license decision, runtime plugin marketplace, row-level product plan, or process role. The distribution determines which capabilities exist; the runtime role determines whether one process runs the distribution's control, worker, or connectivity components, or their `all` union. Package presence alone never changes the running service.
 
 ## Boundaries
 
-| Concern                                                 | Common Foundation owner                | Distribution owner                                            |
-| ------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------- |
-| Resource identity, tenant fields, and lifecycle meaning | Owning common domain                   | Preserves existing meaning                                    |
-| Authorizer and durable Run/RunAttempt kernel            | Common Foundation                      | Uses without replacement                                      |
-| Included product capabilities                           | Exposes cohesive capability contracts  | Selects an explicit set                                       |
-| Final configuration schema                              | Defines common sections                | Adds namespaced settings without reinterpreting common fields |
-| HTTP surfaces and role components                       | Domains declare contributions          | Assembles the final conflict-free set                         |
-| Relational models and revisions                         | Domains own model and revision meaning | Assembles one final metadata and migration graph              |
-| License, entitlement, and placement policy              | Not a common domain field              | Owned by the distribution that supplies it                    |
+| Concern                                                                           | Common Foundation owner                | Distribution owner                                            |
+| --------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------- |
+| Resource identity, Organization and Workspace scope fields, and lifecycle meaning | Owning common domain                   | Preserves existing meaning                                    |
+| Authorizer and durable Run/RunAttempt kernel                                      | Common Foundation                      | Uses without replacement                                      |
+| Included product capabilities                                                     | Exposes cohesive capability contracts  | Selects an explicit set                                       |
+| Final configuration schema                                                        | Defines common sections                | Adds namespaced settings without reinterpreting common fields |
+| HTTP surfaces and role components                                                 | Domains declare contributions          | Assembles the final conflict-free set                         |
+| Relational models and revisions                                                   | Domains own model and revision meaning | Assembles one final metadata and migration graph              |
+| License, entitlement, and placement policy                                        | Not a common domain field              | Owned by the distribution that supplies it                    |
 
 Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Internal classes, module discovery, installation order, and package naming are not part of the product contract.
 
@@ -35,7 +35,7 @@ flowchart BT
 
 Common Foundation code never imports EE or Cloud code. An EE or Cloud distribution depends inward on a compatible common Foundation release and imports only explicit public composition surfaces. The OSS composition is a sibling composition, not a superclass whose singleton-Organization behavior is inherited by commercial distributions.
 
-Each OSS, EE, or Cloud build artifact fixes exactly one trusted distribution descriptor. Runtime configuration selects only operational values such as role, endpoints, and limits; no CLI option, configuration field, environment variable, tenant value, or license response selects the distribution or names an import target. Automatic entry-point discovery, package scanning, filename conventions, and import side effects never select a capability. A missing, invalid, or incompatible descriptor fails the build or startup instead of silently falling back to OSS.
+Each OSS, EE, or Cloud build artifact fixes exactly one trusted distribution descriptor. Runtime configuration selects only operational values such as role, endpoints, and limits; no CLI option, configuration field, environment variable, organization value, or license response selects the distribution or names an import target. Automatic entry-point discovery, package scanning, filename conventions, and import side effects never select a capability. A missing, invalid, or incompatible descriptor fails the build or startup instead of silently falling back to OSS.
 
 ```mermaid
 flowchart TB
@@ -75,7 +75,7 @@ The OSS distribution includes the common durable Run/RunAttempt kernel and the O
 
 The OSS capability set includes the complete [Protocol Gateway](15-protocol-gateway.md). Its `control` and `all` roles always compose Native and Hosted AG-UI routers. It also contains the A2A adapter; the common runtime's single default-on `gateway.a2a_enabled` setting determines whether that adapter's routes and components are mounted. This operational setting neither installs a capability nor selects a distribution.
 
-The OSS capability set also includes [Asset Management](32-asset-management.md): its Native router, authorization actions and role grants, `assets` relational model and migration contribution, object-cleanup control component, Worker-side input resolver, and trusted `AssetCapability` reconstruction. Asset availability is not selected by plugin installation, tenant data, or an Agent-provided import target.
+The OSS capability set also includes [Asset Management](32-asset-management.md): its Native router, authorization actions and role grants, `assets` relational model and migration contribution, object-cleanup control component, Worker-side input resolver, and trusted `AssetCapability` reconstruction. Asset availability is not selected by plugin installation, organization data, or an Agent-provided import target.
 
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
 
@@ -83,12 +83,12 @@ The OSS composition includes the [Connectivity subsystem](40-connectivity/README
 
 ## EE and Cloud Composition
 
-EE and Cloud capabilities are additive vertical capabilities or implementations of an accepted narrow port. Typical variation boundaries include Organization lifecycle, external identity and grant sources, delivery providers, admission policy, usage processing, and distribution-operated control surfaces. An extension cannot reinterpret a common ID, weaken tenant predicates, replace Principal meaning, bypass the common authorizer, or mutate Run or RunAttempt state outside the common durable operation and fencing contracts.
+EE and Cloud capabilities are additive vertical capabilities or implementations of an accepted narrow port. Typical variation boundaries include Organization lifecycle, external identity and grant sources, delivery providers, admission policy, usage processing, and distribution-operated control surfaces. An extension cannot reinterpret a common ID, weaken organization predicates, replace Principal meaning, bypass the common authorizer, or mutate Run or RunAttempt state outside the common durable operation and fencing contracts.
 
-Installed capability and tenant entitlement remain separate facts:
+Installed capability and organization entitlement remain separate facts:
 
 - composition decides whether code and infrastructure for a capability exist in the process;
-- authorization or distribution policy decides whether a Principal or tenant may use it.
+- authorization or distribution policy decides whether a Principal or organization may use it.
 
 Common resource rows contain no `edition`, `plan`, `license`, or placement discriminator. Distribution-owned entitlement or placement data lives in distribution-owned records and cannot grant authority by itself.
 
@@ -141,9 +141,9 @@ Explicit composition requires each distribution to enumerate its application sur
 04. A distribution composes one authorizer, one durable Run/RunAttempt kernel, one metadata registry, and one migration graph.
 05. Duplicate contribution identities fail before startup.
 06. Common rows contain no edition, plan, license, or placement discriminator.
-07. Installed capability and tenant entitlement are separate facts.
+07. Installed capability and organization entitlement are separate facts.
 08. Invalid extension input fails closed and never falls back to OSS.
 09. An extension adds behavior through an owned capability or narrow port and cannot reinterpret common contracts.
 10. Every final distribution schema has at most one migration head.
-11. Runtime input, tenant state, and license response never select or replace the artifact's distribution.
+11. Runtime input, organization state, and license response never select or replace the artifact's distribution.
 12. A managed Harness plugin artifact can affect only explicitly locked Harness reconstruction and never contributes Foundation distribution contents.

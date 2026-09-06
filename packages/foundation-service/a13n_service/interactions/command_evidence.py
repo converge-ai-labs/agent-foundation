@@ -43,7 +43,7 @@ async def load_run_command(
     if evidence is None:
         return None
     run = await database.get(RunRecord, evidence.result_ref)
-    if run is None or run.tenant_id != evidence.organization_id:
+    if run is None or run.organization_id != evidence.organization_id:
         raise RuntimeError("Run command evidence references a missing Run")
     await authorize_agent(
         database,
@@ -76,7 +76,7 @@ class RunCommandCommit:
             raise RuntimeError("accepted Run is missing")
         database.add(
             new_evidence(
-                organization_id=run.tenant_id,
+                organization_id=run.organization_id,
                 scope=run_command_scope(self.actor),
                 identity=IdempotencyIdentity(self.key.removeprefix("idem_"), self.fingerprint),
                 result_kind="run_acceptance",

@@ -219,7 +219,7 @@ class SealedRunState(StrictModel):
 
 class Session(StrictModel):
     id: ObjectId
-    tenant_id: ObjectId
+    organization_id: ObjectId
     workspace_id: ObjectId
     created_at: UtcDateTime
     updated_at: UtcDateTime
@@ -229,7 +229,7 @@ class Thread(StrictModel):
     id: ThreadId
     version: int = Field(ge=1)
     queue_version: int = Field(ge=0)
-    tenant_id: ObjectId
+    organization_id: ObjectId
     session_id: ObjectId
     role: ThreadRole
     origin_kind: ThreadOriginKind
@@ -256,7 +256,7 @@ class Thread(StrictModel):
 class Run(StrictModel):
     id: ObjectId
     version: int = Field(ge=1)
-    tenant_id: ObjectId
+    organization_id: ObjectId
     authority_principal: PrincipalRef
     session_id: ObjectId
     thread_id: ThreadId
@@ -375,7 +375,7 @@ class Run(StrictModel):
 class RunAttempt(StrictModel):
     id: ObjectId
     version: int = Field(ge=1)
-    tenant_id: ObjectId
+    organization_id: ObjectId
     run_id: ObjectId
     attempt_number: int = Field(ge=1)
     fence: int = Field(ge=1)
@@ -490,7 +490,7 @@ def accepted_run(
     *,
     now: datetime,
     id: ObjectId,
-    tenant_id: ObjectId,
+    organization_id: ObjectId,
     authority_principal: PrincipalRef,
     session_id: ObjectId,
     thread_id: ThreadId,
@@ -526,7 +526,7 @@ def accepted_run(
     """Construct fresh execution state from accepted intent, never from prior execution."""
     values: dict[str, object] = dict(
         id=id,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         authority_principal=authority_principal,
         session_id=session_id,
         thread_id=thread_id,

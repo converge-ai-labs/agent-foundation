@@ -55,7 +55,7 @@ Connectivity allocates these Foundation object-ID prefixes under the shared [Pla
 | Connector Connection setup attempt | `csa_`   | Internal expiring object      |
 | MCP OAuth authorization session    | `mos_`   | Internal expiring object      |
 
-An allocated prefix identifies the object kind only. It conveys no provider, tenant, owner, lifecycle, routing, or authority fact. Connector Provider resources retain the allocated `cnr_` prefix; discovered Connector catalog values have no Foundation object ID.
+An allocated prefix identifies the object kind only. It conveys no provider, organization, owner, lifecycle, routing, or authority fact. Connector Provider resources retain the allocated `cnr_` prefix; discovered Connector catalog values have no Foundation object ID.
 
 ## Outbound Endpoint Policy
 

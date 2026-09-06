@@ -132,7 +132,7 @@ def prepare_child_run(
         id=child_thread_id,
         version=1,
         queue_version=0,
-        tenant_id=parent_run.tenant_id,
+        organization_id=parent_run.organization_id,
         session_id=parent_run.session_id,
         role=ThreadRole.child,
         origin_kind=ThreadOriginKind.child,
@@ -352,7 +352,7 @@ def _child_run(
     return accepted_run(
         now=created_at,
         id=child_run_id,
-        tenant_id=parent_run.tenant_id,
+        organization_id=parent_run.organization_id,
         authority_principal=parent_run.authority_principal,
         session_id=parent_run.session_id,
         thread_id=child_thread_id,
@@ -403,13 +403,13 @@ def _validate_resume_source(
             origin_parent=source_parent_run,
             requesting_parent=parent_run,
         )
-        or source_thread.tenant_id != parent_run.tenant_id
+        or source_thread.organization_id != parent_run.organization_id
         or source_thread.session_id != parent_run.session_id
         or source_thread.role is not ThreadRole.child
         or source_thread.origin_kind is not ThreadOriginKind.child
         or source_thread.current_run_id != source_run.id
         or source_thread.head_run_id != source_run.id
-        or source_run.tenant_id != parent_run.tenant_id
+        or source_run.organization_id != parent_run.organization_id
         or source_run.session_id != parent_run.session_id
         or source_run.thread_id != source_thread.id
         or source_run.status is not RunStatus.completed

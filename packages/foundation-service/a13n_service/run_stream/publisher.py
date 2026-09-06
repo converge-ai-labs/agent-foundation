@@ -26,7 +26,7 @@ class RunStreamHarnessProjector:
         self,
         stream: RedisRunStream,
         *,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         thread_id: str,
         run_attempt_id: str,
@@ -39,14 +39,14 @@ class RunStreamHarnessProjector:
         if max_pending_events < 1 or write_timeout_seconds <= 0 or flush_timeout_seconds <= 0:
             raise ValueError("Harness live projection bounds must be positive")
         self._stream = stream
-        self._tenant_id = tenant_id
+        self._organization_id = organization_id
         self._run_id = run_id
         self._thread_id = thread_id
         self._run_attempt_id = run_attempt_id
         self._harness_run_id = harness_run_id
         self._writer = HarnessAguiRunStreamWriter(
             stream,
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             run_id=run_id,
             thread_id=thread_id,
             run_attempt_id=run_attempt_id,
@@ -158,7 +158,7 @@ class RunStreamHarnessProjector:
     async def _write(self, item: HarnessStreamEvent[Any] | EnvironmentHookObservation) -> None:
         if isinstance(item, EnvironmentHookObservation):
             await self._stream.append(
-                self._tenant_id,
+                self._organization_id,
                 RunStreamEvent(
                     event_id=deterministic_run_stream_event_id(
                         "environment",
@@ -184,7 +184,7 @@ class RunStreamHarnessProjector:
             return
         try:
             await asyncio.wait_for(
-                self._stream.mark_incomplete(self._tenant_id, self._run_id),
+                self._stream.mark_incomplete(self._organization_id, self._run_id),
                 timeout=self._write_timeout_seconds,
             )
         except asyncio.CancelledError:
@@ -205,7 +205,7 @@ class RunStreamHarnessProjector:
         try:
             await asyncio.wait_for(
                 self._stream.complete_attempt_projection(
-                    self._tenant_id,
+                    self._organization_id,
                     self._run_id,
                     run_attempt_id=self._run_attempt_id,
                     harness_run_id=self._harness_run_id,

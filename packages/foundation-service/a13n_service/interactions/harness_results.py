@@ -103,7 +103,7 @@ class StoredHarnessOutcomeAdapter:
     def __init__(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         payloads: RunPayloadStore,
         max_output_bytes: int,
@@ -117,7 +117,7 @@ class StoredHarnessOutcomeAdapter:
             raise ValueError("inline_output_bytes must be positive and no greater than max_output_bytes")
         if not 1 <= len(output_schema_version) <= 32:
             raise ValueError("output_schema_version must contain between 1 and 32 characters")
-        self._tenant_id = tenant_id
+        self._organization_id = organization_id
         self._run_id = run_id
         self._payloads = payloads
         self._max_output_bytes = max_output_bytes
@@ -160,7 +160,7 @@ class StoredHarnessOutcomeAdapter:
         if len(encoded) <= self._inline_output_bytes:
             return CompletedOutcomeCandidate(output=value, output_text=output_text)
         reference = await self._payloads.create(
-            self._tenant_id,
+            self._organization_id,
             RunPayloadEnvelope(
                 run_id=self._run_id,
                 payload_kind="output",

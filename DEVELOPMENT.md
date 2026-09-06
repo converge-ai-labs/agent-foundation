@@ -11,7 +11,7 @@ This file explains the engineering choices shared by deployable Python services.
 - `worker`: Run workers, in-process a13n MCP tool groups, native-action and Connector runtime adapters, and remote MCP clients;
 - `connectivity`: provider event ingress, polling, and durable inbound admission only.
 
-A role is a process ownership and scaling boundary, not a separate product, schema, tenant, or authorization boundary. Every background loop must have one explicit owning role, and overlap during rolling deployment must be safe through durable leases, fencing, or idempotency.
+A role is a process ownership and scaling boundary, not a separate product, schema, organization, or authorization boundary. Every background loop must have one explicit owning role, and overlap during rolling deployment must be safe through durable leases, fencing, or idempotency.
 
 ## Application Structure
 
@@ -77,7 +77,7 @@ Complete authentication, authorization, and initial reads in a short session tha
 
 ## Migrations
 
-Each Foundation Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; Foundation Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, tenant state, and runtime edition selection never change migration contents.
+Each Foundation Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; Foundation Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change migration contents.
 
 The OSS artifact resolves its registry from `a13n_service.database.metadata` and its service revision location. A private EE or Cloud artifact adds reviewed model and revision contributions through its own fixed descriptor before invoking the same generator and runner contract. Generation, current-head verification, migration application, and readiness must consume the same resolved composition.
 

@@ -12,7 +12,7 @@ An Application Account is one concrete external identity operated directly by Fo
 | Reception, default Agent, execution Service Account and default input policy | Application Account |
 | Exact provider object Agent and narrow configuration override                | AccountTarget       |
 
-A reusable provider application definition is not an Account. Each concrete tenant installation or authorization is a separate Account. Provider adapters own exact identity meaning and credential schemas. ConnectorProvider, ConnectorConnection, and MCPConnection retain their independent contracts.
+A reusable provider application definition is not an Account. Each concrete provider-tenant installation or authorization is a separate Account. Provider adapters own exact identity meaning and credential schemas. ConnectorProvider, ConnectorConnection, and MCPConnection retain their independent contracts.
 
 ## Account Resource
 
@@ -41,7 +41,7 @@ class Account:
     updated_at: datetime
 ```
 
-Account IDs use the `acct_` object prefix. Provider identity, Organization, and Workspace are immutable. Name and identity-preserving settings are mutable under exact version preconditions. Changing provider, installation, tenant, or account creates a different Account. Among non-deleted Accounts within a Workspace the provider-declared concrete identity is unique; mutable display names and transport configuration never determine that identity.
+Account IDs use the `acct_` object prefix. Provider identity, Organization, and Workspace are immutable. Name and identity-preserving settings are mutable under exact version preconditions. Changing provider, installation, provider tenant, or account creates a different Account. Among non-deleted Accounts within a Workspace the provider-declared concrete identity is unique; mutable display names and transport configuration never determine that identity.
 
 An Account belongs to its Workspace and can serve multiple Agents. `receive_enabled` defaults to false. `default_agent_id` and `execution_service_account_id` are optional for tool-only Accounts and required when reception is enabled. The execution identity is an active same-Workspace Service Account; external actors never supply Foundation authority. Optional `input_batching` and `provider_policy` provide reception defaults, with exact AccountTarget overrides defined by [event routing](01-ingress-and-routing.md#exact-account-targets).
 
@@ -65,7 +65,7 @@ Application Account tools are default host-injected capabilities. They do not be
 
 Account use and target authority are distinct. Binding an Account requires current `application_account.use` authority. An allowed operation does not authorize targets outside the entry's scope. The entry must establish target authority from its trusted policy; validating a target's shape is not permission to use it. Proactive operations expose provider-native destination arguments only within that scope. Current-conversation reply operations use the admitted target and expose no destination selector. Inbound reply authority does not enable proactive send tools.
 
-The [Agent-facing tools contract](04-agent-facing-tools.md#default-native-tool-contexts) owns protected contexts, runtime composition, and continuation behavior. An Account may contribute proactive actions and a narrower inbound reply surface to the same Run; each retains its own scope. Credentials resolve at execution time. Tool arguments cannot choose another Account, credential, tenant, or API origin.
+The [Agent-facing tools contract](04-agent-facing-tools.md#default-native-tool-contexts) owns protected contexts, runtime composition, and continuation behavior. An Account may contribute proactive actions and a narrower inbound reply surface to the same Run; each retains its own scope. Credentials resolve at execution time. Tool arguments cannot choose another Account, credential, provider tenant, or API origin.
 
 Workspace Admin manages Accounts and credentials. Viewer has safe metadata read access; Runner, Builder, and Admin use Accounts only through authorized Run contexts. Binding and dispatch check current Workspace authority and resource eligibility; an external sender is never a Foundation Principal.
 

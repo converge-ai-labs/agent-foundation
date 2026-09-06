@@ -16,7 +16,7 @@ from a13n_service.storage import ObjectStore
 from a13n_service.storage.codec import DurableObjectCodecError, decode_canonical_model
 from pydantic import TypeAdapter
 
-from .conftest import TENANT_ID, initial_state, progress_state
+from .conftest import ORGANIZATION_ID, initial_state, progress_state
 
 pytestmark = pytest.mark.anyio
 
@@ -27,14 +27,14 @@ async def test_state_create_claim_checkpoint_and_read_round_trip(
     store = RunStateStore(interaction_object_store)
     initial = initial_state()
 
-    created = await store.create(TENANT_ID, initial)
+    created = await store.create(ORGANIZATION_ID, initial)
     checkpoint = await store.replace(
         created,
         progress_state(initial),
         run_attempt_id="rat_1234567890abcdef",
         fence=1,
     )
-    restored = await store.read(TENANT_ID, initial.run_id, expected_thread_id=initial.thread_id)
+    restored = await store.read(ORGANIZATION_ID, initial.run_id, expected_thread_id=initial.thread_id)
 
     assert restored.envelope == checkpoint.envelope
     assert restored.info.version == checkpoint.info.version
@@ -47,7 +47,7 @@ async def test_object_version_and_fence_reject_stale_state_writers(
 ) -> None:
     store = RunStateStore(interaction_object_store)
     initial = initial_state()
-    created = await store.create(TENANT_ID, initial)
+    created = await store.create(ORGANIZATION_ID, initial)
     first_checkpoint = await store.replace(
         created,
         progress_state(initial),
@@ -76,7 +76,7 @@ async def test_state_read_rejects_metadata_fence_that_disagrees_with_envelope(
     interaction_object_store: ObjectStore,
 ) -> None:
     store = RunStateStore(interaction_object_store)
-    created = await store.create(TENANT_ID, initial_state())
+    created = await store.create(ORGANIZATION_ID, initial_state())
     metadata = dict(created.info.metadata)
     metadata["writer-fence"] = "1"
     await interaction_object_store.put(
@@ -88,7 +88,7 @@ async def test_state_read_rejects_metadata_fence_that_disagrees_with_envelope(
     )
 
     with pytest.raises(RunObjectIntegrityError, match="writer fence does not match"):
-        await store.read(TENANT_ID, created.envelope.run_id)
+        await store.read(ORGANIZATION_ID, created.envelope.run_id)
 
 
 async def test_payload_is_content_addressed_and_idempotent(
@@ -102,20 +102,20 @@ async def test_payload_is_content_addressed_and_idempotent(
         payload={"text": "hello", "temperature": 1e-7},
     )
 
-    first = await store.create(TENANT_ID, envelope)
-    second = await store.create(TENANT_ID, envelope)
+    first = await store.create(ORGANIZATION_ID, envelope)
+    second = await store.create(ORGANIZATION_ID, envelope)
 
     assert first == second
-    assert await store.read(TENANT_ID, first) == envelope
-    assert await store.verify_reference(TENANT_ID, envelope.run_id, "input", first) == envelope
+    assert await store.read(ORGANIZATION_ID, first) == envelope
+    assert await store.verify_reference(ORGANIZATION_ID, envelope.run_id, "input", first) == envelope
 
 
-async def test_payload_read_rejects_wrong_tenant(
+async def test_payload_read_rejects_wrong_organization(
     interaction_object_store: ObjectStore,
 ) -> None:
     store = RunPayloadStore(interaction_object_store)
     reference = await store.create(
-        TENANT_ID,
+        ORGANIZATION_ID,
         RunPayloadEnvelope(
             run_id="run_1234567890abcdef",
             payload_kind="output",
@@ -124,13 +124,13 @@ async def test_payload_read_rejects_wrong_tenant(
         ),
     )
 
-    with pytest.raises(RunObjectIntegrityError, match="authorized tenant"):
+    with pytest.raises(RunObjectIntegrityError, match="authorized organization"):
         await store.read("org_abcdef1234567890", reference)
 
 
 def test_payload_reference_must_name_the_exact_run_owned_object() -> None:
     reference = RunPayloadObjectRef(
-        object_key=(f"tenants/org_1234567890abcdef/runs/run_other1234567890/payloads/input/{'a' * 64}.json"),
+        object_key=(f"organizations/org_1234567890abcdef/runs/run_other1234567890/payloads/input/{'a' * 64}.json"),
         digest_sha256="a" * 64,
         size_bytes=123,
         content_type="application/vnd.converge.run-payload+json",
@@ -139,7 +139,7 @@ def test_payload_reference_must_name_the_exact_run_owned_object() -> None:
 
     with pytest.raises(RunObjectIntegrityError, match="owned by the selected Run"):
         validate_run_payload_reference(
-            TENANT_ID,
+            ORGANIZATION_ID,
             "run_1234567890abcdef",
             "input",
             reference,
@@ -151,7 +151,7 @@ async def test_state_checkpoint_cas_is_portable_across_object_backends(
 ) -> None:
     store = RunStateStore(object_store)
     initial = initial_state()
-    created = await store.create(TENANT_ID, initial)
+    created = await store.create(ORGANIZATION_ID, initial)
     checkpoint = await store.replace(
         created,
         progress_state(initial),
