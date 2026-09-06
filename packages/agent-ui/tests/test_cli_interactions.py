@@ -67,6 +67,20 @@ def test_selection_does_not_implicitly_choose_and_validates_numbers() -> None:
     assert selection.answer() == "1,2"
 
 
+def test_unselected_approval_arrows_start_at_the_correct_edge() -> None:
+    choices = (Choice("review", "Inspect"), Choice("yes", "Approve once"), Choice("no", "Deny"))
+    upward = Selection(choices)
+    upward.move(0)
+    assert upward.cursor == -1
+    upward.move(-1)
+    assert upward.answer() == "3"
+    upward.move(1)
+    assert upward.answer() == "1"
+    downward = Selection(choices)
+    downward.move(1)
+    assert downward.answer() == "1"
+
+
 def test_question_and_approval_batch_is_typed_and_complete() -> None:
     interaction = DecisionInteraction(_batch())
     assert interaction.accept("2") is None

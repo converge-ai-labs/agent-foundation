@@ -20,6 +20,10 @@ class Selection:
     checked: set[int] = field(default_factory=set)
 
     def move(self, offset: int) -> None:
+        if not offset:
+            return
+        if self.cursor < 0 and offset < 0:
+            self.cursor = 0
         self.cursor = (self.cursor + offset) % len(self.choices)
 
     def toggle(self) -> None:
