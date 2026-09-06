@@ -231,8 +231,8 @@ async fn run_payload(
         .kill_on_drop(true);
     configure_command_tree(&mut command);
 
-    let mut child = match command.spawn() {
-        Ok(child) => child,
+    let (mut child, tree) = match spawn_command_tree(&mut command).await {
+        Ok(started) => started,
         Err(error) => {
             write_event(
                 &mut stdout,
@@ -315,7 +315,7 @@ async fn run_payload(
                         let _ = initial_delivery.await;
                         stop_reason = Some(reason);
                         start_allowed = false;
-                        forced_cleanup_proven |= force_tree(tree_id, &mut child).await;
+                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
                         break StdinDeliveryResult {
                             stdin: None,
                             accepted_bytes: 0,
@@ -327,7 +327,7 @@ async fn run_payload(
                         let _ = initial_delivery.await;
                         stop_reason = Some(StopReason::Shutdown);
                         start_allowed = false;
-                        forced_cleanup_proven |= force_tree(tree_id, &mut child).await;
+                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
                         break StdinDeliveryResult {
                             stdin: None,
                             accepted_bytes: 0,
@@ -344,7 +344,7 @@ async fn run_payload(
                         let _ = initial_delivery.await;
                         stop_reason = Some(StopReason::Shutdown);
                         start_allowed = false;
-                        forced_cleanup_proven |= force_tree(tree_id, &mut child).await;
+                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
                         write_event(&mut stdout, &SupervisorEvent::ProtocolError {
                             message: "invalid request during initial stdin delivery".to_owned(),
                         }).await?;
@@ -361,7 +361,7 @@ async fn run_payload(
                 let _ = initial_delivery.await;
                 stop_reason = Some(StopReason::Timeout);
                 start_allowed = false;
-                forced_cleanup_proven |= force_tree(tree_id, &mut child).await;
+                forced_cleanup_proven |= force_tree(&tree, &mut child).await;
                 break StdinDeliveryResult {
                     stdin: None,
                     accepted_bytes: 0,
@@ -413,7 +413,7 @@ async fn run_payload(
                 stop_reason = Some(StopReason::Timeout);
                 abort_stdin_delivery(&mut stdin_delivery).await;
                 close_payload_stdin(&mut payload_stdin).await;
-                forced_cleanup_proven |= force_tree(tree_id, &mut child).await;
+                forced_cleanup_proven |= force_tree(&tree, &mut child).await;
             }
             stream = stream_rx.recv() => {
                 if let Some(stream) = stream {
@@ -456,7 +456,7 @@ async fn run_payload(
                         stop_reason = Some(reason);
                         abort_stdin_delivery(&mut stdin_delivery).await;
                         close_payload_stdin(&mut payload_stdin).await;
-                        forced_cleanup_proven |= force_tree(tree_id, &mut child).await;
+                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
                     }
                     Some(SupervisorRequest::Prepare { .. } | SupervisorRequest::Start) => {
                         write_event(&mut stdout, &SupervisorEvent::ProtocolError {
@@ -467,7 +467,7 @@ async fn run_payload(
                         stop_reason = Some(StopReason::Shutdown);
                         abort_stdin_delivery(&mut stdin_delivery).await;
                         close_payload_stdin(&mut payload_stdin).await;
-                        forced_cleanup_proven |= force_tree(tree_id, &mut child).await;
+                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
                     }
                 }
             }
@@ -491,7 +491,7 @@ async fn run_payload(
     let cleanup_complete = if plan.isolation == LaunchIsolation::LinuxBubblewrap {
         cleanup_linux_pid_namespace(&mut child).await
     } else {
-        forced_cleanup_proven || cleanup_tree(tree_id, &mut child, stop_reason.is_none()).await
+        forced_cleanup_proven || cleanup_tree(&tree, &mut child).await
     };
     let drain_deadline = tokio::time::sleep(CLEANUP_GRACE);
     tokio::pin!(drain_deadline);
@@ -862,6 +862,30 @@ fn bounded_message(error: &io::Error) -> String {
     message.chars().take(512).collect()
 }
 
+struct CommandTree {
+    #[cfg(unix)]
+    id: Option<u32>,
+    #[cfg(windows)]
+    job: crate::windows_job::WindowsJob,
+}
+
+async fn spawn_command_tree(command: &mut Command) -> io::Result<(Child, CommandTree)> {
+    #[cfg(windows)]
+    {
+        let (child, job) = crate::windows_job::WindowsJob::spawn(command).await?;
+        Ok((child, CommandTree { job }))
+    }
+    #[cfg(not(windows))]
+    {
+        let child = command.spawn()?;
+        let tree = CommandTree {
+            #[cfg(unix)]
+            id: child.id(),
+        };
+        Ok((child, tree))
+    }
+}
+
 #[cfg(unix)]
 fn configure_command_tree(command: &mut Command) {
     unsafe {
@@ -898,8 +922,8 @@ async fn signal_tree(_tree_id: Option<u32>, _signal: ControlSignal, _child: &mut
 }
 
 #[cfg(unix)]
-async fn force_tree(tree_id: Option<u32>, child: &mut Child) -> bool {
-    if let Some(tree_id) = tree_id {
+async fn force_tree(tree: &CommandTree, child: &mut Child) -> bool {
+    if let Some(tree_id) = tree.id {
         unsafe {
             libc::kill(-(tree_id as i32), libc::SIGKILL);
         }
@@ -908,29 +932,22 @@ async fn force_tree(tree_id: Option<u32>, child: &mut Child) -> bool {
     false
 }
 
-#[cfg(not(unix))]
-async fn force_tree(tree_id: Option<u32>, child: &mut Child) -> bool {
-    let complete = if let Some(tree_id) = tree_id {
-        let pid = tree_id.to_string();
-        Command::new("taskkill")
-            .args(["/PID", pid.as_str(), "/T", "/F"])
-            .env_clear()
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await
-            .is_ok_and(|status| status.success())
-    } else {
-        false
-    };
+#[cfg(windows)]
+async fn force_tree(tree: &CommandTree, child: &mut Child) -> bool {
+    let complete = tree.job.terminate_and_wait(CLEANUP_GRACE).await.is_ok();
     let _ = child.start_kill();
     complete
 }
 
+#[cfg(not(any(unix, windows)))]
+async fn force_tree(_tree: &CommandTree, child: &mut Child) -> bool {
+    let _ = child.start_kill();
+    false
+}
+
 #[cfg(unix)]
-async fn cleanup_tree(tree_id: Option<u32>, child: &mut Child, _natural_completion: bool) -> bool {
-    let Some(tree_id) = tree_id else {
+async fn cleanup_tree(tree: &CommandTree, child: &mut Child) -> bool {
+    let Some(tree_id) = tree.id else {
         return false;
     };
     let group = -(tree_id as i32);
@@ -956,23 +973,16 @@ async fn cleanup_tree(tree_id: Option<u32>, child: &mut Child, _natural_completi
     }
 }
 
-#[cfg(not(unix))]
-async fn cleanup_tree(tree_id: Option<u32>, child: &mut Child, natural_completion: bool) -> bool {
-    let Some(tree_id) = tree_id else {
-        return false;
-    };
-    let pid = tree_id.to_string();
-    let complete = Command::new("taskkill")
-        .args(["/PID", pid.as_str(), "/T", "/F"])
-        .env_clear()
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .is_ok_and(|status| status.success());
-    let _ = child.start_kill();
-    complete || natural_completion
+#[cfg(windows)]
+async fn cleanup_tree(tree: &CommandTree, child: &mut Child) -> bool {
+    // Root exit is not tree completion: detached descendants still belong to
+    // the Job even after the requested executable is terminal.
+    force_tree(tree, child).await
+}
+
+#[cfg(not(any(unix, windows)))]
+async fn cleanup_tree(tree: &CommandTree, child: &mut Child) -> bool {
+    force_tree(tree, child).await
 }
 
 #[cfg(unix)]

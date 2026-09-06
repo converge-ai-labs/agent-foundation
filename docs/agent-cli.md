@@ -59,12 +59,15 @@ Codex subscription requests do **not** receive an API output-token cap copied fr
 | Read/change execution permissions                   | `/environment`, `/environment sandbox`           |
 | Show current settings, usage, and pending decisions | `/status`                                        |
 | Locate configuration and explain precedence         | `/config`                                        |
+| Send additional guidance to the current Run         | `/steer message`                                 |
 | Cancel active work                                  | `/cancel`                                        |
 | Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                               |
 
-Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model. Ordinary input entered while a Run is active is preserved, not silently steered or queued. Wait for completion or cancel first.
+Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model. Ordinary input entered while a Run is active is preserved, not silently steered or queued. Use `/steer <message>` for explicit text-only guidance to the current receipt, or wait for completion/cancel first. Acceptance means the input was queued inside the current Harness Run for a model boundary, not that the model has already consumed it. A preparing or completed receipt rejects steering; the CLI preserves rejected guidance and never resends it as a new prompt.
 
-**Concise** output emphasizes assistant text, errors, decisions, and necessary results. **Detailed** output also shows tool calls, file-edit arguments, bounded results, child output, and exposed reasoning. A live switch affects subsequent events, not previously displayed blocks; `/history` can display retained details in the selected mode.
+Commands preserve Windows backslashes. Quote paths containing spaces, such as `/attach "C:\\My Photos\\image.png"`. `/result request-id {"answer": "two words"}` takes raw JSON without an extra shell-quoting layer.
+
+**Concise** output emphasizes assistant text, errors, decisions, and necessary results. **Detailed** output also shows tool calls, file-edit arguments, bounded results, child output, and exposed reasoning. Tool results include call identity and elapsed time; child blocks include their execution or Run identity. A live switch affects subsequent events, not previously displayed blocks; `/history` can display retained details in the selected mode.
 
 The compact status bar shows the model, reasoning, last request footprint/working budget, elapsed time, state, and output mode. `?` means unavailable, not zero. The footprint is the last reported request, not an exact estimate of your next prompt. Child and auxiliary usage are not summed into it. `/status` shows complete details even in a narrow terminal.
 
@@ -72,7 +75,7 @@ The compact status bar shows the model, reasoning, last request footprint/workin
 
 Flagged shell commands and failed shell reviews open a selectable prompt. Inspect the tool, request, arguments, and review details before choosing **Approve once** or **Deny**. No approval is preselected. The Inspect action and `/review request-id` read retained details when the preview is truncated. Ordinary free text cannot approve a shell request.
 
-Structured questions support single choice, multiple choice with Space, and typed answers. Answers stay local until the complete batch is ready and are submitted against the exact continuation. `/cancel` discards local answers without approving anything; `/status` reopens pending decisions. Resuming a suspended conversation also reopens them. Advanced `/approve`, `/deny`, and `/result` commands are available outside an active selector; use `/cancel` first to leave that selector.
+Structured questions support single choice, multiple choice with Space, and typed answers. Complete option labels and descriptions remain scrollable above the compact selector, including in narrow terminals. Answers stay local until the complete batch is ready and are submitted against the exact continuation. `/cancel` discards local answers without approving anything; `/status` reopens pending decisions. Resuming a suspended conversation also reopens them. Advanced `/approve`, `/deny`, and `/result` commands are available outside an active selector; use `/cancel` first to leave that selector.
 
 ### Theme, scrolling, copy, and images
 
@@ -82,7 +85,7 @@ Structured questions support single choice, multiple choice with Space, and type
 - Ctrl+V, Alt+V, or `/paste-image` explicitly reads clipboard images. Normal text paste remains text and never submits itself. Some terminals intercept Ctrl+V; use Alt+V or the command there.
 - `/attach "path/to/image.png"` is the portable fallback. Linux clipboard images need `wl-paste` or `xclip`; no helper is installed automatically.
 - Chips show draft images. `/remove 1` removes one; `/remove all` or idle Ctrl+C clears them. Up to eight validated PNG/JPEG/WebP/GIF images are accepted, with 10 MiB per image, 20 MiB total, and 32 megapixels per image.
-- Image-only prompts are supported. The selected model must support the submitted modality; failures never silently drop images or switch models. A failed pre-admission send restores its draft, or exposes `/recover` if you have already begun another draft. It is never resent automatically.
+- Image-only prompts are supported. The selected model must support the submitted modality; failures never silently drop images or switch models. A failed pre-admission send restores its draft, or exposes `/recover` if you have already begun another draft. It is never resent automatically. A rejected `/new` or `/resume` also preserves attachments; failed commands restore their text or expose `/recover` without overwriting a newer draft.
 
 ## Configuration
 

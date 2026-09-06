@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 from pathlib import Path
 
@@ -417,7 +417,7 @@ class SessionBackend:
             return "Configuration saved. Set the referenced API-key environment variable or stored key before sending a prompt."
         return "Configuration saved. Use /login to authenticate a subscription, or send a prompt if already signed in."
 
-    async def execute(
+    def execute(
         self,
         renderer: StreamRenderer,
         *,
@@ -425,8 +425,23 @@ class SessionBackend:
         response: ThreadDeferredResponse | None = None,
         flush: Callable[[], Awaitable[None]] | None = None,
         admitted: Callable[[], None] | None = None,
-    ) -> str:
+    ) -> Coroutine[object, object, str]:
+        # Reset at scheduling, not first coroutine execution: Enter and Ctrl+C
+        # may arrive in the same terminal input batch before this task starts.
         self.cancel_requested = False
+        return self._execute(renderer, prompt=prompt, response=response, flush=flush, admitted=admitted)
+
+    async def _execute(
+        self,
+        renderer: StreamRenderer,
+        *,
+        prompt: RunInputValue | None,
+        response: ThreadDeferredResponse | None,
+        flush: Callable[[], Awaitable[None]] | None,
+        admitted: Callable[[], None] | None,
+    ) -> str:
+        if self.cancel_requested:
+            return "Cancelled before admission. No operation was submitted."
         await self.refresh()
         thread_id = await self.ensure_session()
         last_ordinal = -1
@@ -434,7 +449,13 @@ class SessionBackend:
 
             def ingest(event: LiveEvent) -> None:
                 nonlocal last_ordinal
-                renderer.ingest(event.event_type, event.payload, child=event.run_kind == "child", run_id=event.run_id)
+                renderer.ingest(
+                    event.event_type,
+                    event.payload,
+                    child=event.run_kind == "child",
+                    run_id=event.run_id,
+                    execution_id=event.execution_id,
+                )
                 for sample in root_context_samples(event):
                     if sample.response_ordinal > last_ordinal:
                         self.status.context_tokens = sample.tokens
@@ -451,6 +472,8 @@ class SessionBackend:
 
             pump = asyncio.create_task(consume())
             try:
+                if self.cancel_requested:
+                    return "Cancelled before admission. No operation was submitted."
                 receipt = (
                     await self.app.submit_thread(
                         thread_id=thread_id, prompt=prompt or "", model_overrides=self.overrides
@@ -505,6 +528,16 @@ class SessionBackend:
         if operation.status == RootOperationStatus.suspended:
             return await self.pending()
         return f"Run {operation.status.value}."
+
+    async def steer(self, message: str) -> str:
+        # Capture once: a delayed control must never target a replacement Run.
+        receipt_id = self.receipt_id
+        if receipt_id is None:
+            raise ValueError("No running receipt accepts steering. Your guidance was not sent.")
+        result = await self.app.steer_root_operation(receipt_id=receipt_id, message=message)
+        if not result.accepted:
+            raise ValueError("This receipt is preparing or no longer running. Your guidance was not accepted.")
+        return f"Guidance accepted for the current Run ({result.enqueue_id}); consumption occurs at a model boundary."
 
     async def cancel(self) -> None:
         self._decisions.clear()

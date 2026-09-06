@@ -20,13 +20,15 @@ Enter submits; Alt+Enter inserts a newline; bracketed multiline paste remains a 
 
 ## Commands and Presentation
 
-One command catalog owns syntax, aliases, help, completion, and availability during active work. Duplicate names or aliases are rejected. Commands that would change subsequent execution configuration are unavailable while work is active. `/mode`, `/status`, `/help`, `/cancel`, and `/quit` remain available.
+One command catalog owns syntax, aliases, help, completion, and availability during active work. Duplicate names or aliases are rejected. Commands that would change subsequent execution configuration are unavailable while work is active. `/mode`, `/status`, `/help`, `/steer`, `/cancel`, and `/quit` remain available. Command arguments preserve native backslashes; paths containing whitespace use surrounding quotes. `/result` takes a request ID followed by raw JSON, without shell quote removal.
 
 - **Concise** is the default: assistant text, decisions, errors, and necessary completion/recovery results.
-- **Detailed** additionally shows provider-exposed reasoning, tool names and arguments, file-edit tool calls, bounded tool results, and child output. It does not invent reasoning or expose hidden model state.
+- **Detailed** additionally shows provider-exposed reasoning, tool names and arguments, file-edit tool calls, bounded tool results, and child output. Tool results identify their call and elapsed observation time; child output identifies its execution or Run. It does not invent reasoning or expose hidden model state.
 - `/mode concise|detailed` and Ctrl+O switch live presentation. Previously displayed content is unchanged; `/history` reads retained details explicitly.
 
 Display mode never changes tool access, shell review, model reasoning effort, or approval behavior. The compact status bar identifies model, reasoning effort, last reported request footprint, working context budget, elapsed time, state, and display mode. Unknown usage is shown as unknown, not zero. Request footprint is not cumulative Run usage and does not estimate the next prompt. Child and auxiliary request usage are not added to root context occupancy.
+
+`/steer <message>` sends literal text to the exact current App receipt. Acceptance means the Harness accepted the input for a model boundary, not that the model consumed it or that a durable checkpoint exists. Preparation, completed receipts, and absent receipts reject steering and preserve the command draft. The CLI does not queue a new Run, silently reinterpret ordinary Enter as steering, retarget a later receipt, or automatically retry rejected guidance.
 
 ## Workspace and Resume
 
@@ -34,7 +36,7 @@ On the first submission, the App resolves the canonical invocation directory. It
 
 Launch resume cannot be combined with Agent, Environment, or title overrides; the CLI rejects the combination before startup rather than silently discarding a requested permission boundary.
 
-`/new` clears the current selection and starts a new conversation on the next submission, preserving all history. `/resume` lists saved root sessions in the current workspace; `/resume <id>` and `--resume <id>` reject archived, child, active, and cross-workspace sessions. Resume uses the durable selected continuation, not discarded partial output. `/history [cursor]` reads bounded retained pages without maintaining a duplicate terminal transcript database.
+`/new` clears the current selection and starts a new conversation on the next submission, preserving all history. `/resume` lists saved root sessions in the current workspace; `/resume <id>` and `--resume <id>` reject archived, child, active, and cross-workspace sessions. Resume uses the durable selected continuation, not discarded partial output. Failed navigation preserves attached images and command text. Asynchronous command failures never overwrite a newer draft; explicit recovery remains available. Successful navigation discards only the unchanged prior attachment draft. `/history [cursor]` reads bounded retained pages without maintaining a duplicate terminal transcript database.
 
 ## Per-operation Model Selection
 
@@ -68,7 +70,7 @@ The composer retains at most eight images, at most 10 MiB per image and 20 MiB i
 
 ## Decisions, Cancellation, and Recovery
 
-Pending approvals and external results are presented using App-owned deferred request types. Individual terminal answers are local drafts until every request in the exact continuation batch has a response. Unknown IDs, mismatched kinds, invalid JSON, or stale continuations are rejected. Cancelling, exiting, or leaving setup never implies approval. Structured question results remain subject to the same App/Harness validation as other adapters.
+Pending approvals and external results are presented using App-owned deferred request types. Individual terminal answers are local drafts until every request in the exact continuation batch has a response. Unknown IDs, mismatched kinds, invalid JSON, or stale continuations are rejected. Cancelling, exiting, or leaving setup never implies approval. Structured question results remain subject to the same App/Harness validation as other adapters. Complete numbered option labels and descriptions remain in the scrollable transcript even when the compact selector clips them.
 
 Cancellation goes through the root receipt and waits for execution/environment cleanup. Exit cancels active work before closing the App in its owning task. Login cancellation uses the existing credential-store transaction boundary; a completed store write is not reported as rolled back. No cancellation retries a potentially side-effecting operation automatically.
 

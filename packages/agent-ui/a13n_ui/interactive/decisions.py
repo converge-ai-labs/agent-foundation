@@ -53,7 +53,15 @@ class DecisionInteraction:
         heading = f"Decision {self.index + 1}/{len(self.batch.requests)} · {request.tool_name} · {request.request_id}"
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
-            return f"{heading}\n{question.header} ({self.question_index + 1}/{len(request.questions)})\n{question.question}\nChoose a number or type your own answer. /cancel keeps the request pending."
+            options = "\n".join(
+                f"{index}. {option.label}\n   {option.description}" for index, option in enumerate(question.options, 1)
+            )
+            review = (
+                f"\n[Source preview incomplete; /review {request.request_id} reads retained details]"
+                if request.metadata_omitted
+                else ""
+            )
+            return f"{heading}\n{question.header} ({self.question_index + 1}/{len(request.questions)})\n{question.question}\n{options}{review}\nChoose a number or type your own answer. /cancel keeps the request pending."
         arguments = json.dumps(request.arguments, ensure_ascii=False, indent=2)
         metadata = json.dumps(request.metadata, ensure_ascii=False, indent=2) if request.metadata else ""
         content = f"{arguments}\n{metadata}".strip()

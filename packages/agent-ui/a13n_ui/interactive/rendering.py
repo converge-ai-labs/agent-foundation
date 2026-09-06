@@ -47,6 +47,14 @@ class Status:
         )
 
 
+@dataclass(slots=True)
+class _ToolPreview:
+    name: str
+    started: float
+    arguments: str = ""
+    truncated: bool = False
+
+
 class StreamRenderer:
     """Keep only a bounded pending batch and bounded per-tool argument tails.
 
@@ -61,7 +69,7 @@ class StreamRenderer:
         self._limit = limit
         self._pending: list[str] = []
         self._size = 0
-        self._arguments: dict[str, str] = {}
+        self._tools: dict[tuple[str, str], _ToolPreview] = {}
         self.assistant_seen = False
         self.gap = False
         self.boundary = False
@@ -100,7 +108,13 @@ class StreamRenderer:
         self.boundary = True
 
     def ingest(
-        self, event_type: str, payload: Mapping[str, object] | None, *, child: bool = False, run_id: str = "root"
+        self,
+        event_type: str,
+        payload: Mapping[str, object] | None,
+        *,
+        child: bool = False,
+        run_id: str = "root",
+        execution_id: str | None = None,
     ) -> None:
         if payload is None:
             self.gap = True
@@ -110,7 +124,10 @@ class StreamRenderer:
         text = delta if isinstance(delta, str) else json.dumps(delta, ensure_ascii=False)
         thinking = event_type.startswith(("REASONING_MESSAGE", "THINKING_TEXT_MESSAGE"))
         assistant = event_type.startswith("TEXT_MESSAGE")
+        identity = terminal_text(execution_id or run_id)
         if thinking or assistant:
+            if not child and self.status.state != "cancelling":
+                self.status.state = "thinking" if thinking else "responding"
             if (child or thinking) and not detailed:
                 return
             key = (run_id, str(payload.get("message_id", "default")), "thinking" if thinking else "assistant")
@@ -123,7 +140,9 @@ class StreamRenderer:
             elif text:
                 block_id = self._messages.get(key)
                 if block_id is None or not self.transcript.extend(block_id, terminal_text(text)):
-                    label = ("**Subagent**\n\n" if child else "") + ("**Thinking**\n\n" if thinking else "")
+                    label = (f"**Subagent · {identity}**\n\n" if child else "") + (
+                        "**Thinking**\n\n" if thinking else ""
+                    )
                     self._messages[key] = self.transcript.append(label + terminal_text(text), markdown=True)
                     if len(self._messages) > 128:
                         self._messages.pop(next(iter(self._messages)))
@@ -132,31 +151,46 @@ class StreamRenderer:
                     self.assistant_seen = True
             return
         if event_type.startswith("TOOL_CALL"):
-            key = run_id + ":" + str(payload.get("tool_call_id", "unknown"))
+            call_id = terminal_text(str(payload.get("tool_call_id", "unknown")))
+            key = (run_id, call_id)
+            preview = self._tools.get(key)
+            label = f"{identity} / {call_id}" if child else call_id
             if event_type.endswith("START"):
-                self.status.state = str(payload.get("tool_call_name", "tool"))[:60]
+                preview = _ToolPreview(str(payload.get("tool_call_name", "tool"))[:60], time.monotonic())
+                self._tools[key] = preview
+                if not child and self.status.state != "cancelling":
+                    self.status.state = preview.name
                 if detailed:
                     self.finish()
-                    self.append(f"[Tool] {self.status.state}\n")
-                self._arguments[key] = ""
+                    self.append(f"[Tool] {preview.name} · {label}\n")
             elif event_type.endswith(("ARGS", "CHUNK")):
-                # Keep names/calls bounded even if a producer omits end events.
-                if len(self._arguments) > 128:
-                    self._arguments.pop(next(iter(self._arguments)))
-                self._arguments[key] = (self._arguments.get(key, "") + text)[: self.limit]
+                if preview is None:
+                    preview = self._tools[key] = _ToolPreview("tool", time.monotonic())
+                preview.truncated |= len(preview.arguments) + len(text) > self.limit
+                preview.arguments = (preview.arguments + text)[: self.limit]
             elif event_type.endswith("RESULT"):
                 if detailed:
+                    name = preview.name if preview else "tool"
+                    elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
+                    self.append(f"[Result] {name} · {label}{elapsed}\n")
                     lines = text.splitlines()
                     self.append("\n".join(lines[: self.status.max_tool_result_lines])[: self.limit] + "\n")
                     if len(lines) > self.status.max_tool_result_lines or len(text) > self.limit:
                         self.append("[Result truncated; /history shows retained details]\n")
-                self._arguments.pop(key, None)
+                self._tools.pop(key, None)
+                if not child and self.status.state != "cancelling":
+                    self.status.state = "working"
                 self.boundary = True
             elif event_type.endswith("END"):
-                arguments = self._arguments.pop(key, "")
-                if detailed and arguments:
-                    self.append(arguments + (" [arguments truncated]" if len(arguments) == self.limit else "") + "\n")
+                # AG-UI END completes argument generation, not tool execution.
+                if detailed and preview and preview.arguments:
+                    self.append(preview.arguments + (" [arguments truncated]" if preview.truncated else "") + "\n")
+                if preview:
+                    preview.arguments = ""
                 self.boundary = True
+            # START-only and malformed streams obey the same bound as ARGS.
+            while len(self._tools) > 128:
+                self._tools.pop(next(iter(self._tools)))
             return
         if event_type == "RUN_ERROR":
             self.finish()

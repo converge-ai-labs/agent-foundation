@@ -36,7 +36,7 @@ def test_command_registry_has_one_grammar_and_rejects_collisions() -> None:
     assert registry.completions("/mo")[0][0] == "/mode"
     assert registry.completions("/mode d")[0][0] == "detailed"
     assert "Alt+Enter" in registry.help()
-    for invalid in ("/unknown", "/model a b", "/mode invalid", '/result id "unclosed'):
+    for invalid in ("/unknown", "/model a b", "/mode invalid", '/attach "unclosed'):
         with pytest.raises(ValueError):
             registry.parse(invalid)
     with pytest.raises(ValueError, match="unavailable"):
@@ -74,6 +74,28 @@ def test_stream_argument_and_result_memory_is_bounded() -> None:
     renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
     renderer.ingest("TOOL_CALL_RESULT", {"content": "\n".join(["line"] * 100)})
     assert len(renderer.drain()) < 400
+
+
+def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellation() -> None:
+    status = Status(mode="detailed")
+    renderer = StreamRenderer(status, limit=128)
+    for run_id in ("child-a", "child-b"):
+        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "edit"}, child=True, run_id=run_id)
+        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"}, child=True, run_id=run_id)
+    for run_id in ("child-b", "child-a"):
+        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": "done"}, child=True, run_id=run_id)
+    result = renderer.drain()
+    assert "[Result] edit · child-a / one" in result
+    assert "[Result] edit · child-b / one" in result
+    for index in range(256):
+        renderer.ingest("TOOL_CALL_START", {"tool_call_id": str(index), "tool_call_name": "edit"})
+    assert len(renderer._tools) == 128
+    renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "answer"})
+    assert status.state == "responding"
+    status.state = "cancelling"
+    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "late", "tool_call_name": "edit"})
+    renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "late answer"})
+    assert status.state == "cancelling"
 
 
 def test_setup_choices_expand_to_explicit_native_context_values() -> None:

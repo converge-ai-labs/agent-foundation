@@ -247,7 +247,6 @@ async def test_sandbox_preflight_uses_production_denied_network_and_does_not_dow
     from a13n_environment_provider import EnvironmentError
     from a13n_ui import setup
 
-    monkeypatch.setattr(setup.sys, "platform", "linux")
     observed = []
 
     async def resolve() -> Path:
@@ -266,12 +265,11 @@ async def test_sandbox_preflight_uses_production_denied_network_and_does_not_dow
 
 
 @pytest.mark.anyio
-async def test_sandbox_preflight_cancellation_propagates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sandbox_preflight_cancellation_propagates(tmp_path: Path) -> None:
     import asyncio
 
     from a13n_ui import setup
 
-    monkeypatch.setattr(setup.sys, "platform", "linux")
     entered = asyncio.Event()
     cancelled = asyncio.Event()
 
@@ -392,21 +390,27 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
 
 
 @pytest.mark.anyio
-async def test_windows_sandbox_offers_explicit_full_control_without_launching_envd(
+async def test_sandbox_readiness_comes_from_envd_on_every_platform(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from unittest.mock import AsyncMock
+
     import a13n_ui.setup as setup
 
-    monkeypatch.setattr(setup.sys, "platform", "win32")
-
-    async def forbidden():
-        raise AssertionError("Windows Sandbox must not start a probe")
-
-    result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=forbidden)
+    executable = tmp_path / "agent-envd.exe"
+    resolve = AsyncMock(return_value=executable)
+    probe = AsyncMock(side_effect=OSError("required execution isolation is not implemented for this platform"))
+    monkeypatch.setattr(setup, "validate_local_envd_runtime", probe)
+    result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=resolve)
+    resolve.assert_awaited_once()
+    probe.assert_awaited_once()
     assert not result.ready
-    assert result.code == "sandbox_platform_unsupported"
-    assert "explicitly choose Full Control" in result.message
+    assert result.code == "sandbox_probe_failed"
+    assert any("Job-based process cleanup alone is not Sandbox support" in item for item in result.instructions)
+    probe.side_effect = None
+    result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=resolve)
+    assert result.ready and result.code == "sandbox_ready"
 
 
 def test_windows_full_control_selects_powershell_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -641,3 +645,35 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
     with pytest.raises(ConfigurationError, match="no longer matches"):
         await preview_setup(path, second, validate_candidate=_validate())
     assert generated.read_text() == edited
+
+
+@pytest.mark.anyio
+async def test_windows_sandbox_shell_recipe_stays_in_eip_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import Mock
+
+    from a13n_environment_provider import LocalEnvdEnvironmentProvider
+    from a13n_ui.composition.models import ResolvedEnvironmentProfile
+    from a13n_ui.extensions import environment_adapters as adapters
+
+    provider = LocalEnvdEnvironmentProvider()
+    create = Mock()
+    monkeypatch.setattr(provider, "create_environment", create)
+    monkeypatch.setattr(adapters.sys, "platform", "win32")
+    monkeypatch.setattr(adapters, "_host_shell", lambda: tmp_path / "pwsh.exe")
+    profile = ResolvedEnvironmentProfile(
+        profile_id="environment-sandbox",
+        behavior_digest="a" * 64,
+        provider_key=adapters.LOCAL_ENVD_PROVIDER_KEY,
+        provider_schema_version=next(iter(provider.configuration_versions)),
+        adapter_key=adapters.LOCAL_ENVD_ADAPTER_KEY,
+    )
+    await adapters.LocalEnvdProjectAdapter().bind(
+        profile=profile, root=tmp_path, state=None, provider=provider, runtime=None
+    )
+    configuration = create.call_args.kwargs["configuration"]
+    shell = configuration.shell_profiles[0]
+    assert shell.fixed_arguments == ("-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-Command")
+    assert not shell.allow_login
+    assert configuration.execution_network.value == "deny"

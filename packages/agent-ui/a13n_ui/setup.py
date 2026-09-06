@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Literal
@@ -68,14 +67,6 @@ async def preflight_environment(
             code="full_control",
             message="Full Control runs as your Host account with ambient filesystem and network access. It is not a sandbox.",
         )
-    if sys.platform == "win32":
-        return EnvironmentReadiness(
-            profile_id=profile_id,
-            ready=False,
-            code="sandbox_platform_unsupported",
-            message="Production Sandbox isolation is not implemented on Windows. You can explicitly choose Full Control instead.",
-            instructions=("Choose Full Control to run without Sandbox, or cancel and retain your current selection.",),
-        )
     try:
         with fail_after(90):
             executable = await resolve_executable()
@@ -102,6 +93,7 @@ async def preflight_environment(
             instructions=(
                 "Check the configured agent-envd release and executable permissions, then Retry.",
                 "On Linux, check /usr/bin/bwrap and the distribution's unprivileged user-namespace/AppArmor policy. See the setup documentation; Agent UI will not modify system policy.",
+                "On Windows, the installed agent-envd must implement and pass required native isolation. Job-based process cleanup alone is not Sandbox support.",
                 "Alternatively explicitly choose Full Control (no Sandbox), or Cancel.",
             ),
         )

@@ -510,11 +510,19 @@ class CliShell:
             self.job.cancel()
         self.emit("Cancellation requested; waiting for cleanup.")
 
-    def launch(self, operation: Coroutine[Any, Any, str], *, kind: str = "command") -> None:
+    def launch(
+        self,
+        operation: Coroutine[Any, Any, str],
+        *,
+        kind: str = "command",
+        failure_input: str | None = None,
+        discard_images: bool = False,
+    ) -> None:
         if self.busy:
             operation.close()
             self.emit("Still working. Use /cancel first.")
             return
+        generation, images = self._draft_generation, self.images
         self.job_kind = kind
         self.status.state = "working" if kind == "run" else kind
         self.status.started = time.monotonic()
@@ -525,12 +533,17 @@ class CliShell:
         async def execute() -> None:
             try:
                 result = await operation
+                if discard_images and self._draft_generation == generation and self.images == images:
+                    self.images = ()
+                    self._draft_generation += 1
                 if result:
                     self.emit(result)
             except asyncio.CancelledError:
                 self.emit("Cancelled. Deferred requests remain unapproved.")
             except Exception as exc:
                 self.emit(f"Error: {exc}")
+                if failure_input is not None:
+                    self._restore_rejected_command(failure_input, generation, images)
             finally:
                 self.renderer.finish()
                 if self.status.started is not None:
@@ -545,15 +558,23 @@ class CliShell:
 
         self.job = asyncio.create_task(execute())
 
+    def _restore_rejected_command(self, text: str, generation: int, images: tuple[DraftImage, ...]) -> None:
+        draft = Document(text, len(text))
+        if not self.composer.text and self._draft_generation == generation:
+            self.composer.buffer.document = draft
+        else:
+            self._recoverable = (draft, images)
+            self.emit("Command rejected. /recover restores its draft; no automatic retry occurred.")
+
     async def handle(self, text: str) -> None:
         if text.startswith("/"):
+            generation, images = self._draft_generation, self.images
             try:
                 invocation = self.registry.parse(text, busy=self.busy)
                 await self.command(invocation)
             except Exception as exc:
                 self.emit(str(exc))
-                if not self.composer.text:
-                    self.composer.buffer.document = Document(text, len(text))
+                self._restore_rejected_command(text, generation, images)
             return
         if self.menu_handler is not None:
             await self.menu_answer(text)
@@ -603,6 +624,9 @@ class CliShell:
         from pydantic_ai import BinaryContent
 
         assert self.backend is not None
+        if self.busy:
+            self.emit("Still working. Your draft is preserved; /steer sends additional text guidance.")
+            return
         images, self.images = self.images, ()
         self._draft_generation += 1
         accepted = False
@@ -613,15 +637,16 @@ class CliShell:
             accepted = True
             self._recoverable = None
 
+        prompt = (
+            (text, *(BinaryContent(data=image.data, media_type=image.media_type) for image in images))
+            if images
+            else text
+        )
+        execution = self.backend.execute(self.renderer, prompt=prompt, flush=self.flush, admitted=admitted)
+
         async def send() -> str:
-            assert self.backend is not None
             try:
-                prompt = (
-                    (text, *(BinaryContent(data=image.data, media_type=image.media_type) for image in images))
-                    if images
-                    else text
-                )
-                return await self.backend.execute(self.renderer, prompt=prompt, flush=self.flush, admitted=admitted)
+                return await execution
             finally:
                 if not accepted:
                     if not self.composer.text and not self.images and self._saved_draft is None:
@@ -872,6 +897,9 @@ class CliShell:
             raise ValueError(
                 "Answer the selectable prompt or use /cancel before another command. Pending requests stay unapproved."
             )
+        elif name == "steer":
+            assert argument is not None
+            self.emit(await self.backend.steer(argument))
         elif name == "setup":
             self.start_setup()
         elif name in {"model", "thinking", "environment", "resume"} and argument is None:
@@ -888,24 +916,20 @@ class CliShell:
         elif name == "import":
             self.offer_import()
         elif name == "model":
-            self.launch(self.backend.models(argument))
+            self.launch(self.backend.models(argument), failure_input=invocation.source)
         elif name == "thinking":
-            self.launch(self.backend.thinking(argument))
+            self.launch(self.backend.thinking(argument), failure_input=invocation.source)
         elif name == "environment":
-            self.launch(self.backend.set_environment(argument))
+            self.launch(self.backend.set_environment(argument), failure_input=invocation.source)
         elif name == "new":
-            self.images = ()
-            self._draft_generation += 1
-            self.launch(self.backend.new())
+            self.launch(self.backend.new(), failure_input=invocation.source, discard_images=True)
         elif name == "resume":
-            self.images = ()
-            self._draft_generation += 1
-            self.launch(self.backend.resume(argument))
+            self.launch(self.backend.resume(argument), failure_input=invocation.source, discard_images=True)
         elif name == "review":
             assert argument is not None
-            self.launch(self.backend.review(argument))
+            self.launch(self.backend.review(argument), failure_input=invocation.source)
         elif name == "history":
-            self.launch(self.backend.history(argument))
+            self.launch(self.backend.history(argument), failure_input=invocation.source)
         elif name == "login":
 
             async def login() -> str:
@@ -913,7 +937,7 @@ class CliShell:
                 account = await self.backend.app.login_model_account(argument or "codex")
                 return f"Account: {account.provider.value} · {account.availability.value} · action: {account.required_action.value}"
 
-            self.launch(login(), kind="login")
+            self.launch(login(), kind="login", failure_input=invocation.source)
         elif name == "config":
             self.emit(
                 f"Configuration: {self.request.config_path or Path.home() / '.a13n-ui/a13n-ui.yaml'}\nSession /model and /thinking override configured model settings for subsequent turns only.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-cli config show --format json` for accepted values and `a13n-cli config validate` after editing."

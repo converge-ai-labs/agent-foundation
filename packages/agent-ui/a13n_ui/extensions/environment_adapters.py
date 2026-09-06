@@ -192,8 +192,12 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
                     {
                         "profile_id": "default",
                         "executable": str(shell),
-                        "fixed_arguments": ["-c"],
-                        "allow_login": True,
+                        "fixed_arguments": (
+                            ["-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-Command"]
+                            if sys.platform == "win32"
+                            else ["-c"]
+                        ),
+                        "allow_login": sys.platform != "win32",
                     }
                 ]
             ),

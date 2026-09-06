@@ -47,6 +47,34 @@ def _batch() -> DecisionBatchView:
     )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [r"C:\Users\me\picture.png", r"\\server\share\picture.png", r'"C:\My Photos\picture.png"', "'/tmp/my photo.png'"],
+)
+def test_attachment_paths_preserve_native_backslashes(path: str) -> None:
+    from a13n_ui.interactive.commands import CommandRegistry
+
+    assert CommandRegistry().parse(f"/attach {path}").arguments == (path.strip("\"'"),)
+
+
+def test_literal_command_tails_preserve_json_and_steering() -> None:
+    from a13n_ui.interactive.commands import CommandRegistry
+
+    registry = CommandRegistry()
+    value = r'{"path": "C:\\work\\image.png", "answer": "two words"}'
+    assert registry.parse(f"/result request {value}").arguments == ("request", value)
+    message = "Use 'this' path C:\\work\nand keep the spaces  here"
+    assert registry.parse(f"/steer {message}", busy=True).arguments == (message,)
+    with pytest.raises(ValueError, match="Usage"):
+        registry.parse("/steer  ")
+
+
+def test_question_transcript_retains_option_descriptions() -> None:
+    prompt = DecisionInteraction(_batch()).prompt()
+    assert "1. One\n   First option" in prompt
+    assert "2. Two\n   Second option" in prompt
+
+
 def test_selection_does_not_implicitly_choose_and_validates_numbers() -> None:
     selection = Selection((Choice("one", "One"), Choice("two", "Two")))
     with pytest.raises(ValueError, match="Choose"):
@@ -220,3 +248,137 @@ async def test_cancel_discards_partial_command_mode_approval_drafts(tmp_path: Pa
     response = await backend.decide("deny", "one")
     assert response is not None
     assert all(isinstance(item, ApprovalDecision) and not item.approved for item in response.responses)
+
+
+@pytest.mark.anyio
+async def test_same_input_batch_cancellation_prevents_admission(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_ui.app import AgentUiApp
+    from a13n_ui.interactive.backend import SessionBackend
+    from a13n_ui.interactive.rendering import Status
+
+    app = Mock(spec=AgentUiApp)
+    backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+    backend.initialize = AsyncMock(return_value=True)
+    backend.interaction = AsyncMock(return_value=None)
+    backend.refresh = AsyncMock()
+
+    @asynccontextmanager
+    async def factory(*args):
+        yield backend
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest(), directory=tmp_path, runtime_loader=lambda: factory)
+        task = asyncio.create_task(shell.run())
+        try:
+            async with asyncio.timeout(3):
+                while not shell.ready or not shell.app.is_running:
+                    await asyncio.sleep(0.01)
+            pipe.send_text("hello\r\x03")
+            async with asyncio.timeout(3):
+                while not backend.cancel_requested or shell.busy or shell.composer.text != "hello":
+                    await asyncio.sleep(0.01)
+            app.submit_thread.assert_not_called()
+            backend.refresh.assert_not_called()
+            assert shell.composer.text == "hello"
+            pipe.send_text("\x03/quit\r")
+            await asyncio.wait_for(task, 3)
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("newer_draft", [False, True])
+async def test_rejected_resume_preserves_images_and_command(tmp_path: Path, newer_draft: bool) -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_ui.interactive.attachments import DraftImage
+    from a13n_ui.interactive.backend import SessionBackend
+
+    release = asyncio.Event()
+
+    async def reject(_argument):
+        await release.wait()
+        raise ValueError("Session does not exist")
+
+    backend = Mock(spec=SessionBackend)
+    backend.resume = AsyncMock(side_effect=reject)
+    backend.interaction = AsyncMock(return_value=None)
+    image = DraftImage("image.png", b"test fixture", "image/png")
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        shell.backend = backend
+        shell.images = (image,)
+        await shell.command(shell.registry.parse("/resume missing"))
+        if newer_draft:
+            shell.composer.buffer.document = Document("new draft")
+        release.set()
+        await shell.job
+        assert shell.images == (image,)
+        assert shell.composer.text == ("new draft" if newer_draft else "/resume missing")
+        if newer_draft:
+            await shell.command(shell.registry.parse("/recover"))
+            assert shell.composer.text == "/resume missing"
+            assert shell.images == (image,)
+
+
+@pytest.mark.anyio
+async def test_steering_captures_receipt_and_does_not_retarget(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_ui.app import AgentUiApp
+    from a13n_ui.interactive.backend import SessionBackend
+    from a13n_ui.interactive.rendering import Status
+    from a13n_ui.surfaces import RootControlResult
+
+    app = Mock(spec=AgentUiApp)
+    backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+    backend.receipt_id = "first"
+
+    async def steer(*, receipt_id, message):
+        backend.receipt_id = "replacement"
+        return RootControlResult(receipt_id=receipt_id, accepted=False)
+
+    app.steer_root_operation = AsyncMock(side_effect=steer)
+    with pytest.raises(ValueError, match="not accepted"):
+        await backend.steer("keep changes small")
+    app.steer_root_operation.assert_awaited_once_with(receipt_id="first", message="keep changes small")
+    app.steer_root_operation = AsyncMock(
+        return_value=RootControlResult(receipt_id="replacement", accepted=True, enqueue_id="input-one")
+    )
+    assert "input-one" in await backend.steer("new guidance")
+    backend.receipt_id = None
+    with pytest.raises(ValueError, match="No running receipt"):
+        await backend.steer("not sent")
+
+
+@pytest.mark.anyio
+async def test_rejected_steering_can_be_recovered_without_overwriting_newer_draft(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_ui.interactive.backend import SessionBackend
+
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def reject(message):
+        entered.set()
+        await release.wait()
+        raise ValueError("Receipt is no longer running")
+
+    backend = Mock(spec=SessionBackend)
+    backend.steer = AsyncMock(side_effect=reject)
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        shell.backend = backend
+        task = asyncio.create_task(shell.handle("/steer important guidance"))
+        await entered.wait()
+        shell.composer.buffer.document = Document("new draft")
+        release.set()
+        await task
+        assert shell.composer.text == "new draft"
+        await shell.command(shell.registry.parse("/recover"))
+        assert shell.composer.text == "/steer important guidance"
+        backend.steer.assert_awaited_once_with("important guidance")

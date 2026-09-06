@@ -66,7 +66,7 @@ def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> N
     for run, text in (("root", "root-1"), ("child", "child-1"), ("root", "root-2")):
         renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "same", "delta": text}, run_id=run, child=run == "child")
     sources = [block.source for block in renderer.transcript.blocks.values()]
-    assert sources == ["root-1root-2", "**Subagent**\n\nchild-1"]
+    assert sources == ["root-1root-2", "**Subagent · child**\n\nchild-1"]
     control = TranscriptControl(renderer.transcript)
     control.create_content(80, 4)
     control.scroll(-3)

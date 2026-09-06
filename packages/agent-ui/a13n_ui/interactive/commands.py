@@ -16,6 +16,7 @@ class Command:
     maximum: int = 0
     choices: tuple[str, ...] = ()
     busy: bool = False
+    raw_tail: bool = False
 
     @property
     def usage(self) -> str:
@@ -55,6 +56,15 @@ COMMANDS = (
     ),
     Command("recover", "Restore the last prompt that failed before admission."),
     Command("status", "Show model, context, environment, and session details.", busy=True),
+    Command(
+        "steer",
+        "Send additional text guidance to the current running receipt.",
+        "message",
+        minimum=1,
+        maximum=1,
+        busy=True,
+        raw_tail=True,
+    ),
     Command("setup", "Configure a provider and explicit context settings; existing files are preserved."),
     Command("import", "Preview and optionally enable external subagents with parent inheritance."),
     Command("model", "List configured models or select one for this session.", "[model-id]", maximum=1),
@@ -85,7 +95,14 @@ COMMANDS = (
     Command("config", "Show configuration paths and effective precedence."),
     Command("approve", "Approve a pending tool request once.", "request-id", minimum=1, maximum=1),
     Command("deny", "Deny a pending tool request.", "request-id", minimum=1, maximum=1),
-    Command("result", "Supply a JSON result for a pending external tool.", "request-id JSON", minimum=2, maximum=2),
+    Command(
+        "result",
+        "Supply a JSON result for a pending external tool.",
+        "request-id JSON",
+        minimum=2,
+        maximum=2,
+        raw_tail=True,
+    ),
     Command(
         "review", "Inspect a pending request against the selected continuation.", "request-id", minimum=1, maximum=1
     ),
@@ -98,6 +115,7 @@ COMMANDS = (
 class Invocation:
     command: Command
     arguments: tuple[str, ...]
+    source: str
 
 
 class CommandRegistry:
@@ -111,10 +129,21 @@ class CommandRegistry:
                 self._index[name] = command
 
     def parse(self, text: str, *, busy: bool = False) -> Invocation:
-        tokens = shlex.split(text.removeprefix("/"))
-        command = self._index.get(tokens[0]) if tokens else None
+        source = text.removeprefix("/")
+        head = source.split(maxsplit=1)
+        command = self._index.get(head[0]) if head else None
         if command is None:
             raise ValueError("Unknown command. Use /help; slash input is never sent to the model.")
+        if command.raw_tail:
+            # Text and JSON are values, not shell syntax. Preserve the final
+            # argument byte-for-byte, including quotes, backslashes and newlines.
+            tokens = source.split(maxsplit=command.maximum)
+        else:
+            lexer = shlex.shlex(source, posix=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            lexer.escape = ""  # Native Windows paths are not POSIX shell escapes.
+            tokens = list(lexer)
         arguments = tuple(tokens[1:])
         if not command.minimum <= len(arguments) <= command.maximum:
             raise ValueError(f"Usage: {command.usage}")
@@ -122,7 +151,7 @@ class CommandRegistry:
             raise ValueError(f"Usage: {command.usage}. Choices: {', '.join(command.choices)}")
         if busy and not command.busy:
             raise ValueError(f"{command.usage} is unavailable while working. Use /cancel first.")
-        return Invocation(command, arguments)
+        return Invocation(command, arguments, text)
 
     def help(self, name: str | None = None) -> str:
         commands = self.commands
@@ -136,7 +165,8 @@ class CommandRegistry:
             lines += [
                 "",
                 "Enter: send   Alt+Enter: newline   Tab: complete   Ctrl+C: clear/cancel   Ctrl+D: exit",
-                "Bracketed multiline paste stays in the draft until Enter. /mode works during a run.",
+                "Bracketed multiline paste stays in the draft until Enter. /mode and /steer work during a run.",
+                "Quote paths containing spaces. /result takes raw JSON; /steer takes literal text.",
                 "Ctrl+V / Alt+V: paste image   PgUp/PgDn: scroll   Ctrl+End: latest   /mouse off: native copy",
             ]
         return "\n".join(lines)

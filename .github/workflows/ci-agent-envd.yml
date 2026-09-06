@@ -278,3 +278,27 @@ jobs:
       - name: Run agent-envd tests
         if: matrix.complete == false
         run: cargo test --locked --package agent-envd
+
+      - name: Set up Python for native Windows EIP tests
+        if: matrix.runner == 'windows-2025'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv for native Windows EIP tests
+        if: matrix.runner == 'windows-2025'
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Exercise native Windows EIP process ownership and fail-closed isolation
+        if: matrix.runner == 'windows-2025'
+        env:
+          AGENT_ENVD_TEST_BINARY: ${{ github.workspace }}\target\debug\agent-envd.exe
+        run: >-
+          uv run --locked --package a13n-envd-client pytest
+          packages/agent-envd-client/tests/eip/test_windows_process_e2e.py
+          packages/agent-envd-client/tests/eip/test_stdio_e2e.py
+          -k "windows_eip_job_lifecycle or configured_daemon_command_process_and_output_plane or required_isolation_default_fails_closed"
+          -q

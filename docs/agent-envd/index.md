@@ -99,6 +99,25 @@ Set `AGENT_ENVD_EXECUTION_ISOLATION=disabled` only when a trusted outer containe
 
 On Linux, install the distribution's non-setuid Bubblewrap package at `/usr/bin/bwrap`. The kernel and active Linux Security Modules must allow the daemon user to create unprivileged user namespaces. `agent-envd` does not change sysctls, load AppArmor policy, search `PATH` for the helper, or fall back to disabled mode.
 
+### Windows: client support versus execution isolation
+
+EIP is platform-neutral. A Windows client can connect to a Linux or macOS daemon and use the capabilities that daemon actually advertises. It does not make the remote execution host Windows, nor add client-side isolation. Agent CLI's built-in Sandbox profile uses Local Envd on every OS; App readiness delegates to the installed daemon's production probe rather than maintaining a second OS support policy. Until the native required backend is available, Windows daemon file and command operations below require an explicitly configured, trusted outer sandbox with `disabled`; the default startup does not admit even file-only sessions.
+
+| Surface                                                      | Windows behavior                                                                                                                                               |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EIP control, descriptors, file operations and transfers      | Available with configured mount authority; native paths remain private and EIP uses logical mount-relative paths                                               |
+| Native `required` execution                                  | Not yet implemented; daemon startup and Local Envd preflight fail closed                                                                                       |
+| Explicit `disabled` execution inside a trusted outer sandbox | Structured argv, configured shell profiles, stdin, separate output streams, status, wait and kill                                                              |
+| Command-tree ownership                                       | A suspended initial process enters a non-breakaway, kill-on-close Job before release; normal root exit, kill, timeout and supervisor loss clean up descendants |
+| Cleanup evidence                                             | Completion requires the owned Job to report no active processes, not successful `taskkill` or root exit alone                                                  |
+| Filesystem and network confinement                           | Job ownership does not provide either; disabled posture remains `outer_host` with containment fields false                                                     |
+| Interrupt / graceful terminate                               | Not advertised on Windows; force kill remains separate                                                                                                         |
+| POSIX executable bits                                        | Reading reports false; setting true is unsupported, not a Windows execution-permission change                                                                  |
+| PTY / ConPTY                                                 | Not part of the EIP command plane on any OS                                                                                                                    |
+| Per-process memory, CPU and descendant-count limits          | Not advertised by current backends; wall time, stdin, output, spool and command-admission limits still apply                                                   |
+
+Use exact executable names, including `.exe`; envd does not perform `PATHEXT` expansion. Shell profiles are trusted bootstrap and must use arguments appropriate to the selected shell. A Windows binary or passing protocol tests does not establish AppContainer/token, ACL, reparse-point, network-denial or full sandbox conformance. Required Windows support is not enabled until those boundaries pass native production probing.
+
 ### Ubuntu 24.04 and AppArmor user namespaces
 
 Ubuntu 24.04 commonly enables `kernel.apparmor_restrict_unprivileged_userns=1`. Even with `kernel.unprivileged_userns_clone=1`, an unprofiled Bubblewrap process can be denied permission to write its UID/GID map. A typical failure is:
