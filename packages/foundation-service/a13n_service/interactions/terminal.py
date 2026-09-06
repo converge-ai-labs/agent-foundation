@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections.abc import Awaitable, Callable
 
 from a13n_harness import SafeFailure
 from sqlalchemy import select
@@ -25,7 +26,7 @@ from .harness_results import RunTerminalDisposition, RunTerminalReceipt
 from .inbox_persistence import RunCompletionBlocked
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import StoredRunState, run_state_key
-from .outcomes import RunOutcomeService
+from .outcomes import RunOutcomeService, VerifiedRunOutcome
 
 
 class DatabaseRunTerminalCommitter:
@@ -51,8 +52,42 @@ class DatabaseRunTerminalCommitter:
         *,
         preparation: AttemptPreparationAccepted | None = None,
     ) -> RunTerminalReceipt:
+        commit = await self.prepare_state_outcome(authority, state, preparation=preparation)
+        return await commit(authority)
+
+    async def prepare_state_outcome(
+        self,
+        authority: AttemptContext,
+        state: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted | None = None,
+    ) -> Callable[[AttemptContext], Awaitable[RunTerminalReceipt]]:
         if state.info.key != run_state_key(authority.tenant_id, authority.run_id):
             raise AttemptAuthorityError("The outcome state key does not belong to the Attempt")
+        async with short_session(self._sessions) as database:
+            replay = await self._sealed_receipt(database, authority, state)
+        verified = await self._outcomes.verify_state_outcome(authority, state) if replay is None else None
+
+        async def commit(current: AttemptContext) -> RunTerminalReceipt:
+            if (
+                current.tenant_id != authority.tenant_id
+                or current.run_id != authority.run_id
+                or current.run_attempt_id != authority.run_attempt_id
+                or current.fence != authority.fence
+            ):
+                raise AttemptAuthorityError("Prepared outcome belongs to another Attempt")
+            return await self._commit_verified(current, state, verified, preparation=preparation)
+
+        return commit
+
+    async def _commit_verified(
+        self,
+        authority: AttemptContext,
+        state: StoredRunState,
+        verified: VerifiedRunOutcome | None,
+        *,
+        preparation: AttemptPreparationAccepted | None,
+    ) -> RunTerminalReceipt:
         for retry in range(3):
             async with short_session(self._sessions) as database:
                 replay = await self._sealed_receipt(database, authority, state)
@@ -61,9 +96,11 @@ class DatabaseRunTerminalCommitter:
                 _, _, thread = await read_attempt_authority(database, authority, self._clock())
                 thread_version = thread.version
             try:
-                receipt = await self._outcomes.commit_state_outcome(
+                if verified is None:
+                    raise AttemptAuthorityError("Prepared outcome no longer matches the sealed Run")
+                receipt = await self._outcomes.commit_verified_state_outcome(
                     authority,
-                    state,
+                    verified,
                     expected_thread_version=thread_version,
                     preparation=preparation,
                 )

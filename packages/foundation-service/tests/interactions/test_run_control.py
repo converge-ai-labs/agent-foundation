@@ -73,6 +73,10 @@ class _RecordingAttemptExecution(AttemptExecutionService):
     trace: list[str]
     yielded: RunAttemptYieldReason | None = None
 
+    async def heartbeat(self, authority, *, lease_duration):
+        self.trace.append("attempt:heartbeat")
+        return _receipt(authority, attempt_delta=1)
+
     async def validate(self, authority: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:validate")
         return _receipt(authority)
@@ -93,23 +97,6 @@ class _RecordingAttemptExecution(AttemptExecutionService):
     async def increment_model_request(self, authority: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:model")
         return _receipt(authority, attempt_delta=1)
-
-    async def publish_checkpoint(
-        self,
-        authority: AttemptContext,
-        states: RunStateStore,
-        current: StoredRunState,
-        successor: RunStateEnvelope,
-    ) -> StoredRunState:
-        self.trace.append("attempt:checkpoint")
-        if current.writer_fence != authority.fence:
-            current = await states.claim_writer(current, fence=authority.fence)
-        return await states.replace(
-            current,
-            successor,
-            run_attempt_id=authority.run_attempt_id,
-            fence=authority.fence,
-        )
 
     async def yield_attempt(
         self,
@@ -167,6 +154,12 @@ class _RecordingTerminalCommitter:
     states: list[StoredRunState] = field(default_factory=list)
     failures: list[SafeFailure] = field(default_factory=list)
     cancelled: int = 0
+
+    async def prepare_state_outcome(self, authority, state, *, preparation=None):
+        async def commit(current):
+            return await self.commit_state_outcome(current, state, preparation=preparation)
+
+        return commit
 
     async def commit_state_outcome(
         self,
@@ -512,10 +505,19 @@ async def test_waiting_gate_survives_internal_model_recovery(
 
 async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     interaction_object_store: ObjectStore,
+    monkeypatch,
 ) -> None:
     trace: list[str] = []
     calls: list[tuple[ModelMessage, ...]] = []
     states, stored = await _stored_state(interaction_object_store, initial_state())
+    replace_state = states.replace
+
+    async def record_checkpoint(*args, **kwargs):
+        state = await replace_state(*args, **kwargs)
+        trace.append("state:checkpoint")
+        return state
+
+    monkeypatch.setattr(states, "replace", record_checkpoint)
     bindings = RunBindings.embedded()
     execution = _RecordingAttemptExecution(trace)
     projector = _RecordingEventProjector()
@@ -529,14 +531,16 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     )
     await coordinator.request_handoff(RunAttemptYieldReason.service_drain)
 
-    result, mutation = await _consume(
+    result = await _run(
         control=coordinator,
         bindings=bindings,
         state=stored,
         model=_model(trace, calls),
         projector=projector,
-        outcome_adapter=_outcome_adapter(interaction_object_store),
-        terminal_committer=terminal,
+    )
+    await coordinator.renew_lease()
+    mutation = await coordinator.finalize(
+        result, adapter=_outcome_adapter(interaction_object_store), committer=terminal
     )
     assert result.status == "cancelled"
     assert isinstance(mutation, AttemptMutationReceipt)
@@ -549,7 +553,8 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
 
     assert execution.yielded is RunAttemptYieldReason.service_drain
     assert mutation.run_version == coordinator.current_context.expected_run_version
-    assert trace.index("attempt:checkpoint") < trace.index("attempt:yield")
+    assert trace.index("state:checkpoint") < trace.index("attempt:yield")
+    assert trace.index("state:checkpoint") < trace.index("attempt:heartbeat") < trace.index("attempt:yield")
 
 
 async def test_driver_projects_events_and_control_commits_one_completed_result(

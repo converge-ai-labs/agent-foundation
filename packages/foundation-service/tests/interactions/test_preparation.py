@@ -327,11 +327,13 @@ async def test_slow_state_read_does_not_block_lease_renewal(interaction_sessions
     assert control.current_context.expected_attempt_version == authority.expected_attempt_version + 1
 
 
-@pytest.mark.parametrize("classified", [True, False])
+@pytest.mark.parametrize("classified", [True, False, "timeout"])
 async def test_dependency_failure_never_enters_harness_or_hides_programming_errors(
     interaction_sessions, interaction_object_store, classified
 ):
     states, _, authority = await _claimed(interaction_sessions, interaction_object_store)
+    if classified == "timeout":
+        authority = replace(authority, preparation_timeout=timedelta(milliseconds=10))
     execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
     control = RunAttemptControl(
         context=authority,
@@ -347,7 +349,11 @@ async def test_dependency_failure_never_enters_harness_or_hides_programming_erro
         else RuntimeError("unexpected programming error")
     )
     preparer, cleanup, wakeups, capacity = AsyncMock(), AsyncMock(), AsyncMock(), Mock()
-    preparer.prepare.side_effect = failure
+
+    async def stalled_preparation(context):
+        await sleep_forever()
+
+    preparer.prepare.side_effect = stalled_preparation if classified == "timeout" else failure
     wakeups.receive.side_effect = sleep_forever
     driver = Mock(spec=HarnessDriver)
     executor = RunAttemptExecutor(
@@ -363,7 +369,7 @@ async def test_dependency_failure_never_enters_harness_or_hides_programming_erro
         environments=Mock(),
     )
     if classified:
-        assert (await executor.run()).disposition == "failed"
+        assert (await executor.run()).disposition == ("retrying" if classified == "timeout" else "failed")
     else:
         with pytest.raises(ExceptionGroup) as captured:
             await executor.run()
@@ -374,4 +380,57 @@ async def test_dependency_failure_never_enters_harness_or_hides_programming_erro
     async with short_session(interaction_sessions) as database:
         attempt = await database.get(RunAttemptRecord, authority.run_attempt_id)
         assert attempt.status == ("failed" if classified else "leased")
+        assert attempt.harness_run_id is None
+
+
+@pytest.mark.parametrize("operation", ["claim_writer", "checkpoint"])
+async def test_state_publication_does_not_block_renewal(
+    interaction_sessions, interaction_object_store, monkeypatch, operation
+):
+    states, _, authority = await _claimed(interaction_sessions, interaction_object_store)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    control = RunAttemptControl(context=authority, execution=execution, states=states, inbox=Mock())
+    await control.load_state()
+    publishing, renewed = Event(), Event()
+    if operation == "checkpoint":
+        await control.commit_preparation()
+    method_name = "claim_writer" if operation == "claim_writer" else "replace"
+    publish = getattr(states, method_name)
+
+    async def slow_publish(*args, **kwargs):
+        publishing.set()
+        await renewed.wait()
+        return await publish(*args, **kwargs)
+
+    monkeypatch.setattr(states, method_name, slow_publish)
+
+    async def run_publication():
+        if operation == "claim_writer":
+            await control.commit_preparation()
+        else:
+            envelope = control.current_state.envelope
+            successor = envelope.model_copy(
+                update={
+                    "checkpoint_seq": envelope.checkpoint_seq + 1,
+                    "checkpoint_kind": "progress",
+                    "input_disposition": "applied",
+                    "last_checkpoint_run_attempt_id": authority.run_attempt_id,
+                    "last_checkpoint_fence": authority.fence,
+                }
+            )
+            await control._publish(successor)
+
+    version = control.current_context.expected_attempt_version
+    with fail_after(2):
+        async with create_task_group() as tasks:
+            tasks.start_soon(run_publication)
+            await publishing.wait()
+            await control.renew_lease()
+            renewed.set()
+    assert control.current_context.expected_attempt_version > version
+    await execution.validate(control.current_context)
+    assert control.current_state.writer_fence == authority.fence
+    async with short_session(interaction_sessions) as database:
+        attempt = await database.get(RunAttemptRecord, authority.run_attempt_id)
+        assert attempt.status == "leased"
         assert attempt.harness_run_id is None

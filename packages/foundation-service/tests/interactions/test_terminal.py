@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import timedelta
+from unittest.mock import Mock
 
 import pytest
 from a13n_harness import SafeFailure
@@ -17,9 +18,12 @@ from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.outcomes import RunOutcomeService
+from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
+from a13n_service.interactions.state import CompletedOutcomeCandidate, RunPayloadEnvelope
 from a13n_service.interactions.terminal import DatabaseRunTerminalCommitter
 from a13n_service.storage import short_session
+from anyio import Event, create_task_group, fail_after
 
 from .conftest import NOW, TENANT_ID
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _waiting_state, _worker
@@ -131,14 +135,14 @@ async def test_failure_receipt_captures_atomic_thread_transition(interaction_ses
 
 
 async def test_thread_precondition_reconciliation_is_bounded(interaction_sessions, interaction_object_store):
-    states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    states, run, initial = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
 
     class ChangingThread(RunOutcomeService):
         calls = 0
 
-        async def commit_state_outcome(self, *args, **kwargs):
+        async def commit_verified_state_outcome(self, *args, **kwargs):
             self.calls += 1
             raise RunOutcomePreconditionChanged("Thread changed")
 
@@ -149,6 +153,69 @@ async def test_thread_precondition_reconciliation_is_bounded(interaction_session
         AttemptExecutionService(interaction_sessions, clock=lambda: NOW),
         clock=lambda: NOW,
     )
+    state = await AttemptExecutionService(interaction_sessions, clock=lambda: NOW).publish_checkpoint(
+        _authority(claim),
+        states,
+        await states.read(TENANT_ID, run.id),
+        _completed_state(initial, claim.attempt.id, 1),
+    )
     with pytest.raises(RunOutcomePreconditionChanged):
-        await committer.commit_state_outcome(_authority(claim), await states.read(TENANT_ID, run.id))
+        await committer.commit_state_outcome(_authority(claim), state)
     assert outcomes.calls == 3
+
+
+async def test_output_verification_keeps_renewing_and_commits_with_fresh_authority(
+    interaction_sessions, interaction_object_store, monkeypatch
+):
+    states, run, initial = await _accept_root(interaction_sessions, interaction_object_store)
+    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: NOW)
+    first = await scheduler.claim(run.id, _worker(lease_seconds=1))
+    assert isinstance(first, ClaimedAttempt)
+    payloads = RunPayloadStore(interaction_object_store)
+    output = await payloads.create(
+        TENANT_ID,
+        RunPayloadEnvelope(run_id=run.id, payload_kind="output", payload_schema_version="1", payload="output"),
+    )
+    candidate = _completed_state(initial, first.attempt.id, 1).model_copy(
+        update={"outcome_candidate": CompletedOutcomeCandidate(output_object=output)}
+    )
+    await AttemptExecutionService(interaction_sessions, clock=lambda: NOW).publish_checkpoint(
+        _authority(first), states, await states.read(TENANT_ID, run.id), candidate
+    )
+
+    def clock():
+        return NOW + timedelta(seconds=2)
+
+    claim = await AttemptScheduler(interaction_sessions, clock=clock).claim(run.id, _worker(worker_id="worker-2"))
+    assert isinstance(claim, ClaimedAttempt)
+    execution = AttemptExecutionService(interaction_sessions, clock=clock)
+    control = RunAttemptControl(context=_authority(claim), execution=execution, states=states, inbox=Mock())
+    await control.load_state()
+    preparation = await control.commit_preparation()
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    committer = DatabaseRunTerminalCommitter(
+        interaction_sessions, RunOutcomeService(interaction_sessions, payloads, clock=clock), execution, clock=clock
+    )
+    verifying, renewed = Event(), Event()
+    verify = payloads.verify_reference
+
+    async def slow_verification(*args, **kwargs):
+        verifying.set()
+        await renewed.wait()
+        return await verify(*args, **kwargs)
+
+    monkeypatch.setattr(payloads, "verify_reference", slow_verification)
+    receipts = []
+
+    async def adopt():
+        receipts.append(await control.adopt_prepared_outcome(preparation, committer=committer))
+
+    with fail_after(2):
+        async with create_task_group() as tasks:
+            tasks.start_soon(adopt)
+            await verifying.wait()
+            await control.renew_lease()
+            renewed.set()
+    assert len(receipts) == 1
+    assert receipts[0].disposition is RunTerminalDisposition.completed
+    assert control.current_context.expected_attempt_version > claim.attempt.version

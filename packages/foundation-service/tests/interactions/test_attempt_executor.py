@@ -6,6 +6,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a13n_environment_provider import Environment
 from a13n_harness import (
     AgentDefinition,
     AgentIdentityRef,
@@ -15,6 +16,7 @@ from a13n_harness import (
     HarnessEvent,
     HarnessRunResultEvent,
     HarnessState,
+    RunBindings,
     SafeFailure,
 )
 from a13n_harness.errors import RunError
@@ -47,7 +49,7 @@ from a13n_service.interactions.objects import RunStateStore, StoredRunState
 from a13n_service.interactions.run_control import AdaptedThreadInboxEntry, RunAttemptControl
 from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry, RunStateEnvelope
 from a13n_service.storage import ObjectStore
-from anyio import Event, create_task_group, sleep_forever
+from anyio import Event, create_task_group, fail_after, sleep_forever
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -64,11 +66,9 @@ class _Execution(AttemptExecutionService):
     reject_preparation: bool = False
     pending_completion: bool = False
 
-    async def resume_completed_candidate(self, context, states, current, *, preparation):
+    async def completed_candidate_needs_resume(self, context, current, *, preparation):
         self.trace.append("attempt:completion-recovery")
-        if self.pending_completion:
-            return await states.resume_completed(current, run_attempt_id=context.run_attempt_id, fence=context.fence)
-        return current
+        return self.pending_completion
 
     async def validate(self, context: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:validate")
@@ -119,23 +119,6 @@ class _Execution(AttemptExecutionService):
     async def increment_model_request(self, context: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:model")
         return _receipt(context, attempt_delta=1)
-
-    async def publish_checkpoint(
-        self,
-        context: AttemptContext,
-        states: RunStateStore,
-        current: StoredRunState,
-        successor: RunStateEnvelope,
-    ) -> StoredRunState:
-        self.trace.append("attempt:checkpoint")
-        if current.writer_fence != context.fence:
-            current = await states.claim_writer(current, fence=context.fence)
-        return await states.replace(
-            current,
-            successor,
-            run_attempt_id=context.run_attempt_id,
-            fence=context.fence,
-        )
 
 
 @dataclass
@@ -211,7 +194,9 @@ class _Preparer:
     trace: list[str]
 
     async def prepare(self, context: AttemptContext) -> HarnessInvocation[str]:
-        assert context is self.context
+        assert context.run_attempt_id == self.context.run_attempt_id
+        assert context.fence == self.context.fence
+        assert context.expected_attempt_version >= self.context.expected_attempt_version
         await self.wakeups.receiving.wait()
         await self.heartbeat_seen.wait()
         self.trace.append("attempt:prepare")
@@ -232,6 +217,12 @@ class _Adapter:
 @dataclass
 class _Committer:
     trace: list[str]
+
+    async def prepare_state_outcome(self, authority, state, *, preparation=None):
+        async def commit(current):
+            return await self.commit_state_outcome(current, state, preparation=preparation)
+
+        return commit
 
     async def commit_state_outcome(
         self,
@@ -537,6 +528,55 @@ async def test_lease_monitor_fences_control_and_cancels_scope_on_authority_loss(
     with pytest.raises(RunError) as error:
         await control.reconcile()
     assert error.value.code == "foundation_control_fenced"
+
+
+@pytest.mark.parametrize("close_failure", ["error", "timeout"])
+async def test_environment_close_failure_still_cleans_up_attempt_and_releases_capacity(
+    interaction_object_store, monkeypatch, close_failure
+):
+    trace = []
+    envelope = initial_state()
+    states, _ = await _stored_state(interaction_object_store, envelope)
+    context = replace(_context(envelope.thread_id), cleanup_timeout=timedelta(milliseconds=100))
+    control = RunAttemptControl(
+        context=context, execution=_Execution(trace, reject_preparation=True), states=states, inbox=_Inbox(trace)
+    )
+    driver = HarnessDriver(HarnessBuilder(instrumentation=None), control=control, projector=_Projector())
+    invocation = HarnessInvocation(
+        definition=AgentDefinition(agent=AgentSpec(), output_type=str, model=FunctionModel(stream_function=_model)),
+        input=ImmediateHarnessInput("hello"),
+        collaborators=HarnessCollaborators(instance=RunBindings.embedded().instance),
+    )
+    environment = Mock(spec=Environment)
+    environment.access = "full"
+    environment.close = AsyncMock(
+        side_effect=RuntimeError("close failed") if close_failure == "error" else sleep_forever
+    )
+    monkeypatch.setattr(
+        "a13n_service.interactions.attempt_executor.prepare_run_environment", AsyncMock(return_value=environment)
+    )
+    cleanup, capacity = AsyncMock(), _CapacitySlot(trace)
+    executor = RunAttemptExecutor(
+        context=context,
+        control=control,
+        driver=driver,
+        preparer=AsyncMock(prepare=AsyncMock(return_value=invocation)),
+        wakeups=_Wakeups(trace),
+        adapter=_Adapter(),
+        committer=_Committer(trace),
+        cleanup=cleanup,
+        capacity_slot=capacity,
+        environments=Mock(spec=EnvironmentLifecycle),
+    )
+    with fail_after(2):
+        if close_failure == "error":
+            with pytest.raises(RuntimeError, match="close failed"):
+                await executor.run()
+        else:
+            assert isinstance(await executor.run(), AttemptPreparationRejected)
+    environment.close.assert_awaited_once()
+    cleanup.close.assert_awaited_once()
+    assert capacity.releases == 1
 
 
 async def test_control_watcher_acknowledges_only_after_each_durable_reconciliation(

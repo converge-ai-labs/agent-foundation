@@ -67,6 +67,7 @@ class AttemptContext:
     renewal_timeout: timedelta
     reconciliation_timeout: timedelta
     cleanup_timeout: timedelta
+    preparation_timeout: timedelta = timedelta(seconds=120)
 
     def __post_init__(self) -> None:
         if self.fence < 1 or self.expected_run_version < 1 or self.expected_attempt_version < 1:
@@ -81,6 +82,8 @@ class AttemptContext:
             raise ValueError("Attempt reconciliation timeout must be positive")
         if self.cleanup_timeout <= timedelta(0):
             raise ValueError("Attempt cleanup timeout must be positive")
+        if self.preparation_timeout <= timedelta(0):
+            raise ValueError("Attempt preparation timeout must be positive")
         object.__setattr__(self, "lease_expires_at", assume_utc(self.lease_expires_at))
 
 
@@ -299,6 +302,20 @@ class AttemptExecutionService:
     ) -> StoredRunState:
         """Reopen only a predecessor's unsealed completion blocked by pending delivery."""
 
+        pending = await self.completed_candidate_needs_resume(authority, current, preparation=preparation)
+        if not pending:
+            return current
+        return await states.resume_completed(current, run_attempt_id=authority.run_attempt_id, fence=authority.fence)
+
+    async def completed_candidate_needs_resume(
+        self,
+        authority: AttemptContext,
+        current: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted,
+    ) -> bool:
+        """Authorize recovery in a short transaction, without publishing an object."""
+
         _require_state_scope(authority, current)
         if (
             current.envelope.checkpoint_kind != "completed"
@@ -316,10 +333,7 @@ class AttemptExecutionService:
             run, attempt, _ = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
             if attempt.status != RunAttemptStatus.leased.value or attempt.harness_run_id is not None:
                 raise AttemptMutationError("completed recovery must precede the replacement's Harness entry")
-            pending = await has_pending_run_delivery(database, run=run, state=current, now=now)
-        if not pending:
-            return current
-        return await states.resume_completed(current, run_attempt_id=authority.run_attempt_id, fence=authority.fence)
+            return await has_pending_run_delivery(database, run=run, state=current, now=now)
 
     async def fail(
         self,

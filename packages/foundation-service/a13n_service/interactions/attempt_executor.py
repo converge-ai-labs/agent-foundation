@@ -147,7 +147,7 @@ class RunAttemptExecutor[OutputT]:
                     await tasks.start(LeaseMonitor(self._context, self._control).run)
                     await self._load_state()
                     await tasks.start(ControlWatcher(self._context, self._control, self._wakeups).run)
-                    invocation = await self._preparer.prepare(self._context)
+                    invocation = await self._prepare()
                     had_candidate = self._control.current_state.envelope.outcome_candidate is not None
                     if not had_candidate:
                         environment = await prepare_run_environment(self._environments, self._control.current_context)
@@ -186,19 +186,33 @@ class RunAttemptExecutor[OutputT]:
                     )
                 finally:
                     with CancelScope(shield=True):
-                        await self._control.close_admission()
                         tasks.cancel_scope.cancel()
+                        await self._control.close_admission()
             if finalization is None:
                 raise AttemptAuthorityError("Attempt executor stopped without an authoritative finalization")
             return finalization
         finally:
             try:
                 with move_on_after(self._context.cleanup_timeout.total_seconds(), shield=True):
-                    if environment is not None:
-                        await environment.close()
-                    await self._cleanup.close(self._control.current_context, self._control, self._driver)
+                    try:
+                        if environment is not None:
+                            # Reserve time for Attempt-owned cleanup if provider close stalls.
+                            with move_on_after(self._context.cleanup_timeout.total_seconds() / 2):
+                                await environment.close()
+                    finally:
+                        await self._cleanup.close(self._control.current_context, self._control, self._driver)
             finally:
                 self._capacity_slot.release()
+
+    async def _prepare(self) -> HarnessInvocation[OutputT]:
+        try:
+            with fail_after(self._context.preparation_timeout.total_seconds()):
+                return await self._preparer.prepare(self._control.current_context)
+        except TimeoutError as error:
+            raise AttemptPreparationError(
+                SafeFailure(code="run_preparation_timeout", message="Run preparation exceeded its time limit."),
+                retryable=True,
+            ) from error
 
     async def _load_state(self) -> None:
         try:

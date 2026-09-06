@@ -20,7 +20,7 @@ from .attempts import (
     AttemptContext,
     AttemptMutationReceipt,
     lock_attempt_authority,
-    read_attempt_authority,
+    read_attempt_lease,
 )
 from .control_domain import (
     SteerReceipt,
@@ -228,7 +228,7 @@ class DatabaseThreadInboxReconciler:
     ) -> Sequence[AdaptedThreadInboxEntry]:
         now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
-            run, _, _ = await read_attempt_authority(database, authority, now)
+            run, _, _ = await read_attempt_lease(database, authority, now)
             pending = tuple(
                 (
                     await database.scalars(
