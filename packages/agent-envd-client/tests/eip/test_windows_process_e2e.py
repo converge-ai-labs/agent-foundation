@@ -11,7 +11,7 @@ from contextlib import suppress
 from pathlib import Path
 
 import pytest
-from a13n_envd_client import EIPSession, StdioTransport
+from a13n_envd_client import EIPSession, EIPTransportClosedError, StdioTransport
 from a13n_envd_client.eip.v1 import (
     ArgvCommand,
     CommandEnvironment,
@@ -105,12 +105,17 @@ def test_windows_eip_job_lifecycle(tmp_path: Path, finish: str) -> None:
 
     async def scenario() -> None:
         daemon = await start_daemon(agent_envd_binary(), config_path=config, runtime_dir=runtime)
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(daemon),
-            expected_environment_id="env-e2e",
-            required_methods=("process.start", "process.kill", "process.wait"),
-            request_timeout=15,
-        )
+        try:
+            session = await EIPSession.initialize(
+                StdioTransport.from_process(daemon),
+                expected_environment_id="env-e2e",
+                required_methods=("process.start", "process.kill", "process.wait"),
+                request_timeout=15,
+            )
+        except EIPTransportClosedError:
+            # Preserve startup diagnostics instead of reporting only pipe EOF.
+            await wait_for_exit(daemon)
+            raise
         pids: list[int] = []
         try:
             request = CommandRequest(

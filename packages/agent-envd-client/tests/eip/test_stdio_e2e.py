@@ -107,6 +107,10 @@ async def start_daemon(
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "HTTP_PROXY": "http://proxy.invalid:8080",
     }
+    if sys.platform == "win32":
+        # Windows process startup requires its trusted system directory even
+        # when the rest of the test environment is intentionally isolated.
+        environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     if execution_isolation is not None:
         environment["AGENT_ENVD_EXECUTION_ISOLATION"] = execution_isolation
     owned_runtime = runtime_dir is None
@@ -1989,13 +1993,7 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
 )
 def test_required_isolation_default_fails_closed_on_unsupported_platform() -> None:
     async def scenario() -> None:
-        process = await asyncio.create_subprocess_exec(
-            str(agent_envd_binary()),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={"AGENT_ENVD_ENVIRONMENT_ID": "env-e2e"},
-        )
+        process = await start_daemon(agent_envd_binary(), execution_isolation=None)
         stderr = await wait_for_exit(process, expected_code=1)
         assert b"required execution isolation is not implemented for this platform" in stderr
         assert process.stdout is not None
