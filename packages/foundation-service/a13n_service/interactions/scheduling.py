@@ -21,10 +21,10 @@ from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
-from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
+from .domain import RecoveryUsage, Run, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .lifecycle import append_run_attempt_lifecycle, append_run_lifecycle, append_run_with_attempt_lifecycle
-from .models import RunAttemptRecord, RunRecord, ThreadRecord
+from .models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from .records import run_attempt_record
 
 
@@ -56,6 +56,8 @@ class ClaimedAttempt:
     thread_id: str
     run_version: int
     lease_token: str = field(repr=False)
+    run: Run
+    workspace_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,11 +400,21 @@ class AttemptScheduler:
                     mutation_id=mutation_id,
                     occurred_at=now,
                 )
+            workspace_id = await database.scalar(
+                select(SessionRecord.workspace_id).where(
+                    SessionRecord.tenant_id == run.tenant_id,
+                    SessionRecord.id == run.session_id,
+                )
+            )
+            if workspace_id is None:
+                raise ValueError("Claimed Run has no owning Session")
             return ClaimedAttempt(
                 attempt=attempt,
                 thread_id=run.thread_id,
                 run_version=run.version,
                 lease_token=token,
+                run=run.to_resource(),
+                workspace_id=workspace_id,
             )
 
     async def _lock_predecessor(

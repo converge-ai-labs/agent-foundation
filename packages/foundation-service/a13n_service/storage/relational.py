@@ -72,11 +72,26 @@ async def short_session(
     factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
 ) -> AsyncGenerator[AsyncSession]:
     session = factory()
+    original_error: BaseException | None = None
     try:
         yield session
+    except BaseException as error:
+        original_error = error
+        raise
     finally:
         with move_on_after(cleanup_timeout_seconds, shield=True):
-            await session.close()
+            try:
+                await session.close()
+            except Exception as cleanup_error:
+                # A cancelled DB driver operation can leave rollback unusable. Retire
+                # that connection without replacing the cancellation with a close error.
+                try:
+                    await session.invalidate()
+                except Exception as invalidate_error:
+                    cleanup_error.add_note(f"invalidation failed with {type(invalidate_error).__name__}")
+                if original_error is None:
+                    raise
+                original_error.add_note(f"session cleanup failed with {type(cleanup_error).__name__}")
 
 
 @asynccontextmanager

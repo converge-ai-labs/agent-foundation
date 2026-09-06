@@ -120,6 +120,10 @@ class WorkerExecutionLoop:
     def is_draining(self) -> bool:
         return self._draining.is_set()
 
+    @property
+    def ready(self) -> bool:
+        return self._started.is_set() and not self._stopped.is_set() and not self.is_draining()
+
     async def wait_started(self) -> None:
         await self._started.wait()
 

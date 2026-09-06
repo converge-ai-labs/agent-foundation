@@ -130,6 +130,7 @@ class HarnessCollaborators:
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
+    external_tools_prepared: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.instance, AgentInstanceContext):
@@ -244,7 +245,9 @@ class HarnessDriver:
                     )
                 else:
                     config = self._control.current_state.envelope.effective_agent_config
-                    if config.connector_tools or config.mcp_tools:
+                    if (
+                        config.connector_tools or config.mcp_tools
+                    ) and not invocation.collaborators.external_tools_prepared:
                         raise RunError("External tool runtime is unavailable.", code="external_tools_unavailable")
                 return await self._run(invocation, preparation=preparation)
         finally:

@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Protocol
 
+from a13n_environment_provider import EnvironmentError, EnvironmentProviderError
 from a13n_harness import EnvironmentAccess, EnvironmentMount, SafeFailure
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, move_on_after, sleep
 from anyio.abc import TaskStatus
 
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
-from a13n_service.environments.runtime import prepare_run_environment
+from a13n_service.environments.runtime import RunEnvironment, prepare_run_environment
+from a13n_service.public_errors import PublicError
 from a13n_service.storage import ObjectNotFound, ObjectStoreUnavailable
 
 from .attempts import (
@@ -21,8 +23,14 @@ from .attempts import (
     AttemptPreparationRejected,
 )
 from .domain import RunAttemptYieldReason
-from .harness_results import HarnessOutcomeAdapter, RunTerminalCommitter, RunTerminalReceipt
+from .harness_results import (
+    HarnessOutcomeAdapter,
+    HarnessOutcomeProjectionError,
+    RunTerminalCommitter,
+    RunTerminalReceipt,
+)
 from .harness_runtime import HarnessDriver, HarnessInvocation, NoHarnessEnvironment, SingleHarnessEnvironment
+from .input import AgentInputError
 from .objects import RunObjectError, StaleStateWriter
 from .run_control import RunAttemptControl
 
@@ -138,6 +146,31 @@ class RunAttemptExecutor[OutputT]:
         await self._control.request_handoff(reason)
 
     async def run(self) -> RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected:
+        try:
+            try:
+                result = await self._run_owned()
+            except* AgentInputError:
+                with fail_after(self._context.reconciliation_timeout.total_seconds()):
+                    result = await self._control.fail_quiesced(
+                        SafeFailure(
+                            code="input_materialization_failed", message="The accepted input could not be materialized."
+                        ),
+                        self._committer,
+                    )
+            except* HarnessOutcomeProjectionError:
+                with fail_after(self._context.reconciliation_timeout.total_seconds()):
+                    result = await self._control.fail_quiesced(
+                        SafeFailure(
+                            code="output_projection_failed",
+                            message="The Run output could not be projected within its accepted limits.",
+                        ),
+                        self._committer,
+                    )
+            return result
+        finally:
+            self._capacity_slot.release()
+
+    async def _run_owned(self) -> RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected:
         finalization: RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected | None = None
         environment = None
         try:
@@ -150,14 +183,14 @@ class RunAttemptExecutor[OutputT]:
                     invocation = await self._prepare()
                     had_candidate = self._control.current_state.envelope.outcome_candidate is not None
                     if not had_candidate:
-                        environment = await prepare_run_environment(self._environments, self._control.current_context)
+                        environment = await self._prepare_environment()
                     decision = await self._control.commit_preparation()
                     if (
                         not isinstance(decision, AttemptPreparationRejected)
                         and had_candidate
                         and self._control.current_state.envelope.outcome_candidate is None
                     ):
-                        environment = await prepare_run_environment(self._environments, self._control.current_context)
+                        environment = await self._prepare_environment()
                         decision = await self._control.commit_preparation()
                     if environment is None:
                         invocation = replace(invocation, environment=NoHarnessEnvironment())
@@ -192,17 +225,14 @@ class RunAttemptExecutor[OutputT]:
                 raise AttemptAuthorityError("Attempt executor stopped without an authoritative finalization")
             return finalization
         finally:
-            try:
-                with move_on_after(self._context.cleanup_timeout.total_seconds(), shield=True):
-                    try:
-                        if environment is not None:
-                            # Reserve time for Attempt-owned cleanup if provider close stalls.
-                            with move_on_after(self._context.cleanup_timeout.total_seconds() / 2):
-                                await environment.close()
-                    finally:
-                        await self._cleanup.close(self._control.current_context, self._control, self._driver)
-            finally:
-                self._capacity_slot.release()
+            with move_on_after(self._context.cleanup_timeout.total_seconds(), shield=True):
+                try:
+                    if environment is not None:
+                        # Reserve time for Attempt-owned cleanup if provider close stalls.
+                        with move_on_after(self._context.cleanup_timeout.total_seconds() / 2):
+                            await environment.close()
+                finally:
+                    await self._cleanup.close(self._control.current_context, self._control, self._driver)
 
     async def _prepare(self) -> HarnessInvocation[OutputT]:
         try:
@@ -212,6 +242,33 @@ class RunAttemptExecutor[OutputT]:
             raise AttemptPreparationError(
                 SafeFailure(code="run_preparation_timeout", message="Run preparation exceeded its time limit."),
                 retryable=True,
+            ) from error
+
+    async def _prepare_environment(self) -> RunEnvironment | None:
+        try:
+            with fail_after(self._context.preparation_timeout.total_seconds()):
+                return await prepare_run_environment(self._environments, self._control.current_context)
+        except EnvironmentProviderError as error:
+            raise AttemptPreparationError(
+                SafeFailure(code=error.code, message="The accepted Environment could not be prepared."),
+                retryable=error.category.value in {"unavailable", "timeout", "conflict", "unknown_outcome"},
+            ) from error
+        except (EnvironmentError, PublicError) as error:
+            raise AttemptPreparationError(
+                SafeFailure(code=error.code, message="The accepted Environment could not be prepared."),
+                retryable=isinstance(error, PublicError) and error.status_code in {429, 502, 503, 504},
+            ) from error
+        except TimeoutError as error:
+            raise AttemptPreparationError(
+                SafeFailure(code="environment_preparation_timeout", message="Environment preparation timed out."),
+                retryable=True,
+            ) from error
+        except ValueError as error:
+            raise AttemptPreparationError(
+                SafeFailure(
+                    code="environment_configuration_invalid", message="The accepted Environment is unavailable."
+                ),
+                retryable=False,
             ) from error
 
     async def _load_state(self) -> None:

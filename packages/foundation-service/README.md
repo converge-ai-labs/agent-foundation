@@ -58,7 +58,7 @@ Connector Provider types are explicitly registered through `Components.connector
 
 `POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors` reads the exact account's current directory under `connector_provider.read`. It creates no connections and publishes no tool catalog. Discovery and setup revalidation share a 30-second deadline and bounds of 128 pages, 2,048 directory entries, and 16 MiB across toolkit and auth-config responses. Composio v3.1 combines `/toolkits` with project `/auth_configs` using cursor pagination. Explicit configured allowlists filter the results. Only hosted OAuth supported by both the toolkit and current account is advertised; third-party credential input and upstream secret fields are excluded.
 
-Connection setup selects `connector_provider_id` and `connector_key`. Each operation constructs a fresh Provider runtime and binds the verified external account plus its opaque user correlation before inspection, live tool discovery, execution, or revocation. Construction and close never create or revoke accounts, and close does not dispose the process-owned HTTP client. Composio pins dated versions in tool-list, tool-detail, and execute requests. Worker composition supplies `external_tools` to the host's `HarnessDriver`. Each Attempt receives one upstream MCP capability per authorized source; credentials and resource authority are rechecked for dispatch.
+Connection setup selects `connector_provider_id` and `connector_key`. Each operation constructs a fresh Provider runtime and binds the verified external account plus its opaque user correlation before inspection, live tool discovery, execution, or revocation. Construction and close never create or revoke accounts, and close does not dispose the process-owned HTTP client. Composio pins dated versions in tool-list, tool-detail, and execute requests. Worker preparation opens Attempt-owned external-tool capabilities before Harness entry and closes them during executor cleanup. Each Attempt receives one upstream MCP capability per authorized source; credentials and resource authority are rechecked for dispatch.
 
 The registered account adapter follows the [Composio v3.1 reference](https://docs.composio.dev/reference). The service does not expose an unfenced public tool-execute endpoint.
 
@@ -125,6 +125,30 @@ Run `make langfuse-test` to start the repository's local Langfuse v4 stack and v
 `Settings` owns the `FOUNDATION_*` environment contract and maps it to the frozen `StorageSettings` model. The storage package accepts typed configuration and does not read process environment variables itself. `foundation-service serve` constructs all selected providers once in FastAPI lifespan, publishes one typed `ProcessRuntime` on `app.state.runtime`, and closes its shared, Control-plane, Worker, and Connectivity resources during supervised shutdown. Storage is available through `runtime.shared.storage`; role-specific capabilities are present only when that process owns them.
 
 The default service profile keeps the existing PostgreSQL and Redis endpoints and uses separate local roots for objects and files. Set `FOUNDATION_OBJECT_BACKEND=s3` and `FOUNDATION_OBJECT_BUCKET` for a multi-process deployment; the local object adapter supports only one writing process. `FOUNDATION_FILESYSTEM_ROOT` may be an ordinary local directory or an NFS mount prepared by deployment.
+
+### Worker execution
+
+With `FOUNDATION_PLUGIN_RUNTIME_MODE=on_demand`, `all` and `worker` roles start the production execution loop. It preflights the exact accepted Runtime lock before claiming capacity, reauthorizes the persisted Principal, reconstructs the accepted Agent configuration, and executes through the native Harness and Model Provider adapters. Current Provider credentials are resolved again for outbound model calls. Supported preparation includes locked Skills, authorized Environment selection, Connector/MCP capabilities, native text/structured/binary inputs, and sealed waiting feedback. Asset inputs use `asset.use`, verify stored content, and recheck access before delivery. Recovery does not reacquire initial input that a checkpoint already marked applied.
+
+The current on-demand implementation explicitly fails preparation with `worker_dependency_unsupported` for child-Agent graphs, Secret requirements, Asset publication capabilities, or encrypted configuration payloads. Custom input adapters and asynchronous child-result inputs are also unsupported. These dependencies are never silently omitted. The `runner` profile currently constructs its supervisor but does not yet connect its child processes to the production execution loop; do not use it to execute Runs yet.
+
+Execution settings use the `FOUNDATION_WORKER_` prefix:
+
+| Suffix                                                 | Default        | Purpose                                                                      |
+| ------------------------------------------------------ | -------------- | ---------------------------------------------------------------------------- |
+| `CONCURRENCY` / `SCAN_LIMIT`                           | `8` / `32`     | Active Attempt capacity and bounded relational scan size                     |
+| `POLL_INTERVAL_SECONDS`                                | `0.5`          | Scheduling and control-hint fallback interval                                |
+| `LEASE_SECONDS`                                        | `30`           | Attempt lease duration                                                       |
+| `RENEWAL_INTERVAL_SECONDS` / `RENEWAL_TIMEOUT_SECONDS` | `5` / `5`      | Renewal interval and request deadline; their sum must be less than the lease |
+| `RECONCILIATION_TIMEOUT_SECONDS`                       | `10`           | Bound for control reconciliation and final input-failure settlement          |
+| `PREPARATION_TIMEOUT_SECONDS`                          | `120`          | Dependency and Environment preparation deadline                              |
+| `CLEANUP_TIMEOUT_SECONDS`                              | `15`           | Bound for Attempt-owned cleanup                                              |
+| `DRAIN_TIMEOUT_SECONDS`                                | `30`           | Time allowed for graceful completion or safe handoff before cancellation     |
+| `HANDOFF_PREFERENCE_SECONDS`                           | Lease duration | Same-build fallback delay after a service-drain handoff                      |
+
+Readiness requires the on-demand execution loop to have started and not be draining or stopped. Shutdown stops new claims first; existing Attempts continue renewing while finishing or reaching a safe handoff boundary. After the drain deadline, execution is cancelled, bounded cleanup runs, and capacity is released. A cancelled process never fabricates a successful durable handoff; unfinished leases remain subject to ordinary expiry recovery.
+
+The immutable `worker_build_id` is calculated off the event loop at startup from installed Foundation/Harness artifact contents and the dependency version inventory. Identical artifacts share an ID regardless of checkout location or runtime deployment labels. `FOUNDATION_BUILD_VERSION` remains the release/dependency-baseline label, not an override for execution build identity. Output projection obeys the accepted Agent protocol's `max_output_bytes` (16 MiB by default), with outputs above 64 KiB stored as Run payload objects; binary input acquisition uses the configured Asset size bound per source. Classified input-acquisition or output-limit failures settle only the owned Run after dispatch has stopped, rather than stopping the Worker process.
 
 ```python
 from pathlib import Path

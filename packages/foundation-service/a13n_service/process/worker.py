@@ -7,6 +7,7 @@ from datetime import timedelta
 
 import httpx2
 from a13n_environment_provider import EnvironmentProviderCatalog
+from anyio import to_thread
 
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
@@ -21,16 +22,24 @@ from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
 from a13n_service.gateway.hosted_agui import HostedAguiTerminalProjector
 from a13n_service.ids import new_object_id
+from a13n_service.interactions.preflight import OnDemandExecutionPreflight
+from a13n_service.interactions.scheduling import AttemptScheduler
+from a13n_service.interactions.worker import WorkerExecutionLoop, WorkerIdentity
+from a13n_service.observability import ObservabilityRuntime
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import (
+    PluginRuntimeLockStore,
     WorkerReleaseManifest,
     default_runtime_target,
     installed_distribution_versions,
     installed_harness_version,
 )
+from a13n_service.process.attempt import ProductionAttemptFactory
 from a13n_service.process.background import BackgroundTask
+from a13n_service.process.build import worker_build_id
+from a13n_service.process.control.asset import build_asset_bundle
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
@@ -45,18 +54,21 @@ async def build_worker_runtime(
     environment_catalog: EnvironmentProviderCatalog,
     stack: AsyncExitStack,
     connector_providers: ConnectorProviderRegistry | None = None,
+    *,
+    observability: ObservabilityRuntime,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
 
+    manifest = WorkerReleaseManifest(
+        worker_release=settings.build_version,
+        harness_version=installed_harness_version(),
+        runtime_target=default_runtime_target(),
+        distributions=installed_distribution_versions(),
+    )
     materializer = await PluginRuntimeMaterializer.create(
         shared.storage.files_root,
         execution.plugin_objects,
-        WorkerReleaseManifest(
-            worker_release=settings.build_version,
-            harness_version=installed_harness_version(),
-            runtime_target=default_runtime_target(),
-            distributions=installed_distribution_versions(),
-        ),
+        manifest,
         executable=settings.plugin_runtime_resolver_executable,
         max_wheel_bytes=settings.plugin_max_wheel_bytes,
         max_expanded_bytes=settings.plugin_max_expanded_bytes,
@@ -152,16 +164,61 @@ async def build_worker_runtime(
             skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
         ),
     )
+    skills = SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store)
+    execution_loop = None
+    if isinstance(plugin_runtime, OnDemandPluginRuntime):
+        assets = await build_asset_bundle(settings, shared)
+        input_http = await stack.enter_async_context(
+            httpx2.AsyncClient(
+                cookies=cookie_free_jar(),
+                timeout=settings.worker_preparation_timeout_seconds,
+                follow_redirects=False,
+            )
+        )
+        factory = ProductionAttemptFactory(
+            settings,
+            shared,
+            execution,
+            environments,
+            external_tools,
+            skills,
+            assets.service,
+            input_http,
+            run_stream,
+            observability,
+        )
+        lease = timedelta(seconds=settings.worker_lease_seconds)
+        execution_loop = WorkerExecutionLoop(
+            AttemptScheduler(shared.storage.sessions),
+            OnDemandExecutionPreflight(
+                shared.storage.sessions,
+                PluginRuntimeLockStore(manifest),
+                plugin_runtime,
+                factory,
+                timeout_seconds=settings.plugin_runtime_resolver_timeout_seconds,
+            ),
+            identity=WorkerIdentity(
+                new_object_id("worker"), new_object_id("wgen"), await to_thread.run_sync(worker_build_id)
+            ),
+            lease_duration=lease,
+            handoff_preference_window=timedelta(
+                seconds=settings.worker_handoff_preference_seconds or settings.worker_lease_seconds
+            ),
+            concurrency=settings.worker_concurrency,
+            scan_limit=settings.worker_scan_limit,
+            poll_interval_seconds=settings.worker_poll_interval_seconds,
+        )
     runtime = WorkerRuntime(
         external_tools=external_tools,
         plugin_materializer=materializer,
         plugin_runtime=plugin_runtime,
         native_model_factory=execution.native_model_factory,
-        skill_runtime=SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store),
+        skill_runtime=skills,
         environment_maintenance=environment_maintenance,
         environments=environments,
         run_stream=run_stream,
         run_replay=run_replay,
+        execution_loop=execution_loop,
     )
     return runtime, (
         BackgroundTask(
@@ -170,6 +227,11 @@ async def build_worker_runtime(
             return_is_expected=environment_maintenance.is_draining,
         ),
         BackgroundTask("lifecycle Run Stream projector", lifecycle_projector.run),
+        *(
+            (BackgroundTask("Worker execution loop", execution_loop.run, execution_loop.is_draining),)
+            if execution_loop is not None
+            else ()
+        ),
     )
 
 

@@ -46,6 +46,10 @@ class InboxPayloadMaterializer(Protocol):
     async def __call__(self, entry: ThreadInboxEntry) -> RunInputValue: ...
 
 
+class InboxInputNotReady(Exception):
+    """The Harness Environment has not entered yet; keep this ordered inbox prefix pending."""
+
+
 class ThreadControlSignalPublisher(Protocol):
     async def publish(self, *, tenant_id: str, thread_id: str) -> None: ...
 
@@ -247,7 +251,10 @@ class DatabaseThreadInboxReconciler:
 
         adapted: list[AdaptedThreadInboxEntry] = []
         for entry in entries:
-            value = await self._materialize(entry)
+            try:
+                value = await self._materialize(entry)
+            except InboxInputNotReady:
+                break
             adapted.append(
                 AdaptedThreadInboxEntry(
                     delivery_sequence=entry.delivery_sequence,

@@ -97,6 +97,7 @@ async def open_process_runtime(
                     environment_catalog,
                     stack,
                     components.connector_provider_registry,
+                    observability=observability,
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
@@ -175,6 +176,8 @@ async def open_process_runtime(
                         "build_version": settings.build_version,
                     },
                 )
+                if worker is not None and worker.execution_loop is not None:
+                    await worker.execution_loop.wait_started()
                 status.startup_complete = True
                 status.draining = False
                 try:
@@ -182,6 +185,10 @@ async def open_process_runtime(
                 finally:
                     status.draining = True
                     if worker is not None:
+                        if worker.execution_loop is not None:
+                            with move_on_after(settings.worker_drain_timeout_seconds):
+                                await worker.execution_loop.drain()
+                                await worker.execution_loop.wait_stopped()
                         worker.environment_maintenance.drain()
                         with move_on_after(settings.environment_operation_timeout_seconds):
                             await worker.environment_maintenance.wait_stopped()

@@ -620,6 +620,16 @@ class RunAttemptControl:
             if self._gate.phase is _CoordinatorPhase.active:
                 await self._fence()
 
+    async def fail_quiesced(self, failure: SafeFailure, committer: RunTerminalCommitter) -> RunTerminalReceipt:
+        """Settle a classified boundary failure only after teardown has fenced local dispatch."""
+
+        async with self._authority_lock:
+            if self._gate.phase is not _CoordinatorPhase.fenced:
+                raise RuntimeError("Failure settlement requires quiesced execution")
+            receipt = await committer.commit_failure(self._context, failure)
+            self._gate.phase = _CoordinatorPhase.terminal
+            return receipt
+
     @property
     def current_context(self) -> AttemptContext:
         return self._context
