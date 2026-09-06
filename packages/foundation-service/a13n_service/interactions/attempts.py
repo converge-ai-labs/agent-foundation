@@ -21,7 +21,7 @@ from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunS
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .lifecycle import append_run_attempt_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
-from .objects import RunStateStore, StoredRunState
+from .objects import RunStateStore, StoredRunState, run_state_key
 from .state import RunStateEnvelope
 
 
@@ -251,9 +251,12 @@ class AttemptExecutionService:
     ) -> StoredRunState:
         """Validate relational authority, then replace state outside the DB session."""
 
+        _require_state_scope(authority, current)
         now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
             await read_attempt_authority(database, authority, now)
+        if current.writer_fence != authority.fence:
+            current = await self.claim_state_writer(authority, states, current)
         return await states.replace(
             current,
             successor,
@@ -269,8 +272,7 @@ class AttemptExecutionService:
     ) -> StoredRunState:
         """Verify the exact lease before taking object ownership outside the session."""
 
-        if current.envelope.run_id != authority.run_id or current.envelope.thread_id != authority.thread_id:
-            raise AttemptMutationError("Run state does not belong to the claimed Attempt")
+        _require_state_scope(authority, current)
         await self.validate(authority)
         return await states.claim_writer(current, fence=authority.fence)
 
@@ -352,6 +354,15 @@ class AttemptExecutionService:
                 occurred_at=now,
             )
             return _receipt(run, attempt)
+
+
+def _require_state_scope(authority: AttemptContext, state: StoredRunState) -> None:
+    if (
+        state.envelope.run_id != authority.run_id
+        or state.envelope.thread_id != authority.thread_id
+        or state.info.key != run_state_key(authority.tenant_id, authority.run_id)
+    ):
+        raise AttemptMutationError("Run state does not belong to the claimed Attempt")
 
 
 async def lock_attempt_authority(

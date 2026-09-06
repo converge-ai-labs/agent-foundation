@@ -399,7 +399,7 @@ class RunStateOutcomeCandidate:
 
 
 class RunStateEnvelope:
-    schema_version: Literal["1"]
+    schema_version: Literal["2"]
     run_id: str
     thread_id: str
     checkpoint_seq: int
@@ -407,6 +407,7 @@ class RunStateEnvelope:
     input_disposition: RunInputDisposition
     last_checkpoint_run_attempt_id: str | None
     last_checkpoint_fence: int
+    writer_fence: int
 
     agent_id: AgentId
     agent_revision_id: AgentRevisionId
@@ -418,7 +419,9 @@ class RunStateEnvelope:
     outcome_candidate: RunStateOutcomeCandidate | None
 ```
 
-This is the complete serialized outer schema. `HarnessState` is encoded through its owning public adapter and carries the same `thread_id`. `checkpoint_seq` starts at zero and increases monotonically for each successful semantic state replacement. The initial value has `checkpoint_kind=initial`, `input_disposition=pending`, no attempt identity, fence zero, and no outcome candidate.
+This is the complete serialized outer schema. `HarnessState` is encoded through its owning public adapter and carries the same `thread_id`. `checkpoint_seq` starts at zero and increases monotonically for each successful semantic state replacement. Acceptance initializes `checkpoint_kind=initial`, `input_disposition=pending`, no checkpoint Attempt identity, both fences zero, and no outcome candidate.
+
+`last_checkpoint_run_attempt_id` and `last_checkpoint_fence` identify the Attempt that produced the current semantic checkpoint. The required non-negative `writer_fence` independently records the latest object-writer claim using the Run's existing monotonic Attempt fence; it is not a new counter or a lease. It never precedes `last_checkpoint_fence`. A claim can advance it while the checkpoint remains initial, progress, waiting, or completed. A semantic checkpoint records its producer and sets both fences to the current Attempt fence. Current relational authority remains mandatory; possession of an envelope never grants execution or write permission.
 
 `effective_agent_config` is the complete non-secret snapshot resolved and authorized at Run acceptance. Its Model, instructions, exact Plugin lock, Skill locks, managed ConnectorConnection and MCPConnection tool configuration, subagent graph, client tools, output contract, and correction budgets remain byte-for-byte equivalent across every checkpoint replacement for that Run. The Run's separate Connectivity selections and protected Ingress context are the final source and tool-scope authority after trusted overlays. They do not freeze discovered external schemas. A Worker reauthorizes mutable references required by their owning contracts, resolves fresh eligible credential values, and opens live bindings, but cannot rewrite either accepted configuration. Exact Skill packages remain internally readable for reconstruction of that accepted Run after Skill deletion.
 
@@ -470,9 +473,13 @@ The state key is deterministic and stable for the lifetime of the Run:
 tenants/{tenant_id}/runs/{run_id}/state.json
 ```
 
-The content type is `application/vnd.converge.run-state+json`. Object metadata records `schema-version`, `run-id`, `thread-id`, `checkpoint-seq`, `writer-fence`, and the lowercase SHA-256 digest of the canonical body. Object stat supplies exact byte size and the opaque current object version.
+The content type is `application/vnd.converge.run-state+json`. Object metadata records `schema-version`, `run-id`, `thread-id`, `checkpoint-seq`, `writer-fence`, and the lowercase SHA-256 digest of the canonical body. Metadata must match the body's corresponding fields exactly, including `writer-fence` matching `writer_fence`; neither a greater nor a smaller metadata fence overrides the body. Object stat supplies exact byte size and the opaque current object version.
 
 Acceptance publishes the initial object create-only. A current attempt does not write until it has conditionally claimed the current object version for its monotonic Run fence. Every state replacement then supplies the exact object version returned by the claim or previous successful write. The replacement is visible as the complete new object or not visible at all.
+
+A writer claim conditionally replaces the same complete canonical body with only `writer_fence` advanced, and publishes matching metadata, digest, and size atomically. It preserves `checkpoint_seq`, `checkpoint_kind`, `input_disposition`, checkpoint provenance, effective configuration, Harness state, Host state, and any prepared outcome candidate. Advancing the fence changes the body and invalidates the preceding conditional-write token even on content-derived-version backends. A metadata-only claim is insufficient. A lower fence is rejected. Repeating the same fence still supplies the exact current object version and cannot succeed against a superseded version; it preserves the state content rather than inventing a checkpoint. After an uncertain claim outcome, the caller revalidates relational authority and reads the exact current object before deciding whether its claim committed or was superseded; it never retries unconditionally.
+
+Run State envelope v2 requires the body field. A v1 envelope or a v2 envelope missing `writer_fence` fails explicit state validation; no reader infers writer authority from checkpoint provenance or metadata. This change supplies no automatic in-place migration or mixed-version Worker compatibility. Existing state is never silently rewritten, including sealed parent state. A deployment with retained v1 state requires an explicitly supported compatibility or migration path before that state can be resumed or selected as a parent.
 
 Before each write, Foundation verifies that the Run remains unsealed and that the attempt ID, fence, lease, tenant, and Run state version are current. It holds no database transaction across object I/O. Expected-version replacement serializes the object writes: after a newer attempt claims the key, an older attempt's known object version can no longer overwrite it. A conflict causes a fresh read of Run and object authority; it is never retried as an unconditional put.
 
@@ -486,7 +493,7 @@ After the [RunAttempt allocation contract](13-run-attempt-scheduling-and-recover
 
 - `input_disposition=pending` starts from the initialized state and supplies the Run's exact accepted input; for `waiting_continue`, that one application supplies both the normalized default `DeferredToolResume` and the accepted `AgentInput` to the first model request;
 - `input_disposition=applied` resumes from the checkpoint without supplying the accepted input again;
-- a valid waiting or completed outcome candidate can be committed idempotently without repeating model or tool work when its relational outcome was not yet sealed.
+- a valid waiting or completed outcome candidate can be committed idempotently without repeating model or tool work when its relational outcome was not yet sealed. The replacement Attempt first claims the object with its own `writer_fence` while preserving the candidate's original checkpoint provenance. Sealing selects the post-claim body's exact digest and size and attributes the relational commit to the current Attempt, not the checkpoint producer.
 
 The same resume rule applies after a predecessor Attempt commits `yielded`. Recovery reads the latest valid complete value at the deterministic key; it does not require that value to have been written by the yield path or selected by a separate relational checkpoint reference.
 

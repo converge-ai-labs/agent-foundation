@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from a13n_service.agents.domain import (
     canonical_digest,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.database import DatabaseMigrator
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions.state import HostContinuationState, RunStateEnvelope
@@ -21,6 +23,7 @@ from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 RUN_ID = "run_1234567890abcdef"
@@ -96,6 +99,7 @@ def initial_state() -> RunStateEnvelope:
         input_disposition="pending",
         last_checkpoint_run_attempt_id=None,
         last_checkpoint_fence=0,
+        writer_fence=0,
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=effective_agent_config(),
@@ -120,6 +124,7 @@ def progress_state(
         input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
         last_checkpoint_fence=fence,
+        writer_fence=fence,
         outcome_candidate=None,
     )
     return RunStateEnvelope.model_validate(payload)
@@ -141,6 +146,31 @@ async def interaction_sessions(
         yield sessions
     finally:
         await engine.dispose()
+
+
+@pytest.fixture(params=["sqlite", "postgresql"])
+async def migrated_interaction_sessions(
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+) -> AsyncIterator[tuple[async_sessionmaker[AsyncSession], SQLiteConfig | PostgreSQLConfig]]:
+    config = (
+        SQLiteConfig(path=tmp_path / "migrated-interactions.sqlite3")
+        if request.param == "sqlite"
+        else PostgreSQLConfig(url=request.getfixturevalue("pg_url"))
+    )
+    await asyncio.to_thread(DatabaseMigrator(config).upgrade)
+    engine = create_sql_engine(config)
+    sessions = create_session_factory(engine)
+    try:
+        await _seed_interaction_database(sessions)
+        yield sessions, config
+    finally:
+        if isinstance(config, PostgreSQLConfig):
+            async with transaction(sessions) as database:
+                await database.execute(text("TRUNCATE TABLE run_attempts CASCADE"))
+        await engine.dispose()
+        if isinstance(config, PostgreSQLConfig):
+            await asyncio.to_thread(DatabaseMigrator(config).downgrade, "base")
 
 
 @pytest.fixture

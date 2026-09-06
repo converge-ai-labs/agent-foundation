@@ -334,7 +334,6 @@ async def test_recovery_omits_already_applied_input_factory(
     state = replace(
         initial,
         envelope=progress_state(initial.envelope),
-        writer_fence=1,
     )
     instance = _instance()
 

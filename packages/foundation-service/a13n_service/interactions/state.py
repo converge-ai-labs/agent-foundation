@@ -100,7 +100,7 @@ RunStateOutcomeCandidate = Annotated[
 
 
 class RunStateEnvelope(StrictModel):
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     run_id: ObjectId
     thread_id: ThreadId
     checkpoint_seq: int = Field(ge=0)
@@ -108,6 +108,7 @@ class RunStateEnvelope(StrictModel):
     input_disposition: Literal["pending", "applied"]
     last_checkpoint_run_attempt_id: ObjectId | None = None
     last_checkpoint_fence: int = Field(ge=0)
+    writer_fence: int = Field(ge=0)
     agent_id: ObjectId
     agent_revision_id: ObjectId
     effective_agent_config: EffectiveAgentConfig
@@ -128,6 +129,8 @@ class RunStateEnvelope(StrictModel):
         attempt_present = self.last_checkpoint_run_attempt_id is not None
         if attempt_present != (self.last_checkpoint_fence > 0):
             raise ValueError("checkpoint Attempt identity and positive fence must be present together")
+        if self.writer_fence < self.last_checkpoint_fence:
+            raise ValueError("Run state writer fence cannot precede its checkpoint fence")
         if self.checkpoint_kind == "initial":
             if (
                 self.checkpoint_seq != 0
@@ -231,8 +234,8 @@ def validate_state_successor(
         raise ValueError("Run checkpoint sequence must increase by exactly one")
     if successor.last_checkpoint_run_attempt_id != run_attempt_id or successor.last_checkpoint_fence != fence:
         raise ValueError("Run checkpoint must name the current Attempt and fence")
-    if fence < previous.last_checkpoint_fence:
-        raise ValueError("Run checkpoint fence cannot move backwards")
+    if successor.writer_fence != fence or fence < previous.writer_fence:
+        raise ValueError("Run checkpoint must preserve the current writer fence")
     previous_receipts = set(previous.host.consumed_inbox_entries)
     successor_receipts = set(successor.host.consumed_inbox_entries)
     if not previous_receipts <= successor_receipts:

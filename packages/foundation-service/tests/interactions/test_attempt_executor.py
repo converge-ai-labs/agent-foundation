@@ -120,6 +120,8 @@ class _Execution(AttemptExecutionService):
         successor: RunStateEnvelope,
     ) -> StoredRunState:
         self.trace.append("attempt:checkpoint")
+        if current.writer_fence != context.fence:
+            current = await states.claim_writer(current, fence=context.fence)
         return await states.replace(
             current,
             successor,

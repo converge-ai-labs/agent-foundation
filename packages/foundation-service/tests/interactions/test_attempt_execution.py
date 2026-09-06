@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.database import DatabaseMigrator
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -13,6 +15,7 @@ from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
     AttemptExecutionService,
+    AttemptMutationError,
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
 )
@@ -37,7 +40,7 @@ from a13n_service.interactions.domain import (
 from a13n_service.interactions.initialization import RunStateSeed, initialize_start_state
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
-from a13n_service.interactions.outcomes import RunOutcomeService
+from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, SealedClaim, WorkerClaim
 from a13n_service.interactions.state import (
     CompletedOutcomeCandidate,
@@ -48,6 +51,7 @@ from a13n_service.interactions.state import (
 )
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.storage import ObjectStore, short_session
+from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -64,6 +68,112 @@ from .conftest import (
 )
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("scope", ["tenant", "run", "thread"])
+async def test_writer_claim_and_checkpoint_reject_wrong_state_scope(
+    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore, scope: str
+) -> None:
+    states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    authority = _authority(claim)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    original = await states.read(TENANT_ID, run.id)
+    if scope == "tenant":
+        altered = replace(original, info=replace(original.info, key=original.info.key.replace(TENANT_ID, "org_other")))
+    else:
+        altered = replace(original, envelope=original.envelope.model_copy(update={f"{scope}_id": "other"}))
+    with pytest.raises(AttemptMutationError, match="does not belong"):
+        await execution.claim_state_writer(authority, states, altered)
+    with pytest.raises(AttemptMutationError, match="does not belong"):
+        await execution.publish_checkpoint(
+            authority, states, altered, _completed_state(original.envelope, claim.attempt.id, claim.attempt.fence)
+        )
+    assert await states.read(TENANT_ID, run.id) == original
+
+
+@pytest.mark.parametrize("candidate_kind", ["waiting", "completed"])
+async def test_takeover_seals_existing_candidate_without_another_harness_run(
+    migrated_interaction_sessions: tuple[async_sessionmaker[AsyncSession], SQLiteConfig | PostgreSQLConfig],
+    object_store: ObjectStore,
+    candidate_kind: str,
+) -> None:
+    interaction_sessions, database_config = migrated_interaction_sessions
+    states, run, initial = await _accept_root(interaction_sessions, object_store)
+    first = await AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        attempt_id_factory=lambda: "rat_1111111111111111",
+    ).claim(run.id, _worker(lease_seconds=1))
+    assert isinstance(first, ClaimedAttempt)
+    first_execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1, milliseconds=100)
+    )
+    first_authority = _authority(first)
+    first_preparation = await first_execution.commit_preparation_success(first_authority)
+    assert isinstance(first_preparation, AttemptPreparationAccepted)
+    entered = await first_execution.enter_harness(
+        first_authority, preparation=first_preparation, harness_run_id="harness-first"
+    )
+    first_authority = _authority(first, run_version=entered.run_version, attempt_version=entered.attempt_version)
+    candidate_factory = _waiting_state if candidate_kind == "waiting" else _completed_state
+    candidate = candidate_factory(initial, first.attempt.id, first.attempt.fence)
+    published = await first_execution.publish_checkpoint(
+        first_authority, states, await states.read(TENANT_ID, run.id), candidate
+    )
+    migrator = DatabaseMigrator(database_config)
+    await asyncio.to_thread(migrator.downgrade, "90c70b278335")
+    await asyncio.to_thread(migrator.upgrade)
+
+    second = await AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+        attempt_id_factory=lambda: "rat_2222222222222222",
+    ).claim(run.id, _worker(worker_id="worker-2"))
+    assert isinstance(second, ClaimedAttempt)
+    second_authority = _authority(second)
+    second_execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=4))
+    outcomes = RunOutcomeService(
+        interaction_sessions, RunPayloadStore(object_store), clock=lambda: NOW + timedelta(seconds=4)
+    )
+    with pytest.raises(RunOutcomeError, match="current fenced Attempt"):
+        await outcomes.commit_state_outcome(second_authority, published, expected_thread_version=1)
+
+    preparation = await second_execution.commit_preparation_success(second_authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    claimed = await second_execution.claim_state_writer(second_authority, states, published)
+    assert claimed.envelope.last_checkpoint_run_attempt_id == first.attempt.id
+    assert claimed.envelope.last_checkpoint_fence == first.attempt.fence
+    assert claimed.writer_fence == second.attempt.fence
+    for invalid_preparation in (None, first_preparation):
+        with pytest.raises(AttemptMutationError, match="matching successful preparation"):
+            await outcomes.commit_state_outcome(
+                second_authority, claimed, expected_thread_version=1, preparation=invalid_preparation
+            )
+    with pytest.raises(AttemptAuthorityError):
+        await second_execution.claim_state_writer(first_authority, states, claimed)
+
+    receipt = await outcomes.commit_state_outcome(
+        second_authority, claimed, expected_thread_version=1, preparation=preparation
+    )
+    assert receipt.run_status.value == candidate_kind
+    assert claimed.digest_sha256 != published.digest_sha256
+    async with short_session(interaction_sessions) as database:
+        sealed = await database.get(RunRecord, run.id)
+        attempt = await database.get(RunAttemptRecord, second.attempt.id)
+        assert sealed is not None and attempt is not None
+        assert sealed.sealed_state_digest_sha256 == claimed.digest_sha256
+        assert sealed.sealed_state_size_bytes == len(claimed.body)
+        assert sealed.sealed_state_envelope_schema_version == "2"
+        assert sealed.sealed_state_checkpoint_seq == published.envelope.checkpoint_seq
+        assert sealed.sealed_state_committed_by_run_attempt_id == second.attempt.id
+        assert attempt.harness_run_id is None
+        assert attempt.status == "succeeded"
+    with pytest.raises(RuntimeError, match="cannot downgrade after outcome adoption"):
+        await asyncio.to_thread(migrator.downgrade, "90c70b278335")
+    with pytest.raises(AttemptAuthorityError):
+        await second_execution.claim_state_writer(second_authority, states, claimed)
 
 
 @pytest.mark.parametrize("object_backed", [False, True])
@@ -766,6 +876,7 @@ def _completed_state(
         input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
         last_checkpoint_fence=fence,
+        writer_fence=fence,
         outcome_candidate=outcome or CompletedOutcomeCandidate(output={"answer": 42}),
     )
     return type(previous).model_validate(payload)
@@ -779,6 +890,7 @@ def _waiting_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) 
         input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
         last_checkpoint_fence=fence,
+        writer_fence=fence,
         host=HostContinuationState(
             deferred=DeferredContinuationState(
                 requests={

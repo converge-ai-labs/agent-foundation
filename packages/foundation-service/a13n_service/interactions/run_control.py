@@ -44,7 +44,7 @@ from .harness_results import (
     RunTerminalDisposition,
     RunTerminalReceipt,
 )
-from .objects import RunStateStore, StoredRunState
+from .objects import RunStateStore, StaleStateWriter, StoredRunState
 from .state import (
     CompletedOutcomeCandidate,
     ConsumedThreadInboxEntry,
@@ -316,8 +316,10 @@ class RunAttemptControl:
                 self._advance(decision.mutation)
                 if isinstance(decision, AttemptPreparationRejected):
                     self._gate.phase = _CoordinatorPhase.terminal
+                else:
+                    self._state = await self._execution.claim_state_writer(self._context, self._states, self._state)
                 return decision
-            except AttemptAuthorityError:
+            except (AttemptAuthorityError, StaleStateWriter):
                 await self._fence()
                 raise
 
@@ -512,6 +514,7 @@ class RunAttemptControl:
             input_disposition="applied",
             last_checkpoint_run_attempt_id=self._context.run_attempt_id,
             last_checkpoint_fence=self._context.fence,
+            writer_fence=self._context.fence,
             harness_schema_version=harness.schema_version,
             harness=harness,
             host=host,

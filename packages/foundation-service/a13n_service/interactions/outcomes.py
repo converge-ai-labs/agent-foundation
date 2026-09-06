@@ -24,7 +24,13 @@ from ._outcome_transitions import (
     validate_outcome_candidate_scope,
 )
 from ._transitions import charge_attempt_usage, terminalize_attempt
-from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority, read_attempt_authority
+from .attempts import (
+    AttemptContext,
+    AttemptMutationError,
+    AttemptPreparationAccepted,
+    lock_attempt_authority,
+    read_attempt_authority,
+)
 from .domain import RunAttemptStatus, RunStatus
 from .inbox import ThreadControlSignalPublisher
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
@@ -66,6 +72,7 @@ class RunOutcomeService:
         state: StoredRunState,
         *,
         expected_thread_version: int,
+        preparation: AttemptPreparationAccepted | None = None,
     ) -> RunOutcomeReceipt:
         """Adopt an already-published waiting or completed state candidate."""
 
@@ -83,7 +90,18 @@ class RunOutcomeService:
                 raise RunOutcomeError("Thread outcome precondition changed")
             validate_outcome_candidate_scope(state, run, thread)
             if attempt.status != RunAttemptStatus.running.value:
-                raise AttemptMutationError("a successful outcome requires Harness entry")
+                if (
+                    attempt.status != RunAttemptStatus.leased.value
+                    or state.envelope.last_checkpoint_fence >= authority.fence
+                    or preparation is None
+                    or preparation.run_attempt_id != authority.run_attempt_id
+                    or preparation.fence != authority.fence
+                    or preparation.mutation.run_version != authority.expected_run_version
+                    or preparation.mutation.attempt_version > authority.expected_attempt_version
+                ):
+                    raise AttemptMutationError(
+                        "outcome adoption requires a prior checkpoint and matching successful preparation"
+                    )
             envelope = state.envelope
             candidate = envelope.outcome_candidate
             if isinstance(candidate, WaitingOutcomeCandidate):
