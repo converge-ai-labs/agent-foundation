@@ -5,9 +5,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Protocol, cast
 
-from anyio import fail_after, move_on_after
+from anyio import fail_after, get_cancelled_exc_class, move_on_after
+from anyio.lowlevel import checkpoint_if_cancelled
 from sqlalchemy import URL, event, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -77,6 +79,15 @@ async def short_session(
         yield session
     except BaseException as error:
         original_error = error
+        if isinstance(error, DBAPIError):
+            # A cancelled pool ping can fail while restoring driver state and
+            # replace cancellation with a DBAPI error across the greenlet bridge.
+            try:
+                await checkpoint_if_cancelled()
+            except get_cancelled_exc_class() as cancellation:
+                original_error = cancellation
+                cancellation.add_note(f"database operation failed during cancellation with {type(error).__name__}")
+                raise cancellation from None
         raise
     finally:
         with move_on_after(cleanup_timeout_seconds, shield=True):

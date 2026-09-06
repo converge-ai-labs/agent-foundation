@@ -53,13 +53,18 @@ async def _worker(tmp_path, monkeypatch, handle, **settings):
             yield app.state.runtime, app
 
 
-async def _configure(runtime, config=None):
+async def _configure(runtime, config=None, *, base_url=None):
     await seed_models(runtime.shared.storage.sessions)
     control = runtime.control
     provider = await control.model_providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name="Worker test", credential="test-only"),
+        request=CreateModelProviderRequest(
+            type="openai_compatible" if base_url else "openai",
+            name="Worker test",
+            credential="test-only",
+            configuration={"base_url": base_url} if base_url else {},
+        ),
     )
     await control.models.create(
         actor=actor(),

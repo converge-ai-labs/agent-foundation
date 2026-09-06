@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from a13n_service.plugins.on_demand import OnDemandPluginRuntime
     from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
     from a13n_service.plugins.service import PluginService
+    from a13n_service.process.runner_discovery import RunnerDiscoveryLoop
     from a13n_service.run_stream import RedisRunStream, RunReplayStore
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import Settings
@@ -78,6 +79,7 @@ class WorkerRuntime:
     run_stream: RedisRunStream
     run_replay: RunReplayStore
     execution_loop: WorkerExecutionLoop | None
+    runner_discovery: RunnerDiscoveryLoop | None = None
 
 
 @dataclass(slots=True)

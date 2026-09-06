@@ -88,6 +88,7 @@ class WorkerExecutionLoop:
         poll_interval_seconds: float = 0.5,
         queue_names: tuple[str, ...] = (),
         runtime_lock_digest: str | None = None,
+        claim_gated: bool = False,
     ) -> None:
         if not 1 <= concurrency <= 1024 or not 1 <= scan_limit <= 1024:
             raise ValueError("Worker capacity and scan limit must be between 1 and 1024")
@@ -105,6 +106,7 @@ class WorkerExecutionLoop:
         self._poll_interval_seconds = poll_interval_seconds
         self._queue_names = queue_names
         self._runtime_lock_digest = runtime_lock_digest
+        self._claims_enabled = not claim_gated
         self._draining = Event()
         self._started = Event()
         self._stopped = Event()
@@ -119,6 +121,11 @@ class WorkerExecutionLoop:
 
     def is_draining(self) -> bool:
         return self._draining.is_set()
+
+    def enable_claims(self) -> None:
+        if self.is_draining():
+            raise RuntimeError("A draining Worker cannot resume claims")
+        self._claims_enabled = True
 
     @property
     def ready(self) -> bool:
@@ -146,7 +153,7 @@ class WorkerExecutionLoop:
             async with create_task_group() as tasks:
                 self._started.set()
                 while not self.is_draining():
-                    if self._capacity.used < self._capacity.limit:
+                    if self._claims_enabled and self._capacity.used < self._capacity.limit:
                         candidates = await self._scheduler.discover(
                             worker_build_id=self._identity.build_id,
                             handoff_preference_window=self._handoff_preference_window,

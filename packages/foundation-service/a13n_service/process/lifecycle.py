@@ -60,7 +60,11 @@ async def open_process_runtime(
     )
     try:
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
-            if owns_worker(settings.role) and settings.pricing_auto_update:
+            if (
+                owns_worker(settings.role)
+                and settings.plugin_runtime_mode == "on_demand"
+                and settings.pricing_auto_update
+            ):
                 stack.enter_context(prices.update_in_background())
             storage.sessions.configure(
                 info={A2A_PUSH_ENABLED_SESSION_INFO_KEY: settings.a2a_enabled},
@@ -88,6 +92,8 @@ async def open_process_runtime(
             worker = None
             worker_background: tuple[BackgroundTask, ...] = ()
             if owns_worker(settings.role):
+                if settings.plugin_runtime_mode == "runner" and components.environment_provider_catalog is not None:
+                    raise RuntimeError("Runner children cannot inherit process-local Environment catalog overrides")
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Worker execution resources were not constructed")
                 worker, worker_background = await build_worker_runtime(
@@ -178,6 +184,8 @@ async def open_process_runtime(
                 )
                 if worker is not None and worker.execution_loop is not None:
                     await worker.execution_loop.wait_started()
+                if worker is not None and worker.runner_discovery is not None:
+                    await worker.runner_discovery.wait_started()
                 status.startup_complete = True
                 status.draining = False
                 try:
@@ -185,11 +193,14 @@ async def open_process_runtime(
                 finally:
                     status.draining = True
                     if worker is not None:
+                        worker.environment_maintenance.drain()
+                        if worker.runner_discovery is not None:
+                            await worker.runner_discovery.drain()
+                            await worker.runner_discovery.wait_stopped()
                         if worker.execution_loop is not None:
                             with move_on_after(settings.worker_drain_timeout_seconds):
                                 await worker.execution_loop.drain()
                                 await worker.execution_loop.wait_stopped()
-                        worker.environment_maintenance.drain()
                         with move_on_after(settings.environment_operation_timeout_seconds):
                             await worker.environment_maintenance.wait_stopped()
                     background_tasks.cancel_scope.cancel()

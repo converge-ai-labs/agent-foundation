@@ -23,6 +23,7 @@ from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.settings import Settings
+from a13n_service.storage import transaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +111,9 @@ async def build_plugin_bundle(
         runtime_command_dispatcher=runtime_dispatcher,
     )
     await service.ensure_runtime_mode()
+    if settings.plugin_runtime_mode is PluginRuntimeMode.runner:
+        async with transaction(shared.storage.sessions) as database:
+            await agent_selection.runtime_locks.initialize_empty_runner_catalog(database)
     for artifact in components.builtin_plugin_artifacts:
         await service.register_builtin(
             registration=artifact.registration,

@@ -128,6 +128,12 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         storage = runtime.shared.storage
         if (
             runtime.worker is not None
+            and runtime.worker.runner_discovery is not None
+            and not runtime.worker.runner_discovery.ready
+        ):
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Runner execution unavailable")
+        if (
+            runtime.worker is not None
             and runtime.worker.execution_loop is not None
             and not runtime.worker.execution_loop.ready
         ):
