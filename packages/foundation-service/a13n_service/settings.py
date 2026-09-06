@@ -77,17 +77,6 @@ class Settings(BaseSettings):
     deployment_environment_name: str = Field(default="default", min_length=1, max_length=256)
     service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
     plugin_runtime_mode: PluginRuntimeMode = PluginRuntimeMode.on_demand
-    worker_concurrency: int = Field(default=8, ge=1, le=1024)
-    worker_scan_limit: int = Field(default=32, ge=1, le=1024)
-    worker_poll_interval_seconds: float = Field(default=0.5, gt=0, le=60)
-    worker_lease_seconds: float = Field(default=30, gt=0, le=3600)
-    worker_renewal_interval_seconds: float = Field(default=5, gt=0, le=300)
-    worker_renewal_timeout_seconds: float = Field(default=5, gt=0, le=300)
-    worker_reconciliation_timeout_seconds: float = Field(default=10, gt=0, le=300)
-    worker_preparation_timeout_seconds: float = Field(default=120, gt=0, le=900)
-    worker_cleanup_timeout_seconds: float = Field(default=15, gt=0, le=300)
-    worker_drain_timeout_seconds: float = Field(default=30, gt=0, le=900)
-    worker_handoff_preference_seconds: float | None = Field(default=None, gt=0, le=3600)
     plugin_max_wheel_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
     plugin_max_expanded_bytes: int = Field(default=200 * 1024 * 1024, ge=1, le=4 * 1024 * 1024 * 1024)
     plugin_max_archive_members: int = Field(default=20_000, ge=1, le=1_000_000)
@@ -294,12 +283,6 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     log_format: LogFormat = LogFormat.pretty
-
-    @model_validator(mode="after")
-    def validate_worker_bounds(self) -> Self:
-        if self.worker_renewal_interval_seconds + self.worker_renewal_timeout_seconds >= self.worker_lease_seconds:
-            raise ValueError("Worker lease must exceed the renewal interval plus renewal timeout")
-        return self
 
     @model_validator(mode="after")
     def validate_connectivity_bounds(self) -> Self:

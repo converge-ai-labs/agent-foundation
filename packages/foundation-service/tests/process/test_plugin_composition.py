@@ -189,10 +189,18 @@ async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(
 
 @pytest.mark.anyio
 async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority(
-    runner_settings,
+    local_settings,
+    tmp_path: Path,
     coordinator_started: asyncio.Event,
 ) -> None:
-    app = create_app(runner_settings)
+    app = create_app(
+        local_settings(
+            tmp_path,
+            plugin_runtime_mode="runner",
+            plugin_runtime_command_poll_interval_seconds=0.01,
+            plugin_runtime_command_lease_seconds=4,
+        )
+    )
 
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
@@ -203,8 +211,8 @@ async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority
 
 
 @pytest.mark.anyio
-async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(runner_settings) -> None:
-    app = create_app(runner_settings.model_copy(update={"role": ProcessRole.worker}))
+async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(local_settings, tmp_path: Path) -> None:
+    app = create_app(local_settings(tmp_path, role=ProcessRole.worker, plugin_runtime_mode="runner"))
 
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
@@ -212,11 +220,3 @@ async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(ru
         assert runtime.worker is not None
         assert isinstance(runtime.worker.plugin_materializer, PluginRuntimeMaterializer)
         assert isinstance(runtime.worker.plugin_runtime, PluginRunnerSupervisor)
-
-
-@pytest.mark.anyio
-async def test_runner_rejects_single_process_storage(local_settings, tmp_path: Path) -> None:
-    app = create_app(local_settings(tmp_path, role=ProcessRole.worker, plugin_runtime_mode="runner"))
-    with pytest.raises(RuntimeError, match="requires PostgreSQL, Redis, and shared S3"):
-        async with app.router.lifespan_context(app):
-            pytest.fail("Runner started with uncoordinated storage")

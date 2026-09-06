@@ -15,7 +15,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
-from .attempts import AttemptContext, AttemptPreparationAccepted
+from .attempts import AttemptContext
 from .domain import JsonObject, PendingCallKind, PendingCallSummary, RunPendingSummary, RunWaitReason
 from .objects import RunPayloadStore, StoredRunState
 from .state import (
@@ -84,19 +84,9 @@ class RunTerminalCommitter(Protocol):
         self,
         authority: AttemptContext,
         state: StoredRunState,
-        *,
-        preparation: AttemptPreparationAccepted | None = None,
     ) -> Callable[[AttemptContext], Awaitable[RunTerminalReceipt]]:
-        """Verify objects and return a database-only commit taking fresh authority."""
+        """Verify object references, then return a DB-only commit using fresh authority."""
         ...
-
-    async def commit_state_outcome(
-        self,
-        authority: AttemptContext,
-        state: StoredRunState,
-        *,
-        preparation: AttemptPreparationAccepted | None = None,
-    ) -> RunTerminalReceipt: ...
 
     async def commit_failure(
         self,

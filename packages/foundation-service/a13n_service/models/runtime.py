@@ -132,7 +132,6 @@ class LiveProviderModel(WrapperModel):
         workspace_id: str,
         provider_resolver: LiveProviderResolver,
         model_factory: NativeModelFactory,
-        thread_id: str,
     ) -> None:
         super().__init__(initial)
         self._snapshot = snapshot
@@ -140,7 +139,6 @@ class LiveProviderModel(WrapperModel):
         self._workspace_id = workspace_id
         self._provider_resolver = provider_resolver
         self._model_factory = model_factory
-        self._thread_id = thread_id
 
     async def __aenter__(self) -> LiveProviderModel:
         return self
@@ -162,7 +160,7 @@ class LiveProviderModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
-        _validate_harness_settings(self._snapshot.model_api, model_settings, self._thread_id)
+        validate_settings(self._snapshot.model_api, cast(JsonObject, dict(model_settings or {})))
         model = await self._fresh()
         async with model:
             return await model.request(messages, model_settings, model_request_parameters)
@@ -175,7 +173,7 @@ class LiveProviderModel(WrapperModel):
         model_request_parameters: ModelRequestParameters,
         run_context: Any = None,
     ) -> AsyncIterator[StreamedResponse]:
-        _validate_harness_settings(self._snapshot.model_api, model_settings, self._thread_id)
+        validate_settings(self._snapshot.model_api, cast(JsonObject, dict(model_settings or {})))
         model = await self._fresh()
         async with model:
             async with model.request_stream(messages, model_settings, model_request_parameters, run_context) as stream:
@@ -203,6 +201,7 @@ class SnapshotRunModelResolver:
         context: ModelResolutionContext[AgentContext],
         model_id: str,
     ) -> PydanticModel[Any]:
+        del context
         if model_id != self._snapshot.model_id:
             raise ModelResolutionError(
                 "The requested Model does not match the accepted Run snapshot.",
@@ -222,22 +221,7 @@ class SnapshotRunModelResolver:
             workspace_id=self._workspace_id,
             provider_resolver=self._provider_resolver,
             model_factory=self._model_factory,
-            thread_id=context.deps.thread_id,
         )
-
-
-def _validate_harness_settings(model_api: str, settings: ModelSettings | None, thread_id: str) -> None:
-    value = cast(JsonObject, dict(settings or {}))
-    headers = value.get("extra_headers")
-    if isinstance(headers, dict):
-        # Only the exact Harness-owned Thread affinity value bypasses the authored header allowlist.
-        value["extra_headers"] = {
-            key: item for key, item in headers.items() if not (key.lower() == "x-session-id" and item == thread_id)
-        }
-    if value.get("openai_prompt_cache_key") == thread_id:
-        # Harness supplies this default for every adapter; non-OpenAI adapters ignore it.
-        value.pop("openai_prompt_cache_key")
-    validate_settings(model_api, value)
 
 
 def _require_enabled(model: ModelRecord, provider: ModelProviderRecord) -> None:

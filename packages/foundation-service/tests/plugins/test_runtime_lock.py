@@ -4,7 +4,6 @@ import hashlib
 from dataclasses import dataclass
 
 import pytest
-from a13n_service.plugins.models import PluginRuntimeStateRecord
 from a13n_service.plugins.runtime import (
     LockedDistribution,
     PluginRuntimeLockError,
@@ -12,7 +11,7 @@ from a13n_service.plugins.runtime import (
     WorkerReleaseManifest,
     default_runtime_target,
 )
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW
@@ -62,48 +61,6 @@ def _store() -> PluginRuntimeLockStore:
         ),
         clock=lambda: NOW,
     )
-
-
-@pytest.mark.anyio
-async def test_empty_runner_catalog_bootstrap_is_idempotent(plugin_sessions, runner_plugin_service):
-    store = _store()
-    async with transaction(plugin_sessions) as session:
-        await store.initialize_empty_runner_catalog(session)
-    async with short_session(plugin_sessions) as session:
-        initial = await session.get(PluginRuntimeStateRecord, "runtime")
-        digest = initial.active_lock_digest
-        lock = await store.require(session, digest, mode="runner")
-        assert lock.plugins == ()
-    async with transaction(plugin_sessions) as session:
-        await store.initialize_empty_runner_catalog(session)
-    async with short_session(plugin_sessions) as session:
-        restarted = await session.get(PluginRuntimeStateRecord, "runtime")
-        assert restarted.active_lock_digest == digest
-        assert restarted.runtime_generation == 1
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("existing", ["head", "command", "generation"])
-async def test_empty_runner_catalog_does_not_overwrite_durable_state(plugin_sessions, runner_plugin_service, existing):
-    async with transaction(plugin_sessions) as session:
-        state = await session.get(PluginRuntimeStateRecord, "runtime")
-        if existing == "head":
-            state.active_lock_digest = "a" * 64
-        elif existing == "command":
-            state.command_operation_id = "operation-pending"
-            state.command_lease_expires_at = NOW
-        else:
-            state.runtime_generation = 2
-    if existing == "generation":
-        with pytest.raises(PluginRuntimeLockError, match="plugin_runtime_lock_unavailable"):
-            async with transaction(plugin_sessions) as session:
-                await _store().initialize_empty_runner_catalog(session)
-    else:
-        async with transaction(plugin_sessions) as session:
-            await _store().initialize_empty_runner_catalog(session)
-    async with short_session(plugin_sessions) as session:
-        state = await session.get(PluginRuntimeStateRecord, "runtime")
-        assert state.active_lock_digest == ("a" * 64 if existing == "head" else None)
 
 
 @pytest.mark.anyio

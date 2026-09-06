@@ -244,10 +244,7 @@ async def test_materialization_rejects_incompatible_worker_release_dependency(tm
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("restart_before", ["replay", "activation"])
-async def test_supervisor_stages_and_activates_fresh_runner_process(
-    tmp_path: Path, runner_settings, restart_before
-) -> None:
+async def test_supervisor_stages_and_activates_fresh_runner_process(tmp_path: Path) -> None:
     plugin_wheel = build_wheel(
         requires_dist=("dependency-one==1.0.0",),
         factory_source=_VALID_FACTORY,
@@ -265,25 +262,16 @@ async def test_supervisor_stages_and_activates_fresh_runner_process(
 
     async with PluginRunnerSupervisor(
         materializer,
-        settings=runner_settings,
         ready_timeout_seconds=10,
         command_timeout_seconds=5,
         shutdown_timeout_seconds=5,
     ) as supervisor:
         token = await supervisor.stage_candidate(operation_id="op_stage1234567890", runtime_lock=runtime_lock)
-        original = supervisor._runners[runtime_lock.digest]
-        if restart_before == "replay":
-            original.process.kill()
-            await original.process.wait()
         replay = await supervisor.stage_candidate(operation_id="op_stage1234567890", runtime_lock=runtime_lock)
 
         assert replay == token
         assert supervisor.runtime_lock_digests == (runtime_lock.digest,)
         assert supervisor.catalog_active_digest is None
-
-        if restart_before == "activation":
-            original.process.kill()
-            await original.process.wait()
 
         await supervisor.activate_candidate(
             operation_id="op_stage1234567890",
@@ -299,11 +287,10 @@ async def test_supervisor_stages_and_activates_fresh_runner_process(
         )
 
         assert supervisor.catalog_active_digest == runtime_lock.digest
-        assert supervisor._runners[runtime_lock.digest].generation != original.generation
 
 
 @pytest.mark.anyio
-async def test_supervisor_rejects_candidate_with_invalid_factory(tmp_path: Path, runner_settings) -> None:
+async def test_supervisor_rejects_candidate_with_invalid_factory(tmp_path: Path) -> None:
     plugin_wheel = build_wheel()
     dependency_wheel = build_wheel(
         distribution_name="dependency-one",
@@ -318,7 +305,6 @@ async def test_supervisor_rejects_candidate_with_invalid_factory(tmp_path: Path,
 
     async with PluginRunnerSupervisor(
         materializer,
-        settings=runner_settings,
         ready_timeout_seconds=10,
         command_timeout_seconds=5,
         shutdown_timeout_seconds=5,
@@ -331,7 +317,7 @@ async def test_supervisor_rejects_candidate_with_invalid_factory(tmp_path: Path,
 
 
 @pytest.mark.anyio
-async def test_supervisor_aborts_uncommitted_candidate(tmp_path: Path, runner_settings) -> None:
+async def test_supervisor_aborts_uncommitted_candidate(tmp_path: Path) -> None:
     plugin_wheel = build_wheel(factory_source=_VALID_FACTORY)
     dependency_wheel = build_wheel(
         distribution_name="dependency-one",
@@ -344,13 +330,9 @@ async def test_supervisor_aborts_uncommitted_candidate(tmp_path: Path, runner_se
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(materializer, settings=runner_settings, ready_timeout_seconds=10) as supervisor:
+    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10) as supervisor:
         token = await supervisor.stage_candidate(operation_id="op_abort123456789", runtime_lock=runtime_lock)
 
-        await supervisor.abort_candidate(
-            operation_id="op_abort123456789", runtime_lock=runtime_lock, staging_token="invalid-token"
-        )
-        assert await supervisor.stage_candidate(operation_id="op_abort123456789", runtime_lock=runtime_lock) == token
         await supervisor.abort_candidate(
             operation_id="op_abort123456789",
             runtime_lock=runtime_lock,
@@ -360,19 +342,9 @@ async def test_supervisor_aborts_uncommitted_candidate(tmp_path: Path, runner_se
         assert supervisor.runtime_lock_digests == ()
         assert supervisor.catalog_active_digest is None
 
-        await supervisor.ensure_execution(runtime_lock)
-        historical = supervisor._runners[runtime_lock.digest]
-        token = await supervisor.stage_candidate(operation_id="op_abort123456789", runtime_lock=runtime_lock)
-        await supervisor.abort_candidate(
-            operation_id="op_abort123456789", runtime_lock=runtime_lock, staging_token=token
-        )
-        assert supervisor._runners[runtime_lock.digest] is historical
-        assert historical.claims_enabled
-        assert historical.process.returncode is None
-
 
 @pytest.mark.anyio
-async def test_supervisor_recovers_committed_activation_after_restart(tmp_path: Path, runner_settings) -> None:
+async def test_supervisor_recovers_committed_activation_after_restart(tmp_path: Path) -> None:
     plugin_wheel = build_wheel(factory_source=_VALID_FACTORY)
     dependency_wheel = build_wheel(
         distribution_name="dependency-one",
@@ -385,10 +357,10 @@ async def test_supervisor_recovers_committed_activation_after_restart(tmp_path: 
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(materializer, settings=runner_settings, ready_timeout_seconds=10) as first:
+    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10) as first:
         token = await first.stage_candidate(operation_id="op_recover12345678", runtime_lock=runtime_lock)
 
-    async with PluginRunnerSupervisor(materializer, settings=runner_settings, ready_timeout_seconds=10) as restarted:
+    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10) as restarted:
         await restarted.activate_candidate(
             operation_id="op_recover12345678",
             runtime_lock=runtime_lock,
@@ -401,7 +373,7 @@ async def test_supervisor_recovers_committed_activation_after_restart(tmp_path: 
 
 
 @pytest.mark.anyio
-async def test_supervisor_rejects_candidate_when_process_capacity_is_exhausted(tmp_path: Path, runner_settings) -> None:
+async def test_supervisor_rejects_candidate_when_process_capacity_is_exhausted(tmp_path: Path) -> None:
     dependency_wheel = build_wheel(
         distribution_name="dependency-one",
         package="dependency_one",
@@ -417,9 +389,7 @@ async def test_supervisor_rejects_candidate_when_process_capacity_is_exhausted(t
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(
-        materializer, settings=runner_settings, ready_timeout_seconds=10, max_processes=1
-    ) as supervisor:
+    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10, max_processes=1) as supervisor:
         await supervisor.stage_candidate(operation_id="op_capacity1234567", runtime_lock=first_lock)
 
         with pytest.raises(PluginRuntimeCommandFailure) as failed:
@@ -427,9 +397,3 @@ async def test_supervisor_rejects_candidate_when_process_capacity_is_exhausted(t
 
         assert failed.value.failure.code == "plugin_runtime_capacity_exceeded"
         assert supervisor.runtime_lock_digests == (first_lock.digest,)
-        await supervisor.abort_candidate(operation_id="op_capacity1234567", runtime_lock=first_lock, staging_token=None)
-        await supervisor.ensure_execution(first_lock)
-        historical = supervisor._runners[first_lock.digest]
-        await supervisor.ensure_execution(second_lock)
-        assert supervisor.runtime_lock_digests == (second_lock.digest,)
-        assert historical.process.returncode == 0

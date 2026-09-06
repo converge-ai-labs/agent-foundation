@@ -14,7 +14,10 @@ from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
+from a13n_service.hooks.persistence import append_matching_webhook_outbox
+from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.observability import build_observability_runtime
@@ -26,8 +29,7 @@ from a13n_service.process.control.asset import build_asset_bundle
 from a13n_service.process.environment import build_environment_catalog
 from a13n_service.process.resources import build_execution_resources
 from a13n_service.process.roles import owns_connectivity_data, owns_control, owns_worker
-from a13n_service.process.runtime import ProcessRuntime, ProcessStatus
-from a13n_service.process.shared import build_shared_runtime
+from a13n_service.process.runtime import ProcessRuntime, ProcessStatus, SharedRuntime
 from a13n_service.process.submission import build_input_commands
 from a13n_service.process.worker import build_worker_runtime
 from a13n_service.settings import Settings
@@ -60,13 +62,17 @@ async def open_process_runtime(
     )
     try:
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
-            if (
-                owns_worker(settings.role)
-                and settings.plugin_runtime_mode == "on_demand"
-                and settings.pricing_auto_update
-            ):
+            if owns_worker(settings.role) and settings.pricing_auto_update:
                 stack.enter_context(prices.update_in_background())
-            shared = build_shared_runtime(settings, storage)
+            shared = SharedRuntime(
+                storage=storage,
+                lifecycle=LifecycleWriter(
+                    (append_matching_webhook_outbox, append_matching_a2a_push_outbox)
+                    if settings.a2a_enabled
+                    else (append_matching_webhook_outbox,)
+                ),
+                secret_protector=settings.secret_protector(),
+            )
             connectivity_selection = ConnectivitySelectionResolver(storage.sessions)
             execution = (
                 await build_execution_resources(
@@ -86,8 +92,6 @@ async def open_process_runtime(
             worker = None
             worker_background: tuple[BackgroundTask, ...] = ()
             if owns_worker(settings.role):
-                if settings.plugin_runtime_mode == "runner" and components.environment_provider_catalog is not None:
-                    raise RuntimeError("Runner children cannot inherit process-local Environment catalog overrides")
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Worker execution resources were not constructed")
                 worker, worker_background = await build_worker_runtime(
@@ -97,7 +101,6 @@ async def open_process_runtime(
                     environment_catalog,
                     stack,
                     components.connector_provider_registry,
-                    observability=observability,
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
@@ -176,10 +179,6 @@ async def open_process_runtime(
                         "build_version": settings.build_version,
                     },
                 )
-                if worker is not None and worker.execution_loop is not None:
-                    await worker.execution_loop.wait_started()
-                if worker is not None and worker.runner_discovery is not None:
-                    await worker.runner_discovery.wait_started()
                 status.startup_complete = True
                 status.draining = False
                 try:
@@ -188,13 +187,6 @@ async def open_process_runtime(
                     status.draining = True
                     if worker is not None:
                         worker.environment_maintenance.drain()
-                        if worker.runner_discovery is not None:
-                            await worker.runner_discovery.drain()
-                            await worker.runner_discovery.wait_stopped()
-                        if worker.execution_loop is not None:
-                            with move_on_after(settings.worker_drain_timeout_seconds):
-                                await worker.execution_loop.drain()
-                                await worker.execution_loop.wait_stopped()
                         with move_on_after(settings.environment_operation_timeout_seconds):
                             await worker.environment_maintenance.wait_stopped()
                     background_tasks.cancel_scope.cancel()

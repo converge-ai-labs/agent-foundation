@@ -52,22 +52,6 @@ def test_asset_size_bound_must_be_positive_and_finite() -> None:
 @pytest.mark.parametrize(
     "values",
     [
-        {"worker_concurrency": 0},
-        {"worker_scan_limit": 1025},
-        {"worker_poll_interval_seconds": float("nan")},
-        {"worker_lease_seconds": 10, "worker_renewal_interval_seconds": 5, "worker_renewal_timeout_seconds": 5},
-        {"worker_drain_timeout_seconds": 0},
-        {"worker_preparation_timeout_seconds": float("inf")},
-    ],
-)
-def test_worker_execution_bounds_fail_closed(values):
-    with pytest.raises(ValueError):
-        Settings(_env_file=None, **values)
-
-
-@pytest.mark.parametrize(
-    "values",
-    [
         {"plugin_runtime_command_poll_interval_seconds": 0},
         {"plugin_runtime_command_poll_interval_seconds": 61},
         {"plugin_runtime_command_lease_seconds": 3},

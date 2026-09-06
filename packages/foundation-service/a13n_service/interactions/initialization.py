@@ -104,7 +104,6 @@ def _initial_envelope(
         input_disposition="pending",
         last_checkpoint_run_attempt_id=None,
         last_checkpoint_fence=0,
-        writer_fence=0,
         agent_id=seed.agent_id,
         agent_revision_id=seed.agent_revision_id,
         effective_agent_config=seed.effective_agent_config,

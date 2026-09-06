@@ -16,7 +16,6 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._outcome_transitions import (
     RunOutcomeError,
-    RunOutcomePreconditionChanged,
     apply_completed_outcome,
     apply_waiting_outcome,
     select_sealed_state,
@@ -27,7 +26,6 @@ from ._transitions import charge_attempt_usage, terminalize_attempt
 from .attempts import (
     AttemptContext,
     AttemptMutationError,
-    AttemptPreparationAccepted,
     lock_attempt_authority,
     read_attempt_lease,
 )
@@ -85,13 +83,12 @@ class RunOutcomeService:
         state: StoredRunState,
         *,
         expected_thread_version: int,
-        preparation: AttemptPreparationAccepted | None = None,
     ) -> RunOutcomeReceipt:
         """Adopt an already-published waiting or completed state candidate."""
 
         verified = await self.verify_state_outcome(authority, state)
         return await self.commit_verified_state_outcome(
-            authority, verified, expected_thread_version=expected_thread_version, preparation=preparation
+            authority, verified, expected_thread_version=expected_thread_version
         )
 
     async def commit_verified_state_outcome(
@@ -100,7 +97,6 @@ class RunOutcomeService:
         verified: VerifiedRunOutcome,
         *,
         expected_thread_version: int,
-        preparation: AttemptPreparationAccepted | None = None,
     ) -> RunOutcomeReceipt:
         """Revalidate current authority and commit without holding a lease gate over object I/O."""
 
@@ -121,21 +117,10 @@ class RunOutcomeService:
                 lock_inbox_origins=True,
             )
             if thread.version != expected_thread_version:
-                raise RunOutcomePreconditionChanged("Thread outcome precondition changed")
+                raise RunOutcomeError("Thread outcome precondition changed")
             validate_outcome_candidate_scope(state, run, thread)
             if attempt.status != RunAttemptStatus.running.value:
-                if (
-                    attempt.status != RunAttemptStatus.leased.value
-                    or state.envelope.last_checkpoint_fence >= authority.fence
-                    or preparation is None
-                    or preparation.run_attempt_id != authority.run_attempt_id
-                    or preparation.fence != authority.fence
-                    or preparation.mutation.run_version != authority.expected_run_version
-                    or preparation.mutation.attempt_version > authority.expected_attempt_version
-                ):
-                    raise AttemptMutationError(
-                        "outcome adoption requires a prior checkpoint and matching successful preparation"
-                    )
+                raise AttemptMutationError("a successful outcome requires Harness entry")
             envelope = state.envelope
             candidate = envelope.outcome_candidate
             if isinstance(candidate, WaitingOutcomeCandidate):

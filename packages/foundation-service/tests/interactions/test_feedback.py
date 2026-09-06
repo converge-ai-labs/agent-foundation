@@ -107,7 +107,6 @@ def _waiting_parent() -> tuple[RunStateEnvelope, RunPendingSummary]:
         input_disposition="applied",
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
-        writer_fence=1,
         host=HostContinuationState(
             deferred=DeferredContinuationState(
                 requests=TypeAdapter(DeferredToolRequests).dump_python(requests, mode="json"),

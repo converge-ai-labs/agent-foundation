@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.temporal import utc_now
 
-from .models import PluginRecord, PluginRuntimeLockRecord, PluginRuntimeStateRecord
+from .models import PluginRuntimeLockRecord
 
 PluginRuntimeModeValue = Literal["on_demand", "runner"]
 DistributionSource = Literal["worker_release", "artifact"]
@@ -276,21 +276,6 @@ class PluginRuntimeLockStore:
         runtime_lock = PluginRuntimeLock(**payload, digest=_canonical_digest(payload))
         await self._persist(session, runtime_lock)
         return runtime_lock
-
-    async def initialize_empty_runner_catalog(self, session: AsyncSession) -> None:
-        """Control-only bootstrap under the same row lock used by catalog commands."""
-        state = await session.get(PluginRuntimeStateRecord, "runtime", with_for_update=True)
-        if state is None or state.mode != "runner":
-            raise PluginRuntimeLockError("plugin_runtime_mode_mismatch")
-        if state.active_lock_digest is not None or state.command_operation_id is not None:
-            return
-        active = await session.scalar(
-            select(PluginRecord.id).where(PluginRecord.active_version_id.is_not(None)).limit(1)
-        )
-        if active is not None or state.runtime_generation != 1:
-            raise PluginRuntimeLockError("plugin_runtime_lock_unavailable")
-        lock = await self.build_and_persist(session, mode="runner", plugins=())
-        state.active_lock_digest = lock.digest
 
     async def require(
         self,

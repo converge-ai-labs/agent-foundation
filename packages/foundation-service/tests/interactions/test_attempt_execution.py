@@ -6,8 +6,6 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
-from a13n_service.agents.domain import EffectiveAgentConfig
-from a13n_service.database import DatabaseMigrator
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -16,7 +14,6 @@ from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
     AttemptExecutionService,
-    AttemptMutationError,
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
 )
@@ -52,8 +49,8 @@ from a13n_service.interactions.state import (
 )
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.storage import ObjectStore, short_session
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from sqlalchemy import select, text
+from anyio import Event, create_task_group, fail_after
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
@@ -71,136 +68,6 @@ from .conftest import (
 )
 
 pytestmark = pytest.mark.anyio
-
-
-@pytest.mark.parametrize("scope", ["organization", "run", "thread"])
-async def test_writer_claim_and_checkpoint_reject_wrong_state_scope(
-    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore, scope: str
-) -> None:
-    states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
-        run.id, _worker()
-    )
-    assert isinstance(claim, ClaimedAttempt)
-    authority = _authority(claim)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
-    original = await states.read(ORGANIZATION_ID, run.id)
-    if scope == "organization":
-        altered = replace(
-            original, info=replace(original.info, key=original.info.key.replace(ORGANIZATION_ID, "org_other"))
-        )
-    else:
-        altered = replace(original, envelope=original.envelope.model_copy(update={f"{scope}_id": "other"}))
-    with pytest.raises(AttemptMutationError, match="does not belong"):
-        await execution.claim_state_writer(authority, states, altered)
-    with pytest.raises(AttemptMutationError, match="does not belong"):
-        await execution.publish_checkpoint(
-            authority, states, altered, _completed_state(original.envelope, claim.attempt.id, claim.attempt.fence)
-        )
-    assert await states.read(ORGANIZATION_ID, run.id) == original
-
-
-@pytest.mark.parametrize("candidate_kind", ["waiting", "completed"])
-@pytest.mark.parametrize("upgrade_from_previous", [False, True])
-async def test_takeover_seals_existing_candidate_without_another_harness_run(
-    migrated_interaction_sessions: tuple[async_sessionmaker[AsyncSession], SQLiteConfig | PostgreSQLConfig],
-    object_store: ObjectStore,
-    candidate_kind: str,
-    upgrade_from_previous: bool,
-) -> None:
-    interaction_sessions, database_config = migrated_interaction_sessions
-    migrator = DatabaseMigrator(database_config)
-    if upgrade_from_previous:
-        await asyncio.to_thread(migrator.downgrade, "90c70b278335")
-    states, run, initial = await _accept_root(interaction_sessions, object_store)
-    first = await AttemptScheduler(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=1),
-        attempt_id_factory=lambda: "rat_1111111111111111",
-        lifecycle=test_lifecycle_writer(),
-    ).claim(run.id, _worker(lease_seconds=1))
-    assert isinstance(first, ClaimedAttempt)
-    first_execution = AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=1, milliseconds=100),
-        lifecycle=test_lifecycle_writer(),
-    )
-    first_authority = _authority(first)
-    first_preparation = await first_execution.commit_preparation_success(first_authority)
-    assert isinstance(first_preparation, AttemptPreparationAccepted)
-    entered = await first_execution.enter_harness(
-        first_authority, preparation=first_preparation, harness_run_id="harness-first"
-    )
-    first_authority = _authority(first, run_version=entered.run_version, attempt_version=entered.attempt_version)
-    candidate_factory = _waiting_state if candidate_kind == "waiting" else _completed_state
-    candidate = candidate_factory(initial, first.attempt.id, first.attempt.fence)
-    published = await first_execution.publish_checkpoint(
-        first_authority, states, await states.read(ORGANIZATION_ID, run.id), candidate
-    )
-    if upgrade_from_previous:
-        async with short_session(interaction_sessions) as database:
-            before = (await database.execute(text("SELECT * FROM run_attempts"))).mappings().all()
-        await asyncio.to_thread(migrator.upgrade)
-        async with short_session(interaction_sessions) as database:
-            after = (await database.execute(text("SELECT * FROM run_attempts"))).mappings().all()
-        assert after == before
-        assert await states.read(ORGANIZATION_ID, run.id) == published
-    second = await AttemptScheduler(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=3),
-        attempt_id_factory=lambda: "rat_2222222222222222",
-        lifecycle=test_lifecycle_writer(),
-    ).claim(run.id, _worker(worker_id="worker-2"))
-    assert isinstance(second, ClaimedAttempt)
-    second_authority = _authority(second)
-    second_execution = AttemptExecutionService(
-        interaction_sessions, clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
-    )
-    outcomes = RunOutcomeService(
-        interaction_sessions,
-        RunPayloadStore(object_store),
-        clock=lambda: NOW + timedelta(seconds=4),
-        lifecycle=test_lifecycle_writer(),
-    )
-    with pytest.raises(RunOutcomeError, match="current fenced Attempt"):
-        await outcomes.commit_state_outcome(second_authority, published, expected_thread_version=1)
-
-    preparation = await second_execution.commit_preparation_success(second_authority)
-    assert isinstance(preparation, AttemptPreparationAccepted)
-    claimed = await second_execution.claim_state_writer(second_authority, states, published)
-    assert claimed.envelope.last_checkpoint_run_attempt_id == first.attempt.id
-    assert claimed.envelope.last_checkpoint_fence == first.attempt.fence
-    assert claimed.writer_fence == second.attempt.fence
-    for invalid_preparation in (None, first_preparation):
-        with pytest.raises(AttemptMutationError, match="matching successful preparation"):
-            await outcomes.commit_state_outcome(
-                second_authority, claimed, expected_thread_version=1, preparation=invalid_preparation
-            )
-    with pytest.raises(AttemptAuthorityError):
-        await second_execution.claim_state_writer(first_authority, states, claimed)
-
-    receipt = await outcomes.commit_state_outcome(
-        second_authority, claimed, expected_thread_version=1, preparation=preparation
-    )
-    assert receipt.run_status.value == candidate_kind
-    assert claimed.digest_sha256 != published.digest_sha256
-    async with short_session(interaction_sessions) as database:
-        sealed = await database.get(RunRecord, run.id)
-        attempt = await database.get(RunAttemptRecord, second.attempt.id)
-        assert sealed is not None and attempt is not None
-        assert sealed.sealed_state_digest_sha256 == claimed.digest_sha256
-        assert sealed.sealed_state_size_bytes == len(claimed.body)
-        assert sealed.sealed_state_envelope_schema_version == claimed.envelope.schema_version
-        assert sealed.sealed_state_checkpoint_seq == published.envelope.checkpoint_seq
-        assert sealed.sealed_state_committed_by_run_attempt_id == second.attempt.id
-        assert attempt.harness_run_id is None
-        assert attempt.status == "succeeded"
-    with pytest.raises(AttemptAuthorityError):
-        await second_execution.claim_state_writer(second_authority, states, claimed)
-    if upgrade_from_previous:
-        with pytest.raises(RuntimeError, match="Recovered Attempt facts prevent downgrade"):
-            await asyncio.to_thread(migrator.downgrade, "90c70b278335")
-        await asyncio.to_thread(migrator.current, check_heads=True, verbose=False)
 
 
 @pytest.mark.parametrize("object_backed", [False, True])
@@ -475,9 +342,6 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
     )
     assert renewed.run_version == claim.run_version
     assert renewed.lease_expires_at == NOW + timedelta(seconds=32)
-    assert await execution.reconcile_authority(_authority(claim)) == renewed
-    with pytest.raises(AttemptAuthorityError):
-        await execution.reconcile_authority(_authority(claim, lease_token="wrong-token"))
     authority = _authority(
         claim,
         run_version=renewed.run_version,
@@ -492,8 +356,6 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
         retry_after=timedelta(seconds=5),
     )
     assert receipt.run_version == claim.run_version + 1
-    with pytest.raises(AttemptAuthorityError):
-        await execution.reconcile_authority(authority)
     async with short_session(interaction_sessions) as database:
         current = await database.get(RunRecord, run.id)
         attempt = await database.get(RunAttemptRecord, claim.attempt.id)
@@ -651,23 +513,6 @@ async def test_cancel_seals_without_state_replacement(
         assert current.sealed_state_digest_sha256 is None
 
 
-@pytest.mark.parametrize("max_handoffs", [0, 1])
-async def test_handoff_admission_checks_budget_before_quiescing(
-    interaction_sessions, interaction_object_store, max_handoffs: int
-) -> None:
-    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store, max_handoffs=max_handoffs)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
-        run.id, _worker()
-    )
-    assert isinstance(claim, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
-    assert await execution.can_handoff(_authority(claim)) is (max_handoffs > 0)
-    if max_handoffs == 0:
-        with pytest.raises(AttemptMutationError, match="budget is exhausted"):
-            await execution.yield_attempt(_authority(claim), RunAttemptYieldReason.service_drain)
-        assert await execution.validate(_authority(claim))
-
-
 async def test_yield_prefers_a_different_build_without_consuming_recovery_budget(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
@@ -812,12 +657,10 @@ async def _accept_root(
     objects: ObjectStore,
     *,
     max_recovery_attempts: int = 3,
-    max_handoffs: int = 2,
     recovery_policy_version: str = "1",
     recovery_deadline_at: datetime | None = None,
-    effective_config: EffectiveAgentConfig | None = None,
 ) -> tuple[RunStateStore, Run, RunStateEnvelope]:
-    config = effective_config or effective_agent_config()
+    config = effective_agent_config()
     seed = RunStateSeed(
         run_id="run_5555555555555555",
         agent_id=AGENT_ID,
@@ -846,7 +689,7 @@ async def _accept_root(
         recovery_budget=RecoveryBudget(
             policy_version=recovery_policy_version,
             max_recovery_attempts=max_recovery_attempts,
-            max_handoffs=max_handoffs,
+            max_handoffs=2,
             recovery_deadline_at=recovery_deadline_at,
         ),
         attempts_started=0,
@@ -956,7 +799,6 @@ def _completed_state(
         input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
         last_checkpoint_fence=fence,
-        writer_fence=fence,
         outcome_candidate=outcome or CompletedOutcomeCandidate(output={"answer": 42}),
     )
     return type(previous).model_validate(payload)
@@ -970,7 +812,6 @@ def _waiting_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) 
         input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
         last_checkpoint_fence=fence,
-        writer_fence=fence,
         host=HostContinuationState(
             deferred=DeferredContinuationState(
                 requests={
@@ -1098,3 +939,83 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
         )
     with pytest.raises((AttemptAuthorityError, AuthorizationError)):
         await runtime._scope(context)
+
+
+@pytest.mark.parametrize("lease_expires", [False, True])
+async def test_output_verification_uses_fresh_lease_and_versions_before_sealing(
+    interaction_sessions, interaction_object_store: ObjectStore, monkeypatch, lease_expires: bool
+) -> None:
+    states, run, envelope = await _accept_root(interaction_sessions, interaction_object_store)
+    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
+    assert isinstance(claim, ClaimedAttempt)
+    now = NOW + timedelta(seconds=1)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
+    authority = _authority(claim)
+    prepared = await execution.commit_preparation_success(authority)
+    assert isinstance(prepared, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(authority, preparation=prepared, harness_run_id="harness-output-check")
+    authority = replace(
+        authority, expected_run_version=entered.run_version, expected_attempt_version=entered.attempt_version
+    )
+    payloads = RunPayloadStore(interaction_object_store)
+    reference = await payloads.create(
+        ORGANIZATION_ID,
+        RunPayloadEnvelope(run_id=run.id, payload_kind="output", payload_schema_version="1", payload={"answer": 42}),
+    )
+    candidate = _completed_state(
+        envelope, claim.attempt.id, claim.attempt.fence, outcome=CompletedOutcomeCandidate(output_object=reference)
+    )
+    stored = await execution.publish_checkpoint(
+        authority, states, await states.read(ORGANIZATION_ID, run.id), candidate
+    )
+    outcomes = RunOutcomeService(interaction_sessions, payloads, clock=lambda: now, lifecycle=test_lifecycle_writer())
+    reading, release = Event(), Event()
+    verify_reference = payloads.verify_reference
+    reads = 0
+
+    async def slow_verify(*args, **kwargs):
+        nonlocal reads
+        reads += 1
+        reading.set()
+        await release.wait()
+        return await verify_reference(*args, **kwargs)
+
+    monkeypatch.setattr(payloads, "verify_reference", slow_verify)
+    verified = []
+
+    async def verify():
+        verified.append(await outcomes.verify_state_outcome(authority, stored))
+
+    with fail_after(5):
+        async with create_task_group() as tasks:
+            tasks.start_soon(verify)
+            await reading.wait()
+            receipt = await execution.heartbeat(authority, lease_duration=timedelta(seconds=30))
+            refreshed = replace(
+                authority,
+                expected_run_version=receipt.run_version,
+                expected_attempt_version=receipt.attempt_version,
+                lease_expires_at=receipt.lease_expires_at,
+            )
+            if lease_expires:
+                now = receipt.lease_expires_at
+            release.set()
+    with pytest.raises(AttemptAuthorityError):
+        await outcomes.commit_verified_state_outcome(authority, verified[0], expected_thread_version=1)
+    another_service = RunOutcomeService(
+        interaction_sessions, payloads, clock=lambda: now, lifecycle=test_lifecycle_writer()
+    )
+    with pytest.raises(RunOutcomeError, match="Output verification"):
+        await another_service.commit_verified_state_outcome(refreshed, verified[0], expected_thread_version=1)
+    if lease_expires:
+        with pytest.raises(AttemptAuthorityError):
+            await outcomes.commit_verified_state_outcome(refreshed, verified[0], expected_thread_version=1)
+        async with short_session(interaction_sessions) as database:
+            record = await database.get(RunRecord, run.id)
+            assert record is not None and record.status == "running" and record.to_resource().sealed_state is None
+    else:
+        result = await outcomes.commit_verified_state_outcome(refreshed, verified[0], expected_thread_version=1)
+        assert result.run_status is RunStatus.completed and result.thread_version == 2
+    assert reads == 1

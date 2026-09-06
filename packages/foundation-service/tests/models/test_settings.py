@@ -2,7 +2,6 @@ import pytest
 from a13n_service.models.descriptions import describe_model
 from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
 from a13n_service.models.providers import built_in_provider_registry
-from a13n_service.models.runtime import _validate_harness_settings
 from a13n_service.models.service_common import ModelError
 from a13n_service.models.settings import effective_settings, settings_schema, validate_settings
 from jsonschema import Draft202012Validator
@@ -146,23 +145,3 @@ def test_missing_source_documentation_does_not_disable_parameter_validation(monk
                 validate_settings(api, {"temperature": "invalid"})
     finally:
         settings_schema.cache_clear()
-
-
-@pytest.mark.parametrize("api", ["openai.chat_completions", "anthropic.messages"])
-def test_runtime_allows_only_exact_harness_thread_affinity(api):
-    value = {
-        "temperature": 0.3,
-        "extra_headers": {"x-session-id": "thread-test"},
-        "openai_prompt_cache_key": "thread-test",
-    }
-    _validate_harness_settings(api, value, "thread-test")
-    assert value["extra_headers"] == {"x-session-id": "thread-test"}
-    with pytest.raises(ModelError):
-        validate_settings(api, value)
-    for headers in (
-        {"x-session-id": "another-thread"},
-        {"authorization": "not-allowed"},
-        {"x-session-id": "thread-test", "x-custom": "not-allowed"},
-    ):
-        with pytest.raises(ModelError):
-            _validate_harness_settings(api, {"extra_headers": headers}, "thread-test")

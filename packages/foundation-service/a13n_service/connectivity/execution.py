@@ -22,7 +22,7 @@ from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agen
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
-from a13n_service.interactions.attempts import AttemptContext, read_attempt_lease
+from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.models import SessionRecord
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
@@ -79,7 +79,7 @@ class ExternalToolRuntime:
 
     async def _scope(self, context: AttemptContext) -> AttemptToolScope:
         async with short_session(self._sessions) as session:
-            run, _, _ = await read_attempt_lease(session, context, utc_now())
+            run, _, _ = await read_attempt_authority(session, context, utc_now())
             conversation = await session.get(SessionRecord, run.session_id)
             if conversation is None:
                 raise ValueError("run_session_unavailable")

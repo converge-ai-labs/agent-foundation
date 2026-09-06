@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from a13n_harness import AgentContext, AgentDefinition, HarnessState, RunInputValue
-from pydantic_ai import CallToolsNode, RunContext, UserPromptNode
+from pydantic_ai import CallToolsNode, RunContext
 from pydantic_ai.capabilities import (
     AbstractCapability,
     AgentNode,
@@ -103,8 +103,6 @@ class RunControlPort(Protocol):
 
     async def bind_model_attempt(self, binding: HarnessContextBinding) -> None: ...
 
-    async def before_input_node(self, boundary: HarnessHookBoundary) -> None: ...
-
     async def before_model_request(
         self,
         boundary: HarnessHookBoundary,
@@ -156,17 +154,6 @@ class RunControlCapability(AbstractCapability[AgentContext]):
             self._driver,
             binding=binding,
         )
-
-    async def before_node_run(
-        self,
-        ctx: RunContext[AgentContext],
-        *,
-        node: AgentNode[AgentContext],
-    ) -> AgentNode[AgentContext]:
-        if isinstance(node, UserPromptNode):
-            async with self._driver.hook_boundary(ctx, self._binding) as boundary:
-                await self._control.before_input_node(boundary)
-        return node
 
     async def before_model_request(
         self,

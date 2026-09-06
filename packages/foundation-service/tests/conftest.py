@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from base64 import b64encode
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from dataclasses import dataclass
@@ -14,10 +13,8 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import anyio
-import psycopg
 import pytest
 from a13n_service.connectivity.runtime import ConnectivityDataRuntime, ConnectivityRuntime
-from a13n_service.database import DatabaseMigrator
 from a13n_service.database.metadata import service_metadata
 from a13n_service.observability import ObservabilityRuntime
 from a13n_service.process.runtime import ControlRuntime, ProcessRuntime, ProcessStatus, SharedRuntime
@@ -29,13 +26,10 @@ from aiobotocore.config import AioConfig
 from aiobotocore.httpxsession import HttpxSession
 from aiobotocore.session import get_session
 from botocore.exceptions import BotoCoreError, ClientError
-from psycopg import sql
 from pydantic_ai import prices
 from redis.asyncio import Redis
 from sqlalchemy import create_engine
 from testcontainers.core.container import DockerContainer
-
-from .process.s3_fixture import runner_s3_endpoint as _runner_s3_endpoint  # noqa: F401
 
 if TYPE_CHECKING:
     from a13n_service.connectivity.ingress.admission import IngressEventService
@@ -226,55 +220,6 @@ async def object_store(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncI
 async def s3_object_store(s3_service: S3Service) -> AsyncIterator[S3ObjectStore]:
     async with _open_s3_store(s3_service) as store:
         yield store
-
-
-@pytest.fixture
-async def runner_settings(pg_url, redis_url, runner_s3_endpoint, tmp_path, monkeypatch):
-    """One disposable database and bucket shared by the Supervisor and real children."""
-    database_name = f"runner_{uuid4().hex}"
-    dsn = pg_url.replace("postgresql+psycopg://", "postgresql://")
-
-    def database_command(command):
-        with psycopg.connect(dsn, autocommit=True) as connection:
-            connection.execute(command.format(sql.Identifier(database_name)))
-
-    await anyio.to_thread.run_sync(database_command, sql.SQL("CREATE DATABASE {}"))
-    # Bypass OS-level proxies too: these tests assert direct socket teardown.
-    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "runner-test-access")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "runner-test-secret")
-    settings = Settings(
-        _env_file=None,
-        plugin_runtime_mode="runner",
-        database_backend="postgresql",
-        database_url=pg_url.rsplit("/", 1)[0] + "/" + database_name,
-        redis_backend="redis",
-        redis_url=redis_url,
-        object_backend="s3",
-        object_bucket="bucket",
-        object_endpoint_url=runner_s3_endpoint,
-        object_force_path_style=True,
-        filesystem_root=tmp_path / "files",
-        secret_master_key_base64=b64encode(b"0123456789abcdef0123456789abcdef").decode(),
-        secret_encryption_key_id="runner-test-key",
-        connectivity_public_origin="http://testserver",
-        connectivity_http_origins=("http://testserver",),
-        model_private_endpoint_cidrs=("127.0.0.0/8",),
-        pricing_auto_update=False,
-        observability_tracing=False,
-        worker_poll_interval_seconds=0.05,
-        worker_lease_seconds=3,
-        worker_renewal_interval_seconds=0.3,
-        worker_renewal_timeout_seconds=0.5,
-        worker_drain_timeout_seconds=0.5,
-        worker_cleanup_timeout_seconds=2,
-        plugin_runner_shutdown_timeout_seconds=2,
-    )
-    try:
-        await anyio.to_thread.run_sync(DatabaseMigrator(settings.database_config()).upgrade)
-        yield settings
-    finally:
-        await anyio.to_thread.run_sync(database_command, sql.SQL("DROP DATABASE {} WITH (FORCE)"))
 
 
 @asynccontextmanager

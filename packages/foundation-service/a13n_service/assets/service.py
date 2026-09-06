@@ -377,19 +377,6 @@ class AssetService:
             await content.remove()
             raise
 
-    async def prepare_content_for_use(self, *, actor: AuthenticatedActor, asset_id: str) -> PreparedAssetContent:
-        """Verify internal execution bytes with asset.use, including a final revocation check."""
-
-        asset = await self.require_for_use(actor=actor, asset_id=asset_id)
-        content = await self._objects.prepare_verified_content(asset)
-        try:
-            if await self.require_for_use(actor=actor, asset_id=asset_id) != asset:
-                raise asset_content_invalid()
-            return PreparedAssetContent(asset=asset, content=content)
-        except BaseException:
-            await content.remove()
-            raise
-
     async def delete(self, *, actor: AuthenticatedActor, asset_id: str) -> None:
         workspace_id = actor.workspace_id
         now = self._clock()
