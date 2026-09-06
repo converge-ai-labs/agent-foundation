@@ -172,7 +172,10 @@ class _RecordingTerminalCommitter:
         self,
         authority: AttemptContext,
         state: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted | None = None,
     ) -> RunTerminalReceipt:
+        del preparation
         self.states.append(state)
         disposition = RunTerminalDisposition(state.envelope.checkpoint_kind)
         return _terminal_receipt(authority, disposition)

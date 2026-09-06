@@ -17,6 +17,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._outcome_transitions import (
     RunOutcomeError,
+    RunOutcomePreconditionChanged,
     apply_completed_outcome,
     apply_waiting_outcome,
     select_sealed_state,
@@ -87,7 +88,7 @@ class RunOutcomeService:
                 lock_inbox_origins=True,
             )
             if thread.version != expected_thread_version:
-                raise RunOutcomeError("Thread outcome precondition changed")
+                raise RunOutcomePreconditionChanged("Thread outcome precondition changed")
             validate_outcome_candidate_scope(state, run, thread)
             if attempt.status != RunAttemptStatus.running.value:
                 if (
@@ -254,7 +255,7 @@ class RunOutcomeService:
         async with short_session(self._sessions) as database:
             run, _, thread = await read_attempt_authority(database, authority, now)
             if thread.version != expected_thread_version:
-                raise RunOutcomeError("Thread outcome precondition changed")
+                raise RunOutcomePreconditionChanged("Thread outcome precondition changed")
             validate_outcome_candidate_scope(state, run, thread)
         await self._payloads.verify_reference(
             authority.tenant_id,

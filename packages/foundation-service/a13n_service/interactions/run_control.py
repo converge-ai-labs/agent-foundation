@@ -123,8 +123,6 @@ class RunAttemptControl:
         envelope = state.envelope
         if envelope.run_id != context.run_id or envelope.thread_id != context.thread_id:
             raise ValueError("Run state and Attempt context must name the same Run and Thread")
-        if envelope.outcome_candidate is not None:
-            raise ValueError("A sealed outcome candidate cannot start active run control")
         self._context = context
         self._execution = execution
         self._states = states
@@ -170,6 +168,11 @@ class RunAttemptControl:
         async with self._gate.lock:
             self._require_open()
             self._require_driver()
+            if self._state.envelope.outcome_candidate is not None:
+                raise RunError(
+                    "A prepared outcome must be sealed without entering Harness.",
+                    code="foundation_outcome_requires_adoption",
+                )
             if self._gate.identity is not None:
                 raise RunError(
                     "Foundation run control already has an active Harness Run.",
@@ -298,6 +301,12 @@ class RunAttemptControl:
 
     async def request_handoff(self, reason: RunAttemptYieldReason) -> None:
         async with self._gate.lock:
+            if self._gate.phase in {
+                _CoordinatorPhase.terminal,
+                _CoordinatorPhase.yielded,
+                _CoordinatorPhase.fenced,
+            }:
+                return
             self._require_open()
             if self._gate.handoff_reason is not None and self._gate.handoff_reason is not reason:
                 raise RunError(
@@ -336,6 +345,47 @@ class RunAttemptControl:
                     lease_duration=self._context.lease_duration,
                 )
             )
+
+    async def adopt_prepared_outcome(
+        self,
+        preparation: AttemptPreparationAccepted,
+        *,
+        committer: RunTerminalCommitter,
+    ) -> RunTerminalReceipt:
+        """Seal a predecessor's complete result under this prepared, still-leased owner."""
+
+        async with self._gate.lock:
+            self._require_open()
+            state = self._state
+            candidate = state.envelope.outcome_candidate
+            if (
+                candidate is None
+                or self._gate.identity is not None
+                or state.writer_fence != self._context.fence
+                or state.envelope.last_checkpoint_fence >= self._context.fence
+                or preparation.run_attempt_id != self._context.run_attempt_id
+                or preparation.fence != self._context.fence
+                or preparation.mutation.run_version != self._context.expected_run_version
+                or preparation.mutation.attempt_version > self._context.expected_attempt_version
+            ):
+                raise RunError(
+                    "Outcome adoption requires a claimed predecessor state and matching preparation.",
+                    code="foundation_outcome_adoption_invalid",
+                )
+            try:
+                await self._validate_authority()
+                receipt = await committer.commit_state_outcome(self._context, state, preparation=preparation)
+                _require_terminal_disposition(
+                    receipt,
+                    RunTerminalDisposition.completed
+                    if isinstance(candidate, CompletedOutcomeCandidate)
+                    else RunTerminalDisposition.waiting,
+                )
+                self._gate.phase = _CoordinatorPhase.terminal
+                return receipt
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
 
     async def reconcile(self) -> None:
         """Reread durable control facts and offer active input only after stream entry."""

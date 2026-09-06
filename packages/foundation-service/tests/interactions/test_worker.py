@@ -4,8 +4,10 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 import pytest
+from a13n_service.interactions.attempts import AttemptAuthorityError
 from a13n_service.interactions.domain import RunAttemptYieldReason
 from a13n_service.interactions.models import RunAttemptRecord
+from a13n_service.interactions.objects import StaleStateWriter
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, RunCandidate, WorkerClaim
 from a13n_service.interactions.worker import WorkerExecutionLoop, WorkerIdentity
 from a13n_service.storage import short_session
@@ -25,12 +27,15 @@ class _Attempt:
     finish: Event = field(default_factory=Event)
     handoffs: list[RunAttemptYieldReason] = field(default_factory=list)
     starts: int = 0
+    failure: Exception | None = None
 
     async def run(self) -> None:
         self.starts += 1
         self.started.set()
         try:
             await self.finish.wait()
+            if self.failure is not None:
+                raise self.failure
         finally:
             self.stopped.set()
 
@@ -173,3 +178,44 @@ async def test_discovery_is_bounded_and_cursor_does_not_repeat_a_candidate(
     assert await scheduler.discover(**args, after=page[0].position) == ()
     assert await scheduler.discover(**args, runtime_lock_digest="b" * 64) == ()
     assert await scheduler.discover(**args, queue_names=("another",)) == ()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        AttemptAuthorityError("lease lost"),
+        ExceptionGroup("executor", [AttemptAuthorityError("lease lost")]),
+        ExceptionGroup("executor", [StaleStateWriter("writer superseded")]),
+    ],
+)
+async def test_attempt_authority_loss_does_not_stop_worker(interaction_sessions, interaction_object_store, failure):
+    await _accept_root(interaction_sessions, interaction_object_store)
+    preflight = _Preflight(attempt=_Attempt(failure=failure))
+    _, loop = _loop(interaction_sessions, preflight)
+    with fail_after(5):
+        async with create_task_group() as tasks:
+            tasks.start_soon(loop.run)
+            await preflight.attempt.started.wait()
+            preflight.attempt.finish.set()
+            await preflight.attempt.stopped.wait()
+            while loop.active_count:
+                await sleep(0)
+            assert not loop.is_draining()
+            await loop.drain()
+            await loop.wait_stopped()
+
+
+async def test_mixed_executor_failure_still_stops_worker(interaction_sessions, interaction_object_store):
+    await _accept_root(interaction_sessions, interaction_object_store)
+    failure = ExceptionGroup("executor", [AttemptAuthorityError("lease lost"), ValueError("broken composition")])
+    preflight = _Preflight(attempt=_Attempt(failure=failure))
+    _, loop = _loop(interaction_sessions, preflight)
+    with fail_after(5), pytest.raises(ExceptionGroup) as raised:
+        async with create_task_group() as tasks:
+            tasks.start_soon(loop.run)
+            await preflight.attempt.started.wait()
+            preflight.attempt.finish.set()
+            await loop.wait_stopped()
+    assert raised.value.subgroup(ValueError) is not None
+    assert raised.value.subgroup(AttemptAuthorityError) is None
+    assert loop.active_count == 0

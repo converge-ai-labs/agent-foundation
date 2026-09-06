@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
@@ -29,6 +29,7 @@ from a13n_service.interactions.attempts import (
     AttemptPreparationRejected,
     AttemptPreparationResult,
 )
+from a13n_service.interactions.domain import RunAttemptYieldReason
 from a13n_service.interactions.environment_observation import EnvironmentHookObservation
 from a13n_service.interactions.harness_control import HarnessContextBinding, HarnessHookBoundary, HarnessRunIdentity
 from a13n_service.interactions.harness_results import (
@@ -229,8 +230,15 @@ class _Committer:
         self,
         context: AttemptContext,
         state: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted | None = None,
     ) -> RunTerminalReceipt:
         assert state.envelope.checkpoint_kind == "completed"
+        if preparation is not None:
+            assert preparation.run_attempt_id == context.run_attempt_id
+            assert state.writer_fence == context.fence
+            assert state.envelope.last_checkpoint_fence < context.fence
+            self.trace.append("attempt:adopt")
         self.trace.append("attempt:terminal")
         return _terminal_receipt(context)
 
@@ -359,15 +367,37 @@ def _terminal_receipt(context: AttemptContext) -> RunTerminalReceipt:
 
 
 @pytest.mark.parametrize("reject_preparation", [False, True])
+@pytest.mark.parametrize("prepared_outcome", [False, True])
 async def test_executor_supervises_two_children_before_cleanup_and_capacity_release(
     interaction_object_store: ObjectStore,
     reject_preparation: bool,
+    prepared_outcome: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trace: list[str] = []
     envelope = initial_state()
     states, stored = await _stored_state(interaction_object_store, envelope)
     context = _context(envelope.thread_id)
+    if prepared_outcome:
+        stored = await states.claim_writer(stored, fence=context.fence)
+        stored = await states.replace(
+            stored,
+            envelope.model_copy(
+                update={
+                    "writer_fence": context.fence,
+                    "checkpoint_seq": 1,
+                    "checkpoint_kind": "completed",
+                    "input_disposition": "applied",
+                    "last_checkpoint_run_attempt_id": context.run_attempt_id,
+                    "last_checkpoint_fence": context.fence,
+                    "harness": HarnessState.new(),
+                    "outcome_candidate": CompletedOutcomeCandidate(output="already done"),
+                }
+            ),
+            run_attempt_id=context.run_attempt_id,
+            fence=context.fence,
+        )
+        context = replace(context, run_attempt_id="attempt-2", fence=2)
     execution = _Execution(trace, reject_preparation=reject_preparation)
     inbox = _Inbox(trace)
     control = RunAttemptControl(
@@ -418,9 +448,13 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     )
 
     receipt = await executor.run()
-    environment_preparer.assert_awaited_once_with(lifecycle, context)
+    if prepared_outcome:
+        environment_preparer.assert_not_awaited()
+    else:
+        environment_preparer.assert_awaited_once_with(lifecycle, context)
     await control.reconcile()
     await control.renew_lease()
+    await control.request_handoff(RunAttemptYieldReason.service_drain)
 
     if reject_preparation:
         assert isinstance(receipt, AttemptPreparationRejected)
@@ -430,7 +464,15 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     else:
         assert isinstance(receipt, RunTerminalReceipt)
         assert receipt.disposition is RunTerminalDisposition.completed
-        assert projector.events
+        if prepared_outcome:
+            assert not projector.events
+            assert "attempt:enter" not in trace
+            assert "attempt:model" not in trace
+            assert "attempt:adopt" in trace
+            assert control.current_state.envelope.last_checkpoint_run_attempt_id == ATTEMPT_ID
+            assert control.current_state.envelope.outcome_candidate == CompletedOutcomeCandidate(output="already done")
+        else:
+            assert projector.events
     assert execution.heartbeat_seen.is_set()
     assert wakeups.acknowledged.is_set()
     assert trace.index("inbox:confirm") < trace.index("attempt:prepare")

@@ -77,6 +77,7 @@ class AttemptMutationReceipt:
     run_version: int
     attempt_version: int
     lease_expires_at: datetime
+    thread_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,7 +327,9 @@ class AttemptExecutionService:
                     actor_type="worker",
                     actor_id=attempt.worker_id,
                 )
-            return _receipt(run, attempt)
+            return _receipt(
+                run, attempt, thread_version=thread.version if run.status == RunStatus.failed.value else None
+            )
 
     async def yield_attempt(
         self,
@@ -519,11 +522,12 @@ def _active_budget_failure(
     return None
 
 
-def _receipt(run: RunRecord, attempt: RunAttemptRecord) -> AttemptMutationReceipt:
+def _receipt(run: RunRecord, attempt: RunAttemptRecord, *, thread_version: int | None = None) -> AttemptMutationReceipt:
     return AttemptMutationReceipt(
         run_version=run.version,
         attempt_version=attempt.version,
         lease_expires_at=assume_utc(attempt.lease_expires_at),
+        thread_version=thread_version,
     )
 
 

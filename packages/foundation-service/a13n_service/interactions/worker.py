@@ -12,6 +12,7 @@ from anyio import Event, create_task_group, move_on_after
 from .attempt_executor import CapacitySlot
 from .attempts import AttemptAuthorityError
 from .domain import RunAttemptYieldReason
+from .objects import StaleStateWriter
 from .scheduling import AttemptScheduler, ClaimedAttempt, RunCandidate, ScanPosition, WorkerClaim
 
 logger = get_logger(__name__)
@@ -195,7 +196,7 @@ class WorkerExecutionLoop:
             if self.is_draining():
                 await attempt.request_handoff(self._handoff_reason)
             await attempt.run()
-        except AttemptAuthorityError:
+        except* (AttemptAuthorityError, StaleStateWriter):
             logger.info(
                 "run_attempt_authority_lost",
                 extra={"run_id": claimed.attempt.run_id, "run_attempt_id": claimed.attempt.id},
