@@ -41,7 +41,7 @@ class RetryRunRequest(RetryRunCommand):
 
 
 def _command_values(request: StartRunRequest | ContinueRunRequest | ForkRunRequest) -> dict[str, object]:
-    values = request.model_dump(mode="python")
+    values = {name: getattr(request, name) for name in request.model_fields_set}
     if "environment" not in request.model_fields_set:
         values["environment"] = Omitted.UNSET
     return values
