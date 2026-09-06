@@ -10,6 +10,7 @@ from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
 )
+from a13n_service.durable_operations.requests import evidence_record
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -41,7 +42,6 @@ from .persistence import (
     lock_agent,
     lock_revision,
     new_agent_audit,
-    new_agent_evidence,
     normalize_agent_name,
     request_identity,
     require_version,
@@ -165,7 +165,7 @@ class AgentDuplication:
                 )
                 session.add_all((duplicate, revision))
                 session.add(
-                    new_agent_evidence(
+                    evidence_record(
                         actor=actor,
                         organization_id=source.organization_id,
                         workspace_id=source.workspace_id,

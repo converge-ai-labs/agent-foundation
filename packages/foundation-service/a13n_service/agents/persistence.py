@@ -9,19 +9,15 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.application_errors import ErrorCategory
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.durable_operations.idempotency import (
-    EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
     digest_request,
     digest_visible_ascii_key,
-    load_evidence,
-    new_evidence,
 )
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
-from a13n_service.durable_operations.requests import ReplayReceipt
+from a13n_service.durable_operations.requests import ReplayReceipt, evidence_record
+from a13n_service.durable_operations.requests import load_replay as load_request_replay
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -397,7 +393,7 @@ def add_command_evidence_and_audit(
     response: BaseModel,
 ) -> None:
     session.add(
-        new_agent_evidence(
+        evidence_record(
             actor=actor,
             organization_id=record.organization_id,
             workspace_id=record.workspace_id,
@@ -447,58 +443,21 @@ async def load_replay(
     identity: IdempotencyIdentity,
     now: datetime,
 ) -> ReplayReceipt | None:
+    # Agent commands require a Workspace even though shared receipts also support Organizations.
+    _ = actor.workspace_id
     try:
-        evidence = await load_evidence(
+        return await load_request_replay(
             session,
-            scope=EvidenceScope(
-                workspace_id=actor.workspace_id,
-                actor_type=actor.principal.principal_type.value,
-                actor_id=actor.principal.principal_id,
-                operation=operation,
-                scope_id=scope_id,
-                organization_id=actor.boundary_organization_id,
-            ),
+            actor=actor,
+            operation=operation,
+            scope_id=scope_id,
             identity=identity,
             now=now,
         )
-    except IdempotencyConflict as error:
-        raise idempotency_conflict() from error
-    if evidence is None:
-        return None
-    if evidence.receipt_json is None:
-        raise RuntimeError("Agent command evidence has no original receipt")
-    return ReplayReceipt(evidence.result_kind, evidence.result_ref, evidence.receipt_json)
-
-
-def new_agent_evidence(
-    *,
-    actor: AuthenticatedActor,
-    organization_id: str,
-    workspace_id: str,
-    operation: str,
-    scope_id: str,
-    identity: IdempotencyIdentity,
-    result_kind: str,
-    result_ref: str,
-    now: datetime,
-    response: BaseModel,
-) -> IdempotencyEvidenceRecord:
-    return new_evidence(
-        organization_id=organization_id,
-        scope=EvidenceScope(
-            workspace_id=workspace_id,
-            actor_type=actor.principal.principal_type.value,
-            actor_id=actor.principal.principal_id,
-            operation=operation,
-            scope_id=scope_id,
-            organization_id=actor.boundary_organization_id,
-        ),
-        identity=identity,
-        result_kind=result_kind,
-        result_ref=result_ref,
-        receipt=response.model_dump(mode="json", by_alias=True),
-        now=now,
-    )
+    except ApplicationError as error:
+        if error.code == "idempotency_conflict":
+            raise idempotency_conflict() from error
+        raise
 
 
 def new_agent_audit(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -13,9 +14,11 @@ from a13n_service.agents.domain import (
     canonical_digest,
 )
 from a13n_service.agents.errors import AgentError
+from a13n_service.agents.persistence import load_replay, payload_identity
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
 from a13n_service.http_errors import application_error_status
+from a13n_service.iam import AuthorizationError
 from a13n_service.storage import transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -294,3 +297,39 @@ async def test_list_filters_enabled_and_archived_axes(agent_management: AgentMan
         include_archived=False,
     )
     assert page.items == (disabled,)
+
+
+@pytest.mark.anyio
+async def test_create_replay_preserves_agent_conflict_error(agent_management: AgentManagement) -> None:
+    await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="conflicting-create",
+        request=CreateAgentRequest(name="Original", config=agent_config()),
+    )
+
+    with pytest.raises(AgentError) as failure:
+        await agent_management.commands.create(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="conflicting-create",
+            request=CreateAgentRequest(name="Different", config=agent_config()),
+        )
+
+    assert failure.value.code == "idempotency_conflict"
+    assert application_error_status(failure.value) == 409
+
+
+@pytest.mark.anyio
+async def test_agent_replay_rejects_organization_boundary(agent_sessions: async_sessionmaker[AsyncSession]) -> None:
+    organization_actor = replace(actor(), boundary_workspace_id=None, boundary_organization_id="org_test")
+    async with transaction(agent_sessions) as session:
+        with pytest.raises(AuthorizationError, match="workspace_boundary_required"):
+            await load_replay(
+                session,
+                actor=organization_actor,
+                operation="agent.create",
+                scope_id=WORKSPACE_ID,
+                identity=payload_identity("workspace-only", {}),
+                now=NOW,
+            )

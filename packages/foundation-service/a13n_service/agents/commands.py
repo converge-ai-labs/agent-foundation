@@ -12,6 +12,7 @@ from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
 )
+from a13n_service.durable_operations.requests import evidence_record
 from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -43,7 +44,6 @@ from .persistence import (
     load_replay,
     lock_agent,
     new_agent_audit,
-    new_agent_evidence,
     new_revision,
     normalize_agent_name,
     payload_identity,
@@ -176,7 +176,7 @@ class AgentCommands:
                 )
                 session.add_all((record, revision))
                 session.add(
-                    new_agent_evidence(
+                    evidence_record(
                         actor=actor,
                         organization_id=workspace.organization_id,
                         workspace_id=workspace_id,
@@ -343,7 +343,7 @@ class AgentCommands:
                     await require_not_in_use(session, record)
                 touch_agent(record, actor=actor, now=now)
                 session.add(
-                    new_agent_evidence(
+                    evidence_record(
                         actor=actor,
                         organization_id=workspace.organization_id,
                         workspace_id=workspace.workspace_id,
