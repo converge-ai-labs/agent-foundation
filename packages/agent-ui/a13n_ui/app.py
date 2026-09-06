@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from a13n_environment_provider import EnvironmentProvider
 from a13n_harness.environment import EnvironmentRunExtensionFactory
+from a13n_harness.input import RunInputValue
 from a13n_harness.model_auth import CodexCredentials, GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
@@ -89,6 +90,7 @@ from a13n_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeySto
 from a13n_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
 from a13n_ui.root_execution import RootRunExecutor
+from a13n_ui.root_input import detach_input
 from a13n_ui.root_run import RootRunCoordinator
 from a13n_ui.settings import AgentUiSettings
 from a13n_ui.setup import EnvironmentReadiness, SetupProvider, SetupStatus, preflight_environment
@@ -407,6 +409,7 @@ class AgentUiApp:
         *,
         product: ExternalSubagentProduct | str,
         scope: ExternalSubagentScope | str,
+        inherit_runtime: bool = False,
         project_root: Path | None = None,
         user_home: Path | None = None,
     ) -> ExternalSubagentImportPreview:
@@ -414,6 +417,7 @@ class AgentUiApp:
             return await preview_external_subagent_import(
                 self._require_configuration_path(),
                 product=product,
+                inherit_runtime=inherit_runtime,
                 scope=scope,
                 project_root=project_root,
                 user_home=user_home,
@@ -823,11 +827,12 @@ class AgentUiApp:
         self,
         *,
         thread_id: str,
-        prompt: str,
+        prompt: RunInputValue,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
     ) -> RootRunReceipt:
+        prompt = detach_input(prompt)
         async with self._operation():
             catalog = await self._terminal_projections.skill_catalog(thread_id=thread_id)
             self._terminal_projections.validate_references_against(

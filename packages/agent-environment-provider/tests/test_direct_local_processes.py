@@ -1,0 +1,205 @@
+"""Native process lifecycle tests shared by Windows and POSIX CI."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import shutil
+import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import pytest
+from a13n_environment_provider import (
+    DirectLocalEnvironmentProvider,
+    DirectLocalProviderRuntime,
+    EnvironmentError,
+)
+from a13n_environment_provider.commands import (
+    ArgvCommand,
+    CommandEnvironment,
+    CommandLimits,
+    CommandRequest,
+    ShellCommand,
+)
+from a13n_environment_provider.direct_local.processes import LocalProcessManager
+from a13n_environment_provider.retention import EnvironmentOutputPolicy
+
+pytestmark = pytest.mark.anyio
+OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=65536, overflow="retain")
+
+
+@asynccontextmanager
+async def _processes(root: Path, *, powershell: bool = False) -> AsyncIterator[LocalProcessManager]:
+    provider = DirectLocalEnvironmentProvider()
+    profiles = []
+    if powershell:
+        executable = shutil.which("pwsh") or shutil.which("powershell")
+        if executable is None:
+            pytest.skip("PowerShell is unavailable")
+        profiles = [
+            {
+                "profile_id": "powershell",
+                "executable": executable,
+                "dialect": "powershell",
+                "fixed_arguments": ["-NoLogo", "-NoProfile", "-NonInteractive"],
+            }
+        ]
+    configuration = provider.validate_configuration(
+        schema_version="1",
+        value={
+            "root": {"path": str(root)},
+            "allowed_executables": [str(Path(sys.executable).resolve())],
+            "allowed_environment_keys": ["SYSTEMROOT", "PATH"],
+            "shell_profiles": profiles,
+            "terminate_grace_seconds": 0.2,
+            "max_wall_time_seconds": 10,
+        },
+    )
+    environment = provider.create_environment(
+        configuration=configuration, environment_id="native-test", state=None, runtime=DirectLocalProviderRuntime()
+    )
+    await environment.enter(thread_id="thread", run_id="run", agent_instance_id="agent", mount_id="root")
+    try:
+        await environment.prepare()
+        processes = environment.operations.processes
+        assert isinstance(processes, LocalProcessManager)
+        yield processes
+    finally:
+        await environment.close()
+
+
+def _request(script: str, **kwargs: object) -> CommandRequest:
+    return CommandRequest(
+        command=ArgvCommand(executable=str(Path(sys.executable).resolve()), arguments=("-c", script)),
+        environment=CommandEnvironment(
+            set={key: os.environ[key] for key in ("SYSTEMROOT", "PATH") if key in os.environ}
+        ),
+        output_policy=OUTPUT,
+        **kwargs,
+    )
+
+
+async def test_native_argv_unicode_stdin_stderr_and_exit(tmp_path: Path) -> None:
+    async with _processes(tmp_path) as processes:
+        result = await processes.exec(
+            _request(
+                "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()); sys.stderr.buffer.write(b'error'); sys.exit(7)",
+                initial_stdin='Unicode: 中文 "quoted"\n'.encode(),
+            )
+        )
+        assert result.status.exit_code == 7
+        assert result.status.cleanup == "complete"
+        assert result.output.stdout.inline == 'Unicode: 中文 "quoted"\n'.encode()
+        assert result.output.stderr.inline == b"error"
+
+
+async def test_native_background_stdin_and_output(tmp_path: Path) -> None:
+    async with _processes(tmp_path) as processes:
+        started = await processes.start(
+            _request(
+                "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())",
+                keep_stdin_open=True,
+            )
+        )
+        await processes.write_stdin(started.process.handle, b"first\n")
+        await processes.write_stdin(started.process.handle, b"second\n", close_after_write=True)
+        terminal = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
+        assert terminal.output is not None
+        assert terminal.output.stdout.inline == b"first\nsecond\n"
+        await processes.release(started.process.handle)
+
+
+@pytest.mark.parametrize("ending", ["root_exit", "timeout", "kill", "cancel", "close"])
+async def test_native_owned_descendants_are_cleaned(tmp_path: Path, ending: str) -> None:
+    # The child would write after its owner ends and inherits its output handles.
+    marker = tmp_path / "escaped"
+    child = "import time,pathlib; time.sleep(2); pathlib.Path('escaped').write_text('leaked')"
+    parent = (
+        "import subprocess,sys,pathlib,time; "
+        f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
+        "pathlib.Path('started').touch(); " + ("pass" if ending == "root_exit" else "time.sleep(30)")
+    )
+    async with _processes(tmp_path) as processes:
+        limits = CommandLimits(wall_time_seconds=0.5 if ending == "timeout" else 10)
+        if ending == "cancel":
+            task = asyncio.create_task(processes.exec(_request(parent, limits=limits)))
+        else:
+            started = await processes.start(_request(parent, limits=limits))
+        async with asyncio.timeout(5):
+            while not (tmp_path / "started").exists():
+                await asyncio.sleep(0.01)
+        if ending == "cancel":
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        elif ending == "close":
+            await processes.close()
+        else:
+            if ending == "kill":
+                await processes.kill(started.process.handle)
+            terminal = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
+            assert terminal.status.cleanup == "complete"
+            assert terminal.output is not None and terminal.output.stdout.producer_complete
+            if ending == "timeout":
+                assert terminal.status.phase == "timed_out"
+    await asyncio.sleep(2.1)
+    assert not marker.exists()
+
+
+async def test_native_powershell_unicode_and_quoting(tmp_path: Path) -> None:
+    async with _processes(tmp_path, powershell=True) as processes:
+        result = await processes.exec(
+            CommandRequest(
+                command=ShellCommand(
+                    profile_id="powershell", script="Write-Output '中文 \"quoted\"'; Write-Error '中文 failure'; exit 7"
+                ),
+                environment=CommandEnvironment(
+                    set={key: os.environ[key] for key in ("SYSTEMROOT", "PATH") if key in os.environ}
+                ),
+                output_policy=OUTPUT,
+            )
+        )
+        assert result.status.exit_code == 7
+        assert result.output.stdout.inline is not None
+        assert result.output.stdout.inline.decode().strip() == '中文 "quoted"'
+        assert result.output.stderr.inline is not None
+        assert "中文 failure" in result.output.stderr.inline.decode()
+        assert "CLIXML" not in result.output.stderr.inline.decode()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows signal contract")
+async def test_windows_interrupt_is_explicitly_unsupported(tmp_path: Path) -> None:
+    async with _processes(tmp_path) as processes:
+        started = await processes.start(_request("import time; time.sleep(30)"))
+        with pytest.raises(EnvironmentError, match="interrupt"):
+            await processes.signal(started.process.handle, "interrupt")
+        await processes.signal(started.process.handle, "terminate")
+        terminal = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
+        assert terminal.status.cleanup == "complete"
+
+
+async def test_owned_worker_settles_before_repeated_cancellation_returns() -> None:
+    from a13n_environment_provider.direct_local.processes import _settle_task
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def worker() -> str:
+        started.set()
+        await release.wait()
+        return "settled"
+
+    owned = asyncio.create_task(worker())
+    waiter = asyncio.create_task(_settle_task(owned))
+    await started.wait()
+    for _ in range(3):
+        waiter.cancel()
+        await asyncio.sleep(0)
+        assert not owned.cancelled()
+        assert not waiter.done()
+    release.set()
+    value, cancellation = await waiter
+    assert value == "settled"
+    assert isinstance(cancellation, asyncio.CancelledError)

@@ -51,6 +51,7 @@ class DirectLocalShellProfile(BaseModel):
     profile_id: str
     executable: Path
     fixed_arguments: tuple[str, ...] = ()
+    dialect: Literal["posix", "powershell"] = "posix"
     allow_login: bool = False
 
 
@@ -71,6 +72,14 @@ class DirectLocalProviderConfiguration(BaseModel):
 ```
 
 The root, shell executables, and allowed executables are absolute after user expansion. Host-supplied runtime identities are bounded and nonblank; profile IDs are unique; ports and limits are valid and positive. A read-only root cannot enable shell profiles or allowed executables because an allowed native process could mutate files through the embedding OS account.
+
+### Native command execution
+
+Direct Local runs on POSIX hosts and native Windows without WSL or a daemon. Each command owns a POSIX process group or Windows Job Object. On Windows, assignment to the Job precedes execution so descendants cannot escape ownership during startup. Root exit and complete tree cleanup are separate observations; inherited output pipes finish only after owned descendants are cleaned up. Timeout, cancellation, startup failure, and adapter close clean up owned processes and output resources.
+
+The default `posix` shell dialect retains `-c` and optional login semantics. A `powershell` profile disallows login, passes the script as an encoded command, and selects UTF-8 for redirected text input/output; argv execution passes arguments without shell interpolation. Hosts explicitly select executables, dialects, and environment keys. The Provider does not inherit ambient environment variables. Binary process output remains bytes.
+
+POSIX supports interrupt and terminate signals. Windows supports tree termination and kill; an interrupt request returns `environment_unsupported` rather than pretending a forced termination is a graceful interrupt. This does not limit cancellation, which uses owned-tree termination. Native execution does not enforce memory, CPU, process-count, or network-denial limits and rejects requests requiring them.
 
 ### State and lifecycle
 

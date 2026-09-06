@@ -146,9 +146,9 @@ langfuse-test: langfuse-up ## Verify Foundation OTLP write and Trace Query again
 langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
-.PHONY: a13n-ui
-a13n-ui: sync ## Run the Agent UI interactive TUI
-	@uv run --locked a13n-ui
+.PHONY: a13n-cli
+a13n-cli: sync ## Run the interactive Agent CLI
+	@uv run --locked a13n-cli
 
 .PHONY: agent-ui-db-migrate
 agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a disposable database

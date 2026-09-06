@@ -105,6 +105,7 @@ async def preview_external_subagent_import(
     *,
     product: ExternalSubagentProduct | str,
     scope: ExternalSubagentScope | str,
+    inherit_runtime: bool = False,
     project_root: Path | None = None,
     user_home: Path | None = None,
     content_plugin_root: Path | None = None,
@@ -132,6 +133,7 @@ async def preview_external_subagent_import(
             selected_scope,
             definition,
             loaded,
+            inherit_runtime=inherit_runtime,
         )
         for definition in definitions
     )
@@ -416,6 +418,8 @@ def _build_candidate(
     scope: ExternalSubagentScope,
     definition: _ExternalDefinition,
     loaded: LoadedAgentUiConfiguration,
+    *,
+    inherit_runtime: bool = False,
 ) -> ExternalSubagentImportCandidate:
     diagnostics: list[ExternalImportDiagnostic] = []
     if definition.parse_error is not None:
@@ -444,6 +448,16 @@ def _build_candidate(
 
     model = _representable_model(fields.get("model"), loaded, diagnostics)
     tools = _normalize_tools(fields.get("tools"), diagnostics)
+    if inherit_runtime:
+        model = None
+        tools = None
+        diagnostics.append(
+            ExternalImportDiagnostic(
+                severity="warning",
+                code="runtime_inherited",
+                message="Explicit import choice: inherit the parent model and visible tools; external model/tool selections are omitted.",
+            )
+        )
 
     supported = {
         "name",

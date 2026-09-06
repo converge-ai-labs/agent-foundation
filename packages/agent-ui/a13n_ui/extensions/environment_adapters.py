@@ -134,6 +134,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
                     {
                         "profile_id": "default",
                         "executable": str(shell),
+                        "dialect": "powershell" if sys.platform == "win32" else "posix",
                         "allow_login": sys.platform != "win32",
                         "fixed_arguments": ["-NoLogo", "-NoProfile", "-NonInteractive"]
                         if sys.platform == "win32"

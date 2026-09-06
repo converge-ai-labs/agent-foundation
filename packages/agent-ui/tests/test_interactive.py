@@ -78,7 +78,7 @@ def test_stream_argument_and_result_memory_is_bounded() -> None:
 
 def test_setup_choices_expand_to_explicit_native_context_values() -> None:
     wizard = SetupWizard()
-    for value in ("", "", "extended", "medium", "sandbox", "no"):
+    for value in ("", "", "", "extended", "medium", "sandbox", "no", ""):
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
@@ -238,36 +238,18 @@ async def test_cancel_is_receipt_owned_and_session_is_reusable(tmp_path: Path, m
 
 
 @pytest.mark.anyio
-async def test_terminal_flush_commits_drained_text_even_when_consumer_is_cancelled(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    import a13n_ui.interactive.shell as shell_module
+async def test_terminal_flush_retains_semantic_output_independently_of_draw() -> None:
+    from a13n_ui.interactive.shell import CliShell
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import DummyInput
     from prompt_toolkit.output import DummyOutput
 
-    waiting = asyncio.Event()
-    release = asyncio.Event()
-
-    async def delayed_write(write):
-        waiting.set()
-        await release.wait()
-        write()
-
-    monkeypatch.setattr(shell_module, "run_in_terminal", delayed_write)
     with create_app_session(input=DummyInput(), output=DummyOutput()):
-        shell = shell_module.InlineShell(CliRequest())
+        shell = CliShell(CliRequest())
         shell.renderer.append("FINAL")
-        task = asyncio.create_task(shell.flush())
-        await waiting.wait()
-        task.cancel()
-        await asyncio.sleep(0)
-        assert not task.done()
-        release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await shell.flush()
         assert shell.renderer.drain() == ""
-    assert capsys.readouterr().out == "FINAL"
+        assert [block.source for block in shell.renderer.transcript.blocks.values()] == ["FINAL"]
 
 
 @pytest.mark.anyio
@@ -375,7 +357,6 @@ def test_resume_with_explicit_permissions_is_rejected_before_any_app_start(monke
 
 
 @pytest.mark.anyio
-@pytest.mark.skipif(os.name != "posix", reason="Direct Local process execution currently requires POSIX")
 @pytest.mark.parametrize("decision", ["approve", "deny"])
 @pytest.mark.parametrize("mode", ["full-control", "sandbox"])
 async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
@@ -439,10 +420,93 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
         review = await backend.review("approval-one")
         assert "shell_exec" in review
         assert "approved-result" in review
-        response = await backend.decide(decision, "approval-one")
-        assert response is not None
+        interaction = await backend.interaction()
+        assert interaction is not None
+        assert "Needs review" in interaction.prompt()
+        response = interaction.accept("yes" if decision == "approve" else "no")
+        assert response is not None and not isinstance(response, str)
         assert await backend.execute(StreamRenderer(backend.status), response=response) == ""
         assert marker.exists() is (decision == "approve"), (
             await app.get_thread_transcript(thread_id=backend.thread_id)
         ).model_dump_json()
         assert await backend.pending() == ""
+
+
+@pytest.mark.anyio
+async def test_native_image_input_reaches_model_and_survives_continuation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from io import BytesIO
+
+    import a13n_ui.model_runtime as runtime
+    from PIL import Image
+    from pydantic_ai import BinaryContent
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+
+    path = await _seed(tmp_path, monkeypatch)
+    stream = BytesIO()
+    Image.new("RGB", (2, 2), "white").save(stream, format="PNG")
+    data = stream.getvalue()
+    observed = []
+
+    async def stream_model(messages, info):
+        observed.append(messages)
+        yield "Image received"
+
+    monkeypatch.setattr(
+        runtime,
+        "build_codex_model",
+        lambda *args, **kwargs: FunctionModel(stream_function=stream_model, profile={"supports_thinking": True}),
+    )
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        await backend.execute(
+            StreamRenderer(backend.status), prompt=(BinaryContent(data=data, media_type="image/png"),)
+        )
+        await backend.execute(StreamRenderer(backend.status), prompt="Recall the image")
+        assert len(observed) == 2
+        for messages in observed:
+            contents = [
+                item
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+                for item in part.content
+                if isinstance(item, BinaryContent)
+            ]
+            assert any(item.data == data and item.media_type == "image/png" for item in contents)
+
+
+@pytest.mark.anyio
+async def test_onboarding_import_enrolls_inheriting_subagent_and_is_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = await _seed(tmp_path, monkeypatch)
+    external = tmp_path / ".claude/agents/reviewer.md"
+    external.parent.mkdir(parents=True)
+    source = (
+        "---\nname: reviewer\ndescription: Review code.\nmodel: sonnet\ntools: Read, Bash\n---\nInspect carefully.\n"
+    )
+    external.write_text(source)
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        choices, preview = await backend.import_choices("claude-code", "project")
+        assert [item.value for item in choices] == ["reviewer"]
+        assert "inherit" in preview
+        assert "enabled" in await backend.import_and_enroll(("reviewer",))
+        configuration = await app.current_configuration()
+        assert configuration.subagents["subagent-reviewer"].model is None
+        assert configuration.subagents["subagent-reviewer"].tools is None
+        assert any(edge.markdown == "subagent-reviewer" for edge in configuration.agents["agent-codex"].subagents)
+        await backend.import_choices("claude-code", "project")
+        assert "enabled" in await backend.import_and_enroll(("reviewer",))
+        configuration = await app.current_configuration()
+        assert len(configuration.agents["agent-codex"].subagents) == 1
+        assert external.read_text() == source

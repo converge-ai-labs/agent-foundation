@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`AgentUiApp` is the only Agent UI application boundary. It runs configuration, catalog, Project, Thread, Harness, Model, Capability, Plugin, MCP, Environment, subagent, and observation behavior in one process. The inline CLI and explicitly enabled embedding tools are thin adapters over its typed commands and queries.
+`AgentUiApp` is the only Agent UI application boundary. It runs configuration, catalog, Project, Thread, Harness, Model, Capability, Plugin, MCP, Environment, subagent, and observation behavior in one process. The full-terminal CLI and explicitly enabled embedding tools are thin adapters over its typed commands and queries.
 
 Agent UI implements the Harness `SubagentOperator` contract as `AgentUiSubagentOperator`. It persists each async child as an ordinary child Thread, runs each delegate or resume as an independent segment, saves exact checkpoints, and returns bounded saved execution views.
 
@@ -78,6 +78,8 @@ A source change triggers a stable complete-tree candidate load. Invalid intermed
 ## Root Run Coordination
 
 ### Process-local Operations
+
+Root prompt admission accepts native Harness `RunInputValue`: text or a sequence of Pydantic AI `UserContent`, including `BinaryContent`. This is a process-local input contract, not a serialized transport schema or permission to return native message objects in projections. The App normalizes and detaches mutable input before asynchronous admission. Image-only input is valid; empty or whitespace-only input is not. Native Harness messages and selected continuation checkpoints retain submitted content through the existing lifecycle. Provider capability failures are explicit; adapters do not silently discard content or substitute Models. The [CLI contract](07-interactive-cli.md#multimodal-drafts) owns acquisition, draft limits, and recovery presentation.
 
 One App admits at most one root operation for a Thread. Another root submission while that operation is preparing or running is rejected rather than queued. Admission returns a detached receipt immediately; the receipt ID is unpredictable, unique within the App lifetime, and is the exact correlation used by active queries, waits, steering, and cancellation.
 

@@ -1,14 +1,14 @@
-# Agent UI
+# Agent CLI
 
-`a13n-ui` is an interactive coding CLI for Agent Foundation Harness. It uses native terminal scrollback, an editable multiline draft, and a compact status bar. One reusable `AgentUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. There is no full-screen workbench, browser server, or detached daemon.
+`a13n-cli` is the interactive coding CLI supplied by the `a13n-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `AgentUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. There is no browser server or detached daemon.
 
 ```console
 cd your-repository
-a13n-ui
+a13n-cli
 # From a source checkout:
-make a13n-ui
+make a13n-cli
 # From a published distribution:
-uvx a13n-ui
+uvx --from a13n-ui a13n-cli
 ```
 
 The prompt is editable before heavy runtime imports finish. `/help` explains commands, `/setup` configures access and permissions, and `/login codex` starts device authorization. Default Codex setup uses GPT-5.6 Sol, high reasoning, and an explicit 350k working context budget. Setup also offers 272k and 872k budgets with explanations; editable YAML contains actual values and thresholds, not opaque preset names.
@@ -18,17 +18,17 @@ The prompt is editable before heavy runtime imports finish. `/help` explains com
 The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` lists this directory's saved conversations. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/model` and `/thinking` affect subsequent Run captures without rewriting resources. The same App boundary remains suitable for a future browser or remote adapter; the CLI does not contain a second execution engine.
 
 ```console
-a13n-ui --environment-mode sandbox
-a13n-ui --resume session-id
-a13n-ui run "Review the current diff" --format json
-a13n-ui config path
-a13n-ui config validate
-a13n-ui auth login --help
+a13n-cli --environment-mode sandbox
+a13n-cli --resume session-id
+a13n-cli run "Review the current diff" --format json
+a13n-cli config path
+a13n-cli config validate
+a13n-cli auth login --help
 ```
 
 Enter submits, Alt+Enter inserts a newline, Ctrl+C clears or cancels, and Ctrl+D on an empty draft exits. Bracketed multiline paste remains unsent until Enter. Rejected/busy commands preserve the draft. Cancellation waits for App-owned cleanup; nothing is approved implicitly or detached on exit.
 
-See the [user guide](../../docs/agent-ui.md) for setup, all slash commands, explicit configuration examples and precedence, credentials, permissions, and recovery. The [interactive CLI contract](../../spec/agent-ui/07-interactive-cli.md) owns accepted terminal behavior.
+See the [user guide](../../docs/agent-cli.md) for setup, all slash commands, explicit configuration examples and precedence, credentials, permissions, and recovery. The [interactive CLI contract](../../spec/agent-cli/07-interactive-cli.md) owns accepted terminal behavior.
 
 ## Configuration
 
@@ -57,10 +57,10 @@ This controls the updater owned by this App; it does not erase prices already do
 Declarative Content Plugins install Skills and canonical Markdown subagents from a Git repository without importing or executing plugin code. A repository contains `.agents/plugins/marketplace.yaml`; each indexed plugin contains `.a13n-plugin/plugin.yaml` and can point to `skills/` and `subagents/` directories.
 
 ```console
-a13n-ui plugin install https://github.com/example/agent-plugins.git
-a13n-ui plugin install https://github.com/example/agent-plugins.git --plugin plugin-reviewer --ref v1.0.0
-a13n-ui plugin list
-a13n-ui plugin uninstall plugin-reviewer
+a13n-cli plugin install https://github.com/example/agent-plugins.git
+a13n-cli plugin install https://github.com/example/agent-plugins.git --plugin plugin-reviewer --ref v1.0.0
+a13n-cli plugin list
+a13n-cli plugin uninstall plugin-reviewer
 ```
 
 Install and list output includes the immutable installation directory so its complete content can be inspected directly. Uninstall removes the registration but retains that content-addressed directory for Runs that already captured it. Content Plugin management is an explicit CLI operation.
@@ -95,10 +95,10 @@ The source manifest declares unversioned dependencies on `a13n-environment-provi
 
 ## Packaging
 
-The wheel and sdist contain the inline CLI, reusable App, and native runtime release manifest. They contain no browser bundle or full-screen terminal frontend. Builds and sdist wheel rebuilds require Python tooling, not Node.js.
+The wheel and sdist contain the native CLI, reusable App, runtime release manifest, and the YAACLI BSD attribution for adapted presentation components. They contain no browser bundle. Builds and sdist wheel rebuilds require Python tooling, not Node.js.
 
 ## Versioning
 
 Agent UI releases independently through `release/agent-ui-v<version>`, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Its version does not need to match the selected Harness release; Python package metadata represents either RC as `X.Y.ZrcN`. The CLI has no companion npm artifact or independent frontend release.
 
-The accepted architecture is defined in the [Agent UI specification](../../spec/agent-ui/README.md).
+The accepted architecture is defined in the [Agent CLI specification](../../spec/agent-cli/README.md).

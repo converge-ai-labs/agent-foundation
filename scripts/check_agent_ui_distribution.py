@@ -31,6 +31,11 @@ TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_ui/interactive/rendering.py"),
     PurePosixPath("a13n_ui/interactive/setup.py"),
     PurePosixPath("a13n_ui/interactive/runtime.py"),
+    PurePosixPath("a13n_ui/interactive/transcript.py"),
+    PurePosixPath("a13n_ui/interactive/markdown.py"),
+    PurePosixPath("a13n_ui/interactive/attachments.py"),
+    PurePosixPath("a13n_ui/interactive/decisions.py"),
+    PurePosixPath("a13n_ui/interactive/theme.py"),
 )
 INTERNAL_PACKAGES = (
     "a13n-environment-provider",
@@ -45,7 +50,7 @@ class DistributionError(ValueError):
 
 def _validate_terminal_package(names: set[str], prefix: PurePosixPath | None = None) -> None:
     root = prefix or PurePosixPath()
-    obsolete = tuple((root / path).as_posix() for path in ("a13n_ui/static/", "a13n_ui/tui/", "a13n_ui/webui.py"))
+    obsolete = tuple((root / path).as_posix() for path in ("a13n_ui/static/", "a13n_ui/webui.py"))
     if any(name.startswith(obsolete) for name in names):
         raise DistributionError("Agent UI artifact contains an obsolete workstation payload")
     for path in TERMINAL_PACKAGE_PATHS:
@@ -65,8 +70,8 @@ def _validate_wheel_imports(path: Path) -> None:
                 "-c",
                 (
                     "from a13n_ui.cli import main; "
-                    "from a13n_ui.interactive.shell import InlineShell; "
-                    "assert callable(main) and InlineShell"
+                    "from a13n_ui.interactive.shell import CliShell; "
+                    "assert callable(main) and CliShell"
                 ),
             ],
             cwd=directory,
@@ -76,7 +81,7 @@ def _validate_wheel_imports(path: Path) -> None:
             text=True,
         )
     if result.returncode != 0:
-        raise DistributionError(f"Agent UI wheel cannot import its entrypoint and inline CLI:\n{result.stderr}")
+        raise DistributionError(f"Agent UI wheel cannot import its entrypoint and CLI:\n{result.stderr}")
 
 
 def _validate_console_entrypoint(content: bytes) -> None:
@@ -85,8 +90,8 @@ def _validate_console_entrypoint(content: bytes) -> None:
         parser.read_string(content.decode("utf-8"))
     except (configparser.Error, UnicodeDecodeError) as error:
         raise DistributionError(f"Invalid Agent UI entry_points.txt: {error}") from error
-    if parser.get("console_scripts", "a13n-ui", fallback=None) != "a13n_ui.cli:main":
-        raise DistributionError("Agent UI artifact is missing the a13n-ui console entrypoint")
+    if parser.get("console_scripts", "a13n-cli", fallback=None) != "a13n_ui.cli:main":
+        raise DistributionError("Agent UI artifact is missing the a13n-cli console entrypoint")
 
 
 def _validate_runtime_manifest(read: Callable[[str], bytes], names: set[str], path: PurePosixPath) -> None:
@@ -131,6 +136,8 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
         names = set(archive.namelist())
         _validate_runtime_manifest(archive.read, names, RUNTIME_MANIFEST_PATH)
         _validate_terminal_package(names)
+        if not any(name.endswith(".dist-info/licenses/YAACLI-LICENSE") for name in names):
+            raise DistributionError("Agent UI wheel is missing the YAACLI BSD notice")
         entrypoint_paths = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         if len(entrypoint_paths) != 1:
             raise DistributionError(f"Expected one entry_points.txt in {path}, found {len(entrypoint_paths)}")
@@ -164,6 +171,8 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
 
         _validate_runtime_manifest(read, names, PurePosixPath(root) / RUNTIME_MANIFEST_PATH)
         _validate_terminal_package(names, PurePosixPath(root))
+        if f"{root}/YAACLI-LICENSE" not in names:
+            raise DistributionError("Agent UI sdist is missing the YAACLI BSD notice")
         if any("apps/harness-ui" in name for name in names):
             raise DistributionError("Agent UI sdist must not bundle obsolete browser source")
         pyproject_path = f"{root}/pyproject.toml"
@@ -177,8 +186,8 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
             raise DistributionError(f"Cannot read Agent UI sdist dependencies: {error}") from error
         if not isinstance(requirements, list) or not all(isinstance(value, str) for value in requirements):
             raise DistributionError("Agent UI sdist has invalid project.dependencies")
-        if not isinstance(scripts, dict) or scripts.get("a13n-ui") != "a13n_ui.cli:main":
-            raise DistributionError("Agent UI sdist is missing the a13n-ui console entrypoint")
+        if not isinstance(scripts, dict) or scripts.get("a13n-cli") != "a13n_ui.cli:main":
+            raise DistributionError("Agent UI sdist is missing the a13n-cli console entrypoint")
         pin = _validate_internal_requirements(requirements) if require_exact_internal_version else None
         return root, pin
 

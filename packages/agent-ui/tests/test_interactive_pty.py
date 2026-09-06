@@ -70,7 +70,7 @@ def _stop(process: subprocess.Popen[bytes], master: int) -> None:
         os.close(master)
 
 
-def test_real_app_landing_is_editable_before_preparation_and_never_enters_alternate_screen(tmp_path: Path) -> None:
+def test_real_app_landing_is_editable_before_preparation_and_restores_alternate_screen(tmp_path: Path) -> None:
     configuration = tmp_path / ".a13n-ui"
     configuration.mkdir()
     (configuration / "a13n-ui.yaml").write_text('schema_version: "2"\nprocess:\n  pricing_auto_update: false\n')
@@ -82,11 +82,17 @@ def test_real_app_landing_is_editable_before_preparation_and_never_enters_altern
         assert time.monotonic() - started < 1.5
         os.write(master, b"/help\r")
         output += _read_until(master, b"Bracketed multiline paste")
-        output += _read_until(master, b"No model configured")
+        output += _read_until(master, b"Connect a model")
+        os.write(master, b"\x1b[B\r")
+        output += _read_until(master, b"API model route")
+        os.write(master, b"/cancel\r")
+        output += _read_until(master, b"Setup cancelled")
         os.write(master, b"/quit\r")
+        output += _read_until(master, b"\x1b[?1049l")
         process.wait(timeout=5)
         assert process.returncode == 0
-        assert b"\x1b[?1049h" not in output
+        assert b"\x1b[?1049h" in output
+        assert b"\x1b[?1049l" in output
         assert not (configuration / "models").exists()
     finally:
         _stop(process, master)
@@ -98,7 +104,7 @@ import asyncio, json, time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from a13n_ui.cli import CliRequest
-from a13n_ui.interactive.shell import InlineShell
+from a13n_ui.interactive.shell import CliShell
 
 class Backend:
     def __init__(self, status):
@@ -107,8 +113,10 @@ class Backend:
     async def initialize(self):
         self.status.model = "fixture-model"
         return True
-    async def execute(self, renderer, *, prompt=None, flush=None):
+    async def execute(self, renderer, *, prompt=None, flush=None, admitted=None):
         Path("submitted.json").write_text(json.dumps(prompt))
+        if admitted is not None:
+            admitted()
         renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "fixture-stream\n"})
         await asyncio.sleep(.7)
         renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "edit"})
@@ -116,6 +124,8 @@ class Backend:
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
         await self.stop.wait()
         return "fixture-cancelled"
+    async def interaction(self):
+        return None
     async def cancel(self):
         self.stop.set()
 
@@ -127,7 +137,7 @@ def load():
     time.sleep(1.2)
     return factory
 
-asyncio.run(InlineShell(CliRequest(), runtime_loader=load).run())
+asyncio.run(CliShell(CliRequest(), runtime_loader=load).run())
 """
     process, master = _spawn(script, tmp_path)
     try:
@@ -148,8 +158,10 @@ asyncio.run(InlineShell(CliRequest(), runtime_loader=load).run())
         os.write(master, b"\x03")
         output += _read_until(master, b"fixture-cancelled")
         os.write(master, b"/quit\r")
+        output += _read_until(master, b"\x1b[?1049l")
         process.wait(timeout=5)
         assert process.returncode == 0
-        assert b"\x1b[?1049h" not in output
+        assert b"\x1b[?1049h" in output
+        assert b"\x1b[?1049l" in output
     finally:
         _stop(process, master)

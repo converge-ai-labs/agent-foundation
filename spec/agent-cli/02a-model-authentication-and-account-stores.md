@@ -132,12 +132,12 @@ Interactive sessions are process-local and bounded to fifteen minutes, with star
 ### CLI Contract
 
 ```text
-a13n-ui auth key list [--format json]
-a13n-ui auth key set <reference>
-a13n-ui auth key delete <reference> [--yes]
-a13n-ui auth status [codex|grok]
-a13n-ui auth login <codex|grok> [--allow-account-switch] [--device-code|--browser]
-a13n-ui auth logout <codex|grok>
+a13n-cli auth key list [--format json]
+a13n-cli auth key set <reference>
+a13n-cli auth key delete <reference> [--yes]
+a13n-cli auth status [codex|grok]
+a13n-cli auth login <codex|grok> [--allow-account-switch] [--device-code|--browser]
+a13n-cli auth logout <codex|grok>
 ```
 
 `status` without a provider returns both provider projections in stable `codex`, then `grok` order; selecting a provider returns one. `login` and `logout` require a provider. Login defaults to device authorization; `--browser` explicitly selects a Host-local callback. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.

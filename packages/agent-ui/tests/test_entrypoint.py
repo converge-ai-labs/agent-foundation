@@ -41,7 +41,7 @@ def test_terminal_frontend_requires_interactive_input_and_output(
 
     assert result.returncode == 1
     assert "Interactive mode requires a terminal" in result.stderr
-    assert "a13n-ui run <prompt>" in result.stderr
+    assert "a13n-cli run <prompt>" in result.stderr
 
 
 @pytest.mark.skipif(os.name != "posix", reason="PTY terminal restoration requires POSIX")
@@ -71,13 +71,13 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
     output = bytearray()
     try:
         startup_deadline = time.monotonic() + _ENTRYPOINT_TIMEOUT_SECONDS
-        while b"Agent UI" not in output and process.poll() is None:
+        while b"Agent CLI" not in output and process.poll() is None:
             if time.monotonic() >= startup_deadline:
                 break
             readable, _, _ = select.select([master], [], [], 0.1)
             if readable:
                 output.extend(os.read(master, 65536))
-        assert b"Agent UI" in output, output.decode(errors="replace")
+        assert b"Agent CLI" in output, output.decode(errors="replace")
 
         os.write(master, b"/quit\r")
         exit_deadline = time.monotonic() + 10

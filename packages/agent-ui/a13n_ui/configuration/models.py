@@ -99,6 +99,7 @@ class GlobalDefaults(StrictModel):
 
 
 class TerminalDisplayConfiguration(StrictModel):
+    theme: Literal["auto", "dark", "light"] = "auto"
     mode: Literal["concise", "detailed"] = "concise"
     show_status: bool = True
     max_tool_result_lines: int = Field(default=5, ge=1, le=200)

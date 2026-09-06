@@ -26,12 +26,16 @@ def _write_wheel(
     extra_packaged_files: dict[str, bytes] | None = None,
 ) -> None:
     with zipfile.ZipFile(path, mode="w") as archive:
+        archive.writestr(
+            "a13n_ui-9.8.7.dist-info/licenses/YAACLI-LICENSE",
+            (SCRIPTS_DIRECTORY.parent / "packages/agent-ui/YAACLI-LICENSE").read_bytes(),
+        )
         for module in TERMINAL_PACKAGE_PATHS:
             if module.as_posix() == "a13n_ui/interactive/shell.py" and not include_terminal_shell:
                 continue
             content = b"\n"
             if module.as_posix() == "a13n_ui/interactive/shell.py":
-                content = b"class InlineShell: pass\n"
+                content = b"class CliShell: pass\n"
             elif module.as_posix() == "a13n_ui/cli.py":
                 content = cli_content
             archive.writestr(module.as_posix(), content)
@@ -51,7 +55,7 @@ def _write_wheel(
         if include_entrypoint:
             archive.writestr(
                 "a13n_ui-9.8.7.dist-info/entry_points.txt",
-                "[console_scripts]\na13n-ui = a13n_ui.cli:main\n",
+                "[console_scripts]\na13n-cli = a13n_ui.cli:main\n",
             )
         archive.writestr(
             "a13n_ui-9.8.7.dist-info/METADATA",
@@ -73,7 +77,7 @@ def _write_wheel(
             archive.writestr(f"a13n_ui/{name}", content)
 
 
-def test_validates_inline_cli_distribution(tmp_path: Path) -> None:
+def test_validates_cli_distribution(tmp_path: Path) -> None:
     wheel = tmp_path / "agent-ui.whl"
     _write_wheel(
         wheel,
@@ -123,7 +127,7 @@ def test_rejects_unimportable_entrypoint(tmp_path: Path) -> None:
         cli_content=b"raise RuntimeError('broken wheel')\n",
     )
 
-    with pytest.raises(DistributionError, match="cannot import its entrypoint and inline CLI"):
+    with pytest.raises(DistributionError, match="cannot import its entrypoint and CLI"):
         validate_wheel(wheel)
 
 

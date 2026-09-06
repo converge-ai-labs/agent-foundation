@@ -1,4 +1,4 @@
-"""Application adapter for one inline session; AgentUiApp owns execution."""
+"""Application adapter for one CLI session; AgentUiApp owns execution."""
 
 from __future__ import annotations
 
@@ -8,8 +8,12 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from pathlib import Path
 
+import yaml
+from a13n_harness.input import RunInputValue
+
 from a13n_ui.app import AgentUiApp
 from a13n_ui.cli import CliRequest
+from a13n_ui.configuration import ExternalSubagentImportPreview, ResourceMutationRequest
 from a13n_ui.configuration.setup import SetupPreview, SetupSelection
 from a13n_ui.environment_profiles import environment_profile_id_for_mode
 from a13n_ui.errors import AgentUiError, ConfigurationError
@@ -24,7 +28,9 @@ from a13n_ui.surfaces import (
     ThreadDeferredResponse,
 )
 
+from .decisions import DecisionInteraction
 from .rendering import Status, StreamRenderer
+from .selection import Choice
 from .setup import SetupWizard
 
 
@@ -54,11 +60,14 @@ class SessionBackend:
         self._decisions: dict[str, ApprovalDecision | ExternalToolResult] = {}
         self._decision_continuation: str | None = None
         self.preview: SetupPreview | None = None
+        self.import_preview: ExternalSubagentImportPreview | None = None
 
     async def initialize(self) -> bool:
         configuration = await self.app.current_configuration()
         if configuration is not None:
             display = configuration.document.display
+            if not self.status.theme_explicit:
+                self.status.theme = display.theme
             if not self.status.mode_explicit:
                 self.status.mode = display.mode
             self.status.show_status = display.show_status
@@ -194,7 +203,7 @@ class SessionBackend:
         if detail.thread.parent_thread_id is not None or detail.thread.archived:
             raise ValueError("Only non-archived root sessions can be resumed.")
         if detail.thread.configuration.project_id not in matches:
-            raise ValueError("This session belongs to another workspace. Launch a13n-ui from its original directory.")
+            raise ValueError("This session belongs to another workspace. Launch a13n-cli from its original directory.")
         if await self.app.active_root_operation(selected) is not None:
             raise ValueError("This session is already running.")
         self.thread_id = selected
@@ -225,6 +234,12 @@ class SessionBackend:
         if page.next_cursor is not None:
             lines.append(f"[More retained messages: /history {page.next_cursor}]")
         return "\n".join(lines) or "No retained messages."
+
+    async def interaction(self) -> DecisionInteraction | None:
+        if self.thread_id is None:
+            return None
+        batch = await self.app.thread_decisions(thread_id=self.thread_id)
+        return DecisionInteraction(batch) if batch is not None else None
 
     async def pending(self) -> str:
         if self.thread_id is None:
@@ -289,6 +304,98 @@ class SessionBackend:
         self._decisions.clear()
         return response
 
+    async def import_choices(self, product: str, scope: str) -> tuple[tuple[Choice, ...], str]:
+        self.import_preview = await self.app.preview_subagent_import(
+            product=product, scope=scope, project_root=self.directory, inherit_runtime=True
+        )
+        choices = []
+        lines = [
+            f"Import preview: {self.import_preview.source_root}",
+            "Selected definitions inherit the parent model, capabilities, and tools; imported instructions replace parent instructions.",
+        ]
+        for candidate in self.import_preview.candidates:
+            lines.append(f"{candidate.name}: {candidate.status} -> {candidate.target_relative_path}")
+            lines.extend(f"  {item.severity}: {item.message}" for item in candidate.diagnostics)
+            if candidate.status in {"ready", "unchanged"}:
+                choices.append(Choice(candidate.name, candidate.name, candidate.status))
+                lines.append(candidate.canonical_content or "")
+        return tuple(choices), "\n".join(lines)
+
+    async def import_and_enroll(self, names: tuple[str, ...]) -> str:
+        if self.import_preview is None:
+            raise ValueError("Preview definitions first.")
+        candidates = tuple(item for item in self.import_preview.candidates if item.name in names)
+        if len(candidates) != len(names):
+            raise ValueError("The import selection changed. Preview again.")
+        published = []
+        try:
+            for candidate in candidates:
+                await self.app.apply_subagent_import(candidate)
+                published.append(candidate.target_relative_path)
+            configuration = await self.app.current_configuration()
+            if configuration is None:
+                raise ValueError("No accepted configuration.")
+            agent_id = self.request.agent_id or configuration.document.defaults.agent
+            if self.thread_id is not None:
+                agent_id = (await self.app.get_thread(self.thread_id)).thread.configuration.agent_source.id
+            source = next((item for item in configuration.sources if item.resource_id == agent_id), None)
+            if source is None:
+                raise ValueError("The selected Agent has no editable source.")
+            document = yaml.safe_load(source.content)
+            roster = document.setdefault("subagents", [])
+            for candidate in candidates:
+                edge = {"markdown": f"subagent-{candidate.name}"}
+                if edge not in roster:
+                    roster.append(edge)
+            await self.app.mutate_configuration(
+                relative_path=source.relative_path,
+                request=ResourceMutationRequest(
+                    expected_source_digest=source.source_digest,
+                    content=yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
+                ),
+            )
+            return f"Imported and enabled {len(candidates)} subagent(s) on {agent_id}. Model and tools inherit at the next composition capture."
+        except Exception as exc:
+            raise ValueError(
+                f"Import/enrollment incomplete: {exc}. Definitions already published or reused: {', '.join(published) or 'none'}. No rollback claimed; /import previews the current state before retry."
+            ) from exc
+
+    async def choices(self, kind: str) -> tuple[Choice, ...]:
+        if kind == "model":
+            configuration = await self.app.current_configuration()
+            return (
+                (
+                    Choice("default", "Agent default"),
+                    *(Choice(item.id, item.id, item.route) for item in configuration.models.values()),
+                )
+                if configuration
+                else ()
+            )
+        if kind == "thinking":
+            return tuple(Choice(value, value) for value in ("default", "low", "medium", "high", "xhigh"))
+        if kind == "environment":
+            return (
+                Choice("full-control", "Full Control", "Native host shell and files; no sandbox"),
+                Choice("sandbox", "Sandbox", "Isolation; unavailable configurations fail without fallback"),
+            )
+        if kind == "resume":
+            configuration = await self.app.current_configuration()
+            if configuration is None:
+                return ()
+            sessions = []
+            for project in configuration.projects.values():
+                if len(project.roots) == 1 and project.roots[0].path == str(self.directory):
+                    page = await self.app.list_threads(project_id=project.id, limit=20)
+                    sessions.extend(
+                        item for item in page.threads if item.parent_thread_id is None and not item.archived
+                    )
+            sessions.sort(key=lambda item: item.updated_at, reverse=True)
+            return tuple(
+                Choice(item.thread_id, item.title or "Untitled", f"{item.updated_at:%Y-%m-%d %H:%M} · {item.thread_id}")
+                for item in sessions[:20]
+            )
+        raise ValueError("Unknown selector.")
+
     async def preview_setup(self, wizard: SetupWizard) -> str:
         selection = SetupSelection.model_validate(wizard.selection(str(self.directory)))
         self.preview = await self.app.preview_setup(selection)
@@ -312,15 +419,18 @@ class SessionBackend:
                 publication.error_message or "Setup publication failed", code=publication.error_code or "setup_failed"
             )
         await self.refresh()
+        if wizard.values.get("provider") == "api":
+            return "Configuration saved. Set the referenced API-key environment variable or stored key before sending a prompt."
         return "Configuration saved. Use /login to authenticate a subscription, or send a prompt if already signed in."
 
     async def execute(
         self,
         renderer: StreamRenderer,
         *,
-        prompt: str | None = None,
+        prompt: RunInputValue | None = None,
         response: ThreadDeferredResponse | None = None,
         flush: Callable[[], Awaitable[None]] | None = None,
+        admitted: Callable[[], None] | None = None,
     ) -> str:
         self.cancel_requested = False
         await self.refresh()
@@ -330,7 +440,7 @@ class SessionBackend:
 
             def ingest(event: LiveEvent) -> None:
                 nonlocal last_ordinal
-                renderer.ingest(event.event_type, event.payload, child=event.run_kind == "child")
+                renderer.ingest(event.event_type, event.payload, child=event.run_kind == "child", run_id=event.run_id)
                 for sample in root_context_samples(event):
                     if sample.response_ordinal > last_ordinal:
                         self.status.context_tokens = sample.tokens
@@ -357,6 +467,8 @@ class SessionBackend:
                     )
                 )
                 self.receipt_id = receipt.receipt_id
+                if admitted is not None:
+                    admitted()
                 if self.cancel_requested:
                     await self.app.cancel_root_operation(receipt.receipt_id)
                 operation = await self.app.wait_root_operation(receipt.receipt_id)

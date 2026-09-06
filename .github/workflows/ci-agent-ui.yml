@@ -104,6 +104,12 @@ jobs:
         if: matrix.name != 'Linux'
         run: uv run --locked python -m pytest packages/agent-ui/tests
 
+      - name: Test native command lifecycle
+        run: >-
+          uv run --locked python -m pytest
+          packages/agent-environment-provider/tests/test_direct_local.py
+          packages/agent-environment-provider/tests/test_direct_local_processes.py
+
       - name: Build Agent UI distribution
         if: matrix.name == 'Linux'
         run: uv build --package a13n-ui --out-dir dist/agent-ui

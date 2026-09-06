@@ -12,6 +12,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
+from a13n_harness.input import RunInputValue
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -19,6 +20,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from a13n_ui.errors import AgentUiError, RunCoordinationError
 from a13n_ui.live import AgentUiSummaryHub
 from a13n_ui.root_execution import RootRunExecutor, RootRunOutcome
+from a13n_ui.root_input import detach_input
 from a13n_ui.storage import ThreadConfigurationMutation
 from a13n_ui.surfaces import (
     ContinuationSelectionView,
@@ -161,12 +163,11 @@ class RootRunCoordinator:
         self,
         *,
         thread_id: str,
-        prompt: str,
+        prompt: RunInputValue,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
-        if not prompt.strip():
-            raise RunCoordinationError("A root message must not be blank.", code="run_input_invalid")
+        prompt = detach_input(prompt)
         return await self._submit(
             thread_id=thread_id,
             prompt=prompt,
@@ -195,7 +196,7 @@ class RootRunCoordinator:
         self,
         *,
         thread_id: str,
-        prompt: str | None,
+        prompt: RunInputValue | None,
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
         model_overrides: RunModelOverrides | None,
@@ -346,7 +347,7 @@ class RootRunCoordinator:
     async def _run_operation(
         self,
         operation: _RootOperation,
-        prompt: str | None,
+        prompt: RunInputValue | None,
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
         model_overrides: RunModelOverrides | None,

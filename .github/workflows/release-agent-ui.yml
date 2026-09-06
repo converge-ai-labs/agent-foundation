@@ -70,7 +70,7 @@ jobs:
             --no-cache \
             --index-url https://pypi.org/simple \
             "dist/a13n_ui-${python_version}-py3-none-any.whl"
-          "$environment/bin/a13n-ui" --help
+          "$environment/bin/a13n-cli" --help
 
       - name: Upload Agent UI distribution
         uses: actions/upload-artifact@v4

@@ -22,6 +22,7 @@ from a13n_harness import (
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
 from a13n_harness.context import AgentContext
+from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_stream_protocol import HarnessAguiObserver
 from anyio import CancelScope, to_thread
@@ -42,6 +43,7 @@ from a13n_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunS
 from a13n_ui.errors import RunCoordinationError, ThreadError
 from a13n_ui.live import AgentUiLiveHub
 from a13n_ui.model_runtime import SubscriptionSource
+from a13n_ui.root_input import detach_input
 from a13n_ui.storage import (
     LocalStore,
     ObjectKind,
@@ -116,7 +118,7 @@ class RootRunExecutor:
         self,
         *,
         thread_id: str,
-        prompt: str | None = None,
+        prompt: RunInputValue | None = None,
         response: ThreadDeferredResponse | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
@@ -127,8 +129,8 @@ class RootRunExecutor:
                 "A root operation requires exactly one prompt or deferred response.",
                 code="run_input_invalid",
             )
-        if prompt is not None and not prompt.strip():
-            raise RunCoordinationError("A root message must not be blank.", code="run_input_invalid")
+        if prompt is not None:
+            prompt = detach_input(prompt)
         thread = await self._threads.get(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("run_thread accepts only root Threads.", code="child_thread_scoped")

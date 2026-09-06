@@ -1,23 +1,25 @@
-# Agent UI
+# Agent CLI
 
-Agent UI is an interactive coding CLI built on Agent Foundation Harness. It uses your terminal's normal scrollback, not a full-screen workbench. One foreground process owns one `AgentUiApp`, the current conversation, and its active work. There is no browser server, daemon, or detached execution mode.
+Agent CLI (`a13n-cli`, installed from the `a13n-ui` distribution) is an interactive coding CLI built on Agent Foundation Harness. Its native full-terminal interface supports Windows, macOS, and Linux, with reflowing Markdown, selectable interactions, and image drafts. One foreground process owns one `AgentUiApp`, the current conversation, and its active work. There is no browser server, daemon, or detached execution mode.
 
 ```console
 cd your-repository
-a13n-ui
+a13n-cli
 ```
 
 You can type immediately while the App prepares. Enter during startup preserves your draft rather than submitting it unexpectedly. A model request begins only when you explicitly send a prompt. The current directory is the workspace; you do not need to create or manage a Project.
 
 ## First use
 
-Run `/setup` from the prompt, or start with `a13n-ui setup`:
+Missing model configuration opens setup automatically and preserves anything you typed during startup. `/setup` or `a13n-cli setup` reopens it:
 
-1. Choose **codex**, **grok**, or **api** access.
-2. For Codex, choose the model, working context budget, and reasoning effort. Sol, balanced/350k, and high are the defaults.
-3. Choose **full-control** or **sandbox** permissions. Subscription setup also offers shell review.
-4. Inspect the file preview, then type **yes** to publish. `/cancel` leaves setup.
-5. Use `/login codex` or `/login grok` if you have not already authenticated. Existing compatible account stores are reused.
+1. **Connect a model:** choose BYOS (Codex/Grok subscription) or BYOK (an API route and an environment-variable or stored-key reference). Never paste a raw secret into the composer. Codex defaults to Sol, high reasoning, and a balanced 350k working budget.
+2. **Configure the coding Agent:** choose Full Control or Sandbox, optional subscription shell review, and optional additional Agent instructions. Built-in system instructions remain active. Preview files and explicitly choose Publish. Existing edited resources are preserved.
+3. **Optional BYOS follow-up:** sign in now or later, then optionally migrate Codex or Claude Code subagents. Select product, project/user scope, definitions, and explicit import-and-enable confirmation. Skip does not scan external files. `/import` makes the same flow available later, including for BYOK.
+
+Use Up/Down and Enter, or type option numbers. Space toggles multiple selections. Esc returns to the previous setup question; `/cancel` restores the conversation draft. Publication confirmation never defaults to approval. After configuration has been published, cancelling login or import does not undo those files.
+
+Imports preserve instructions and explicitly inherit the parent model and visible tools rather than activating foreign tool names. Preview lists unsupported settings and conflicts. Successful import enrolls selected definitions in the selected Agent's roster; file publication and enrollment are separate operations, and partial completion is reported for deliberate retry.
 
 Setup creates editable YAML resources. It does not put OAuth tokens or API keys into them, call a model to test entitlement, or silently overwrite edited Model resources. A preserved existing Model keeps its existing settings even if you selected different starter values; edit its YAML to change those values. Explicitly connecting the selected Agent can update its model binding through the reviewed publication.
 
@@ -62,32 +64,36 @@ Codex subscription requests do **not** receive an API output-token cap copied fr
 
 Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model. Ordinary input entered while a Run is active is preserved, not silently steered or queued. Wait for completion or cancel first.
 
-**Concise** output emphasizes assistant text, errors, decisions, and necessary results. **Detailed** output also shows tool calls, file-edit arguments, bounded results, child output, and exposed reasoning. A live switch affects subsequent events, not old scrollback; `/history` can display retained details in the selected mode.
+**Concise** output emphasizes assistant text, errors, decisions, and necessary results. **Detailed** output also shows tool calls, file-edit arguments, bounded results, child output, and exposed reasoning. A live switch affects subsequent events, not previously displayed blocks; `/history` can display retained details in the selected mode.
 
-The compact status bar shows the model, reasoning, last request footprint/working budget, elapsed time, state, and output mode. `?` means unavailable, not zero. The footprint is the last reported request, not an exact estimate of your next prompt. Child and auxiliary usage are not summed into it. Terminal cursor-position reporting is needed for prompt-toolkit's bottom toolbar; use `/status` if your terminal suppresses that reporting.
+The compact status bar shows the model, reasoning, last request footprint/working budget, elapsed time, state, and output mode. `?` means unavailable, not zero. The footprint is the last reported request, not an exact estimate of your next prompt. Child and auxiliary usage are not summed into it. `/status` shows complete details even in a narrow terminal.
 
 ### Approvals and questions
 
-Flagged shell commands and failed shell reviews require an explicit decision. Review the request ID, tool, and arguments. `/review request-id` opens its bounded retained details when the inline argument preview is truncated:
+Flagged shell commands and failed shell reviews open a selectable prompt. Inspect the tool, request, arguments, and review details before choosing **Approve once** or **Deny**. No approval is preselected. The Inspect action and `/review request-id` read retained details when the preview is truncated. Ordinary free text cannot approve a shell request.
 
-```text
-/approve request-id
-/deny request-id
-/result request-id '{"answers":{"question-key":"selected answer"}}'
-```
+Structured questions support single choice, multiple choice with Space, and typed answers. Answers stay local until the complete batch is ready and are submitted against the exact continuation. `/cancel` discards local answers without approving anything; `/status` reopens pending decisions. Resuming a suspended conversation also reopens them. Advanced `/approve`, `/deny`, and `/result` commands are available outside an active selector; use `/cancel` first to leave that selector.
 
-`/result` supplies JSON for an external tool, including a structured question. Use the displayed request schema to form the answer. It is not an approval shortcut. For multiple pending requests, answers remain local until the complete batch is ready; every answer is validated against the same continuation. Cancel or exit never approves a request. A suspended conversation can be resumed later.
+### Theme, scrolling, copy, and images
+
+- `/theme auto|dark|light` changes UI and Markdown syntax colors for this session; `display.theme` sets the file default. Auto uses passive terminal metadata, never an interactive terminal query.
+- PageUp/PageDown scroll the bounded display history; Ctrl+End returns to following live output. `/history` retrieves durable pages after display eviction.
+- `/mouse on` captures wheel scrolling; `/mouse off` (the default) leaves native terminal selection/copy available. Code rendering avoids padded backgrounds and OSC hyperlinks.
+- Ctrl+V, Alt+V, or `/paste-image` explicitly reads clipboard images. Normal text paste remains text and never submits itself. Some terminals intercept Ctrl+V; use Alt+V or the command there.
+- `/attach "path/to/image.png"` is the portable fallback. Linux clipboard images need `wl-paste` or `xclip`; no helper is installed automatically.
+- Chips show draft images. `/remove 1` removes one; `/remove all` or idle Ctrl+C clears them. Up to eight validated PNG/JPEG/WebP/GIF images are accepted, with 10 MiB per image, 20 MiB total, and 32 megapixels per image.
+- Image-only prompts are supported. The selected model must support the submitted modality; failures never silently drop images or switch models. A failed pre-admission send restores its draft, or exposes `/recover` if you have already begun another draft. It is never resent automatically.
 
 ## Configuration
 
 The default root remains `~/.a13n-ui/a13n-ui.yaml`. Use `--config PATH` before a subcommand to select another tree. `--data-root PATH` selects separate local state, followed by `A13N_UI_DATA_ROOT`; the default is the configuration directory's `data/` child.
 
 ```console
-a13n-ui config path
-a13n-ui config show --format json
-a13n-ui config validate
-a13n-ui --config /path/to/a13n-ui.yaml config validate
-a13n-ui doctor --format json
+a13n-cli config path
+a13n-cli config show --format json
+a13n-cli config validate
+a13n-cli --config /path/to/a13n-ui.yaml config validate
+a13n-cli doctor --format json
 ```
 
 Configuration precedence is:
@@ -113,6 +119,7 @@ defaults:
   agent: agent-codex
   environment_profile: environment-native
 display:
+  theme: auto
   mode: concise
   show_status: true
   max_tool_result_lines: 5
@@ -167,18 +174,18 @@ This minimal example omits shell review. Setup enables it by default for subscri
 
 The empty context-capability configurations use native defaults. Advanced users can set an absolute `compaction.configuration.trigger_tokens`, a `handoff.configuration.summary_reminder_tokens`, or `runtime_context.configuration.context_window_tokens`. Explicit capability values override derived defaults. Normally change the Model's `model_characteristics` instead, so all derived thresholds stay aligned.
 
-Every Agent receives the release-owned system prompt separately from its optional `instructions`. Instructions add preferences; they do not replace the built-in system prompt. Setup does not silently enable external MCP servers or a subagent roster. Those remain advanced editable resources; inspect accepted configuration and the [configuration specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/agent-ui/01-configuration-and-resource-catalog.md) for their contracts.
+Every Agent receives the release-owned system prompt separately from its optional `instructions`. Instructions add preferences; they do not replace the built-in system prompt. Setup does not silently enable external MCP servers or subagents. Optional migration requires explicit import-and-enable confirmation; other selections remain editable resources; inspect accepted configuration and the [configuration specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/agent-cli/01-configuration-and-resource-catalog.md) for their contracts.
 
 ### Subscription login and API keys
 
 ```console
-a13n-ui auth status
-a13n-ui auth login codex
-a13n-ui auth login grok
-a13n-ui auth login codex --browser
-a13n-ui auth key list
-a13n-ui auth key set key-primary
-a13n-ui auth key delete key-primary
+a13n-cli auth status
+a13n-cli auth login codex
+a13n-cli auth login grok
+a13n-cli auth login codex --browser
+a13n-cli auth key list
+a13n-cli auth key set key-primary
+a13n-cli auth key delete key-primary
 ```
 
 Device authorization is the default and needs no host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
@@ -197,20 +204,20 @@ Process loss discards active receipts and incomplete input/output. Resume contin
 
 ## Execution permissions
 
-**Full Control** runs as your host account with ambient filesystem and network authority. It does not download or launch agent-envd. The current Direct Local provider requires POSIX for shell/process execution; Windows file access does not imply Windows command execution support.
+**Full Control** runs as your host account with ambient filesystem and network authority. It does not download or launch agent-envd. Direct Local executes natively on Linux, macOS, and Windows without WSL. Windows uses PowerShell (`pwsh`, then Windows PowerShell), UTF-8 text streams, and a Job Object that owns the command's descendants. Cancellation, timeout, and exit clean up that owned tree. Portable interrupt signals are unavailable on Windows; cancellation uses tree termination instead. Full Control remains host-account execution, not a sandbox.
 
 **Sandbox** uses the local Environment provider and required filesystem/process isolation with denied networking. Readiness is checked when execution needs it, not during landing. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Agent UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows production Sandbox isolation is not supported. See the [agent-envd operations guide](agent-envd/index.md#isolation-behavior).
 
 ## Automation and diagnostics
 
 ```console
-a13n-ui run "Review the current diff"
-a13n-ui run "Summarize the next step" --resume session-id --format json
-a13n-ui --environment-mode sandbox run "Inspect the repository"
-a13n-ui plugin list
-a13n-ui import subagents --product codex --scope project --project-root .
-a13n-ui --help
-a13n-ui auth login --help
+a13n-cli run "Review the current diff"
+a13n-cli run "Summarize the next step" --resume session-id --format json
+a13n-cli --environment-mode sandbox run "Inspect the repository"
+a13n-cli plugin list
+a13n-cli import subagents --product codex --scope project --project-root .
+a13n-cli --help
+a13n-cli auth login --help
 ```
 
 One-shot mode prints the final text or a structured operation object, then exits. It shares workspace, model, continuation, and permission semantics with interactive mode. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.

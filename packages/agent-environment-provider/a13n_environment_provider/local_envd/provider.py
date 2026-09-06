@@ -39,7 +39,7 @@ from .configuration import LocalEnvdProviderConfiguration
 from .runtime import LocalEnvdProviderRuntime
 
 if TYPE_CHECKING:
-    from ._windows_job import WindowsJob
+    from .._windows_job import WindowsJob
 
 _PROVIDER_KEY = "a13n.local-envd"
 _CONFIGURATION_VERSION = "1"
@@ -257,7 +257,7 @@ class LocalEnvdEnvironment(Environment):
         if os.name == "posix":
             subprocess_options["start_new_session"] = True
         elif os.name == "nt":  # pragma: no cover - exercised on Windows
-            from ._windows_job import WindowsJob
+            from .._windows_job import WindowsJob
 
             self._windows_job = WindowsJob.create()
             subprocess_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | self._windows_job.creation_flags

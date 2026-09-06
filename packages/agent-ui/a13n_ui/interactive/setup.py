@@ -1,8 +1,10 @@
-"""Inline setup conversation. Selection is inert until an explicit publication."""
+"""Selectable setup conversation. Selection is inert until an explicit publication."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from .selection import Choice, Selection, resolve_choice
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,17 +30,18 @@ class Question:
 
 
 _QUESTIONS = (
+    Question("access", "Step 1/3 · Connect a model", "byos", ("byos", "byok")),
     Question(
         "provider",
-        "Model access: codex subscription, grok subscription, or api key?",
+        "Subscription provider (BYOS)",
         "codex",
-        ("codex", "grok", "api"),
+        ("codex", "grok"),
     ),
     Question("route", "API model route (for example openai-responses:gpt-5.6-sol)", "openai-responses:gpt-5.6-sol"),
     Question(
         "credential",
         "Credential source: env:VARIABLE or key:credential-id. Never paste a secret here.\n"
-        "Manage stored keys separately with `a13n-ui auth key set <id>`.",
+        "Manage stored keys separately with `a13n-cli auth key set <id>`.",
         "env:OPENAI_API_KEY",
     ),
     Question("model", "Codex model", "gpt-5.6-sol", ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra")),
@@ -58,7 +61,7 @@ _QUESTIONS = (
     ),
     Question(
         "environment",
-        "Execution permissions:\n"
+        "Step 2/3 · Configure your coding agent\nExecution permissions:\n"
         "  full-control: commands and file edits run directly on this host.\n"
         "  sandbox: isolated Environment provider; readiness checked only when executing.\n"
         "No silent fallback between these modes.",
@@ -72,6 +75,9 @@ _QUESTIONS = (
         "yes",
         ("yes", "no"),
     ),
+    Question(
+        "instructions", "Additional Agent instructions (optional; built-in system instructions remain active)", ""
+    ),
 )
 
 
@@ -79,32 +85,68 @@ _QUESTIONS = (
 class SetupWizard:
     values: dict[str, str] = field(default_factory=dict)
     index: int = 0
+    history: list[int] = field(default_factory=list)
     preview_generation: str | None = None
 
     @property
     def question(self) -> Question | None:
         return _QUESTIONS[self.index] if self.index < len(_QUESTIONS) else None
 
+    def selection_prompt(self) -> Selection | None:
+        question = self.question
+        if question is None:
+            return Selection(
+                (
+                    Choice("no", "Keep preview", "Do not write yet"),
+                    Choice("yes", "Publish configuration", "Create missing files only"),
+                )
+            )
+        if not question.choices:
+            return None
+        labels = {
+            "byos": "BYOS — use a subscription account",
+            "byok": "BYOK — use your API key",
+        }
+        return Selection(
+            tuple(Choice(value, labels.get(value, value)) for value in question.choices),
+            cursor=question.choices.index(question.default),
+        )
+
+    def back(self) -> bool:
+        if not self.history:
+            return False
+        self.preview_generation = None
+        self.index = self.history.pop()
+        for question in _QUESTIONS[self.index :]:
+            self.values.pop(question.key, None)
+        return True
+
     def prompt(self) -> str:
         question = self.question
         if question is None:
-            return "Publish these files? Type yes to confirm, or /cancel to leave everything unchanged."
-        return f"{question.text}\n[{question.default}] (Enter accepts; /cancel leaves setup)"
+            return "Publish these files? Choose Publish or type yes. /cancel leaves everything unchanged."
+        return f"{question.text}\n[{question.default or 'keep built-in instructions'}] (Enter accepts; Esc goes back; /cancel leaves setup)"
 
     def accept(self, text: str) -> None:
         question = self.question
         if question is None:
             raise ValueError("Setup is awaiting publication confirmation.")
         selected = text.strip() or question.default
-        if question.choices and selected not in question.choices:
-            raise ValueError(f"Choose one of: {', '.join(question.choices)}")
+        if question.choices:
+            selected = str(resolve_choice(selected, question.choices)).lower()
+            if selected not in question.choices:
+                raise ValueError(f"Choose one of: {', '.join(question.choices)}")
         if question.key == "credential":
             kind, separator, name = selected.partition(":")
             if not separator or kind not in {"env", "key"} or not name or any(c.isspace() for c in name):
                 raise ValueError("Use env:VARIABLE or key:credential-id; do not enter the API key itself.")
         self.values[question.key] = selected
+        self.history.append(self.index)
         self.index += 1
-        provider = self.values["provider"]
+        if question.key == "access" and selected == "byok":
+            self.values["provider"] = "api"
+            self.index += 1
+        provider = self.values.get("provider", "codex")
         while self.question is not None:
             key = self.question.key
             if key in {"route", "credential"} and provider != "api":
@@ -128,6 +170,7 @@ class SetupWizard:
             else "environment-sandbox",
             "shell_review": self.values["review"] == "yes",
             "connect_default": True,
+            "instructions": self.values.get("instructions", ""),
         }
         if provider == "codex":
             result.update(

@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "Interactive coding CLI for Agent Foundation Harness"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "YAACLI-LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "aiosqlite>=0.21,<1",
@@ -26,6 +26,8 @@ dependencies = [
     "pydantic-ai-slim>=2.40,<3",
     "pyyaml>=6.0.2,<7",
     "prompt-toolkit>=3.0.52,<4",
+    "rich>=15,<16",
+    "pillow>=11,<13",
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "zstandard>=0.25,<0.26",
     "pypdf>=6,<7",
@@ -36,7 +38,7 @@ dependencies = [
 ]
 
 [project.scripts]
-a13n-ui = "a13n_ui.cli:main"
+a13n-cli = "a13n_ui.cli:main"
 
 [dependency-groups]
 test = [
@@ -49,7 +51,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-exclude = ["a13n_ui/static/**", "a13n_ui/tui/**"]
+exclude = ["a13n_ui/static/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["a13n_ui"]
@@ -58,6 +60,7 @@ packages = ["a13n_ui"]
 include = [
     "a13n_ui",
     "LICENSE",
+    "YAACLI-LICENSE",
     "README.md",
     "pyproject.toml",
 ]

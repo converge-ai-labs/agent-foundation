@@ -74,7 +74,7 @@ _PATH = click.Path(path_type=Path)
 
 
 @click.group(
-    name="a13n-ui",
+    name="a13n-cli",
     invoke_without_command=True,
     no_args_is_help=False,
     context_settings=_CONTEXT_SETTINGS,
@@ -531,7 +531,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Run the Click command tree from the console-script boundary."""
 
     try:
-        exit_code = cli.main(args=None if argv is None else list(argv), prog_name="a13n-ui", standalone_mode=False)
+        exit_code = cli.main(args=None if argv is None else list(argv), prog_name="a13n-cli", standalone_mode=False)
         if isinstance(exit_code, int) and exit_code:
             raise SystemExit(exit_code)
     except click.exceptions.Exit as exc:

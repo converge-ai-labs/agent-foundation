@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -33,7 +33,14 @@ class DirectLocalShellProfile(BaseModel):
     profile_id: Annotated[str, Field(min_length=1, max_length=128)]
     executable: Path
     fixed_arguments: tuple[Annotated[str, Field(max_length=4096)], ...] = ()
+    dialect: Literal["posix", "powershell"] = "posix"
     allow_login: bool = False
+
+    @model_validator(mode="after")
+    def _login_dialect(self) -> Self:
+        if self.dialect == "powershell" and self.allow_login:
+            raise ValueError("PowerShell profiles do not support login mode")
+        return self
 
     @field_validator("profile_id")
     @classmethod

@@ -397,7 +397,7 @@ def test_cli_key_input_is_hidden_and_login_defaults_to_device(monkeypatch: pytes
 def test_help_and_public_surface_are_cli_only() -> None:
     result = CliRunner().invoke(cli, ["--help"])
     assert result.exit_code == 0
-    for removed in ("tui", "webui", "thread", "project"):
+    for removed in ("webui", "thread", "project"):
         assert removed not in cli.commands
     assert "--resume" in result.output
     assert "--display" in result.output

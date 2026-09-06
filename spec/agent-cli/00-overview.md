@@ -1,8 +1,8 @@
-# Agent UI Overview
+# Agent CLI and App Overview
 
 ## Design Position
 
-Agent UI is a local single-user coding CLI. One process-local `AgentUiApp` owns configuration generations, trusted catalogs, internal Projects and Threads, process-local root receipts, persisted async children, Environment state, detached projections, and live presentation. The inline terminal is an adapter over that reusable boundary; a future WebUI or remote adapter does not require moving execution authority into the CLI.
+Agent UI is a local single-user coding CLI. One process-local `AgentUiApp` owns configuration generations, trusted catalogs, internal Projects and Threads, process-local root receipts, persisted async children, Environment state, detached projections, and live presentation. The full-terminal client is an adapter over that reusable boundary; a future WebUI or remote adapter does not require moving execution authority into the CLI.
 
 Human-editable files remain the desired-resource authority so Agent UI can be configured without a browser or a large command surface. Separately, explicit CLI operations install editable declarative Content Plugins under the data root. SQLite owns mutable Thread and execution heads, while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
 
@@ -70,7 +70,7 @@ The core concepts are:
 | Async child admission and persistence  | `AgentUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                          |
 | AG-UI conversion                       | Agent Stream Protocol                       | Uses one observer per root or child Harness Run                                                                     |
 | Local persistence                      | Agent UI                                    | Uses SQLite for compact mutable heads and immutable files for compositions and checkpoints                          |
-| Presentation                           | Inline CLI and embedding adapters           | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
+| Presentation                           | Full-terminal CLI and embedding adapters    | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
 | Durable distributed execution          | Foundation Service                          | Not emulated by Agent UI                                                                                            |
 
 ## Configuration and Run Flow
@@ -142,7 +142,7 @@ It does not store root receipts, pending root input or deferred responses, activ
 
 ## Surfaces and Packaging
 
-The [interactive CLI](07-interactive-cli.md) uses one editable draft, native scrollback, shared slash-command metadata, and concise/detailed live presentation. Direct file editing remains a complete configuration path. CLI management locates, validates, and shows configuration, manages Content Plugins, and explicitly imports external subagents. Setup publishes reviewed starter resources. The App bootstraps an exact-cwd internal Project only when execution needs one; the CLI offers lightweight session resume rather than Project or Thread management.
+The [interactive CLI](07-interactive-cli.md) uses one editable multimodal draft, a bounded Markdown viewport, shared slash-command metadata, and concise/detailed live presentation. Direct file editing remains a complete configuration path. CLI management locates, validates, and shows configuration, manages Content Plugins, and explicitly imports external subagents. Setup publishes reviewed starter resources. The App bootstraps an exact-cwd internal Project only when execution needs one; the CLI offers lightweight session resume rather than Project or Thread management.
 
 The App remains reusable: adapters consume detached values and exact receipts, not SQLite or native Harness authority. Root-lineage live events remain bounded best-effort observations; retained continuations and operation state decide completion. The distribution contains Python CLI and App modules plus native runtime metadata, with no Textual dependency, browser bundle, foreground HTTP listener, or Node.js build requirement.
 

@@ -32,8 +32,31 @@ COMMANDS = (
         choices=("concise", "detailed"),
         busy=True,
     ),
+    Command(
+        "theme",
+        "Select terminal colors without probing keyboard input.",
+        "[auto|dark|light]",
+        maximum=1,
+        choices=("auto", "dark", "light"),
+        busy=True,
+    ),
+    Command(
+        "mouse",
+        "Toggle wheel capture; off preserves native selection/copy.",
+        "[on|off]",
+        maximum=1,
+        choices=("on", "off"),
+        busy=True,
+    ),
+    Command("attach", "Attach an image to the current draft.", "path", minimum=1, maximum=1, busy=True),
+    Command("paste-image", "Read clipboard images explicitly.", busy=True),
+    Command(
+        "remove", "Remove one image or all images from the current draft.", "index|all", minimum=1, maximum=1, busy=True
+    ),
+    Command("recover", "Restore the last prompt that failed before admission."),
     Command("status", "Show model, context, environment, and session details.", busy=True),
     Command("setup", "Configure a provider and explicit context settings; existing files are preserved."),
+    Command("import", "Preview and optionally enable external subagents with parent inheritance."),
     Command("model", "List configured models or select one for this session.", "[model-id]", maximum=1),
     Command(
         "thinking",
@@ -114,6 +137,7 @@ class CommandRegistry:
                 "",
                 "Enter: send   Alt+Enter: newline   Tab: complete   Ctrl+C: clear/cancel   Ctrl+D: exit",
                 "Bracketed multiline paste stays in the draft until Enter. /mode works during a run.",
+                "Ctrl+V / Alt+V: paste image   PgUp/PgDn: scroll   Ctrl+End: latest   /mouse off: native copy",
             ]
         return "\n".join(lines)
 
