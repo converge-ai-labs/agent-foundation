@@ -441,6 +441,7 @@ def _state_with_receipts(previous: RunStateEnvelope, authority, receipts) -> Run
         input_disposition="applied",
         last_checkpoint_run_attempt_id=authority.run_attempt_id,
         last_checkpoint_fence=authority.fence,
+        writer_fence=authority.fence,
         host=HostContinuationState(consumed_inbox_entries=receipts),
         outcome_candidate=None,
     )

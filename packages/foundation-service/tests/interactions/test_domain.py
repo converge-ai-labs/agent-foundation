@@ -86,6 +86,24 @@ def test_state_successor_preserves_run_identity_and_increments_once() -> None:
         validate_state_successor(progress, skipped, run_attempt_id=ATTEMPT_ID, fence=1)
 
 
+@pytest.mark.parametrize("writer_fence", [-1, 0])
+def test_writer_fence_cannot_precede_checkpoint_provenance(writer_fence: int) -> None:
+    state = progress_state(initial_state())
+    payload = state.model_dump(mode="python")
+    payload["writer_fence"] = writer_fence
+    with pytest.raises(ValidationError):
+        type(state).model_validate(payload)
+
+
+def test_checkpoint_writer_fence_must_match_publishing_attempt() -> None:
+    initial = initial_state()
+    payload = progress_state(initial).model_dump(mode="python")
+    payload["writer_fence"] = 2
+    successor = type(initial).model_validate(payload)
+    with pytest.raises(ValueError, match="current writer fence"):
+        validate_state_successor(initial, successor, run_attempt_id=ATTEMPT_ID, fence=1)
+
+
 def test_non_initial_checkpoint_requires_applied_input_and_attempt_fence() -> None:
     initial = initial_state()
     payload = initial.model_dump(mode="python")
@@ -118,6 +136,7 @@ def test_waiting_summary_must_match_native_deferred_request_kinds() -> None:
         input_disposition="applied",
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
+        writer_fence=1,
         host=HostContinuationState(
             deferred=DeferredContinuationState(
                 requests={

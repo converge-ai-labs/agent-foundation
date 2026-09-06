@@ -20,12 +20,17 @@ class RunOutcomeError(RuntimeError):
     """The prepared outcome is stale or inconsistent with relational authority."""
 
 
+class RunOutcomePreconditionChanged(RunOutcomeError):
+    """The Thread changed without proving that this Attempt lost its lease."""
+
+
 def validate_outcome_candidate(state: StoredRunState, authority: AttemptContext) -> None:
     envelope = state.envelope
     if (
         envelope.run_id != authority.run_id
-        or envelope.last_checkpoint_run_attempt_id != authority.run_attempt_id
-        or envelope.last_checkpoint_fence != authority.fence
+        or envelope.thread_id != authority.thread_id
+        or (envelope.last_checkpoint_run_attempt_id == authority.run_attempt_id)
+        != (envelope.last_checkpoint_fence == authority.fence)
         or state.writer_fence != authority.fence
         or state.info.content_type != RUN_STATE_CONTENT_TYPE
         or envelope.checkpoint_seq < 1

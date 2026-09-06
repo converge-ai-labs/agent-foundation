@@ -17,7 +17,7 @@ class PluginRunnerProtocolError(Exception):
 async def read_runner_message(reader: asyncio.StreamReader) -> dict[str, object]:
     try:
         raw = await reader.readline()
-    except (OSError, asyncio.LimitOverrunError) as error:
+    except (OSError, asyncio.LimitOverrunError, ValueError) as error:
         raise PluginRunnerProtocolError("Runner control read failed") from error
     if not raw or len(raw) > _MAX_MESSAGE_BYTES or not raw.endswith(b"\n"):
         raise PluginRunnerProtocolError("Runner control message is invalid")

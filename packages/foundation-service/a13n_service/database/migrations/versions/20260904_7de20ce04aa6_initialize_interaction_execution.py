@@ -425,7 +425,7 @@ def upgrade() -> None:
             name=op.f("ck_run_attempts_failure_lifecycle_valid"),
         ),
         sa.CheckConstraint(
-            "(status = 'leased' AND harness_run_id IS NULL AND started_at IS NULL) OR (status IN ('running', 'succeeded') AND harness_run_id IS NOT NULL AND started_at IS NOT NULL) OR (status IN ('yielded', 'failed', 'cancelled') AND ((harness_run_id IS NULL AND started_at IS NULL) OR (harness_run_id IS NOT NULL AND started_at IS NOT NULL)))",
+            "(status = 'leased' AND harness_run_id IS NULL AND started_at IS NULL) OR (status IN ('running', 'succeeded') AND harness_run_id IS NOT NULL AND started_at IS NOT NULL) OR (status IN ('yielded', 'failed', 'cancelled') AND ((harness_run_id IS NULL AND started_at IS NULL) OR (harness_run_id IS NOT NULL AND started_at IS NOT NULL))) OR (status = 'succeeded' AND harness_run_id IS NULL AND started_at IS NULL AND replaces_run_attempt_id IS NOT NULL AND attempt_number >= 2)",
             name=op.f("ck_run_attempts_harness_lifecycle_valid"),
         ),
         sa.CheckConstraint(

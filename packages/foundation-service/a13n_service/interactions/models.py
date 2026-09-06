@@ -634,6 +634,8 @@ class RunAttemptRecord(Base):
         CheckConstraint(
             "(status = 'leased' AND harness_run_id IS NULL AND started_at IS NULL) "
             "OR (status IN ('running', 'succeeded') AND harness_run_id IS NOT NULL AND started_at IS NOT NULL) "
+            "OR (status = 'succeeded' AND harness_run_id IS NULL AND started_at IS NULL "
+            "AND replaces_run_attempt_id IS NOT NULL AND attempt_number >= 2) "
             "OR (status IN ('yielded', 'failed', 'cancelled') "
             "AND ((harness_run_id IS NULL AND started_at IS NULL) "
             "OR (harness_run_id IS NOT NULL AND started_at IS NOT NULL)))",

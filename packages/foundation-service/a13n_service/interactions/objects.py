@@ -6,9 +6,10 @@ import hashlib
 from dataclasses import dataclass
 from typing import Literal
 
+from a13n_logging import get_logger
 from pydantic import TypeAdapter
 
-from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectStore
+from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectNotFound, ObjectStore, ObjectStoreUnavailable
 from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
 
 from .domain import RunPayloadObjectRef
@@ -18,6 +19,8 @@ RUN_STATE_CONTENT_TYPE = "application/vnd.converge.run-state+json"
 RUN_PAYLOAD_CONTENT_TYPE = "application/vnd.converge.run-payload+json"
 DEFAULT_MAX_STATE_BYTES = 256 * 1024 * 1024
 DEFAULT_MAX_PAYLOAD_BYTES = 256 * 1024 * 1024
+
+logger = get_logger(__name__)
 
 _STATE_ADAPTER = TypeAdapter(RunStateEnvelope)
 _PAYLOAD_ADAPTER = TypeAdapter(RunPayloadEnvelope)
@@ -41,7 +44,10 @@ class StoredRunState:
     info: ObjectInfo
     digest_sha256: str
     body: bytes
-    writer_fence: int
+
+    @property
+    def writer_fence(self) -> int:
+        return self.envelope.writer_fence
 
 
 class RunStateStore:
@@ -52,25 +58,25 @@ class RunStateStore:
         self._max_state_bytes = max_state_bytes
 
     async def create(self, organization_id: str, envelope: RunStateEnvelope) -> StoredRunState:
-        if envelope.checkpoint_kind != "initial":
-            raise ValueError("Run state creation requires an initial envelope")
+        if envelope.checkpoint_kind != "initial" or envelope.writer_fence != 0:
+            raise ValueError("Run state creation requires an initial envelope with writer fence zero")
         body = canonical_model_bytes(envelope)
         self._require_bounded(body)
         digest = hashlib.sha256(body).hexdigest()
         key = run_state_key(organization_id, envelope.run_id)
         try:
-            info = await self._objects.put(
+            info = await self._put_state(
                 key,
                 body,
-                content_type=RUN_STATE_CONTENT_TYPE,
-                metadata=_state_metadata(envelope, digest, writer_fence=0),
+                envelope=envelope,
+                digest=digest,
                 if_none_match=True,
             )
         except ObjectConflict as error:
             raise StaleStateWriter("Run state already exists") from error
         _verify_info(info, key=key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
         _verify_state_metadata(info, envelope=envelope, digest=digest)
-        return StoredRunState(envelope, info, digest, body, 0)
+        return StoredRunState(envelope, info, digest, body)
 
     async def read(
         self,
@@ -87,12 +93,37 @@ class RunStateStore:
         except DurableObjectCodecError as error:
             raise RunObjectIntegrityError("Run state body is invalid") from error
         digest = hashlib.sha256(body).hexdigest()
-        writer_fence = _verify_state_metadata(info, envelope=envelope, digest=digest)
+        _verify_state_metadata(info, envelope=envelope, digest=digest)
         if envelope.run_id != run_id:
             raise RunObjectIntegrityError("Run state identity does not match its deterministic key")
         if expected_thread_id is not None and envelope.thread_id != expected_thread_id:
             raise RunObjectIntegrityError("Run state Thread identity does not match relational authority")
-        return StoredRunState(envelope, info, digest, body, writer_fence)
+        return StoredRunState(envelope, info, digest, body)
+
+    async def claim_writer(self, state: StoredRunState, *, fence: int) -> StoredRunState:
+        """Fence prior writers without inventing a semantic checkpoint or rewriting its provenance."""
+
+        if fence < 1:
+            raise ValueError("Attempt writer fence must be positive")
+        if fence < state.writer_fence:
+            raise StaleStateWriter("Attempt fence is older than the state writer fence")
+        envelope = state.envelope.model_copy(update={"writer_fence": fence})
+        body = canonical_model_bytes(envelope)
+        self._require_bounded(body)
+        digest = hashlib.sha256(body).hexdigest()
+        try:
+            info = await self._put_state(
+                state.info.key,
+                body,
+                envelope=envelope,
+                digest=digest,
+                if_match=state.info.version,
+            )
+        except ObjectConflict as error:
+            raise StaleStateWriter("Run state changed before writer claim committed") from error
+        _verify_info(info, key=state.info.key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
+        _verify_state_metadata(info, envelope=envelope, digest=digest)
+        return StoredRunState(envelope, info, digest, body)
 
     async def replace(
         self,
@@ -102,30 +133,101 @@ class RunStateStore:
         run_attempt_id: str,
         fence: int,
     ) -> StoredRunState:
-        if fence < state.writer_fence:
-            raise StaleStateWriter("Attempt fence is older than the state writer fence")
+        if fence != state.writer_fence:
+            raise StaleStateWriter("Attempt must claim the current state writer fence before checkpoint publication")
         validate_state_successor(
             state.envelope,
             successor,
             run_attempt_id=run_attempt_id,
             fence=fence,
         )
+        return await self._replace(state, successor)
+
+    async def resume_completed(
+        self,
+        state: StoredRunState,
+        *,
+        run_attempt_id: str,
+        fence: int,
+    ) -> StoredRunState:
+        """Publish only the recovery transition authorized by the Attempt service."""
+
+        previous = state.envelope
+        if (
+            previous.checkpoint_kind != "completed"
+            or fence != state.writer_fence
+            or fence <= previous.last_checkpoint_fence
+            or run_attempt_id == previous.last_checkpoint_run_attempt_id
+        ):
+            raise ValueError("completed recovery requires a claimed replacement Attempt")
+        payload = previous.model_dump(mode="python", by_alias=True)
+        payload.update(
+            checkpoint_kind="progress",
+            checkpoint_seq=previous.checkpoint_seq + 1,
+            last_checkpoint_run_attempt_id=run_attempt_id,
+            last_checkpoint_fence=fence,
+            outcome_candidate=None,
+        )
+        successor = RunStateEnvelope.model_validate(payload)
+        return await self._replace(state, successor)
+
+    async def _replace(self, state: StoredRunState, successor: RunStateEnvelope) -> StoredRunState:
         body = canonical_model_bytes(successor)
         self._require_bounded(body)
         digest = hashlib.sha256(body).hexdigest()
         try:
-            info = await self._objects.put(
+            info = await self._put_state(
                 state.info.key,
                 body,
-                content_type=RUN_STATE_CONTENT_TYPE,
-                metadata=_state_metadata(successor, digest, writer_fence=fence),
+                envelope=successor,
+                digest=digest,
                 if_match=state.info.version,
             )
         except ObjectConflict as error:
             raise StaleStateWriter("Run state changed before the checkpoint committed") from error
         _verify_info(info, key=state.info.key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
         _verify_state_metadata(info, envelope=successor, digest=digest)
-        return StoredRunState(successor, info, digest, body, fence)
+        return StoredRunState(successor, info, digest, body)
+
+    async def _put_state(
+        self,
+        key: str,
+        body: bytes,
+        *,
+        envelope: RunStateEnvelope,
+        digest: str,
+        if_none_match: bool = False,
+        if_match: str | None = None,
+    ) -> ObjectInfo:
+        try:
+            return await self._objects.put(
+                key,
+                body,
+                content_type=RUN_STATE_CONTENT_TYPE,
+                metadata=_state_metadata(envelope, digest),
+                if_none_match=if_none_match,
+                if_match=if_match,
+            )
+        except (ObjectStoreUnavailable, TimeoutError) as error:
+            # A lost response can follow a durable write. Never repeat a mutation
+            # using its old token, or accept another writer's bytes as our receipt.
+            try:
+                observed = await self._objects.stat(key)
+                actual, info = await _read_object(self._objects, key, max_bytes=self._max_state_bytes)
+            except (ObjectNotFound, ObjectStoreUnavailable, TimeoutError) as read_error:
+                raise error from read_error
+            if info.version != observed.version:
+                raise StaleStateWriter("Run state changed during write reconciliation") from error
+            if actual != body:
+                if info.version != if_match:
+                    raise StaleStateWriter("Run state changed after an uncertain write") from error
+                raise error
+            _verify_info(info, key=key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
+            _verify_state_metadata(info, envelope=envelope, digest=digest)
+            logger.info(
+                "run_state_write_reconciled", extra={"run_id": envelope.run_id, "writer_fence": envelope.writer_fence}
+            )
+            return info
 
     def _require_bounded(self, body: bytes) -> None:
         if len(body) > self._max_state_bytes:
@@ -276,37 +378,22 @@ async def _read_object(objects: ObjectStore, key: str, *, max_bytes: int) -> tup
     return body, info
 
 
-def _state_metadata(envelope: RunStateEnvelope, digest: str, *, writer_fence: int) -> dict[str, str]:
+def _state_metadata(envelope: RunStateEnvelope, digest: str) -> dict[str, str]:
     return {
         "schema-version": envelope.schema_version,
         "run-id": envelope.run_id,
         "thread-id": envelope.thread_id,
         "checkpoint-seq": str(envelope.checkpoint_seq),
-        "writer-fence": str(writer_fence),
+        "writer-fence": str(envelope.writer_fence),
         "digest-sha256": digest,
     }
 
 
-def _verify_state_metadata(info: ObjectInfo, *, envelope: RunStateEnvelope, digest: str) -> int:
-    writer_fence = _parse_non_negative_int(info, "writer-fence")
-    if writer_fence != envelope.last_checkpoint_fence:
-        raise RunObjectIntegrityError("Run state writer fence does not match its envelope")
-    expected = _state_metadata(envelope, digest, writer_fence=writer_fence)
+def _verify_state_metadata(info: ObjectInfo, *, envelope: RunStateEnvelope, digest: str) -> None:
+    expected = _state_metadata(envelope, digest)
     for key, value in expected.items():
         if info.metadata.get(key) != value:
             raise RunObjectIntegrityError(f"Run state metadata field {key} is invalid")
-    return writer_fence
-
-
-def _parse_non_negative_int(info: ObjectInfo, key: str) -> int:
-    raw = info.metadata.get(key)
-    try:
-        value = int(raw) if raw is not None else -1
-    except ValueError as error:
-        raise RunObjectIntegrityError(f"Run state metadata field {key} is invalid") from error
-    if value < 0 or str(value) != raw:
-        raise RunObjectIntegrityError(f"Run state metadata field {key} is invalid")
-    return value
 
 
 def _verify_info(info: ObjectInfo, *, key: str, body: bytes, content_type: str) -> None:

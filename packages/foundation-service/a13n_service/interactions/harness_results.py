@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -14,7 +15,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
-from .attempts import AttemptContext
+from .attempts import AttemptContext, AttemptPreparationAccepted
 from .domain import JsonObject, PendingCallKind, PendingCallSummary, RunPendingSummary, RunWaitReason
 from .objects import RunPayloadStore, StoredRunState
 from .state import (
@@ -79,10 +80,22 @@ class RunTerminalReceipt:
 class RunTerminalCommitter(Protocol):
     """Own the final fenced outcome and active-control race transactions."""
 
+    async def prepare_state_outcome(
+        self,
+        authority: AttemptContext,
+        state: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted | None = None,
+    ) -> Callable[[AttemptContext], Awaitable[RunTerminalReceipt]]:
+        """Verify objects and return a database-only commit taking fresh authority."""
+        ...
+
     async def commit_state_outcome(
         self,
         authority: AttemptContext,
         state: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted | None = None,
     ) -> RunTerminalReceipt: ...
 
     async def commit_failure(

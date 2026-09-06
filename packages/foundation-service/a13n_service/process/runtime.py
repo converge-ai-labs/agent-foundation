@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
     from a13n_service.interactions.lifecycle import LifecycleWriter
+    from a13n_service.interactions.worker import WorkerExecutionLoop
     from a13n_service.lifecycle.service import LifecycleEventService
     from a13n_service.models.model_factory import NativeModelFactory
     from a13n_service.models.provider_service import ModelProviderService
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from a13n_service.plugins.on_demand import OnDemandPluginRuntime
     from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
     from a13n_service.plugins.service import PluginService
+    from a13n_service.process.runner_discovery import RunnerDiscoveryLoop
     from a13n_service.run_stream import RedisRunStream, RunReplayStore
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import Settings
@@ -78,6 +80,8 @@ class WorkerRuntime:
     environments: EnvironmentLifecycle
     run_stream: RedisRunStream
     run_replay: RunReplayStore
+    execution_loop: WorkerExecutionLoop | None
+    runner_discovery: RunnerDiscoveryLoop | None = None
 
 
 @dataclass(slots=True)

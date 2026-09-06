@@ -77,6 +77,8 @@ Omitting `mode` selects `on_demand`. Control persists the selected mode as an in
 
 Changing the persisted mode after any Plugin, AgentRevision, or Run exists is not a configuration update. Foundation exposes no mode mutation or migration API. A migration between profiles requires a separately reviewed data migration that translates retained Agent configs into new Revisions, establishes their current selections and the runner active set when applicable, and preserves every retained Run lock.
 
+Control initializes a new runner catalog with an immutable empty Runtime lock for the deployment's Worker release, Harness version, and Runtime target. This permits Agent Revisions with no Plugin selections before the first Activate. Initialization uses the catalog's relational concurrency boundary and applies only to its initial generation when no active lock, active PluginVersion pointer, or in-flight catalog command exists. It creates no Plugin, PluginVersion, or command receipt and does not advance the initial catalog generation. Restart never replaces an existing active lock or repairs inconsistent retained catalog state by selecting an empty lock. Workers reconstruct this lock through the ordinary gated Runner startup; the Supervisor does not execute empty-lock Runs itself.
+
 ## Agent Selection and Revision Locking
 
 `AgentConfig.plugins` and the corresponding typed Run override use the following conceptual selection contract:

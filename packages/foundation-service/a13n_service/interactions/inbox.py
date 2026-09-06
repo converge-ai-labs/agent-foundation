@@ -20,7 +20,7 @@ from .attempts import (
     AttemptContext,
     AttemptMutationReceipt,
     lock_attempt_authority,
-    read_attempt_authority,
+    read_attempt_lease,
 )
 from .control_domain import (
     SteerReceipt,
@@ -44,6 +44,10 @@ logger = logging.getLogger("a13n_service.interactions.inbox")
 
 class InboxPayloadMaterializer(Protocol):
     async def __call__(self, entry: ThreadInboxEntry) -> RunInputValue: ...
+
+
+class InboxInputNotReady(Exception):
+    """The Harness Environment has not entered yet; keep this ordered inbox prefix pending."""
 
 
 class ThreadControlSignalPublisher(Protocol):
@@ -228,7 +232,7 @@ class DatabaseThreadInboxReconciler:
     ) -> Sequence[AdaptedThreadInboxEntry]:
         now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
-            run, _, _ = await read_attempt_authority(database, authority, now)
+            run, _, _ = await read_attempt_lease(database, authority, now)
             pending = tuple(
                 (
                     await database.scalars(
@@ -247,7 +251,10 @@ class DatabaseThreadInboxReconciler:
 
         adapted: list[AdaptedThreadInboxEntry] = []
         for entry in entries:
-            value = await self._materialize(entry)
+            try:
+                value = await self._materialize(entry)
+            except InboxInputNotReady:
+                break
             adapted.append(
                 AdaptedThreadInboxEntry(
                     delivery_sequence=entry.delivery_sequence,

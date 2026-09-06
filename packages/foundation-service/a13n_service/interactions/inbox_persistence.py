@@ -25,6 +25,10 @@ class ThreadInboxCapacityExceeded(ThreadInboxConflict):
     """The shared pending count or byte budget cannot admit an entry."""
 
 
+class RunCompletionBlocked(ThreadInboxConflict):
+    """Eligible pending delivery prevents sealing a completed candidate."""
+
+
 async def lock_inbox_related_runs(
     database: AsyncSession,
     *,
@@ -261,6 +265,10 @@ async def apply_run_outcome(
 ) -> None:
     """Apply the inbox half of a Run seal under already-held Thread/Run locks."""
 
+    if outcome == "completed":
+        if await has_pending_run_delivery(database, run=run, state=state, now=now):
+            raise RunCompletionBlocked("completed Run still has eligible pending inbox delivery")
+        return
     if state is not None:
         await reconcile_checkpoint(database, run=run, state=state, now=now)
     rows = await _lock_pending_scope(
@@ -278,16 +286,30 @@ async def apply_run_outcome(
         terminal_origin_run_id=run.id if outcome in {"failed", "cancelled"} else None,
     )
     remaining = tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
-    if outcome == "completed":
-        if remaining:
-            raise ThreadInboxConflict("completed Run still has eligible pending inbox delivery")
-        return
     if outcome == "waiting":
         for row in remaining:
             row.target_run_id = None
             row.source_waiting_run_id = run.id
         return
     await _finalize_rows(database, remaining, fallback=ThreadInboxStatus.superseded, now=now)
+
+
+async def has_pending_run_delivery(
+    database: AsyncSession,
+    *,
+    run: RunRecord,
+    state: StoredRunState | None,
+    now: datetime,
+) -> bool:
+    """Reconcile receipts and test delivery under canonical Thread/Run/origin locks."""
+
+    if state is not None:
+        await reconcile_checkpoint(database, run=run, state=state, now=now)
+    rows = await _lock_pending_scope(
+        database, organization_id=run.organization_id, thread_id=run.thread_id, target_run_id=run.id
+    )
+    await suppress_failed_inbox_origins(database, organization_id=run.organization_id, rows=rows, now=now)
+    return any(row.status == ThreadInboxStatus.pending.value for row in rows)
 
 
 async def _lock_pending_scope(

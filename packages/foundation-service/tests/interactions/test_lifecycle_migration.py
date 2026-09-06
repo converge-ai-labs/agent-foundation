@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import pytest
 from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import DBAPIError
 
 
 def _assert_lifecycle_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
@@ -65,3 +67,40 @@ def test_lifecycle_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None
 
 def test_lifecycle_schema_migrates_up_and_down_on_postgresql(pg_url: str) -> None:
     _exercise_migration(PostgreSQLConfig(url=pg_url))
+
+
+def test_postgresql_fact_guard_allows_projection_but_preserves_json(pg_url: str) -> None:
+    config = PostgreSQLConfig(url=pg_url)
+    migrator = DatabaseMigrator(config)
+    migrator.upgrade()
+    engine = create_engine(sync_database_url(config))
+    try:
+        with engine.begin() as connection:
+            # Exercise the installed function with the real column types while
+            # keeping this migration test independent of Run creation fixtures.
+            connection.execute(
+                text("CREATE TEMP TABLE lifecycle_guard_probe AS SELECT * FROM lifecycle_events WITH NO DATA")
+            )
+            connection.execute(
+                text(
+                    "CREATE TRIGGER lifecycle_guard_probe BEFORE UPDATE ON lifecycle_guard_probe "
+                    "FOR EACH ROW EXECUTE FUNCTION reject_lifecycle_fact_update()"
+                )
+            )
+            connection.execute(
+                text("INSERT INTO lifecycle_guard_probe (payload, projection_attempts) VALUES ('{\"key\": 1}', 0)")
+            )
+            connection.execute(text("UPDATE lifecycle_guard_probe SET projection_attempts = 1"))
+            connection.execute(text("UPDATE lifecycle_guard_probe SET payload = payload"))
+            assert connection.scalar(text("SELECT projection_attempts FROM lifecycle_guard_probe")) == 1
+            for mutation in (
+                "payload = '{\"key\": 2}'",
+                "payload = '{\"key\":1}'",
+                "actor_id = 'actor-changed'",
+            ):
+                with pytest.raises(DBAPIError, match="lifecycle fact columns are immutable"), connection.begin_nested():
+                    connection.exec_driver_sql(f"UPDATE lifecycle_guard_probe SET {mutation}")
+            assert connection.scalar(text("SELECT payload::text FROM lifecycle_guard_probe")) == '{"key": 1}'
+    finally:
+        engine.dispose()
+        migrator.downgrade("base")

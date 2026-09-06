@@ -116,6 +116,7 @@ A tool call and its result become recoverable only through a complete Run state 
 stateDiagram-v2
     [*] --> leased: Run claimed and fenced
     leased --> running: Harness Run entered
+    leased --> succeeded: prior outcome adopted after preparation and writer claim
     leased --> yielded: initial state retained and authority released
     leased --> failed: preparation failure or expired lease replaced
     leased --> cancelled
@@ -136,6 +137,10 @@ Loss of outcome certainty at the attempt boundary means that the whole attempt c
 `leased` is the pre-Run preparation state. Worker claim acknowledgement is a transport observation, not another durable phase. While an attempt is `leased`, `harness_run_id` and `started_at` are null. The executor may read and validate state and immutable artifacts, resolve current authority and credentials, and construct fresh run-local dependencies outside database transactions. It cannot dispatch an Agent model or tool call before Harness entry. Entering the Harness Run atomically records `harness_run_id` and `started_at` and changes the attempt to `running`.
 
 A `leased` Attempt can yield before Harness entry by retaining the already complete initial or imported Run state. A `running` Attempt can yield only after the [Run state contract](12-run-persistence.md#checkpoint-triggers-and-refresh) confirms a complete safe boundary and the local Harness execution is fenced from further model, tool, or child dispatch. A yielded Attempt has a `yield_reason`, has no `failure`, and has `harness_run_id` and `started_at` exactly when it had entered Harness before yielding.
+
+A replacement `leased` Attempt can also succeed without Harness entry by adopting a predecessor's complete waiting or completed candidate under the [Run outcome contract](12-run-persistence.md#resume-semantics). This path requires the matching successful preparation decision, the current writer claim, and the usual relational outcome checks. It preserves null `harness_run_id` and `started_at`, the original checkpoint provenance, and the replacement Attempt's own terminal attribution; it never invents a Harness Run to satisfy lifecycle validation.
+
+If eligible pending Thread-inbox delivery blocks an unsealed completed candidate, the replacement instead follows that contract's fenced transition back to progress before entering its one Harness Run. This does not allocate another Run, restore the failed producer's authority, or reset recovery usage or budgets. If new delivery races adoption, that Attempt records retryable failure and the usual successor budget applies again.
 
 ## `run_attempts` Relational Schema
 
@@ -303,12 +308,12 @@ sequenceDiagram
         New->>DB: Commit fenced preparation decision for Attempt N+1
         alt Preparation permits continuation
             DB-->>New: Confirm current lease, fence, and relational versions
+            New->>Objects: Conditionally claim the current object version for fence N+1
+            Objects-->>New: Confirm the replacement writer fence and object version
             alt State contains a valid waiting or completed outcome candidate
                 New->>DB: Commit the prepared Run outcome idempotently
                 DB-->>New: Seal the Run and terminalize Attempt N+1
             else State requires Harness execution
-                New->>Objects: Conditionally claim the current object version for fence N+1
-                Objects-->>New: Confirm the replacement writer fence and object version
                 alt input_disposition is pending
                     New->>Harness: Enter with accepted input and previous_state
                 else input_disposition is applied

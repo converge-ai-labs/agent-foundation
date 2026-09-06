@@ -58,6 +58,7 @@ def _completed_parent():
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
         harness=harness,
+        writer_fence=1,
         outcome_candidate=CompletedOutcomeCandidate(output="done"),
     )
     return type(initial).model_validate(payload)
@@ -81,6 +82,7 @@ def _waiting_parent():
         input_disposition="applied",
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
+        writer_fence=1,
         host=HostContinuationState(
             deferred=DeferredContinuationState(
                 requests={

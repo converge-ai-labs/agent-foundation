@@ -21,10 +21,10 @@ from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
-from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
+from .domain import RecoveryUsage, Run, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .lifecycle import LifecycleWriter
-from .models import RunAttemptRecord, RunRecord, ThreadRecord
+from .models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from .records import run_attempt_record
 
 
@@ -56,6 +56,8 @@ class ClaimedAttempt:
     thread_id: str
     run_version: int
     lease_token: str = field(repr=False)
+    run: Run
+    workspace_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +66,25 @@ class SealedClaim:
 
 
 type ClaimResult = ClaimedAttempt | SealedClaim | None
+
+
+@dataclass(frozen=True, slots=True)
+class ScanPosition:
+    available_at: datetime
+    priority: int
+    created_at: datetime
+    run_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RunCandidate:
+    """Detached scheduling metadata; preflight and claim still establish eligibility."""
+
+    organization_id: str
+    run_id: str
+    runtime_lock_digest: str
+    queue_name: str
+    position: ScanPosition
 
 
 class AttemptScheduler:
@@ -87,22 +108,47 @@ class AttemptScheduler:
     async def scan(self, claim: WorkerClaim, *, queue_name: str, limit: int = 32) -> Sequence[str]:
         """Return a bounded deterministic superset of claimable Run identities."""
 
-        if limit < 1 or limit > 1024:
-            raise ValueError("scan limit must be between 1 and 1024")
         if claim.draining:
             return ()
+        candidates = await self.discover(
+            worker_build_id=claim.worker_build_id,
+            handoff_preference_window=claim.handoff_preference_window,
+            organization_id=claim.organization_id,
+            runtime_lock_digest=claim.runtime_lock_digest,
+            queue_names=(queue_name,),
+            limit=limit,
+        )
+        return tuple(candidate.run_id for candidate in candidates)
+
+    async def discover(
+        self,
+        *,
+        worker_build_id: str,
+        handoff_preference_window: timedelta,
+        limit: int = 32,
+        after: ScanPosition | None = None,
+        organization_id: str | None = None,
+        runtime_lock_digest: str | None = None,
+        queue_names: tuple[str, ...] = (),
+    ) -> tuple[RunCandidate, ...]:
+        """Discover work across organizations without unbounded organization or Runtime-lock scans."""
+
+        if limit < 1 or limit > 1024:
+            raise ValueError("scan limit must be between 1 and 1024")
+        if handoff_preference_window <= timedelta(0):
+            raise ValueError("handoff_preference_window must be positive")
         now = assume_utc(self._clock())
         predecessor = aliased(RunAttemptRecord)
         same_build_service_drain_ready = and_(
             predecessor.yield_reason == "service_drain",
-            predecessor.worker_build_id == claim.worker_build_id,
-            predecessor.finished_at <= now - claim.handoff_preference_window,
+            predecessor.worker_build_id == worker_build_id,
+            predecessor.finished_at <= now - handoff_preference_window,
         )
         yielded_ready = and_(
             predecessor.status == RunAttemptStatus.yielded.value,
             or_(
                 predecessor.yield_reason == "runner_rotation",
-                predecessor.worker_build_id != claim.worker_build_id,
+                predecessor.worker_build_id != worker_build_id,
                 same_build_service_drain_ready,
             ),
         )
@@ -126,7 +172,15 @@ class AttemptScheduler:
             ),
         )
         statement = (
-            select(RunRecord.id)
+            select(
+                RunRecord.organization_id,
+                RunRecord.id,
+                RunRecord.runtime_lock_digest,
+                RunRecord.queue_name,
+                RunRecord.available_at,
+                RunRecord.priority,
+                RunRecord.created_at,
+            )
             .outerjoin(EnvironmentRecord, EnvironmentRecord.id == RunRecord.environment_id)
             .outerjoin(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
             .outerjoin(
@@ -138,10 +192,7 @@ class AttemptScheduler:
                 ),
             )
             .where(
-                RunRecord.organization_id == claim.organization_id,
                 local_backend_eligible(),
-                RunRecord.queue_name == queue_name,
-                RunRecord.runtime_lock_digest == claim.runtime_lock_digest,
                 eligible,
             )
             .order_by(
@@ -152,8 +203,45 @@ class AttemptScheduler:
             )
             .limit(limit)
         )
+        if organization_id is not None:
+            statement = statement.where(RunRecord.organization_id == organization_id)
+        if runtime_lock_digest is not None:
+            statement = statement.where(RunRecord.runtime_lock_digest == runtime_lock_digest)
+        if queue_names:
+            statement = statement.where(RunRecord.queue_name.in_(queue_names))
+        if after is not None:
+            same_time = RunRecord.available_at == after.available_at
+            same_priority = RunRecord.priority == after.priority
+            statement = statement.where(
+                or_(
+                    RunRecord.available_at > after.available_at,
+                    and_(same_time, RunRecord.priority < after.priority),
+                    and_(same_time, same_priority, RunRecord.created_at > after.created_at),
+                    and_(
+                        same_time,
+                        same_priority,
+                        RunRecord.created_at == after.created_at,
+                        RunRecord.id > after.run_id,
+                    ),
+                )
+            )
         async with short_session(self._sessions) as database:
-            return tuple((await database.scalars(statement)).all())
+            rows = (await database.execute(statement)).all()
+            return tuple(
+                RunCandidate(
+                    organization_id=row.organization_id,
+                    run_id=row.id,
+                    runtime_lock_digest=row.runtime_lock_digest,
+                    queue_name=row.queue_name,
+                    position=ScanPosition(
+                        available_at=assume_utc(row.available_at),
+                        priority=row.priority,
+                        created_at=assume_utc(row.created_at),
+                        run_id=row.id,
+                    ),
+                )
+                for row in rows
+            )
 
     async def claim(self, run_id: str, claim: WorkerClaim) -> ClaimResult:
         """Try one exact claim or takeover; a changed candidate returns an empty result."""
@@ -314,11 +402,21 @@ class AttemptScheduler:
                     mutation_id=mutation_id,
                     occurred_at=now,
                 )
+            workspace_id = await database.scalar(
+                select(SessionRecord.workspace_id).where(
+                    SessionRecord.organization_id == run.organization_id,
+                    SessionRecord.id == run.session_id,
+                )
+            )
+            if workspace_id is None:
+                raise ValueError("Claimed Run has no owning Session")
             return ClaimedAttempt(
                 attempt=attempt,
                 thread_id=run.thread_id,
                 run_version=run.version,
                 lease_token=token,
+                run=run.to_resource(),
+                workspace_id=workspace_id,
             )
 
     async def _lock_predecessor(
@@ -416,6 +514,8 @@ __all__ = [
     "AttemptSchedulingError",
     "ClaimResult",
     "ClaimedAttempt",
+    "RunCandidate",
+    "ScanPosition",
     "SealedClaim",
     "WorkerClaim",
 ]

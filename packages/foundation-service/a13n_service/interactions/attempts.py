@@ -18,10 +18,10 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
-from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
+from .inbox_persistence import apply_run_outcome, has_pending_run_delivery, lock_inbox_related_runs
 from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
-from .objects import RunStateStore, StoredRunState
+from .objects import RunStateStore, StoredRunState, run_state_key
 from .state import RunStateEnvelope
 
 
@@ -31,6 +31,18 @@ class AttemptAuthorityError(RuntimeError):
 
 class AttemptMutationError(RuntimeError):
     """The requested mutation is incompatible with the current Attempt lifecycle."""
+
+
+class AttemptPreparationError(RuntimeError):
+    """A classified pre-Harness failure safe to persist on the claimed Attempt."""
+
+    def __init__(self, failure: SafeFailure, *, retryable: bool, retry_after: timedelta = timedelta(seconds=1)) -> None:
+        if retry_after <= timedelta(0):
+            raise ValueError("Preparation retry backoff must be positive")
+        super().__init__(failure.code)
+        self.failure = failure
+        self.retryable = retryable
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +67,7 @@ class AttemptContext:
     renewal_timeout: timedelta
     reconciliation_timeout: timedelta
     cleanup_timeout: timedelta
+    preparation_timeout: timedelta = timedelta(seconds=120)
 
     def __post_init__(self) -> None:
         if self.fence < 1 or self.expected_run_version < 1 or self.expected_attempt_version < 1:
@@ -69,6 +82,8 @@ class AttemptContext:
             raise ValueError("Attempt reconciliation timeout must be positive")
         if self.cleanup_timeout <= timedelta(0):
             raise ValueError("Attempt cleanup timeout must be positive")
+        if self.preparation_timeout <= timedelta(0):
+            raise ValueError("Attempt preparation timeout must be positive")
         object.__setattr__(self, "lease_expires_at", assume_utc(self.lease_expires_at))
 
 
@@ -77,6 +92,7 @@ class AttemptMutationReceipt:
     run_version: int
     attempt_version: int
     lease_expires_at: datetime
+    thread_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +134,18 @@ class AttemptExecutionService:
         async with short_session(self._sessions) as database:
             run, attempt, _ = await read_attempt_authority(database, authority, now)
             return _receipt(run, attempt)
+
+    async def reconcile_authority(self, authority: AttemptContext) -> AttemptMutationReceipt:
+        """Refresh CAS versions only after proving the same selected, live lease."""
+
+        async with short_session(self._sessions) as database:
+            run, attempt, _ = await read_attempt_lease(database, authority, assume_utc(self._clock()))
+            return _receipt(run, attempt)
+
+    async def can_handoff(self, authority: AttemptContext) -> bool:
+        async with short_session(self._sessions) as database:
+            run, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
+            return run.handoffs_completed < run.max_handoffs
 
     async def heartbeat(
         self,
@@ -253,15 +281,79 @@ class AttemptExecutionService:
     ) -> StoredRunState:
         """Validate relational authority, then replace state outside the DB session."""
 
+        _require_state_scope(authority, current)
         now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
             await read_attempt_authority(database, authority, now)
-        return await states.replace(
+        if current.writer_fence != authority.fence:
+            current = await self.claim_state_writer(authority, states, current)
+        published = await states.replace(
             current,
             successor,
             run_attempt_id=authority.run_attempt_id,
             fence=authority.fence,
         )
+        await self.reconcile_authority(authority)
+        return published
+
+    async def claim_state_writer(
+        self,
+        authority: AttemptContext,
+        states: RunStateStore,
+        current: StoredRunState,
+    ) -> StoredRunState:
+        """Verify the exact lease before taking object ownership outside the session."""
+
+        _require_state_scope(authority, current)
+        await self.validate(authority)
+        claimed = await states.claim_writer(current, fence=authority.fence)
+        await self.reconcile_authority(authority)
+        return claimed
+
+    async def resume_completed_candidate(
+        self,
+        authority: AttemptContext,
+        states: RunStateStore,
+        current: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted,
+    ) -> StoredRunState:
+        """Reopen only a predecessor's unsealed completion blocked by pending delivery."""
+
+        pending = await self.completed_candidate_needs_resume(authority, current, preparation=preparation)
+        if not pending:
+            return current
+        resumed = await states.resume_completed(current, run_attempt_id=authority.run_attempt_id, fence=authority.fence)
+        await self.reconcile_authority(authority)
+        return resumed
+
+    async def completed_candidate_needs_resume(
+        self,
+        authority: AttemptContext,
+        current: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted,
+    ) -> bool:
+        """Authorize recovery in a short transaction, without publishing an object."""
+
+        _require_state_scope(authority, current)
+        if (
+            current.envelope.checkpoint_kind != "completed"
+            or current.writer_fence != authority.fence
+            or current.envelope.last_checkpoint_fence >= authority.fence
+            or current.envelope.last_checkpoint_run_attempt_id == authority.run_attempt_id
+            or preparation.run_attempt_id != authority.run_attempt_id
+            or preparation.fence != authority.fence
+            or preparation.mutation.run_version != authority.expected_run_version
+            or preparation.mutation.attempt_version > authority.expected_attempt_version
+        ):
+            raise AttemptMutationError("completed recovery requires a prepared, claimed replacement Attempt")
+        now = assume_utc(self._clock())
+        async with transaction(self._sessions) as database:
+            run, attempt, _ = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
+            if attempt.status != RunAttemptStatus.leased.value or attempt.harness_run_id is not None:
+                raise AttemptMutationError("completed recovery must precede the replacement's Harness entry")
+            return await has_pending_run_delivery(database, run=run, state=current, now=now)
 
     async def fail(
         self,
@@ -313,7 +405,9 @@ class AttemptExecutionService:
                     actor_type="worker",
                     actor_id=attempt.worker_id,
                 )
-            return _receipt(run, attempt)
+            return _receipt(
+                run, attempt, thread_version=thread.version if run.status == RunStatus.failed.value else None
+            )
 
     async def yield_attempt(
         self,
@@ -341,6 +435,15 @@ class AttemptExecutionService:
                 occurred_at=now,
             )
             return _receipt(run, attempt)
+
+
+def _require_state_scope(authority: AttemptContext, state: StoredRunState) -> None:
+    if (
+        state.envelope.run_id != authority.run_id
+        or state.envelope.thread_id != authority.thread_id
+        or state.info.key != run_state_key(authority.organization_id, authority.run_id)
+    ):
+        raise AttemptMutationError("Run state does not belong to the claimed Attempt")
 
 
 async def lock_attempt_authority(
@@ -412,6 +515,18 @@ async def read_attempt_authority(
     authority: AttemptContext,
     now: datetime,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
+    records = await read_attempt_lease(database, authority, now)
+    _validate_versions(records[0], records[1], authority)
+    return records
+
+
+async def read_attempt_lease(
+    database: AsyncSession,
+    authority: AttemptContext,
+    now: datetime,
+) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
+    """Validate read authority without treating a concurrent heartbeat as lease loss."""
+
     result = await database.execute(
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
@@ -431,7 +546,6 @@ async def read_attempt_authority(
         raise AttemptAuthorityError("Attempt authority was not found")
     run, attempt, thread = row
     _validate_lease(run, attempt, thread, authority, now)
-    _validate_versions(run, attempt, authority)
     return run, attempt, thread
 
 
@@ -497,11 +611,12 @@ def _active_budget_failure(
     return None
 
 
-def _receipt(run: RunRecord, attempt: RunAttemptRecord) -> AttemptMutationReceipt:
+def _receipt(run: RunRecord, attempt: RunAttemptRecord, *, thread_version: int | None = None) -> AttemptMutationReceipt:
     return AttemptMutationReceipt(
         run_version=run.version,
         attempt_version=attempt.version,
         lease_expires_at=assume_utc(attempt.lease_expires_at),
+        thread_version=thread_version,
     )
 
 
@@ -516,6 +631,7 @@ __all__ = [
     "AttemptMutationError",
     "AttemptMutationReceipt",
     "AttemptPreparationAccepted",
+    "AttemptPreparationError",
     "AttemptPreparationRejected",
     "AttemptPreparationResult",
 ]
