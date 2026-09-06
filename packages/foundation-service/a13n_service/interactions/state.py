@@ -100,7 +100,7 @@ RunStateOutcomeCandidate = Annotated[
 
 
 class RunStateEnvelope(StrictModel):
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["1", "2"] = "2"
     run_id: ObjectId
     thread_id: ThreadId
     checkpoint_seq: int = Field(ge=0)
@@ -117,6 +117,15 @@ class RunStateEnvelope(StrictModel):
     harness: HarnessState
     host: HostContinuationState = Field(default_factory=HostContinuationState)
     outcome_candidate: RunStateOutcomeCandidate | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_previous_format(cls, value: object) -> object:
+        # Schema 1 recorded only checkpoint provenance. Its original bytes remain
+        # the digest authority; a live writer upgrades them only through CAS.
+        if isinstance(value, dict) and value.get("schema_version") == "1" and "writer_fence" not in value:
+            return {**value, "writer_fence": value.get("last_checkpoint_fence", 0)}
+        return value
 
     @model_validator(mode="after")
     def checkpoint_is_coherent(self) -> RunStateEnvelope:

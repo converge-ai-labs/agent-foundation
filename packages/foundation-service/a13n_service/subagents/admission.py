@@ -136,11 +136,7 @@ class ProfileChildRunAdmissionPreparer:
             )
         profile = self._profile(plan)
         parent, parent_state = await self._parent(authority)
-        source_state = await self._states.read(
-            source.run.organization_id,
-            source.run.id,
-            expected_thread_id=source.thread.id,
-        )
+        source_state = await self._states.read_run(source.run)
         return prepare_child_resume(
             parent_run=parent,
             parent_state=parent_state,
@@ -187,11 +183,7 @@ class ProfileChildRunAdmissionPreparer:
         async with short_session(self._sessions) as database:
             parent, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             parent_resource = parent.to_resource()
-        stored = await self._states.read(
-            authority.organization_id,
-            authority.run_id,
-            expected_thread_id=authority.thread_id,
-        )
+        stored = await self._states.read_run(parent_resource)
         return parent_resource, stored.envelope
 
 

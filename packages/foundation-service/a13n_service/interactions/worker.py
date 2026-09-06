@@ -9,6 +9,8 @@ from typing import Protocol
 from a13n_logging import get_logger
 from anyio import Event, create_task_group, move_on_after
 
+from a13n_service.storage.relational import limit_session_cleanup
+
 from .attempt_executor import CapacitySlot
 from .attempts import AttemptAuthorityError
 from .domain import RunAttemptYieldReason
@@ -86,6 +88,7 @@ class WorkerExecutionLoop:
         concurrency: int = 8,
         scan_limit: int = 32,
         poll_interval_seconds: float = 0.5,
+        cleanup_timeout_seconds: float = 5,
         queue_names: tuple[str, ...] = (),
         runtime_lock_digest: str | None = None,
         claim_gated: bool = False,
@@ -94,6 +97,8 @@ class WorkerExecutionLoop:
             raise ValueError("Worker capacity and scan limit must be between 1 and 1024")
         if poll_interval_seconds <= 0:
             raise ValueError("Worker poll interval must be positive")
+        if cleanup_timeout_seconds <= 0:
+            raise ValueError("Worker cleanup timeout must be positive")
         if lease_duration <= timedelta(0) or handoff_preference_window <= timedelta(0):
             raise ValueError("Worker lease and handoff preference durations must be positive")
         self._scheduler = scheduler
@@ -104,6 +109,7 @@ class WorkerExecutionLoop:
         self._capacity = _Capacity(concurrency)
         self._scan_limit = scan_limit
         self._poll_interval_seconds = poll_interval_seconds
+        self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._queue_names = queue_names
         self._runtime_lock_digest = runtime_lock_digest
         self._claims_enabled = not claim_gated
@@ -149,58 +155,59 @@ class WorkerExecutionLoop:
         if self._used:
             raise RuntimeError("A Worker execution loop cannot be restarted")
         self._used = True
-        try:
-            async with create_task_group() as tasks:
-                self._started.set()
-                while not self.is_draining():
-                    if self._claims_enabled and self._capacity.used < self._capacity.limit:
-                        candidates = await self._scheduler.discover(
-                            worker_build_id=self._identity.build_id,
-                            handoff_preference_window=self._handoff_preference_window,
-                            limit=self._scan_limit,
-                            after=self._position,
-                            queue_names=self._queue_names,
-                            runtime_lock_digest=self._runtime_lock_digest,
-                        )
-                        for candidate in candidates:
-                            if self.is_draining() or self._capacity.used >= self._capacity.limit:
-                                break
-                            self._position = candidate.position
-                            launcher = await self._preflight.prepare(candidate)
-                            if launcher is None or self.is_draining():
-                                continue
-                            slot = self._capacity.reserve()
-                            if slot is None:
-                                break
-                            transferred = False
-                            try:
-                                claimed = await self._scheduler.claim(
-                                    candidate.run_id,
-                                    WorkerClaim(
-                                        organization_id=candidate.organization_id,
-                                        worker_id=self._identity.worker_id,
-                                        worker_generation=self._identity.generation,
-                                        worker_build_id=self._identity.build_id,
-                                        runtime_lock_digest=candidate.runtime_lock_digest,
-                                        lease_duration=self._lease_duration,
-                                        handoff_preference_window=self._handoff_preference_window,
-                                    ),
-                                )
-                                if isinstance(claimed, ClaimedAttempt):
-                                    attempt = launcher.create(claimed, slot)
-                                    self._active[claimed.attempt.id] = attempt
-                                    tasks.start_soon(self._execute, claimed, attempt, slot)
-                                    transferred = True
-                            finally:
-                                if not transferred:
-                                    slot.release()
-                        if len(candidates) < self._scan_limit:
-                            self._position = None
-                    with move_on_after(self._poll_interval_seconds):
-                        await self._draining.wait()
-                # The process owner bounds drain. Task-group exit keeps renewal alive meanwhile.
-        finally:
-            self._stopped.set()
+        with limit_session_cleanup(self._cleanup_timeout_seconds):
+            try:
+                async with create_task_group() as tasks:
+                    self._started.set()
+                    while not self.is_draining():
+                        if self._claims_enabled and self._capacity.used < self._capacity.limit:
+                            candidates = await self._scheduler.discover(
+                                worker_build_id=self._identity.build_id,
+                                handoff_preference_window=self._handoff_preference_window,
+                                limit=self._scan_limit,
+                                after=self._position,
+                                queue_names=self._queue_names,
+                                runtime_lock_digest=self._runtime_lock_digest,
+                            )
+                            for candidate in candidates:
+                                if self.is_draining() or self._capacity.used >= self._capacity.limit:
+                                    break
+                                self._position = candidate.position
+                                launcher = await self._preflight.prepare(candidate)
+                                if launcher is None or self.is_draining():
+                                    continue
+                                slot = self._capacity.reserve()
+                                if slot is None:
+                                    break
+                                transferred = False
+                                try:
+                                    claimed = await self._scheduler.claim(
+                                        candidate.run_id,
+                                        WorkerClaim(
+                                            organization_id=candidate.organization_id,
+                                            worker_id=self._identity.worker_id,
+                                            worker_generation=self._identity.generation,
+                                            worker_build_id=self._identity.build_id,
+                                            runtime_lock_digest=candidate.runtime_lock_digest,
+                                            lease_duration=self._lease_duration,
+                                            handoff_preference_window=self._handoff_preference_window,
+                                        ),
+                                    )
+                                    if isinstance(claimed, ClaimedAttempt):
+                                        attempt = launcher.create(claimed, slot)
+                                        self._active[claimed.attempt.id] = attempt
+                                        tasks.start_soon(self._execute, claimed, attempt, slot)
+                                        transferred = True
+                                finally:
+                                    if not transferred:
+                                        slot.release()
+                            if len(candidates) < self._scan_limit:
+                                self._position = None
+                        with move_on_after(self._poll_interval_seconds):
+                            await self._draining.wait()
+                    # The process owner bounds drain. Task-group exit keeps renewal alive meanwhile.
+            finally:
+                self._stopped.set()
 
     async def _execute(self, claimed: ClaimedAttempt, attempt: ManagedAttempt, slot: _Slot) -> None:
         try:

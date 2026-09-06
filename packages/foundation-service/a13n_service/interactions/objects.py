@@ -9,10 +9,11 @@ from typing import Literal
 from a13n_logging import get_logger
 from pydantic import TypeAdapter
 
+from a13n_service.agents.domain import canonical_digest
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectNotFound, ObjectStore, ObjectStoreUnavailable
 from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
 
-from .domain import RunPayloadObjectRef
+from .domain import Run, RunPayloadObjectRef, RunStatus
 from .state import RunPayloadEnvelope, RunStateEnvelope, validate_state_successor
 
 RUN_STATE_CONTENT_TYPE = "application/vnd.converge.run-state+json"
@@ -58,7 +59,7 @@ class RunStateStore:
         self._max_state_bytes = max_state_bytes
 
     async def create(self, organization_id: str, envelope: RunStateEnvelope) -> StoredRunState:
-        if envelope.checkpoint_kind != "initial" or envelope.writer_fence != 0:
+        if envelope.schema_version != "2" or envelope.checkpoint_kind != "initial" or envelope.writer_fence != 0:
             raise ValueError("Run state creation requires an initial envelope with writer fence zero")
         body = canonical_model_bytes(envelope)
         self._require_bounded(body)
@@ -77,6 +78,13 @@ class RunStateStore:
         _verify_info(info, key=key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
         _verify_state_metadata(info, envelope=envelope, digest=digest)
         return StoredRunState(envelope, info, digest, body)
+
+    async def read_run(self, run: Run) -> StoredRunState:
+        """Read exact Run-owned bytes and verify any relationally selected seal."""
+
+        state = await self.read(run.organization_id, run.id, expected_thread_id=run.thread_id)
+        validate_run_state_reference(run, state)
+        return state
 
     async def read(
         self,
@@ -107,7 +115,7 @@ class RunStateStore:
             raise ValueError("Attempt writer fence must be positive")
         if fence < state.writer_fence:
             raise StaleStateWriter("Attempt fence is older than the state writer fence")
-        envelope = state.envelope.model_copy(update={"writer_fence": fence})
+        envelope = state.envelope.model_copy(update={"schema_version": "2", "writer_fence": fence})
         body = canonical_model_bytes(envelope)
         self._require_bounded(body)
         digest = hashlib.sha256(body).hexdigest()
@@ -378,6 +386,38 @@ async def _read_object(objects: ObjectStore, key: str, *, max_bytes: int) -> tup
     return body, info
 
 
+def validate_run_state_reference(run: Run, state: StoredRunState) -> None:
+    """Verify detached state against its relational owner and immutable seal."""
+
+    envelope = state.envelope
+    if (
+        state.info.key != run_state_key(run.organization_id, run.id)
+        or envelope.run_id != run.id
+        or envelope.thread_id != run.thread_id
+        or envelope.agent_id != run.agent_id
+        or envelope.agent_revision_id != run.agent_revision_id
+        or envelope.runtime_lock_digest != run.runtime_lock_digest
+        or envelope.effective_agent_config.content_digest != run.effective_agent_config_digest
+        or canonical_digest(
+            envelope.effective_agent_config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
+        )
+        != run.effective_agent_config_digest
+        or envelope.effective_agent_config.resolved_model.execution.observation() != run.model_execution_observation
+    ):
+        raise RunObjectIntegrityError("Run state does not match its accepted execution selection")
+    seal = run.sealed_state
+    if seal is not None and (
+        state.digest_sha256 != seal.digest_sha256
+        or state.info.size != seal.size_bytes
+        or state.info.content_type != seal.content_type
+        or envelope.schema_version != seal.envelope_schema_version
+        or envelope.harness_schema_version != seal.harness_schema_version
+        or envelope.checkpoint_seq != seal.checkpoint_seq
+        or (run.status in {RunStatus.waiting, RunStatus.completed} and envelope.checkpoint_kind != run.status.value)
+    ):
+        raise RunObjectIntegrityError("Run state does not match the relationally selected sealed state")
+
+
 def _state_metadata(envelope: RunStateEnvelope, digest: str) -> dict[str, str]:
     return {
         "schema-version": envelope.schema_version,
@@ -413,4 +453,5 @@ __all__ = [
     "run_payload_key",
     "run_state_key",
     "validate_run_payload_reference",
+    "validate_run_state_reference",
 ]

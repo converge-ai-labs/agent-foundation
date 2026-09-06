@@ -5,7 +5,7 @@ import hashlib
 
 import pytest
 import rfc8785
-from a13n_service.interactions.domain import RunPayloadObjectRef
+from a13n_service.interactions.domain import RunPayloadObjectRef, RunStatus, SealedRunState
 from a13n_service.interactions.objects import (
     RunObjectError,
     RunObjectIntegrityError,
@@ -15,13 +15,129 @@ from a13n_service.interactions.objects import (
     validate_run_payload_reference,
 )
 from a13n_service.interactions.state import CompletedOutcomeCandidate, RunPayloadEnvelope, RunStateEnvelope
-from a13n_service.storage import ObjectStore, ObjectStoreUnavailable
+from a13n_service.storage import ObjectConflict, ObjectStore, ObjectStoreUnavailable
 from a13n_service.storage.codec import DurableObjectCodecError, decode_canonical_model
 from pydantic import TypeAdapter
 
 from .conftest import ORGANIZATION_ID, initial_state, progress_state
+from .test_acceptance import _accepted_run
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("checkpoint_kind", ["initial", "progress", "completed"])
+async def test_previous_state_format_preserves_bytes_until_fenced_upgrade(
+    object_store: ObjectStore, checkpoint_kind: str
+) -> None:
+    store = RunStateStore(object_store)
+    initial = await store.create(ORGANIZATION_ID, initial_state())
+    envelope = initial.envelope if checkpoint_kind == "initial" else progress_state(initial.envelope)
+    if checkpoint_kind == "completed":
+        envelope = envelope.model_copy(
+            update={"checkpoint_kind": "completed", "outcome_candidate": CompletedOutcomeCandidate(output="done")}
+        )
+    payload = envelope.model_dump(mode="json", by_alias=True, exclude={"writer_fence"})
+    payload["schema_version"] = "1"
+    legacy_body = rfc8785.dumps(payload)
+    legacy_digest = hashlib.sha256(legacy_body).hexdigest()
+    legacy_info = await object_store.put(
+        initial.info.key,
+        legacy_body,
+        content_type=initial.info.content_type,
+        metadata={
+            **initial.info.metadata,
+            "schema-version": "1",
+            "checkpoint-seq": str(envelope.checkpoint_seq),
+            "writer-fence": str(envelope.last_checkpoint_fence),
+            "digest-sha256": legacy_digest,
+        },
+        if_match=initial.info.version,
+    )
+    restored = await store.read(ORGANIZATION_ID, envelope.run_id)
+    assert restored.body == legacy_body
+    assert restored.digest_sha256 == legacy_digest
+    assert restored.writer_fence == envelope.last_checkpoint_fence
+    assert restored.info.version == legacy_info.version
+    if checkpoint_kind == "completed":
+        run = _accepted_run(
+            run_id=envelope.run_id, thread_id=envelope.thread_id, idempotency_key="legacy", request_fingerprint="a" * 64
+        ).model_copy(
+            update={
+                "status": RunStatus.completed,
+                "sealed_state": SealedRunState(
+                    digest_sha256=legacy_digest,
+                    size_bytes=len(legacy_body),
+                    content_type=legacy_info.content_type,
+                    envelope_schema_version="1",
+                    harness_schema_version=envelope.harness_schema_version,
+                    checkpoint_seq=envelope.checkpoint_seq,
+                ),
+            }
+        )
+        assert (await store.read_run(run)).body == legacy_body
+    claimed = await store.claim_writer(restored, fence=2)
+    assert claimed.envelope.schema_version == "2"
+    assert claimed.writer_fence == 2
+    assert claimed.info.version != legacy_info.version
+    assert claimed.envelope.model_dump(exclude={"schema_version", "writer_fence"}) == envelope.model_dump(
+        exclude={"schema_version", "writer_fence"}
+    )
+    with pytest.raises(ObjectConflict):
+        await object_store.put(
+            legacy_info.key,
+            legacy_body,
+            content_type=legacy_info.content_type,
+            metadata=legacy_info.metadata,
+            if_match=legacy_info.version,
+        )
+    assert await store.read(ORGANIZATION_ID, envelope.run_id) == claimed
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("digest_sha256", "f" * 64),
+        ("size_bytes", 1),
+        ("content_type", "application/json"),
+        ("envelope_schema_version", "1"),
+        ("harness_schema_version", "unknown"),
+        ("checkpoint_seq", 99),
+    ],
+)
+async def test_run_state_read_verifies_every_selected_seal_field(
+    interaction_object_store: ObjectStore, field: str, value: str | int
+) -> None:
+    store = RunStateStore(interaction_object_store)
+    initial = await store.create(ORGANIZATION_ID, initial_state())
+    envelope = progress_state(initial.envelope).model_copy(
+        update={"checkpoint_kind": "completed", "outcome_candidate": CompletedOutcomeCandidate(output="done")}
+    )
+    state = await store.replace(
+        await store.claim_writer(initial, fence=1),
+        envelope,
+        run_attempt_id=envelope.last_checkpoint_run_attempt_id,
+        fence=1,
+    )
+    run = _accepted_run(
+        run_id=envelope.run_id, thread_id=envelope.thread_id, idempotency_key="sealed", request_fingerprint="a" * 64
+    ).model_copy(
+        update={
+            "status": RunStatus.completed,
+            "sealed_state": SealedRunState(
+                digest_sha256=state.digest_sha256,
+                size_bytes=len(state.body),
+                content_type=state.info.content_type,
+                envelope_schema_version=envelope.schema_version,
+                harness_schema_version=envelope.harness_schema_version,
+                checkpoint_seq=envelope.checkpoint_seq,
+            ),
+        }
+    )
+    assert await store.read_run(run) == state
+    assert run.sealed_state is not None
+    altered = run.model_copy(update={"sealed_state": run.sealed_state.model_copy(update={field: value})})
+    with pytest.raises(RunObjectIntegrityError, match="sealed state"):
+        await store.read_run(altered)
 
 
 @pytest.mark.parametrize("operation", ["create", "claim", "checkpoint", "resume"])

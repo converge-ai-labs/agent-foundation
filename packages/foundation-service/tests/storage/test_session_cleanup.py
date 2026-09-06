@@ -2,15 +2,44 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_service.storage import short_session
+from a13n_service.storage import short_session, transaction
 from a13n_service.storage.config import PostgreSQLConfig
-from a13n_service.storage.relational import create_session_factory, create_sql_engine
-from anyio import CancelScope, fail_after
+from a13n_service.storage.relational import create_session_factory, create_sql_engine, limit_session_cleanup
+from anyio import CancelScope, create_task_group, current_effective_deadline, current_time, fail_after, sleep_forever
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("scope", [short_session, transaction])
+async def test_child_database_cleanup_cannot_outlive_its_owner_limit(scope):
+    observed = []
+
+    async def stalled_cleanup():
+        observed.append(current_effective_deadline() - current_time())
+        await sleep_forever()
+
+    session = Mock(spec=AsyncSession)
+    session.close = AsyncMock(side_effect=stalled_cleanup)
+    session.begin = AsyncMock(return_value=Mock(rollback=AsyncMock(side_effect=stalled_cleanup)))
+
+    async def cancelled_child():
+        with pytest.raises(asyncio.CancelledError):
+            async with scope(lambda: session, cleanup_timeout_seconds=10):
+                raise asyncio.CancelledError()
+
+    with limit_session_cleanup(0.01), limit_session_cleanup(1):
+        async with create_task_group() as tasks:
+            tasks.start_soon(cancelled_child)
+    assert len(observed) == (2 if scope is transaction else 1)
+    assert all(0 < remaining <= 0.01 for remaining in observed)
+    session.close.assert_awaited_once()
+    session.close.side_effect = lambda: observed.append(current_effective_deadline() - current_time())
+    async with short_session(lambda: session):
+        pass
+    assert 1 < observed[-1] <= 5
 
 
 async def test_cleanup_failure_does_not_replace_cancellation_and_invalidates_connection():

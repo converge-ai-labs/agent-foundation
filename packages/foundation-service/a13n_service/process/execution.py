@@ -122,6 +122,7 @@ def build_execution_loop(
         concurrency=settings.worker_concurrency,
         scan_limit=settings.worker_scan_limit,
         poll_interval_seconds=settings.worker_poll_interval_seconds,
+        cleanup_timeout_seconds=settings.worker_cleanup_timeout_seconds,
         runtime_lock_digest=runtime_lock_digest,
         claim_gated=claim_gated,
     )

@@ -347,11 +347,7 @@ class InteractionCommands:
             return replay
 
         source, thread = await self._load_continue_source(actor=actor, source_run_id=source_run_id)
-        source_state = await self._states.read(
-            source.organization_id,
-            source.id,
-            expected_thread_id=source.thread_id,
-        )
+        source_state = await self._states.read_run(source)
         run_id = new_run_id()
         prepared = await self._invocations.preparation.prepare(
             actor=actor,
@@ -640,11 +636,7 @@ class InteractionCommands:
             return replay
 
         source = await self._load_fork_source(actor=actor, run_id=run_id)
-        source_state = await self._states.read(
-            source.organization_id,
-            source.id,
-            expected_thread_id=source.thread_id,
-        )
+        source_state = await self._states.read_run(source)
         new_run_id_value = new_run_id()
         new_thread_id_value = new_thread_id()
         reuse_exact_source = (
@@ -816,20 +808,9 @@ class InteractionCommands:
         if replay is not None:
             return replay
 
-        source, thread = await self._load_retry_source(actor=actor, run_id=run_id)
-        source_state = await self._states.read(
-            source.organization_id,
-            source.id,
-            expected_thread_id=source.thread_id,
-        )
-        parent_state = None
-        if source.parent_run_id is not None:
-            parent_state = (
-                await self._states.read(
-                    source.organization_id,
-                    source.parent_run_id,
-                )
-            ).envelope
+        source, thread, parent = await self._load_retry_source(actor=actor, run_id=run_id)
+        source_state = await self._states.read_run(source)
+        parent_state = (await self._states.read_run(parent)).envelope if parent is not None else None
         new_run_id_value = new_run_id()
         copied_input_object = None
         if source.input_object is not None:
@@ -1012,11 +993,7 @@ class InteractionCommands:
             lineage_kind = RunLineageKind.root
             next_head_run_id = None
         else:
-            head_state = await self._states.read(
-                head.organization_id,
-                head.id,
-                expected_thread_id=head.thread_id,
-            )
+            head_state = await self._states.read_run(head)
             state = initialize_completed_continuation_state(seed, head_state.envelope)
             parent_run_id = head.id
             lineage_kind = RunLineageKind.continue_
@@ -1134,11 +1111,7 @@ class InteractionCommands:
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         source, thread = await self._load_feedback_source(actor=actor, run_id=run_id)
-        source_state = await self._states.read(
-            source.organization_id,
-            source.id,
-            expected_thread_id=source.thread_id,
-        )
+        source_state = await self._states.read_run(source)
         if source.sealed_state is None or source.pending is None:
             raise InteractionCommandError(
                 "run_waiting_state_invalid",
@@ -1296,11 +1269,7 @@ class InteractionCommands:
             run_id=run_id,
             actions=frozenset({WorkspaceAction.run_continue, WorkspaceAction.run_feedback}),
         )
-        source_state = await self._states.read(
-            source.organization_id,
-            source.id,
-            expected_thread_id=source.thread_id,
-        )
+        source_state = await self._states.read_run(source)
         if source.sealed_state is None or source.pending is None:
             raise InteractionCommandError(
                 "run_waiting_state_invalid",
@@ -1575,7 +1544,7 @@ class InteractionCommands:
             return replay
         source, _thread = await self._load_steer_source(actor=actor, run_id=run_id)
         try:
-            state = await self._states.read(source.organization_id, source.id, expected_thread_id=source.thread_id)
+            state = await self._states.read_run(source)
         except (ObjectStoreError, RunObjectError) as error:
             raise InteractionCommandError(
                 "run_state_unavailable",
@@ -2158,7 +2127,7 @@ class InteractionCommands:
                 )
             return source, thread_record.to_resource()
 
-    async def _load_retry_source(self, *, actor: AuthenticatedActor, run_id: str):
+    async def _load_retry_source(self, *, actor: AuthenticatedActor, run_id: str) -> tuple[Run, Thread, Run | None]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
@@ -2205,7 +2174,18 @@ class InteractionCommands:
                     "The selected Run is not the Thread's current failed or cancelled Run.",
                     category=ErrorCategory.conflict,
                 )
-            return source_record.to_resource(), thread_record.to_resource()
+            parent = None
+            if source_record.parent_run_id is not None:
+                parent_record = await database.scalar(
+                    select(RunRecord).where(
+                        RunRecord.organization_id == source_record.organization_id,
+                        RunRecord.id == source_record.parent_run_id,
+                    )
+                )
+                if parent_record is None:
+                    raise _not_found()
+                parent = parent_record.to_resource()
+            return source_record.to_resource(), thread_record.to_resource(), parent
 
     async def _load_empty_thread_source(
         self,

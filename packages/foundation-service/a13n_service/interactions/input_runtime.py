@@ -202,14 +202,7 @@ class AttemptInputRuntime(AbstractCapability[AgentContext]):
             parent = record.to_resource() if record is not None else None
         if parent is None or parent.sealed_state is None:
             raise AgentInputError("waiting_feedback_invalid", "The sealed feedback parent is unavailable.")
-        state = await self._states.read(run.organization_id, parent.id)
-        sealed = parent.sealed_state
-        if (
-            state.digest_sha256 != sealed.digest_sha256
-            or len(state.body) != sealed.size_bytes
-            or state.info.content_type != sealed.content_type
-            or state.envelope.checkpoint_seq != sealed.checkpoint_seq
-            or state.digest_sha256 != feedback.sealed_state_digest_sha256
-        ):
+        state = await self._states.read_run(parent)
+        if state.digest_sha256 != feedback.sealed_state_digest_sha256:
             raise AgentInputError("waiting_feedback_invalid", "The sealed feedback parent failed verification.")
         return map_waiting_feedback(feedback, state.envelope)

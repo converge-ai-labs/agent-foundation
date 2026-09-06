@@ -160,13 +160,7 @@ def _create_fact_immutability_trigger() -> None:
         "created_at",
     )
     if op.get_bind().dialect.name == "postgresql":
-        # PostgreSQL JSON has no equality operator; compare its stored representation.
-        changed = " OR ".join(
-            "NEW.payload::text IS DISTINCT FROM OLD.payload::text"
-            if column == "payload"
-            else f"NEW.{column} IS DISTINCT FROM OLD.{column}"
-            for column in fact_columns
-        )
+        changed = " OR ".join(f"NEW.{column} IS DISTINCT FROM OLD.{column}" for column in fact_columns)
         op.execute(
             f"""
             CREATE FUNCTION reject_lifecycle_fact_update()

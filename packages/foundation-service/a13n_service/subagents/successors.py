@@ -100,11 +100,7 @@ class AsyncSubagentSuccessorReconciler:
             expected_item_id=selected.result_authority.payload.terminal_result_item_id,
         )
         validate_async_subagent_result_authority(selected.result_authority, terminal_item)
-        parent_state = await self._states.read(
-            organization_id,
-            selected.selected_parent.id,
-            expected_thread_id=thread_id,
-        )
+        parent_state = await self._states.read_run(selected.selected_parent)
         _verify_selected_parent_state(selected.selected_parent, parent_state)
         prepared = prepare_async_result_successor(
             selected_parent=selected.selected_parent,

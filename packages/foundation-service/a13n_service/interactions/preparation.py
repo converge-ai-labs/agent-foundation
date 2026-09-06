@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import AgentRevision, EffectiveAgentConfig, PluginRuntimeMode, canonical_digest
+from a13n_service.agents.domain import AgentRevision, EffectiveAgentConfig, PluginRuntimeMode
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.resolution import MAX_SUBAGENT_NODES
 from a13n_service.iam import AuthorizationError, WorkspaceAction
@@ -22,7 +22,7 @@ from a13n_service.temporal import Clock, utc_now
 from .attempts import AttemptContext, AttemptPreparationError, read_attempt_lease
 from .domain import Run
 from .models import SessionRecord
-from .objects import StoredRunState, run_state_key
+from .objects import RunObjectIntegrityError, StoredRunState, validate_run_state_reference
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,22 +134,10 @@ async def _require_revision(
 
 
 def _validate_run_state(run: Run, state: StoredRunState) -> None:
-    envelope = state.envelope
-    if (
-        state.info.key != run_state_key(run.organization_id, run.id)
-        or envelope.run_id != run.id
-        or envelope.thread_id != run.thread_id
-        or envelope.agent_id != run.agent_id
-        or envelope.agent_revision_id != run.agent_revision_id
-        or envelope.runtime_lock_digest != run.runtime_lock_digest
-        or envelope.effective_agent_config.content_digest != run.effective_agent_config_digest
-        or canonical_digest(
-            envelope.effective_agent_config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-        )
-        != run.effective_agent_config_digest
-        or envelope.effective_agent_config.resolved_model.execution.observation() != run.model_execution_observation
-    ):
-        raise _invalid("run_state_identity_mismatch")
+    try:
+        validate_run_state_reference(run, state)
+    except RunObjectIntegrityError as error:
+        raise _invalid("run_state_identity_mismatch") from error
 
 
 def _invalid(code: str) -> AttemptPreparationError:

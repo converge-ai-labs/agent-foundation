@@ -1,7 +1,8 @@
 """Async relational storage construction and short session scopes."""
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -14,6 +15,21 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from .config import PostgreSQLConfig, SQLiteConfig
+
+_SESSION_CLEANUP_LIMIT: ContextVar[float] = ContextVar("session_cleanup_limit", default=float("inf"))
+
+
+@contextmanager
+def limit_session_cleanup(timeout_seconds: float) -> Iterator[None]:
+    """Cap shielded database cleanup in this owner and its child tasks."""
+
+    if timeout_seconds <= 0:
+        raise ValueError("Session cleanup limit must be positive")
+    token = _SESSION_CLEANUP_LIMIT.set(min(timeout_seconds, _SESSION_CLEANUP_LIMIT.get()))
+    try:
+        yield
+    finally:
+        _SESSION_CLEANUP_LIMIT.reset(token)
 
 
 class _Cursor(Protocol):
@@ -73,6 +89,7 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
 async def short_session(
     factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
 ) -> AsyncGenerator[AsyncSession]:
+    cleanup_timeout_seconds = min(cleanup_timeout_seconds, _SESSION_CLEANUP_LIMIT.get())
     session = factory()
     original_error: BaseException | None = None
     try:
@@ -109,6 +126,7 @@ async def short_session(
 async def transaction(
     factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
 ) -> AsyncGenerator[AsyncSession]:
+    cleanup_timeout_seconds = min(cleanup_timeout_seconds, _SESSION_CLEANUP_LIMIT.get())
     async with short_session(factory, cleanup_timeout_seconds=cleanup_timeout_seconds) as session:
         database_transaction = await session.begin()
         try:

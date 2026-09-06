@@ -397,7 +397,7 @@ class RunStateOutcomeCandidate:
 
 
 class RunStateEnvelope:
-    schema_version: Literal["1"]
+    schema_version: Literal["2"]
     run_id: str
     thread_id: str
     checkpoint_seq: int
@@ -475,7 +475,7 @@ The content type is `application/vnd.converge.run-state+json`. Object metadata r
 
 Acceptance publishes the initial object create-only. A current attempt does not write until it has conditionally claimed the current object version for its monotonic Run fence. Every state replacement then supplies the exact object version returned by the claim or previous successful write. The replacement is visible as the complete new object or not visible at all.
 
-A writer claim conditionally replaces the same complete canonical body with only `writer_fence` advanced, and publishes matching metadata, digest, and size atomically. It preserves `checkpoint_seq`, `checkpoint_kind`, `input_disposition`, checkpoint provenance, effective configuration, Harness state, Host state, and any prepared outcome candidate. Advancing the fence changes the body and invalidates the preceding conditional-write token even on content-derived-version backends. A metadata-only claim is insufficient. A lower fence is rejected. Repeating the same fence still supplies the exact current object version and cannot succeed against a superseded version; it preserves the state content rather than inventing a checkpoint. After an uncertain claim outcome, the caller revalidates relational authority and reads the exact current object before deciding whether its claim committed or was superseded; it never retries unconditionally.
+A writer claim conditionally replaces the same complete canonical body with `writer_fence` advanced (and the outer schema upgraded when reading the preceding format), and publishes matching metadata, digest, and size atomically. It preserves `checkpoint_seq`, `checkpoint_kind`, `input_disposition`, checkpoint provenance, effective configuration, Harness state, Host state, and any prepared outcome candidate. Advancing the fence changes the body and invalidates the preceding conditional-write token even on content-derived-version backends. A metadata-only claim is insufficient. A lower fence is rejected. Repeating the same fence still supplies the exact current object version and cannot succeed against a superseded version; it preserves the state content rather than inventing a checkpoint. After an uncertain claim outcome, the caller revalidates relational authority and reads the exact current object before deciding whether its claim committed or was superseded; it never retries unconditionally.
 
 `writer_fence` is required in the current Run State envelope. Readers never infer writer authority from checkpoint provenance or metadata.
 
@@ -681,7 +681,7 @@ Fork, continuation, automatic asynchronous-result acceptance, feedback, retry, a
 
 Cancellation before durable acceptance creates no Run. Interrupt after acceptance seals the Run without selecting in-flight state and does not make the Run an eligible parent. A lost client response after possible acceptance is reconciled through the API idempotency contract.
 
-## Validation Boundaries
+## Compatibility and Validation Boundaries
 
 The following versions and identities have independent owners:
 
@@ -698,9 +698,9 @@ The following versions and identities have independent owners:
 | Agent definition revision                    | Foundation immutable Agent domain           |
 | Model execution snapshot schema              | Foundation Model Management domain          |
 
-Foundation reads one current Run State envelope format. Each referenced state, payload, Harness, Capability, Environment configuration/state, or Plugin-lock format is validated by its owner; unsupported values fail explicitly. A sealed parent remains unchanged when initialization creates a new Run-owned state.
+New Run State writes use envelope schema `2`. Readers also accept schema `1` from the preceding contract: when the body has no `writer_fence`, its `last_checkpoint_fence` is the historical writer value and must match object metadata. This decoding grants no authority. Sealed schema `1` objects retain their exact original bytes, digest, size, and envelope schema reference; creating a continuation never rewrites its parent. An active Run upgrades to schema `2` only when its current Attempt conditionally claims the exact object version, preserving all checkpoint provenance and semantic state. Schema `2` requires an explicit body `writer_fence`; missing or conflicting values fail closed. Each referenced state, payload, Harness, Capability, Environment configuration/state, or Plugin-lock format is validated by its owner; unsupported values fail explicitly. A sealed parent remains unchanged when initialization creates a new Run-owned state.
 
-Relational migrations never reinterpret state bytes through current defaults.
+Relational migrations never reinterpret state bytes through current defaults. Upgrade the relational schema before starting the new Worker. Stop previous-version state readers and writers before enabling schema `2` writes: older binaries cannot read the new envelope. Existing state needs no bulk rewrite or reset. After schema `2` publication or recovery-only successful Attempts exist, retain the new schema and roll forward; reverting binaries is not a compatible rollback.
 
 ## Trade-offs
 

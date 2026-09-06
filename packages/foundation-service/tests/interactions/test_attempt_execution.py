@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 from a13n_harness import SafeFailure
 from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.database import DatabaseMigrator
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -52,7 +53,7 @@ from a13n_service.interactions.state import (
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.storage import ObjectStore, short_session
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
@@ -100,12 +101,17 @@ async def test_writer_claim_and_checkpoint_reject_wrong_state_scope(
 
 
 @pytest.mark.parametrize("candidate_kind", ["waiting", "completed"])
+@pytest.mark.parametrize("upgrade_from_previous", [False, True])
 async def test_takeover_seals_existing_candidate_without_another_harness_run(
     migrated_interaction_sessions: tuple[async_sessionmaker[AsyncSession], SQLiteConfig | PostgreSQLConfig],
     object_store: ObjectStore,
     candidate_kind: str,
+    upgrade_from_previous: bool,
 ) -> None:
-    interaction_sessions, _database_config = migrated_interaction_sessions
+    interaction_sessions, database_config = migrated_interaction_sessions
+    migrator = DatabaseMigrator(database_config)
+    if upgrade_from_previous:
+        await asyncio.to_thread(migrator.downgrade, "90c70b278335")
     states, run, initial = await _accept_root(interaction_sessions, object_store)
     first = await AttemptScheduler(
         interaction_sessions,
@@ -131,6 +137,14 @@ async def test_takeover_seals_existing_candidate_without_another_harness_run(
     published = await first_execution.publish_checkpoint(
         first_authority, states, await states.read(ORGANIZATION_ID, run.id), candidate
     )
+    if upgrade_from_previous:
+        async with short_session(interaction_sessions) as database:
+            before = (await database.execute(text("SELECT * FROM run_attempts"))).mappings().all()
+        await asyncio.to_thread(migrator.upgrade)
+        async with short_session(interaction_sessions) as database:
+            after = (await database.execute(text("SELECT * FROM run_attempts"))).mappings().all()
+        assert after == before
+        assert await states.read(ORGANIZATION_ID, run.id) == published
     second = await AttemptScheduler(
         interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=3),
@@ -176,13 +190,17 @@ async def test_takeover_seals_existing_candidate_without_another_harness_run(
         assert sealed is not None and attempt is not None
         assert sealed.sealed_state_digest_sha256 == claimed.digest_sha256
         assert sealed.sealed_state_size_bytes == len(claimed.body)
-        assert sealed.sealed_state_envelope_schema_version == "1"
+        assert sealed.sealed_state_envelope_schema_version == claimed.envelope.schema_version
         assert sealed.sealed_state_checkpoint_seq == published.envelope.checkpoint_seq
         assert sealed.sealed_state_committed_by_run_attempt_id == second.attempt.id
         assert attempt.harness_run_id is None
         assert attempt.status == "succeeded"
     with pytest.raises(AttemptAuthorityError):
         await second_execution.claim_state_writer(second_authority, states, claimed)
+    if upgrade_from_previous:
+        with pytest.raises(RuntimeError, match="Recovered Attempt facts prevent downgrade"):
+            await asyncio.to_thread(migrator.downgrade, "90c70b278335")
+        await asyncio.to_thread(migrator.current, check_heads=True, verbose=False)
 
 
 @pytest.mark.parametrize("object_backed", [False, True])

@@ -88,11 +88,7 @@ class ChildRunAcceptanceService:
                 child_definition_id=prepared.child_definition_id,
                 workspace_id=session.workspace_id,
             )
-        parent_state = await self._states.read(
-            prepared.run.organization_id,
-            prepared.relationship.parent_run_id,
-            expected_thread_id=authority.thread_id,
-        )
+        parent_state = await self._states.read_run(parent_resource)
         _validate_new_child_parent(
             prepared,
             parent_resource,
@@ -181,16 +177,20 @@ class ChildRunAcceptanceService:
                 child_definition_id=prepared.child_definition_id,
                 workspace_id=session.workspace_id,
             )
-        parent_state = await self._states.read(
-            prepared.run.organization_id,
-            prepared.relationship.parent_run_id,
-            expected_thread_id=authority.thread_id,
-        )
-        source_state = await self._states.read(
-            prepared.run.organization_id,
-            prepared.resumed_from_child_run_id,
-            expected_thread_id=prepared.run.thread_id,
-        )
+            source_record = await database.scalar(
+                select(RunRecord).where(
+                    RunRecord.organization_id == prepared.run.organization_id,
+                    RunRecord.id == prepared.resumed_from_child_run_id,
+                    RunRecord.thread_id == prepared.run.thread_id,
+                )
+            )
+            if source_record is None:
+                raise ChildRunAcceptanceError(
+                    "child_run_resume_source_missing", "Retained child continuation source was not found"
+                )
+            source_resource = source_record.to_resource()
+        parent_state = await self._states.read_run(parent_resource)
+        source_state = await self._states.read_run(source_resource)
         _validate_parent_authority(
             run=prepared.run,
             child_state=prepared.state,

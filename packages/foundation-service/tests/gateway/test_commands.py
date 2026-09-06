@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import rfc8785
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -13,6 +16,7 @@ from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
 from a13n_service.interactions.commands import (
+    ContinueRunCommand,
     ForkRunCommand,
     InteractionCommandError,
     InteractionCommands,
@@ -24,13 +28,13 @@ from a13n_service.interactions.control_domain import InterruptRequest, WaitingRu
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
-from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
+from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import seed_hook_actor_access
@@ -586,6 +590,78 @@ async def test_retry_rejects_terminal_run_after_thread_advances(
         )
 
     assert captured.value.code == "run_not_retryable"
+
+
+@pytest.mark.parametrize("command", ["continue", "fork", "feedback", "waiting_continue"])
+async def test_parent_consumers_reject_self_consistent_state_that_differs_from_seal(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession], tmp_path, command: str
+) -> None:
+    sessions = lifecycle_interaction_sessions
+    objects = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    await seed_hook_actor_access(sessions)
+    source = await commands.start(
+        actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="seal-source", request=_request()
+    )
+    if command in {"feedback", "waiting_continue"}:
+        await _wait_run(sessions, objects, run_id=source.run_id)
+    else:
+        await _complete_run(sessions, objects, run_id=source.run_id)
+    states = RunStateStore(objects)
+    original = await states.read(ORGANIZATION_ID, source.run_id)
+    payload = json.loads(original.body)
+    payload["checkpoint_seq"] += 1
+    body = rfc8785.dumps(payload)
+    await objects.put(
+        original.info.key,
+        body,
+        content_type=original.info.content_type,
+        metadata={
+            **original.info.metadata,
+            "checkpoint-seq": str(payload["checkpoint_seq"]),
+            "digest-sha256": hashlib.sha256(body).hexdigest(),
+        },
+        if_match=original.info.version,
+    )
+    assert (await states.read(ORGANIZATION_ID, source.run_id)).body == body
+    with pytest.raises(RunObjectIntegrityError, match="sealed state"):
+        if command == "continue":
+            await commands.continue_from(
+                actor=_actor(),
+                source_run_id=source.run_id,
+                idempotency_key="seal-consumer",
+                request=ContinueRunCommand(expected_thread_version=2, input=_request().input),
+            )
+        elif command == "fork":
+            await commands.fork(
+                actor=_actor(),
+                run_id=source.run_id,
+                idempotency_key="seal-consumer",
+                request=ForkRunCommand(input=_request().input),
+            )
+        elif command == "feedback":
+            await commands.feedback(
+                actor=_actor(),
+                run_id=source.run_id,
+                idempotency_key="seal-consumer",
+                request=WaitingRunFeedbackRequest(
+                    expected_thread_version=2, sealed_state_digest_sha256=original.digest_sha256
+                ),
+            )
+        else:
+            await commands.continue_waiting(
+                actor=_actor(),
+                run_id=source.run_id,
+                idempotency_key="seal-consumer",
+                request=WaitingContinueRunCommand(
+                    expected_thread_version=2, sealed_state_digest_sha256=original.digest_sha256, input=_request().input
+                ),
+            )
+    async with short_session(sessions) as database:
+        assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
+        assert await database.scalar(select(func.count()).select_from(ThreadRecord)) == 1
+        thread = await database.get(ThreadRecord, source.thread_id)
+        assert thread is not None and thread.current_run_id == source.run_id and thread.version == 2
 
 
 async def test_fork_creates_child_thread_and_replays(
