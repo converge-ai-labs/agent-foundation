@@ -27,8 +27,8 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequestError,
     ReceptionDefaults,
 )
-from a13n_service.connectivity.management import canonical_digest
 from a13n_service.database.metadata import service_metadata
+from a13n_service.durable_operations.idempotency import digest_request
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import (
     OrganizationRecord,
@@ -372,7 +372,7 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
             provider_key="fake",
             provider_config_version="fake_http_v1",
             provider_config_json={"installation_id": "installation-1"},
-            identity_digest=canonical_digest("installation-1"),
+            identity_digest=digest_request("installation-1"),
             status="active",
             version=1,
             credential_generation=0,

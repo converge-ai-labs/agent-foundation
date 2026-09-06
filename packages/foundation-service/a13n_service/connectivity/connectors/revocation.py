@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
-from a13n_service.connectivity.management import canonical_digest, record_command
+from a13n_service.connectivity.management import record_command
+from a13n_service.durable_operations.idempotency import digest_request
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.resource_scope import ResourceScope
@@ -60,7 +61,7 @@ class ConnectorRevocationService:
         delete: bool,
     ) -> ConnectionCleanupReceipt:
         key = idempotency_digest(idempotency_key)
-        digest = canonical_digest({"expected_version": expected_version})
+        digest = digest_request({"expected_version": expected_version})
         operation = "connector_connection.delete" if delete else "connector_connection.revoke"
         binding = None
         credential = None

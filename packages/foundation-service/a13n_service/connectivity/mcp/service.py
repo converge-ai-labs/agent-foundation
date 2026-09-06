@@ -13,15 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
-from a13n_service.connectivity.management import (
-    CommandReceipt,
-    canonical_digest,
-    fingerprint,
-    idempotency_key_digest,
-    record_command,
-    replay_command,
+from a13n_service.connectivity.management import CommandReceipt, fingerprint, record_command, replay_command
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyConflict,
+    InvalidIdempotencyKey,
+    digest_request,
+    digest_visible_ascii_key,
 )
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor
@@ -329,7 +327,7 @@ class MCPConnectionService:
         expected_version: int,
     ) -> MCPConnection:
         key_digest = _idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version})
+        request_fingerprint = digest_request({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True)
             await authorize_connection(session, actor, record, mode="manage")
@@ -375,7 +373,7 @@ class MCPConnectionService:
     ) -> MCPConnection:
         operation = f"mcp_connection.{'enable' if enabled else 'disable'}"
         key_digest = _idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version})
+        request_fingerprint = digest_request({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True)
             await authorize_connection(
@@ -429,7 +427,7 @@ class MCPConnectionService:
         expected_version: int,
     ) -> ConnectionCleanupReceipt:
         key_digest = _idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version})
+        request_fingerprint = digest_request({"expected_version": expected_version})
         credentials = []
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True, include_deleted=True)
@@ -623,6 +621,6 @@ def _credential_value(record: MCPConnectionRecord, request: ReplaceMCPCredential
 
 def _idempotency_digest(value: str) -> str:
     try:
-        return idempotency_key_digest(value)
+        return digest_visible_ascii_key(value)
     except InvalidIdempotencyKey as error:
         raise map_management_error(error) from error

@@ -21,7 +21,7 @@ from a13n_service.connectivity.connectors.contracts import (
 )
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.management import canonical_digest
+from a13n_service.durable_operations.idempotency import digest_request
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.iam.resource_scope import ResourceScope
@@ -112,7 +112,7 @@ class ConnectorSetupCoordinator:
             type=connector.type,
             connector_key=connection.connector_key,
             external_user_correlation=correlation,
-            state_digest=canonical_digest({"attempt_id": attempt_id, "correlation": correlation}),
+            state_digest=digest_request({"attempt_id": attempt_id, "correlation": correlation}),
             return_path=return_path,
             setup_json=setup,
             external_ref=None,
@@ -185,7 +185,7 @@ class ConnectorSetupCoordinator:
                 "ConnectorProvider setup callback is invalid.",
                 category=ErrorCategory.invalid_request,
             )
-        digest = canonical_digest(session_uri)
+        digest = digest_request(session_uri)
         now = self._clock()
         async with transaction(self._sessions) as session:
             attempt = await session.scalar(
@@ -297,7 +297,7 @@ class ConnectorSetupCoordinator:
             connection.updated_at = now
             attempt.external_ref = started.external_ref
             attempt.external_handle_digest = (
-                canonical_digest(started.external_handle) if started.external_handle is not None else None
+                digest_request(started.external_handle) if started.external_handle is not None else None
             )
             attempt.supports_verified_callback = started.supports_verified_callback
             attempt.status = "attached"

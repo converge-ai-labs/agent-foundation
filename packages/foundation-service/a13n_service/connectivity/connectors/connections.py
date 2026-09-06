@@ -11,13 +11,8 @@ from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.management import (
-    canonical_digest,
-    fingerprint,
-    record_command,
-    replay_command,
-)
-from a13n_service.durable_operations.idempotency import IdempotencyConflict
+from a13n_service.connectivity.management import fingerprint, record_command, replay_command
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.resource_scope import ResourceScope
@@ -201,7 +196,7 @@ class ConnectorConnectionService:
                 "interactive_user_required", "Interactive setup requires a User.", category=ErrorCategory.forbidden
             )
         key_digest = idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest(
+        request_fingerprint = digest_request(
             {"expected_version": expected_version, "setup": setup, "return_path": return_path}
         )
         attempt_id = new_object_id("csa")
@@ -393,7 +388,7 @@ class ConnectorConnectionService:
         idempotency_key: str,
     ) -> ConnectorConnection:
         key_digest = idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version, "enabled": enabled})
+        request_fingerprint = digest_request({"expected_version": expected_version, "enabled": enabled})
         operation = "connector_connection.enable" if enabled else "connector_connection.disable"
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True)
@@ -485,7 +480,7 @@ class ConnectorConnectionService:
                 "interactive_user_required", "Interactive setup requires a User.", category=ErrorCategory.forbidden
             )
         key_digest = idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest(
+        request_fingerprint = digest_request(
             {"expected_version": expected_version, "setup": setup, "return_path": return_path}
         )
         attempt_id = new_object_id("csa")

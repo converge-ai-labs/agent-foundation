@@ -11,12 +11,13 @@ from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.management import CommandReceipt
 from a13n_service.connectivity.management import (
-    idempotency_key_digest as shared_idempotency_key_digest,
-)
-from a13n_service.connectivity.management import (
     replay_command as shared_replay_command,
 )
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyConflict,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+)
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -97,7 +98,7 @@ def require_limit(limit: int) -> None:
 
 def idempotency_key_digest(value: str) -> str:
     try:
-        return shared_idempotency_key_digest(value)
+        return digest_visible_ascii_key(value)
     except InvalidIdempotencyKey as error:
         raise NativeError(
             "invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request

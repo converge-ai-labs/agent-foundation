@@ -14,13 +14,7 @@ from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.connectivity.management import (
-    canonical_digest,
-    canonical_json,
-    clear_credentials,
-    fingerprint,
-    record_command,
-)
+from a13n_service.connectivity.management import canonical_json, clear_credentials, fingerprint, record_command
 from a13n_service.connectivity.native_management import (
     audit,
     authorize,
@@ -30,6 +24,7 @@ from a13n_service.connectivity.native_management import (
     require_limit,
     require_version,
 )
+from a13n_service.durable_operations.idempotency import digest_request
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
     WorkspaceAction,
@@ -127,7 +122,7 @@ class AccountService:
                     provider_key=request.provider_key,
                     provider_config_version=request.provider_config_version,
                     provider_config_json=config,
-                    identity_digest=canonical_digest(
+                    identity_digest=digest_request(
                         adapter.configuration_identity(config, config_version=request.provider_config_version)
                     ),
                     status=AccountStatus.active.value,
@@ -240,7 +235,7 @@ class AccountService:
                 if request.provider_config is not None:
                     config = _validate_config(adapter, request.provider_config, record.provider_config_version)
                     if (
-                        canonical_digest(
+                        digest_request(
                             adapter.configuration_identity(config, config_version=record.provider_config_version)
                         )
                         != record.identity_digest
@@ -387,7 +382,7 @@ class AccountService:
         idempotency_key: str,
     ) -> Account:
         key_digest = idempotency_key_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version, "status": status.value})
+        request_fingerprint = digest_request({"expected_version": expected_version, "status": status.value})
         operation = "application_account.enable" if status is AccountStatus.active else "application_account.disable"
         async with transaction(self._sessions) as session:
             record = await require_account(session, account_id, lock=True)

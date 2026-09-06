@@ -16,15 +16,18 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import (
     CommandReceipt,
-    canonical_digest,
     canonical_json,
     clear_credentials,
     fingerprint,
-    idempotency_key_digest,
     record_command,
     replay_command,
 )
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyConflict,
+    InvalidIdempotencyKey,
+    digest_request,
+    digest_visible_ascii_key,
+)
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
@@ -146,7 +149,7 @@ class ConnectorProviderService:
         request: CreateConnectorProviderRequest,
     ) -> ConnectorProvider:
         try:
-            key_digest = idempotency_key_digest(idempotency_key)
+            key_digest = digest_visible_ascii_key(idempotency_key)
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
         connector_provider_id = new_object_id("cnr")
@@ -352,7 +355,7 @@ class ConnectorProviderService:
         request: ReplaceConnectorProviderCredentialsRequest,
     ) -> ConnectorProvider:
         try:
-            key_digest = idempotency_key_digest(idempotency_key)
+            key_digest = digest_visible_ascii_key(idempotency_key)
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
         credentials = clear_credentials(request.credentials)
@@ -432,10 +435,10 @@ class ConnectorProviderService:
         idempotency_key: str,
     ) -> ConnectorProviderTestResult:
         try:
-            key_digest = idempotency_key_digest(idempotency_key)
+            key_digest = digest_visible_ascii_key(idempotency_key)
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
-        request_fingerprint = canonical_digest({"expected_version": expected_version})
+        request_fingerprint = digest_request({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
             record = await require_connector_provider(
                 session, connector_provider_id, scope=await connector_actor_scope(session, actor)
@@ -549,10 +552,10 @@ class ConnectorProviderService:
         idempotency_key: str,
     ) -> ConnectorProvider:
         try:
-            key_digest = idempotency_key_digest(idempotency_key)
+            key_digest = digest_visible_ascii_key(idempotency_key)
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
-        request_fingerprint = canonical_digest({"expected_version": expected_version, "status": status.value})
+        request_fingerprint = digest_request({"expected_version": expected_version, "status": status.value})
         async with transaction(self._sessions) as session:
             record = await require_connector_provider(
                 session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True

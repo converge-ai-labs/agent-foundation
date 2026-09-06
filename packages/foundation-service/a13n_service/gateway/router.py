@@ -277,7 +277,7 @@ async def retry_run(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
-        request=body.to_command(),
+        request=body,
     )
 
 

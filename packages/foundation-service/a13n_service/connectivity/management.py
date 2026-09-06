@@ -14,7 +14,6 @@ from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyIdentity,
     digest_request,
-    digest_visible_ascii_key,
     load_evidence,
     new_evidence,
 )
@@ -119,17 +118,9 @@ def clear_credentials(value: dict[str, SecretStr]) -> dict[str, str]:
 def fingerprint(value: BaseModel, *, credentials: Mapping[str, object] | None = None) -> str:
     payload = value.model_dump(mode="json", exclude={"credentials"})
     if credentials is not None:
-        payload["credentials_sha256"] = canonical_digest(credentials)
-    return canonical_digest(payload)
-
-
-def canonical_digest(value: object) -> str:
-    return digest_request(value)
+        payload["credentials_sha256"] = digest_request(credentials)
+    return digest_request(payload)
 
 
 def canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def idempotency_key_digest(value: str) -> str:
-    return digest_visible_ascii_key(value)

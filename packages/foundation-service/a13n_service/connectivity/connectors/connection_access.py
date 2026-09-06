@@ -14,11 +14,12 @@ from a13n_service.connectivity.connectors.contracts import (
     ConnectionInspection,
     ConnectorProviderError,
 )
-from a13n_service.connectivity.management import (
-    idempotency_key_digest,
-    replay_command,
+from a13n_service.connectivity.management import replay_command
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyConflict,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
 )
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import (
     WorkspaceAction,
@@ -87,7 +88,7 @@ def require_version(current: int, expected: int) -> None:
 
 def idempotency_digest(value: str) -> str:
     try:
-        return idempotency_key_digest(value)
+        return digest_visible_ascii_key(value)
     except InvalidIdempotencyKey as error:
         raise map_management_value_error(error) from error
 

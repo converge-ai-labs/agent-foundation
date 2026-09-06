@@ -15,15 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.management import (
-    canonical_digest,
-    canonical_json,
-    idempotency_key_digest,
-    record_command,
-    replay_command,
-)
+from a13n_service.connectivity.management import canonical_json, record_command, replay_command
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyConflict,
+    InvalidIdempotencyKey,
+    digest_request,
+    digest_visible_ascii_key,
+)
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import (
@@ -121,7 +120,7 @@ class MCPOAuthService:
     ) -> MCPAuthorizationLaunch:
         _require_user(actor)
         key_digest = _idempotency_digest(idempotency_key)
-        request_fingerprint = canonical_digest({"expected_version": expected_version})
+        request_fingerprint = digest_request({"expected_version": expected_version})
         source = await self._authorize_source(
             actor=actor,
             connection_id=connection_id,
@@ -575,7 +574,7 @@ def _require_user(actor: AuthenticatedActor) -> None:
 
 def _idempotency_digest(value: str) -> str:
     try:
-        return idempotency_key_digest(value)
+        return digest_visible_ascii_key(value)
     except InvalidIdempotencyKey as error:
         raise map_management_error(error) from error
 
