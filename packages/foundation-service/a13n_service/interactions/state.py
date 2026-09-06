@@ -100,7 +100,7 @@ RunStateOutcomeCandidate = Annotated[
 
 
 class RunStateEnvelope(StrictModel):
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["1"] = "1"
     run_id: ObjectId
     thread_id: ThreadId
     checkpoint_seq: int = Field(ge=0)

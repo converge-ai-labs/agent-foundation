@@ -128,6 +128,8 @@ The default service profile keeps the existing PostgreSQL and Redis endpoints an
 
 ### Worker execution
 
+Run State has one current envelope schema (`1`) with a required independent `writer_fence`. This pre-release implementation updates its initialization migrations directly; initialize fresh development storage from the current definitions instead of upgrading previously initialized Run data. No legacy Run State reader, converter, or mixed-version rollout is provided.
+
 With `FOUNDATION_PLUGIN_RUNTIME_MODE=on_demand`, `all` and `worker` roles start the production execution loop. It preflights the exact accepted Runtime lock before claiming capacity, reauthorizes the persisted Principal, reconstructs the accepted Agent configuration, and executes through the native Harness and Model Provider adapters. Current Provider credentials are resolved again for outbound model calls. Supported preparation includes locked Skills, authorized Environment selection, Connector/MCP capabilities, native text/structured/binary inputs, and sealed waiting feedback. Asset inputs use `asset.use`, verify stored content, and recheck access before delivery. Recovery does not reacquire initial input that a checkpoint already marked applied.
 
 Both execution profiles explicitly fail preparation with `worker_dependency_unsupported` for child-Agent graphs, Secret requirements, Asset publication capabilities, or encrypted configuration payloads. Custom input adapters and asynchronous child-result inputs are also unsupported. These dependencies are never silently omitted.

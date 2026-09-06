@@ -190,17 +190,13 @@ async def test_takeover_preserves_checkpoint_provenance_and_prepared_outcome(
         await store.claim_writer(published, fence=1)
 
 
-@pytest.mark.parametrize("schema_version", ["1", "2"])
-async def test_state_read_rejects_missing_writer_field_without_inferred_migration(
-    interaction_object_store: ObjectStore, schema_version: str
-) -> None:
+async def test_state_read_requires_writer_fence(interaction_object_store: ObjectStore) -> None:
     store = RunStateStore(interaction_object_store)
     created = await store.create(TENANT_ID, initial_state())
     payload = created.envelope.model_dump(mode="json", exclude={"writer_fence"})
-    payload["schema_version"] = schema_version
     body = rfc8785.dumps(payload)
     metadata = dict(created.info.metadata)
-    metadata.update({"schema-version": schema_version, "digest-sha256": hashlib.sha256(body).hexdigest()})
+    metadata["digest-sha256"] = hashlib.sha256(body).hexdigest()
     await interaction_object_store.put(
         created.info.key, body, content_type=created.info.content_type, metadata=metadata, if_match=created.info.version
     )

@@ -399,7 +399,7 @@ class RunStateOutcomeCandidate:
 
 
 class RunStateEnvelope:
-    schema_version: Literal["2"]
+    schema_version: Literal["1"]
     run_id: str
     thread_id: str
     checkpoint_seq: int
@@ -479,7 +479,7 @@ Acceptance publishes the initial object create-only. A current attempt does not 
 
 A writer claim conditionally replaces the same complete canonical body with only `writer_fence` advanced, and publishes matching metadata, digest, and size atomically. It preserves `checkpoint_seq`, `checkpoint_kind`, `input_disposition`, checkpoint provenance, effective configuration, Harness state, Host state, and any prepared outcome candidate. Advancing the fence changes the body and invalidates the preceding conditional-write token even on content-derived-version backends. A metadata-only claim is insufficient. A lower fence is rejected. Repeating the same fence still supplies the exact current object version and cannot succeed against a superseded version; it preserves the state content rather than inventing a checkpoint. After an uncertain claim outcome, the caller revalidates relational authority and reads the exact current object before deciding whether its claim committed or was superseded; it never retries unconditionally.
 
-Run State envelope v2 requires the body field. A v1 envelope or a v2 envelope missing `writer_fence` fails explicit state validation; no reader infers writer authority from checkpoint provenance or metadata. This change supplies no automatic in-place migration or mixed-version Worker compatibility. Existing state is never silently rewritten, including sealed parent state. A deployment with retained v1 state requires an explicitly supported compatibility or migration path before that state can be resumed or selected as a parent.
+`writer_fence` is required in the current Run State envelope. Readers never infer writer authority from checkpoint provenance or metadata.
 
 Before each write, Foundation verifies that the Run remains unsealed and that the attempt ID, fence, lease, tenant, and Run state version are current. It holds no database transaction across object I/O. Expected-version replacement serializes the object writes: after a newer attempt claims the key, an older attempt's known object version can no longer overwrite it. A conflict causes a fresh read of Run and object authority; it is never retried as an unconditional put.
 
@@ -683,9 +683,9 @@ Fork, continuation, automatic asynchronous-result acceptance, feedback, retry, a
 
 Cancellation before durable acceptance creates no Run. Interrupt after acceptance seals the Run without selecting in-flight state and does not make the Run an eligible parent. A lost client response after possible acceptance is reconciled through the API idempotency contract.
 
-## Compatibility
+## Validation Boundaries
 
-The compatibility axes remain independent:
+The following versions and identities have independent owners:
 
 | Version                                      | Owner                                       |
 | -------------------------------------------- | ------------------------------------------- |
@@ -700,9 +700,9 @@ The compatibility axes remain independent:
 | Agent definition revision                    | Foundation immutable Agent domain           |
 | Model execution snapshot schema              | Foundation Model Management domain          |
 
-An unknown required state, payload, Harness, Capability, Environment configuration/state, or Plugin-lock version fails explicitly unless its owner supplies a compatible reader or migration. A sealed parent state is never rewritten for compatibility with a new Run; initialization reads and transforms it into the new Run-owned state. An active Run migration, when supported, is another fenced conditional replacement of the same key.
+Foundation reads one current Run State envelope format. Each referenced state, payload, Harness, Capability, Environment configuration/state, or Plugin-lock format is validated by its owner; unsupported values fail explicitly. A sealed parent remains unchanged when initialization creates a new Run-owned state.
 
-Relational migrations never reinterpret state bytes through current defaults. Adding a source kind is additive only when old readers preserve it as unknown without executing or authorizing it.
+Relational migrations never reinterpret state bytes through current defaults.
 
 ## Trade-offs
 

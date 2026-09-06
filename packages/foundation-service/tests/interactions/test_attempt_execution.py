@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import pytest
 from a13n_harness import SafeFailure
 from a13n_service.agents.domain import EffectiveAgentConfig
-from a13n_service.database import DatabaseMigrator
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -100,7 +99,7 @@ async def test_takeover_seals_existing_candidate_without_another_harness_run(
     object_store: ObjectStore,
     candidate_kind: str,
 ) -> None:
-    interaction_sessions, database_config = migrated_interaction_sessions
+    interaction_sessions, _database_config = migrated_interaction_sessions
     states, run, initial = await _accept_root(interaction_sessions, object_store)
     first = await AttemptScheduler(
         interaction_sessions,
@@ -123,10 +122,6 @@ async def test_takeover_seals_existing_candidate_without_another_harness_run(
     published = await first_execution.publish_checkpoint(
         first_authority, states, await states.read(TENANT_ID, run.id), candidate
     )
-    migrator = DatabaseMigrator(database_config)
-    await asyncio.to_thread(migrator.downgrade, "90c70b278335")
-    await asyncio.to_thread(migrator.upgrade)
-
     second = await AttemptScheduler(
         interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=3),
@@ -166,13 +161,11 @@ async def test_takeover_seals_existing_candidate_without_another_harness_run(
         assert sealed is not None and attempt is not None
         assert sealed.sealed_state_digest_sha256 == claimed.digest_sha256
         assert sealed.sealed_state_size_bytes == len(claimed.body)
-        assert sealed.sealed_state_envelope_schema_version == "2"
+        assert sealed.sealed_state_envelope_schema_version == "1"
         assert sealed.sealed_state_checkpoint_seq == published.envelope.checkpoint_seq
         assert sealed.sealed_state_committed_by_run_attempt_id == second.attempt.id
         assert attempt.harness_run_id is None
         assert attempt.status == "succeeded"
-    with pytest.raises(RuntimeError, match="cannot downgrade after outcome adoption"):
-        await asyncio.to_thread(migrator.downgrade, "90c70b278335")
     with pytest.raises(AttemptAuthorityError):
         await second_execution.claim_state_writer(second_authority, states, claimed)
 
