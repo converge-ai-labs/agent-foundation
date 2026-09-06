@@ -239,6 +239,9 @@ class SessionBackend:
         if self.thread_id is None:
             return None
         batch = await self.app.thread_decisions(thread_id=self.thread_id)
+        if batch is not None:
+            self._decisions.clear()
+            self._decision_continuation = None
         return DecisionInteraction(batch) if batch is not None else None
 
     async def pending(self) -> str:
@@ -247,19 +250,10 @@ class SessionBackend:
         detail = await self.app.get_thread(self.thread_id)
         if not detail.deferred_requests:
             return ""
+        # The typed selector owns arguments and response instructions. Do not
+        # duplicate its preview or advertise commands blocked by that selector.
         lines = ["Pending decisions (nothing is approved automatically):"]
-        for item in detail.deferred_requests:
-            arguments = json.dumps(item.arguments, ensure_ascii=False)
-            lines.append(
-                f"{item.request_id}: {item.kind} {item.tool_name}\n{arguments[: self.status.max_tool_argument_chars]}"
-            )
-            if item.arguments_omitted or len(arguments) > self.status.max_tool_argument_chars:
-                lines.append(f"[Arguments omitted/truncated; /review {item.request_id} inspects the retained request]")
-            lines.append(
-                f"  /approve {item.request_id} or /deny {item.request_id}"
-                if item.kind == "approval"
-                else f"  /result {item.request_id} 'JSON' or /deny {item.request_id}"
-            )
+        lines.extend(f"{item.request_id}: {item.kind} {item.tool_name}" for item in detail.deferred_requests)
         return "\n".join(lines)
 
     async def review(self, request_id: str) -> str:
@@ -513,6 +507,8 @@ class SessionBackend:
         return f"Run {operation.status.value}."
 
     async def cancel(self) -> None:
+        self._decisions.clear()
+        self._decision_continuation = None
         self.cancel_requested = True
         if self.receipt_id is not None:
             await self.app.cancel_root_operation(self.receipt_id)

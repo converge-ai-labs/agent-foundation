@@ -11,6 +11,7 @@ from a13n_ui.interactive.selection import Choice, Selection, resolve_choice
 from a13n_ui.interactive.setup import SetupWizard
 from a13n_ui.interactive.shell import CliShell
 from a13n_ui.surfaces import (
+    ApprovalDecision,
     ApprovalRequestView,
     DecisionBatchView,
     ExternalToolResult,
@@ -187,3 +188,35 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
             if not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_cancel_discards_partial_command_mode_approval_drafts(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from a13n_ui.interactive.backend import SessionBackend
+    from a13n_ui.interactive.rendering import Status
+
+    detail = SimpleNamespace(
+        continuation_id="a" * 64,
+        deferred_requests=(
+            SimpleNamespace(request_id="one", kind="approval"),
+            SimpleNamespace(request_id="two", kind="approval"),
+        ),
+    )
+
+    class App:
+        async def get_thread(self, thread_id):
+            return detail
+
+    backend = SessionBackend(App(), CliRequest(), tmp_path, Status())
+    backend.thread_id = "thread-one"
+    assert await backend.decide("approve", "one") is None
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = backend
+        await shell.cancel()
+    assert await backend.decide("deny", "two") is None
+    response = await backend.decide("deny", "one")
+    assert response is not None
+    assert all(isinstance(item, ApprovalDecision) and not item.approved for item in response.responses)

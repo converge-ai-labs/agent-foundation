@@ -128,6 +128,9 @@ async def test_failed_admission_preserves_images_and_next_draft_is_not_overwritt
             await fail.wait()
             raise ValueError("fixture admission failure")
 
+        async def cancel(self):
+            return None
+
         async def interaction(self):
             return None
 
@@ -157,6 +160,9 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images() -> No
         async def initialize(self):
             initialized.set()
             return True
+
+        async def cancel(self):
+            return None
 
         async def interaction(self):
             return None
@@ -236,6 +242,9 @@ async def test_failed_send_recovery_fences_next_drafts_pending_clipboard(monkeyp
             started.set()
             await fail.wait()
             raise ValueError("admission failed")
+
+        async def cancel(self):
+            return None
 
         async def interaction(self):
             return None
@@ -317,6 +326,52 @@ async def test_first_page_key_scrolls_visible_viewport_and_freezes_new_output() 
                     await asyncio.sleep(0.01)
             shell.app.exit()
             await task
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("key", ["\x03", "\x1b"])
+async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(key: str) -> None:
+    initialized, entered = asyncio.Event(), asyncio.Event()
+
+    class Backend:
+        async def initialize(self):
+            initialized.set()
+            return True
+
+        async def choices(self, kind):
+            entered.set()
+            await asyncio.Event().wait()
+
+        async def cancel(self):
+            return None
+
+        async def interaction(self):
+            return None
+
+    @asynccontextmanager
+    async def factory(*args):
+        yield Backend()
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest(), runtime_loader=lambda: factory)
+        task = asyncio.create_task(shell.run())
+        try:
+            await initialized.wait()
+            pipe.send_text("/model\r")
+            await asyncio.wait_for(entered.wait(), 3)
+            shell.composer.buffer.document = Document("next draft", 3)
+            pipe.send_text(key)
+            async with asyncio.timeout(3):
+                while not shell._input_task.done():
+                    await asyncio.sleep(0.01)
+            assert shell.menu_handler is None
+            assert shell.composer.buffer.document == Document("next draft", 3)
+            pipe.send_text("\x03/quit\r")
+            await asyncio.wait_for(task, 3)
         finally:
             if not task.done():
                 task.cancel()

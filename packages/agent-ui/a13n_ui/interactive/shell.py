@@ -346,11 +346,17 @@ class CliShell:
         @keys.add(
             "escape",
             filter=Condition(
-                lambda: self.wizard is not None or self.interaction is not None or self.menu_handler is not None
+                lambda: (
+                    self.wizard is not None
+                    or self.interaction is not None
+                    or self.menu_handler is not None
+                    or (self._input_task is not None and not self._input_task.done())
+                )
             ),
         )
         def back(event: KeyPressEvent) -> None:
-            if self.busy:
+            if self.busy or (self._input_task is not None and not self._input_task.done()):
+                event.app.create_background_task(self.cancel())
                 return
             if self.wizard is not None and self.wizard.back():
                 self.selection = self.wizard.selection_prompt()
@@ -365,7 +371,13 @@ class CliShell:
 
         @keys.add("c-c")
         def interrupt(event: KeyPressEvent) -> None:
-            if self.busy or self.wizard is not None or self.interaction is not None or self.menu_handler is not None:
+            if (
+                self.busy
+                or self.wizard is not None
+                or self.interaction is not None
+                or self.menu_handler is not None
+                or (self._input_task is not None and not self._input_task.done())
+            ):
                 event.app.create_background_task(self.cancel())
             else:
                 event.current_buffer.reset()
@@ -474,6 +486,8 @@ class CliShell:
             self._input_task.cancel()
             await asyncio.gather(self._input_task, return_exceptions=True)
             self.emit("Action cancelled. Completed writes are not rolled back; preview current state before retry.")
+        if self.backend is not None and not self.busy:
+            await self.backend.cancel()
         if (self.wizard is not None or self.interaction is not None or self.menu_handler is not None) and not self.busy:
             was_setup = self.wizard is not None
             self.wizard = None

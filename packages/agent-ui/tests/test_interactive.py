@@ -416,6 +416,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
         backend = SessionBackend(app, CliRequest(environment_mode=mode), tmp_path, Status())
         first = await backend.execute(StreamRenderer(backend.status), prompt="Try reviewed command")
         assert "Pending decisions" in first
+        assert "/approve" not in first and "/result" not in first
         assert not marker.exists()
         review = await backend.review("approval-one")
         assert "shell_exec" in review
