@@ -82,13 +82,19 @@ def test_windows_eip_job_lifecycle(tmp_path: Path, finish: str) -> None:
             [
                 "import json, os, subprocess, sys",
                 "from pathlib import Path",
+                "pids = [os.getpid()]",
                 "try:",
-                "    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], creationflags=subprocess.CREATE_BREAKAWAY_FROM_JOB)",
-                "except OSError as error:",
-                "    assert error.winerror == 5, error",
-                "else:",
-                "    child.terminate(); child.wait(); raise AssertionError('child escaped Job')",
-                f"Path({str(marker)!r}).write_text(json.dumps([os.getpid()]))",
+                "    try:",
+                "        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], creationflags=subprocess.CREATE_BREAKAWAY_FROM_JOB)",
+                "    except OSError as error:",
+                "        assert error.winerror == 5, error",
+                "    else:",
+                # A launcher may create a nested Job that permits breakaway.
+                # Success can leave the child in envd's outer Job: prove actual
+                # descendant death after root exit, not rejection of the flag.
+                "        pids.append(child.pid)",
+                "finally:",
+                f"    Path({str(marker)!r}).write_text(json.dumps(pids))",
             ]
         )
     else:

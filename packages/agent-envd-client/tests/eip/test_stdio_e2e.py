@@ -1031,7 +1031,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
             foreground.output.stdout.reference,
             observed=foreground.output.stdout,
         )
-        assert b"".join([chunk async for chunk in foreground_reader]) == b"foreground\n"
+        assert b"".join([chunk async for chunk in foreground_reader]) == f"foreground{os.linesep}".encode()
         for index, foreground_output in enumerate((foreground.output.stdout, foreground.output.stderr)):
             foreground_release = await session.client.output_release(
                 OutputReleaseParams(
@@ -1059,7 +1059,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
             retained_reference,
             observed=retained_foreground.output.stdout,
         )
-        assert b"".join([chunk async for chunk in retained_reader]) == b"retained-foreground\n"
+        assert b"".join([chunk async for chunk in retained_reader]) == f"retained-foreground{os.linesep}".encode()
         retained_references = (
             retained_reference,
             retained_foreground.output.stderr.reference,
