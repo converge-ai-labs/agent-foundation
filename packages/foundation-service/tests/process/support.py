@@ -3,6 +3,7 @@
 import asyncio
 from base64 import b64encode
 from pathlib import Path
+from shutil import copyfile
 
 import httpx2
 from a13n_service.database import DatabaseMigrator
@@ -19,7 +20,7 @@ def request(app: FastAPI, path: str, *, method: str = "GET") -> httpx2.Response:
     return asyncio.run(send_request())
 
 
-def local_settings(tmp_path: Path, **updates: object) -> Settings:
+def local_settings(tmp_path: Path, *, database_template: Path | None = None, **updates: object) -> Settings:
     values: dict[str, object] = {
         "_env_file": None,
         "database_backend": "sqlite",
@@ -35,7 +36,15 @@ def local_settings(tmp_path: Path, **updates: object) -> Settings:
     }
     values.update(updates)
     settings = Settings(**values)
-    DatabaseMigrator(settings.database_config()).upgrade()
+    if (
+        database_template is not None
+        and settings.database_backend == "sqlite"
+        and not settings.database_sqlite_path.exists()
+    ):
+        settings.database_sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+        copyfile(database_template, settings.database_sqlite_path)
+    else:
+        DatabaseMigrator(settings.database_config()).upgrade()
     return settings
 
 

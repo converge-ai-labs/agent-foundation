@@ -20,7 +20,6 @@ from a13n_service.skills import SkillRuntimePreparer
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 
 from ..connectivity.connector_helpers import FakeConnectorBackend, fake_registry
-from .support import local_settings
 
 
 @pytest.mark.anyio
@@ -93,7 +92,7 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
 
 
 @pytest.mark.anyio
-async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: Path) -> None:
+async def test_lifespan_constructs_storage_once_and_readiness_uses_it(local_settings, tmp_path: Path) -> None:
     app = create_app(local_settings(tmp_path))
 
     async with app.router.lifespan_context(app):
@@ -121,6 +120,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 @pytest.mark.anyio
 @pytest.mark.parametrize("role", tuple(ProcessRole))
 async def test_role_lifespan_installs_only_owned_connectivity_components(
+    local_settings,
     tmp_path: Path,
     role: ProcessRole,
 ) -> None:
@@ -142,6 +142,7 @@ async def test_role_lifespan_installs_only_owned_connectivity_components(
 
 @pytest.mark.anyio
 async def test_connectivity_role_does_not_build_control_adapters(
+    local_settings,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -160,7 +161,7 @@ async def test_connectivity_role_does_not_build_control_adapters(
 
 
 @pytest.mark.anyio
-async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_path: Path) -> None:
+async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(local_settings, tmp_path: Path) -> None:
     app = create_app(local_settings(tmp_path, role=ProcessRole.connectivity))
 
     async with app.router.lifespan_context(app):
@@ -182,7 +183,7 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_
 
 
 @pytest.mark.anyio
-async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
+async def test_lifespan_wires_skill_components_only_to_their_process_roles(local_settings, tmp_path: Path) -> None:
     control = create_app(local_settings(tmp_path / "control", role=ProcessRole.control))
     async with control.router.lifespan_context(control):
         assert control.state.runtime.control is not None
@@ -199,7 +200,7 @@ async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_p
 
 
 @pytest.mark.anyio
-async def test_trace_query_client_is_created_only_for_control_plane_roles(tmp_path: Path) -> None:
+async def test_trace_query_client_is_created_only_for_control_plane_roles(local_settings, tmp_path: Path) -> None:
     query_values = {
         "observability_query_provider": "langfuse",
         "observability_query_langfuse_base_url": "https://langfuse.example.com",
@@ -216,7 +217,9 @@ async def test_trace_query_client_is_created_only_for_control_plane_roles(tmp_pa
 
 
 @pytest.mark.anyio
-async def test_distribution_registered_trace_query_provider_is_selected_only_by_control(tmp_path: Path) -> None:
+async def test_distribution_registered_trace_query_provider_is_selected_only_by_control(
+    local_settings, tmp_path: Path
+) -> None:
     class Provider:
         capabilities = TraceQueryCapabilities()
 
@@ -255,7 +258,7 @@ async def test_distribution_registered_trace_query_provider_is_selected_only_by_
         assert worker.state.runtime.control is None
 
 
-def test_distribution_cannot_replace_the_builtin_langfuse_provider(tmp_path: Path) -> None:
+def test_distribution_cannot_replace_the_builtin_langfuse_provider(local_settings, tmp_path: Path) -> None:
     registry = TraceQueryProviderRegistry()
     registry.register("langfuse", lambda: object())  # type: ignore[arg-type,return-value]
 
@@ -267,7 +270,7 @@ def test_distribution_cannot_replace_the_builtin_langfuse_provider(tmp_path: Pat
 
 
 @pytest.mark.anyio
-async def test_lifespan_fails_closed_without_secret_master_key(tmp_path: Path) -> None:
+async def test_lifespan_fails_closed_without_secret_master_key(local_settings, tmp_path: Path) -> None:
     app = create_app(
         local_settings(
             tmp_path,
@@ -282,7 +285,7 @@ async def test_lifespan_fails_closed_without_secret_master_key(tmp_path: Path) -
 
 
 @pytest.mark.anyio
-async def test_control_lifespan_requires_connectivity_public_origin(tmp_path: Path) -> None:
+async def test_control_lifespan_requires_connectivity_public_origin(local_settings, tmp_path: Path) -> None:
     app = create_app(
         local_settings(
             tmp_path,
@@ -299,7 +302,9 @@ async def test_control_lifespan_requires_connectivity_public_origin(tmp_path: Pa
 @pytest.mark.anyio
 @pytest.mark.parametrize("role", list(ProcessRole))
 @pytest.mark.parametrize("enabled", [False, True])
-async def test_price_updater_lifetime_belongs_only_to_enabled_execution_roles(tmp_path, monkeypatch, role, enabled):
+async def test_price_updater_lifetime_belongs_only_to_enabled_execution_roles(
+    local_settings, tmp_path, monkeypatch, role, enabled
+):
     from contextlib import contextmanager
 
     from pydantic_ai import prices

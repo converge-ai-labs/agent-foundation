@@ -13,8 +13,6 @@ from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinato
 from a13n_service.settings import ProcessRole
 from anyio import sleep_forever
 
-from .support import local_settings
-
 
 class _UnusedPluginRuntimeCandidateResolver:
     async def resolve_candidate(
@@ -73,6 +71,7 @@ def coordinator_started(monkeypatch: pytest.MonkeyPatch) -> asyncio.Event:
 
 @pytest.mark.anyio
 async def test_on_demand_import_failure_removes_worker_readiness(
+    local_settings,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -92,7 +91,7 @@ async def test_on_demand_import_failure_removes_worker_readiness(
 
 
 @pytest.mark.anyio
-async def test_lifespan_rejects_partial_plugin_runtime_coordination(tmp_path: Path) -> None:
+async def test_lifespan_rejects_partial_plugin_runtime_coordination(local_settings, tmp_path: Path) -> None:
     app = create_app(
         local_settings(
             tmp_path,
@@ -110,7 +109,7 @@ async def test_lifespan_rejects_partial_plugin_runtime_coordination(tmp_path: Pa
 
 
 @pytest.mark.anyio
-async def test_lifespan_rejects_runner_coordination_in_on_demand_mode(tmp_path: Path) -> None:
+async def test_lifespan_rejects_runner_coordination_in_on_demand_mode(local_settings, tmp_path: Path) -> None:
     app = create_app(
         local_settings(tmp_path, role=ProcessRole.control),
         components=Components(
@@ -126,6 +125,7 @@ async def test_lifespan_rejects_runner_coordination_in_on_demand_mode(tmp_path: 
 
 @pytest.mark.anyio
 async def test_lifespan_wires_durable_plugin_runtime_coordinator(
+    local_settings,
     tmp_path: Path,
     coordinator_started: asyncio.Event,
 ) -> None:
@@ -151,6 +151,7 @@ async def test_lifespan_wires_durable_plugin_runtime_coordinator(
 
 @pytest.mark.anyio
 async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(
+    local_settings,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -188,6 +189,7 @@ async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(
 
 @pytest.mark.anyio
 async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority(
+    local_settings,
     tmp_path: Path,
     coordinator_started: asyncio.Event,
 ) -> None:
@@ -209,7 +211,7 @@ async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority
 
 
 @pytest.mark.anyio
-async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(tmp_path: Path) -> None:
+async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(local_settings, tmp_path: Path) -> None:
     app = create_app(local_settings(tmp_path, role=ProcessRole.worker, plugin_runtime_mode="runner"))
 
     async with app.router.lifespan_context(app):
