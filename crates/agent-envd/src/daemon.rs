@@ -2834,6 +2834,28 @@ mod tests {
         assert_eq!(second["result"]["descriptor"]["generation"], 7);
     }
 
+    #[test]
+    fn dispatch_fits_a_windows_sized_thread_stack() {
+        std::thread::Builder::new()
+            .name("eip-small-stack".to_owned())
+            .stack_size(1024 * 1024)
+            .spawn(|| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("runtime builds");
+                runtime.block_on(async {
+                    let config = Config::for_test("env-test");
+                    let daemon = Daemon::with_generation(&config, 7).expect("daemon builds");
+                    let initialized = initialize(&daemon).await;
+                    assert_eq!(initialized["result"]["descriptor"]["generation"], 7);
+                });
+            })
+            .expect("small-stack thread starts")
+            .join()
+            .expect("dispatch completes on the bounded stack");
+    }
+
     #[tokio::test]
     async fn initialize_describe_and_close_follow_session_lifecycle() {
         let config = Config::for_test("env-test");
