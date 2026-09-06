@@ -30,7 +30,7 @@ flowchart LR
     Protocol --> Harness[a13n-harness]
     Harness --> Pydantic[Pydantic AI]
     Host --> Store[Host persistence and fan-out]
-    Host --> Surface[WebUI or TUI]
+    Host --> Surface[CLI or embedding adapter]
 ```
 
 The Harness imports no AG-UI, UI, Session, HTTP, or terminal-rendering type. Agent Stream Protocol depends only on public Harness and Pydantic AI stream types plus the upstream AG-UI schema library. It imports no Agent UI session implementation, Foundation persistence model, or transport framework.

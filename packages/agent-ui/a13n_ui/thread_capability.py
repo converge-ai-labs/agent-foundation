@@ -1,4 +1,4 @@
-"""WebUI-only root Thread collaboration tools over detached Agent UI commands and queries."""
+"""Opt-in embedding collaboration tools over detached Agent UI commands and queries."""
 
 from __future__ import annotations
 

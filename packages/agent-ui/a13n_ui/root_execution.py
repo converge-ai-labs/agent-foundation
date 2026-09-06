@@ -52,7 +52,7 @@ from a13n_ui.storage import (
     ThreadConfigurationMutation,
 )
 from a13n_ui.subagent_operator import AgentUiSubagentOperator
-from a13n_ui.surfaces import ApprovalDecision, ExternalToolResult, ThreadDeferredResponse
+from a13n_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_ui.thread_service import ThreadService
 
 
@@ -119,6 +119,7 @@ class RootRunExecutor:
         prompt: str | None = None,
         response: ThreadDeferredResponse | None = None,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
         on_stream: Callable[[HarnessRunStream[Any]], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
         if (prompt is None) == (response is None):
@@ -136,7 +137,7 @@ class RootRunExecutor:
         if mutation is not None:
             thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
         source = await self._required_configuration()
-        published = await self._compositions.publish(source, _selection(thread))
+        published = await self._compositions.publish(source, _selection(thread), model_overrides=model_overrides)
         previous_state, deferred = await self._load_run_state(thread)
         deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
         if prompt is not None and deferred is not None:

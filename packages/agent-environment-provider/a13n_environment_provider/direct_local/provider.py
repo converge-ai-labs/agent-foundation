@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, JsonValue, ValidationError
 
+from .._local_identity import local_backing_identity
 from ..errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
@@ -171,6 +172,13 @@ class DirectLocalEnvironment(Environment):
     ) -> None:
         del thread_id, run_id, agent_instance_id, host_refs
         root = await asyncio.to_thread(_resolve_shared_root, self._configuration.root.path)
+        policy = self._configuration.model_dump(mode="json")
+        policy["root"] = {"path": str(root), "read_only": self._configuration.root.read_only}
+        for field in ("allowed_executables", "allowed_environment_keys", "allowed_ports"):
+            policy[field] = sorted(policy[field])
+        backing_identity = await asyncio.to_thread(
+            local_backing_identity, provider_key=_PROVIDER_KEY, roots=(root,), policy=policy
+        )
         generation = f"generation-{uuid4().hex[:16]}"
         files = LocalFileOperator(
             root=root,
@@ -217,7 +225,7 @@ class DirectLocalEnvironment(Environment):
             else None
         )
         shell = LocalShell(processes) if processes is not None else None
-        self._descriptor = _descriptor(self._configuration, generation)
+        self._descriptor = _descriptor(self._configuration, generation, backing_identity=backing_identity)
         self._processes = processes
         self._retention = retention
         self._operations = EnvironmentOperations(
@@ -322,7 +330,9 @@ def _operation_error(message: str, code: str):
     return EnvironmentError(message, code=code)
 
 
-def _descriptor(configuration: DirectLocalProviderConfiguration, generation: str) -> EnvironmentDescriptor:
+def _descriptor(
+    configuration: DirectLocalProviderConfiguration, generation: str, *, backing_identity: str | None = None
+) -> EnvironmentDescriptor:
     process_enabled = bool(configuration.allowed_executables or configuration.shell_profiles)
     read_actions = {
         EnvironmentAction.FILE_STAT,
@@ -359,6 +369,7 @@ def _descriptor(configuration: DirectLocalProviderConfiguration, generation: str
         )
     return EnvironmentDescriptor(
         generation=generation,
+        backing_identity=backing_identity,
         operation_families=frozenset(families),
         permissions=EnvironmentPermissionSet(operations=frozenset(permissions)),
         limits=limits,

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Agent UI uses a small multi-file configuration tree so people can configure and inspect the workstation with an ordinary editor when no browser is available. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
+Agent UI uses a small multi-file configuration tree so people can configure and inspect the CLI with an ordinary editor or another agent. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
 
 A stable valid read of the configuration tree plus usable optional Content Plugin sources produces one accepted configuration generation. A malformed, incomplete, or changing primary configuration tree leaves the previous accepted generation active. Invalid optional plugin content is skipped with diagnostics under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration). Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
 
@@ -50,7 +50,7 @@ defaults:
 
 `process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
 
-Web listener binding and process-local API access are intentionally absent from this desired-resource tree. They are executable-bound surface inputs owned by [HTTP Startup and Access](05-runtime-subagents-and-surfaces.md#http-startup-and-access).
+The root also accepts `display.mode` (`concise` by default), `display.show_status` (true), `display.max_tool_result_lines` (5, range 1–200), and `display.max_tool_argument_chars` (8192, range 128–65536). The CLI reads these at startup; explicit launch or live mode selections take precedence. These are presentation settings, not model or permission controls. There is no listener or API-key configuration because this release has no HTTP adapter. The [interactive contract](07-interactive-cli.md) owns terminal behavior.
 
 The data root is a bootstrap locator resolved before parsing this tree: explicit `--data-root`, then `A13N_UI_DATA_ROOT`, then `<config-directory>/data`. It owns both local persistence and the installed Content Plugin catalog. It is deliberately absent from `a13n-ui.yaml`, so an invalid root edit cannot hide the SQLite database that retains the prior accepted generation. Selecting another data root opens a distinct local workstation dataset and never implies migration.
 
@@ -111,9 +111,9 @@ The accepted generation contains normalized credential-free definitions and exac
 
 Manual editing is always supported. A valid external save enters the next accepted generation; an invalid or incomplete save produces diagnostics while the previous generation remains active.
 
-WebUI mutation operations use source-content preconditions. The CLI can locate, validate, and show configuration and can invoke separately defined explicit imports, but it exposes no generic create, update, or delete operation for desired resources.
+App mutation operations use source-content preconditions. The CLI can locate, validate, and show configuration and can invoke separately defined explicit imports, but it exposes no generic create, update, or delete operation for desired resources.
 
-The WebUI mutation request is:
+The App mutation request is:
 
 ```python
 class ResourceMutationRequest(BaseModel):
@@ -186,7 +186,7 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 | Malformed, unstable, or duplicate resource source   | Candidate generation is rejected                                                   |
 | Unknown resource reference                          | Candidate generation is rejected with the owning source location                   |
 | Catalog key unavailable or ambiguous                | Candidate generation is rejected; no similarly named fallback is chosen            |
-| Stale WebUI write                                   | Mutation is rejected with the current source digest                                |
+| Stale App write                                     | Mutation is rejected with the current source digest                                |
 | Credential lookup failure                           | Current Run fails before the dependent external dispatch                           |
 | Atomic publication fails before source replacement  | Previous accepted source and generation remain authoritative                       |
 | Generation selection fails after source publication | Previous accepted generation remains selected; reload retries the published source |
@@ -201,7 +201,7 @@ The root `schema_version` governs tree layout and global fields. Every resource 
 2. One resource file defines one stable resource ID.
 3. One accepted generation is complete and coherent across the whole tree.
 4. Invalid intermediate edits never partially replace the accepted generation.
-5. WebUI writes require expected source content and never knowingly clobber a newer observed revision; the CLI exposes no generic desired-resource write.
+5. Managed writes require expected source content and never knowingly clobber a newer observed revision; the CLI exposes no generic desired-resource write.
 6. Global defaults initialize new Threads and never live-update existing Threads.
 7. Credentials remain references until fresh Run construction.
 8. Installed runtime-package or Content Plugin availability never grants selection.

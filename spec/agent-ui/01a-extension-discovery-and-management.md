@@ -14,7 +14,7 @@ Capabilities are listed beside extensions for Agent composition but are not misr
 
 ## Catalog Surface
 
-A common detached projection supports WebUI, CLI, and diagnostics:
+A common detached projection supports CLI, embedding adapters, and diagnostics:
 
 ```python
 class CatalogReference(BaseModel):

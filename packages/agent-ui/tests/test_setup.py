@@ -343,7 +343,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
     resolved: list[str] = []
 
     async def main_stream(messages, info):
-        assert info.model_request_parameters.thinking == "medium"
+        assert info.model_request_parameters.thinking == "high"
         yield {
             0: DeltaToolCall(
                 name="shell_exec",
@@ -386,7 +386,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
         batch = await app.thread_decisions(thread_id=thread.thread_id)
         assert batch is not None and len(batch.requests) == 1
         assert batch.requests[0].kind == "approval"
-    assert resolved == ["gpt-5.6-luna", "gpt-5.6-terra"] or resolved == ["gpt-5.6-terra", "gpt-5.6-luna"]
+    assert set(resolved) == {"gpt-5.6-luna", "gpt-5.6-sol"}
     assert reviewed == ["low"]
     assert not marker.exists()
 

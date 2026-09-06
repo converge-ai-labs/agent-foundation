@@ -16,6 +16,7 @@ from a13n_envd_client import __version__ as envd_client_version
 from anyio import CancelScope
 from pydantic import BaseModel, JsonValue, ValidationError
 
+from .._local_identity import local_backing_identity
 from ..attachments import StdioEIPCarrier
 from ..eip import EIPEnvironmentSession, open_eip_environment
 from ..eip.binding import configured_descriptor
@@ -187,6 +188,12 @@ class LocalEnvdEnvironment(Environment):
             configuration = await asyncio.to_thread(_canonical_configuration, self._configuration)
             await _validate_runtime(self._runtime.executable, configuration)
             self._configuration = configuration
+            backing_identity = await asyncio.to_thread(
+                local_backing_identity,
+                provider_key=_PROVIDER_KEY,
+                roots=(configuration.workspace.path, *configuration.trusted_executable_roots),
+                policy=configuration.model_dump(mode="json"),
+            )
             await self._launch_private_generation()
 
             carrier = self._carrier
@@ -207,7 +214,7 @@ class LocalEnvdEnvironment(Environment):
             self._bound_eip = bound
             await bound.ensure_ready(bound.descriptor.operation_families)
             facets = bound.operations
-            self._descriptor = bound.descriptor
+            self._descriptor = bound.descriptor.model_copy(update={"backing_identity": backing_identity})
             self._operations = EnvironmentOperations(
                 files=facets.files,
                 shell=facets.shell,

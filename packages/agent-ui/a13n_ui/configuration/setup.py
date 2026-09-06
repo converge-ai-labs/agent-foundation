@@ -49,7 +49,12 @@ class SetupSelection(StrictModel):
     project_path: str = Field(min_length=1, max_length=4096)
     environment_profile: Literal["environment-native", "environment-sandbox"]
     shell_review: bool = True
-    codex_model: Literal["gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"] = "gpt-5.6-terra"
+    codex_model: Literal["gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"] = "gpt-5.6-sol"
+
+    codex_thinking: Literal["low", "medium", "high", "xhigh"] = "high"
+    codex_context_window: int = Field(default=350000, ge=16000, le=872000)
+    proactive_context_management_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+    compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
 
 
 class SetupPreview(StrictModel):
@@ -118,11 +123,31 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
             "name": f"{provider.title()} coding",
             "route": f"{'openai-codex' if codex else 'grok'}:{model}",
             "authentication": {"kind": f"{provider}_subscription"},
-            "settings": {"thinking": "medium"} if codex else {},
+            "settings": {
+                "thinking": selection.codex_thinking,
+                "openai_reasoning_summary": "detailed",
+                "openai_store": False,
+            }
+            if codex
+            else {},
+            **(
+                {
+                    "model_characteristics": {
+                        "context_window": selection.codex_context_window,
+                        "proactive_context_management_threshold": selection.proactive_context_management_threshold,
+                        "compact_threshold": selection.compact_threshold,
+                    }
+                }
+                if codex
+                else {}
+            ),
         }
         capabilities: list[dict[str, object]] = [
             {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
             {"capability": "skills", "configuration": {}},
+            {"capability": "compaction", "configuration": {}},
+            {"capability": "handoff", "configuration": {}},
+            {"capability": "runtime_context", "configuration": {}},
         ]
         if selection.shell_review:
             reviewer = "model-codex-review" if "codex" in selection.providers else "model-grok"
@@ -173,6 +198,9 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
             "capabilities": [
                 {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
                 {"capability": "skills", "configuration": {}},
+                {"capability": "compaction", "configuration": {}},
+                {"capability": "handoff", "configuration": {}},
+                {"capability": "runtime_context", "configuration": {}},
             ],
         }
     if not selection.providers and selection.api_key_model is None:
@@ -184,6 +212,9 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
             "capabilities": [
                 {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
                 {"capability": "skills", "configuration": {}},
+                {"capability": "compaction", "configuration": {}},
+                {"capability": "handoff", "configuration": {}},
+                {"capability": "runtime_context", "configuration": {}},
             ],
         }
     if selection.instructions.strip():
@@ -276,6 +307,9 @@ async def preview_setup(
                     resource["model"] = connection_model
                     files[name] = yaml.safe_dump(resource, sort_keys=False)
     root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
+    root.setdefault(
+        "display", {"mode": "concise", "show_status": True, "max_tool_result_lines": 5, "max_tool_argument_chars": 8192}
+    )
     if not isinstance(root, dict):
         raise ConfigurationError("The root configuration must be a mapping.", code="configuration_invalid")
     defaults = root.get("defaults", {})

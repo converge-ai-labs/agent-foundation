@@ -41,7 +41,7 @@ The CLI releases independently from all SDK channels through `release/foundation
 
 Projects under `examples/` may carry their own manifests and lock files when realistic packaging is part of the integration being demonstrated. They remain outside production package workspaces and release groups; example distribution names and artifacts are not platform packages.
 
-`apps/harness-ui` is the private WebUI source for `a13n-ui`. Its compiled output is not tracked in Git, published to npm, or released independently. The Agent UI release workflow builds it, copies immutable assets into the generated `a13n_ui` static package tree, and includes those assets in both the `a13n-ui` sdist and wheel. The sdist can rebuild its wheel without Node.js.
+`a13n-ui` is a Python CLI distribution. Its wheel and sdist include the inline terminal adapter, reusable `AgentUiApp`, and native runtime metadata, with no browser bundle or frontend build input. Building a wheel from source or sdist does not require Node.js. A future WebUI integrates through the App boundary rather than adding execution authority to the terminal.
 
 Source directory, Python distribution, and import-package naming are deliberately distinct. Workspace directories omit the project prefix, such as `packages/agent-environment-provider`; public distributions add the hyphenated `a13n-` prefix, such as `a13n-environment-provider`; Python imports normalize that name with underscores, such as `a13n_environment_provider`. The same rule applies to `agent-harness`, `agent-stream-protocol`, and `agent-ui`. Foundation Service SDKs use the distribution name `a13n-sdk` in Python, Rust, and TypeScript. The native daemon is the deliberate exception: its Cargo package and executable are both `agent-envd`.
 

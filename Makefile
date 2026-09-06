@@ -10,7 +10,6 @@ CHECK_TARGETS := \
 	lint \
 	typecheck \
 	examples-check \
-	harness-ui-check \
 	rust-check \
 	sdk-python-check \
 	sdk-go-check \
@@ -29,7 +28,6 @@ install: ## Install locked dependencies and Git hooks
 	@echo "Synchronizing the standalone Python SDK"
 	@uv sync --project sdk/python --locked
 	@echo "Installing Harness UI dependencies"
-	@npm --prefix apps/harness-ui ci
 	@echo "Installing TypeScript SDK dependencies"
 	@npm --prefix sdk/typescript ci
 	@echo "Installing pre-commit hooks"
@@ -158,7 +156,7 @@ agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a dis
 	@uv run --locked python -m a13n_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
-format: sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
+format: sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
 	@run_formatters() { \
 		formatter_status=0; \
 		for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
@@ -172,7 +170,6 @@ format: sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repos
 	@cargo fmt --all
 	@(cd sdk/rust && cargo fmt)
 	@(cd sdk/rust/agent-foundation-cli && cargo fmt)
-	@npm --prefix apps/harness-ui run format
 	@npm --prefix sdk/typescript run format
 
 .PHONY: deps-check
@@ -260,7 +257,7 @@ docker-provider-test: sync ## Run Docker Provider tests
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate
 
 .PHONY: python-build
-python-build: sync agent-ui-assets ## Build all Python workspace distributions
+python-build: sync ## Build all Python workspace distributions
 	@rm -rf dist
 	@uv build --all-packages
 
@@ -280,13 +277,13 @@ harness-release-build: harness-python-build ## Build and verify the prepared Har
 	@uv run --no-project python scripts/check-agent-distributions.py dist --require-exact-internal-version
 
 .PHONY: agent-ui-build
-agent-ui-build: sync agent-ui-assets ## Build Agent UI for repository development
+agent-ui-build: sync ## Build Agent UI for repository development
 	@rm -rf dist
 	@uv build --package a13n-ui --out-dir dist
 	@uv run --locked python scripts/check-agent-ui-distribution.py dist --rebuild-wheel
 
 .PHONY: agent-ui-release-build
-agent-ui-release-build: ## Build and verify Agent UI from prepared assets and release metadata
+agent-ui-release-build: ## Build and verify Agent UI from prepared release metadata
 	@rm -rf dist
 	@uv build --package a13n-ui --out-dir dist
 	@uv run --no-project python scripts/check-agent-ui-distribution.py dist --rebuild-wheel --require-exact-internal-version
@@ -442,31 +439,7 @@ foundation-cli-check: foundation-cli-isolation-check foundation-cli-format-check
 .PHONY: foundation-cli-check-all
 foundation-cli-check-all: foundation-cli-check foundation-cli-test foundation-cli-build ## Run the complete Foundation CLI gate
 
-apps/harness-ui/node_modules/.package-lock.json: apps/harness-ui/package.json apps/harness-ui/package-lock.json
-	@npm --prefix apps/harness-ui ci
 
-.PHONY: harness-ui-sync
-harness-ui-sync: apps/harness-ui/node_modules/.package-lock.json ## Install locked Harness UI dependencies
-
-.PHONY: harness-ui-format
-harness-ui-format: harness-ui-sync ## Format Harness UI sources
-	@npm --prefix apps/harness-ui run format
-
-.PHONY: harness-ui-build
-harness-ui-build: harness-ui-sync ## Build Harness UI production assets
-	@npm --prefix apps/harness-ui run build
-
-.PHONY: harness-ui-check
-harness-ui-check: harness-ui-sync ## Run Harness UI formatting and type checks
-	@npm --prefix apps/harness-ui run check
-
-.PHONY: harness-ui-check-all
-harness-ui-check-all: harness-ui-sync ## Run the complete Harness UI gate
-	@npm --prefix apps/harness-ui run check:all
-
-.PHONY: agent-ui-assets
-agent-ui-assets: sync harness-ui-build ## Prepare generated Harness UI files for Python packaging
-	@uv run --locked python scripts/prepare-agent-ui-assets.py
 
 sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json
 	@npm --prefix sdk/typescript ci
@@ -571,12 +544,11 @@ check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
-check-all: eip-check examples-check-all harness-ui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
+check-all: eip-check examples-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
 	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/agent-foundation-cli/target packages/agent-ui/a13n_ui/static
-	@npm --prefix apps/harness-ui run clean
 	@npm --prefix sdk/typescript run clean
 
 .PHONY: help

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from a13n_ui.configuration import LoadedAgentUiConfiguration, canonical_digest
 from a13n_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry
+from a13n_ui.surfaces import RunModelOverrides
 
 from .models import ResolvedAgentNode, ResolvedRunComposition
 from .resolver import AgentCompositionResolver, ThreadCompositionSelection
@@ -99,8 +100,9 @@ class RunCompositionService:
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> PublishedRunComposition:
-        value = self._resolver.resolve_run(source, selection, parent_node=parent_node)
+        value = self._resolver.resolve_run(source, selection, parent_node=parent_node, model_overrides=model_overrides)
         envelope = await self._store.objects.publish_model(
             object_kind=ObjectKind.run_composition,
             value=value,

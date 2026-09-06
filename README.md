@@ -16,7 +16,7 @@ Agent Foundation is a Python-first open-source toolkit for building agents and m
 | You want to...                   | Start with                                                                                 | You get                                                                                            |
 | -------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | Build Agents into an application | [Agent Harness](https://agent-foundation-docs.converge.ai/agent-harness/) (`a13n-harness`) | A code-first Python library for composing, running, resuming, and observing Agents                 |
-| Run Agents on your own machine   | [Agent UI](packages/agent-ui/README.md) (`a13n-ui`)                                        | A local single-user experience with continuation-backed Sessions and CLI/WebUI interaction         |
+| Run Agents on your own machine   | [Agent UI](packages/agent-ui/README.md) (`a13n-ui`)                                        | A local single-user experience with continuation-backed Sessions and inline CLI interaction        |
 | Operate managed Agents           | [Foundation Service](packages/foundation-service/README.md) (`a13n-service`)               | A durable service with APIs, managed definitions, authorization, persistence, and scalable workers |
 
 Agent UI and Foundation Service both build on Agent Harness. `a13n` is short for Agent Foundation, so the managed service distribution is simply `a13n-service`.

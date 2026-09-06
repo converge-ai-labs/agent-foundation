@@ -7,6 +7,7 @@ from typing import Literal, Self, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_ui.configuration import McpTransport, ModelAuthentication
+from a13n_ui.configuration.models import ModelCharacteristics
 
 
 class CompositionModel(BaseModel):
@@ -47,6 +48,7 @@ class ResolvedModelRecipe(CompositionModel):
     authentication: ModelAuthentication
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    model_characteristics: ModelCharacteristics | None = None
 
 
 class ResolvedCapabilityRecipe(CompositionModel):

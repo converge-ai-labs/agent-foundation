@@ -1,58 +1,23 @@
-"""Interactive terminal adapter with strict TTY and lazy Textual imports."""
+"""Lightweight terminal entry. No App, provider, database, or GUI imports."""
 
 from __future__ import annotations
 
-import os
+import asyncio
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from a13n_ui.errors import ConfigurationError
-from a13n_ui.surfaces import NewThreadDefaults
+import click
 
 if TYPE_CHECKING:
-    from a13n_ui.tui.controller import AppContextFactory
+    from a13n_ui.cli import CliRequest
 
 
-@dataclass(frozen=True, slots=True)
-class TuiLaunchOptions:
-    """Terminal-local initial selection that never mutates file defaults."""
+def start(request: CliRequest) -> None:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise click.ClickException("Interactive mode requires a terminal. Use `a13n-ui run <prompt>` for automation.")
+    from a13n_ui.interactive.shell import InlineShell
 
-    thread_id: str | None = None
-    show_setup: bool = False
-    defaults: NewThreadDefaults = field(default_factory=NewThreadDefaults)
-
-
-async def run(
-    app_factory: AppContextFactory,
-    *,
-    launch: TuiLaunchOptions | None = None,
-    launch_directory: Path | None = None,
-    stdin_isatty: Callable[[], bool] | None = None,
-    stdout_isatty: Callable[[], bool] | None = None,
-) -> None:
-    """Validate the terminal and lazily run Textual against one App factory."""
-
-    input_check = stdin_isatty or sys.stdin.isatty
-    output_check = stdout_isatty or sys.stdout.isatty
-    if not input_check() or not output_check():
-        raise ConfigurationError(
-            "The full-screen TUI requires an interactive input and output terminal. "
-            "Use `a13n-ui run <prompt>` for non-interactive execution.",
-            code="tui_tty_required",
-        )
-    from a13n_ui.tui.launch import launch_terminal
-
-    selected = launch or TuiLaunchOptions()
-    await launch_terminal(
-        app_factory=app_factory,
-        launch_directory=(launch_directory or Path(os.getcwd())).resolve(strict=True),
-        launch_thread_id=selected.thread_id,
-        launch_defaults=selected.defaults,
-        show_setup=selected.show_setup,
-    )
-
-
-__all__ = ["TuiLaunchOptions", "run"]
+    try:
+        asyncio.run(InlineShell(request).run())
+    except KeyboardInterrupt:
+        raise click.exceptions.Exit(130) from None

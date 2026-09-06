@@ -148,7 +148,7 @@ class TerminalProjectionService:
     ) -> ThreadActivityPage:
         source = await self._required_configuration()
         if project_id is not None and project_id not in source.projects:
-            raise ThreadError("The selected Workbench Project is unavailable.", code="project_missing")
+            raise ThreadError("The selected Project is unavailable.", code="project_missing")
         page = await self._threads.list_threads(
             query=query,
             project_id=project_id,

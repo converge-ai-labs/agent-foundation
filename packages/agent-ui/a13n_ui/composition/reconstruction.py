@@ -218,6 +218,7 @@ class AgentReconstructor:
             agent=AgentSpec(
                 model=recipe_id,
                 model_settings=dict(node.model.settings),
+                model_characteristics=node.model.model_characteristics,
                 system_prompt=list(node.instructions if node.system_prompt is None else node.system_prompt),
                 instructions=list(node.instructions) if node.system_prompt is not None else None,
             ),

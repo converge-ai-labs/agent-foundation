@@ -82,6 +82,8 @@ Direct Local is stateless for re-entry and `dump_state()` returns `None`. The se
 
 `close()` terminates and releases only processes, streams, retained output, and local handles owned by that adapter. It does not change or delete the root. `stop()` and `destroy()` are unsupported for the caller-owned backing directory. Direct Local declares no keepalive requirement; retention policies must disable target stop/delete.
 
+Prepared Direct Local descriptors expose bounded `backing_identity` evidence for approval continuity across fresh operation Sessions. The evidence binds the Provider, Host filesystem namespace, resolved root file identity, and configured operation policy. An ordinary workspace content edit preserves it; replacing the root or changing the policy invalidates it. Discovery, validation, construction, and entry do not inspect the filesystem or advertise verified backing identity. If the filesystem cannot supply usable identity evidence, the field remains absent and approvals remain connection-local. This evidence is neither a content digest nor a filesystem lock, and makes no guarantee against file-ID reuse or hostile concurrent namespace changes.
+
 Direct Local makes no sandbox, account isolation, network isolation, or race-free filesystem-broker claim. Its confinement is a provider operation policy over one Host-selected root. A hostile same-account process can race native filesystem changes.
 
 ## Local Envd
@@ -153,7 +155,7 @@ A failure after process launch unconditionally terminates the owned process tree
 
 `close()` fences new operations, closes EIP, terminates the complete owned daemon process tree under bounded grace, closes pipes, and removes its private runtime. It never deletes or mutates the shared workspace merely because the adapter closes. There is no durable daemon target to stop or delete; these target actions are unsupported. Local Envd requires no target keepalive, and template stop/delete policies must be disabled for its caller-owned workspace.
 
-Because every independent Run creates a fresh daemon, Local Envd state does not preserve daemon identity across Runs. Filesystem continuity comes from the configured Host workspace.
+Because every independent Run creates a fresh daemon, Local Envd state does not preserve daemon identity across Runs. Filesystem continuity comes from the configured Host workspace. After preparation, `backing_identity` binds the same Host filesystem evidence described for Direct Local, including the workspace, trusted executable roots, and canonical execution policy. Recreating a private daemon or its runtime directory does not invalidate workspace approval continuity; replacing a backing root or changing the policy does. The fresh daemon `generation` still fences process, output, and other Session-local handles. Missing filesystem evidence leaves approval validation connection-local rather than treating a configured path as verified backing.
 
 ## Docker
 

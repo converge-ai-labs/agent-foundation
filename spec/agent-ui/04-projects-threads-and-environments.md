@@ -41,6 +41,8 @@ Changing Project roots affects later Runs of every Thread selecting the Project.
 
 ### Current-directory Resolution
 
+This query remains available to embedding adapters. The inline CLI uses the separate [exact-cwd workspace bootstrap](07-interactive-cli.md#workspace-and-resume) command: it reuses or creates a single-root exact directory resource and never silently adopts a containing ancestor. The query itself remains read-only.
+
 The App can resolve a normalized current working directory to a Project for a local surface. Only each Project's first root participates in this launch lookup; later roots are additional Run mounts rather than independent Project entry points. A current directory equal to or beneath a first root matches that Project. The most specific containing first root wins, while an equally specific path shared by several Projects is ambiguous.
 
 Resolution returns a configured Project or an unmatched or ambiguous outcome. It never creates a Project, adds or reorders roots, or makes the launch directory a surface-owned authority. The selected Project retains its configured first root as the default working directory represented by mount alias `workspace`, even when the current directory is a descendant. A surface that does not expose Project management can use this result as its new-Thread context and default Project filter.

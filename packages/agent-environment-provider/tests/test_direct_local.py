@@ -67,6 +67,33 @@ async def test_direct_local_entry_exposes_provider_owned_file_operations(tmp_pat
     assert (tmp_path / "created.txt").read_text() == "created"
 
 
+async def test_direct_local_backing_survives_reentry_but_not_replacement_or_policy_change(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+
+    async def observe(*, read_only: bool = False) -> tuple[str, str | None]:
+        environment = _environment(root, read_only=read_only)
+        assert environment.descriptor.backing_identity is None
+        await environment.enter(thread_id="thread", run_id="run", agent_instance_id="agent", mount_id="mount")
+        assert environment.descriptor.backing_identity is None
+        try:
+            await environment.prepare()
+            return environment.descriptor.generation, environment.descriptor.backing_identity
+        finally:
+            await environment.close()
+
+    generation, identity = await observe()
+    assert identity is not None
+    (root / "normal-write").write_text("ordinary content changes preserve backing")
+    next_generation, next_identity = await observe()
+    assert next_generation != generation
+    assert next_identity == identity
+    assert (await observe(read_only=True))[1] != identity
+    root.rename(tmp_path / "previous-workspace")
+    root.mkdir()
+    assert (await observe())[1] != identity
+
+
 async def test_direct_local_read_only_configuration_denies_writes(tmp_path: Path) -> None:
     environment = _environment(tmp_path, read_only=True)
     await environment.enter(

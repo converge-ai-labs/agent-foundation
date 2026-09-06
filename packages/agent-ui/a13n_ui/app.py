@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -13,7 +15,7 @@ from a13n_environment_provider import EnvironmentProvider
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.model_auth import CodexCredentials, GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
-from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep
+from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import prices
 from pydantic_ai.capabilities import AbstractCapability
@@ -104,6 +106,7 @@ from a13n_ui.surfaces import (
     ActiveWorkSummary,
     ChildControlResult,
     ChildExecutionPage,
+    ContextUsageView,
     DecisionBatchView,
     DecisionResponseBatch,
     EnvironmentProfileSummary,
@@ -117,6 +120,7 @@ from a13n_ui.surfaces import (
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
+    RunModelOverrides,
     SkillCatalogView,
     SkillReference,
     TaskPage,
@@ -130,6 +134,7 @@ from a13n_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
+    WorkspaceContext,
 )
 from a13n_ui.terminal_projection import TerminalProjectionService
 from a13n_ui.thread_capability import ThreadCollaborationCapability, ThreadToolController
@@ -485,6 +490,58 @@ class AgentUiApp:
                 )
             return tuple(result)
 
+    async def ensure_cwd_workspace(self, directory: Path) -> WorkspaceContext:
+        """Bind an exact cwd without retargeting existing saved sessions.
+
+        Resources remain internal configuration facts. This command is invoked
+        on first submission, never merely to paint an editable landing prompt.
+        """
+        normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
+        if not normalized.is_dir():
+            raise AppStateError("Workspace must be a directory.", code="workspace_invalid")
+        root = str(normalized)
+        project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
+        for attempt in range(2):
+            source = await self.current_configuration()
+            if source is None:
+                raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
+            exact = sorted(
+                item.id for item in source.projects.values() if len(item.roots) == 1 and item.roots[0].path == root
+            )
+            if exact:
+                return WorkspaceContext(directory=root, project_id=exact[0])
+            if project_id in source.projects:
+                raise AppStateError(
+                    "Workspace identity conflicts with a configured resource.", code="workspace_conflict"
+                )
+            try:
+                await self.mutate_configuration(
+                    relative_path=f"projects/{project_id}.yaml",
+                    request=ResourceMutationRequest(
+                        content=json.dumps(
+                            {
+                                "schema_version": "1",
+                                "kind": "project",
+                                "id": project_id,
+                                "name": normalized.name or root,
+                                "roots": [{"path": root}],
+                            }
+                        )
+                    ),
+                )
+            except ConfigurationError as exc:
+                if attempt or exc.code != "configuration_source_conflict":
+                    raise
+                await self.reload_configuration()
+                continue
+            return WorkspaceContext(directory=root, project_id=project_id)
+        raise AppStateError("Workspace changed during preparation; retry.", code="workspace_conflict")
+
+    async def context_usage(self, thread_id: str) -> ContextUsageView:
+        """Last reported root request footprint, not accumulated Run usage."""
+        async with self._operation():
+            return await self._projections.context_usage(thread_id)
+
     async def resolve_launch_project(
         self,
         directory: Path,
@@ -768,6 +825,7 @@ class AgentUiApp:
         thread_id: str,
         prompt: str,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
     ) -> RootRunReceipt:
         async with self._operation():
@@ -780,6 +838,7 @@ class AgentUiApp:
                 thread_id=thread_id,
                 prompt=prompt,
                 mutation=mutation,
+                model_overrides=model_overrides,
             )
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -794,12 +853,14 @@ class AgentUiApp:
         thread_id: str,
         response: ThreadDeferredResponse,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
         async with self._operation():
             return await self._root_runs.submit_response(
                 thread_id=thread_id,
                 response=response,
                 mutation=mutation,
+                model_overrides=model_overrides,
             )
 
     async def respond_decisions(
@@ -808,6 +869,7 @@ class AgentUiApp:
         thread_id: str,
         response: DecisionResponseBatch,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
         projected = await self.thread_decisions(
             thread_id=thread_id,
@@ -857,6 +919,7 @@ class AgentUiApp:
                 responses=tuple(converted),
             ),
             mutation=mutation,
+            model_overrides=model_overrides,
         )
 
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:

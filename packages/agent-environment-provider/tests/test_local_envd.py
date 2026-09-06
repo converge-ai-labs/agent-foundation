@@ -125,6 +125,47 @@ async def test_local_envd_uses_fresh_private_generation_and_non_destructive_clos
     assert tmp_path.is_dir()
 
 
+async def test_local_envd_approval_backing_is_independent_of_daemon_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    trusted = tmp_path / "executables"
+    trusted.mkdir()
+
+    async def observe(*, read_only: bool = False) -> str | None:
+        environment = _environment(root)
+        environment._configuration = environment._configuration.model_copy(
+            update={
+                "workspace": environment._configuration.workspace.model_copy(update={"read_only": read_only}),
+                "trusted_executable_roots": (trusted,),
+            }
+        )
+        _carrier, bound, _events = _patch_entry(monkeypatch, environment)
+        assert environment.descriptor.backing_identity is None
+        await environment.enter(thread_id="thread", run_id="run", agent_instance_id="agent", mount_id="mount")
+        assert environment.descriptor.backing_identity is None
+        try:
+            await environment.prepare()
+            assert environment.descriptor.generation == bound.descriptor.generation
+            return environment.descriptor.backing_identity
+        finally:
+            await environment.close()
+
+    identity = await observe()
+    assert identity is not None
+    (root / "written").write_text("normal workspace edit")
+    assert await observe() == identity
+    assert await observe(read_only=True) != identity
+    trusted.rename(tmp_path / "old-executables")
+    trusted.mkdir()
+    changed_trusted = await observe()
+    assert changed_trusted != identity
+    root.rename(tmp_path / "old-workspace")
+    root.mkdir()
+    assert await observe() != changed_trusted
+
+
 async def test_local_envd_destroy_does_not_delete_host_workspace(tmp_path: Path) -> None:
     marker = tmp_path / "host-owned.txt"
     marker.write_text("preserve")

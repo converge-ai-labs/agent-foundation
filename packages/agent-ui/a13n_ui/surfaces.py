@@ -21,6 +21,26 @@ class SurfaceModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 
+class RunModelOverrides(SurfaceModel):
+    """Per-operation choices; never rewrite resources or sticky Thread heads."""
+
+    model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
+
+
+class WorkspaceContext(SurfaceModel):
+    directory: str
+    project_id: str
+
+
+class ContextUsageView(SurfaceModel):
+    thread_id: str
+    latest_request_tokens: int | None = None
+    context_window: int | None = None
+    model_id: str | None = None
+    thinking: str | bool | None = None
+
+
 class AgentSourceView(SurfaceModel):
     kind: Literal["agent", "markdown"]
     id: str = Field(min_length=1, max_length=128)

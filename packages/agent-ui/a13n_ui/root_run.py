@@ -32,6 +32,7 @@ from a13n_ui.surfaces import (
     RootOperationView,
     RootRunOutcomeView,
     RootRunReceipt,
+    RunModelOverrides,
     ThreadDeferredResponse,
 )
 
@@ -162,6 +163,7 @@ class RootRunCoordinator:
         thread_id: str,
         prompt: str,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
         if not prompt.strip():
             raise RunCoordinationError("A root message must not be blank.", code="run_input_invalid")
@@ -170,6 +172,7 @@ class RootRunCoordinator:
             prompt=prompt,
             response=None,
             mutation=mutation,
+            model_overrides=model_overrides,
         )
 
     async def submit_response(
@@ -178,12 +181,14 @@ class RootRunCoordinator:
         thread_id: str,
         response: ThreadDeferredResponse,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
         return await self._submit(
             thread_id=thread_id,
             prompt=None,
             response=response.model_copy(deep=True),
             mutation=mutation,
+            model_overrides=model_overrides,
         )
 
     async def _submit(
@@ -193,6 +198,7 @@ class RootRunCoordinator:
         prompt: str | None,
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
+        model_overrides: RunModelOverrides | None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -221,6 +227,7 @@ class RootRunCoordinator:
                 prompt,
                 response,
                 mutation,
+                None if model_overrides is None else model_overrides.model_copy(deep=True),
             )
         await self._publish_change(operation)
         return receipt.model_copy(deep=True)
@@ -342,6 +349,7 @@ class RootRunCoordinator:
         prompt: str | None,
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
+        model_overrides: RunModelOverrides | None,
     ) -> None:
         scope = CancelScope()
         async with self._lock:
@@ -361,6 +369,7 @@ class RootRunCoordinator:
                         prompt=prompt,
                         response=response,
                         mutation=mutation,
+                        model_overrides=model_overrides,
                         on_stream=lambda stream: self._running(operation.receipt.receipt_id, stream),
                     )
             if outcome is None:

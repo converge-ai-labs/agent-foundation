@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
+from a13n_harness.spec import HarnessModelCharacteristics
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     JsonValue,
@@ -96,12 +98,20 @@ class GlobalDefaults(StrictModel):
         return value
 
 
+class TerminalDisplayConfiguration(StrictModel):
+    mode: Literal["concise", "detailed"] = "concise"
+    show_status: bool = True
+    max_tool_result_lines: int = Field(default=5, ge=1, le=200)
+    max_tool_argument_chars: int = Field(default=8192, ge=128, le=65536)
+
+
 class AgentUiDocument(StrictModel):
     """Root ``a13n-ui.yaml`` document."""
 
     schema_version: Literal["2"] = "2"
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
+    display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -148,6 +158,17 @@ type ModelAuthentication = Annotated[
 ]
 
 
+def _native_model_characteristics(value: object) -> object:
+    # Parent document normalizers turn JSON arrays into Python values before
+    # nested validation. Preserve native JSON semantics for its frozenset field.
+    if isinstance(value, dict):
+        return HarnessModelCharacteristics.model_validate_json(json.dumps(value), strict=True)
+    return value
+
+
+type ModelCharacteristics = Annotated[HarnessModelCharacteristics, BeforeValidator(_native_model_characteristics)]
+
+
 class ModelResource(StrictModel):
     schema_version: Literal["1"]
     kind: Literal["model"]
@@ -157,6 +178,7 @@ class ModelResource(StrictModel):
     authentication: ModelAuthentication
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    model_characteristics: ModelCharacteristics | None = None
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:

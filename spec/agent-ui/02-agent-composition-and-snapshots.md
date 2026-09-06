@@ -25,6 +25,14 @@ model_configuration: {}
 
 The release-owned Model integration selected by the route validates settings, construction configuration, and the explicit authentication kind without resolving credential bytes. API keys name environment variables; Codex and Grok subscription Models can instead select their compatible product account store. [Model Authentication and Compatible Account Stores](02a-model-authentication-and-account-stores.md) owns authentication precedence, shared login, refresh, and credential persistence.
 
+### Model Characteristics and Operation Overrides
+
+Model resources may include native `HarnessModelCharacteristics` under `model_characteristics`: `context_window`, `proactive_context_management_threshold`, and `compact_threshold`, together with the native optional capabilities field. The complete value is captured in `ResolvedModelRecipe` and passed to the fresh native `AgentSpec`. Absent values retain native defaults; old captures without this field remain readable. Host defaults do not overwrite an explicitly configured capability policy.
+
+For the `runtime_context` capability, an omitted `context_window_tokens` is resolved from the effective Model's characteristics at capture time. An explicitly configured value remains authoritative. Native handoff reminders and compaction retain their own derivation and explicit-policy semantics.
+
+The App accepts detached per-operation `RunModelOverrides` for a selected Model ID and reasoning effort. These values are copied before scheduling and applied while resolving the root graph, before inherited Markdown children are constructed. They do not mutate files, Thread configuration, previous compositions, or explicitly selected auxiliary/child models. Invalid selections fail without fallback. The [CLI contract](07-interactive-cli.md#per-operation-model-selection) owns interactive precedence and resume behavior.
+
 ### Shell Review Auxiliary Model
 
 `ShellReviewCapability.configuration.model` names a Model resource ID, not an ambient provider route. Agent UI validates the reference, captures its complete credential-free recipe with the Capability in the immutable Run composition, and registers it in the same per-Run Model resolver as primary Models. Subscription refresh and request-local authentication therefore apply to the reviewer as well as the main Agent. Changing or deleting the source Model does not change an already captured reviewer. The captured Model settings initialize the review request, with explicit Capability `model_settings` overriding matching keys. Auxiliary-model resolution alone does not apply request settings; the reconstructed reviewer receives the merged frozen values, including the starter Luna's low thinking level.

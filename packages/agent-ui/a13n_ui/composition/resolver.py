@@ -37,6 +37,7 @@ from a13n_ui.errors import CompositionError
 from a13n_ui.extensions import AgentUiExtensionCatalog, SelectedCapability
 from a13n_ui.model_adapters import PydanticAiModelAdapter
 from a13n_ui.prompts import DEFAULT_SYSTEM_PROMPT
+from a13n_ui.surfaces import RunModelOverrides
 
 from .models import (
     DependencyProvenance,
@@ -129,6 +130,7 @@ class AgentCompositionResolver:
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> ResolvedRunComposition:
         """Resolve one exact Thread head against one accepted source generation."""
 
@@ -145,6 +147,7 @@ class AgentCompositionResolver:
                 root_mcp=selection.mcp_server_ids,
                 budget=budget,
                 depth=1,
+                model_overrides=model_overrides,
             )
         else:
             if parent_node is None:
@@ -234,19 +237,28 @@ class AgentCompositionResolver:
         root_mcp: tuple[str, ...] | None,
         budget: list[int],
         depth: int,
+        model_overrides: RunModelOverrides | None = None,
     ) -> ResolvedAgentNode:
         _consume_budget(budget, depth)
         plugin_ids = source.selected_plugins(agent) if root_plugins is None else root_plugins
         mcp_ids = source.selected_mcp_servers(agent) if root_mcp is None else root_mcp
         plugins = self._plugins(source, plugin_ids, plugin_catalog)
         mcp = tuple(ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids)
-        if agent.model is None:
+        selected_model = model_overrides.model_id if model_overrides and model_overrides.model_id else agent.model
+        if selected_model is None:
             raise CompositionError(
                 "This Agent has no model yet. Open Setup to connect a model and select a configured Agent before sending.",
                 code="agent_model_required",
             )
-        model = self._model_recipe(source.models[agent.model])
-        capabilities = self._capability_recipes(source, agent)
+        if selected_model not in source.models:
+            raise CompositionError("The selected model is unavailable.", code="model_missing")
+        resource = source.models[selected_model]
+        if model_overrides is not None and model_overrides.thinking is not None:
+            resource = resource.model_copy(
+                update={"settings": {**resource.settings, "thinking": model_overrides.thinking}}
+            )
+        model = self._model_recipe(resource)
+        capabilities = self._capability_recipes(source, agent, active_model=model)
         children: list[ResolvedSubagent] = []
         provisional = ResolvedAgentNode(
             source_kind="agent",
@@ -369,16 +381,28 @@ class AgentCompositionResolver:
             authentication=item.authentication,
             settings=normalized.settings,
             model_configuration=normalized.model_cfg,
+            model_characteristics=item.model_characteristics,
         )
 
     def _capability_recipes(
         self,
         source: LoadedAgentUiConfiguration,
         agent: AgentResource,
+        *,
+        active_model: ResolvedModelRecipe | None = None,
     ) -> tuple[ResolvedCapabilityRecipe, ...]:
         self._capabilities(agent)
         recipes: list[ResolvedCapabilityRecipe] = []
         for item in agent.capabilities:
+            configuration = dict(item.configuration)
+            characteristics = None if active_model is None else active_model.model_characteristics
+            if (
+                item.capability == "runtime_context"
+                and "context_window_tokens" not in configuration
+                and characteristics is not None
+                and characteristics.context_window is not None
+            ):
+                configuration["context_window_tokens"] = characteristics.context_window
             model = None
             if item.capability == "ShellReviewCapability":
                 model_id = item.configuration.get("model")
@@ -392,7 +416,7 @@ class AgentCompositionResolver:
             recipes.append(
                 ResolvedCapabilityRecipe(
                     capability=item.capability,
-                    configuration=item.configuration,
+                    configuration=configuration,
                     model=model,
                 )
             )

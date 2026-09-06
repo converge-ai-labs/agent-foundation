@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Agent UI is a local, single-user Harness workstation. One process-local `AgentUiApp` owns configuration generations, trusted catalogs, Projects, Threads, process-local root receipts, persisted async children, Environment state, detached projections, and live presentation. CLI, Textual TUI, and WebUI adapters call that same application boundary.
+Agent UI is a local single-user coding CLI. One process-local `AgentUiApp` owns configuration generations, trusted catalogs, internal Projects and Threads, process-local root receipts, persisted async children, Environment state, detached projections, and live presentation. The inline terminal is an adapter over that reusable boundary; a future WebUI or remote adapter does not require moving execution authority into the CLI.
 
 Human-editable files remain the desired-resource authority so Agent UI can be configured without a browser or a large command surface. Separately, explicit CLI operations install editable declarative Content Plugins under the data root. SQLite owns mutable Thread and execution heads, while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
 
@@ -70,14 +70,14 @@ The core concepts are:
 | Async child admission and persistence  | `AgentUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                          |
 | AG-UI conversion                       | Agent Stream Protocol                       | Uses one observer per root or child Harness Run                                                                     |
 | Local persistence                      | Agent UI                                    | Uses SQLite for compact mutable heads and immutable files for compositions and checkpoints                          |
-| Presentation                           | CLI, TUI, and WebUI adapters                | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
+| Presentation                           | Inline CLI and embedding adapters           | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
 | Durable distributed execution          | Foundation Service                          | Not emulated by Agent UI                                                                                            |
 
 ## Configuration and Run Flow
 
 ```mermaid
 sequenceDiagram
-    participant Editor as Editor or WebUI
+    participant Editor as Editor or Setup
     participant App as AgentUiApp
     participant Files as Configuration files
     participant Store as SQLite and objects
@@ -142,9 +142,9 @@ It does not store root receipts, pending root input or deferred responses, activ
 
 ## Surfaces and Packaging
 
-The `a13n-ui` CLI, [Textual TUI](tui/README.md), and [WebUI](webui/README.md) use the same file configuration and App boundary. The CLI additionally owns Content Plugin install, list, and uninstall; the other surfaces do not manage that catalog. The App projects the release-owned **Full Control** and **Sandbox** modes together with accepted custom Environment profiles, so every surface presents the same identity, execution warning, Provider selection, and path-layout fact. The [Web adapter](05-runtime-subagents-and-surfaces.md#http-startup-and-access) binds to loopback and requires a fresh process-local API key by default; its explicit network and access overrides do not create another application-configuration plane. Direct file editing remains a complete configuration path. The CLI locates, validates, and shows configuration but provides no generic desired-resource CRUD; the WebUI owns guided Settings management and expected-digest source mutation; the TUI resolves one launch Project from the current directory, defaults the transient Thread picker to that Project filter with an All Projects fallback, and patches only supported non-Project sticky selections. Surfaces receive strict detached views rather than storage or Harness values. Focused views establish an epoch and sequence cutover before reading their snapshot, then consume root-lineage events after that point; an App-wide best-effort invalidation stream prompts summary refetch. The TUI provides one conversation surface and a transient Thread picker without adding another runtime authority. [First-use setup](06-setup-and-environment-readiness.md) explicitly seeds editable resources and defaults and provides selected-Environment preflight recovery. Agent UI has no standalone daemon or IPC mode; the WebUI server owns its App directly in memory and alone injects root-only Thread collaboration.
+The [interactive CLI](07-interactive-cli.md) uses one editable draft, native scrollback, shared slash-command metadata, and concise/detailed live presentation. Direct file editing remains a complete configuration path. CLI management locates, validates, and shows configuration, manages Content Plugins, and explicitly imports external subagents. Setup publishes reviewed starter resources. The App bootstraps an exact-cwd internal Project only when execution needs one; the CLI offers lightweight session resume rather than Project or Thread management.
 
-Textual ships as part of the Python `a13n-ui` distribution. The private `apps/harness-ui` build output ships in both the `a13n-ui` wheel and sdist. Rebuilding a wheel from the sdist requires no Node.js.
+The App remains reusable: adapters consume detached values and exact receipts, not SQLite or native Harness authority. Root-lineage live events remain bounded best-effort observations; retained continuations and operation state decide completion. The distribution contains Python CLI and App modules plus native runtime metadata, with no Textual dependency, browser bundle, foreground HTTP listener, or Node.js build requirement.
 
 ## Stable Principles
 
@@ -158,5 +158,5 @@ Textual ships as part of the Python `a13n-ui` distribution. The private `apps/ha
 08. Root receipts, input, deferred responses, and active work are not durably accepted.
 09. Root continuation, Environment state, and child checkpoint publication remain independent facts.
 10. Surface projections and streams are detached from storage and native runtime authority.
-11. CLI, TUI, WebUI, and model-visible Thread tools use the same App commands and queries while retaining their explicit Project and configuration-authoring boundaries.
+11. The CLI and embedding integrations use the same App commands, projections, and immutable capture boundaries.
 12. Full Control and Sandbox expose canonical Host Project and user Skill paths while preserving Direct Local versus sandboxed EIP execution authority; other adapters retain virtual routes unless they explicitly preserve Host paths.

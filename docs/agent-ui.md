@@ -1,117 +1,218 @@
 # Agent UI
 
-Agent UI is a local, single-user conversation application for Agent Foundation Harness. Choose the terminal or explicitly start the browser server:
+Agent UI is an interactive coding CLI built on Agent Foundation Harness. It uses your terminal's normal scrollback, not a full-screen workbench. One foreground process owns one `AgentUiApp`, the current conversation, and its active work. There is no browser server, daemon, or detached execution mode.
 
 ```console
+cd your-repository
 a13n-ui
-a13n-ui webui
 ```
 
-One foreground process owns one App and its active root and child work. There is no separate agent daemon, IPC service, or detached execution mode. Different conversations can run concurrently in that process. Switching conversations does not cancel work; exiting the terminal or stopping the WebUI server ends its App lifetime. Closing a browser tab only closes that tab's delivery.
+You can type immediately while the App prepares. Enter during startup preserves your draft rather than submitting it unexpectedly. A model request begins only when you explicitly send a prompt. The current directory is the workspace; you do not need to create or manage a Project.
 
-## First-use setup
+## First use
 
-On an empty installation, the terminal and browser offer setup before your first conversation. Reopen it with `a13n-ui setup`, the terminal `/setup` command, or the browser Setup action.
+Run `/setup` from the prompt, or start with `a13n-ui setup`:
 
-1. **Model connection.** Choose API key (BYOK) or subscription (BYOS), or **Not now**. BYOK saves a key in the Host-local plaintext `auth.json` and configures its reference, or uses an existing host environment variable. BYOS discovers compatible Codex/Grok login, with all available providers initially selected. Discovery makes no login, refresh, or model request.
-2. **Execution environment.** Confirm a new Project's directory or reuse existing roots. Sandbox must pass its production readiness check for every root before Continue is enabled. Retry or cancel a failed check, or explicitly choose Full Control to run as your host user without isolation. This step works even if you skipped model connection.
-3. **Your Agent.** A default Agent is already selected. Choose model-specific options and optional additional instructions, inspect the proposed files, then **Finish setup**. Back preserves your choices. Preview writes nothing, and only Finish setup publishes files.
+1. Choose **codex**, **grok**, or **api** access.
+2. For Codex, choose the model, working context budget, and reasoning effort. Sol, balanced/350k, and high are the defaults.
+3. Choose **full-control** or **sandbox** permissions. Subscription setup also offers shell review.
+4. Inspect the file preview, then type **yes** to publish. `/cancel` leaves setup.
+5. Use `/login codex` or `/login grok` if you have not already authenticated. Existing compatible account stores are reused.
 
-**Not now** is not Cancel setup: it lets you complete the remaining steps with a default Agent that has no Model yet. You can enter the conversation shell and keep a draft, but that Agent cannot execute until a Model is configured. Reopen Setup to choose a connected starter or existing Agent; enable **Connect the selected Agent to this model** to bind its model while preserving its other fields. Restarting does not reopen onboarding just because you deferred the connection.
+Setup creates editable YAML resources. It does not put OAuth tokens or API keys into them, call a model to test entitlement, or silently overwrite edited Model resources. A preserved existing Model keeps its existing settings even if you selected different starter values; edit its YAML to change those values. Explicitly connecting the selected Agent can update its model binding through the reviewed publication.
 
-The subscription step reuses existing login or starts authorization directly. Terminal setup uses a device URL and user code; open the URL in any browser. WebUI offers browser login and device authorization. The CLI also defaults to device authorization:
+### Codex reasoning and context
 
-```console
-a13n-ui auth login codex
-a13n-ui auth login grok
+The defaults are release-owned recommendations, not claims that every account supports every model or context size.
+
+| Setup choice | Working context budget | When to choose it                                                                             |
+| ------------ | ---------------------: | --------------------------------------------------------------------------------------------- |
+| standard     |                272,000 | Conservative local budget matching the current Codex catalog default                          |
+| balanced     |                350,000 | Default for repository work, aligned with the reference YAACLI configuration                  |
+| extended     |                872,000 | Large tasks where your account supports the catalog maximum; expect greater latency and usage |
+
+A **working budget** controls local reminders and compaction. It does not increase the provider's limit or grant access. The default reminder threshold is 65% and automatic compaction starts at 90%, based on the latest reported root request footprint rather than cumulative tokens. At 350k these are 227,500 and 315,000 tokens.
+
+Reasoning choices are `low`, `medium`, `high`, and `xhigh`. `/thinking default` returns to the selected Model's configured value. High reasoning is independent of detailed display: you can use high reasoning while seeing concise output. Only provider-exposed reasoning is shown, and some providers do not return it.
+
+Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The native subscription adapter strips unsupported settings such as `max_tokens`; `openai_store` is forced false.
+
+## Everyday interaction
+
+| Action                                              | Command or key                                   |
+| --------------------------------------------------- | ------------------------------------------------ |
+| Send the draft                                      | Enter                                            |
+| Insert a newline                                    | Alt+Enter                                        |
+| Complete a slash command or supported argument      | Tab                                              |
+| Clear an idle draft; cancel active work             | Ctrl+C                                           |
+| Exit from an empty draft                            | Ctrl+D                                           |
+| Switch concise/detailed display                     | Ctrl+O or `/mode concise`, `/mode detailed`      |
+| Explain commands                                    | `/help` or `/help command`                       |
+| Start a new conversation without deleting history   | `/new`                                           |
+| List recent conversations in this workspace         | `/resume`                                        |
+| Resume one saved conversation                       | `/resume session-id`                             |
+| Read saved messages and tool details                | `/history`, then the next-page command it prints |
+| List/select configured Models                       | `/model`, `/model model-codex`, `/model default` |
+| Read/change reasoning                               | `/thinking`, `/thinking low`                     |
+| Read/change execution permissions                   | `/environment`, `/environment sandbox`           |
+| Show current settings, usage, and pending decisions | `/status`                                        |
+| Locate configuration and explain precedence         | `/config`                                        |
+| Cancel active work                                  | `/cancel`                                        |
+| Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                               |
+
+Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model. Ordinary input entered while a Run is active is preserved, not silently steered or queued. Wait for completion or cancel first.
+
+**Concise** output emphasizes assistant text, errors, decisions, and necessary results. **Detailed** output also shows tool calls, file-edit arguments, bounded results, child output, and exposed reasoning. A live switch affects subsequent events, not old scrollback; `/history` can display retained details in the selected mode.
+
+The compact status bar shows the model, reasoning, last request footprint/working budget, elapsed time, state, and output mode. `?` means unavailable, not zero. The footprint is the last reported request, not an exact estimate of your next prompt. Child and auxiliary usage are not summed into it. Terminal cursor-position reporting is needed for prompt-toolkit's bottom toolbar; use `/status` if your terminal suppresses that reporting.
+
+### Approvals and questions
+
+Flagged shell commands and failed shell reviews require an explicit decision. Review the request ID, tool, and arguments. `/review request-id` opens its bounded retained details when the inline argument preview is truncated:
+
+```text
+/approve request-id
+/deny request-id
+/result request-id '{"answers":{"question-key":"selected answer"}}'
 ```
 
-Use `--browser` only when your browser can reach the Host's loopback callback. Codex retains `http://localhost:1455/auth/callback`; a remote WebUI URL cannot replace that registered redirect. Device authorization needs no callback and is the appropriate choice for a remote Host. No browser opens automatically, and unsupported device authorization never silently falls back. Login progress supports cancellation and expires within fifteen minutes.
+`/result` supplies JSON for an external tool, including a structured question. Use the displayed request schema to form the answer. It is not an approval shortcut. For multiple pending requests, answers remain local until the complete batch is ready; every answer is validated against the same continuation. Cancel or exit never approves a request. A suspended conversation can be resumed later.
 
-Do not paste OAuth tokens into setup. Login uses the compatible provider store. A different shared account requires the normal explicit account-switch confirmation. Availability is not a guarantee that every model is entitled to your subscription.
+## Configuration
 
-### Starter Agents
-
-The September 2026 starter choices are editable defaults:
-
-| Provider | Main model                   | Reasoning         | Default shell reviewer                                   |
-| -------- | ---------------------------- | ----------------- | -------------------------------------------------------- |
-| Codex    | `openai-codex:gpt-5.6-terra` | medium            | `openai-codex:gpt-5.6-luna`, low thinking                |
-| Grok     | `grok:grok-4.6`              | provider defaults | Codex Luna if Codex is also selected; otherwise Grok 4.6 |
-
-Codex setup also offers Sol for deeper reasoning and Astra where the account has access. Grok-only setup does not assume a cheaper compatible subscription route. Shell review starts enabled for subscription setup; flagged commands and review failures request approval. Review is not a sandbox.
-
-Starter Agents enable file/shell tools and project-aware skills. Every Agent receives a release-owned system prompt for evidence-based work, preserving user changes and authority, verification, and accurate reporting. The optional `instructions` field adds preferences or task guidance through Pydantic AI's separate instructions channel; it never replaces the built-in system prompt. Omitting instructions still produces a fully instructed Agent. Both layers are frozen for each Run; changing defaults cannot rewrite old captures. Setup does not silently enable external MCP servers, task tools, or a child roster. Add those through the ordinary editable configuration when needed. Only WebUI roots receive the host-owned Thread collaboration tools; this is not enabled by editing starter YAML.
-
-### API-key configuration
-
-The API-key step takes a supported `provider:model-name` route. Choose **Host-local saved key** to add or replace a password-masked key with a reference such as `key-primary`, or select an existing reference. **Delete key** removes that reference; future model resolution using it fails explicitly. The UI never reads a saved key back. Saving does not make a provider request or prove model entitlement.
-
-Keys save immediately to the Host data root's independent `auth.json`, with private directory permissions and POSIX file mode `0600`. This file stores plaintext: protect the Host and its backups. It is not project configuration and contains no subscription tokens. Configuration previews, snapshots, and exports contain only the reference, never key bytes. Cancelling setup does not undo a credential save or completed subscription login.
-
-The CLI provides `a13n-ui auth key list`, `a13n-ui auth key set key-primary` (hidden prompt), and `a13n-ui auth key delete key-primary` (confirmation). It never accepts a key as a command-line argument.
-
-Alternatively choose **Host environment variable**, for example `OPENAI_API_KEY`. The variable must exist in the **Agent UI server process**, not just a browser or another terminal. Enter its name, not the key. This source has no implicit fallback to a saved key.
-
-### Files and recovery
-
-Find the selected configuration root with:
+The default root remains `~/.a13n-ui/a13n-ui.yaml`. Use `--config PATH` before a subcommand to select another tree. `--data-root PATH` selects separate local state, followed by `A13N_UI_DATA_ROOT`; the default is the configuration directory's `data/` child.
 
 ```console
 a13n-ui config path
+a13n-ui config show --format json
 a13n-ui config validate
+a13n-ui --config /path/to/a13n-ui.yaml config validate
+a13n-ui doctor --format json
 ```
 
-On Unix-like systems the default root is `~/.a13n-ui/a13n-ui.yaml`; `--config PATH` selects another tree. Models, Agents, and Projects are ordinary YAML files in sibling `models/`, `agents/`, and `projects/` directories. Resources are created once. Explicitly connecting the selected Agent updates its model; existing instructions, other fields, and other Agents are preserved. Setup instructions customize newly created Agents; edit an existing Agent file to change its instructions. A changed API-key model gets a new resource rather than rewriting a shared Model. Upgrades never rewrite these resources. New defaults affect future conversations, not existing ones.
+Configuration precedence is:
 
-Publication creates resources first and updates root defaults last. A multi-file filesystem update is not a transaction: a failure may leave completed files, and the result reports those paths. Review them and preview again. Do not assume closing a tab or a failed response rolled publication back. Browser navigation is temporarily blocked while Apply is pending.
+1. Explicit `/model` and `/thinking` selections for subsequent operations.
+2. Launch selections such as `--agent` and `--environment-mode` for a new session.
+3. Accepted resource YAML and root defaults.
+4. Documented built-in defaults.
 
-When updating an existing root or explicitly selected Agent, setup temporarily retains it in a private `.a13n-ui-setup-recovery-*` directory beside the configuration file. A crash or competing save can leave the retained original there. Further setup publication stops until you inspect both versions and restore or move the retained original. Do not delete the recovery file without inspecting it. Setup never deletes a competing save to force its own version into place.
+For display, an explicit `/mode` or `--display` takes precedence over `display.mode`. Model/reasoning slash commands do not write YAML. File edits affect later captures, never previous immutable Run snapshots. Resume restores the last selected continuation's Model ID and reasoning, resolving them against current resources. It rejects a deleted model rather than inventing a fallback.
 
-## Sandbox or Full Control
+### Explicit Codex configuration
 
-**Full Control** runs as your host account with ambient filesystem and network access. It does not download or start agent-envd, alter system policy, or provide isolation. Windows uses PowerShell for the default shell profile.
+A typical root document is:
 
-**Sandbox** resolves the configured or release-managed agent-envd executable and runs the same exact-version and isolation checks used in production preparation. It checks filesystem, process, and denied-network isolation rather than merely finding a `bwrap` command. The check is bounded and cancellable; each Run still validates its actual environment.
+```yaml
+schema_version: "2"
+process:
+  pricing_auto_update: true
+  log_level: INFO
+  log_format: pretty
+defaults:
+  agent: agent-codex
+  environment_profile: environment-native
+display:
+  mode: concise
+  show_status: true
+  max_tool_result_lines: 5
+  max_tool_argument_chars: 8192
+```
 
-If readiness fails, choose one of:
+`models/codex.yaml`:
 
-- **Retry** after following the linked prerequisite instructions;
-- **Cancel** to retain your previous selection and unsent prompt;
-- **Choose Full Control (no Sandbox)** to explicitly run without isolation.
+```yaml
+schema_version: "1"
+kind: model
+id: model-codex
+name: Codex coding
+route: openai-codex:gpt-5.6-sol
+authentication:
+  kind: codex_subscription
+settings:
+  thinking: high
+  openai_reasoning_summary: detailed
+  openai_store: false
+model_characteristics:
+  context_window: 350000
+  proactive_context_management_threshold: 0.65
+  compact_threshold: 0.90
+```
 
-There is no automatic downgrade. Agent UI never runs `sudo`, disables required isolation, changes sysctls, or installs system security policy for you. Windows production Sandbox isolation is not supported; choose Full Control explicitly if appropriate. On Linux, including Ubuntu's unprivileged-user-namespace/AppArmor restrictions, follow the [agent-envd operations guide](agent-envd/index.md#isolation-behavior).
+`agents/codex.yaml`:
 
-The terminal checks Sandbox when you select it and before a first submission using an unchecked Sandbox default. Choosing Full Control during recovery changes the selection but does not automatically send the waiting prompt. The browser checks Sandbox for new-conversation selections and during setup.
+```yaml
+schema_version: "1"
+kind: agent
+id: agent-codex
+name: Codex coding
+model: model-codex
+instructions: ""
+capabilities:
+  - capability: dynamic_environment
+    configuration:
+      files_enabled: true
+      shell_enabled: true
+  - capability: skills
+    configuration: {}
+  - capability: runtime_context
+    configuration: {}
+  - capability: handoff
+    configuration: {}
+  - capability: compaction
+    configuration: {}
+```
 
-## Conversation workflow
+This minimal example omits shell review. Setup enables it by default for subscriptions, adds a separate Codex Luna/low reviewer resource, and selects `ShellReviewCapability` with `risk_threshold: high`, `on_flagged: approval_required`, and `on_error: approval_required`. Review is not a filesystem sandbox.
 
-### Terminal
+The empty context-capability configurations use native defaults. Advanced users can set an absolute `compaction.configuration.trigger_tokens`, a `handoff.configuration.summary_reminder_tokens`, or `runtime_context.configuration.context_window_tokens`. Explicit capability values override derived defaults. Normally change the Model's `model_characteristics` instead, so all derived thresholds stay aligned.
 
-The terminal has one conversation and one composer, not a Workbench:
+Every Agent receives the release-owned system prompt separately from its optional `instructions`. Instructions add preferences; they do not replace the built-in system prompt. Setup does not silently enable external MCP servers or a subagent roster. Those remain advanced editable resources; inspect accepted configuration and the [configuration specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/agent-ui/01-configuration-and-resource-catalog.md) for their contracts.
 
-- `Ctrl+O` opens the transient Thread picker. Search by title or ID, select the current Project or All Projects, and load bounded pages.
-- `Ctrl+N` starts a new draft without creating a Thread.
-- `Ctrl+P` opens the command palette; `/threads`, `/setup`, `/agent`, and `/environment` are also available from the composer.
-- `Escape` closes a transient surface without clearing the draft or approving a decision.
-- Ordinary input while a root Run is active steers that exact Run. It is never queued as a hidden next message.
+### Subscription login and API keys
 
-Only the selected Thread has a detailed live subscription. Other active conversations continue and retain their own unsent drafts. Exiting with active work requires confirmation; work does not detach after shutdown.
+```console
+a13n-ui auth status
+a13n-ui auth login codex
+a13n-ui auth login grok
+a13n-ui auth login codex --browser
+a13n-ui auth key list
+a13n-ui auth key set key-primary
+a13n-ui auth key delete key-primary
+```
 
-### Browser
+Device authorization is the default and needs no host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
 
-Open the URL printed by `a13n-ui webui`. The server defaults to `127.0.0.1:8765`. It prints a fresh process-local key and a convenience URL containing that key in the fragment. The browser removes the fragment immediately and keeps the key in that tab's session storage. A supplied `--api-key` is not echoed; enter it in the access form.
+For API access, run the hidden key prompt first, then choose `api` in setup and provide `key:key-primary`. Or choose `env:OPENAI_API_KEY`; enter the variable name, not its value. The variable must exist in the Agent UI process. Never paste an API key into the normal composer.
 
-The header provides New conversation, Conversations (`Ctrl+O`), and Setup. The modal picker is navigation only: no second composer, split preview, or per-row execution controls. Drafts, pending submissions, and unknown-outcome notices survive conversation switches in page memory but are not stored across page reload or sign-out.
+Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
 
-The first Send creates a Thread and then admits the message. These are separate operations. If admission fails, the created Thread and prompt remain available. If the response is lost, review authoritative state before explicitly enabling another attempt; the browser never retries a command automatically. A rejected steer preserves the prompt. Text typed while a request is pending is not erased by the older response.
+### Files, workspaces, and recovery
 
-Retained conversation history is separate from the bounded provisional live tail. Switching back can show recent current-process events but cannot recover already-evicted live output. Receipt state and retained continuations, not a terminal-looking stream event, decide completion. Approvals and questions submit against the exact selected continuation.
+Model, Agent, extension, MCP, and internal Project resources live in sibling YAML directories. The first prompt creates an exact-directory internal Project if necessary; it does not rewrite an old Project to follow your current directory. Existing history is preserved. To resume a conversation from another directory, launch the CLI in its original workspace. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
 
-This browser implementation provides conversation execution and setup. General-purpose guided Settings resource editors and advanced child-control screens are not included; use editable resource files and the existing CLI management commands for those operations.
+Setup publishes resources first and root defaults last. Multi-file publication is not a transaction: failures report completed paths. Review those paths and preview again. An interrupted replacement may retain an original in `.a13n-ui-setup-recovery-*`; inspect and restore or move it before retrying. Do not delete a competing save to force publication.
 
-### Listener exposure
+Process loss discards active receipts and incomplete input/output. Resume continues only a previously selected complete checkpoint; it does not replay interrupted side effects. Best-effort live output can be incomplete; if events are lost, the terminal labels recovery and prints the authoritative final answer.
 
-`--host` and `--port` change the foreground listener. Non-loopback HTTP is still a single-user listener, not a multi-user deployment boundary. Protect remote access appropriately; API keys do not encrypt plain HTTP.
+## Execution permissions
 
-`--dangerously-bypass-permission` disables API authentication for every reachable client. It is not required for normal local use and cannot be combined with `--api-key`. Disconnecting one browser does not stop server-owned work. Restarting the server does not automatically reacquire old receipts or replay interrupted input.
+**Full Control** runs as your host account with ambient filesystem and network authority. It does not download or launch agent-envd. The current Direct Local provider requires POSIX for shell/process execution; Windows file access does not imply Windows command execution support.
+
+**Sandbox** uses the local Environment provider and required filesystem/process isolation with denied networking. Readiness is checked when execution needs it, not during landing. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Agent UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows production Sandbox isolation is not supported. See the [agent-envd operations guide](agent-envd/index.md#isolation-behavior).
+
+## Automation and diagnostics
+
+```console
+a13n-ui run "Review the current diff"
+a13n-ui run "Summarize the next step" --resume session-id --format json
+a13n-ui --environment-mode sandbox run "Inspect the repository"
+a13n-ui plugin list
+a13n-ui import subagents --product codex --scope project --project-root .
+a13n-ui --help
+a13n-ui auth login --help
+```
+
+One-shot mode prints the final text or a structured operation object, then exits. It shares workspace, model, continuation, and permission semantics with interactive mode. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
+
+Help and version do not load provider or database modules. App initialization happens behind the editable prompt; model construction, Environment acquisition, and selected MCP connections happen only when needed. `AgentUiApp` remains the reusable application boundary for a future WebUI or other adapter; the CLI does not own a parallel execution engine.

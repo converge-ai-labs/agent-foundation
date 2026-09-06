@@ -26,10 +26,12 @@ from pydantic_ai.messages import (
 from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_ui.composition import CompositionAcceptanceService
+from a13n_ui.composition.models import ResolvedRunComposition
 from a13n_ui.errors import ThreadError
 from a13n_ui.storage import LocalStore, StoredContinuation, StoredThreadInitialState, Thread, ThreadConfiguration
 from a13n_ui.surfaces import (
     AgentSourceView,
+    ContextUsageView,
     DeferredRequestView,
     ProjectSummary,
     RootActivityState,
@@ -285,6 +287,34 @@ class ThreadProjectionService:
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",
             root_activity=activity,
+        )
+
+    async def context_usage(self, thread_id: str) -> ContextUsageView:
+        thread = await self._store.threads.get(thread_id)
+        if thread is None:
+            raise ThreadError("Session does not exist.", code="thread_missing")
+        if thread.continuation is None:
+            return ContextUsageView(thread_id=thread_id)
+        stored = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+        if stored.harness_state.thread_id != thread_id:
+            raise ThreadError("Session state belongs to another session.", code="thread_continuation_incompatible")
+        composition = await self._store.objects.read_model(stored.run_composition, ResolvedRunComposition)
+        latest = next(
+            (
+                message.usage.total_tokens
+                for message in reversed(stored.harness_state.message_history)
+                if isinstance(message, ModelResponse) and message.usage.total_tokens > 0
+            ),
+            None,
+        )
+        model = composition.root.model
+        thinking = model.settings.get("thinking")
+        return ContextUsageView(
+            thread_id=thread_id,
+            latest_request_tokens=latest,
+            context_window=None if model.model_characteristics is None else model.model_characteristics.context_window,
+            model_id=model.model_id,
+            thinking=thinking if isinstance(thinking, (str, bool)) else None,
         )
 
     async def _state(self, thread: Thread) -> tuple[HarnessState, str]:

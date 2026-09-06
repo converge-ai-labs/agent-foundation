@@ -59,12 +59,6 @@ repos:
         files: ^sdk/rust/agent-foundation-cli/.*\.rs$
         pass_filenames: false
 
-      - id: harness-ui-prettier
-        name: Prettier (Harness UI)
-        entry: npm exec --offline --prefix apps/harness-ui -- prettier --write --ignore-path apps/harness-ui/.prettierignore
-        language: system
-        files: ^apps/harness-ui/.*\.(css|html|js|json|jsx|md|mjs|ts|tsx|yaml|yml)$
-
       - id: sdk-typescript-prettier
         name: Prettier (TypeScript SDK)
         entry: npm exec --offline --prefix sdk/typescript -- prettier --write
