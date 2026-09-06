@@ -63,7 +63,7 @@ Wide terminals can show the conversation inspector; the picker remains a transie
 
 ## Setup and Browser
 
-First use offers compatible Codex/Grok discovery, separate editable starter Agents, an explicit default Agent and Project, complete file preview, and confirmed publication. All usable providers are initially selected. Codex defaults to Terra with a separate low-thinking Luna shell reviewer; Grok defaults to Grok 4.6. Shell review starts enabled and is not a Sandbox. Existing resource files remain unchanged.
+First use has three steps: model connection (API-key environment reference, compatible Codex/Grok subscription, or Not now), execution environment, and default Agent. Not now still creates a default Agent without a Model; it cannot run until configured. Every Agent receives the built-in system prompt; optional user `instructions` are additional and never replace it. Complete file preview precedes confirmed publication, and existing files remain unchanged. Subscription discovery initially selects all usable providers. Codex defaults to Terra with a low-thinking Luna shell reviewer; Grok defaults to Grok 4.6. Direct API-key storage and in-wizard OAuth presentation are not implemented; subscription login uses the existing auth CLI.
 
 Sandbox selection runs a cancellable production-equivalent preflight. Failed checks offer Retry, Cancel, or explicit Full Control without changing system security policy. Windows Sandbox isolation is unsupported; Full Control uses PowerShell and requires explicit selection. See the [user guide](../../docs/agent-ui.md) for setup, recovery, and environment authority.
 

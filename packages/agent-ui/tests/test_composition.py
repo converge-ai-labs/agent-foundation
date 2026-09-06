@@ -201,7 +201,8 @@ async def test_resolves_complete_credential_free_run_composition(tmp_path: Path)
     assert composition.generation_digest == source.source_digest
     assert composition.project_roots == (str((tmp_path / "workspace").resolve()),)
     assert composition.environment_profile.profile_id == IMPLICIT_NATIVE_PROFILE
-    assert composition.root.instructions == (PACKAGE_SYSTEM_PROMPT, "Root authored instructions.")
+    assert composition.root.system_prompt == (PACKAGE_SYSTEM_PROMPT,)
+    assert composition.root.instructions == ("Root authored instructions.",)
     assert composition.root.model.route == "openai:gpt-5"
     assert composition.root.model.authentication.env == "OPENAI_API_KEY"
     assert composition.root.model.settings == {"temperature": 0.0}
@@ -210,7 +211,8 @@ async def test_resolves_complete_credential_free_run_composition(tmp_path: Path)
 
     explorer = composition.root.children[0]
     assert explorer.name == "explorer"
-    assert explorer.definition.instructions == (PACKAGE_SYSTEM_PROMPT, "Report evidence with file paths.")
+    assert explorer.definition.system_prompt == (PACKAGE_SYSTEM_PROMPT,)
+    assert explorer.definition.instructions == ("Report evidence with file paths.",)
     assert explorer.definition.model == composition.root.model
     assert explorer.definition.capabilities == composition.root.capabilities
     assert explorer.definition.tools == ("glob", "grep")
@@ -555,3 +557,32 @@ async def test_webui_collaboration_is_absent_from_reconstructed_children(tmp_pat
     assert capability in reconstructed.executable.definition.capabilities
     for child in reconstructed.executable.subagents.values():
         assert not any(isinstance(item, ThreadCollaborationCapability) for item in child.definition.capabilities)
+
+
+@pytest.mark.parametrize("instructions", ["", "   \n", "Reply in Chinese; prioritize short patches."])
+async def test_system_prompt_is_always_frozen_separately_from_additions(tmp_path: Path, instructions: str) -> None:
+    source = await load_agent_ui_configuration(_write_source(tmp_path))
+    root = source.agents["agent-assistant"]
+    source = source.model_copy(
+        update={"agents": {**source.agents, root.id: root.model_copy(update={"instructions": instructions})}}
+    )
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    assert composition.root.system_prompt == (PACKAGE_SYSTEM_PROMPT,)
+    assert composition.root.instructions == ((instructions,) if instructions.strip() else ())
+    rebuilt = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    spec = rebuilt.executable.definition.agent
+    assert spec.system_prompt == [PACKAGE_SYSTEM_PROMPT]
+    assert spec.instructions == ([instructions] if instructions.strip() else [])
+
+
+async def test_legacy_capture_keeps_original_combined_prompt_without_new_defaults(tmp_path: Path) -> None:
+    source = await load_agent_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    legacy_root = composition.root.model_copy(
+        update={"system_prompt": None, "instructions": ("Original frozen identity", "Original additions")}
+    )
+    rebuilt = AgentReconstructor(_catalog()).reconstruct(
+        composition.model_copy(update={"root": legacy_root}), subagent_operator=_UnusedOperator()
+    )
+    assert rebuilt.executable.definition.agent.system_prompt == ["Original frozen identity", "Original additions"]
+    assert rebuilt.executable.definition.agent.instructions is None

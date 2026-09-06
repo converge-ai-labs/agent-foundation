@@ -36,6 +36,7 @@ from a13n_ui.environment_profiles import (
 from a13n_ui.errors import CompositionError
 from a13n_ui.extensions import AgentUiExtensionCatalog, SelectedCapability
 from a13n_ui.model_adapters import PydanticAiModelAdapter
+from a13n_ui.prompts import DEFAULT_SYSTEM_PROMPT
 
 from .models import (
     DependencyProvenance,
@@ -51,8 +52,8 @@ from .models import (
     ResolvedSubagent,
 )
 
-PACKAGE_SYSTEM_PROMPT = "You are an AI assistant running in Agent UI."
-PACKAGE_PROMPT_REVISION = "agent-ui/1"
+PACKAGE_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
+PACKAGE_PROMPT_REVISION = "agent-ui/2"
 IMPLICIT_NATIVE_PROFILE = FULL_CONTROL_PROFILE_ID
 _MAX_RESOLVED_NODES = 1024
 _MAX_RESOLVED_DEPTH = 128
@@ -239,6 +240,11 @@ class AgentCompositionResolver:
         mcp_ids = source.selected_mcp_servers(agent) if root_mcp is None else root_mcp
         plugins = self._plugins(source, plugin_ids, plugin_catalog)
         mcp = tuple(ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids)
+        if agent.model is None:
+            raise CompositionError(
+                "This Agent has no model yet. Open Setup to connect a model and select a configured Agent before sending.",
+                code="agent_model_required",
+            )
         model = self._model_recipe(source.models[agent.model])
         capabilities = self._capability_recipes(source, agent)
         children: list[ResolvedSubagent] = []
@@ -246,7 +252,8 @@ class AgentCompositionResolver:
             source_kind="agent",
             source_id=agent.id,
             roster_name=agent.id,
-            instructions=(PACKAGE_SYSTEM_PROMPT, agent.instructions),
+            system_prompt=(PACKAGE_SYSTEM_PROMPT,),
+            instructions=(agent.instructions,) if agent.instructions.strip() else (),
             model=model,
             capabilities=capabilities,
             harness_plugins=plugins,
@@ -333,7 +340,8 @@ class AgentCompositionResolver:
             source_kind="markdown",
             source_id=child.id,
             roster_name=child.name,
-            instructions=(PACKAGE_SYSTEM_PROMPT, child.body),
+            system_prompt=(PACKAGE_SYSTEM_PROMPT,),
+            instructions=(child.body,) if child.body.strip() else (),
             model=model,
             capabilities=parent.capabilities,
             harness_plugins=self._plugins(

@@ -94,7 +94,9 @@ class ResolvedAgentNode(CompositionModel):
     source_kind: Literal["agent", "markdown"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
-    instructions: tuple[str, ...] = Field(min_length=1, max_length=16)
+    # None identifies legacy captures whose instructions held the combined system prompt.
+    system_prompt: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=16)
+    instructions: tuple[str, ...] = Field(default=(), max_length=16)
     model: ResolvedModelRecipe
     capabilities: tuple[ResolvedCapabilityRecipe, ...] = Field(default=(), max_length=128)
     harness_plugins: tuple[ResolvedPluginRecipe, ...] = Field(default=(), max_length=128)

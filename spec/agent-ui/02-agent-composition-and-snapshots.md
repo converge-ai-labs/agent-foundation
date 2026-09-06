@@ -2,7 +2,7 @@
 
 ## Design Position
 
-An Agent UI Agent is a file-defined reusable Agent configuration. It selects one Model, declarative Capabilities, Harness Plugins, MCP servers, instructions, tool visibility, and an ordered subagent roster. Agent UI resolves the selected Agent and the current Thread overrides into a complete finite Harness graph for each admitted Run.
+An Agent UI Agent is a file-defined reusable Agent configuration. A runnable Agent selects one Model, declarative Capabilities, Harness Plugins, MCP servers, instructions, tool visibility, and an ordered subagent roster. Agent UI resolves the selected Agent and the current Thread overrides into a complete finite Harness graph for each admitted Run.
 
 Agent resources and Thread selections remain mutable between Runs. The App captures one immutable resolved Run composition before execution, then continues the existing `HarnessState` with that composition. Changing an Agent, Plugin, MCP server, Capability selection, or subagent roster affects later captures and never mutates an active Run.
 
@@ -107,14 +107,20 @@ The conceptual model is:
 class AgentResource(BaseModel):
     id: AgentId
     name: str
-    model: ModelId
-    instructions: str
+    model: ModelId | None = None
+    instructions: str = ""
     capabilities: tuple[CapabilitySelection, ...]
     harness_plugins: tuple[PluginId, ...] | None
     mcp_servers: tuple[McpServerId, ...] | None
     tools: tuple[str, ...] | None
     subagents: tuple[SubagentSelection, ...]
 ```
+
+`model` may be omitted while configuring an Agent, including after skipping model connection during setup. A non-null reference must resolve in the accepted catalog. Run composition requires a Model for every selected Agent node and fails with `agent_model_required` when one is unconfigured; it never invents a provider or falls back to ambient credentials.
+
+Every Agent receives a release-owned `system_prompt` describing Agent UI identity, evidence-based work, repository guidance, focused changes, authority and environment boundaries, validation, and accurate communication. Agent resources expose no field to replace or remove it. `instructions` contains optional user additions passed separately through native Pydantic AI `instructions`; empty or whitespace-only text adds nothing, and non-empty text does not replace the base. Markdown child bodies use this same additional-instructions channel. Capability contributions remain independently owned.
+
+The resolver freezes exact `system_prompt` and `instructions` values separately into every new Run composition, including child nodes. Reconstruction passes both to Harness `AgentSpec` without reading the current release prompt again. Legacy captured nodes without a separate `system_prompt` retain their previously frozen combined instructions as the system prompt, rather than silently receiving new text. The separation defines composition and lifecycle ownership; it does not claim a provider-independent role hierarchy or protection against conflicting instructions.
 
 `capabilities` uses the complete configurable catalog defined by [Extension and Capability Discovery](01a-extension-discovery-and-management.md#capability-catalog). Each selection names one serialization key and capability-owned JSON configuration. A Capability owns the Toolsets, instructions, hooks, settings, and lifecycle it contributes; Agent UI does not create a competing Toolset plugin system.
 

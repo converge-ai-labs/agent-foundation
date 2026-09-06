@@ -108,11 +108,11 @@ OAuth authorization URLs can open in a new browser context, but the React applic
 
 The Agent editor preserves the distinctions among:
 
-- one Model selection;
+- one Model selection, or an explicitly unconfigured Agent that cannot run;
 - ordered declarative Capability selections and capability-owned configuration;
 - `null`, empty, and exact Agent Plugin/MCP defaults;
 - `null`, empty, and exact visible-tool allowlists;
-- instructions;
+- additional user instructions, separate from the always-included release-owned system prompt;
 - an ordered roster of Agent-resource and Markdown-subagent references.
 
 Immediate roster names and graph diagnostics are shown before save when locally derivable, but complete finite-graph and catalog validation remains App-owned. Reordering a roster is behavior-affecting. The UI never exposes a Python import target or a separate fine-grained child permission graph.
@@ -181,4 +181,4 @@ Authenticated App status, listener access, schema compatibility, accepted-genera
 
 ## First-use Setup
 
-`/setup` is a bounded initialization flow, not an alternative mutation authority. It shares App discovery, preview, candidate validation, effective Project-root preflight, and generation-checked publication with the TUI. [Setup and Environment Readiness](../06-setup-and-environment-readiness.md) owns its models, defaults, preservation rules, failure recovery, and explicit Sandbox/Full Control choice. Login without an exposed Web provider flow is offered as a copyable external terminal command followed by explicit rediscovery; discovery itself never begins authentication.
+`/setup` presents model connection (API key, subscription, or Not now), Environment readiness/settings, and default Agent selection in three ordered steps. The system prompt is inspectable but not replaceable; only additional instructions are editable. It is a bounded initialization flow, not an alternative mutation authority. It shares App discovery, preview, candidate validation, effective Project-root preflight, and generation-checked publication with the TUI. [Setup and Environment Readiness](../06-setup-and-environment-readiness.md) owns its models, defaults, preservation rules, failure recovery, and explicit Sandbox/Full Control choice. Login without an exposed Web provider flow is offered as a copyable external terminal command followed by explicit rediscovery; discovery itself never begins authentication.

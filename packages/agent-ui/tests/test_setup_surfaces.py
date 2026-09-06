@@ -73,6 +73,13 @@ async def test_first_use_terminal_setup_publishes_then_enters_conversation(
         assert screen.query_one("#setup-review", Checkbox).value
         assert screen.query_one("#setup-agent", Select).value == "agent-codex"
         assert not path.exists()
+        assert screen._step == 1
+        screen.query_one("#setup-next", Button).press()
+        await pilot.pause()
+        assert screen._step == 2
+        screen.query_one("#setup-next", Button).press()
+        await pilot.pause()
+        assert screen._step == 3
         screen.query_one("#setup-preview", Button).press()
         async with asyncio.timeout(5):
             while screen.query_one("#setup-apply", Button).disabled:
@@ -196,3 +203,80 @@ async def test_readiness_escape_cancels_inflight_probe(tmp_path: Path, monkeypat
             await cancelled.wait()
         assert terminal.controller.state.draft_defaults.environment_profile_id != "environment-sandbox"
     await terminal.controller.close()
+
+
+@pytest.mark.anyio
+async def test_terminal_not_now_checks_environment_before_agent_and_finishes_without_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_ui.app import AgentUiApp
+    from a13n_ui.setup import EnvironmentReadiness
+    from textual.widgets import TextArea
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    path = tmp_path / "config" / "config.yaml"
+    checked = []
+
+    async def failed(self, profile_id, *, project_path):
+        checked.append(project_path)
+        return EnvironmentReadiness(
+            profile_id=profile_id,
+            ready=False,
+            code="unavailable",
+            message="Sandbox unavailable; choose Full Control or retry.",
+        )
+
+    monkeypatch.setattr(AgentUiApp, "preflight_environment", failed)
+
+    @asynccontextmanager
+    async def factory():
+        async with open_agent_ui_app(
+            AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+        ) as application:
+            yield application
+
+    terminal = AgentUiTerminalApp(app_factory=factory, launch_directory=tmp_path)
+    async with terminal.run_test(size=(100, 48)) as pilot:
+        async with asyncio.timeout(5):
+            while not isinstance(terminal.screen, SetupScreen):
+                await pilot.pause(0.02)
+        screen = terminal.screen
+        await pilot.pause()
+        screen.query_one("#setup-skip", Button).press()
+        await pilot.pause()
+        assert screen._step == 2
+        screen.query_one("#setup-environment", Select).value = "environment-sandbox"
+        await pilot.pause()
+        assert screen.query_one("#setup-next", Button).disabled
+        screen.query_one("#setup-probe", Button).press()
+        async with asyncio.timeout(5):
+            while not checked or screen._busy:
+                await pilot.pause(0.02)
+        assert screen._step == 2 and not path.exists()
+        assert screen.query_one("#setup-next", Button).disabled
+        screen.query_one("#setup-environment", Select).value = "environment-native"
+        await pilot.pause()
+        screen.query_one("#setup-next", Button).press()
+        await pilot.pause()
+        assert screen._step == 3
+        assert screen.query_one("#setup-agent", Select).value == "agent-default"
+        screen.query_one("#setup-instructions", TextArea).load_text("Use short answers.")
+        await pilot.pause()
+        screen.query_one("#setup-back", Button).press()
+        await pilot.pause()
+        screen.query_one("#setup-next", Button).press()
+        await pilot.pause()
+        assert screen.query_one("#setup-instructions", TextArea).text == "Use short answers."
+        screen.query_one("#setup-preview", Button).press()
+        async with asyncio.timeout(5):
+            while screen.query_one("#setup-apply", Button).disabled:
+                await pilot.pause(0.02)
+        screen.query_one("#setup-apply", Button).press()
+        async with asyncio.timeout(5):
+            while terminal.terminal_state.lifecycle is not TerminalLifecycle.READY:
+                await pilot.pause(0.02)
+    await terminal.controller.close()
+    assert "Use short answers." in (path.parent / "agents" / "default.yaml").read_text()
+    assert not (path.parent / "models").exists()

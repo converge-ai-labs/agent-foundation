@@ -978,6 +978,9 @@ class AgentUiApp:
                 providers=tuple(providers),
                 agents={} if current is None else {key: value.name for key, value in current.agents.items()},
                 projects={} if current is None else {key: value.name for key, value in current.projects.items()},
+                project_paths={}
+                if current is None
+                else {key: tuple(root.path for root in value.roots) for key, value in current.projects.items()},
                 default_agent=None if defaults is None else defaults.agent,
                 default_project=None if defaults is None else defaults.project,
                 environment_profile="environment-native"

@@ -4,7 +4,7 @@
 
 Agent UI offers a guided first-use workflow before asking a new user to author configuration manually. Setup selects usable Models and Agents, a default Agent, a Project, and an Environment mode, then publishes ordinary human-editable resource files. It creates no private alternate configuration, copied credential store, daemon, or execution queue.
 
-`AgentUiApp` owns credential-free discovery, starter composition, validation, and explicit publication. CLI, TUI, and WebUI present the same facts. TUI and WebUI offer setup when accepted defaults cannot form a usable new conversation; `a13n-ui setup` explicitly reopens the flow. Existing valid installations are not rewritten or forced through setup after an upgrade.
+`AgentUiApp` owns credential-free discovery, starter composition, validation, and explicit publication. CLI, TUI, and WebUI present the same facts. TUI and WebUI offer setup when accepted Agent/Project defaults are missing; `a13n-ui setup` explicitly reopens the flow. Existing valid installations are not rewritten or forced through setup after an upgrade.
 
 ## Discovery and Choice
 
@@ -12,23 +12,21 @@ Discovery is read-only and bounded. It inspects accepted resources, default refe
 
 An account projection distinguishes available, missing, unsupported, and invalid state with safe guidance. An expiring credential with a refresh grant can be offered for reuse; discovery does not promise a successful provider request. One provider's absent or malformed store must not prevent configuring the other provider or selecting an already configured Agent.
 
-The workflow offers:
+The landing workflow has three ordered steps with Back navigation that retains choices:
 
-1. reuse compatible Codex and/or Grok logins, with all usable providers initially selected and each independently deselectable;
-2. select one of the resulting or existing Agents as the explicit default;
-3. confirm the Project, offering the launch directory as an absolute first root only when the user confirms creating it;
-4. select Full Control or Sandbox with the precise authority descriptions from the App;
-5. inspect a credential-free file/default summary and confirm publication.
+1. **Model connection**: choose API key (BYOK) or subscription (BYOS). Subscription discovery initially selects every available compatible provider. API-key configuration selects a model route and environment-variable reference, never a key inside a resource file. Existing configured Agents remain reusable. **Not now** skips connection, clears new connection selections, and continues without authenticating or publishing files.
+2. **Execution environment**: confirm the Project and its roots, then choose and check Sandbox or explicitly choose Full Control. The Sandbox check is cancellable, supports Retry, and is independent of model credentials. A checked selection is invalidated when Project roots or environment authority change. Continue requires a successful check for every effective Sandbox root, or the explicit Full Control choice.
+3. **Agent**: offer a preselected default Agent, model-specific choices where applicable, and optional additional instructions. Review the credential-free files and defaults before explicitly finishing. The final confirmation preserves the preceding environment check rather than making the user discover it at submission time.
 
-When neither login is available, the flow does not dead-end or start authentication automatically. It shows the supported explicit login commands, can retry discovery after login in another terminal, and can select an existing configured Agent. Users may leave setup without publishing or enter the ordinary read-only shell to inspect configuration and history. Model failures after setup remain ordinary explicit authentication or provider errors, not silent fallback to another account.
+Skipping connection still permits complete publication of a default Agent and Project. An Agent without a Model is a valid unconfigured resource, not a runnable fallback: selecting it for execution fails with `agent_model_required` before any model or environment execution. Finishing setup does not claim authentication readiness or open the wizard repeatedly just because connection was deferred. A later setup can select a connected starter or existing Agent. Leaving setup entirely remains distinct from Not now and publishes nothing. Provider failures never silently fall back to another account.
 
 The WebUI, TUI, and CLI provide copyable `a13n-ui auth login codex` / `a13n-ui auth login grok` guidance. No surface asks users to paste OAuth credentials. Login is completed in an external terminal and followed by explicit rediscovery; a registered Web provider flow can expose the same explicit operation without receiving credentials in React. A user-selected upstream account replacement continues to require the existing explicit confirmation contract.
 
 ## Reviewed Starter Configuration
 
-Each supported subscription provider has one release-owned starter Model and Agent template. The templates use a reviewed supported route and explicit authentication kind, practical model-specific reasoning settings, and a concise general-purpose coding/knowledge-work instruction. Recommendations are based on official provider guidance and compatible upstream model catalogs rather than a runtime web search, benchmark slogan, or an automatically changing `latest` guess.
+Each supported subscription provider has one release-owned starter Model and Agent template. An API-key starter uses the explicitly entered supported route and environment reference without guessing credentials or model entitlement. With no new connection selected, setup offers an unconfigured default Agent. The templates use explicit authentication kinds and practical model-specific reasoning settings; they omit additional instructions unless the user supplies them. Every Agent receives the non-replaceable release-owned system prompt defined by [Agent composition](02-agent-composition-and-snapshots.md). Recommendations are based on official provider guidance and compatible upstream model catalogs rather than a runtime web search, benchmark slogan, or an automatically changing `latest` guess.
 
-The starter Agent enables native Harness file/shell tools and project-aware skills. Additional task tools, context policies, and bounded child rosters can be authored through the ordinary composition catalog; setup does not invent new implementations for these features. It does not inject WebUI-only collaboration through YAML, enable arbitrary external MCP servers, or bypass tool approval policy. Default instructions encourage inspecting relevant sources, preserving unrelated edits, concise progress, validating changes, and reporting incomplete work honestly. The setup screen identifies the selected model and allows users to choose their default; selecting both accounts creates both Agents rather than combining authentication or silently switching providers.
+The starter Agent enables native Harness file/shell tools and project-aware skills. Additional task tools, context policies, and bounded child rosters can be authored through the ordinary composition catalog; setup does not invent new implementations for these features. It does not inject WebUI-only collaboration through YAML, enable arbitrary external MCP servers, or bypass tool approval policy. The built-in system prompt encourages inspecting relevant sources, preserving unrelated edits, concise progress, validating changes, and reporting incomplete work honestly. The setup screen identifies the selected model and allows users to choose their default; selecting both accounts creates both Agents rather than combining authentication or silently switching providers.
 
 The reviewed September 2026 Codex starter is `openai-codex:gpt-5.6-terra` with `thinking: medium`. Setup also offers `gpt-5.6-sol` and `gpt-6-astra`; Astra is explicitly marked as entitlement/rollout-dependent, not universally available. The Grok starter is `grok:grok-4.6`. These choices follow the official [Codex models](https://developers.openai.com/codex/models) and [xAI models](https://docs.x.ai/developers/models) guidance and remain editable after creation.
 
@@ -36,7 +34,7 @@ Subscription setup offers enabled shell review by default. When Codex is selecte
 
 Configuration is written into the selected tree: root YAML defaults and ordinary `models/`, `agents/`, and, when explicitly selected, `projects/` resources. Authentication fields reference the existing compatible store kind and contain no token bytes. The default Environment remains Full Control unless the user explicitly selects Sandbox; model recommendations do not change that omission default.
 
-Templates seed files once. Later releases, setup discovery, or ordinary startup never replace user-edited instructions, model routes, settings, tools, or resource names. Users can edit these files directly or through WebUI Settings. The selected default affects new Threads only.
+Templates seed files once. Additional instructions are written only for the newly created selected Agent; they never replace the built-in system prompt. Later releases, setup discovery, or ordinary startup never replace user-edited instructions, model routes, settings, tools, or resource names. Every new Run capture includes the current release system prompt alongside any non-empty additional instructions; frozen Runs retain the exact text already captured. Users can edit these files directly or through WebUI Settings. The selected default affects new Threads only.
 
 ## Publication and Recovery
 

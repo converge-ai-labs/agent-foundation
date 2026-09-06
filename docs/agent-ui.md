@@ -13,13 +13,13 @@ One foreground process owns one App and its active root and child work. There is
 
 On an empty installation, the terminal and browser offer setup before your first conversation. Reopen it with `a13n-ui setup`, the terminal `/setup` command, or the browser Setup action.
 
-1. **Choose subscriptions.** Compatible Codex and Grok account stores are inspected without refreshing credentials, logging in, or calling a model. All available providers start selected. Select both to create two separate Agents, then choose one default.
-2. **Choose your Agent and Project.** Confirm the launch directory for a new local Project or reuse an existing Project. Existing resources and Project roots are preserved.
-3. **Choose execution authority.** Full Control uses your host account without Sandbox isolation. Sandbox requires a production readiness check for every effective Project root.
-4. **Preview configuration.** Read the complete proposed files. Preview does not create your configuration directory or write user files.
-5. **Apply and continue.** Only explicit Apply writes files. The first message, not setup, creates a conversation.
+1. **Model connection.** Choose API key (BYOK) or subscription (BYOS), or **Not now**. BYOK configures a model route and a host environment-variable reference; it does not store a key. BYOS discovers compatible Codex/Grok login, with all available providers initially selected. Discovery makes no login, refresh, or model request.
+2. **Execution environment.** Confirm a new Project's directory or reuse existing roots. Sandbox must pass its production readiness check for every root before Continue is enabled. Retry or cancel a failed check, or explicitly choose Full Control to run as your host user without isolation. This step works even if you skipped model connection.
+3. **Your Agent.** A default Agent is already selected. Choose model-specific options and optional additional instructions, inspect the proposed files, then **Finish setup**. Back preserves your choices. Preview writes nothing, and only Finish setup publishes files.
 
-If no compatible login exists, complete an explicit login in another terminal, then use Retry account discovery:
+**Not now** is not Cancel setup: it lets you complete the remaining steps with a default Agent that has no Model yet. You can enter the conversation shell and keep a draft, but that Agent cannot execute until a Model is configured. Reopen Setup to choose a connected starter or existing Agent; existing Agent files are preserved rather than silently rebound. Restarting does not reopen onboarding just because you deferred the connection.
+
+The subscription step currently reuses external login, not an embedded authorization flow. If no compatible login exists, complete an explicit login in another terminal on the server host, then use Refresh accounts:
 
 ```console
 a13n-ui auth login codex
@@ -39,7 +39,11 @@ The September 2026 starter choices are editable defaults:
 
 Codex setup also offers Sol for deeper reasoning and Astra where the account has access. Grok-only setup does not assume a cheaper compatible subscription route. Shell review starts enabled for subscription setup; flagged commands and review failures request approval. Review is not a sandbox.
 
-Starter Agents enable file/shell tools and project-aware skills, with concise coding instructions. Setup does not silently enable external MCP servers, task tools, or a child roster. Add those through the ordinary editable configuration when needed. Only WebUI roots receive the host-owned Thread collaboration tools; this is not enabled by editing starter YAML.
+Starter Agents enable file/shell tools and project-aware skills. Every Agent receives a release-owned system prompt for evidence-based work, preserving user changes and authority, verification, and accurate reporting. The optional `instructions` field adds preferences or task guidance through Pydantic AI's separate instructions channel; it never replaces the built-in system prompt. Omitting instructions still produces a fully instructed Agent. Both layers are frozen for each Run; changing defaults cannot rewrite old captures. Setup does not silently enable external MCP servers, task tools, or a child roster. Add those through the ordinary editable configuration when needed. Only WebUI roots receive the host-owned Thread collaboration tools; this is not enabled by editing starter YAML.
+
+### API-key configuration
+
+The API-key step takes a supported `provider:model-name` route and the name of an environment variable, for example `OPENAI_API_KEY`. The variable must exist in the **Agent UI server process**, not just the browser or another terminal. Set it using your normal local secret-management mechanism before launching Agent UI. Do not paste the key into either field. Direct Key entry/storage and in-wizard subscription authorization remain unimplemented; a completed wizard is not proof that credentials or model access work.
 
 ### Files and recovery
 

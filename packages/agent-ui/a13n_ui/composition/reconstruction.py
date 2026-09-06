@@ -214,7 +214,8 @@ class AgentReconstructor:
             agent=AgentSpec(
                 model=recipe_id,
                 model_settings=dict(node.model.settings),
-                system_prompt=list(node.instructions),
+                system_prompt=list(node.instructions if node.system_prompt is None else node.system_prompt),
+                instructions=list(node.instructions) if node.system_prompt is not None else None,
             ),
             output_type=str,
             definition_id=f"agent-ui:{node.source_kind}:{node.source_id}",

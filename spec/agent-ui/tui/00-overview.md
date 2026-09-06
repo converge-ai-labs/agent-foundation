@@ -45,7 +45,7 @@ Bare `a13n-ui` and `a13n-ui tui` start the same terminal. `a13n-ui webui` explic
 
 The shell paints before opening the App or performing optional preparation. It then:
 
-1. inspects accepted configuration and offers setup when a usable default composition has not been configured;
+1. inspects accepted configuration and offers the three-step setup when default Agent/Project references have not been configured; an intentionally unconfigured Agent after Not now does not restart onboarding;
 2. uses an explicit accepted `--project` or resolves the launch directory against Projects' first roots;
 3. opens an explicitly selected root `--thread`, otherwise shows a new local draft;
 4. verifies the effective Environment selection through the App readiness boundary before admitting work.

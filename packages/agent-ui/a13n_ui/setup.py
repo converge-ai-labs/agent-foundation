@@ -15,9 +15,11 @@ from a13n_environment_provider.local_envd import (
     validate_local_envd_runtime,
 )
 from anyio import fail_after
+from pydantic import Field
 
 from a13n_ui.configuration.models import StrictModel
 from a13n_ui.errors import AgentUiError
+from a13n_ui.prompts import DEFAULT_SYSTEM_PROMPT
 
 
 class SetupProvider(StrictModel):
@@ -36,6 +38,8 @@ class SetupStatus(StrictModel):
     providers: tuple[SetupProvider, ...]
     agents: dict[str, str]
     projects: dict[str, str]
+    project_paths: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    system_prompt: str = DEFAULT_SYSTEM_PROMPT
     default_agent: str | None
     default_project: str | None
     environment_profile: str

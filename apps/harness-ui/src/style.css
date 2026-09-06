@@ -465,3 +465,19 @@ summary {
     animation: none !important;
   }
 }
+
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.setup-steps [aria-current="step"] {
+  color: var(--accent);
+  font-weight: 700;
+}
+.system-prompt {
+  white-space: pre-wrap;
+}

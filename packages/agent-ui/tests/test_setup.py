@@ -416,3 +416,112 @@ def test_windows_full_control_selects_powershell_profile(tmp_path: Path, monkeyp
     monkeypatch.setattr(adapters.sys, "platform", "win32")
     monkeypatch.setattr(adapters.shutil, "which", lambda name: str(executable) if name == "pwsh" else None)
     assert adapters._host_shell() == executable
+
+
+@pytest.mark.anyio
+async def test_not_now_finishes_setup_without_model_or_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_ui.app import open_agent_ui_app
+    from a13n_ui.errors import CompositionError
+    from a13n_ui.settings import AgentUiSettings, StorageSettings
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    path = tmp_path / "config" / "config.yaml"
+    selection = _selection(tmp_path, providers=(), default_agent="agent-default")
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+    ) as app:
+        assert (await app.setup_status()).needed
+        preview = await app.preview_setup(selection)
+        assert not path.exists()
+        assert not any(name.startswith("models/") for name in preview.files)
+        assert (await app.apply_setup(selection, expected_generation=preview.generation)).completed
+        assert not (await app.setup_status()).needed
+        source = await load_agent_ui_configuration(path)
+        assert source.agents["agent-default"].model is None
+        assert source.agents["agent-default"].instructions == ""
+        thread = await app.create_thread()
+        try:
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="hello")
+        except CompositionError as exc:
+            assert exc.code == "agent_model_required"
+        else:
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+            assert outcome.status.value == "failed"
+            assert "agent_model_required" in outcome.model_dump_json()
+    assert not (tmp_path / "codex" / "auth.json").exists()
+
+
+@pytest.mark.anyio
+async def test_api_key_setup_publishes_only_reference_and_additional_instructions(tmp_path: Path) -> None:
+    selection = _selection(
+        tmp_path,
+        providers=(),
+        default_agent="agent-api-key",
+        api_key_model={"route": "openai:gpt-5", "authentication": {"kind": "api_key", "env": "MY_EXISTING_KEY"}},
+        instructions="Answer briefly.",
+    )
+    path = tmp_path / "config.yaml"
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    assert "MY_EXISTING_KEY" in preview.files["models/api-key.yaml"]
+    assert "Answer briefly." in preview.files["agents/api-key.yaml"]
+    assert "system_prompt" not in preview.files["agents/api-key.yaml"]
+    assert (
+        await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
+    ).completed
+    source = await load_agent_ui_configuration(path)
+    assert source.agents["agent-api-key"].model == "model-api-key"
+    assert source.models["model-api-key"].authentication.env == "MY_EXISTING_KEY"
+
+
+@pytest.mark.anyio
+async def test_setup_run_delivers_base_and_additions_through_distinct_native_channels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import a13n_ui.model_runtime as runtime
+    from a13n_ui.app import open_agent_ui_app
+    from a13n_ui.prompts import DEFAULT_SYSTEM_PROMPT
+    from a13n_ui.settings import AgentUiSettings, StorageSettings
+    from pydantic_ai.messages import ModelRequest, SystemPromptPart
+    from pydantic_ai.models.function import FunctionModel
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    (tmp_path / "codex").mkdir()
+    calls = []
+
+    async def stream(messages, info):
+        system = [
+            p.content
+            for m in messages
+            if isinstance(m, ModelRequest)
+            for p in m.parts
+            if isinstance(p, SystemPromptPart)
+        ]
+        assert DEFAULT_SYSTEM_PROMPT in system
+        assert "Use short answers." not in system
+        assert info.instructions is not None and "Use short answers." in info.instructions
+        calls.append(True)
+        yield "done"
+
+    monkeypatch.setattr(
+        runtime,
+        "build_codex_model",
+        lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
+    )
+    path = tmp_path / "config" / "config.yaml"
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+    ) as app:
+        selection = _selection(tmp_path, providers=("codex",), instructions="Use short answers.", shell_review=False)
+        preview = await app.preview_setup(selection)
+        assert (await app.apply_setup(selection, expected_generation=preview.generation)).completed
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Hello")
+        outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status.value == "completed", outcome.model_dump_json()
+    assert calls == [True]

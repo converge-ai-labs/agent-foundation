@@ -195,9 +195,12 @@ function App() {
       result(await api.GET("/api/setup", { signal })),
     enabled: !!access && synchronized,
   });
-  async function reloadSetup() {
+  async function reloadSetup(signal?: AbortSignal) {
     const value = result(
-      await api.GET("/api/setup", { params: { query: { rediscover: true } } }),
+      await api.GET("/api/setup", {
+        params: { query: { rediscover: true } },
+        signal,
+      }),
     );
     cache.setQueryData(["setup"], value);
     await cache.invalidateQueries({ queryKey: ["selectors"] });
@@ -708,13 +711,23 @@ export function Conversation({
     };
   }, [receipt, continuation]);
   const canSteer = activity?.available_actions.includes("steer") ?? false;
+  const selectedAgent = selectors.data?.agents?.find(
+    (item) =>
+      item.agent_id ===
+      (id ? current?.thread.configuration.agent_source.id : agent),
+  );
+  const modelMissing = !!selectedAgent && !selectedAgent.model_id;
   const legalSubmit = id
     ? (current?.available_actions?.includes("run") || canSteer) &&
       !current?.thread.archived
     : !!project &&
       !!agent &&
       (environment !== "environment-sandbox" || checked);
-  const canSubmit = legalSubmit && !uncertain && !draftState.pending;
+  const canSubmit =
+    legalSubmit &&
+    (!modelMissing || canSteer) &&
+    !uncertain &&
+    !draftState.pending;
   useEffect(() => {
     if (!lastReceipt) return;
     const controller = new AbortController();
@@ -1095,6 +1108,12 @@ export function Conversation({
                 I reviewed the current state; enable another attempt
               </button>
             )}
+          </p>
+        )}
+        {modelMissing && !canSteer && (
+          <p role="status" className="notice">
+            This Agent has no model yet. Open Setup to connect a model and
+            select a configured Agent. Your draft is kept.
           </p>
         )}
         {detail.error && (

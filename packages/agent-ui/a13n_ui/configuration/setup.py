@@ -21,7 +21,7 @@ from pydantic import ConfigDict, Field
 from a13n_ui.errors import AgentUiError, ConfigurationError
 
 from .loader import _parse_yaml_mapping, _scan_directory, load_agent_ui_configuration
-from .models import LoadedAgentUiConfiguration, ResourceId, StrictModel
+from .models import ApiKeyAuthentication, LoadedAgentUiConfiguration, ResourceId, StrictModel
 from .mutation import (
     CandidateValidator,
     _fsync_directory,
@@ -34,9 +34,16 @@ _EMPTY_ROOT = b'schema_version: "2"\n'
 _DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "subagents")
 
 
+class SetupApiKeyModel(StrictModel):
+    route: str = Field(min_length=1, max_length=512)
+    authentication: ApiKeyAuthentication
+
+
 class SetupSelection(StrictModel):
     providers: tuple[Literal["codex", "grok"], ...] = ()
-    default_agent: ResourceId
+    api_key_model: SetupApiKeyModel | None = None
+    instructions: str = Field(default="", max_length=1024 * 1024)
+    default_agent: ResourceId = "agent-default"
     project: ResourceId = "project-local"
     project_path: str = Field(min_length=1, max_length=4096)
     environment_profile: Literal["environment-native", "environment-sandbox"]
@@ -135,7 +142,6 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
             "name": f"{provider.title()} coding",
             "model": f"model-{provider}",
             "capabilities": capabilities,
-            "instructions": "Inspect the project guidance and relevant code before editing. Make focused, reversible changes. Preserve unrelated work and secrets. Validate changed behavior with relevant tests. Report results and limitations accurately. Ask before destructive or externally visible actions not authorized by the user.",
         }
     if selection.shell_review and "codex" in selection.providers:
         resources["models/codex-review.yaml"] = {
@@ -147,6 +153,41 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
             "authentication": {"kind": "codex_subscription"},
             "settings": {"thinking": "low"},
         }
+    if selection.api_key_model is not None:
+        resources["models/api-key.yaml"] = {
+            "schema_version": "1",
+            "kind": "model",
+            "id": "model-api-key",
+            "name": "API key model",
+            "route": selection.api_key_model.route,
+            "authentication": selection.api_key_model.authentication.model_dump(mode="json"),
+        }
+        resources["agents/api-key.yaml"] = {
+            "schema_version": "1",
+            "kind": "agent",
+            "id": "agent-api-key",
+            "name": "API key Agent",
+            "model": "model-api-key",
+            "capabilities": [
+                {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
+                {"capability": "skills", "configuration": {}},
+            ],
+        }
+    if not selection.providers and selection.api_key_model is None:
+        resources["agents/default.yaml"] = {
+            "schema_version": "1",
+            "kind": "agent",
+            "id": "agent-default",
+            "name": "Default Agent",
+            "capabilities": [
+                {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
+                {"capability": "skills", "configuration": {}},
+            ],
+        }
+    if selection.instructions.strip():
+        for resource in resources.values():
+            if resource["id"] == selection.default_agent:
+                resource["instructions"] = selection.instructions
     resources[f"projects/{selection.project}.yaml"] = {
         "schema_version": "1",
         "kind": "project",

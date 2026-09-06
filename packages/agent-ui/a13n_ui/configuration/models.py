@@ -310,7 +310,7 @@ class AgentResource(StrictModel):
     kind: Literal["agent"]
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
-    model: ResourceId
+    model: ResourceId | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     capabilities: tuple[CapabilitySelection, ...] = Field(default=(), max_length=128)
     harness_plugins: tuple[ResourceId, ...] | None = None
@@ -321,7 +321,8 @@ class AgentResource(StrictModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "agent-")
-        _require_id_prefix(self.model, "model-")
+        if self.model is not None:
+            _require_id_prefix(self.model, "model-")
         for values in (self.harness_plugins, self.mcp_servers, self.tools):
             if values is not None and len(values) != len(set(values)):
                 raise ValueError("Agent selections must be unique and ordered")
@@ -446,7 +447,8 @@ class LoadedAgentUiConfiguration(StrictModel):
             _require_reference(item, self.mcp_servers, "defaults.mcp_servers")
 
         for agent in self.agents.values():
-            _require_reference(agent.model, self.models, f"{agent.id}.model")
+            if agent.model is not None:
+                _require_reference(agent.model, self.models, f"{agent.id}.model")
             for item in agent.harness_plugins or ():
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():

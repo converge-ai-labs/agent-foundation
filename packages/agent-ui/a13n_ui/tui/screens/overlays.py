@@ -386,7 +386,7 @@ def _configuration_context(state: TerminalState, context_key: str | None) -> str
     if state.selectors is not None:
         agent = next((item for item in state.selectors.agents if item.agent_id == agent_id), None)
         if agent is not None:
-            model_id = agent.model_id
+            model_id = agent.model_id or "not configured — connect a model in Setup"
     lines = [
         f"Project: {project_id or 'unmatched'} (read-only)",
         f"Resolved Model: {model_id} (read-only)",
@@ -440,7 +440,7 @@ def _configuration_entries(
                 entries.append(
                     (
                         f"{marker} {item.name}",
-                        f"{item.model_id} - {item.source_path}",
+                        f"{item.model_id or 'not configured'} - {item.source_path}",
                         SelectConfigurationResource("agent", item.agent_id),
                         True,
                     )
@@ -554,7 +554,7 @@ def _status_text(state: TerminalState, context_key: str | None) -> str:
                     None,
                 )
                 if agent is not None:
-                    model_id = agent.model_id
+                    model_id = agent.model_id or "not configured — connect a model in Setup"
             return "\n".join(
                 (
                     f"App: {state.lifecycle.value}",
@@ -581,7 +581,7 @@ def _status_text(state: TerminalState, context_key: str | None) -> str:
             None,
         )
         if agent is not None:
-            model_id = agent.model_id
+            model_id = agent.model_id or "not configured — connect a model in Setup"
     operation = view.root_operation
     return "\n".join(
         (
