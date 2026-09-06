@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import timedelta
 from enum import StrEnum
 from typing import Any, Literal, Protocol
 
@@ -13,6 +14,7 @@ from a13n_harness import (
     HarnessRunResult,
     HarnessState,
     RunInputValue,
+    SafeFailure,
 )
 from a13n_harness.errors import RunError
 from pydantic_ai.capabilities import NodeResult
@@ -44,7 +46,7 @@ from .harness_results import (
     RunTerminalDisposition,
     RunTerminalReceipt,
 )
-from .objects import RunStateStore, StaleStateWriter, StoredRunState
+from .objects import RunObjectIntegrityError, RunStateStore, StaleStateWriter, StoredRunState
 from .state import (
     CompletedOutcomeCandidate,
     ConsumedThreadInboxEntry,
@@ -117,11 +119,11 @@ class RunAttemptControl:
         context: AttemptContext,
         execution: AttemptExecutionService,
         states: RunStateStore,
-        state: StoredRunState,
+        state: StoredRunState | None = None,
         inbox: ThreadInboxReconciler,
     ) -> None:
-        envelope = state.envelope
-        if envelope.run_id != context.run_id or envelope.thread_id != context.thread_id:
+        envelope = state.envelope if state is not None else None
+        if envelope is not None and (envelope.run_id != context.run_id or envelope.thread_id != context.thread_id):
             raise ValueError("Run state and Attempt context must name the same Run and Thread")
         self._context = context
         self._execution = execution
@@ -131,7 +133,7 @@ class RunAttemptControl:
         self._gate = _RunControlGate()
         self._gate.delivery_gate = (
             _DeliveryGate.first_response
-            if envelope.input_disposition == "pending" and envelope.host.deferred is not None
+            if envelope is not None and envelope.input_disposition == "pending" and envelope.host.deferred is not None
             else _DeliveryGate.open
         )
         self._driver: HarnessControlDriver | None = None
@@ -168,7 +170,7 @@ class RunAttemptControl:
         async with self._gate.lock:
             self._require_open()
             self._require_driver()
-            if self._state.envelope.outcome_candidate is not None:
+            if self.current_state.envelope.outcome_candidate is not None:
                 raise RunError(
                     "A prepared outcome must be sealed without entering Harness.",
                     code="foundation_outcome_requires_adoption",
@@ -178,7 +180,7 @@ class RunAttemptControl:
                     "Foundation run control already has an active Harness Run.",
                     code="foundation_control_reused",
                 )
-            if identity.thread_id != self._state.envelope.thread_id:
+            if identity.thread_id != self.current_state.envelope.thread_id:
                 raise RunError(
                     "Harness Run identity does not match Foundation preparation.",
                     code="foundation_control_identity_mismatch",
@@ -230,7 +232,7 @@ class RunAttemptControl:
             try:
                 await self._prepare_boundary()
                 if (
-                    self._state.envelope.input_disposition == "applied"
+                    self.current_state.envelope.input_disposition == "applied"
                     and self._gate.delivery_gate is _DeliveryGate.open
                     and self._gate.handoff_reason is None
                 ):
@@ -332,6 +334,69 @@ class RunAttemptControl:
                 )
             self._gate.handoff_reason = reason
 
+    async def load_state(self) -> None:
+        """Load the exact current object after claim, before inbox or Harness work."""
+
+        async with self._gate.lock:
+            self._require_open()
+            if self._gate.identity is not None or self._gate.offered:
+                raise RunError("Run state cannot be reloaded after Harness entry.", code="foundation_control_reused")
+            try:
+                await self._validate_authority()
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+        # Object I/O must not prevent the monitor from renewing the selected lease.
+        state = await self._states.read(
+            self._context.tenant_id, self._context.run_id, expected_thread_id=self._context.thread_id
+        )
+        async with self._gate.lock:
+            self._require_open()
+            if self._gate.identity is not None or self._gate.offered:
+                raise RunError("Run state cannot be reloaded after Harness entry.", code="foundation_control_reused")
+            try:
+                await self._validate_authority()
+                if state.writer_fence > self._context.fence:
+                    raise StaleStateWriter("A newer Attempt has already claimed the Run state")
+                if state.envelope.runtime_lock_digest != self._context.runtime_lock_digest:
+                    raise RunObjectIntegrityError("Run state does not match the claimed Runtime lock")
+                self._state = state
+                self._gate.delivery_gate = (
+                    _DeliveryGate.first_response
+                    if state.envelope.input_disposition == "pending" and state.envelope.host.deferred is not None
+                    else _DeliveryGate.open
+                )
+            except (AttemptAuthorityError, StaleStateWriter):
+                await self._fence()
+                raise
+
+    async def fail_preparation(
+        self, failure: SafeFailure, *, retryable: bool, retry_after: timedelta
+    ) -> RunTerminalReceipt:
+        """Settle a classified preparation failure before any Harness execution."""
+
+        async with self._gate.lock:
+            self._require_open()
+            if self._gate.identity is not None:
+                raise RunError("Harness has already been entered.", code="foundation_control_reused")
+            try:
+                mutation = await self._execution.fail(
+                    self._context, failure, retryable=retryable, retry_after=retry_after
+                )
+                self._advance(mutation)
+                self._gate.phase = _CoordinatorPhase.terminal
+                return RunTerminalReceipt(
+                    RunTerminalDisposition.retrying
+                    if mutation.thread_version is None
+                    else RunTerminalDisposition.failed,
+                    mutation.run_version,
+                    mutation.attempt_version,
+                    mutation.thread_version,
+                )
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
     async def commit_preparation(self) -> AttemptPreparationResult:
         """Commit preflight using the latest context after concurrent lease renewal."""
 
@@ -343,10 +408,12 @@ class RunAttemptControl:
                 if isinstance(decision, AttemptPreparationRejected):
                     self._gate.phase = _CoordinatorPhase.terminal
                 else:
-                    self._state = await self._execution.claim_state_writer(self._context, self._states, self._state)
-                    if isinstance(self._state.envelope.outcome_candidate, CompletedOutcomeCandidate):
+                    self._state = await self._execution.claim_state_writer(
+                        self._context, self._states, self.current_state
+                    )
+                    if isinstance(self.current_state.envelope.outcome_candidate, CompletedOutcomeCandidate):
                         self._state = await self._execution.resume_completed_candidate(
-                            self._context, self._states, self._state, preparation=decision
+                            self._context, self._states, self.current_state, preparation=decision
                         )
                 return decision
             except (AttemptAuthorityError, StaleStateWriter):
@@ -377,7 +444,7 @@ class RunAttemptControl:
 
         async with self._gate.lock:
             self._require_open()
-            state = self._state
+            state = self.current_state
             candidate = state.envelope.outcome_candidate
             if (
                 candidate is None
@@ -485,7 +552,7 @@ class RunAttemptControl:
                         projection = await adapter.project(result)
                         await self._publish_terminal(projection)
                         await self._confirm_state()
-                        receipt = await committer.commit_state_outcome(self._context, self._state)
+                        receipt = await committer.commit_state_outcome(self._context, self.current_state)
                         expected = (
                             RunTerminalDisposition.completed
                             if isinstance(projection.candidate, CompletedOutcomeCandidate)
@@ -531,6 +598,8 @@ class RunAttemptControl:
 
     @property
     def current_state(self) -> StoredRunState:
+        if self._state is None:
+            raise RunError("Run state has not been loaded.", code="foundation_state_not_loaded")
         return self._state
 
     async def _prepare_boundary(self) -> None:
@@ -541,7 +610,7 @@ class RunAttemptControl:
         self._advance(await self._execution.validate(self._context))
 
     async def _confirm_state(self) -> None:
-        self._advance(await self._inbox.confirm_checkpoint(self._context, self._state))
+        self._advance(await self._inbox.confirm_checkpoint(self._context, self.current_state))
 
     async def _checkpoint(
         self,
@@ -551,7 +620,7 @@ class RunAttemptControl:
         await self._checkpoint_state(await boundary.export_state(messages))
 
     async def _checkpoint_state(self, harness: HarnessState) -> None:
-        prior = self._state.envelope
+        prior = self.current_state.envelope
         receipts = (*prior.host.consumed_inbox_entries, *self._gate.offered)
         host = HostContinuationState(consumed_inbox_entries=receipts)
         if prior.input_disposition == "applied" and prior.harness == harness and prior.host == host:
@@ -560,7 +629,7 @@ class RunAttemptControl:
         await self._publish(self._successor(harness, host, "progress", None))
 
     async def _publish_terminal(self, projection: HarnessOutcomeProjection) -> None:
-        prior = self._state.envelope
+        prior = self.current_state.envelope
         host = HostContinuationState(
             deferred=projection.deferred,
             consumed_inbox_entries=(
@@ -590,7 +659,7 @@ class RunAttemptControl:
             message_history=harness.message_history,
             agent_context_state=harness.agent_context_state,
         )
-        prior = self._state.envelope
+        prior = self.current_state.envelope
         payload = prior.model_dump(mode="python", by_alias=True)
         payload.update(
             checkpoint_seq=prior.checkpoint_seq + 1,
@@ -610,7 +679,7 @@ class RunAttemptControl:
         self._state = await self._execution.publish_checkpoint(
             self._context,
             self._states,
-            self._state,
+            self.current_state,
             successor,
         )
         self._gate.offered.clear()
@@ -624,7 +693,7 @@ class RunAttemptControl:
         if self._gate.offered:
             return ()
         entries = tuple(await self._inbox.read_eligible(self._context))
-        _validate_delivery_batch(entries, self._state.envelope)
+        _validate_delivery_batch(entries, self.current_state.envelope)
         return entries
 
     def _require_boundary(self, boundary: HarnessHookBoundary) -> None:
@@ -635,7 +704,7 @@ class RunAttemptControl:
         identity = self._gate.identity
         if (
             identity is None
-            or result.thread_id != self._state.envelope.thread_id
+            or result.thread_id != self.current_state.envelope.thread_id
             or result.thread_id != identity.thread_id
             or result.run_id != identity.run_id
         ):

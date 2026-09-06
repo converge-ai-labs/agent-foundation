@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.database import DatabaseMigrator
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
@@ -737,8 +738,9 @@ async def _accept_root(
     max_recovery_attempts: int = 3,
     recovery_policy_version: str = "1",
     recovery_deadline_at: datetime | None = None,
+    effective_config: EffectiveAgentConfig | None = None,
 ) -> tuple[RunStateStore, Run, RunStateEnvelope]:
-    config = effective_agent_config()
+    config = effective_config or effective_agent_config()
     seed = RunStateSeed(
         run_id="run_5555555555555555",
         agent_id=AGENT_ID,

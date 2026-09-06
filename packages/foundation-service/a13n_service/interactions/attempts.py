@@ -33,6 +33,18 @@ class AttemptMutationError(RuntimeError):
     """The requested mutation is incompatible with the current Attempt lifecycle."""
 
 
+class AttemptPreparationError(RuntimeError):
+    """A classified pre-Harness failure safe to persist on the claimed Attempt."""
+
+    def __init__(self, failure: SafeFailure, *, retryable: bool, retry_after: timedelta = timedelta(seconds=1)) -> None:
+        if retry_after <= timedelta(0):
+            raise ValueError("Preparation retry backoff must be positive")
+        super().__init__(failure.code)
+        self.failure = failure
+        self.retryable = retryable
+        self.retry_after = retry_after
+
+
 @dataclass(frozen=True, slots=True)
 class AttemptContext:
     """Claim-derived process-local correlation, authority, and fixed execution policy."""
@@ -469,6 +481,18 @@ async def read_attempt_authority(
     authority: AttemptContext,
     now: datetime,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
+    records = await read_attempt_lease(database, authority, now)
+    _validate_versions(records[0], records[1], authority)
+    return records
+
+
+async def read_attempt_lease(
+    database: AsyncSession,
+    authority: AttemptContext,
+    now: datetime,
+) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
+    """Validate read authority without treating a concurrent heartbeat as lease loss."""
+
     result = await database.execute(
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
@@ -488,7 +512,6 @@ async def read_attempt_authority(
         raise AttemptAuthorityError("Attempt authority was not found")
     run, attempt, thread = row
     _validate_lease(run, attempt, thread, authority, now)
-    _validate_versions(run, attempt, authority)
     return run, attempt, thread
 
 
@@ -574,6 +597,7 @@ __all__ = [
     "AttemptMutationError",
     "AttemptMutationReceipt",
     "AttemptPreparationAccepted",
+    "AttemptPreparationError",
     "AttemptPreparationRejected",
     "AttemptPreparationResult",
 ]

@@ -414,12 +414,19 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     execution = _Execution(
         trace, reject_preparation=reject_preparation, pending_completion=prepared_outcome == "resume"
     )
+    read_state = states.read
+
+    async def slow_state_read(*args, **kwargs):
+        await execution.heartbeat_seen.wait()
+        trace.append("attempt:state-read")
+        return await read_state(*args, **kwargs)
+
+    monkeypatch.setattr(states, "read", slow_state_read)
     inbox = _Inbox(trace)
     control = RunAttemptControl(
         context=context,
         execution=execution,
         states=states,
-        state=stored,
         inbox=inbox,
     )
     projector = _Projector()
@@ -497,6 +504,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
                 assert trace.count("attempt:preparation-commit") == 2
                 assert trace.index("attempt:completion-recovery") < trace.index("attempt:enter")
     assert execution.heartbeat_seen.is_set()
+    assert trace.index("attempt:heartbeat") < trace.index("attempt:state-read") < trace.index("attempt:prepare")
     assert wakeups.acknowledged.is_set()
     assert trace.index("inbox:confirm") < trace.index("attempt:prepare")
     assert trace[-2:] == ["attempt:cleanup", "capacity:release"]
