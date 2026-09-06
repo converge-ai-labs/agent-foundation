@@ -84,19 +84,13 @@ jobs:
       - name: Test Foundation Service
         if: matrix.name == 'tests'
         timeout-minutes: 10
-        run: |
-          lscpu
-          df -h "$RUNNER_TEMP" /dev/shm
-          stats="$RUNNER_TEMP/foundation-vmstat.log"
-          vmstat 5 > "$stats" &
-          monitor_pid=$!
-          trap 'kill "$monitor_pid" 2>/dev/null || true; cat "$stats"' EXIT
-          /usr/bin/time -v uv run --locked python -m pytest \
-            -n 7 --dist loadgroup --max-worker-restart=0 \
-            -vv --tb=short --durations=30 \
-            -o faulthandler_timeout=120 \
-            -o faulthandler_exit_on_timeout=true \
-            packages/foundation-service/tests
+        run: >-
+          /usr/bin/time -p uv run --locked python -m pytest
+          -n 7 --dist loadgroup --max-worker-restart=0
+          -vv --tb=short --durations=30
+          -o faulthandler_timeout=120
+          -o faulthandler_exit_on_timeout=true
+          packages/foundation-service/tests
 
       - name: Build Foundation Python distributions
         if: matrix.name == 'checks'
