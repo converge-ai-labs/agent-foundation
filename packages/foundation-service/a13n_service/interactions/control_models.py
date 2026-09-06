@@ -42,8 +42,8 @@ _QUEUED_FAILURE_ADAPTER = TypeAdapter(QueuedSubmissionFailure)
 def _run_references() -> tuple[ForeignKeyConstraint, ...]:
     return tuple(
         ForeignKeyConstraint(
-            ("tenant_id", "thread_id", column),
-            ("runs.tenant_id", "runs.thread_id", "runs.id"),
+            ("organization_id", "thread_id", column),
+            ("runs.organization_id", "runs.thread_id", "runs.id"),
             name=f"fk_thread_inbox_{column}",
             ondelete="RESTRICT",
         )
@@ -61,25 +61,25 @@ class ThreadInboxCounterRecord(Base):
     __tablename__ = "thread_inbox_counters"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("organization_id", "thread_id"),
+            ("threads.organization_id", "threads.id"),
             ondelete="CASCADE",
         ),
         CheckConstraint("next_delivery_sequence >= 1", name="next_delivery_sequence_positive"),
         CheckConstraint("pending_count >= 0", name="pending_count_non_negative"),
         CheckConstraint("pending_bytes >= 0", name="pending_bytes_non_negative"),
-        UniqueConstraint("tenant_id", "thread_id", name="uq_thread_inbox_counters_scope"),
+        UniqueConstraint("organization_id", "thread_id", name="uq_thread_inbox_counters_scope"),
     )
 
     thread_id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     next_delivery_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     pending_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
     pending_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
     def to_resource(self) -> ThreadInboxCounter:
         return ThreadInboxCounter(
-            tenant_id=self.tenant_id,
+            organization_id=self.organization_id,
             thread_id=self.thread_id,
             next_delivery_sequence=self.next_delivery_sequence,
             pending_count=self.pending_count,
@@ -91,14 +91,14 @@ class ThreadInboxRecord(Base):
     __tablename__ = "thread_inbox"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("organization_id", "thread_id"),
+            ("threads.organization_id", "threads.id"),
             ondelete="CASCADE",
         ),
         *_run_references(),
         ForeignKeyConstraint(
-            ("tenant_id", "async_subagent_relationship_id"),
-            ("child_run_relationships.tenant_id", "child_run_relationships.id"),
+            ("organization_id", "async_subagent_relationship_id"),
+            ("child_run_relationships.organization_id", "child_run_relationships.id"),
             name="fk_thread_inbox_async_subagent_relationship",
             ondelete="RESTRICT",
         ),
@@ -157,28 +157,28 @@ class ThreadInboxRecord(Base):
             "payload_object_digest_sha256 IS NULL OR length(payload_object_digest_sha256) = 64",
             name="payload_digest_sha256",
         ),
-        UniqueConstraint("tenant_id", "id", name="uq_thread_inbox_tenant_id"),
-        UniqueConstraint("tenant_id", "thread_id", "delivery_sequence", name="uq_thread_inbox_sequence"),
+        UniqueConstraint("organization_id", "id", name="uq_thread_inbox_organization_id"),
+        UniqueConstraint("organization_id", "thread_id", "delivery_sequence", name="uq_thread_inbox_sequence"),
         UniqueConstraint(
-            "tenant_id",
+            "organization_id",
             "async_subagent_relationship_id",
             name="uq_thread_inbox_async_subagent_relationship",
         ),
-        Index("ix_thread_inbox_fifo", "tenant_id", "thread_id", "status", "delivery_sequence"),
-        Index("ix_thread_inbox_target", "tenant_id", "target_run_id", "status", "delivery_sequence"),
+        Index("ix_thread_inbox_fifo", "organization_id", "thread_id", "status", "delivery_sequence"),
+        Index("ix_thread_inbox_target", "organization_id", "target_run_id", "status", "delivery_sequence"),
         Index(
             "ix_thread_inbox_waiting_source",
-            "tenant_id",
+            "organization_id",
             "source_waiting_run_id",
             "status",
             "delivery_sequence",
         ),
-        Index("ix_thread_inbox_kind_scan", "tenant_id", "kind", "status", "delivery_sequence"),
-        Index("ix_thread_inbox_origin", "tenant_id", "origin_run_id", "kind", "status", "delivery_sequence"),
+        Index("ix_thread_inbox_kind_scan", "organization_id", "kind", "status", "delivery_sequence"),
+        Index("ix_thread_inbox_origin", "organization_id", "origin_run_id", "kind", "status", "delivery_sequence"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     delivery_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -216,7 +216,7 @@ class ThreadInboxRecord(Base):
             )
         return ThreadInboxEntry(
             id=self.id,
-            tenant_id=self.tenant_id,
+            organization_id=self.organization_id,
             thread_id=self.thread_id,
             kind=ThreadInboxKind(self.kind),
             delivery_sequence=self.delivery_sequence,
@@ -241,20 +241,20 @@ class QueuedSubmissionRecord(Base):
     __tablename__ = "thread_queued_submissions"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("organization_id", "thread_id"),
+            ("threads.organization_id", "threads.id"),
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
             (
-                "tenant_id",
+                "organization_id",
                 "thread_id",
                 "consumed_run_id",
                 "authority_principal_type",
                 "authority_principal_id",
             ),
             (
-                "runs.tenant_id",
+                "runs.organization_id",
                 "runs.thread_id",
                 "runs.id",
                 "runs.authority_principal_type",
@@ -275,11 +275,11 @@ class QueuedSubmissionRecord(Base):
             "AND failure_json IS NOT NULL AND failed_at IS NOT NULL)",
             name="lifecycle_valid",
         ),
-        UniqueConstraint("tenant_id", "id", name="uq_thread_queued_submissions_tenant_id"),
-        UniqueConstraint("tenant_id", "consumed_run_id", name="uq_thread_queued_submissions_consumed_run"),
+        UniqueConstraint("organization_id", "id", name="uq_thread_queued_submissions_organization_id"),
+        UniqueConstraint("organization_id", "consumed_run_id", name="uq_thread_queued_submissions_consumed_run"),
         Index(
             "uq_thread_queued_submissions_position",
-            "tenant_id",
+            "organization_id",
             "thread_id",
             "position",
             unique=True,
@@ -288,7 +288,7 @@ class QueuedSubmissionRecord(Base):
         ),
         Index(
             "ix_thread_queued_submissions_live",
-            "tenant_id",
+            "organization_id",
             "thread_id",
             "position",
             "id",
@@ -297,14 +297,14 @@ class QueuedSubmissionRecord(Base):
         ),
         Index(
             "ix_thread_queued_submissions_consumed",
-            "tenant_id",
+            "organization_id",
             "thread_id",
             "consumed_at",
             "id",
         ),
         Index(
             "ix_thread_queued_submissions_failed",
-            "tenant_id",
+            "organization_id",
             "thread_id",
             "failed_at",
             "id",
@@ -313,7 +313,7 @@ class QueuedSubmissionRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
     authority_principal_type: Mapped[str] = mapped_column(String(32), nullable=False)
     authority_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)

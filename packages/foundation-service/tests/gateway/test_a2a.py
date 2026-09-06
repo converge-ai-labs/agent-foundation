@@ -11,6 +11,7 @@ import pytest
 from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.api import install_api_conventions
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets.models import AssetRecord
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.service import AssetService
@@ -20,7 +21,6 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
 from a13n_service.gateway.a2a_push import (
-    A2A_PUSH_ENABLED_SESSION_INFO_KEY,
     A2APushMaterial,
     A2APushPublisher,
     _event_status,
@@ -149,6 +149,35 @@ async def test_initial_message_atomically_binds_task_and_replays(
     assert run is not None
     assert task.run_ids_json == [run.id]
     assert message.run_id == run.id
+
+
+@pytest.mark.parametrize("operation", ["send", "push"])
+async def test_protocol_tenant_selection_is_rejected_before_mutation(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+    operation: str,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+
+    with pytest.raises(A2AError) as captured:
+        if operation == "send":
+            request = _request()
+            request.tenant = "external-tenant"
+            await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+        else:
+            await service.create_push_configuration(
+                actor=_actor(),
+                agent_id=AGENT_ID,
+                task_id="unselected-task",
+                requested=a2a.TaskPushNotificationConfig(tenant="external-tenant"),
+            )
+
+    assert captured.value.code == "tenant_not_supported"
+    assert captured.value.category is ErrorCategory.invalid_request
+    async with short_session(lifecycle_interaction_sessions) as database:
+        for record_type in (A2ATaskBindingRecord, RunRecord, A2APushConfigurationRecord):
+            assert await database.scalar(select(record_type.id)) is None
 
 
 async def test_send_rejects_unavailable_accepted_output_modes_before_mutation(
@@ -783,14 +812,15 @@ async def test_disabled_a2a_does_not_append_push_outbox(
         task_id=task.id,
         requested=a2a.TaskPushNotificationConfig(url="https://8.8.8.8/a2a-events"),
     )
-    lifecycle_interaction_sessions.configure(
-        info={A2A_PUSH_ENABLED_SESSION_INFO_KEY: False},
-    )
     async with short_session(lifecycle_interaction_sessions) as database:
         binding = await database.get(A2ATaskBindingRecord, task.id)
     assert binding is not None
 
-    await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
+    from tests.sql_capture import capture_sql
+
+    with capture_sql(lifecycle_interaction_sessions) as statements:
+        await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id, a2a_enabled=False)
+    assert not any("a2a_" in statement for statement in statements)
 
     async with short_session(lifecycle_interaction_sessions) as database:
         delivery = await database.scalar(select(OutboxRecord.id).where(OutboxRecord.destination_kind == "a2a_push"))
@@ -836,13 +866,18 @@ async def test_push_configuration_delete_waits_for_claimed_delivery(
 
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(delete_configuration)
-        await anyio.sleep(0.01)
+        # Wait for the committed fence, not a scheduler-dependent delay.
+        with anyio.fail_after(5):
+            while True:
+                async with short_session(lifecycle_interaction_sessions) as database:
+                    configuration = await database.get(A2APushConfigurationRecord, created.id)
+                assert configuration is not None
+                if configuration.state == "disabled":
+                    break
+                await anyio.sleep(0.01)
         assert not deleted.is_set()
         async with short_session(lifecycle_interaction_sessions) as database:
-            configuration = await database.get(A2APushConfigurationRecord, created.id)
             claimed = await database.get(OutboxRecord, delivery.id)
-        assert configuration is not None
-        assert configuration.state == "disabled"
         assert claimed is not None
         async with transaction(lifecycle_interaction_sessions) as database:
             claimed = await database.get(OutboxRecord, delivery.id)
@@ -851,7 +886,8 @@ async def test_push_configuration_delete_waits_for_claimed_delivery(
             claimed.lease_expires_at = None
             claimed.published_at = NOW + timedelta(seconds=1)
             claimed.updated_at = NOW + timedelta(seconds=1)
-        await deleted.wait()
+        with anyio.fail_after(5):
+            await deleted.wait()
 
     async with short_session(lifecycle_interaction_sessions) as database:
         assert await database.get(OutboxRecord, delivery.id) is None

@@ -322,7 +322,7 @@ class InboxPayloadObjectRef(StrictModel):
 
 class ThreadInboxEntry(StrictModel):
     id: ObjectId
-    tenant_id: ObjectId
+    organization_id: ObjectId
     thread_id: ThreadId
     kind: ThreadInboxKind
     delivery_sequence: int = Field(ge=1)
@@ -417,7 +417,7 @@ def _validate_inbox_binding(entry: ThreadInboxEntry) -> None:
 
 
 class ThreadInboxCounter(StrictModel):
-    tenant_id: ObjectId
+    organization_id: ObjectId
     thread_id: ThreadId
     next_delivery_sequence: int = Field(ge=1)
     pending_count: int = Field(ge=0)

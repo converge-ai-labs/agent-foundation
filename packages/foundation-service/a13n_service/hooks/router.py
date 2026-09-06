@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
@@ -31,7 +32,7 @@ def _service(request: Request) -> HookSubscriptionService:
         raise HookManagementError(
             "hook_management_unavailable",
             "Hook subscription management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.hook_subscriptions
 

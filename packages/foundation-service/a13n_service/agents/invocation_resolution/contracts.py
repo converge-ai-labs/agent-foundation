@@ -24,7 +24,7 @@ from ..domain import (
     ResolvedPluginVersion,
     ResolvedSubagentEdge,
 )
-from ..invocation import AgentRunSensitiveValues, MergedAgentRun
+from ..invocation import MergedAgentRunConfig
 from ..plugin_resolution import PreparedPluginSelections
 from ..skill_resolution import (
     PreparedSkillLock,
@@ -63,7 +63,7 @@ class PreparedAgentInvocation:
     expected_current_revision_id: str | None
     revision_content_digest: str
     revision: AgentRevision
-    merged: MergedAgentRun
+    merged: MergedAgentRunConfig
     model: PreparedInvocationModel
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillLock, ...]
@@ -78,8 +78,6 @@ class FrozenAgentInvocation:
     agent_revision_id: str
     selector_kind: AgentSelectorKind
     effective_config: EffectiveAgentConfig
-    sensitive_values: AgentRunSensitiveValues
-    sensitive_values_digest: str
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
 

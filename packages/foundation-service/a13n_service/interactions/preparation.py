@@ -1,4 +1,4 @@
-"""Tenant-scoped loading of the exact dependencies needed by a claimed Attempt."""
+"""Organization-scoped loading of the exact dependencies needed by a claimed Attempt."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ class AttemptDependencyLoader:
                 _validate_run_state(run, state)
                 session = await database.scalar(
                     select(SessionRecord).where(
-                        SessionRecord.tenant_id == authority.tenant_id, SessionRecord.id == run.session_id
+                        SessionRecord.organization_id == authority.organization_id, SessionRecord.id == run.session_id
                     )
                 )
                 if session is None:
@@ -101,7 +101,7 @@ async def _authorize(database: AsyncSession, run: Run, workspace_id: str, agent_
     await authorize_persisted_agent_principal_actions(
         database,
         principal=run.authority_principal,
-        organization_id=run.tenant_id,
+        organization_id=run.organization_id,
         workspace_id=workspace_id,
         agent_id=agent_id,
         actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -121,7 +121,7 @@ async def _require_revision(
                 & (AgentRevisionRecord.workspace_id == AgentRecord.workspace_id),
             )
             .where(
-                AgentRecord.organization_id == run.tenant_id,
+                AgentRecord.organization_id == run.organization_id,
                 AgentRecord.workspace_id == workspace_id,
                 AgentRecord.id == agent_id,
                 AgentRevisionRecord.id == revision_id,
@@ -136,7 +136,7 @@ async def _require_revision(
 def _validate_run_state(run: Run, state: StoredRunState) -> None:
     envelope = state.envelope
     if (
-        state.info.key != run_state_key(run.tenant_id, run.id)
+        state.info.key != run_state_key(run.organization_id, run.id)
         or envelope.run_id != run.id
         or envelope.thread_id != run.thread_id
         or envelope.agent_id != run.agent_id

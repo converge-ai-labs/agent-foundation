@@ -34,7 +34,7 @@ from .attempts import (
 from .domain import RunAttemptStatus, RunStatus
 from .inbox import ThreadControlSignalPublisher
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
-from .lifecycle import append_run_lifecycle, append_run_with_attempt_lifecycle
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, StoredRunState
 from .state import CompletedOutcomeCandidate, WaitingOutcomeCandidate
@@ -55,7 +55,7 @@ class VerifiedRunOutcome:
     """Process-local proof of exact immutable output verification, not lease authority."""
 
     state: StoredRunState
-    tenant_id: str
+    organization_id: str
     run_id: str
     verifier: object = field(repr=False)
 
@@ -68,9 +68,11 @@ class RunOutcomeService:
         sessions: async_sessionmaker[AsyncSession],
         payloads: RunPayloadStore,
         *,
+        lifecycle: LifecycleWriter,
         control_signals: ThreadControlSignalPublisher | None = None,
         clock: Clock = utc_now,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._payloads = payloads
         self._control_signals = control_signals
@@ -104,7 +106,7 @@ class RunOutcomeService:
 
         if (
             verified.verifier is not self._verifier
-            or verified.tenant_id != authority.tenant_id
+            or verified.organization_id != authority.organization_id
             or verified.run_id != authority.run_id
         ):
             raise RunOutcomeError("Output verification does not belong to this Run and outcome service")
@@ -158,7 +160,7 @@ class RunOutcomeService:
             thread.head_run_id = run.id
             thread.version += 1
             thread.updated_at = now
-            await append_run_with_attempt_lifecycle(
+            await self._lifecycle.append_run_with_attempt_lifecycle(
                 database,
                 run,
                 "run.waiting" if status is RunStatus.waiting else "run.completed",
@@ -173,7 +175,7 @@ class RunOutcomeService:
     async def cancel(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         expected_run_version: int,
         expected_thread_version: int,
@@ -186,18 +188,18 @@ class RunOutcomeService:
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             thread_id = await database.scalar(
-                select(RunRecord.thread_id).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id)
+                select(RunRecord.thread_id).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id)
             )
             if thread_id is None:
                 raise RunOutcomeError("Run was not found")
             thread = await database.scalar(
                 select(ThreadRecord)
-                .where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == thread_id)
+                .where(ThreadRecord.organization_id == organization_id, ThreadRecord.id == thread_id)
                 .with_for_update()
             )
             locked_runs = await lock_inbox_related_runs(
                 database,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 thread_id=thread_id,
                 required_run_ids=(run_id,),
             )
@@ -218,7 +220,7 @@ class RunOutcomeService:
                 attempt = await database.scalar(
                     select(RunAttemptRecord)
                     .where(
-                        RunAttemptRecord.tenant_id == tenant_id,
+                        RunAttemptRecord.organization_id == organization_id,
                         RunAttemptRecord.run_id == run.id,
                         RunAttemptRecord.id == run.current_run_attempt_id,
                     )
@@ -242,7 +244,7 @@ class RunOutcomeService:
             thread.version += 1
             thread.updated_at = now
             if attempt is None:
-                await append_run_lifecycle(
+                await self._lifecycle.append_run_lifecycle(
                     database,
                     run,
                     "run.cancelled",
@@ -251,7 +253,7 @@ class RunOutcomeService:
                     actor_id=None,
                 )
             else:
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     run,
                     "run.cancelled",
@@ -270,7 +272,7 @@ class RunOutcomeService:
             if transaction_hook is not None:
                 await transaction_hook(database)
             cancelled_thread_id = thread.id
-        await self._best_effort_signal(tenant_id=tenant_id, thread_id=cancelled_thread_id)
+        await self._best_effort_signal(organization_id=organization_id, thread_id=cancelled_thread_id)
         return receipt
 
     async def verify_state_outcome(
@@ -287,18 +289,18 @@ class RunOutcomeService:
         candidate = state.envelope.outcome_candidate
         if isinstance(candidate, CompletedOutcomeCandidate) and candidate.output_object is not None:
             await self._payloads.verify_reference(
-                authority.tenant_id,
+                authority.organization_id,
                 authority.run_id,
                 "output",
                 candidate.output_object,
             )
-        return VerifiedRunOutcome(state, authority.tenant_id, authority.run_id, self._verifier)
+        return VerifiedRunOutcome(state, authority.organization_id, authority.run_id, self._verifier)
 
-    async def _best_effort_signal(self, *, tenant_id: str, thread_id: str) -> None:
+    async def _best_effort_signal(self, *, organization_id: str, thread_id: str) -> None:
         if self._control_signals is None:
             return
         try:
-            await self._control_signals.publish(tenant_id=tenant_id, thread_id=thread_id)
+            await self._control_signals.publish(organization_id=organization_id, thread_id=thread_id)
         except Exception:
             logger.warning(
                 "thread_control_signal_failed",

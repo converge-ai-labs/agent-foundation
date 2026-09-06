@@ -12,6 +12,7 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.durable_operations.idempotency import delete_expired_evidence
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.storage import transaction
 
@@ -25,6 +26,7 @@ logger = logging.getLogger("a13n_service.lifecycle.retention")
 class LifecycleRetentionSweep:
     outbox_records_deleted: int
     lifecycle_events_deleted: int
+    idempotency_evidence_deleted: int = 0
 
 
 class LifecycleRetentionReconciler:
@@ -59,13 +61,14 @@ class LifecycleRetentionReconciler:
         while True:
             try:
                 sweep = await self.reconcile_once()
-                if sweep.outbox_records_deleted or sweep.lifecycle_events_deleted:
+                if sweep.outbox_records_deleted or sweep.lifecycle_events_deleted or sweep.idempotency_evidence_deleted:
                     logger.info(
                         "lifecycle_retention_sweep_completed",
                         extra={
                             "event": "lifecycle_retention_sweep_completed",
                             "outbox_records_deleted": sweep.outbox_records_deleted,
                             "lifecycle_events_deleted": sweep.lifecycle_events_deleted,
+                            "idempotency_evidence_deleted": sweep.idempotency_evidence_deleted,
                         },
                     )
             except anyio.get_cancelled_exc_class():
@@ -80,9 +83,10 @@ class LifecycleRetentionReconciler:
     async def reconcile_once(self) -> LifecycleRetentionSweep:
         now = self._clock()
         async with transaction(self._sessions) as database:
+            idempotency_evidence_deleted = await delete_expired_evidence(database, now=now, limit=self._batch_limit)
             outbox_records_deleted = await self._delete_expired_deliveries(database, now=now)
             lifecycle_events_deleted = await self._delete_expired_events(database, now=now)
-        return LifecycleRetentionSweep(outbox_records_deleted, lifecycle_events_deleted)
+        return LifecycleRetentionSweep(outbox_records_deleted, lifecycle_events_deleted, idempotency_evidence_deleted)
 
     async def _delete_expired_deliveries(self, database: AsyncSession, *, now: datetime) -> int:
         published_before = now - self._published_delivery_horizon
@@ -126,7 +130,7 @@ class LifecycleRetentionReconciler:
             OutboxRecord.source_id == prior.id,
         )
         blocking_prior = exists().where(
-            prior.tenant_id == LifecycleEventRecord.tenant_id,
+            prior.organization_id == LifecycleEventRecord.organization_id,
             prior.seq < LifecycleEventRecord.seq,
             or_(
                 prior.created_at >= event_cutoff,

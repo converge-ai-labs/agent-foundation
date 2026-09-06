@@ -6,7 +6,6 @@ from datetime import timedelta
 import pytest
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.domain import RecoveryUsage, RunAttempt, RunAttemptStatus
-from a13n_service.interactions.lifecycle import append_run_attempt_lifecycle, append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.records import run_attempt_record
 from a13n_service.lifecycle.models import LifecycleEventRecord
@@ -16,7 +15,8 @@ from a13n_service.storage import transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.hooks.support import RUN_ID, hook_actor, seed_hook_actor_access, seed_run_and_secret
-from tests.interactions.conftest import AGENT_ID, ATTEMPT_ID, NOW, TENANT_ID, USER_ID, WORKSPACE_ID
+from tests.interactions.conftest import AGENT_ID, ATTEMPT_ID, NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
+from tests.lifecycle_support import test_lifecycle_writer
 
 
 async def _prepare_events(sessions: async_sessionmaker[AsyncSession]) -> LifecycleEventService:
@@ -25,7 +25,7 @@ async def _prepare_events(sessions: async_sessionmaker[AsyncSession]) -> Lifecyc
     async with transaction(sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
         assert run is not None
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",
@@ -34,7 +34,7 @@ async def _prepare_events(sessions: async_sessionmaker[AsyncSession]) -> Lifecyc
             actor_type="user",
             actor_id=USER_ID,
         )
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.running",
@@ -111,14 +111,14 @@ async def test_direct_agent_viewer_can_reconcile_agent_owned_lifecycle(
 
 
 @pytest.mark.anyio
-async def test_workspace_boundaries_use_tenant_sequence_before_visibility_filter(
+async def test_workspace_boundaries_use_organization_sequence_before_visibility_filter(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _prepare_events(lifecycle_interaction_sessions)
     async with lifecycle_interaction_sessions() as database:
         full_page = await read_workspace_events(
             database,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             visible_agent_ids=None,
             after_seq=0,
@@ -126,7 +126,7 @@ async def test_workspace_boundaries_use_tenant_sequence_before_visibility_filter
         )
         filtered_page = await read_workspace_events(
             database,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             visible_agent_ids=frozenset({"agt_not_visible_123456"}),
             after_seq=0,
@@ -219,7 +219,7 @@ async def test_run_attempt_lifecycle_resolves_authority_through_owning_run(
             RunAttempt(
                 id=ATTEMPT_ID,
                 version=1,
-                tenant_id=run.tenant_id,
+                organization_id=run.organization_id,
                 run_id=run.id,
                 attempt_number=1,
                 fence=1,
@@ -240,7 +240,7 @@ async def test_run_attempt_lifecycle_resolves_authority_through_owning_run(
         )
         database.add(attempt)
         await database.flush()
-        await append_run_attempt_lifecycle(
+        await test_lifecycle_writer().append_run_attempt_lifecycle(
             database,
             run,
             attempt,

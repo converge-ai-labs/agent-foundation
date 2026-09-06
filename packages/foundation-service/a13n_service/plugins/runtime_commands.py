@@ -14,7 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, is_evidence_unique_race
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request, is_evidence_unique_race
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -44,7 +45,6 @@ from .idempotency import (
     load_plugin_evidence,
     new_plugin_evidence,
     plugin_key_digest,
-    plugin_request_digest,
 )
 from .models import (
     PluginRecord,
@@ -158,7 +158,7 @@ class PluginRuntimeCommandCoordinator:
                 raise PluginError(
                     "plugin_operation_not_found",
                     "The Plugin operation was not found.",
-                    status_code=404,
+                    category=ErrorCategory.not_found,
                 )
             return _receipt(task)
 
@@ -232,7 +232,7 @@ class PluginRuntimeCommandCoordinator:
         idempotency_key: str,
     ) -> PluginTaskReceipt:
         key_digest = plugin_key_digest(idempotency_key)
-        request_digest = plugin_request_digest(
+        request_digest = digest_request(
             {"command": command, "plugin_id": plugin_id, "plugin_version_id": plugin_version_id}
         )
         operation = f"plugin_runtime.{command}"
@@ -264,7 +264,7 @@ class PluginRuntimeCommandCoordinator:
                     raise PluginError(
                         "plugin_runtime_mode_unsupported",
                         "Plugin Runtime commands are unavailable in the configured mode.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 plugin = await session.get(PluginRecord, plugin_id)
                 if plugin is None:
@@ -335,7 +335,7 @@ class PluginRuntimeCommandCoordinator:
                 await session.flush()
                 return _receipt(task)
         except AuthorizationError as error:
-            raise PluginError("forbidden", "The operation is not allowed.", status_code=403) from error
+            raise PluginError("forbidden", "The operation is not allowed.", category=ErrorCategory.forbidden) from error
         except IntegrityError as error:
             if not is_evidence_unique_race(error):
                 raise
@@ -945,5 +945,5 @@ def _idempotency_conflict() -> PluginError:
     return PluginError(
         "plugin_idempotency_conflict",
         "The Idempotency-Key was already used for a different Plugin Runtime command.",
-        status_code=409,
+        category=ErrorCategory.conflict,
     )

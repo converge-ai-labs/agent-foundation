@@ -8,15 +8,17 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connectors.contracts import (
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
 )
-from a13n_service.connectivity.management import (
-    ConnectivityManagementValueError,
-    idempotency_key_digest,
-    replay_command,
+from a13n_service.connectivity.management import replay_command
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyConflict,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
 )
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import (
@@ -62,7 +64,7 @@ def verify_inspection(
         raise ConnectorError(
             "connection_substitution",
             "ConnectorProvider returned another external account.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         )
 
 
@@ -81,13 +83,13 @@ def apply_inspection(
 
 def require_version(current: int, expected: int) -> None:
     if current != expected:
-        raise ConnectorError("version_conflict", "Resource version has changed.", status_code=409)
+        raise ConnectorError("version_conflict", "Resource version has changed.", category=ErrorCategory.conflict)
 
 
 def idempotency_digest(value: str) -> str:
     try:
-        return idempotency_key_digest(value)
-    except ConnectivityManagementValueError as error:
+        return digest_visible_ascii_key(value)
+    except InvalidIdempotencyKey as error:
         raise map_management_value_error(error) from error
 
 
@@ -99,6 +101,7 @@ async def replay_connection_command(
     operation: str,
     key_digest: str,
     request_fingerprint: str,
+    now: datetime,
 ):
     try:
         return await replay_command(
@@ -109,15 +112,20 @@ async def replay_connection_command(
             scope_id=connection.id,
             idempotency_key_digest=key_digest,
             fingerprint=request_fingerprint,
+            now=now,
         )
-    except ConnectivityManagementValueError as error:
+    except IdempotencyConflict as error:
         raise map_management_value_error(error) from error
 
 
 def external_error(error: ConnectorProviderError) -> ConnectorError:
     if error.retryable or error.outcome_unknown:
-        return ConnectorError("connector_unavailable", "ConnectorProvider is unavailable.", status_code=503)
-    return ConnectorError("connector_rejected", "ConnectorProvider rejected the operation.", status_code=409)
+        return ConnectorError(
+            "connector_unavailable", "ConnectorProvider is unavailable.", category=ErrorCategory.unavailable
+        )
+    return ConnectorError(
+        "connector_rejected", "ConnectorProvider rejected the operation.", category=ErrorCategory.conflict
+    )
 
 
 async def connection_binding(session: AsyncSession, connection: ConnectorConnectionRecord) -> ConnectionBinding:
@@ -129,7 +137,9 @@ async def connection_binding(session: AsyncSession, connection: ConnectorConnect
         )
     )
     if attempt is None or connection.external_ref is None:
-        raise ConnectorError("setup_unavailable", "Verified connection binding is unavailable.", status_code=409)
+        raise ConnectorError(
+            "setup_unavailable", "Verified connection binding is unavailable.", category=ErrorCategory.conflict
+        )
     return ConnectionBinding(
         external_ref=connection.external_ref,
         connector_key=connection.connector_key,

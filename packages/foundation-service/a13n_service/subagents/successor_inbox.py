@@ -22,7 +22,7 @@ from a13n_service.interactions.inbox_persistence import (
 async def lock_unbound_async_entries(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     required_run_ids: Collection[str],
     now: datetime,
@@ -31,17 +31,17 @@ async def lock_unbound_async_entries(
 
     await lock_inbox_related_runs(
         database,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         required_run_ids=required_run_ids,
     )
-    counter = await lock_inbox_counter(database, tenant_id, thread_id)
+    counter = await lock_inbox_counter(database, organization_id, thread_id)
     rows = tuple(
         (
             await database.scalars(
                 select(ThreadInboxRecord)
                 .where(
-                    ThreadInboxRecord.tenant_id == tenant_id,
+                    ThreadInboxRecord.organization_id == organization_id,
                     ThreadInboxRecord.thread_id == thread_id,
                     ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
@@ -55,7 +55,7 @@ async def lock_unbound_async_entries(
     )
     await suppress_failed_inbox_origins(
         database,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         rows=rows,
         now=now,
         locked_counter=counter,

@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
@@ -48,7 +49,7 @@ def _connector_providers(request: Request) -> ConnectorProviderService:
         raise ConnectorError(
             "connector_provider_management_unavailable",
             "ConnectorProvider Management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return runtime.connector_providers
 
@@ -59,7 +60,7 @@ def _connections(request: Request) -> ConnectorConnectionService:
         raise ConnectorError(
             "connector_provider_management_unavailable",
             "ConnectorProvider Management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return runtime.connector_connections
 
@@ -387,7 +388,9 @@ async def connector_setup_callback(
     return_path = await _connections(request).complete_callback(actor=actor, session_uri=session_uri)
     runtime = get_connectivity_control_runtime(request)
     if runtime is None:
-        raise ConnectorError("callback_unavailable", "ConnectorProvider callback is unavailable.", status_code=503)
+        raise ConnectorError(
+            "callback_unavailable", "ConnectorProvider callback is unavailable.", category=ErrorCategory.unavailable
+        )
     return RedirectResponse(f"{runtime.public_origin.rstrip('/')}{return_path}", status_code=303)
 
 

@@ -19,7 +19,7 @@ async def test_wakeups_poll_without_signals_and_ack_only_the_delivered_batch():
         batch = await wakeups.receive()
         assert batch == ()
         await wakeups.acknowledge(batch)
-        await signals.publish(tenant_id=context.tenant_id, thread_id=context.thread_id)
+        await signals.publish(organization_id=context.organization_id, thread_id=context.thread_id)
         batch = await wakeups.receive()
         assert len(batch) == 1
         with pytest.raises(RuntimeError):

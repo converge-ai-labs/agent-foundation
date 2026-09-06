@@ -89,7 +89,7 @@ class ChildRunAcceptanceService:
                 workspace_id=session.workspace_id,
             )
         parent_state = await self._states.read(
-            prepared.run.tenant_id,
+            prepared.run.organization_id,
             prepared.relationship.parent_run_id,
             expected_thread_id=authority.thread_id,
         )
@@ -102,7 +102,7 @@ class ChildRunAcceptanceService:
         )
         if prepared.run.input_object is not None:
             await self._payloads.verify_reference(
-                prepared.run.tenant_id,
+                prepared.run.organization_id,
                 prepared.run.id,
                 "input",
                 prepared.run.input_object,
@@ -151,7 +151,9 @@ class ChildRunAcceptanceService:
                     workspace_id=session.workspace_id,
                     choice=choice,
                 )
-                database.add(child_run_relationship_record(prepared.relationship, tenant_id=prepared.run.tenant_id))
+                database.add(
+                    child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
+                )
                 database.add(inbox_counter_record(prepared.thread))
         except IntegrityError as error:
             raise ChildRunAcceptanceError(
@@ -180,12 +182,12 @@ class ChildRunAcceptanceService:
                 workspace_id=session.workspace_id,
             )
         parent_state = await self._states.read(
-            prepared.run.tenant_id,
+            prepared.run.organization_id,
             prepared.relationship.parent_run_id,
             expected_thread_id=authority.thread_id,
         )
         source_state = await self._states.read(
-            prepared.run.tenant_id,
+            prepared.run.organization_id,
             prepared.resumed_from_child_run_id,
             expected_thread_id=prepared.run.thread_id,
         )
@@ -205,7 +207,7 @@ class ChildRunAcceptanceService:
             )
         if prepared.run.input_object is not None:
             await self._payloads.verify_reference(
-                prepared.run.tenant_id,
+                prepared.run.organization_id,
                 prepared.run.id,
                 "input",
                 prepared.run.input_object,
@@ -240,7 +242,7 @@ class ChildRunAcceptanceService:
                 child_thread = await database.scalar(
                     select(ThreadRecord)
                     .where(
-                        ThreadRecord.tenant_id == prepared.run.tenant_id,
+                        ThreadRecord.organization_id == prepared.run.organization_id,
                         ThreadRecord.id == prepared.run.thread_id,
                     )
                     .with_for_update()
@@ -248,7 +250,7 @@ class ChildRunAcceptanceService:
                 source_run = await database.scalar(
                     select(RunRecord)
                     .where(
-                        RunRecord.tenant_id == prepared.run.tenant_id,
+                        RunRecord.organization_id == prepared.run.organization_id,
                         RunRecord.id == prepared.resumed_from_child_run_id,
                     )
                     .with_for_update()
@@ -256,7 +258,7 @@ class ChildRunAcceptanceService:
                 source_relationship = await database.scalar(
                     select(ChildRunRelationshipRecord)
                     .where(
-                        ChildRunRelationshipRecord.tenant_id == prepared.run.tenant_id,
+                        ChildRunRelationshipRecord.organization_id == prepared.run.organization_id,
                         ChildRunRelationshipRecord.id == prepared.resumed_from_relationship_id,
                     )
                     .with_for_update()
@@ -264,7 +266,7 @@ class ChildRunAcceptanceService:
                 source_parent_run = await database.scalar(
                     select(RunRecord)
                     .where(
-                        RunRecord.tenant_id == prepared.run.tenant_id,
+                        RunRecord.organization_id == prepared.run.organization_id,
                         RunRecord.id == prepared.source_parent_run_id,
                     )
                     .with_for_update()
@@ -295,7 +297,9 @@ class ChildRunAcceptanceService:
                     if source_run.environment_id
                     else None,
                 )
-                database.add(child_run_relationship_record(prepared.relationship, tenant_id=prepared.run.tenant_id))
+                database.add(
+                    child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
+                )
                 assert child_thread is not None
                 child_thread.version += 1
                 child_thread.current_run_id = prepared.run.id
@@ -313,7 +317,7 @@ class ChildRunAcceptanceService:
         prepared: PreparedChildRunAcceptance | PreparedChildRunResume,
     ) -> None:
         try:
-            await self._states.create(prepared.run.tenant_id, prepared.state)
+            await self._states.create(prepared.run.organization_id, prepared.state)
         except StaleStateWriter as error:
             raise ChildRunAcceptanceError(
                 "child_run_state_conflict",
@@ -333,7 +337,7 @@ def _validate_bundle(prepared: PreparedChildRunAcceptance) -> None:
         or thread.origin_run_id != relationship.parent_run_id
         or thread.origin_thread_id is None
         or thread.session_id != run.session_id
-        or thread.tenant_id != run.tenant_id
+        or thread.organization_id != run.organization_id
     ):
         raise ValueError("prepared child Thread, Run, and relationship identities do not match")
     if run.delegation_id != relationship.id or run.trigger_entity_id != relationship.id:
@@ -499,7 +503,7 @@ async def _reauthorize_resume_source(
 async def _require_session(database: AsyncSession, parent: RunRecord) -> SessionRecord:
     record = await database.scalar(
         select(SessionRecord).where(
-            SessionRecord.tenant_id == parent.tenant_id,
+            SessionRecord.organization_id == parent.organization_id,
             SessionRecord.id == parent.session_id,
         )
     )
@@ -540,7 +544,7 @@ async def _reauthorize(
         )
         child_agent = await database.scalar(
             select(AgentRecord).where(
-                AgentRecord.organization_id == parent.tenant_id,
+                AgentRecord.organization_id == parent.organization_id,
                 AgentRecord.workspace_id == workspace_id,
                 AgentRecord.id == child.agent_id,
                 AgentRecord.enabled.is_(True),
@@ -549,7 +553,7 @@ async def _reauthorize(
         )
         child_revision = await database.scalar(
             select(AgentRevisionRecord).where(
-                AgentRevisionRecord.organization_id == parent.tenant_id,
+                AgentRevisionRecord.organization_id == parent.organization_id,
                 AgentRevisionRecord.workspace_id == workspace_id,
                 AgentRevisionRecord.agent_id == child.agent_id,
                 AgentRevisionRecord.id == child.agent_revision_id,

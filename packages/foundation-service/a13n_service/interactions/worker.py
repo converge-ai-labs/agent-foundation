@@ -177,7 +177,7 @@ class WorkerExecutionLoop:
                                 claimed = await self._scheduler.claim(
                                     candidate.run_id,
                                     WorkerClaim(
-                                        tenant_id=candidate.tenant_id,
+                                        organization_id=candidate.organization_id,
                                         worker_id=self._identity.worker_id,
                                         worker_generation=self._identity.generation,
                                         worker_build_id=self._identity.build_id,

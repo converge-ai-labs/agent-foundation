@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.resource_routes import require_organization_boundary
@@ -39,7 +40,7 @@ def _service(request: Request) -> EnvironmentService:
     control = get_control_runtime(request)
     if control is None:
         raise EnvironmentManagementError(
-            "environment_unavailable", "Environment control is unavailable", status_code=503
+            "environment_unavailable", "Environment control is unavailable", category=ErrorCategory.unavailable
         )
     return control.environments
 
@@ -56,7 +57,7 @@ async def get_provider_type(request: Request, actor: Actor, provider_type: str) 
         if item["type"] == provider_type:
             return item
     raise EnvironmentManagementError(
-        "environment_provider_type_not_found", "Provider type was not found", status_code=404
+        "environment_provider_type_not_found", "Provider type was not found", category=ErrorCategory.not_found
     )
 
 

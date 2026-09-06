@@ -14,7 +14,6 @@ from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.gateway.a2a_push import A2A_PUSH_ENABLED_SESSION_INFO_KEY
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -25,9 +24,9 @@ from a13n_service.process.connectivity import build_connectivity_runtime
 from a13n_service.process.control import build_control_runtime
 from a13n_service.process.control.asset import build_asset_bundle
 from a13n_service.process.environment import build_environment_catalog
-from a13n_service.process.resources import build_execution_resources
+from a13n_service.process.resources import build_execution_resources, build_shared_runtime
 from a13n_service.process.roles import owns_connectivity_data, owns_control, owns_worker
-from a13n_service.process.runtime import ProcessRuntime, ProcessStatus, SharedRuntime
+from a13n_service.process.runtime import ProcessRuntime, ProcessStatus
 from a13n_service.process.submission import build_input_commands
 from a13n_service.process.worker import build_worker_runtime
 from a13n_service.settings import Settings
@@ -66,13 +65,7 @@ async def open_process_runtime(
                 and settings.pricing_auto_update
             ):
                 stack.enter_context(prices.update_in_background())
-            storage.sessions.configure(
-                info={A2A_PUSH_ENABLED_SESSION_INFO_KEY: settings.a2a_enabled},
-            )
-            shared = SharedRuntime(
-                storage=storage,
-                secret_protector=settings.secret_protector(),
-            )
+            shared = build_shared_runtime(settings, storage)
             connectivity_selection = ConnectivitySelectionResolver(storage.sessions)
             execution = (
                 await build_execution_resources(

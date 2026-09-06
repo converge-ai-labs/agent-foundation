@@ -7,7 +7,6 @@ from datetime import timedelta
 from a13n_logging import get_logger
 from anyio import Event, move_on_after
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.interactions.scheduling import AttemptScheduler, ScanPosition
 from a13n_service.plugins.commands import PluginRuntimeCommandFailure
@@ -15,6 +14,7 @@ from a13n_service.plugins.models import PluginRuntimeStateRecord
 from a13n_service.plugins.runner_protocol import PluginRunnerProtocolError
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import PluginRuntimeLockError, PluginRuntimeLockStore
+from a13n_service.process.runtime import SharedRuntime
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session
 
@@ -25,15 +25,15 @@ class RunnerDiscoveryLoop:
     def __init__(
         self,
         settings: Settings,
-        sessions: async_sessionmaker[AsyncSession],
+        shared: SharedRuntime,
         locks: PluginRuntimeLockStore,
         supervisor: PluginRunnerSupervisor,
     ) -> None:
         self._settings = settings
-        self._sessions = sessions
+        self._sessions = shared.storage.sessions
         self._locks = locks
         self._supervisor = supervisor
-        self._scheduler = AttemptScheduler(sessions)
+        self._scheduler = AttemptScheduler(shared.storage.sessions, lifecycle=shared.lifecycle)
         self._started = Event()
         self._draining = Event()
         self._stopped = Event()

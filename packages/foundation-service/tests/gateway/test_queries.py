@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from a13n_service.gateway.queries import NativeInteractionQueries, NativeQueryError
+from a13n_service.http_errors import application_error_status
 from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -59,4 +60,4 @@ async def test_missing_retained_items_are_explicit(queries: NativeInteractionQue
         await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=None)
 
     assert captured.value.code == "items_unavailable"
-    assert captured.value.status_code == 409
+    assert application_error_status(captured.value) == 409

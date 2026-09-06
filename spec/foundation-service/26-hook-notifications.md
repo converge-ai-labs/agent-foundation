@@ -133,7 +133,7 @@ class InlineHookSubscriptionInput:
     webhook: WebhookDestinationConfig
 ```
 
-`hook_names` is a non-empty bounded set of exact registry names. Scope filters are optional, tenant-consistent, and conjunctive. The authorized subscription read returns the configured endpoint URL and managed Secret reference, never the signing value. A Hook event and an Outbox record contain neither the callback URL nor a Secret value.
+`hook_names` is a non-empty bounded set of exact registry names. Scope filters are optional, organization-consistent, and conjunctive. The authorized subscription read returns the configured endpoint URL and managed Secret reference, never the signing value. A Hook event and an Outbox record contain neither the callback URL nor a Secret value.
 
 Durable Hook subscriptions have two creation paths that produce the same head and immutable Revision record:
 
@@ -199,7 +199,7 @@ class HookSubscriptionRevisionRecord:
 
 `HookSubscriptionRevision.id` is the immutable destination reference stored by Outbox. `(hook_subscription_id, version)` is unique and versions are positive and contiguous. A deleted head never matches a new event.
 
-`hook_names` is stored as one bounded, duplicate-free JSON array. A GIN index on that field plus partial B-tree indexes over the current active Workspace and non-null Session, Thread, and Run filters support source-transaction matching. All filters are conjunctive and tenant-consistent.
+`hook_names` is stored as one bounded, duplicate-free JSON array. A GIN index on that field plus partial B-tree indexes over the current active Workspace and non-null Session, Thread, and Run filters support source-transaction matching. All filters are conjunctive and organization-consistent.
 
 Each Revision contains the callback URL but no URL user information or plaintext signing value. `signing_secret_id` is resolved through the managed Secret authorization boundary at delivery time. Ordinary reads return the head and may embed its current Revision. Historical Revisions remain immutable and retained while an Outbox row can still reference them.
 

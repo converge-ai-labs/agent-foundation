@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-
-class RunAcceptanceError(RuntimeError):
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 
 
-__all__ = ["RunAcceptanceError"]
+class RunAcceptanceError(ApplicationError):
+    def __init__(self, code: str, message: str, *, category: ErrorCategory = ErrorCategory.conflict) -> None:
+        super().__init__(code, message, category=category)

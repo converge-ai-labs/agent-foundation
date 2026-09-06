@@ -18,8 +18,8 @@ from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
 from a13n_service.gateway.notifications import NotificationService
 from a13n_service.gateway.queries import NativeInteractionQueries
-from a13n_service.gateway.queue import NativeQueuedSubmissionService
 from a13n_service.interactions.queue import QueuedSubmissionStore
+from a13n_service.interactions.submissions import QueuedSubmissionService
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
@@ -172,7 +172,7 @@ async def build_control_runtime(
         ),
         notifications=NotificationService(shared.storage.sessions),
         queries=NativeInteractionQueries(shared.storage.sessions, gateway_replay),
-        queued_submissions=NativeQueuedSubmissionService(
+        queued_submissions=QueuedSubmissionService(
             shared.storage.sessions,
             QueuedSubmissionStore(shared.storage.sessions, hooks.inline_validator),
             gateway_commands,

@@ -22,7 +22,7 @@ The shared [Environment Provider contract](../agent-environment-provider/README.
 | How to create, resume, connect, retain, stop or delete                    | Provider implementation                             |
 | File, shell and other Agent operation routing                             | Harness through the supplied Environment object     |
 
-One Workspace owns an actual Environment; its Provider and frozen TemplateRevision can belong to that Workspace or its Organization. Allocation always records the consuming Workspace, independently from the recipe owner. Threads in that Workspace may share the same Environment record. Cross-Workspace management of the same external target is unsupported; Foundation defines no deployment-global target resource or cross-tenant target deduplication. IDs grant no authority.
+One Workspace owns an actual Environment; its Provider and frozen TemplateRevision can belong to that Workspace or its Organization. Allocation always records the consuming Workspace, independently from the recipe owner. Threads in that Workspace may share the same Environment record. Cross-Workspace management of the same external target is unsupported; Foundation defines no deployment-global target resource or cross-organization target deduplication. IDs grant no authority.
 
 ## Configured Providers
 

@@ -23,7 +23,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, Run, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
-from .lifecycle import append_run_attempt_lifecycle, append_run_lifecycle, append_run_with_attempt_lifecycle
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from .records import run_attempt_record
 
@@ -34,7 +34,7 @@ class AttemptSchedulingError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class WorkerClaim:
-    tenant_id: str
+    organization_id: str
     worker_id: str
     worker_generation: str
     worker_build_id: str
@@ -80,7 +80,7 @@ class ScanPosition:
 class RunCandidate:
     """Detached scheduling metadata; preflight and claim still establish eligibility."""
 
-    tenant_id: str
+    organization_id: str
     run_id: str
     runtime_lock_digest: str
     queue_name: str
@@ -94,10 +94,12 @@ class AttemptScheduler:
         self,
         sessions: async_sessionmaker[AsyncSession],
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
         token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         attempt_id_factory: Callable[[], str] = new_run_attempt_id,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._clock = clock
         self._token_factory = token_factory
@@ -111,7 +113,7 @@ class AttemptScheduler:
         candidates = await self.discover(
             worker_build_id=claim.worker_build_id,
             handoff_preference_window=claim.handoff_preference_window,
-            tenant_id=claim.tenant_id,
+            organization_id=claim.organization_id,
             runtime_lock_digest=claim.runtime_lock_digest,
             queue_names=(queue_name,),
             limit=limit,
@@ -125,11 +127,11 @@ class AttemptScheduler:
         handoff_preference_window: timedelta,
         limit: int = 32,
         after: ScanPosition | None = None,
-        tenant_id: str | None = None,
+        organization_id: str | None = None,
         runtime_lock_digest: str | None = None,
         queue_names: tuple[str, ...] = (),
     ) -> tuple[RunCandidate, ...]:
-        """Discover work across tenants without an unbounded tenant or Runtime-lock scan."""
+        """Discover work across organizations without an unbounded organization or Runtime-lock scan."""
 
         if limit < 1 or limit > 1024:
             raise ValueError("scan limit must be between 1 and 1024")
@@ -171,7 +173,7 @@ class AttemptScheduler:
         )
         statement = (
             select(
-                RunRecord.tenant_id,
+                RunRecord.organization_id,
                 RunRecord.id,
                 RunRecord.runtime_lock_digest,
                 RunRecord.queue_name,
@@ -184,7 +186,7 @@ class AttemptScheduler:
             .outerjoin(
                 predecessor,
                 and_(
-                    predecessor.tenant_id == RunRecord.tenant_id,
+                    predecessor.organization_id == RunRecord.organization_id,
                     predecessor.run_id == RunRecord.id,
                     predecessor.attempt_number == RunRecord.attempts_started,
                 ),
@@ -201,8 +203,8 @@ class AttemptScheduler:
             )
             .limit(limit)
         )
-        if tenant_id is not None:
-            statement = statement.where(RunRecord.tenant_id == tenant_id)
+        if organization_id is not None:
+            statement = statement.where(RunRecord.organization_id == organization_id)
         if runtime_lock_digest is not None:
             statement = statement.where(RunRecord.runtime_lock_digest == runtime_lock_digest)
         if queue_names:
@@ -227,7 +229,7 @@ class AttemptScheduler:
             rows = (await database.execute(statement)).all()
             return tuple(
                 RunCandidate(
-                    tenant_id=row.tenant_id,
+                    organization_id=row.organization_id,
                     run_id=row.id,
                     runtime_lock_digest=row.runtime_lock_digest,
                     queue_name=row.queue_name,
@@ -250,7 +252,7 @@ class AttemptScheduler:
         async with transaction(self._sessions) as database:
             scope = await database.scalar(
                 select(RunRecord.thread_id).where(
-                    RunRecord.tenant_id == claim.tenant_id,
+                    RunRecord.organization_id == claim.organization_id,
                     RunRecord.id == run_id,
                 )
             )
@@ -258,12 +260,12 @@ class AttemptScheduler:
                 return None
             thread = await database.scalar(
                 select(ThreadRecord)
-                .where(ThreadRecord.tenant_id == claim.tenant_id, ThreadRecord.id == scope)
+                .where(ThreadRecord.organization_id == claim.organization_id, ThreadRecord.id == scope)
                 .with_for_update()
             )
             locked_runs = await lock_inbox_related_runs(
                 database,
-                tenant_id=claim.tenant_id,
+                organization_id=claim.organization_id,
                 thread_id=scope,
                 required_run_ids=(run_id,),
             )
@@ -305,7 +307,7 @@ class AttemptScheduler:
                 seal_failed_run(run, thread, budget_failure, now)
                 if classification == "lease_expired":
                     assert predecessor is not None
-                    await append_run_with_attempt_lifecycle(
+                    await self._lifecycle.append_run_with_attempt_lifecycle(
                         database,
                         run,
                         "run.failed",
@@ -317,7 +319,7 @@ class AttemptScheduler:
                         actor_id=claim.worker_id,
                     )
                 else:
-                    await append_run_lifecycle(
+                    await self._lifecycle.append_run_lifecycle(
                         database,
                         run,
                         "run.failed",
@@ -334,7 +336,7 @@ class AttemptScheduler:
             attempt = RunAttempt(
                 id=self._attempt_id_factory(),
                 version=1,
-                tenant_id=run.tenant_id,
+                organization_id=run.organization_id,
                 run_id=run.id,
                 attempt_number=run.attempts_started + 1,
                 fence=run.next_attempt_fence,
@@ -371,7 +373,7 @@ class AttemptScheduler:
             await database.flush()
             if classification == "lease_expired":
                 assert predecessor is not None
-                await append_run_attempt_lifecycle(
+                await self._lifecycle.append_run_attempt_lifecycle(
                     database,
                     run,
                     predecessor,
@@ -380,7 +382,7 @@ class AttemptScheduler:
                     occurred_at=now,
                 )
             if initially_accepted:
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     run,
                     "run.running",
@@ -392,7 +394,7 @@ class AttemptScheduler:
                     actor_id=claim.worker_id,
                 )
             else:
-                await append_run_attempt_lifecycle(
+                await self._lifecycle.append_run_attempt_lifecycle(
                     database,
                     run,
                     attempt_record_value,
@@ -402,7 +404,7 @@ class AttemptScheduler:
                 )
             workspace_id = await database.scalar(
                 select(SessionRecord.workspace_id).where(
-                    SessionRecord.tenant_id == run.tenant_id,
+                    SessionRecord.organization_id == run.organization_id,
                     SessionRecord.id == run.session_id,
                 )
             )
@@ -426,7 +428,7 @@ class AttemptScheduler:
             return await database.scalar(
                 select(RunAttemptRecord)
                 .where(
-                    RunAttemptRecord.tenant_id == run.tenant_id,
+                    RunAttemptRecord.organization_id == run.organization_id,
                     RunAttemptRecord.run_id == run.id,
                     RunAttemptRecord.id == run.current_run_attempt_id,
                 )
@@ -437,7 +439,7 @@ class AttemptScheduler:
         return await database.scalar(
             select(RunAttemptRecord)
             .where(
-                RunAttemptRecord.tenant_id == run.tenant_id,
+                RunAttemptRecord.organization_id == run.organization_id,
                 RunAttemptRecord.run_id == run.id,
                 RunAttemptRecord.attempt_number == run.attempts_started,
             )

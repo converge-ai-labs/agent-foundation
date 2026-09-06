@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from a13n_service.public_errors import PublicError
+from a13n_service.application_errors import ApplicationError
 
 
-class HookManagementError(PublicError):
+class HookManagementError(ApplicationError):
     """A safe Hook management error exposed through the public API."""
 
 

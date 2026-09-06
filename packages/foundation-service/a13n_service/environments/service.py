@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
 from a13n_service.etags import etag_matches, resource_etag
@@ -182,7 +183,8 @@ class EnvironmentService:
                     now=now,
                 )
                 if replay:
-                    return (await self._template(session, actor, replay[1])).to_resource()
+                    await self._template(session, actor, replay.result_ref)
+                    return replay.restore(EnvironmentTemplate)
                 recipe = TemplateConfiguration.model_validate(request.model_dump(exclude={"name", "description"}))
                 await self.validate_recipe(session, actor=actor, workspace_id=workspace_id, recipe=recipe)
                 row = EnvironmentTemplateRecord(
@@ -210,6 +212,7 @@ class EnvironmentService:
                         result_kind="environment_template",
                         result_ref=row.id,
                         now=now,
+                        response=row.to_resource(),
                     )
                 )
                 return row.to_resource()
@@ -225,7 +228,8 @@ class EnvironmentService:
                         now=datetime.now(UTC),
                     )
                     if replay is not None:
-                        return (await self._template(session, actor, replay[1])).to_resource()
+                        await self._template(session, actor, replay.result_ref)
+                        return replay.restore(EnvironmentTemplate)
             raise
 
     async def validate_recipe(
@@ -276,7 +280,9 @@ class EnvironmentService:
             row = await self._template(session, actor, template_id, manage=True, lock=True)
             if row.version != request.expected_version or row.archived_at is not None:
                 raise EnvironmentManagementError(
-                    "environment_template_conflict", "Template version changed or is archived.", status_code=409
+                    "environment_template_conflict",
+                    "Template version changed or is archived.",
+                    category=ErrorCategory.conflict,
                 )
             recipe = TemplateConfiguration.model_validate(request.model_dump(exclude={"expected_version"}))
             await self.validate_recipe(session, actor=actor, workspace_id=row.workspace_id, recipe=recipe)
@@ -346,7 +352,8 @@ class EnvironmentService:
                     now=now,
                 )
                 if replay:
-                    return (await self.require_environment(session, actor, replay[1])).to_resource()
+                    await self.require_environment(session, actor, replay.result_ref)
+                    return replay.restore(Environment)
                 if isinstance(request, NewEnvironmentSelection):
                     row = await self.allocate(
                         session, actor=actor, workspace_id=workspace_id, selection=request, now=now
@@ -364,6 +371,7 @@ class EnvironmentService:
                         result_kind="environment",
                         result_ref=row.id,
                         now=now,
+                        response=row.to_resource(),
                     )
                 )
                 return row.to_resource()
@@ -372,7 +380,7 @@ class EnvironmentService:
                 raise EnvironmentManagementError(
                     "environment_target_conflict",
                     "This backend target already has an Environment owner.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 ) from error
             if is_evidence_unique_race(error):
                 async with transaction(self.sessions) as session:
@@ -385,7 +393,8 @@ class EnvironmentService:
                         now=datetime.now(UTC),
                     )
                     if replay is not None:
-                        return (await self.require_environment(session, actor, replay[1])).to_resource()
+                        await self.require_environment(session, actor, replay.result_ref)
+                        return replay.restore(Environment)
             raise
 
     async def _register(
@@ -512,7 +521,9 @@ class EnvironmentService:
     @staticmethod
     def _match(resource_id: str, updated_at: datetime, if_match: str) -> None:
         if not etag_matches(if_match, resource_etag(resource_id, updated_at)):
-            raise EnvironmentManagementError("precondition_failed", "The resource changed.", status_code=412)
+            raise EnvironmentManagementError(
+                "precondition_failed", "The resource changed.", category=ErrorCategory.stale_version
+            )
 
     async def get_provider(self, *, actor: AuthenticatedActor, resource_id: str) -> EnvironmentProvider:
         async with short_session(self.sessions) as session:
@@ -648,10 +659,10 @@ class EnvironmentService:
                 now=now,
             )
             if replay:
-                command = await session.get(EnvironmentCommandRecord, replay[1])
+                command = await session.get(EnvironmentCommandRecord, replay.result_ref)
                 if command is None:
                     raise environment_not_found()
-                return command.to_resource()
+                return replay.restore(EnvironmentCommand)
             environment = await session.scalar(
                 select(EnvironmentRecord).where(EnvironmentRecord.id == environment.id).with_for_update()
             )
@@ -662,7 +673,9 @@ class EnvironmentService:
                 or await has_active_use(session, environment.id)
             ):
                 raise EnvironmentManagementError(
-                    "environment_busy", "Environment is in use, externally owned, or has pending work.", status_code=409
+                    "environment_busy",
+                    "Environment is in use, externally owned, or has pending work.",
+                    category=ErrorCategory.conflict,
                 )
             provider = await session.get(EnvironmentProviderRecord, environment.provider_id)
             if provider is None:
@@ -695,6 +708,7 @@ class EnvironmentService:
                     result_kind="environment_command",
                     result_ref=command.id,
                     now=now,
+                    response=command.to_resource(),
                 )
             )
             return command.to_resource()

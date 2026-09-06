@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
 from a13n_service.environments.domain import NewEnvironmentSelection
@@ -14,7 +15,6 @@ from a13n_service.environments.selection import allocate_selection, resolve_sele
 from a13n_service.iam import AuthenticatedActor, authorize_agent
 from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
 from a13n_service.ids import new_object_id
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import transaction
 
 from .control_records import inbox_counter_record
@@ -33,7 +33,10 @@ async def allocate_thread(
     idempotency_key: str,
 ) -> Thread:
     now = datetime.now(UTC)
-    identity = request_identity(idempotency_key, body)
+    normalized = body.model_dump(mode="json")
+    if "environment" not in body.model_fields_set:
+        normalized.pop("environment")
+    identity = request_identity(idempotency_key, normalized)
     try:
         async with transaction(sessions) as session:
             workspace = await authorize_workspace(
@@ -43,10 +46,12 @@ async def allocate_thread(
                 session, actor=actor, operation="thread.create", scope_id=workspace_id, identity=identity, now=now
             )
             if replay:
-                row = await session.get(ThreadRecord, replay[1])
+                row = await session.get(ThreadRecord, replay.result_ref)
                 if row is None:
-                    raise PublicError("thread_not_found", "Thread is unavailable", status_code=404)
-                return row.to_resource()
+                    raise ApplicationError(
+                        "thread_not_found", "Thread is unavailable", category=ErrorCategory.not_found
+                    )
+                return replay.restore(Thread)
             selected = body.environment
             if body.agent_id is not None:
                 await authorize_agent(
@@ -58,7 +63,7 @@ async def allocate_thread(
                 )
                 agent = await session.get(AgentRecord, body.agent_id)
                 if agent is None:
-                    raise PublicError("agent_not_found", "Agent is unavailable", status_code=404)
+                    raise ApplicationError("agent_not_found", "Agent is unavailable", category=ErrorCategory.not_found)
                 if "environment" not in body.model_fields_set and agent.default_environment_template_id:
                     selected = NewEnvironmentSelection(template_id=agent.default_environment_template_id)
             environment_id = None
@@ -79,19 +84,21 @@ async def allocate_thread(
                     .where(
                         SessionRecord.id == body.session_id,
                         SessionRecord.workspace_id == workspace_id,
-                        SessionRecord.tenant_id == workspace.organization_id,
+                        SessionRecord.organization_id == workspace.organization_id,
                     )
                     .with_for_update()
                 )
                 if parent is None:
-                    raise PublicError("session_not_found", "Session is unavailable", status_code=404)
+                    raise ApplicationError(
+                        "session_not_found", "Session is unavailable", category=ErrorCategory.not_found
+                    )
                 await authorize_workspace(
                     session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.session_read
                 )
             else:
                 parent = SessionRecord(
                     id=new_object_id("session"),
-                    tenant_id=workspace.organization_id,
+                    organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
                     created_at=now,
                     updated_at=now,
@@ -102,7 +109,7 @@ async def allocate_thread(
                 id=new_thread_id(),
                 version=1,
                 queue_version=0,
-                tenant_id=workspace.organization_id,
+                organization_id=workspace.organization_id,
                 session_id=parent.id,
                 role=ThreadRole.root,
                 origin_kind=ThreadOriginKind.new,
@@ -124,6 +131,7 @@ async def allocate_thread(
                     result_kind="thread",
                     result_ref=thread.id,
                     now=now,
+                    response=thread,
                 )
             )
             return thread
@@ -142,7 +150,7 @@ async def allocate_thread(
                     now=datetime.now(UTC),
                 )
                 if replay is not None:
-                    row = await session.get(ThreadRecord, replay[1])
+                    row = await session.get(ThreadRecord, replay.result_ref)
                     if row is not None:
-                        return row.to_resource()
+                        return replay.restore(Thread)
         raise

@@ -59,7 +59,7 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
         CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
-        Index("uq_connector_providers_id_tenant", "id", "organization_id", unique=True),
+        Index("uq_connector_providers_id_organization", "id", "organization_id", unique=True),
         Index("uq_connector_providers_workspace_name", "workspace_id", "normalized_name", unique=True),
         Index("ix_connector_providers_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_connector_providers_driver_status", "type", "status", "id"),
@@ -124,7 +124,7 @@ class ConnectorConnectionRecord(Base):
         CheckConstraint("setup_generation >= 1", name="setup_generation_positive"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
-        Index("uq_connector_connections_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_connector_connections_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index(
             "uq_connector_connections_workspace_name",
             "workspace_id",

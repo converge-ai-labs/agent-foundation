@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
@@ -36,7 +37,7 @@ def _connections(request: Request) -> MCPConnectionService:
         raise MCPConnectionError(
             "mcp_connection_management_unavailable",
             "MCPConnection Management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return runtime.mcp_connections
 
@@ -47,7 +48,7 @@ def _oauth(request: Request) -> MCPOAuthService:
         raise MCPConnectionError(
             "mcp_oauth_unavailable",
             "MCP OAuth is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return runtime.mcp_oauth
 
@@ -61,7 +62,9 @@ async def mcp_client_metadata(request: Request) -> MCPClientMetadata:
     oauth = _oauth(request)
     runtime = get_process_runtime(request)
     if runtime is None:
-        raise MCPConnectionError("mcp_oauth_unavailable", "MCP OAuth is unavailable.", status_code=503)
+        raise MCPConnectionError(
+            "mcp_oauth_unavailable", "MCP OAuth is unavailable.", category=ErrorCategory.unavailable
+        )
     return MCPClientMetadata(
         client_id=oauth.client_metadata_url,
         client_name=runtime.settings.connectivity_oauth_client_name,

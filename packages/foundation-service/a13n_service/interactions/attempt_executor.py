@@ -10,9 +10,9 @@ from a13n_harness import EnvironmentAccess, EnvironmentMount, SafeFailure
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, move_on_after, sleep
 from anyio.abc import TaskStatus
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import RunEnvironment, prepare_run_environment
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import ObjectNotFound, ObjectStoreUnavailable
 
 from .attempts import (
@@ -253,10 +253,17 @@ class RunAttemptExecutor[OutputT]:
                 SafeFailure(code=error.code, message="The accepted Environment could not be prepared."),
                 retryable=error.category.value in {"unavailable", "timeout", "conflict", "unknown_outcome"},
             ) from error
-        except (EnvironmentError, PublicError) as error:
+        except (EnvironmentError, ApplicationError) as error:
             raise AttemptPreparationError(
                 SafeFailure(code=error.code, message="The accepted Environment could not be prepared."),
-                retryable=isinstance(error, PublicError) and error.status_code in {429, 502, 503, 504},
+                retryable=isinstance(error, ApplicationError)
+                and error.category
+                in {
+                    ErrorCategory.rate_limited,
+                    ErrorCategory.dependency_failure,
+                    ErrorCategory.unavailable,
+                    ErrorCategory.timeout,
+                },
             ) from error
         except TimeoutError as error:
             raise AttemptPreparationError(

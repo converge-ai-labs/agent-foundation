@@ -32,7 +32,7 @@ class RunCompletionBlocked(ThreadInboxConflict):
 async def lock_inbox_related_runs(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     required_run_ids: Collection[str],
 ) -> tuple[RunRecord, ...]:
@@ -45,7 +45,7 @@ async def lock_inbox_related_runs(
             await database.scalars(
                 select(ThreadInboxRecord.origin_run_id)
                 .where(
-                    ThreadInboxRecord.tenant_id == tenant_id,
+                    ThreadInboxRecord.organization_id == organization_id,
                     ThreadInboxRecord.thread_id == thread_id,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     ThreadInboxRecord.origin_run_id.is_not(None),
@@ -59,7 +59,7 @@ async def lock_inbox_related_runs(
         (
             await database.scalars(
                 select(RunRecord)
-                .where(RunRecord.tenant_id == tenant_id, RunRecord.id.in_(sorted(run_ids)))
+                .where(RunRecord.organization_id == organization_id, RunRecord.id.in_(sorted(run_ids)))
                 .order_by(RunRecord.id)
                 .with_for_update()
             )
@@ -73,7 +73,7 @@ async def lock_inbox_related_runs(
 async def bind_waiting_entries(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     source_waiting_run_id: str,
     target_run_id: str,
@@ -83,11 +83,11 @@ async def bind_waiting_entries(
 
     rows = await _lock_pending_scope(
         database,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await suppress_failed_inbox_origins(database, tenant_id=tenant_id, rows=rows, now=now)
+    await suppress_failed_inbox_origins(database, organization_id=organization_id, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -96,7 +96,7 @@ async def bind_waiting_entries(
 async def bind_unbound_async_entries(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     target_run_id: str,
     now: datetime,
@@ -109,7 +109,7 @@ async def bind_unbound_async_entries(
             await database.scalars(
                 select(ThreadInboxRecord.origin_run_id)
                 .where(
-                    ThreadInboxRecord.tenant_id == tenant_id,
+                    ThreadInboxRecord.organization_id == organization_id,
                     ThreadInboxRecord.thread_id == thread_id,
                     ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
@@ -121,14 +121,14 @@ async def bind_unbound_async_entries(
         ).all()
         if value is not None
     )
-    await _lock_runs(database, tenant_id=tenant_id, run_ids=origin_ids)
-    await lock_inbox_counter(database, tenant_id, thread_id)
+    await _lock_runs(database, organization_id=organization_id, run_ids=origin_ids)
+    await lock_inbox_counter(database, organization_id, thread_id)
     rows = tuple(
         (
             await database.scalars(
                 select(ThreadInboxRecord)
                 .where(
-                    ThreadInboxRecord.tenant_id == tenant_id,
+                    ThreadInboxRecord.organization_id == organization_id,
                     ThreadInboxRecord.thread_id == thread_id,
                     ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
@@ -140,7 +140,7 @@ async def bind_unbound_async_entries(
             )
         ).all()
     )
-    await suppress_failed_inbox_origins(database, tenant_id=tenant_id, rows=rows, now=now)
+    await suppress_failed_inbox_origins(database, organization_id=organization_id, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -149,7 +149,7 @@ async def bind_unbound_async_entries(
 async def abandon_waiting_entries(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     source_waiting_run_id: str,
     now: datetime,
@@ -158,11 +158,11 @@ async def abandon_waiting_entries(
 
     rows = await _lock_pending_scope(
         database,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await suppress_failed_inbox_origins(database, tenant_id=tenant_id, rows=rows, now=now)
+    await suppress_failed_inbox_origins(database, organization_id=organization_id, rows=rows, now=now)
     await _finalize_rows(database, rows, fallback=ThreadInboxStatus.superseded, now=now)
 
 
@@ -189,7 +189,7 @@ async def reconcile_checkpoint(
             await database.scalars(
                 select(ThreadInboxRecord.origin_run_id)
                 .where(
-                    ThreadInboxRecord.tenant_id == run.tenant_id,
+                    ThreadInboxRecord.organization_id == run.organization_id,
                     ThreadInboxRecord.thread_id == run.thread_id,
                     ThreadInboxRecord.target_run_id == run.id,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
@@ -200,14 +200,14 @@ async def reconcile_checkpoint(
         ).all()
         if value is not None
     )
-    await _lock_runs(database, tenant_id=run.tenant_id, run_ids=origin_ids)
-    counter = await lock_inbox_counter(database, run.tenant_id, run.thread_id)
+    await _lock_runs(database, organization_id=run.organization_id, run_ids=origin_ids)
+    counter = await lock_inbox_counter(database, run.organization_id, run.thread_id)
     rows = tuple(
         (
             await database.scalars(
                 select(ThreadInboxRecord)
                 .where(
-                    ThreadInboxRecord.tenant_id == run.tenant_id,
+                    ThreadInboxRecord.organization_id == run.organization_id,
                     ThreadInboxRecord.thread_id == run.thread_id,
                     or_(
                         ThreadInboxRecord.id.in_(receipt_ids),
@@ -230,7 +230,7 @@ async def reconcile_checkpoint(
     eligible = tuple(
         row for row in rows if row.target_run_id == run.id and row.status == ThreadInboxStatus.pending.value
     )
-    await suppress_failed_inbox_origins(database, tenant_id=run.tenant_id, rows=eligible, now=now)
+    await suppress_failed_inbox_origins(database, organization_id=run.organization_id, rows=eligible, now=now)
     pending_receipt_ids = tuple(
         receipt.inbox_entry_id
         for receipt in receipts
@@ -273,14 +273,14 @@ async def apply_run_outcome(
         await reconcile_checkpoint(database, run=run, state=state, now=now)
     rows = await _lock_pending_scope(
         database,
-        tenant_id=run.tenant_id,
+        organization_id=run.organization_id,
         thread_id=run.thread_id,
         target_run_id=run.id,
         origin_run_id=run.id if outcome in {"failed", "cancelled"} else None,
     )
     await suppress_failed_inbox_origins(
         database,
-        tenant_id=run.tenant_id,
+        organization_id=run.organization_id,
         rows=rows,
         now=now,
         terminal_origin_run_id=run.id if outcome in {"failed", "cancelled"} else None,
@@ -305,15 +305,17 @@ async def has_pending_run_delivery(
 
     if state is not None:
         await reconcile_checkpoint(database, run=run, state=state, now=now)
-    rows = await _lock_pending_scope(database, tenant_id=run.tenant_id, thread_id=run.thread_id, target_run_id=run.id)
-    await suppress_failed_inbox_origins(database, tenant_id=run.tenant_id, rows=rows, now=now)
+    rows = await _lock_pending_scope(
+        database, organization_id=run.organization_id, thread_id=run.thread_id, target_run_id=run.id
+    )
+    await suppress_failed_inbox_origins(database, organization_id=run.organization_id, rows=rows, now=now)
     return any(row.status == ThreadInboxStatus.pending.value for row in rows)
 
 
 async def _lock_pending_scope(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     target_run_id: str | None = None,
     source_waiting_run_id: str | None = None,
@@ -335,7 +337,7 @@ async def _lock_pending_scope(
             await database.scalars(
                 select(ThreadInboxRecord.origin_run_id)
                 .where(
-                    ThreadInboxRecord.tenant_id == tenant_id,
+                    ThreadInboxRecord.organization_id == organization_id,
                     ThreadInboxRecord.thread_id == thread_id,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     or_(*predicates),
@@ -346,14 +348,14 @@ async def _lock_pending_scope(
         ).all()
         if value is not None
     )
-    await _lock_runs(database, tenant_id=tenant_id, run_ids=origin_ids)
-    await lock_inbox_counter(database, tenant_id, thread_id)
+    await _lock_runs(database, organization_id=organization_id, run_ids=origin_ids)
+    await lock_inbox_counter(database, organization_id, thread_id)
     return tuple(
         (
             await database.scalars(
                 select(ThreadInboxRecord)
                 .where(
-                    ThreadInboxRecord.tenant_id == tenant_id,
+                    ThreadInboxRecord.organization_id == organization_id,
                     ThreadInboxRecord.thread_id == thread_id,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     or_(*predicates),
@@ -367,13 +369,13 @@ async def _lock_pending_scope(
 
 async def lock_inbox_counter(
     database: AsyncSession,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
 ) -> ThreadInboxCounterRecord:
     counter = await database.scalar(
         select(ThreadInboxCounterRecord)
         .where(
-            ThreadInboxCounterRecord.tenant_id == tenant_id,
+            ThreadInboxCounterRecord.organization_id == organization_id,
             ThreadInboxCounterRecord.thread_id == thread_id,
         )
         .with_for_update()
@@ -386,7 +388,7 @@ async def lock_inbox_counter(
 async def _lock_runs(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     run_ids: Collection[str],
 ) -> None:
     if not run_ids:
@@ -395,7 +397,7 @@ async def _lock_runs(
         (
             await database.scalars(
                 select(RunRecord)
-                .where(RunRecord.tenant_id == tenant_id, RunRecord.id.in_(sorted(run_ids)))
+                .where(RunRecord.organization_id == organization_id, RunRecord.id.in_(sorted(run_ids)))
                 .order_by(RunRecord.id)
                 .with_for_update()
             )
@@ -408,7 +410,7 @@ async def _lock_runs(
 async def suppress_failed_inbox_origins(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     rows: Sequence[ThreadInboxRecord],
     now: datetime,
     terminal_origin_run_id: str | None = None,
@@ -425,7 +427,7 @@ async def suppress_failed_inbox_origins(
             (
                 await database.scalars(
                     select(RunRecord.id).where(
-                        RunRecord.tenant_id == tenant_id,
+                        RunRecord.organization_id == organization_id,
                         RunRecord.id.in_(origin_ids),
                         RunRecord.status.in_(("failed", "cancelled")),
                     )
@@ -441,7 +443,7 @@ async def suppress_failed_inbox_origins(
         return
     counter = locked_counter or await lock_inbox_counter(
         database,
-        rows[0].tenant_id,
+        rows[0].organization_id,
         rows[0].thread_id,
     )
     for row in suppressed:
@@ -459,7 +461,7 @@ async def _finalize_rows(
     pending = tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
     if not pending:
         return
-    counter = await lock_inbox_counter(database, pending[0].tenant_id, pending[0].thread_id)
+    counter = await lock_inbox_counter(database, pending[0].organization_id, pending[0].thread_id)
     for row in pending:
         _set_terminal(row, fallback, now)
     release_pending_inbox_capacity(counter, pending)

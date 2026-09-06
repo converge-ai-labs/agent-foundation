@@ -62,7 +62,7 @@ class QueuedSubmissionStore:
     async def enqueue(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         expected_thread_version: int,
         authority_principal: PrincipalRef,
@@ -76,19 +76,19 @@ class QueuedSubmissionStore:
         async with transaction(self._sessions) as database:
             if replay is not None and (replayed := await replay(database)) is not None:
                 return replayed
-            thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=thread_id)
+            thread = await _lock_thread(database, organization_id=organization_id, thread_id=thread_id)
             if thread.version != expected_thread_version:
                 raise QueuedSubmissionConflict("Thread version changed before queue admission")
-            rows = await _lock_live(database, tenant_id=tenant_id, thread_id=thread_id)
+            rows = await _lock_live(database, organization_id=organization_id, thread_id=thread_id)
             current = (
-                await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+                await _load_run_snapshot(database, organization_id=organization_id, run_id=thread.current_run_id)
                 if thread.current_run_id
                 else None
             )
             head = (
                 None
                 if thread.head_run_id is None
-                else await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.head_run_id)
+                else await _load_run_snapshot(database, organization_id=organization_id, run_id=thread.head_run_id)
             )
             admission = classify_thread_submission(
                 thread=thread.to_resource(),
@@ -105,7 +105,7 @@ class QueuedSubmissionStore:
                 raise QueuedSubmissionConflict("Thread queued-submission capacity is exhausted")
             await self._authorize_inline_hook(
                 database,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 workspace_id=await _load_workspace_id(database, thread),
                 agent_id=submission.agent_id or (current.agent_id if current else ""),
                 principal=authority_principal,
@@ -123,7 +123,7 @@ class QueuedSubmissionStore:
                 created_at=now,
                 updated_at=now,
             )
-            database.add(queued_submission_record(value, tenant_id=tenant_id))
+            database.add(queued_submission_record(value, organization_id=organization_id))
             thread.queue_version += 1
             thread.updated_at = now
             await database.flush()
@@ -138,7 +138,7 @@ class QueuedSubmissionStore:
     async def list(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         state: QueuedSubmissionState = QueuedSubmissionState.queued,
         limit: int = 100,
@@ -153,7 +153,7 @@ class QueuedSubmissionStore:
         async with short_session(self._sessions) as database:
             exists = await database.scalar(
                 select(ThreadRecord.id).where(
-                    ThreadRecord.tenant_id == tenant_id,
+                    ThreadRecord.organization_id == organization_id,
                     ThreadRecord.id == thread_id,
                 )
             )
@@ -164,7 +164,7 @@ class QueuedSubmissionStore:
                     await database.scalars(
                         select(QueuedSubmissionRecord)
                         .where(
-                            QueuedSubmissionRecord.tenant_id == tenant_id,
+                            QueuedSubmissionRecord.organization_id == organization_id,
                             QueuedSubmissionRecord.thread_id == thread_id,
                             lifecycle_column.is_not(None),
                         )
@@ -175,12 +175,12 @@ class QueuedSubmissionStore:
             )
             return QueuedSubmissionCollection(items=tuple(row.to_resource() for row in rows))
 
-    async def get(self, *, tenant_id: str, queued_submission_id: str) -> QueuedSubmission:
+    async def get(self, *, organization_id: str, queued_submission_id: str) -> QueuedSubmission:
         async with short_session(self._sessions) as database:
-            row = await _load(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
+            row = await _load(database, organization_id=organization_id, queued_submission_id=queued_submission_id)
             return row.to_resource()
 
-    async def scan_drainable(self, *, tenant_id: str, limit: int = 100) -> tuple[str, ...]:
+    async def scan_drainable(self, *, organization_id: str, limit: int = 100) -> tuple[str, ...]:
         """Find bounded terminal-Thread-plus-queue recovery authority."""
 
         if limit < 1 or limit > 1000:
@@ -189,7 +189,7 @@ class QueuedSubmissionStore:
         head = aliased(RunRecord)
         has_live_queue = exists(
             select(QueuedSubmissionRecord.id).where(
-                QueuedSubmissionRecord.tenant_id == ThreadRecord.tenant_id,
+                QueuedSubmissionRecord.organization_id == ThreadRecord.organization_id,
                 QueuedSubmissionRecord.thread_id == ThreadRecord.id,
                 QueuedSubmissionRecord.position.is_not(None),
             )
@@ -201,14 +201,16 @@ class QueuedSubmissionStore:
                         select(ThreadRecord.id)
                         .join(
                             current,
-                            (current.tenant_id == ThreadRecord.tenant_id) & (current.id == ThreadRecord.current_run_id),
+                            (current.organization_id == ThreadRecord.organization_id)
+                            & (current.id == ThreadRecord.current_run_id),
                         )
                         .outerjoin(
                             head,
-                            (head.tenant_id == ThreadRecord.tenant_id) & (head.id == ThreadRecord.head_run_id),
+                            (head.organization_id == ThreadRecord.organization_id)
+                            & (head.id == ThreadRecord.head_run_id),
                         )
                         .where(
-                            ThreadRecord.tenant_id == tenant_id,
+                            ThreadRecord.organization_id == organization_id,
                             current.status.in_(("completed", "failed", "cancelled")),
                             or_(ThreadRecord.head_run_id.is_(None), head.status == "completed"),
                             has_live_queue,
@@ -222,7 +224,7 @@ class QueuedSubmissionStore:
     async def update(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         queued_submission_id: str,
         expected_version: int,
         actor_principal: PrincipalRef,
@@ -235,22 +237,24 @@ class QueuedSubmissionStore:
         async with transaction(self._sessions) as database:
             if replay is not None and (replayed := await replay(database)) is not None:
                 return replayed
-            scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
-            thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=scope)
-            row = await _lock_entry(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
+            scope = await _scope(database, organization_id=organization_id, queued_submission_id=queued_submission_id)
+            thread = await _lock_thread(database, organization_id=organization_id, thread_id=scope)
+            row = await _lock_entry(
+                database, organization_id=organization_id, queued_submission_id=queued_submission_id
+            )
             if row.position is None or row.version != expected_version:
                 raise QueuedSubmissionConflict("queued submission version or lifecycle changed")
             resource = row.to_resource()
             if resource.authority_principal != actor_principal:
                 raise QueuedSubmissionConflict("only the queued authority Principal can replace its intent")
             current = (
-                await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+                await _load_run_snapshot(database, organization_id=organization_id, run_id=thread.current_run_id)
                 if thread.current_run_id
                 else None
             )
             await self._authorize_inline_hook(
                 database,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 workspace_id=await _load_workspace_id(database, thread),
                 agent_id=submission.agent_id or (current.agent_id if current else ""),
                 principal=actor_principal,
@@ -274,7 +278,7 @@ class QueuedSubmissionStore:
     async def delete(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         queued_submission_id: str,
         expected_version: int,
         replay: Callable[[AsyncSession], Awaitable[ThreadQueueMutationReceipt | None]] | None = None,
@@ -284,9 +288,9 @@ class QueuedSubmissionStore:
         async with transaction(self._sessions) as database:
             if replay is not None and (replayed := await replay(database)) is not None:
                 return replayed
-            scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
-            thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=scope)
-            rows = await _lock_live(database, tenant_id=tenant_id, thread_id=scope)
+            scope = await _scope(database, organization_id=organization_id, queued_submission_id=queued_submission_id)
+            thread = await _lock_thread(database, organization_id=organization_id, thread_id=scope)
+            rows = await _lock_live(database, organization_id=organization_id, thread_id=scope)
             target = next((row for row in rows if row.id == queued_submission_id), None)
             if target is None or target.version != expected_version:
                 raise QueuedSubmissionConflict("queued submission version or lifecycle changed")
@@ -320,7 +324,7 @@ class QueuedSubmissionStore:
     async def reorder(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         expected_queue_version: int,
         queued_submission_ids: tuple[str, ...],
@@ -331,8 +335,8 @@ class QueuedSubmissionStore:
         async with transaction(self._sessions) as database:
             if replay is not None and (replayed := await replay(database)) is not None:
                 return replayed
-            thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=thread_id)
-            rows = await _lock_live(database, tenant_id=tenant_id, thread_id=thread_id)
+            thread = await _lock_thread(database, organization_id=organization_id, thread_id=thread_id)
+            rows = await _lock_live(database, organization_id=organization_id, thread_id=thread_id)
             if thread.queue_version != expected_queue_version:
                 raise QueuedSubmissionConflict("Thread queue version changed")
             if set(queued_submission_ids) != {row.id for row in rows} or len(queued_submission_ids) != len(rows):
@@ -368,7 +372,7 @@ class QueuedSubmissionStore:
         self,
         database: AsyncSession,
         *,
-        tenant_id: str,
+        organization_id: str,
         workspace_id: str,
         agent_id: str,
         principal: PrincipalRef,
@@ -378,7 +382,7 @@ class QueuedSubmissionStore:
             await self._inline_hooks.authorize(
                 database,
                 principal=principal,
-                organization_id=tenant_id,
+                organization_id=organization_id,
                 workspace_id=workspace_id,
                 agent_id=agent_id,
                 subscription=submission.hook_subscription,
@@ -427,10 +431,10 @@ def classify_thread_submission(
     return ThreadSubmissionAdmission.reject
 
 
-async def _scope(database: AsyncSession, *, tenant_id: str, queued_submission_id: str) -> str:
+async def _scope(database: AsyncSession, *, organization_id: str, queued_submission_id: str) -> str:
     thread_id = await database.scalar(
         select(QueuedSubmissionRecord.thread_id).where(
-            QueuedSubmissionRecord.tenant_id == tenant_id,
+            QueuedSubmissionRecord.organization_id == organization_id,
             QueuedSubmissionRecord.id == queued_submission_id,
         )
     )
@@ -439,9 +443,11 @@ async def _scope(database: AsyncSession, *, tenant_id: str, queued_submission_id
     return thread_id
 
 
-async def _lock_thread(database: AsyncSession, *, tenant_id: str, thread_id: str) -> ThreadRecord:
+async def _lock_thread(database: AsyncSession, *, organization_id: str, thread_id: str) -> ThreadRecord:
     thread = await database.scalar(
-        select(ThreadRecord).where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == thread_id).with_for_update()
+        select(ThreadRecord)
+        .where(ThreadRecord.organization_id == organization_id, ThreadRecord.id == thread_id)
+        .with_for_update()
     )
     if thread is None:
         raise QueuedSubmissionConflict("Thread was not found")
@@ -451,7 +457,7 @@ async def _lock_thread(database: AsyncSession, *, tenant_id: str, thread_id: str
 async def _lock_live(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
 ) -> tuple[QueuedSubmissionRecord, ...]:
     return tuple(
@@ -459,7 +465,7 @@ async def _lock_live(
             await database.scalars(
                 select(QueuedSubmissionRecord)
                 .where(
-                    QueuedSubmissionRecord.tenant_id == tenant_id,
+                    QueuedSubmissionRecord.organization_id == organization_id,
                     QueuedSubmissionRecord.thread_id == thread_id,
                     QueuedSubmissionRecord.position.is_not(None),
                 )
@@ -473,12 +479,12 @@ async def _lock_live(
 async def _load(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     queued_submission_id: str,
 ) -> QueuedSubmissionRecord:
     row = await database.scalar(
         select(QueuedSubmissionRecord).where(
-            QueuedSubmissionRecord.tenant_id == tenant_id,
+            QueuedSubmissionRecord.organization_id == organization_id,
             QueuedSubmissionRecord.id == queued_submission_id,
         )
     )
@@ -487,8 +493,10 @@ async def _load(
     return row
 
 
-async def _load_run_snapshot(database: AsyncSession, *, tenant_id: str, run_id: str) -> RunRecord:
-    run = await database.scalar(select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id))
+async def _load_run_snapshot(database: AsyncSession, *, organization_id: str, run_id: str) -> RunRecord:
+    run = await database.scalar(
+        select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id)
+    )
     if run is None:
         raise QueuedSubmissionConflict("Thread-selected Run was not found")
     return run
@@ -497,7 +505,7 @@ async def _load_run_snapshot(database: AsyncSession, *, tenant_id: str, run_id: 
 async def _load_workspace_id(database: AsyncSession, thread: ThreadRecord) -> str:
     workspace_id = await database.scalar(
         select(SessionRecord.workspace_id).where(
-            SessionRecord.tenant_id == thread.tenant_id,
+            SessionRecord.organization_id == thread.organization_id,
             SessionRecord.id == thread.session_id,
         )
     )
@@ -509,13 +517,13 @@ async def _load_workspace_id(database: AsyncSession, thread: ThreadRecord) -> st
 async def _lock_entry(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     queued_submission_id: str,
 ) -> QueuedSubmissionRecord:
     row = await database.scalar(
         select(QueuedSubmissionRecord)
         .where(
-            QueuedSubmissionRecord.tenant_id == tenant_id,
+            QueuedSubmissionRecord.organization_id == organization_id,
             QueuedSubmissionRecord.id == queued_submission_id,
         )
         .with_for_update()

@@ -21,7 +21,7 @@ def upgrade() -> None:
     op.create_table(
         "thread_inbox_counters",
         sa.Column("thread_id", sa.String(length=72), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("next_delivery_sequence", sa.BigInteger(), nullable=False),
         sa.Column("pending_count", sa.BigInteger(), nullable=False),
         sa.Column("pending_bytes", sa.BigInteger(), nullable=False),
@@ -31,18 +31,18 @@ def upgrade() -> None:
         sa.CheckConstraint("pending_bytes >= 0", name=op.f("ck_thread_inbox_counters_pending_bytes_non_negative")),
         sa.CheckConstraint("pending_count >= 0", name=op.f("ck_thread_inbox_counters_pending_count_non_negative")),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id"],
-            ["threads.tenant_id", "threads.id"],
-            name=op.f("fk_thread_inbox_counters_tenant_id_threads"),
+            ["organization_id", "thread_id"],
+            ["threads.organization_id", "threads.id"],
+            name=op.f("fk_thread_inbox_counters_organization_id_threads"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("thread_id", name=op.f("pk_thread_inbox_counters")),
-        sa.UniqueConstraint("tenant_id", "thread_id", name="uq_thread_inbox_counters_scope"),
+        sa.UniqueConstraint("organization_id", "thread_id", name="uq_thread_inbox_counters_scope"),
     )
     op.create_table(
         "thread_inbox",
         sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("thread_id", sa.String(length=72), nullable=False),
         sa.Column("kind", sa.String(length=32), nullable=False),
         sa.Column("delivery_sequence", sa.BigInteger(), nullable=False),
@@ -102,74 +102,80 @@ def upgrade() -> None:
             name=op.f("ck_thread_inbox_target_waiting_source_distinct"),
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id", "accepted_against_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "thread_id", "accepted_against_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_thread_inbox_accepted_against_run_id",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id", "consumed_by_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "thread_id", "consumed_by_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_thread_inbox_consumed_by_run_id",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id", "origin_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "thread_id", "origin_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_thread_inbox_origin_run_id",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id", "source_waiting_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "thread_id", "source_waiting_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_thread_inbox_source_waiting_run_id",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id", "target_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "thread_id", "target_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_thread_inbox_target_run_id",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id"],
-            ["threads.tenant_id", "threads.id"],
-            name=op.f("fk_thread_inbox_tenant_id_threads"),
+            ["organization_id", "thread_id"],
+            ["threads.organization_id", "threads.id"],
+            name=op.f("fk_thread_inbox_organization_id_threads"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_thread_inbox")),
-        sa.UniqueConstraint("tenant_id", "id", name="uq_thread_inbox_tenant_id"),
-        sa.UniqueConstraint("tenant_id", "thread_id", "delivery_sequence", name="uq_thread_inbox_sequence"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_thread_inbox_organization_id"),
+        sa.UniqueConstraint("organization_id", "thread_id", "delivery_sequence", name="uq_thread_inbox_sequence"),
     )
     op.create_index(
-        "ix_thread_inbox_fifo", "thread_inbox", ["tenant_id", "thread_id", "status", "delivery_sequence"], unique=False
+        "ix_thread_inbox_fifo",
+        "thread_inbox",
+        ["organization_id", "thread_id", "status", "delivery_sequence"],
+        unique=False,
     )
     op.create_index(
-        "ix_thread_inbox_kind_scan", "thread_inbox", ["tenant_id", "kind", "status", "delivery_sequence"], unique=False
+        "ix_thread_inbox_kind_scan",
+        "thread_inbox",
+        ["organization_id", "kind", "status", "delivery_sequence"],
+        unique=False,
     )
     op.create_index(
         "ix_thread_inbox_origin",
         "thread_inbox",
-        ["tenant_id", "origin_run_id", "kind", "status", "delivery_sequence"],
+        ["organization_id", "origin_run_id", "kind", "status", "delivery_sequence"],
         unique=False,
     )
     op.create_index(
         "ix_thread_inbox_target",
         "thread_inbox",
-        ["tenant_id", "target_run_id", "status", "delivery_sequence"],
+        ["organization_id", "target_run_id", "status", "delivery_sequence"],
         unique=False,
     )
     op.create_index(
         "ix_thread_inbox_waiting_source",
         "thread_inbox",
-        ["tenant_id", "source_waiting_run_id", "status", "delivery_sequence"],
+        ["organization_id", "source_waiting_run_id", "status", "delivery_sequence"],
         unique=False,
     )
     op.create_table(
         "thread_queued_submissions",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("thread_id", sa.String(length=72), nullable=False),
         sa.Column("authority_principal_type", sa.String(length=32), nullable=False),
         sa.Column("authority_principal_id", sa.String(length=72), nullable=False),
@@ -195,9 +201,9 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("version >= 1", name=op.f("ck_thread_queued_submissions_version_positive")),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id", "consumed_run_id", "authority_principal_type", "authority_principal_id"],
+            ["organization_id", "thread_id", "consumed_run_id", "authority_principal_type", "authority_principal_id"],
             [
-                "runs.tenant_id",
+                "runs.organization_id",
                 "runs.thread_id",
                 "runs.id",
                 "runs.authority_principal_type",
@@ -207,31 +213,31 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id"],
-            ["threads.tenant_id", "threads.id"],
-            name=op.f("fk_thread_queued_submissions_tenant_id_threads"),
+            ["organization_id", "thread_id"],
+            ["threads.organization_id", "threads.id"],
+            name=op.f("fk_thread_queued_submissions_organization_id_threads"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_thread_queued_submissions")),
-        sa.UniqueConstraint("tenant_id", "consumed_run_id", name="uq_thread_queued_submissions_consumed_run"),
-        sa.UniqueConstraint("tenant_id", "id", name="uq_thread_queued_submissions_tenant_id"),
+        sa.UniqueConstraint("organization_id", "consumed_run_id", name="uq_thread_queued_submissions_consumed_run"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_thread_queued_submissions_organization_id"),
     )
     op.create_index(
         "ix_thread_queued_submissions_consumed",
         "thread_queued_submissions",
-        ["tenant_id", "thread_id", "consumed_at", "id"],
+        ["organization_id", "thread_id", "consumed_at", "id"],
         unique=False,
     )
     op.create_index(
         "ix_thread_queued_submissions_failed",
         "thread_queued_submissions",
-        ["tenant_id", "thread_id", "failed_at", "id"],
+        ["organization_id", "thread_id", "failed_at", "id"],
         unique=False,
     )
     op.create_index(
         "ix_thread_queued_submissions_live",
         "thread_queued_submissions",
-        ["tenant_id", "thread_id", "position", "id"],
+        ["organization_id", "thread_id", "position", "id"],
         unique=False,
         postgresql_where=sa.text("position IS NOT NULL"),
         sqlite_where=sa.text("position IS NOT NULL"),
@@ -239,7 +245,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_thread_queued_submissions_position",
         "thread_queued_submissions",
-        ["tenant_id", "thread_id", "position"],
+        ["organization_id", "thread_id", "position"],
         unique=True,
         postgresql_where=sa.text("position IS NOT NULL"),
         sqlite_where=sa.text("position IS NOT NULL"),

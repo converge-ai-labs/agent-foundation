@@ -42,7 +42,9 @@ from anyio import sleep_forever
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
-from .conftest import NOW, TENANT_ID
+from tests.lifecycle_support import test_lifecycle_writer
+
+from .conftest import NOW, ORGANIZATION_ID
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _worker
 from .test_attempt_executor import _Projector
 
@@ -54,7 +56,7 @@ PENDING_ID = "inb_2222222222222222"
 
 async def _append(sessions, run_id, entry_id, text):
     return await ThreadInboxStore(sessions, clock=lambda: NOW).append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run_id,
         entry_id=entry_id,
         input=AcceptedAgentInput(schema_version="1", content=(TextContent(text=text),)),
@@ -63,9 +65,11 @@ async def _append(sessions, run_id, entry_id, text):
 
 async def _published_completion(sessions, objects, *, pending=True, budget=3):
     states, run, initial = await _accept_root(sessions, objects, max_recovery_attempts=budget)
-    claim = await AttemptScheduler(sessions, clock=lambda: NOW).claim(run.id, _worker())
+    claim = await AttemptScheduler(sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker()
+    )
     assert isinstance(claim, ClaimedAttempt)
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW)
+    execution = AttemptExecutionService(sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -87,12 +91,12 @@ async def _published_completion(sessions, objects, *, pending=True, budget=3):
             ),
         }
     )
-    state = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), candidate)
+    state = await execution.publish_checkpoint(authority, states, await states.read(ORGANIZATION_ID, run.id), candidate)
     if pending:
         await _append(sessions, run.id, PENDING_ID, "follow-up request")
     committer = DatabaseRunTerminalCommitter(
         sessions,
-        RunOutcomeService(sessions, RunPayloadStore(objects), clock=lambda: NOW),
+        RunOutcomeService(sessions, RunPayloadStore(objects), lifecycle=test_lifecycle_writer(), clock=lambda: NOW),
         execution,
         clock=lambda: NOW,
     )
@@ -122,7 +126,9 @@ async def test_completion_race_recovers_same_run_and_preserves_history(
         assert receipt.disposition is RunTerminalDisposition.retrying
         assert current_run.status == "running"
 
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker(worker_id="worker-2"))
+    claim = await AttemptScheduler(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker(worker_id="worker-2")
+    )
     assert isinstance(claim, ClaimedAttempt)
     second = _authority(claim)
     preparation = await execution.commit_preparation_success(second)
@@ -179,7 +185,7 @@ async def test_completion_race_recovers_same_run_and_preserves_history(
     async def prepare_environment(lifecycle, context):
         del lifecycle
         assert context.run_attempt_id == second.run_attempt_id
-        progress = await states.read(TENANT_ID, run.id)
+        progress = await states.read(ORGANIZATION_ID, run.id)
         assert progress.envelope.harness == candidate.envelope.harness
         assert progress.envelope.host == candidate.envelope.host
         assert progress.envelope.effective_agent_config == candidate.envelope.effective_agent_config
@@ -202,7 +208,7 @@ async def test_completion_race_recovers_same_run_and_preserves_history(
         preparer=preparer,
         wakeups=wakeups,
         adapter=StoredHarnessOutcomeAdapter(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             run_id=run.id,
             payloads=RunPayloadStore(interaction_object_store),
             max_output_bytes=4096,
@@ -226,7 +232,7 @@ async def test_completion_race_recovers_same_run_and_preserves_history(
         for message in model_calls[0]
         for part in message.parts
     )
-    final_state = await states.read(TENANT_ID, run.id)
+    final_state = await states.read(ORGANIZATION_ID, run.id)
     assert [receipt.inbox_entry_id for receipt in final_state.envelope.host.consumed_inbox_entries] == [
         CONSUMED_ID,
         PENDING_ID,
@@ -255,7 +261,9 @@ async def test_completed_recovery_rejects_missing_preparation_claim_and_sealed_r
         await states.resume_completed(candidate, run_attempt_id=first.run_attempt_id, fence=first.fence)
 
     await execution.fail(first, SafeFailure(code="retry", message="Retry."), retryable=True)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker(worker_id="worker-2"))
+    claim = await AttemptScheduler(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker(worker_id="worker-2")
+    )
     assert isinstance(claim, ClaimedAttempt)
     second = _authority(claim)
     second_preparation = await execution.commit_preparation_success(second)
@@ -272,7 +280,7 @@ async def test_completed_recovery_rejects_missing_preparation_claim_and_sealed_r
     assert sealed.disposition is RunTerminalDisposition.completed
     with pytest.raises(AttemptAuthorityError):
         await execution.resume_completed_candidate(second, states, claimed, preparation=second_preparation)
-    assert await states.read(TENANT_ID, run.id) == claimed
+    assert await states.read(ORGANIZATION_ID, run.id) == claimed
 
 
 @pytest.mark.parametrize("race", ["new_writer", "lost_response"])
@@ -283,7 +291,9 @@ async def test_completed_recovery_uses_exact_cas_and_never_retries_unknown_write
         interaction_sessions, interaction_object_store
     )
     await committer.commit_state_outcome(first, candidate)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker(worker_id="worker-2"))
+    claim = await AttemptScheduler(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker(worker_id="worker-2")
+    )
     assert isinstance(claim, ClaimedAttempt)
     second = _authority(claim)
     preparation = await execution.commit_preparation_success(second)
@@ -306,7 +316,7 @@ async def test_completed_recovery_uses_exact_cas_and_never_retries_unknown_write
         await execution.resume_completed_candidate(second, states, claimed, preparation=preparation)
     assert calls == [claimed.info.version]
     await execution.validate(second)
-    observed = await states.read(TENANT_ID, run.id)
+    observed = await states.read(ORGANIZATION_ID, run.id)
     assert observed.envelope.harness == candidate.envelope.harness
     assert observed.envelope.host == candidate.envelope.host
     if race == "new_writer":

@@ -1,18 +1,20 @@
 """Safe Environment application errors."""
 
-from a13n_service.public_errors import PublicError
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 
 
-class EnvironmentManagementError(PublicError):
+class EnvironmentManagementError(ApplicationError):
     pass
 
 
 def environment_not_found() -> EnvironmentManagementError:
-    return EnvironmentManagementError("environment_not_found", "Environment resource was not found.", status_code=404)
+    return EnvironmentManagementError(
+        "environment_not_found", "Environment resource was not found.", category=ErrorCategory.not_found
+    )
 
 
 def invalid_environment(message: str) -> EnvironmentManagementError:
-    return EnvironmentManagementError("environment_invalid", message, status_code=422)
+    return EnvironmentManagementError("environment_invalid", message, category=ErrorCategory.invalid_input)
 
 
 def is_target_identity_conflict(error: BaseException) -> bool:

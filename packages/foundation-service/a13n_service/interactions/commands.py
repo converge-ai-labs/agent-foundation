@@ -8,13 +8,14 @@ from datetime import datetime
 from typing import Literal
 
 from a13n_harness import SafeFailure
-from pydantic import Field
+from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import AgentRunOverride, EffectiveAgentConfig, canonical_digest
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver, FrozenAgentInvocation
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.assets import Asset, UploadedAssetSource
 from a13n_service.assets.service import AssetService
 from a13n_service.durable_operations.idempotency import (
@@ -22,6 +23,7 @@ from a13n_service.durable_operations.idempotency import (
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
+    digest_request,
     digest_visible_ascii_key,
     is_evidence_unique_race,
     load_evidence,
@@ -30,8 +32,6 @@ from a13n_service.durable_operations.idempotency import (
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import EnvironmentSelection
 from a13n_service.environments.selection import Omitted
-from a13n_service.hooks.domain import InlineHookSubscriptionInput
-from a13n_service.hooks.persistence import load_inline_hook_subscription
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -54,7 +54,6 @@ from a13n_service.interactions.control_domain import (
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.domain import (
     RecoveryBudget,
-    RecoveryUsage,
     Run,
     RunInputKind,
     RunLineageKind,
@@ -64,6 +63,7 @@ from a13n_service.interactions.domain import (
     Thread,
     ThreadOriginKind,
     ThreadRole,
+    accepted_run,
     new_run_id,
     new_session_id,
     new_thread_id,
@@ -90,60 +90,24 @@ from a13n_service.interactions.objects import RunObjectError, RunPayloadStore, R
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
 from a13n_service.interactions.state import RunPayloadEnvelope
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .environment import input_environment_access
+from .command_evidence import RunCommandCommit, load_run_command, run_command_scope
+from .command_values import (
+    ContinueRunCommand,
+    ForkRunCommand,
+    RetryRunCommand,
+    StartRunCommand,
+    WaitingContinueRunCommand,
+)
+from .environment_preview import input_environment_access
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
 
 
-class GatewayCommandError(PublicError):
+class InteractionCommandError(ApplicationError):
     """A bounded command failure safe for every Gateway adapter."""
-
-
-class StartRunRequest(StrictModel):
-    agent_id: str
-    input: AgentInput
-    session_id: str | None = None
-    agent_revision_id: str | None = None
-    expected_current_revision_id: str | None = None
-    config_override: AgentRunOverride | None = None
-    environment: EnvironmentSelection | None = None
-    hook_subscription: InlineHookSubscriptionInput | None = None
-
-
-class ContinueRunRequest(StrictModel):
-    expected_thread_version: int = Field(ge=1)
-    input: AgentInput
-    agent_id: str | None = None
-    agent_revision_id: str | None = None
-    expected_current_revision_id: str | None = None
-    config_override: AgentRunOverride | None = None
-    environment: EnvironmentSelection | None = None
-    hook_subscription: InlineHookSubscriptionInput | None = None
-
-
-class WaitingContinueRunRequest(StrictModel):
-    expected_thread_version: int = Field(ge=1)
-    sealed_state_digest_sha256: str
-    input: AgentInput
-    hook_subscription: InlineHookSubscriptionInput | None = None
-
-
-class RetryRunRequest(StrictModel):
-    expected_thread_version: int = Field(ge=1)
-
-
-class ForkRunRequest(StrictModel):
-    input: AgentInput
-    agent_id: str | None = None
-    agent_revision_id: str | None = None
-    expected_current_revision_id: str | None = None
-    config_override: AgentRunOverride | None = None
-    environment: EnvironmentSelection | None = None
-    hook_subscription: InlineHookSubscriptionInput | None = None
 
 
 class InterruptReceipt(StrictModel):
@@ -153,7 +117,7 @@ class InterruptReceipt(StrictModel):
     interrupted_at: datetime
 
 
-class NativeInteractionCommands:
+class InteractionCommands:
     """Accept Agent work once for reuse by Native, AG-UI, and A2A adapters."""
 
     def __init__(
@@ -195,11 +159,12 @@ class NativeInteractionCommands:
         actor: AuthenticatedActor,
         workspace_id: str,
         idempotency_key: str,
-        request: StartRunRequest,
+        request: StartRunCommand,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
+        environment = request.environment
         if workspace_id != actor.workspace_id:
             raise _not_found()
         _require_idempotency_key(idempotency_key)
@@ -209,22 +174,12 @@ class NativeInteractionCommands:
             scope_id=workspace_id,
             supplied=idempotency_key,
         )
-        request_fingerprint = canonical_digest(request)
+        request_fingerprint = _request_fingerprint(request)
         replay = await self._start_replay(
             actor=actor,
             workspace_id=workspace_id,
             stored_key=stored_key,
-            request_fingerprint=(
-                canonical_digest(
-                    {
-                        "request": request_fingerprint,
-                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
-                    }
-                )
-                if "environment" in request.model_fields_set
-                else request_fingerprint
-            ),
-            accepted_thread_version=1,
+            request_fingerprint=request_fingerprint,
         )
         if replay is not None:
             return replay
@@ -245,6 +200,7 @@ class NativeInteractionCommands:
             actor=actor,
             workspace_id=workspace_id,
             request=request,
+            environment=environment,
             frozen=frozen,
             prepared_assets=prepared_assets,
         )
@@ -254,14 +210,14 @@ class NativeInteractionCommands:
             now = self._clock()
             session = Session(
                 id=session_id,
-                tenant_id=prepared.organization_id,
+                organization_id=prepared.organization_id,
                 workspace_id=workspace_id,
                 created_at=now,
                 updated_at=now,
             )
         else:
             await self._require_session(
-                tenant_id=prepared.organization_id,
+                organization_id=prepared.organization_id,
                 workspace_id=workspace_id,
                 session_id=session_id,
             )
@@ -277,10 +233,10 @@ class NativeInteractionCommands:
             ),
             thread_id=thread_id,
         )
-        run = Run(
+        run = accepted_run(
+            now=now,
             id=run_id,
-            version=1,
-            tenant_id=prepared.organization_id,
+            organization_id=prepared.organization_id,
             authority_principal=actor.principal,
             session_id=session_id,
             thread_id=thread_id,
@@ -292,7 +248,6 @@ class NativeInteractionCommands:
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
-            encrypted_config_payload=None,
             runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
             model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
             connector_connection_selections=tuple(
@@ -301,33 +256,22 @@ class NativeInteractionCommands:
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
             priority=self._priority,
             queue_name=self._queue_name,
-            available_at=now,
-            current_run_attempt_id=None,
-            next_attempt_fence=1,
             recovery_budget=RecoveryBudget(
                 policy_version="1",
                 max_recovery_attempts=self._recovery_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
-            attempts_started=0,
-            recovery_attempts_started=0,
-            handoffs_completed=0,
-            usage_charged=RecoveryUsage(),
-            idempotency_key=stored_key,
+            idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            status=RunStatus.accepted,
-            wait_reason=None,
             input_kind=RunInputKind.agent_input,
             input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
             input_text=_input_text(accepted_input),
-            created_at=now,
-            updated_at=now,
         )
         thread = Thread(
             id=thread_id,
             version=1,
             queue_version=0,
-            tenant_id=prepared.organization_id,
+            organization_id=prepared.organization_id,
             session_id=session_id,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -342,10 +286,10 @@ class NativeInteractionCommands:
         async def validate_final(database: AsyncSession) -> None:
             final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
             if final != frozen:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_invocation_changed",
                     "The selected Agent invocation changed before Run acceptance.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
 
         try:
@@ -355,11 +299,21 @@ class NativeInteractionCommands:
                 run=run,
                 state=state,
                 hook_subscription=request.hook_subscription,
-                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+                environment=environment,
                 final_validator=validate_final,
-                transaction_hook=transaction_hook,
+                transaction_hook=RunCommandCommit(
+                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
+                ),
             )
         except RunAcceptanceError as error:
+            replay = await self._start_replay(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def continue_from(
@@ -368,12 +322,13 @@ class NativeInteractionCommands:
         actor: AuthenticatedActor,
         source_run_id: str,
         idempotency_key: str,
-        request: ContinueRunRequest,
+        request: ContinueRunCommand,
         inherit_parent_environment: bool = True,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
+        environment = request.environment
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
             actor=actor,
@@ -381,29 +336,19 @@ class NativeInteractionCommands:
             scope_id=source_run_id,
             supplied=idempotency_key,
         )
-        request_fingerprint = canonical_digest(request)
+        request_fingerprint = _request_fingerprint(request)
         replay = await self._start_replay(
             actor=actor,
             workspace_id=actor.workspace_id,
             stored_key=stored_key,
-            request_fingerprint=(
-                canonical_digest(
-                    {
-                        "request": request_fingerprint,
-                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
-                    }
-                )
-                if "environment" in request.model_fields_set
-                else request_fingerprint
-            ),
-            accepted_thread_version=request.expected_thread_version + 1,
+            request_fingerprint=request_fingerprint,
         )
         if replay is not None:
             return replay
 
         source, thread = await self._load_continue_source(actor=actor, source_run_id=source_run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -423,12 +368,12 @@ class NativeInteractionCommands:
             workspace_id=actor.workspace_id,
             submitted=request.input,
             frozen=frozen,
-            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+            environment=environment,
             inherited_environment_id=source.environment_id
             if inherit_parent_environment
             else thread.default_environment_id,
             environment_access_ceiling=source.environment_access
-            if inherit_parent_environment and "environment" not in request.model_fields_set
+            if inherit_parent_environment and environment is Omitted.UNSET
             else None,
             prepared_assets=prepared_assets,
         )
@@ -442,10 +387,10 @@ class NativeInteractionCommands:
             ),
             source_state.envelope,
         )
-        run = Run(
+        run = accepted_run(
+            now=now,
             id=run_id,
-            version=1,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=actor.principal,
             session_id=source.session_id,
             thread_id=source.thread_id,
@@ -457,7 +402,6 @@ class NativeInteractionCommands:
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
-            encrypted_config_payload=None,
             runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
             model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
             connector_connection_selections=tuple(
@@ -466,27 +410,16 @@ class NativeInteractionCommands:
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
             priority=self._priority,
             queue_name=self._queue_name,
-            available_at=now,
-            current_run_attempt_id=None,
-            next_attempt_fence=1,
             recovery_budget=RecoveryBudget(
                 policy_version="1",
                 max_recovery_attempts=self._recovery_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
-            attempts_started=0,
-            recovery_attempts_started=0,
-            handoffs_completed=0,
-            usage_charged=RecoveryUsage(),
-            idempotency_key=stored_key,
+            idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            status=RunStatus.accepted,
-            wait_reason=None,
             input_kind=RunInputKind.agent_input,
             input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
             input_text=_input_text(accepted_input),
-            created_at=now,
-            updated_at=now,
         )
 
         async def validate_final(database: AsyncSession) -> None:
@@ -502,10 +435,10 @@ class NativeInteractionCommands:
                 raise _not_found() from error
             final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
             if final != frozen:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_invocation_changed",
                     "The selected Agent invocation changed before Run acceptance.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
 
         try:
@@ -518,11 +451,21 @@ class NativeInteractionCommands:
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
                 inherit_parent_environment=inherit_parent_environment,
-                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+                environment=environment,
                 final_validator=validate_final,
-                transaction_hook=transaction_hook,
+                transaction_hook=RunCommandCommit(
+                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
+                ),
             )
         except RunAcceptanceError as error:
+            replay = await self._start_replay(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def continue_empty_thread(
@@ -531,11 +474,12 @@ class NativeInteractionCommands:
         actor: AuthenticatedActor,
         thread_id: str,
         idempotency_key: str,
-        request: ContinueRunRequest,
+        request: ContinueRunCommand,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
+        environment = request.environment
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
             actor=actor,
@@ -543,22 +487,12 @@ class NativeInteractionCommands:
             scope_id=thread_id,
             supplied=idempotency_key,
         )
-        request_fingerprint = canonical_digest(request)
+        request_fingerprint = _request_fingerprint(request)
         replay = await self._start_replay(
             actor=actor,
             workspace_id=actor.workspace_id,
             stored_key=stored_key,
-            request_fingerprint=(
-                canonical_digest(
-                    {
-                        "request": request_fingerprint,
-                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
-                    }
-                )
-                if "environment" in request.model_fields_set
-                else request_fingerprint
-            ),
-            accepted_thread_version=request.expected_thread_version + 1,
+            request_fingerprint=request_fingerprint,
         )
         if replay is not None:
             return replay
@@ -584,7 +518,7 @@ class NativeInteractionCommands:
             workspace_id=actor.workspace_id,
             submitted=request.input,
             frozen=frozen,
-            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+            environment=environment,
             inherited_environment_id=thread.default_environment_id,
             prepared_assets=prepared_assets,
         )
@@ -598,10 +532,10 @@ class NativeInteractionCommands:
             thread_id=thread.id,
         )
         now = self._clock()
-        run = Run(
+        run = accepted_run(
+            now=now,
             id=run_id,
-            version=1,
-            tenant_id=thread.tenant_id,
+            organization_id=thread.organization_id,
             authority_principal=actor.principal,
             session_id=thread.session_id,
             thread_id=thread.id,
@@ -613,7 +547,6 @@ class NativeInteractionCommands:
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
-            encrypted_config_payload=None,
             runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
             model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
             connector_connection_selections=tuple(
@@ -622,27 +555,16 @@ class NativeInteractionCommands:
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
             priority=self._priority,
             queue_name=self._queue_name,
-            available_at=now,
-            current_run_attempt_id=None,
-            next_attempt_fence=1,
             recovery_budget=RecoveryBudget(
                 policy_version="1",
                 max_recovery_attempts=self._recovery_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
-            attempts_started=0,
-            recovery_attempts_started=0,
-            handoffs_completed=0,
-            usage_charged=RecoveryUsage(),
-            idempotency_key=stored_key,
+            idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            status=RunStatus.accepted,
-            wait_reason=None,
             input_kind=RunInputKind.agent_input,
             input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
             input_text=_input_text(accepted_input),
-            created_at=now,
-            updated_at=now,
         )
 
         async def validate_final(database: AsyncSession) -> None:
@@ -658,10 +580,10 @@ class NativeInteractionCommands:
                 raise _not_found() from error
             final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
             if final != frozen:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_invocation_changed",
                     "The selected Agent invocation changed before Run acceptance.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
 
         try:
@@ -673,11 +595,21 @@ class NativeInteractionCommands:
                 expected_head_run_id=None,
                 next_head_run_id=None,
                 hook_subscription=request.hook_subscription,
-                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+                environment=environment,
                 final_validator=validate_final,
-                transaction_hook=transaction_hook,
+                transaction_hook=RunCommandCommit(
+                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
+                ),
             )
         except RunAcceptanceError as error:
+            replay = await self._start_replay(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def fork(
@@ -686,9 +618,10 @@ class NativeInteractionCommands:
         actor: AuthenticatedActor,
         run_id: str,
         idempotency_key: str,
-        request: ForkRunRequest,
+        request: ForkRunCommand,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
+        environment = request.environment
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
             actor=actor,
@@ -696,29 +629,19 @@ class NativeInteractionCommands:
             scope_id=run_id,
             supplied=idempotency_key,
         )
-        request_fingerprint = canonical_digest(request)
+        request_fingerprint = _request_fingerprint(request)
         replay = await self._start_replay(
             actor=actor,
             workspace_id=actor.workspace_id,
             stored_key=stored_key,
-            request_fingerprint=(
-                canonical_digest(
-                    {
-                        "request": request_fingerprint,
-                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
-                    }
-                )
-                if "environment" in request.model_fields_set
-                else request_fingerprint
-            ),
-            accepted_thread_version=1,
+            request_fingerprint=request_fingerprint,
         )
         if replay is not None:
             return replay
 
         source = await self._load_fork_source(actor=actor, run_id=run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -745,21 +668,19 @@ class NativeInteractionCommands:
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
         if reuse_exact_source and frozen.effective_config != source_state.envelope.effective_agent_config:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_fork_source_changed",
                 "The source Run's exact executable configuration is no longer available.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         accepted_input = await self._accept_input_value(
             actor=actor,
             workspace_id=actor.workspace_id,
             submitted=request.input,
             frozen=frozen,
-            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+            environment=environment,
             inherited_environment_id=source.environment_id,
-            environment_access_ceiling=source.environment_access
-            if "environment" not in request.model_fields_set
-            else None,
+            environment_access_ceiling=source.environment_access if environment is Omitted.UNSET else None,
         )
         state = initialize_fork_state(
             RunStateSeed(
@@ -772,10 +693,10 @@ class NativeInteractionCommands:
             thread_id=new_thread_id_value,
         )
         now = self._clock()
-        forked_run = Run(
+        forked_run = accepted_run(
+            now=now,
             id=new_run_id_value,
-            version=1,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=actor.principal,
             session_id=source.session_id,
             thread_id=new_thread_id_value,
@@ -786,7 +707,6 @@ class NativeInteractionCommands:
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
-            encrypted_config_payload=None,
             runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
             model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
             connector_connection_selections=tuple(
@@ -795,33 +715,22 @@ class NativeInteractionCommands:
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
             priority=self._priority,
             queue_name=self._queue_name,
-            available_at=now,
-            current_run_attempt_id=None,
-            next_attempt_fence=1,
             recovery_budget=RecoveryBudget(
                 policy_version="1",
                 max_recovery_attempts=self._recovery_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
-            attempts_started=0,
-            recovery_attempts_started=0,
-            handoffs_completed=0,
-            usage_charged=RecoveryUsage(),
-            idempotency_key=stored_key,
+            idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            status=RunStatus.accepted,
-            wait_reason=None,
             input_kind=RunInputKind.agent_input,
             input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
             input_text=_input_text(accepted_input),
-            created_at=now,
-            updated_at=now,
         )
         thread = Thread(
             id=new_thread_id_value,
             version=1,
             queue_version=0,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             session_id=source.session_id,
             role=ThreadRole.child,
             origin_kind=ThreadOriginKind.fork,
@@ -846,10 +755,10 @@ class NativeInteractionCommands:
                 raise _not_found() from error
             final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
             if final != frozen:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_invocation_changed",
                     "The selected Agent invocation changed before Run acceptance.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
 
         try:
@@ -859,11 +768,21 @@ class NativeInteractionCommands:
                 run=forked_run,
                 state=state,
                 hook_subscription=request.hook_subscription,
-                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+                environment=environment,
                 final_validator=validate_final,
-                transaction_hook=transaction_hook,
+                transaction_hook=RunCommandCommit(
+                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
+                ),
             )
         except RunAcceptanceError as error:
+            replay = await self._start_replay(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def retry(
@@ -872,13 +791,13 @@ class NativeInteractionCommands:
         actor: AuthenticatedActor,
         run_id: str,
         idempotency_key: str,
-        request: RetryRunRequest,
+        request: RetryRunCommand,
     ) -> RunAcceptanceReceipt:
         if self._payloads is None:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "gateway_command_unavailable",
                 "Run retry is unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -887,20 +806,19 @@ class NativeInteractionCommands:
             scope_id=run_id,
             supplied=idempotency_key,
         )
-        request_fingerprint = canonical_digest(request)
+        request_fingerprint = _request_fingerprint(request)
         replay = await self._start_replay(
             actor=actor,
             workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=request_fingerprint,
-            accepted_thread_version=request.expected_thread_version + 1,
         )
         if replay is not None:
             return replay
 
         source, thread = await self._load_retry_source(actor=actor, run_id=run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
@@ -908,32 +826,28 @@ class NativeInteractionCommands:
         if source.parent_run_id is not None:
             parent_state = (
                 await self._states.read(
-                    source.tenant_id,
+                    source.organization_id,
                     source.parent_run_id,
                 )
             ).envelope
         new_run_id_value = new_run_id()
-        input_fields: dict[str, object]
-        if source.input_object is None:
-            input_fields = {"input": source.input}
-        else:
+        copied_input_object = None
+        if source.input_object is not None:
             source_payload = await self._payloads.verify_reference(
-                source.tenant_id,
+                source.organization_id,
                 source.id,
                 "input",
                 source.input_object,
             )
-            input_fields = {
-                "input_object": await self._payloads.create(
-                    source.tenant_id,
-                    RunPayloadEnvelope(
-                        run_id=new_run_id_value,
-                        payload_kind="input",
-                        payload_schema_version=source_payload.payload_schema_version,
-                        payload=source_payload.payload,
-                    ),
-                )
-            }
+            copied_input_object = await self._payloads.create(
+                source.organization_id,
+                RunPayloadEnvelope(
+                    run_id=new_run_id_value,
+                    payload_kind="input",
+                    payload_schema_version=source_payload.payload_schema_version,
+                    payload=source_payload.payload,
+                ),
+            )
         state = initialize_retry_state(
             RunStateSeed(
                 run_id=new_run_id_value,
@@ -947,44 +861,42 @@ class NativeInteractionCommands:
             parent=parent_state,
         )
         now = self._clock()
-        retry_values = source.model_dump(mode="python", exclude_unset=True)
-        for field in (
-            "input",
-            "input_object",
-            "output",
-            "output_object",
-            "output_text",
-            "failure",
-            "pending",
-            "sealed_state",
-            "started_at",
-            "waiting_at",
-            "completed_at",
-            "sealed_at",
-        ):
-            retry_values.pop(field, None)
-        retry_values.update(
-            {
-                "id": new_run_id_value,
-                "version": 1,
-                "retry_of_run_id": source.id,
-                "available_at": now,
-                "current_run_attempt_id": None,
-                "next_attempt_fence": 1,
-                "attempts_started": 0,
-                "recovery_attempts_started": 0,
-                "handoffs_completed": 0,
-                "usage_charged": RecoveryUsage(),
-                "idempotency_key": stored_key,
-                "request_fingerprint": request_fingerprint,
-                "status": RunStatus.accepted,
-                "wait_reason": None,
-                "created_at": now,
-                "updated_at": now,
-                **input_fields,
-            }
+        retry_run = accepted_run(
+            now=now,
+            id=new_run_id_value,
+            retry_of_run_id=source.id,
+            idempotency_key=None,
+            request_fingerprint=request_fingerprint,
+            organization_id=source.organization_id,
+            authority_principal=source.authority_principal,
+            session_id=source.session_id,
+            thread_id=source.thread_id,
+            parent_run_id=source.parent_run_id,
+            lineage_kind=source.lineage_kind,
+            trigger_type=source.trigger_type,
+            trigger_entity_type=source.trigger_entity_type,
+            trigger_entity_id=source.trigger_entity_id,
+            parent_agent_instance_id=source.parent_agent_instance_id,
+            delegation_id=source.delegation_id,
+            parent_tool_call_id=source.parent_tool_call_id,
+            agent_id=source.agent_id,
+            agent_revision_id=source.agent_revision_id,
+            environment_id=source.environment_id,
+            environment_access=source.environment_access,
+            effective_agent_config_digest=source.effective_agent_config_digest,
+            runtime_lock_digest=source.runtime_lock_digest,
+            model_execution_observation=source.model_execution_observation,
+            connector_connection_selections=source.connector_connection_selections,
+            mcp_connection_selections=source.mcp_connection_selections,
+            native_tool_contexts=source.native_tool_contexts,
+            priority=source.priority,
+            queue_name=source.queue_name,
+            recovery_budget=source.recovery_budget,
+            input_kind=source.input_kind,
+            input_text=source.input_text,
+            input=source.input if source.input_object is None else None,
+            input_object=copied_input_object,
         )
-        retry_run = Run.model_validate(retry_values)
 
         async def validate_final(database: AsyncSession) -> None:
             try:
@@ -998,7 +910,7 @@ class NativeInteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=source.authority_principal,
-                    organization_id=source.tenant_id,
+                    organization_id=source.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1015,8 +927,17 @@ class NativeInteractionCommands:
                 expected_head_run_id=thread.head_run_id,
                 next_head_run_id=thread.head_run_id,
                 final_validator=validate_final,
+                transaction_hook=RunCommandCommit(actor, stored_key, request_fingerprint, self._clock()),
             )
         except RunAcceptanceError as error:
+            replay = await self._start_replay(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def consume_queued(
@@ -1036,13 +957,12 @@ class NativeInteractionCommands:
             scope_id=thread_id,
             supplied=idempotency_key,
         )
-        request_fingerprint = canonical_digest(request)
+        request_fingerprint = _request_fingerprint(request)
         replay = await self._queued_consumption_replay(
             actor=actor,
             thread_id=thread_id,
             stored_key=stored_key,
             request_fingerprint=request_fingerprint,
-            request=request,
         )
         if replay is not None:
             return replay
@@ -1093,7 +1013,7 @@ class NativeInteractionCommands:
             next_head_run_id = None
         else:
             head_state = await self._states.read(
-                head.tenant_id,
+                head.organization_id,
                 head.id,
                 expected_thread_id=head.thread_id,
             )
@@ -1103,10 +1023,10 @@ class NativeInteractionCommands:
             next_head_run_id = head.id
 
         now = self._clock()
-        run = Run(
+        run = accepted_run(
+            now=now,
             id=run_id,
-            version=1,
-            tenant_id=current.tenant_id,
+            organization_id=current.organization_id,
             authority_principal=queued.authority_principal,
             session_id=current.session_id,
             thread_id=current.thread_id,
@@ -1117,7 +1037,6 @@ class NativeInteractionCommands:
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config_digest=frozen.effective_config.content_digest,
-            encrypted_config_payload=None,
             runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
             model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
             connector_connection_selections=tuple(
@@ -1126,27 +1045,16 @@ class NativeInteractionCommands:
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
             priority=self._priority,
             queue_name=self._queue_name,
-            available_at=now,
-            current_run_attempt_id=None,
-            next_attempt_fence=1,
             recovery_budget=RecoveryBudget(
                 policy_version="1",
                 max_recovery_attempts=self._recovery_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
-            attempts_started=0,
-            recovery_attempts_started=0,
-            handoffs_completed=0,
-            usage_charged=RecoveryUsage(),
-            idempotency_key=stored_key,
+            idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            status=RunStatus.accepted,
-            wait_reason=None,
             input_kind=RunInputKind.agent_input,
             input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
             input_text=_input_text(accepted_input),
-            created_at=now,
-            updated_at=now,
         )
 
         async def validate_final(database: AsyncSession) -> None:
@@ -1161,7 +1069,7 @@ class NativeInteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=queued.authority_principal,
-                    organization_id=current.tenant_id,
+                    organization_id=current.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=target_agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1170,11 +1078,24 @@ class NativeInteractionCommands:
                 raise _not_found() from error
             final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
             if final != frozen:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_invocation_changed",
                     "The selected Agent invocation changed before Run acceptance.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
+
+        async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
+            database.add(
+                new_evidence(
+                    organization_id=run.organization_id,
+                    scope=run_command_scope(actor),
+                    identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
+                    result_kind="queue_consumption",
+                    result_ref=run.id,
+                    receipt=receipt.model_dump(mode="json"),
+                    now=self._clock(),
+                )
+            )
 
         try:
             return await self._acceptance.consume_queued(
@@ -1189,8 +1110,17 @@ class NativeInteractionCommands:
                 expected_head_run_id=None if head is None else head.id,
                 next_head_run_id=next_head_run_id,
                 final_validator=validate_final,
+                transaction_hook=record_receipt,
             )
         except RunAcceptanceError as error:
+            replay = await self._queued_consumption_replay(
+                actor=actor,
+                thread_id=thread_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def feedback(
@@ -1205,15 +1135,15 @@ class NativeInteractionCommands:
         _require_idempotency_key(idempotency_key)
         source, thread = await self._load_feedback_source(actor=actor, run_id=run_id)
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
         if source.sealed_state is None or source.pending is None:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_waiting_state_invalid",
                 "The selected waiting Run has no complete pending state.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         try:
             normalized = normalize_feedback(
@@ -1223,12 +1153,12 @@ class NativeInteractionCommands:
                 submitted=request.resolutions,
             )
         except ValueError as error:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_feedback_invalid",
                 str(error),
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             ) from error
-        request_fingerprint = canonical_digest(
+        request_fingerprint = digest_request(
             {
                 "expected_thread_version": request.expected_thread_version,
                 "feedback": normalized.model_dump(mode="json", by_alias=True),
@@ -1250,21 +1180,20 @@ class NativeInteractionCommands:
             workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=request_fingerprint,
-            accepted_thread_version=request.expected_thread_version + 1,
         )
         if replay is not None:
             return replay
         if thread.current_run_id != source.id or thread.head_run_id != source.id:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_not_feedback_eligible",
                 "The selected waiting Run is no longer the Thread's current head.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         if request.sealed_state_digest_sha256 != source.sealed_state.digest_sha256:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_waiting_state_conflict",
                 "The waiting Run state changed before feedback acceptance.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
 
         new_run_id_value = new_run_id()
@@ -1278,10 +1207,10 @@ class NativeInteractionCommands:
             source_state.envelope,
         )
         now = self._clock()
-        feedback_run = Run(
+        feedback_run = accepted_run(
+            now=now,
             id=new_run_id_value,
-            version=1,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=source.authority_principal,
             session_id=source.session_id,
             thread_id=source.thread_id,
@@ -1292,30 +1221,18 @@ class NativeInteractionCommands:
             agent_id=source.agent_id,
             agent_revision_id=source.agent_revision_id,
             effective_agent_config_digest=source.effective_agent_config_digest,
-            encrypted_config_payload=source.encrypted_config_payload,
             runtime_lock_digest=source.runtime_lock_digest,
             model_execution_observation=source.model_execution_observation,
             connector_connection_selections=source.connector_connection_selections,
             mcp_connection_selections=source.mcp_connection_selections,
             priority=source.priority,
             queue_name=source.queue_name,
-            available_at=now,
-            current_run_attempt_id=None,
-            next_attempt_fence=1,
             recovery_budget=source.recovery_budget,
-            attempts_started=0,
-            recovery_attempts_started=0,
-            handoffs_completed=0,
-            usage_charged=RecoveryUsage(),
-            idempotency_key=stored_key,
+            idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            status=RunStatus.accepted,
-            wait_reason=None,
             input_kind=RunInputKind.waiting_feedback,
             input=normalized.model_dump(mode="json", by_alias=True),
             input_text=None,
-            created_at=now,
-            updated_at=now,
         )
 
         async def validate_final(database: AsyncSession) -> None:
@@ -1330,7 +1247,7 @@ class NativeInteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=source.authority_principal,
-                    organization_id=source.tenant_id,
+                    organization_id=source.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1348,9 +1265,19 @@ class NativeInteractionCommands:
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
-                transaction_hook=transaction_hook,
+                transaction_hook=RunCommandCommit(
+                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
+                ),
             )
         except RunAcceptanceError as error:
+            replay = await self._start_replay(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def continue_waiting(
@@ -1359,7 +1286,7 @@ class NativeInteractionCommands:
         actor: AuthenticatedActor,
         run_id: str,
         idempotency_key: str,
-        request: WaitingContinueRunRequest,
+        request: WaitingContinueRunCommand,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
@@ -1370,15 +1297,15 @@ class NativeInteractionCommands:
             actions=frozenset({WorkspaceAction.run_continue, WorkspaceAction.run_feedback}),
         )
         source_state = await self._states.read(
-            source.tenant_id,
+            source.organization_id,
             source.id,
             expected_thread_id=source.thread_id,
         )
         if source.sealed_state is None or source.pending is None:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_waiting_state_invalid",
                 "The selected waiting Run has no complete pending state.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         accepted_input = await self._accept_input_for_effective(
             actor=actor,
@@ -1394,7 +1321,7 @@ class NativeInteractionCommands:
             pending=source.pending,
             input=accepted_input,
         )
-        request_fingerprint = canonical_digest(
+        request_fingerprint = digest_request(
             {
                 "expected_thread_version": request.expected_thread_version,
                 "waiting_continue": normalized.model_dump(mode="json", by_alias=True),
@@ -1416,21 +1343,20 @@ class NativeInteractionCommands:
             workspace_id=actor.workspace_id,
             stored_key=stored_key,
             request_fingerprint=request_fingerprint,
-            accepted_thread_version=request.expected_thread_version + 1,
         )
         if replay is not None:
             return replay
         if thread.current_run_id != source.id or thread.head_run_id != source.id:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_not_waiting_continue_eligible",
                 "The selected waiting Run is no longer the Thread's current head.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         if request.sealed_state_digest_sha256 != source.sealed_state.digest_sha256:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_waiting_state_conflict",
                 "The waiting Run state changed before continuation acceptance.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
 
         successor_id = new_run_id()
@@ -1444,10 +1370,10 @@ class NativeInteractionCommands:
             source_state.envelope,
         )
         now = self._clock()
-        successor = Run(
+        successor = accepted_run(
+            now=now,
             id=successor_id,
-            version=1,
-            tenant_id=source.tenant_id,
+            organization_id=source.organization_id,
             authority_principal=source.authority_principal,
             session_id=source.session_id,
             thread_id=source.thread_id,
@@ -1458,30 +1384,18 @@ class NativeInteractionCommands:
             agent_id=source.agent_id,
             agent_revision_id=source.agent_revision_id,
             effective_agent_config_digest=source.effective_agent_config_digest,
-            encrypted_config_payload=source.encrypted_config_payload,
             runtime_lock_digest=source.runtime_lock_digest,
             model_execution_observation=source.model_execution_observation,
             connector_connection_selections=source.connector_connection_selections,
             mcp_connection_selections=source.mcp_connection_selections,
             priority=source.priority,
             queue_name=source.queue_name,
-            available_at=now,
-            current_run_attempt_id=None,
-            next_attempt_fence=1,
             recovery_budget=source.recovery_budget,
-            attempts_started=0,
-            recovery_attempts_started=0,
-            handoffs_completed=0,
-            usage_charged=RecoveryUsage(),
-            idempotency_key=stored_key,
+            idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            status=RunStatus.accepted,
-            wait_reason=None,
             input_kind=RunInputKind.waiting_continue,
             input=normalized.model_dump(mode="json", by_alias=True),
             input_text=_input_text(accepted_input),
-            created_at=now,
-            updated_at=now,
         )
 
         async def validate_final(database: AsyncSession) -> None:
@@ -1497,7 +1411,7 @@ class NativeInteractionCommands:
                 await authorize_persisted_agent_principal_actions(
                     database,
                     principal=source.authority_principal,
-                    organization_id=source.tenant_id,
+                    organization_id=source.organization_id,
                     workspace_id=actor.workspace_id,
                     agent_id=source.agent_id,
                     actions=frozenset({WorkspaceAction.agent_invoke}),
@@ -1515,9 +1429,19 @@ class NativeInteractionCommands:
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
-                transaction_hook=transaction_hook,
+                transaction_hook=RunCommandCommit(
+                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
+                ),
             )
         except RunAcceptanceError as error:
+            replay = await self._start_replay(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
             raise _map_acceptance_error(error) from error
 
     async def interrupt(
@@ -1529,10 +1453,10 @@ class NativeInteractionCommands:
         request: InterruptRequest,
     ) -> InterruptReceipt:
         if self._outcomes is None:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "gateway_command_unavailable",
                 "Run interruption is unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         identity = _command_identity(idempotency_key, request)
         scope = EvidenceScope(
@@ -1547,10 +1471,10 @@ class NativeInteractionCommands:
             return replay
         source, thread = await self._load_interrupt_source(actor=actor, run_id=run_id)
         if source.version != request.expected_run_version or thread.version != request.expected_thread_version:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_precondition_changed",
                 "The Run or Thread version changed before interruption.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         now = assume_utc(self._clock())
 
@@ -1574,7 +1498,7 @@ class NativeInteractionCommands:
             if existing is None:
                 database.add(
                     new_evidence(
-                        organization_id=source.tenant_id,
+                        organization_id=source.organization_id,
                         scope=scope,
                         identity=identity,
                         result_kind="run_interrupt",
@@ -1585,7 +1509,7 @@ class NativeInteractionCommands:
 
         try:
             await self._outcomes.cancel(
-                tenant_id=source.tenant_id,
+                organization_id=source.organization_id,
                 run_id=run_id,
                 expected_run_version=request.expected_run_version,
                 expected_thread_version=request.expected_thread_version,
@@ -1599,27 +1523,27 @@ class NativeInteractionCommands:
             )
         except IntegrityError as error:
             if not is_evidence_unique_race(error):
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_interrupt_conflict",
                     "Run interruption lost a concurrent mutation.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 ) from error
             replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
             if replay is not None:
                 return replay
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_interrupt_conflict",
                 "Run interruption lost a concurrent mutation.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         except RunOutcomeError as error:
             replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
             if replay is not None:
                 return replay
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_interrupt_conflict",
                 "The Run can no longer be interrupted.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         return InterruptReceipt(run_id=run_id, interrupted_at=now)
 
@@ -1633,10 +1557,10 @@ class NativeInteractionCommands:
         transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
         if self._inbox is None:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "gateway_command_unavailable",
                 "Run steering is unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         identity = _command_identity(idempotency_key, input)
         scope = EvidenceScope(
@@ -1651,12 +1575,12 @@ class NativeInteractionCommands:
             return replay
         source, _thread = await self._load_steer_source(actor=actor, run_id=run_id)
         try:
-            state = await self._states.read(source.tenant_id, source.id, expected_thread_id=source.thread_id)
+            state = await self._states.read(source.organization_id, source.id, expected_thread_id=source.thread_id)
         except (ObjectStoreError, RunObjectError) as error:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_state_unavailable",
                 "The selected Run state is unavailable.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         accepted = await self._accept_input_for_effective(
             actor=actor,
@@ -1687,7 +1611,7 @@ class NativeInteractionCommands:
             if existing is None:
                 database.add(
                     new_evidence(
-                        organization_id=source.tenant_id,
+                        organization_id=source.organization_id,
                         scope=scope,
                         identity=identity,
                         result_kind="run_steer",
@@ -1701,7 +1625,7 @@ class NativeInteractionCommands:
 
         try:
             return await self._inbox.append_steer(
-                tenant_id=source.tenant_id,
+                organization_id=source.organization_id,
                 run_id=source.id,
                 input=accepted,
                 final_validator=validate_final,
@@ -1712,16 +1636,16 @@ class NativeInteractionCommands:
                 replay = await self._steer_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
                 if replay is not None:
                     return replay
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_steer_conflict",
                 "Run steering lost a concurrent mutation.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         except ThreadInboxConflict as error:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "run_steer_conflict",
                 "The selected Run can no longer accept steer input.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def get_steer(
@@ -1732,14 +1656,14 @@ class NativeInteractionCommands:
         steer_id: str,
     ) -> SteerStatus:
         if self._inbox is None:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "gateway_command_unavailable",
                 "Run steering is unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         source, _thread = await self._load_steer_source(actor=actor, run_id=run_id, read_only=True)
         try:
-            return await self._inbox.get_steer(tenant_id=source.tenant_id, run_id=run_id, steer_id=steer_id)
+            return await self._inbox.get_steer(organization_id=source.organization_id, run_id=run_id, steer_id=steer_id)
         except ThreadInboxConflict as error:
             raise _not_found() from error
 
@@ -1760,7 +1684,7 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
@@ -1789,20 +1713,20 @@ class NativeInteractionCommands:
             if evidence is None:
                 return None
             if evidence.result_kind != "run_steer":
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "idempotency_evidence_invalid",
                     "The Run steer replay evidence is invalid.",
-                    status_code=503,
+                    category=ErrorCategory.unavailable,
                 )
             steer_id = evidence.result_ref
-            tenant_id = run.tenant_id
+            organization_id = run.organization_id
         try:
-            status = await self._inbox.get_steer(tenant_id=tenant_id, run_id=run_id, steer_id=steer_id)
+            status = await self._inbox.get_steer(organization_id=organization_id, run_id=run_id, steer_id=steer_id)
         except ThreadInboxConflict as error:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "idempotency_evidence_invalid",
                 "The Run steer replay evidence is invalid.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             ) from error
         return SteerReceipt(
             session_id=status.session_id,
@@ -1827,14 +1751,14 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -1866,10 +1790,10 @@ class NativeInteractionCommands:
                     RunStatus.waiting.value,
                 }
             ):
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_not_steerable",
                     "The selected Run cannot accept steer input.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return source.to_resource(), thread.to_resource()
 
@@ -1889,7 +1813,7 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
@@ -1918,10 +1842,10 @@ class NativeInteractionCommands:
             if evidence is None:
                 return None
             if evidence.result_kind != "run_interrupt" or evidence.result_ref != run.id or run.sealed_at is None:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "idempotency_evidence_invalid",
                     "The Run interruption replay evidence is invalid.",
-                    status_code=503,
+                    category=ErrorCategory.unavailable,
                 )
             return InterruptReceipt(run_id=run.id, interrupted_at=assume_utc(run.sealed_at))
 
@@ -1938,14 +1862,14 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -1969,10 +1893,10 @@ class NativeInteractionCommands:
             except AuthorizationError as error:
                 raise _not_found() from error
             if source.status not in {RunStatus.accepted.value, RunStatus.running.value}:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_not_interruptible",
                     "The selected Run is not active.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return source.to_resource(), thread.to_resource()
 
@@ -1981,7 +1905,8 @@ class NativeInteractionCommands:
         *,
         actor: AuthenticatedActor,
         workspace_id: str,
-        request: StartRunRequest,
+        request: StartRunCommand,
+        environment: EnvironmentSelection | Omitted | None,
         frozen: FrozenAgentInvocation,
         prepared_assets: Mapping[str, Asset] | None = None,
     ):
@@ -1990,7 +1915,7 @@ class NativeInteractionCommands:
             workspace_id=workspace_id,
             submitted=request.input,
             frozen=frozen,
-            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+            environment=environment,
             prepared_assets=prepared_assets,
         )
 
@@ -2060,7 +1985,7 @@ class NativeInteractionCommands:
                 ),
             )
         except AgentInputError as error:
-            raise GatewayCommandError(error.code, str(error), status_code=400) from error
+            raise InteractionCommandError(error.code, str(error), category=ErrorCategory.invalid_request) from error
 
     async def _queued_consumption_replay(
         self,
@@ -2069,69 +1994,32 @@ class NativeInteractionCommands:
         thread_id: str,
         stored_key: str,
         request_fingerprint: str,
-        request: ConsumeQueuedSubmissionRequest,
     ) -> QueuedSubmissionConsumptionReceipt | None:
-        async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, QueuedSubmissionRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .join(
-                        QueuedSubmissionRecord,
-                        and_(
-                            QueuedSubmissionRecord.tenant_id == RunRecord.tenant_id,
-                            QueuedSubmissionRecord.thread_id == RunRecord.thread_id,
-                            QueuedSubmissionRecord.consumed_run_id == RunRecord.id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.thread_id == thread_id,
-                        RunRecord.idempotency_key == stored_key,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                return None
-            run_record, queued_record = row
-            queued = queued_record.to_resource()
-            target_agent_id = queued.submission.agent_id or run_record.agent_id
+        async with transaction(self._sessions) as database:
             try:
+                evidence = await load_evidence(
+                    database,
+                    scope=run_command_scope(actor),
+                    identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
+                    now=self._clock(),
+                )
+                if evidence is None:
+                    return None
+                run = await database.get(RunRecord, evidence.result_ref)
+                if run is None or run.thread_id != thread_id or run.organization_id != evidence.organization_id:
+                    raise RuntimeError("Queue command evidence references a missing Run")
                 await authorize_agent(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
-                    agent_id=target_agent_id,
+                    agent_id=run.agent_id,
                     action=WorkspaceAction.queued_submission_consume,
                 )
             except AuthorizationError as error:
                 raise _not_found() from error
-            if run_record.request_fingerprint != request_fingerprint:
-                raise _idempotency_conflict()
-            hook = await load_inline_hook_subscription(
-                database,
-                organization_id=run_record.tenant_id,
-                run_id=run_record.id,
-            )
-            return QueuedSubmissionConsumptionReceipt(
-                outcome="run_accepted",
-                queued_submission=queued,
-                queue_version=request.expected_queue_version + 1,
-                run=RunAcceptanceReceipt(
-                    session_id=run_record.session_id,
-                    thread_id=run_record.thread_id,
-                    thread_version=request.expected_thread_version + 1,
-                    run_id=run_record.id,
-                    run_version=1,
-                    hook_subscription_id=None if hook is None else hook[0].id,
-                ),
-            )
+            except IdempotencyConflict as error:
+                raise _idempotency_conflict() from error
+            return QueuedSubmissionConsumptionReceipt.model_validate(evidence.receipt_json)
 
     async def _load_queued_consumption_source(
         self,
@@ -2146,14 +2034,14 @@ class NativeInteractionCommands:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )
@@ -2169,7 +2057,7 @@ class NativeInteractionCommands:
             queued_record = await database.scalar(
                 select(QueuedSubmissionRecord)
                 .where(
-                    QueuedSubmissionRecord.tenant_id == thread_record.tenant_id,
+                    QueuedSubmissionRecord.organization_id == thread_record.organization_id,
                     QueuedSubmissionRecord.thread_id == thread_record.id,
                     QueuedSubmissionRecord.position.is_not(None),
                 )
@@ -2177,10 +2065,10 @@ class NativeInteractionCommands:
                 .limit(1)
             )
             if queued_record is None:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "queue_empty",
                     "The Thread has no queued submission to consume.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             queued = queued_record.to_resource()
             target_agent_id = queued.submission.agent_id or current_record.agent_id
@@ -2199,22 +2087,22 @@ class NativeInteractionCommands:
                 if thread_record.head_run_id is None
                 else await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == thread_record.tenant_id,
+                        RunRecord.organization_id == thread_record.organization_id,
                         RunRecord.id == thread_record.head_run_id,
                     )
                 )
             )
             if thread_record.head_run_id is not None and head_record is None:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "thread_head_missing",
                     "The Thread head Run was not found.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             if head_record is not None and head_record.status != RunStatus.completed.value:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "queue_not_consumable",
                     "The Thread head Run is not completed.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return (
                 current_record.to_resource(),
@@ -2231,14 +2119,14 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -2263,10 +2151,10 @@ class NativeInteractionCommands:
                 raise _not_found() from error
             source = source_record.to_resource()
             if source.status is not RunStatus.completed:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_not_continuable",
                     "The selected Run is not a completed continuation source.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return source, thread_record.to_resource()
 
@@ -2278,14 +2166,14 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -2312,10 +2200,10 @@ class NativeInteractionCommands:
                 RunStatus.failed.value,
                 RunStatus.cancelled.value,
             }:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_not_retryable",
                     "The selected Run is not the Thread's current failed or cancelled Run.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return source_record.to_resource(), thread_record.to_resource()
 
@@ -2334,14 +2222,14 @@ class NativeInteractionCommands:
                     .outerjoin(
                         RunRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.current_run_id == RunRecord.id,
                         ),
                     )
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == ThreadRecord.tenant_id,
+                            SessionRecord.organization_id == ThreadRecord.organization_id,
                             SessionRecord.id == ThreadRecord.session_id,
                         ),
                     )
@@ -2356,7 +2244,9 @@ class NativeInteractionCommands:
             source_record, thread_record = row
             target_agent_id = agent_id or (source_record.agent_id if source_record else None)
             if target_agent_id is None:
-                raise GatewayCommandError("agent_required", "First input requires an Agent selection.", status_code=400)
+                raise InteractionCommandError(
+                    "agent_required", "First input requires an Agent selection.", category=ErrorCategory.invalid_request
+                )
             try:
                 await authorize_agent(
                     database,
@@ -2375,10 +2265,10 @@ class NativeInteractionCommands:
                     RunStatus.cancelled.value,
                 }
             ):
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "thread_not_root_continuable",
                     "The Thread does not have an empty continuation head.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return source_record.to_resource() if source_record else None, thread_record.to_resource()
 
@@ -2390,7 +2280,7 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
@@ -2414,10 +2304,10 @@ class NativeInteractionCommands:
                 raise _not_found() from error
             source = source_record.to_resource()
             if source.status is not RunStatus.completed:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_not_forkable",
                     "The selected Run is not a completed fork source.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return source
 
@@ -2435,14 +2325,14 @@ class NativeInteractionCommands:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.organization_id == RunRecord.organization_id,
                             SessionRecord.id == RunRecord.session_id,
                         ),
                     )
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.organization_id == RunRecord.organization_id,
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
@@ -2468,14 +2358,14 @@ class NativeInteractionCommands:
                 raise _not_found() from error
             source = source_record.to_resource()
             if source.status is not RunStatus.waiting:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "run_not_feedback_eligible",
                     "The selected Run is not waiting for feedback.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             return source, thread_record.to_resource()
 
-    async def _require_session(self, *, tenant_id: str, workspace_id: str, session_id: str) -> None:
+    async def _require_session(self, *, organization_id: str, workspace_id: str, session_id: str) -> None:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
@@ -2483,14 +2373,14 @@ class NativeInteractionCommands:
                     .outerjoin(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                             ThreadRecord.role == ThreadRole.root.value,
                         ),
                     )
                     .where(
                         SessionRecord.id == session_id,
-                        SessionRecord.tenant_id == tenant_id,
+                        SessionRecord.organization_id == organization_id,
                         SessionRecord.workspace_id == workspace_id,
                     )
                 )
@@ -2498,10 +2388,10 @@ class NativeInteractionCommands:
         if row is None:
             raise _not_found()
         if row[1] is not None:
-            raise GatewayCommandError(
+            raise InteractionCommandError(
                 "session_root_exists",
                 "The selected Session already has its root Thread.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
 
     async def _start_replay(
@@ -2511,77 +2401,39 @@ class NativeInteractionCommands:
         workspace_id: str,
         stored_key: str,
         request_fingerprint: str,
-        accepted_thread_version: int,
     ) -> RunAcceptanceReceipt | None:
-        async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, ThreadRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.tenant_id == RunRecord.tenant_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .join(
-                        ThreadRecord,
-                        and_(
-                            ThreadRecord.tenant_id == RunRecord.tenant_id,
-                            ThreadRecord.id == RunRecord.thread_id,
-                        ),
-                    )
-                    .where(
-                        SessionRecord.workspace_id == workspace_id,
-                        RunRecord.authority_principal_type == actor.principal.principal_type.value,
-                        RunRecord.authority_principal_id == actor.principal.principal_id,
-                        RunRecord.idempotency_key == stored_key,
-                    )
+        if workspace_id != actor.workspace_id:
+            raise _not_found()
+        try:
+            async with transaction(self._sessions) as database:
+                return await load_run_command(
+                    database, actor=actor, key=stored_key, fingerprint=request_fingerprint, now=self._clock()
                 )
-            ).one_or_none()
-            if row is None:
-                return None
-            run, _thread = row
-            if run.request_fingerprint != request_fingerprint:
-                raise GatewayCommandError(
-                    "idempotency_conflict",
-                    "The Idempotency-Key was already used with different request content.",
-                    status_code=409,
-                )
-            hook = await load_inline_hook_subscription(
-                database,
-                organization_id=run.tenant_id,
-                run_id=run.id,
-            )
-            return RunAcceptanceReceipt(
-                session_id=run.session_id,
-                thread_id=run.thread_id,
-                thread_version=accepted_thread_version,
-                run_id=run.id,
-                run_version=1,
-                hook_subscription_id=None if hook is None else hook[0].id,
-            )
+        except IdempotencyConflict as error:
+            raise _idempotency_conflict() from error
+        except AuthorizationError as error:
+            raise _not_found() from error
 
 
 def _require_idempotency_key(value: str) -> None:
-    if not 1 <= len(value.encode("utf-8")) <= 512 or any(not 0x21 <= ord(character) <= 0x7E for character in value):
-        raise GatewayCommandError(
-            "invalid_request",
-            "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-            status_code=400,
-        )
+    try:
+        digest_visible_ascii_key(value)
+    except InvalidIdempotencyKey as error:
+        raise InteractionCommandError(
+            "invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request
+        ) from error
 
 
 def _command_identity(idempotency_key: str, request: StrictModel) -> IdempotencyIdentity:
     try:
         key_digest = digest_visible_ascii_key(idempotency_key)
     except InvalidIdempotencyKey as error:
-        raise GatewayCommandError(
+        raise InteractionCommandError(
             "invalid_request",
             "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         ) from error
-    return IdempotencyIdentity(key_digest=key_digest, request_digest=canonical_digest(request))
+    return IdempotencyIdentity(key_digest=key_digest, request_digest=digest_request(request))
 
 
 def _scoped_idempotency_key(*, actor: AuthenticatedActor, operation: str, scope_id: str, supplied: str) -> str:
@@ -2604,30 +2456,38 @@ def _input_text(accepted) -> str | None:
     return block.text if block.type == "text" else None
 
 
-def _map_acceptance_error(error: RunAcceptanceError) -> GatewayCommandError:
-    status_code = 404 if error.code.endswith("_not_found") else 409
-    return GatewayCommandError(error.code, str(error), status_code=status_code)
+def _map_acceptance_error(error: RunAcceptanceError) -> InteractionCommandError:
+    return InteractionCommandError(error.code, str(error), category=error.category)
 
 
-def _not_found() -> GatewayCommandError:
-    return GatewayCommandError("resource_not_found", "The requested resource was not found.", status_code=404)
+def _not_found() -> InteractionCommandError:
+    return InteractionCommandError(
+        "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+    )
 
 
-def _idempotency_conflict() -> GatewayCommandError:
-    return GatewayCommandError(
+def _idempotency_conflict() -> InteractionCommandError:
+    return InteractionCommandError(
         "idempotency_conflict",
         "The Idempotency-Key was already used with different request content.",
-        status_code=409,
+        category=ErrorCategory.conflict,
     )
 
 
 __all__ = [
-    "ContinueRunRequest",
-    "ForkRunRequest",
-    "GatewayCommandError",
+    "ContinueRunCommand",
+    "ForkRunCommand",
+    "InteractionCommandError",
+    "InteractionCommands",
     "InterruptReceipt",
-    "NativeInteractionCommands",
-    "RetryRunRequest",
-    "StartRunRequest",
-    "WaitingContinueRunRequest",
+    "RetryRunCommand",
+    "StartRunCommand",
+    "WaitingContinueRunCommand",
 ]
+
+
+def _request_fingerprint(request: BaseModel) -> str:
+    payload = request.model_dump(mode="json")
+    if getattr(request, "environment", Omitted.UNSET) is Omitted.UNSET:
+        payload.pop("environment", None)
+    return digest_request(payload)

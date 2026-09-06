@@ -44,6 +44,8 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import (
     NOW,
     effective_agent_config,
@@ -154,6 +156,7 @@ async def test_operator_resumes_only_the_selected_completed_child_head(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_6767676767676767",
+        lifecycle=test_lifecycle_writer(),
     ).claim(delegated.child_run_id, _worker())
     assert child_claim is not None and delegated.child_run_id is not None
     await _complete_run(
@@ -199,6 +202,7 @@ async def test_operator_projects_bounded_closed_child_output_activity(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_6767676767676767",
+        lifecycle=test_lifecycle_writer(),
     ).claim(delegated.child_run_id, _worker())
     assert child_claim is not None
     output = "x" * (ACTIVITY_OUTPUT_PREVIEW_LIMIT + 1)
@@ -240,6 +244,7 @@ async def _operator(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_7878787878787878",
+        lifecycle=test_lifecycle_writer(),
     ).claim(parent.id, _worker())
     assert parent_claim is not None
     authority = _authority(parent_claim)
@@ -288,7 +293,12 @@ async def _operator(
         admission,
         acceptance,
         ThreadInboxStore(sessions, clock=lambda: NOW + timedelta(seconds=4)),
-        RunOutcomeService(sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=5)),
+        RunOutcomeService(
+            sessions,
+            RunPayloadStore(objects),
+            clock=lambda: NOW + timedelta(seconds=5),
+            lifecycle=test_lifecycle_writer(),
+        ),
         parent_agent_instance_id=context.parent_agent_instance_id,
         host_refs=dict(context.host_refs),
         default_wait_timeout_seconds=0.01,

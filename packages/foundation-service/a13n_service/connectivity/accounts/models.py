@@ -62,7 +62,7 @@ class AccountRecord(ResourceCredential[str], Base):
             postgresql_where=text("deleted_at IS NULL"),
             sqlite_where=text("deleted_at IS NULL"),
         ),
-        Index("uq_application_accounts_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_application_accounts_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index(
             "uq_application_accounts_workspace_name",
             "workspace_id",

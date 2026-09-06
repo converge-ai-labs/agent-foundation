@@ -1,5 +1,5 @@
-from a13n_service.public_errors import PublicError
+from a13n_service.application_errors import ApplicationError
 
 
-class NativeError(PublicError):
+class NativeError(ApplicationError):
     """Safe stable error from native Account and Ingress operations."""

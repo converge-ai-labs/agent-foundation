@@ -32,9 +32,9 @@ def relationship() -> ChildRunRelationship:
 def test_relationship_record_round_trips_the_durable_contract() -> None:
     value = relationship()
 
-    record = child_run_relationship_record(value, tenant_id="org_1234567890abcdef")
+    record = child_run_relationship_record(value, organization_id="org_1234567890abcdef")
 
-    assert record.tenant_id == "org_1234567890abcdef"
+    assert record.organization_id == "org_1234567890abcdef"
     assert record.to_resource() == value
 
 

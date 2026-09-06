@@ -1,4 +1,4 @@
-"""Resources shared only by Control and Worker process capabilities."""
+"""Shared process resources and Control/Worker execution capabilities."""
 
 from __future__ import annotations
 
@@ -9,13 +9,30 @@ import httpx2
 from anyio import to_thread
 
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
+from a13n_service.hooks.persistence import append_matching_webhook_outbox
+from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.settings import settings_schema
 from a13n_service.plugins.objects import PluginObjectStore
 from a13n_service.process.runtime import SharedRuntime
+from a13n_service.settings import Settings
 from a13n_service.skills.objects import SkillPackageStore
+from a13n_service.storage import StorageResources
+
+
+def build_shared_runtime(settings: Settings, storage: StorageResources) -> SharedRuntime:
+    return SharedRuntime(
+        storage=storage,
+        lifecycle=LifecycleWriter(
+            (append_matching_webhook_outbox, append_matching_a2a_push_outbox)
+            if settings.a2a_enabled
+            else (append_matching_webhook_outbox,)
+        ),
+        secret_protector=settings.secret_protector(),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,4 +78,4 @@ async def build_execution_resources(
     )
 
 
-__all__ = ["ExecutionResources", "build_execution_resources"]
+__all__ = ["ExecutionResources", "build_execution_resources", "build_shared_runtime"]

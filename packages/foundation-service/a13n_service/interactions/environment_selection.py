@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.agents.domain import ChildEnvironmentPolicy, canonical_digest
+from a13n_service.agents.domain import ChildEnvironmentPolicy
 from a13n_service.agents.models import AgentRecord
 from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection, NewEnvironmentSelection
 from a13n_service.environments.errors import invalid_environment
@@ -14,6 +14,30 @@ from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_
 
 from .domain import Run, RunInputKind
 from .models import RunRecord, ThreadRecord
+
+
+async def resolve_environment_intent(
+    session: AsyncSession,
+    *,
+    agent_id: str,
+    choice: EnvironmentSelection | Omitted | None,
+    inherited_id: str | Omitted | None = Omitted.UNSET,
+) -> EnvironmentSelection | None:
+    """Resolve omission against the selected source, then the Agent default.
+
+    Both input preview and transactional acceptance use this decision. Resource
+    authorization and allocation remain separate from intent resolution.
+    """
+    if choice is not Omitted.UNSET:
+        return choice
+    if inherited_id is not Omitted.UNSET:
+        return ExistingEnvironmentSelection(environment_id=inherited_id) if inherited_id else None
+    agent = await session.get(AgentRecord, agent_id)
+    return (
+        NewEnvironmentSelection(template_id=agent.default_environment_template_id)
+        if agent and agent.default_environment_template_id
+        else None
+    )
 
 
 async def select_run_environment(
@@ -29,7 +53,7 @@ async def select_run_environment(
         source_id = source_id or run.parent_run_id
     if source_id is not None:
         source = await session.get(RunRecord, source_id)
-        if source is None or source.tenant_id != run.tenant_id or source.thread_id != run.thread_id:
+        if source is None or source.organization_id != run.organization_id or source.thread_id != run.thread_id:
             raise invalid_environment("Environment source Run is unavailable")
         inherited = (
             ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
@@ -41,7 +65,7 @@ async def select_run_environment(
     if choice is Omitted.UNSET:
         if thread is not None and thread.origin_run_id is not None and thread.current_run_id == run.id:
             source = await session.get(RunRecord, thread.origin_run_id)
-            if source is None or source.tenant_id != run.tenant_id:
+            if source is None or source.organization_id != run.organization_id:
                 raise invalid_environment("Fork source Run is unavailable")
             choice = (
                 ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
@@ -56,18 +80,13 @@ async def select_run_environment(
                 else None
             )
         else:
-            agent = await session.get(AgentRecord, run.agent_id)
-            choice = (
-                NewEnvironmentSelection(template_id=agent.default_environment_template_id)
-                if agent and agent.default_environment_template_id
-                else None
-            )
+            choice = await resolve_environment_intent(session, agent_id=run.agent_id, choice=choice)
     if choice is None:
         return run.model_copy(update={"environment_id": None, "environment_access": None})
     await authorize_persisted_agent_principal_actions(
         session,
         principal=run.authority_principal,
-        organization_id=run.tenant_id,
+        organization_id=run.organization_id,
         workspace_id=workspace_id,
         agent_id=run.agent_id,
         actions=frozenset(
@@ -106,12 +125,3 @@ async def child_environment_choice(
     if revision is None:
         raise invalid_environment("Child Environment template revision is unavailable")
     return NewEnvironmentSelection(template_id=revision.template_id, version=revision.version)
-
-
-def bind_environment_intent(run: Run, choice: EnvironmentSelection | Omitted | None) -> Run:
-    if choice is Omitted.UNSET:
-        return run
-    intent = {"environment": choice.model_dump(mode="json") if choice else None}
-    return run.model_copy(
-        update={"request_fingerprint": canonical_digest({"request": run.request_fingerprint, **intent})}
-    )

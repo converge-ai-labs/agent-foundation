@@ -15,7 +15,7 @@ from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage
 
-from .conftest import RUN_ID, TENANT_ID, initial_state
+from .conftest import ORGANIZATION_ID, RUN_ID, initial_state
 
 pytestmark = pytest.mark.anyio
 
@@ -25,7 +25,7 @@ async def test_completed_output_uses_inline_and_object_representations(
 ) -> None:
     payloads = RunPayloadStore(interaction_object_store)
     inline = StoredHarnessOutcomeAdapter(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=RUN_ID,
         payloads=payloads,
         max_output_bytes=1024,
@@ -40,7 +40,7 @@ async def test_completed_output_uses_inline_and_object_representations(
     assert inline_projection.deferred is None
 
     object_backed = StoredHarnessOutcomeAdapter(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=RUN_ID,
         payloads=payloads,
         max_output_bytes=1024,
@@ -52,7 +52,7 @@ async def test_completed_output_uses_inline_and_object_representations(
     assert "output" not in object_projection.candidate.model_fields_set
     reference = object_projection.candidate.output_object
     assert reference is not None
-    stored = await payloads.read(TENANT_ID, reference)
+    stored = await payloads.read(ORGANIZATION_ID, reference)
     assert stored.run_id == RUN_ID
     assert stored.payload == "a longer output"
     assert object_projection.candidate.output_text == "a longer output"
@@ -62,7 +62,7 @@ async def test_completed_output_rejects_values_beyond_accepted_limit(
     interaction_object_store: ObjectStore,
 ) -> None:
     adapter = StoredHarnessOutcomeAdapter(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),
         max_output_bytes=8,
@@ -79,7 +79,7 @@ async def test_completed_output_rejects_non_finite_numbers(
     value: float,
 ) -> None:
     adapter = StoredHarnessOutcomeAdapter(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),
         max_output_bytes=1024,
@@ -116,7 +116,7 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
         ],
     )
     adapter = StoredHarnessOutcomeAdapter(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),
         max_output_bytes=1024,
@@ -149,7 +149,7 @@ async def test_client_tool_suspension_requires_frozen_effective_surface(
     interaction_object_store: ObjectStore,
 ) -> None:
     adapter = StoredHarnessOutcomeAdapter(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),
         max_output_bytes=1024,

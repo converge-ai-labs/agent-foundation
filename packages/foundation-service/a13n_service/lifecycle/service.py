@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -11,7 +12,6 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_agent_scoped_collection,
 )
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import short_session
 
 from .cursors import LifecycleCursorError, decode_lifecycle_cursor, encode_lifecycle_cursor
@@ -20,7 +20,7 @@ from .persistence import LifecycleReplayGap, read_resource_events
 from .reconciliation import load_owning_run, read_workspace_events
 
 
-class LifecycleEventError(PublicError):
+class LifecycleEventError(ApplicationError):
     """A safe lifecycle reconciliation error exposed through the public API."""
 
 
@@ -44,7 +44,7 @@ class LifecycleEventService:
             raise LifecycleEventError(
                 "invalid_cursor",
                 "The lifecycle cursor is invalid.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             ) from error
         async with short_session(self._sessions) as database:
             try:
@@ -59,7 +59,7 @@ class LifecycleEventService:
             try:
                 page = await read_workspace_events(
                     database,
-                    tenant_id=authorization.workspace.organization_id,
+                    organization_id=authorization.workspace.organization_id,
                     workspace_id=workspace_id,
                     visible_agent_ids=authorization.visible_agent_ids,
                     after_seq=after_seq,
@@ -69,7 +69,7 @@ class LifecycleEventService:
                 raise LifecycleEventError(
                     "lifecycle_replay_gap",
                     "The requested lifecycle history is no longer retained.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                     details={
                         "retained_floor": encode_lifecycle_cursor(
                             sequence=max(error.retained_floor - 1, 0), scope=scope
@@ -151,7 +151,7 @@ class LifecycleEventService:
             try:
                 page = await read_resource_events(
                     database,
-                    tenant_id=run.tenant_id,
+                    organization_id=run.organization_id,
                     entity_type=resource_type,
                     entity_id=resource_id,
                     after_resource_seq=after_resource_seq,
@@ -162,7 +162,7 @@ class LifecycleEventService:
                 raise LifecycleEventError(
                     "lifecycle_resource_replay_gap",
                     "The requested resource lifecycle history is no longer retained.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                     details={
                         "retained_resource_seq_floor": error.retained_floor,
                         "high_watermark_resource_seq": error.high_watermark,
@@ -190,23 +190,27 @@ def _cursor_scope(actor: AuthenticatedActor, workspace_id: str) -> dict[str, obj
 
 def _validate_page_request(*, limit: int, after_resource_seq: int | None = None) -> None:
     if limit < 1 or limit > 200:
-        raise LifecycleEventError("invalid_request", "limit must be between 1 and 200.", status_code=400)
+        raise LifecycleEventError(
+            "invalid_request", "limit must be between 1 and 200.", category=ErrorCategory.invalid_request
+        )
     if after_resource_seq is not None and after_resource_seq < 0:
         raise LifecycleEventError(
             "invalid_request",
             "after_resource_seq must be non-negative.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
 
 
 def _authorization_error(error: AuthorizationError) -> LifecycleEventError:
     if error.concealed:
         return _resource_not_found()
-    return LifecycleEventError("permission_denied", "Permission denied.", status_code=403)
+    return LifecycleEventError("permission_denied", "Permission denied.", category=ErrorCategory.forbidden)
 
 
 def _resource_not_found() -> LifecycleEventError:
-    return LifecycleEventError("resource_not_found", "The requested resource was not found.", status_code=404)
+    return LifecycleEventError(
+        "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+    )
 
 
 __all__ = ["LifecycleEventError", "LifecycleEventService"]

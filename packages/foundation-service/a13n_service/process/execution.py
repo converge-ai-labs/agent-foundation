@@ -6,7 +6,6 @@ from contextlib import AsyncExitStack
 from datetime import timedelta
 
 import httpx2
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
@@ -102,7 +101,7 @@ async def build_attempt_factory(
 
 def build_execution_loop(
     settings: Settings,
-    sessions: async_sessionmaker[AsyncSession],
+    shared: SharedRuntime,
     preflight: ExecutionPreflight,
     identity: WorkerIdentity,
     *,
@@ -110,7 +109,7 @@ def build_execution_loop(
     claim_gated: bool = False,
 ) -> WorkerExecutionLoop:
     return WorkerExecutionLoop(
-        AttemptScheduler(sessions),
+        AttemptScheduler(shared.storage.sessions, lifecycle=shared.lifecycle),
         preflight,
         identity=identity,
         lease_duration=timedelta(seconds=settings.worker_lease_seconds),

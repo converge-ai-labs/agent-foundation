@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
@@ -35,7 +36,9 @@ IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 def _management(request: Request) -> AgentManagement:
     control = get_control_runtime(request)
     if control is None:
-        raise AgentError("agent_management_unavailable", "Agent Management is unavailable.", status_code=503)
+        raise AgentError(
+            "agent_management_unavailable", "Agent Management is unavailable.", category=ErrorCategory.unavailable
+        )
     return control.agents
 
 

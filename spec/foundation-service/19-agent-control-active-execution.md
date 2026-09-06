@@ -54,7 +54,7 @@ class InboxPayloadObjectRef:
 
 class ThreadInboxEntry:
     id: ThreadInboxEntryId
-    tenant_id: TenantId
+    organization_id: OrganizationId
     thread_id: ThreadId
 
     kind: ThreadInboxKind
@@ -78,7 +78,7 @@ class ThreadInboxEntry:
 
 
 class ThreadInboxCounter:
-    tenant_id: TenantId
+    organization_id: OrganizationId
     thread_id: ThreadId
     next_delivery_sequence: int
     pending_count: int
@@ -99,18 +99,18 @@ An entry is eligible for a Run when it is `pending`, bound to that exact target,
 
 The table preserves these constraints and access paths:
 
-01. `(tenant_id, id)` is unique, and the owning Thread belongs to that tenant.
-02. Every present accepted-against, target, waiting-source, or origin Run belongs to the same tenant and Thread; target and waiting source cannot identify the same Run.
+01. `(organization_id, id)` is unique, and the owning Thread belongs to that organization.
+02. Every present accepted-against, target, waiting-source, or origin Run belongs to the same organization and Thread; target and waiting source cannot identify the same Run.
 03. Payload columns form an exactly-one representation group.
 04. Consumption fields are absent unless `status="consumed"` and are all required when it is consumed. `finalized_at` is present exactly for a terminal status.
-05. Every entry has one unique `(tenant_id, thread_id, delivery_sequence)`. Steer rows require `accepted_against_run_id`, forbid `origin_run_id` and `expires_at`, and follow only consumed or superseded terminalization. Async rows require `origin_run_id` equal to the immutable parent Run of their unique relationship and forbid `accepted_against_run_id`; the async payload owner defines relationship uniqueness and expiry.
+05. Every entry has one unique `(organization_id, thread_id, delivery_sequence)`. Steer rows require `accepted_against_run_id`, forbid `origin_run_id` and `expires_at`, and follow only consumed or superseded terminalization. Async rows require `origin_run_id` equal to the immutable parent Run of their unique relationship and forbid `accepted_against_run_id`; the async payload owner defines relationship uniqueness and expiry.
 06. A pending row has exactly one legal binding shape: active target only, waiting source only, waiting-derived target plus source, or unbound async-result reconciliation. A consumed row has `consumed_by_run_id=target_run_id` as last bound; terminal non-consumed rows retain safe provenance but authorize no delivery.
-07. `(tenant_id, thread_id, status, delivery_sequence)` supports strict cross-kind FIFO reconciliation and admission-bound checks.
-08. `(tenant_id, target_run_id, status, delivery_sequence)` supports ordered active-Run delivery and the mandatory pending check before completed outcome commit.
-09. `(tenant_id, source_waiting_run_id, status, delivery_sequence)` supports direct-successor binding, branch supersession, and waiting rollover.
-10. `(tenant_id, kind, status, delivery_sequence)` supports bounded control reconciliation of pending asynchronous results whose Threads have no active Worker.
-11. `(tenant_id, origin_run_id, kind, status, delivery_sequence)` supports locked suppression of all not-yet-consumed asynchronous results when their spawning Run fails or is cancelled.
-12. `thread_inbox_counters` has exactly one same-tenant row per Thread, a positive next sequence, and non-negative bounded pending counters; it is created atomically with the Thread and is not part of optimistic Thread advancement.
+07. `(organization_id, thread_id, status, delivery_sequence)` supports strict cross-kind FIFO reconciliation and admission-bound checks.
+08. `(organization_id, target_run_id, status, delivery_sequence)` supports ordered active-Run delivery and the mandatory pending check before completed outcome commit.
+09. `(organization_id, source_waiting_run_id, status, delivery_sequence)` supports direct-successor binding, branch supersession, and waiting rollover.
+10. `(organization_id, kind, status, delivery_sequence)` supports bounded control reconciliation of pending asynchronous results whose Threads have no active Worker.
+11. `(organization_id, origin_run_id, kind, status, delivery_sequence)` supports locked suppression of all not-yet-consumed asynchronous results when their spawning Run fails or is cancelled.
+12. `thread_inbox_counters` has exactly one same-organization row per Thread, a positive next sequence, and non-negative bounded pending counters; it is created atomically with the Thread and is not part of optimistic Thread advancement.
 
 ## Steer Command
 
@@ -232,7 +232,7 @@ A later retry follows the [terminal-intent retry contract](18-agent-control-inpu
 
 ## Thread Control Signal Stream
 
-Each Thread can have one tenant-scoped Redis Stream dedicated to active-control wakeups. It is distinct from the Run presentation Stream owned by [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md). The key is derived from tenant and Thread identity and is never exposed as a bearer reference.
+Each Thread can have one organization-scoped Redis Stream dedicated to active-control wakeups. It is distinct from the Run presentation Stream owned by [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md). The key is derived from organization and Thread identity and is never exposed as a bearer reference.
 
 ```python
 class ReconcileThreadSignal:

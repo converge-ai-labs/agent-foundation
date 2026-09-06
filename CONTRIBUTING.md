@@ -93,6 +93,8 @@ make check-all
 
 `foundation-service` integration tests use fixture-owned Testcontainers. Application `FOUNDATION_*` variables never select test infrastructure.
 
+Foundation CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `Foundation Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-foundation.yml) for worker counts, timing output, and timeout settings. Local `make test` uses two workers. Service tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
+
 ## Releases
 
 Create a stable release with canonical version `X.Y.Z` or a release candidate with `X.Y.Z-rc.N`, where `N` is a positive integer without leading zeroes. The release tag must point to a commit whose required CI checks have passed. Do not commit release-only version bumps: each release workflow injects the tag version into its known manifests and lock files in the ephemeral checkout, validates the resulting source, and then builds and publishes it. Release workflows do not repeat CI tests or lint checks. The canonical cross-ecosystem RC identity is `X.Y.Z-rc.N`; Python package metadata and artifact names use its standard PEP 440 normalization, `X.Y.ZrcN`.

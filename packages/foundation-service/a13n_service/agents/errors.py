@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthorizationError
 from a13n_service.models.service import ModelError
-from a13n_service.public_errors import PublicError
 
 
-class AgentError(PublicError):
+class AgentError(ApplicationError):
     pass
 
 
 def map_authorization_error(error: AuthorizationError, *, exact: bool = False) -> AgentError:
     if exact or error.concealed:
         return agent_not_found()
-    return AgentError("forbidden", "The operation is not allowed.", status_code=403)
+    return AgentError("forbidden", "The operation is not allowed.", category=ErrorCategory.forbidden)
 
 
 def builtin_identity_conflict() -> AgentError:
     return AgentError(
         "agent_state_conflict",
         "The built-in Agent identity is already in use.",
-        status_code=409,
+        category=ErrorCategory.conflict,
     )
 
 
@@ -29,7 +29,7 @@ def invalid_idempotency_key() -> AgentError:
     return AgentError(
         "invalid_request",
         "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
     )
 
 
@@ -37,13 +37,13 @@ def idempotency_conflict() -> AgentError:
     return AgentError(
         "idempotency_conflict",
         "The Idempotency-Key was already used with different request content.",
-        status_code=409,
+        category=ErrorCategory.conflict,
     )
 
 
 def map_model_error(error: ModelError) -> AgentError:
     if error.code == "invalid_model_settings":
-        return AgentError(error.code, error.message, status_code=error.status_code, details=error.details)
+        return AgentError(error.code, error.message, category=error.category, details=error.details)
     reason = {
         "model_not_found": "model_unavailable",
         "model_disabled": "model_unavailable",
@@ -55,27 +55,27 @@ def map_model_error(error: ModelError) -> AgentError:
 
 
 def agent_not_found() -> AgentError:
-    return AgentError("agent_not_found", "The Agent was not found.", status_code=404)
+    return AgentError("agent_not_found", "The Agent was not found.", category=ErrorCategory.not_found)
 
 
 def agent_revision_not_found() -> AgentError:
-    return AgentError("agent_revision_not_found", "The AgentRevision was not found.", status_code=404)
+    return AgentError("agent_revision_not_found", "The AgentRevision was not found.", category=ErrorCategory.not_found)
 
 
 def agent_current_revision_missing() -> AgentError:
     return AgentError(
         "agent_current_revision_missing",
         "The Agent has no current Revision.",
-        status_code=409,
+        category=ErrorCategory.conflict,
     )
 
 
 def agent_disabled() -> AgentError:
-    return AgentError("agent_disabled", "The Agent is disabled.", status_code=409)
+    return AgentError("agent_disabled", "The Agent is disabled.", category=ErrorCategory.conflict)
 
 
 def agent_archived() -> AgentError:
-    return AgentError("agent_archived", "The Agent is archived.", status_code=409)
+    return AgentError("agent_archived", "The Agent is archived.", category=ErrorCategory.conflict)
 
 
 def agent_revision_not_executable(reason: str | None = None) -> AgentError:
@@ -83,7 +83,7 @@ def agent_revision_not_executable(reason: str | None = None) -> AgentError:
     return AgentError(
         "agent_revision_not_executable",
         "The AgentRevision cannot currently be executed.",
-        status_code=409,
+        category=ErrorCategory.conflict,
         details=details,
     )
 
@@ -92,7 +92,7 @@ def current_revision_conflict(current_revision_id: str | None) -> AgentError:
     return AgentError(
         "current_revision_conflict",
         "The current AgentRevision has changed.",
-        status_code=409,
+        category=ErrorCategory.conflict,
         details={"current_revision_id": current_revision_id},
     )
 
@@ -101,7 +101,7 @@ def agent_version_conflict(current_version: int) -> AgentError:
     return AgentError(
         "agent_version_conflict",
         "The Agent version has changed.",
-        status_code=409,
+        category=ErrorCategory.conflict,
         details={"current_version": current_version},
     )
 
@@ -113,7 +113,7 @@ def agent_revision_create_failed(reason: str, *, path: str | None = None) -> Age
     return AgentError(
         "agent_revision_create_failed",
         "The Agent configuration could not be resolved into a Revision.",
-        status_code=409,
+        category=ErrorCategory.conflict,
         details=details,
     )
 
@@ -124,6 +124,6 @@ def invalid_run_override(path: str, reason: str) -> AgentError:
     return AgentError(
         "validation_error",
         "The Agent Run configuration override is invalid.",
-        status_code=422,
+        category=ErrorCategory.invalid_input,
         details={"path": path, "reason": reason},
     )

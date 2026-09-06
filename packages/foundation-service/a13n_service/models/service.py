@@ -9,6 +9,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import transaction
@@ -84,7 +85,9 @@ class ModelService:
                     provider_id=request.provider_id,
                 )
                 if not provider.enabled:
-                    raise ModelError("model_provider_disabled", "The Model Provider is disabled.", status_code=409)
+                    raise ModelError(
+                        "model_provider_disabled", "The Model Provider is disabled.", category=ErrorCategory.conflict
+                    )
                 self._registry.validate_model_api(provider.type, request.model_api)
                 validate_settings(request.model_api, request.settings)
                 record = ModelRecord(
@@ -129,7 +132,7 @@ class ModelService:
             raise ModelError(
                 "model_key_conflict",
                 "A Model with this key is already visible in the Workspace.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def get(self, *, actor: AuthenticatedActor, workspace_id: str | None, model_id: str) -> Model:
@@ -158,9 +161,11 @@ class ModelService:
         enabled: bool | None = None,
     ) -> ModelCollection:
         if not 1 <= limit <= 100:
-            raise ModelError("invalid_request", "limit must be between 1 and 100.", status_code=400)
+            raise ModelError(
+                "invalid_request", "limit must be between 1 and 100.", category=ErrorCategory.invalid_request
+            )
         if query_text is not None and (not query_text.strip() or len(query_text) > 128):
-            raise ModelError("invalid_request", "query search is invalid.", status_code=400)
+            raise ModelError("invalid_request", "query search is invalid.", category=ErrorCategory.invalid_request)
         scope = {
             "workspace_id": workspace_id,
             "organization_boundary": actor.boundary_organization_id,
@@ -174,7 +179,9 @@ class ModelService:
         try:
             position = decode_model_cursor(cursor, scope=scope) if cursor is not None else None
         except CursorError as error:
-            raise ModelError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise ModelError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_read
@@ -285,7 +292,11 @@ class ModelService:
         model_id: str,
     ) -> ModelConnectionTestResult:
         if self._connection_tester is None:
-            raise ModelError("model_connection_tester_unavailable", "Model testing is unavailable.", status_code=503)
+            raise ModelError(
+                "model_connection_tester_unavailable",
+                "Model testing is unavailable.",
+                category=ErrorCategory.unavailable,
+            )
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_manage
@@ -342,5 +353,5 @@ async def require_model(
         query = query.where(ModelRecord.workspace_id == workspace_id).with_for_update()
     record = await session.scalar(query)
     if record is None:
-        raise ModelError("model_not_found", "The Model was not found.", status_code=404)
+        raise ModelError("model_not_found", "The Model was not found.", category=ErrorCategory.not_found)
     return record

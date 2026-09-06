@@ -357,12 +357,12 @@ def test_foundation_stored_zip_has_a_separate_deterministic_encoding_bound(
     assert normalize_stored_skill_zip(package.archive_bytes) == package
 
 
-def test_object_key_uses_only_authorized_tenant_identity_and_content_digest() -> None:
+def test_object_key_uses_only_authorized_organization_identity_and_content_digest() -> None:
     digest = "a" * 64
     organization_id = "org_1234567890abcdef"
     workspace_id = "ws_1234567890abcdef"
     assert skill_package_object_key(organization_id, workspace_id, digest) == (
-        f"tenants/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/" + digest + ".zip"
+        f"organizations/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/" + digest + ".zip"
     )
     with pytest.raises(ValueError):
         skill_package_object_key(organization_id, workspace_id, "A" * 64)

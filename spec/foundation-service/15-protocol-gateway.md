@@ -66,6 +66,8 @@ Each adapter owns only:
 - protocol-specific event projection and transport encoding; and
 - translation between owning-domain failures and the protocol's error model.
 
+Adapters normalize wire requests into typed interaction commands, including explicit omitted/default versus null Environment intent. HTTP schemas remain at the protocol boundary. Application failures carry explicit categories and safe codes; adapters select HTTP status and headers or the protocol error representation without inferring categories from code suffixes or message text.
+
 Adapters share application use cases instead of calling one another. AG-UI is not reconstructed from a Native envelope, A2A is not reconstructed from an AG-UI event, and no standard protocol handler creates a second Run acceptance path. A request that cannot map exactly to an accepted Foundation operation fails before mutation.
 
 Native `POST /api/v1/threads/{thread_id}/runs` advances a waiting head with defaults only when the caller explicitly supplies `waiting_resolution.mode="defaults"`; omission retains queue-if-busy behavior. Hosted AG-UI and A2A set that application option only for their documented “new message abandons current HITL” mapping. Explicit feedback remains a separate command. No adapter infers default abandonment merely because a Thread is waiting.
@@ -88,7 +90,7 @@ Run acceptance freezes the exact `agent_revision_id`—whose content includes th
 
 ## Security and Admission
 
-Native browser sessions, bearer API keys, AG-UI credentials, and A2A security schemes all resolve to the existing Foundation `PrincipalRef` and credential context. Foundation defines no protocol-specific Principal or credential type. Protocol compatibility never bypasses tenant predicates, resource actions, credential boundaries, CSRF or Origin requirements, or current revocation.
+Native browser sessions, bearer API keys, AG-UI credentials, and A2A security schemes all resolve to the existing Foundation `PrincipalRef` and credential context. Foundation defines no protocol-specific Principal or credential type. Protocol compatibility never bypasses organization predicates, resource actions, credential boundaries, CSRF or Origin requirements, or current revocation.
 
 All public requests and streams are bounded by deployment configuration and safe common defaults for body size, uploaded content, metadata, nesting, connections, subscriptions, duration, queue depth, event size, and rate. Distribution policy can reduce or raise documented operational bounds without changing protocol identity or weakening hard safety ceilings.
 

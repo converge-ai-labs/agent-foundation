@@ -7,16 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentRunOverride
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.reception import InputOverride
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.native_context import InboundRunContext
-from a13n_service.gateway.commands import (
-    ContinueRunRequest,
-    GatewayCommandError,
-    NativeInteractionCommands,
-    StartRunRequest,
-)
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -25,6 +20,12 @@ from a13n_service.iam import (
     WorkspaceAction,
     authorize_agent,
     authorize_workspace,
+)
+from a13n_service.interactions.commands import (
+    ContinueRunCommand,
+    InteractionCommandError,
+    InteractionCommands,
+    StartRunCommand,
 )
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, SteerReceipt
 from a13n_service.interactions.models import RunRecord, ThreadRecord
@@ -58,7 +59,7 @@ class _Selection:
 
 class IngressInputAcceptor:
     def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], commands: NativeInteractionCommands, *, clock: Clock = utc_now
+        self, sessions: async_sessionmaker[AsyncSession], commands: InteractionCommands, *, clock: Clock = utc_now
     ) -> None:
         self._sessions = sessions
         self._commands = commands
@@ -145,7 +146,7 @@ class IngressInputAcceptor:
                     actor=selection.actor,
                     workspace_id=batch.workspace_id,
                     idempotency_key=key,
-                    request=StartRunRequest(
+                    request=StartRunCommand(
                         agent_id=selection.agent_id, input=batch.agent_input, config_override=selection.override
                     ),
                     origin=origin,
@@ -153,7 +154,7 @@ class IngressInputAcceptor:
                 )
             else:
                 assert selection.thread_version is not None
-                request = ContinueRunRequest(
+                request = ContinueRunCommand(
                     expected_thread_version=selection.thread_version,
                     agent_id=selection.agent_id,
                     input=batch.agent_input,
@@ -184,10 +185,15 @@ class IngressInputAcceptor:
             return RejectedInputOutcome(reason_code="execution_principal_unauthorized")
         except _Ineligible as error:
             return RejectedInputOutcome(reason_code=str(error))
-        except GatewayCommandError as error:
-            if error.status_code == 409:
+        except InteractionCommandError as error:
+            if error.category is ErrorCategory.conflict:
                 return LostRaceInputOutcome()
-            if error.status_code < 500:
+            if error.category not in {
+                ErrorCategory.internal,
+                ErrorCategory.dependency_failure,
+                ErrorCategory.unavailable,
+                ErrorCategory.timeout,
+            }:
                 return RejectedInputOutcome(reason_code=error.code)
             raise
 
@@ -233,7 +239,7 @@ class IngressInputAcceptor:
         if binding is None or binding.account_id != account.id:
             raise _Ineligible("binding_unavailable")
         thread = await session.get(ThreadRecord, binding.thread_id) if binding.thread_id is not None else None
-        if binding.thread_id is not None and (thread is None or thread.tenant_id != batch.organization_id):
+        if binding.thread_id is not None and (thread is None or thread.organization_id != batch.organization_id):
             raise _Ineligible("thread_unavailable")
         run_id = (thread.current_run_id or thread.head_run_id) if thread is not None else None
         run = await session.get(RunRecord, run_id) if run_id is not None else None

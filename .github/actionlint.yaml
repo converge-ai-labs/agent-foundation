@@ -1,0 +1,4 @@
+# actionlint uses this setting for custom labels, including GitHub-hosted larger runners.
+self-hosted-runner:
+  labels:
+    - ubuntu-24.04-8core

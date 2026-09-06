@@ -488,29 +488,14 @@ async def test_runtime_command_authorization_and_idempotency_conflict(
 
 
 @pytest.mark.anyio
-async def test_runtime_command_preserves_utf8_idempotency_keys(
+async def test_runtime_command_rejects_non_ascii_idempotency_keys(
     runner_plugin_service: PluginService,
     runtime_coordinator: tuple[PluginRuntimeCommandCoordinator, _CandidateResolver, _StagingAuthority],
 ) -> None:
     coordinator, _resolver, _authority = runtime_coordinator
-    uploaded, first = await _activate(
-        runner_plugin_service,
-        coordinator,
-        version="1.0.0",
-        key="运行-🔁",
-    )
-    plugin = await runner_plugin_service.get(actor=actor(), plugin_id=uploaded.version.plugin_id)
-
-    replay = await coordinator.activate(
-        actor=actor(),
-        organization_id="org_1234567890abcdef",
-        workspace_id="ws_1234567890abcdef",
-        plugin=plugin,
-        plugin_version=uploaded.version,
-        idempotency_key="运行-🔁",
-    )
-
-    assert replay == first
+    with pytest.raises(PluginError) as caught:
+        await _activate(runner_plugin_service, coordinator, version="1.0.0", key="运行-🔁")
+    assert caught.value.code == "invalid_request"
 
 
 @pytest.mark.anyio

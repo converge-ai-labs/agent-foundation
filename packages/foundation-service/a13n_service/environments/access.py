@@ -1,9 +1,10 @@
-"""Tenant-scoped authorization and relational Environment lookups."""
+"""Organization-scoped authorization and relational Environment lookups."""
 
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import (
     AuthorizationError,
@@ -29,7 +30,9 @@ async def authorize_environment_workspace(
     except AuthorizationError as error:
         if error.concealed:
             raise environment_not_found() from error
-        raise EnvironmentManagementError("forbidden", "The operation is not allowed.", status_code=403) from error
+        raise EnvironmentManagementError(
+            "forbidden", "The operation is not allowed.", category=ErrorCategory.forbidden
+        ) from error
 
 
 async def environment_actor_scope(session: AsyncSession, actor: AuthenticatedActor) -> ResourceScope:

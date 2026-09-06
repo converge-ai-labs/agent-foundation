@@ -352,7 +352,7 @@ class RunAttemptControl:
                 raise
         # Object I/O must not prevent the monitor from renewing the selected lease.
         state = await self._states.read(
-            self._context.tenant_id, self._context.run_id, expected_thread_id=self._context.thread_id
+            self._context.organization_id, self._context.run_id, expected_thread_id=self._context.thread_id
         )
         async with self._gate.lock:
             self._require_open()

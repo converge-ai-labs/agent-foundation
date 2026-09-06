@@ -8,11 +8,11 @@ from datetime import datetime
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.interactions.control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
 from a13n_service.interactions.domain import (
-    RecoveryUsage,
     Run,
     RunInputKind,
     RunLineageKind,
     RunStatus,
+    accepted_run,
 )
 from a13n_service.interactions.initialization import RunStateSeed, initialize_completed_continuation_state
 from a13n_service.interactions.state import RunStateEnvelope
@@ -67,10 +67,10 @@ def prepare_async_result_successor(
             "input": accepted_input,
         }
     )
-    run = Run(
+    run = accepted_run(
+        now=created_at,
         id=successor_run_id,
-        version=1,
-        tenant_id=selected_parent.tenant_id,
+        organization_id=selected_parent.organization_id,
         authority_principal=origin_run.authority_principal,
         session_id=selected_parent.session_id,
         thread_id=selected_parent.thread_id,
@@ -82,7 +82,6 @@ def prepare_async_result_successor(
         agent_id=selected_parent.agent_id,
         agent_revision_id=selected_parent.agent_revision_id,
         effective_agent_config_digest=config.content_digest,
-        encrypted_config_payload=selected_parent.encrypted_config_payload,
         runtime_lock_digest=selected_parent.runtime_lock_digest,
         model_execution_observation=selected_parent.model_execution_observation,
         connector_connection_selections=selected_parent.connector_connection_selections,
@@ -90,20 +89,11 @@ def prepare_async_result_successor(
         native_tool_contexts=selected_parent.native_tool_contexts,
         priority=selected_parent.priority,
         queue_name=selected_parent.queue_name,
-        available_at=created_at,
-        next_attempt_fence=1,
         recovery_budget=selected_parent.recovery_budget,
-        attempts_started=0,
-        recovery_attempts_started=0,
-        handoffs_completed=0,
-        usage_charged=RecoveryUsage(),
         idempotency_key=f"async-result:{inbox_entry.id}",
         request_fingerprint=request_fingerprint,
-        status=RunStatus.accepted,
         input_kind=RunInputKind.async_subagent_result,
         input=accepted_input,
-        created_at=created_at,
-        updated_at=created_at,
     )
     return PreparedAsyncResultSuccessor(
         inbox_entry_id=inbox_entry.id,
@@ -132,7 +122,7 @@ def _validate_authority(
     ):
         raise ValueError("selected parent state does not match its sealed Run")
     if (
-        origin_run.tenant_id != selected_parent.tenant_id
+        origin_run.organization_id != selected_parent.organization_id
         or origin_run.session_id != selected_parent.session_id
         or origin_run.thread_id != selected_parent.thread_id
         or origin_run.status in {RunStatus.failed, RunStatus.cancelled}
@@ -141,7 +131,7 @@ def _validate_authority(
     if (
         inbox_entry.kind is not ThreadInboxKind.async_subagent_result
         or inbox_entry.status is not ThreadInboxStatus.pending
-        or inbox_entry.tenant_id != selected_parent.tenant_id
+        or inbox_entry.organization_id != selected_parent.organization_id
         or inbox_entry.thread_id != selected_parent.thread_id
         or inbox_entry.origin_run_id != origin_run.id
         or inbox_entry.target_run_id is not None

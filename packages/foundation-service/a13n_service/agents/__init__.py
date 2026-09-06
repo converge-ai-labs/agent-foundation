@@ -10,7 +10,7 @@ from .domain import (
     EffectiveAgentConfig,
 )
 from .errors import AgentError
-from .invocation import AgentRunSensitiveValues, MergedAgentRunConfig, merge_agent_run_override
+from .invocation import MergedAgentRunConfig, merge_agent_run_override
 from .invocation_resolution import (
     AgentInvocationResolver,
     AgentSelectorKind,
@@ -36,7 +36,6 @@ __all__ = [
     "AgentReconstructor",
     "AgentRevision",
     "AgentRunOverride",
-    "AgentRunSensitiveValues",
     "AgentSelectorKind",
     "BuiltinAgentRegistration",
     "EffectiveAgentConfig",

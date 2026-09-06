@@ -135,7 +135,7 @@ metadata or lifecycle mutation, but one mutation axis never mixes the two
 contracts. Resources that cannot lose updates do not require an artificial
 concurrency token.
 
-A create or command that callers may safely retry accepts an `Idempotency-Key` header. Within the operation's documented authenticated principal and resource scope, the same key and same canonical request return the original receipt or result; reuse with different content returns `409`. The owning API defines finite evidence retention. Once evidence has expired, absence does not prove that an earlier request was never dispatched.
+A create or command that callers may safely retry accepts an `Idempotency-Key` header. Within the operation's documented authenticated principal and resource scope, the same key and same canonical request return the original receipt or result; reuse with different content returns `409`. Ordinary Foundation HTTP keys contain 1–512 visible ASCII bytes. Evidence is eligible for 24 hours from the original successful commit; replay does not extend that deadline. Scope includes the principal, applicable Workspace or credential boundary, operation, target, and key digest. The server reauthorizes replay access before returning an original receipt. AG-UI and A2A external identities and durable execution identities retain their separately owned semantics. Once evidence has expired, absence does not prove that an earlier request was never dispatched.
 
 Idempotent replay is resolved before evaluating `expected_version` or
 `If-Match`, so replay of a committed mutation does not conflict with the state

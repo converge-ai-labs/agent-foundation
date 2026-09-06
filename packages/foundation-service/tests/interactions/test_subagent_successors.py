@@ -26,7 +26,9 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, TENANT_ID, effective_agent_config
+from tests.lifecycle_support import test_lifecycle_writer
+
+from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_attempt_execution import _completed_state, _waiting_state
 from .test_subagent_acceptance import CHILD_AGENT_ID, CHILD_DEFINITION_ID, CHILD_REVISION_ID
 from .test_subagent_results import (
@@ -61,21 +63,21 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         RunReplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_bbbbbbbbbbbbbbbb",
         clock=lambda: NOW + timedelta(seconds=5),
-    ).publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     assert result.target_run_id is None and result.source_waiting_run_id is None
 
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
-        run_id_factory=lambda _tenant, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
+        run_id_factory=lambda _organization, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
         clock=lambda: NOW + timedelta(seconds=6),
-    ).reconcile_thread(tenant_id=TENANT_ID, thread_id=parent.thread_id)
+    ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted"
     assert receipt.successor is not None
     successor_id = receipt.successor.run_id
-    successor_state = await states.read(TENANT_ID, successor_id, expected_thread_id=parent.thread_id)
+    successor_state = await states.read(ORGANIZATION_ID, successor_id, expected_thread_id=parent.thread_id)
     async with short_session(interaction_sessions) as database:
         thread = await database.get(ThreadRecord, parent.thread_id)
         successor = await database.get(RunRecord, successor_id)
@@ -150,21 +152,21 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         child_run_id,
     )
     await _project_all_lifecycle(projector)
-    snapshot = await replays.read(TENANT_ID, child_run_id)
+    snapshot = await replays.read(ORGANIZATION_ID, child_run_id)
     entry = await AsyncSubagentResultPublisher(
         interaction_sessions,
         replays,
         entry_id_factory=lambda: "inb_2323232323232323",
         clock=lambda: NOW + timedelta(seconds=6),
-    ).publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
 
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
         replays,
-        run_id_factory=lambda _tenant, _entry, _parent: "run_2424242424242424",
+        run_id_factory=lambda _organization, _entry, _parent: "run_2424242424242424",
         clock=lambda: NOW + timedelta(seconds=7),
-    ).reconcile_thread(tenant_id=TENANT_ID, thread_id=parent.thread_id)
+    ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted" and receipt.successor is not None
     payload = AsyncSubagentResultInboxPayload.model_validate(entry.payload)
@@ -209,21 +211,21 @@ async def test_oldest_result_accepts_successor_and_later_result_binds_in_fifo_or
         RunReplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1212121212121212",
         clock=lambda: NOW + timedelta(seconds=5),
-    ).publish(tenant_id=TENANT_ID, child_run_id=first_child_run_id)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=first_child_run_id)
     second = await AsyncSubagentResultPublisher(
         interaction_sessions,
         RunReplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1313131313131313",
         clock=lambda: NOW + timedelta(seconds=6),
-    ).publish(tenant_id=TENANT_ID, child_run_id=second_child_run_id)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=second_child_run_id)
 
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
-        run_id_factory=lambda _tenant, _entry, _parent: "run_1414141414141414",
+        run_id_factory=lambda _organization, _entry, _parent: "run_1414141414141414",
         clock=lambda: NOW + timedelta(seconds=7),
-    ).reconcile_thread(tenant_id=TENANT_ID, thread_id=parent.thread_id)
+    ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted" and receipt.successor is not None
     async with short_session(interaction_sessions) as database:
@@ -266,7 +268,7 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
         RunReplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1818181818181818",
         clock=lambda: NOW + timedelta(seconds=5),
-    ).publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     async with transaction(interaction_sessions) as database:
         entry = await database.get(ThreadInboxRecord, result.id)
         assert entry is not None and isinstance(entry.payload_json, dict)
@@ -277,9 +279,9 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
             interaction_sessions,
             states,
             RunReplayStore(interaction_object_store),
-            run_id_factory=lambda _tenant, _entry, _parent: "run_1818181818181818",
+            run_id_factory=lambda _organization, _entry, _parent: "run_1818181818181818",
             clock=lambda: NOW + timedelta(seconds=6),
-        ).reconcile_thread(tenant_id=TENANT_ID, thread_id=parent.thread_id)
+        ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     async with short_session(interaction_sessions) as database:
         entry = await database.get(ThreadInboxRecord, result.id)
@@ -308,18 +310,18 @@ async def test_concurrent_postgresql_successor_reconciliation_accepts_one_run(
         RunReplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=5),
-    ).publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     reconciler = AsyncSubagentSuccessorReconciler(
         sessions,
         states,
         RunReplayStore(interaction_object_store),
-        run_id_factory=lambda _tenant, _entry, _parent: "run_ffffffffffffffff",
+        run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=6),
     )
 
     receipts = await asyncio.gather(
-        reconciler.reconcile_thread(tenant_id=TENANT_ID, thread_id=parent.thread_id),
-        reconciler.reconcile_thread(tenant_id=TENANT_ID, thread_id=parent.thread_id),
+        reconciler.reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id),
+        reconciler.reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id),
     )
 
     assert sorted(receipt.outcome for receipt in receipts) == ["idle", "run_accepted"]
@@ -343,7 +345,7 @@ async def _accept_another_child(
     parent: Run,
     authority,
 ) -> str:
-    parent_state = await states.read(TENANT_ID, parent.id)
+    parent_state = await states.read(ORGANIZATION_ID, parent.id)
     child_config = effective_agent_config()
     prepared = prepare_child_run(
         parent_run=parent,
@@ -383,7 +385,9 @@ async def _seal_parent(
     *,
     outcome: str,
 ) -> Run:
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=3))
+    execution = AttemptExecutionService(
+        sessions, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
+    )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
     authority = replace(
@@ -401,7 +405,7 @@ async def _seal_parent(
         expected_run_version=entered.run_version,
         expected_attempt_version=entered.attempt_version,
     )
-    current = await states.read(TENANT_ID, parent.id)
+    current = await states.read(ORGANIZATION_ID, parent.id)
     candidate = (
         _completed_state(current.envelope, authority.run_attempt_id, authority.fence)
         if outcome == "completed"
@@ -409,9 +413,7 @@ async def _seal_parent(
     )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
     receipt = await RunOutcomeService(
-        sessions,
-        RunPayloadStore(objects),
-        clock=lambda: NOW + timedelta(seconds=4),
+        sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
     assert receipt.run_status.value == outcome
     async with short_session(sessions) as database:

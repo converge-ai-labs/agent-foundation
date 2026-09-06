@@ -38,8 +38,10 @@ from anyio import Event, create_task_group, fail_after, sleep_forever
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import event, select
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from ..plugins.test_on_demand import _runtime
-from .conftest import NOW, TENANT_ID, effective_agent_config
+from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_attempt_executor import _Projector
 from .test_preparation import _authorize_fixture
@@ -63,7 +65,7 @@ async def _fixture(sessions, objects, tmp_path, *, mode="on_demand"):
         }
     )
     states, run, _ = await _accept_root(sessions, objects, effective_config=config)
-    scheduler = AttemptScheduler(sessions, clock=lambda: NOW)
+    scheduler = AttemptScheduler(sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     (candidate,) = await scheduler.discover(worker_build_id="build-1", handoff_preference_window=timedelta(seconds=30))
     runtime = await _runtime(tmp_path, objects)
     return locks, lock, runtime, scheduler, candidate, states, run
@@ -130,7 +132,7 @@ async def test_exact_runtime_materialization_finishes_outside_database_before_cl
         event.remove(engine.sync_engine, "checkin", checkin)
 
 
-@pytest.mark.parametrize("problem", ["missing", "invalid", "mode", "tenant", "digest", "conflict", "timeout"])
+@pytest.mark.parametrize("problem", ["missing", "invalid", "mode", "organization", "digest", "conflict", "timeout"])
 async def test_declined_preflight_never_allocates_an_attempt(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, problem
 ):
@@ -144,8 +146,8 @@ async def test_declined_preflight_never_allocates_an_attempt(
                 await database.delete(record)
             else:
                 record.manifest = {"malformed": True}
-    elif problem == "tenant":
-        candidate = replace(candidate, tenant_id="org_9999999999999999")
+    elif problem == "organization":
+        candidate = replace(candidate, organization_id="org_9999999999999999")
     elif problem == "digest":
         candidate = replace(candidate, runtime_lock_digest="f" * 64)
     prepare = AsyncMock(wraps=runtime.prepare_for_claim)
@@ -207,7 +209,7 @@ async def test_launcher_cannot_be_reused_for_another_run_or_runtime(
     claim = await scheduler.claim(candidate.run_id, replace(_worker(), runtime_lock_digest=lock.digest))
     assert isinstance(claim, ClaimedAttempt)
     for fields in [
-        {"tenant_id": "org_9999999999999999"},
+        {"organization_id": "org_9999999999999999"},
         {"run_id": "run_9999999999999999"},
         {"runtime_lock_digest": "f" * 64},
     ]:
@@ -224,10 +226,10 @@ async def test_preflight_claim_executor_harness_and_durable_completion(
 ):
     locks, _, runtime, _, _, states, run = await _fixture(interaction_sessions, interaction_object_store, tmp_path)
     await _authorize_fixture(interaction_sessions)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    execution = AttemptExecutionService(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     dependencies = AttemptDependencyLoader(interaction_sessions, clock=lambda: NOW)
     payloads = RunPayloadStore(interaction_object_store)
-    outcomes = RunOutcomeService(interaction_sessions, payloads, clock=lambda: NOW)
+    outcomes = RunOutcomeService(interaction_sessions, payloads, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     environments = EnvironmentLifecycle(interaction_sessions, EnvironmentProviderCatalog(), Mock(), tmp_path)
     projector = _Projector()
     cleanups = []
@@ -289,7 +291,11 @@ async def test_preflight_claim_executor_harness_and_durable_completion(
             preparer=Mock(prepare=prepare),
             wakeups=Mock(receive=sleep_forever),
             adapter=StoredHarnessOutcomeAdapter(
-                tenant_id=TENANT_ID, run_id=run.id, payloads=payloads, max_output_bytes=4096, inline_output_bytes=4096
+                organization_id=ORGANIZATION_ID,
+                run_id=run.id,
+                payloads=payloads,
+                max_output_bytes=4096,
+                inline_output_bytes=4096,
             ),
             committer=DatabaseRunTerminalCommitter(interaction_sessions, outcomes, execution, clock=lambda: NOW),
             cleanup=Mock(close=cleanup),
@@ -313,7 +319,7 @@ async def test_preflight_claim_executor_harness_and_durable_completion(
         assert record.sealed_at is not None
         assert attempt.status == "succeeded"
         assert attempt.harness_run_id is not None
-    state = await states.read(TENANT_ID, run.id)
+    state = await states.read(ORGANIZATION_ID, run.id)
     assert state.envelope.outcome_candidate.output == "completed by the claimed executor"
     assert state.envelope.writer_fence == state.envelope.last_checkpoint_fence == 1
     assert state.envelope.input_disposition == "applied"

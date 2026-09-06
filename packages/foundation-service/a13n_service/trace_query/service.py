@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.temporal import Clock, utc_now
 
@@ -125,7 +126,9 @@ class TraceQueryService:
         try:
             decoded_cursor = decode_trace_cursor(cursor, scope=cursor_scope) if cursor is not None else None
         except TraceCursorError as error:
-            raise TraceQueryError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise TraceQueryError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         if decoded_cursor is None:
             start, end = _range(from_started_at, to_started_at, self._clock())
             provider_cursor = None
@@ -140,7 +143,9 @@ class TraceQueryService:
             else:
                 requested_start, requested_end = _range(from_started_at, to_started_at, self._clock())
                 if (requested_start, requested_end) != (cursor_start, cursor_end):
-                    raise TraceQueryError("invalid_cursor", "The collection cursor is invalid.", status_code=400)
+                    raise TraceQueryError(
+                        "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+                    )
                 start, end = requested_start, requested_end
             provider_cursor = decoded_cursor.provider_cursor
         provider_query = ProviderTraceQuery(
@@ -198,7 +203,7 @@ class TraceQueryService:
             raise TraceQueryError(
                 "trace_query_unavailable",
                 "Trace Query is temporarily unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             ) from error
         return TraceCollection(items=items, next_cursor=next_cursor)
 
@@ -241,7 +246,7 @@ class TraceQueryService:
             raise TraceQueryError(
                 "trace_query_unavailable",
                 "Trace Query is unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         return self._provider, self._authorizer
 
@@ -251,7 +256,7 @@ def _validate_range_pair(start: datetime | None, end: datetime | None) -> None:
         raise TraceQueryError(
             "invalid_request",
             "Trace Query requires both from and to.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
             details={"fields": ["from", "to"]},
         )
 
@@ -267,7 +272,7 @@ def _range(start: datetime | None, end: datetime | None, now: datetime) -> tuple
         raise TraceQueryError(
             "invalid_request",
             "The Trace Query time range is invalid.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
             details={"fields": ["from", "to"]},
         )
     return normalized_start, normalized_end
@@ -278,7 +283,7 @@ def _validate_search(query: str | None, search_in: SearchIn | None) -> None:
         raise TraceQueryError(
             "invalid_request",
             "query and search_in must be supplied together.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
             details={"fields": ["query", "search_in"]},
         )
     if query is not None:
@@ -286,7 +291,7 @@ def _validate_search(query: str | None, search_in: SearchIn | None) -> None:
             raise TraceQueryError(
                 "invalid_request",
                 "The Trace Query search value is invalid.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
                 details={"fields": ["query"]},
             )
 
@@ -296,7 +301,7 @@ def _validate_exact_filters(*values: str | None) -> None:
         raise TraceQueryError(
             "invalid_request",
             "A Trace Query correlation filter is invalid.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
             details={"fields": ["thread_id", "run_id", "run_attempt_id"]},
         )
 
@@ -306,7 +311,7 @@ def _validate_trace_id(value: str) -> None:
         raise TraceQueryError(
             "invalid_request",
             "The Trace identifier is invalid.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
             details={"fields": ["trace_id"]},
         )
 
@@ -333,7 +338,7 @@ def _require_capabilities(provider: TraceQueryProvider, query: ProviderTraceQuer
         raise TraceQueryError(
             "trace_query_filter_unsupported",
             "The selected Trace Query provider does not support this filter.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
 
 
@@ -348,7 +353,7 @@ def _public_summary(item: ProviderTraceSummary, decision: AuthorizedRunAttempt) 
         raise TraceQueryError(
             "trace_query_unavailable",
             "Trace Query is temporarily unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return TraceSummary(
         id=item.id,
@@ -381,7 +386,7 @@ def _unique_candidates(items: Iterable[ProviderTraceSummary]) -> tuple[ProviderT
         raise TraceQueryError(
             "trace_query_unavailable",
             "Trace Query is temporarily unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return candidates
 
@@ -573,23 +578,23 @@ def _provider_error(error: TraceQueryProviderError) -> TraceQueryError:
         return TraceQueryError(
             "trace_query_provider_version_unsupported",
             "The selected Trace Query provider version is unsupported.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     if error.failure == "filter_unsupported":
         return TraceQueryError(
             "trace_query_filter_unsupported",
             "The selected Trace Query provider does not support this filter.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     return TraceQueryError(
         "trace_query_unavailable",
         "Trace Query is temporarily unavailable.",
-        status_code=503,
+        category=ErrorCategory.unavailable,
     )
 
 
 def _not_found() -> TraceQueryError:
-    return TraceQueryError("trace_not_found", "The Trace was not found.", status_code=404)
+    return TraceQueryError("trace_not_found", "The Trace was not found.", category=ErrorCategory.not_found)
 
 
 def _cursor_scope(
@@ -625,7 +630,7 @@ def _as_utc(value: datetime) -> datetime:
         raise TraceQueryError(
             "invalid_request",
             "Trace Query timestamps must include a UTC offset.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
             details={"fields": ["from", "to"]},
         )
     return value.astimezone(UTC)

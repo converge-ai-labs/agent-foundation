@@ -14,9 +14,14 @@ from fastapi import APIRouter, Depends, Header, Query, Request, WebSocket, WebSo
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
+from a13n_service.interactions.commands import (
+    InteractionCommands,
+    InterruptReceipt,
+)
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     InterruptRequest,
@@ -35,18 +40,10 @@ from a13n_service.interactions.control_domain import (
     WaitingRunFeedbackRequest,
 )
 from a13n_service.interactions.input import AgentInput
+from a13n_service.interactions.submissions import DeleteQueuedSubmissionRequest, QueuedSubmissionService
 from a13n_service.process.runtime import ProcessRuntime
-from a13n_service.public_errors import PublicError
 from a13n_service.request_runtime import get_control_runtime
 
-from .commands import (
-    ContinueRunRequest,
-    ForkRunRequest,
-    InterruptReceipt,
-    NativeInteractionCommands,
-    RetryRunRequest,
-    StartRunRequest,
-)
 from .hosted_agui import HostedAguiCancelReceipt, HostedAguiCancelRequest, HostedAguiService
 from .native_streaming import NativeRunStreamService
 from .notifications import (
@@ -70,7 +67,7 @@ from .queries import (
     ThreadCollection,
     ThreadResource,
 )
-from .queue import DeleteQueuedSubmissionRequest, NativeQueuedSubmissionService
+from .requests import ContinueRunRequest, ForkRunRequest, RetryRunRequest, StartRunRequest
 
 NOTIFICATION_SUBPROTOCOL = "foundation.notifications.v1"
 
@@ -108,21 +105,21 @@ _CLIENT_FRAME = TypeAdapter(ClientFrame)
 def _native_streams(request: Request) -> NativeRunStreamService:
     control = get_control_runtime(request)
     if control is None:
-        raise PublicError(
+        raise ApplicationError(
             "gateway_unavailable",
             "The Protocol Gateway is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.gateway.native_streams
 
 
-def _queued_submissions(request: Request) -> NativeQueuedSubmissionService:
+def _queued_submissions(request: Request) -> QueuedSubmissionService:
     control = get_control_runtime(request)
     if control is None:
-        raise PublicError(
+        raise ApplicationError(
             "gateway_unavailable",
             "The Foundation Service Gateway is unavailable in this process role.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.gateway.queued_submissions
 
@@ -130,21 +127,21 @@ def _queued_submissions(request: Request) -> NativeQueuedSubmissionService:
 def _queries(request: Request) -> NativeInteractionQueries:
     control = get_control_runtime(request)
     if control is None:
-        raise PublicError(
+        raise ApplicationError(
             "gateway_unavailable",
             "The Protocol Gateway is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.gateway.queries
 
 
-def _commands(request: Request) -> NativeInteractionCommands:
+def _commands(request: Request) -> InteractionCommands:
     control = get_control_runtime(request)
     if control is None:
-        raise PublicError(
+        raise ApplicationError(
             "gateway_unavailable",
             "The Protocol Gateway is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.gateway.commands
 
@@ -152,10 +149,10 @@ def _commands(request: Request) -> NativeInteractionCommands:
 def _hosted_agui(request: Request) -> HostedAguiService:
     control = get_control_runtime(request)
     if control is None:
-        raise PublicError(
+        raise ApplicationError(
             "gateway_unavailable",
             "The Protocol Gateway is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.gateway.hosted_agui
 
@@ -171,10 +168,10 @@ async def hosted_agui_run(
 ) -> StreamingResponse:
     media_types = {item.partition(";")[0].strip().lower() for item in (accept or "").split(",")}
     if "text/event-stream" not in media_types:
-        raise PublicError(
+        raise ApplicationError(
             "not_acceptable",
             "Accept must include text/event-stream.",
-            status_code=406,
+            category=ErrorCategory.not_acceptable,
         )
     service = _hosted_agui(request)
     attachment = await service.accept(
@@ -220,7 +217,7 @@ async def start_run(
         actor=actor,
         workspace_id=workspace_id,
         idempotency_key=idempotency_key,
-        request=body,
+        request=body.to_command(),
     )
 
 
@@ -240,7 +237,7 @@ async def continue_from_run(
         actor=actor,
         source_run_id=source_run_id,
         idempotency_key=idempotency_key,
-        request=body,
+        request=body.to_command(),
     )
 
 
@@ -260,7 +257,7 @@ async def fork_run(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
-        request=body,
+        request=body.to_command(),
     )
 
 
@@ -603,10 +600,10 @@ async def stream_run(
 ) -> StreamingResponse:
     media_types = {item.partition(";")[0].strip().lower() for item in (accept or "").split(",")}
     if "text/event-stream" not in media_types:
-        raise PublicError(
+        raise ApplicationError(
             "not_acceptable",
             "Accept must include text/event-stream.",
-            status_code=406,
+            category=ErrorCategory.not_acceptable,
         )
     service = _native_streams(request)
     attachment = await service.attach(actor=actor, run_id=run_id, after_stream_id=last_event_id)

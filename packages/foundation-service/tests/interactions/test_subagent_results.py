@@ -39,7 +39,9 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, TENANT_ID, effective_agent_config
+from tests.lifecycle_support import test_lifecycle_writer
+
+from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_attempt_execution import _authority, _worker
 from .test_inbox import _state_with_receipts
 from .test_subagent_acceptance import (
@@ -58,8 +60,8 @@ _RESULT_ADAPTER = TypeAdapter(AsyncSubagentResultInboxPayload)
 class RecordingSignals:
     threads: list[tuple[str, str]] = field(default_factory=list)
 
-    async def publish(self, *, tenant_id: str, thread_id: str) -> None:
-        self.threads.append((tenant_id, thread_id))
+    async def publish(self, *, organization_id: str, thread_id: str) -> None:
+        self.threads.append((organization_id, thread_id))
 
 
 async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
@@ -75,7 +77,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
         clock=lambda: NOW + timedelta(seconds=3),
     )
     await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=parent.id,
         input=AcceptedAgentInput(schema_version="1", content=(TextContent(text="first steer"),)),
         entry_id="inb_1111111111111111",
@@ -91,13 +93,13 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     )
 
     assert await publisher.reconcile_once() == 1
-    entry = await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    entry = await publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
 
     assert entry.id == "inb_2222222222222222"
     assert entry.delivery_sequence == 2
     assert entry.target_run_id == parent.id
     assert entry.status is ThreadInboxStatus.pending
-    assert signals.threads == [(TENANT_ID, parent.thread_id)]
+    assert signals.threads == [(ORGANIZATION_ID, parent.thread_id)]
     payload = _RESULT_ADAPTER.validate_python(entry.payload)
     assert payload.child_run_id == child_run_id
     assert payload.terminal_status == "failed"
@@ -139,17 +141,16 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     assert "Trusted Host provenance" in eligible[1].input
     assert "never system instruction" in eligible[1].input
     assert child_run_id in eligible[1].input
-    assert await states.read(TENANT_ID, child_run_id)
+    assert await states.read(ORGANIZATION_ID, child_run_id)
 
-    current = await states.read(TENANT_ID, parent.id)
+    current = await states.read(ORGANIZATION_ID, parent.id)
     successor = _state_with_receipts(
         current.envelope,
         authority,
         tuple(item.receipt for item in eligible),
     )
     stored = await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=6),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=6), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
     await reconciler.confirm_checkpoint(authority, stored)
 
@@ -186,18 +187,17 @@ async def test_parent_failure_suppresses_unconsumed_child_result_on_both_race_or
         clock=lambda: NOW + timedelta(seconds=4),
     )
     if publish_first:
-        pending = await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+        pending = await publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
         assert pending.status is ThreadInboxStatus.pending
     await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=5),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=5), lifecycle=test_lifecycle_writer()
     ).fail(
         authority,
         SafeFailure(code="parent_failed", message="Parent failed."),
         retryable=False,
     )
 
-    entry = await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    entry = await publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
 
     assert entry.status is ThreadInboxStatus.suppressed
     assert entry.target_run_id is None
@@ -208,7 +208,7 @@ async def test_parent_failure_suppresses_unconsumed_child_result_on_both_race_or
         assert counter is not None
         assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (2, 0, 0)
         assert len(rows) == 1
-    assert signals.threads == ([(TENANT_ID, parent.thread_id)] if publish_first else [])
+    assert signals.threads == ([(ORGANIZATION_ID, parent.thread_id)] if publish_first else [])
 
 
 async def test_result_capacity_failure_leaves_no_partial_publication(
@@ -223,7 +223,7 @@ async def test_result_capacity_failure_leaves_no_partial_publication(
         interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=3),
     ).append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=parent.id,
         input=AcceptedAgentInput(schema_version="1", content=(TextContent(text="fills inbox"),)),
         entry_id="inb_6666666666666666",
@@ -238,7 +238,7 @@ async def test_result_capacity_failure_leaves_no_partial_publication(
     )
 
     with pytest.raises(ThreadInboxCapacityExceeded):
-        await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+        await publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     assert await publisher.reconcile_once() == 0
 
     async with short_session(interaction_sessions) as database:
@@ -262,6 +262,7 @@ async def test_inline_json_null_result_survives_inbox_and_materialization(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "null-child-lease",
         attempt_id_factory=lambda: "rat_cccccccccccccccc",
+        lifecycle=test_lifecycle_writer(),
     ).claim(child_run_id, _worker())
     assert claim is not None
     async with short_session(interaction_sessions) as database:
@@ -280,7 +281,7 @@ async def test_inline_json_null_result_survives_inbox_and_materialization(
     replays = RunReplayStore(interaction_object_store)
 
     entry = await AsyncSubagentResultPublisher(interaction_sessions, replays).publish(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         child_run_id=child_run_id,
     )
     payload = _RESULT_ADAPTER.validate_python(entry.payload)
@@ -311,7 +312,7 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
 
     with pytest.raises(AsyncSubagentResultError, match="authorized terminal result Item"):
         await publisher.publish(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             child_run_id=child_run_id,
         )
     assert await publisher.reconcile_once() == 0
@@ -324,8 +325,8 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
         assert rows == ()
 
     await _project_all_lifecycle(projector)
-    snapshot = await replays.read(TENANT_ID, child_run_id)
-    entry = await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    snapshot = await replays.read(ORGANIZATION_ID, child_run_id)
+    entry = await publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     result = _RESULT_ADAPTER.validate_python(entry.payload)
     output_item = snapshot.items[-1]
     output_reference = RunPayloadObjectRef.model_validate(output_item.content)
@@ -371,7 +372,7 @@ async def test_result_publication_reauthorizes_the_spawning_principal(
             interaction_sessions,
             RunReplayStore(interaction_object_store),
         ).publish(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             child_run_id=child_run_id,
         )
 
@@ -393,7 +394,7 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
     )
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
     await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=parent.id,
         input=AcceptedAgentInput(schema_version="1", content=(TextContent(text="first"),)),
         entry_id="inb_8888888888888888",
@@ -404,9 +405,9 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
         RunReplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_9999999999999999",
         clock=lambda: NOW + timedelta(seconds=4),
-    ).publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=parent.id,
         input=AcceptedAgentInput(schema_version="1", content=(TextContent(text="third"),)),
         entry_id="inb_aaaaaaaaaaaaaaaa",
@@ -448,8 +449,8 @@ async def test_concurrent_result_publication_converges_on_postgresql(
     )
 
     entries = await asyncio.gather(
-        publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id),
-        publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id),
+        publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id),
+        publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id),
     )
 
     assert entries[0] == entries[1]
@@ -464,7 +465,7 @@ async def test_concurrent_result_publication_converges_on_postgresql(
             ).all()
         )
         assert len(rows) == 1
-    assert signals.threads == [(TENANT_ID, parent.thread_id)]
+    assert signals.threads == [(ORGANIZATION_ID, parent.thread_id)]
 
 
 async def _accept_child(
@@ -478,6 +479,7 @@ async def _accept_child(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_aaaaaaaaaaaaaaaa",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -528,6 +530,7 @@ async def _complete_object_backed_child(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
+        lifecycle=test_lifecycle_writer(),
     ).claim(child_run_id, _worker())
     assert claim is not None
     async with short_session(sessions) as database:
@@ -537,7 +540,7 @@ async def _complete_object_backed_child(
     output = "x" * (MAX_INLINE_ASYNC_RESULT_BYTES + 1)
     payloads = RunPayloadStore(objects)
     output_object = await payloads.create(
-        TENANT_ID,
+        ORGANIZATION_ID,
         RunPayloadEnvelope(
             run_id=child_run_id,
             payload_kind="output",
@@ -548,7 +551,7 @@ async def _complete_object_backed_child(
     stream = RedisRunStream(redis)
     live_projector = RunStreamHarnessProjector(
         stream,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=child_run_id,
         thread_id=child_resource.thread_id,
         run_attempt_id=claim.attempt.id,

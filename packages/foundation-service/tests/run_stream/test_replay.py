@@ -23,7 +23,7 @@ from a13n_service.storage.codec import canonical_model_bytes
 
 pytestmark = pytest.mark.anyio
 
-TENANT_ID = "org_1234567890abcdef"
+ORGANIZATION_ID = "org_1234567890abcdef"
 RUN_ID = "run_1234567890abcdef"
 THREAD_ID = "thread-1234567890abcdef"
 ATTEMPT_ID = "rat_1234567890abcdef"
@@ -67,15 +67,15 @@ def _source(*, content: str = "hello") -> CompleteRunStream:
             ),
         ),
     )
-    return CompleteRunStream(entries, NOW, run_stream_key_digest_sha256(TENANT_ID, RUN_ID))
+    return CompleteRunStream(entries, NOW, run_stream_key_digest_sha256(ORGANIZATION_ID, RUN_ID))
 
 
 async def test_publishes_and_validates_create_only_complete_snapshot(object_store: ObjectStore) -> None:
     store = RunReplayStore(object_store)
 
-    created = await store.publish(TENANT_ID, RUN_ID, _source())
-    replayed = await store.publish(TENANT_ID, RUN_ID, _source())
-    loaded = await store.read(TENANT_ID, RUN_ID)
+    created = await store.publish(ORGANIZATION_ID, RUN_ID, _source())
+    replayed = await store.publish(ORGANIZATION_ID, RUN_ID, _source())
+    loaded = await store.read(ORGANIZATION_ID, RUN_ID)
 
     assert created == replayed == loaded
     assert created.source_run_attempt_ids == (ATTEMPT_ID,)
@@ -86,10 +86,10 @@ async def test_publishes_and_validates_create_only_complete_snapshot(object_stor
 
 async def test_rejects_conflicting_existing_snapshot(object_store: ObjectStore) -> None:
     store = RunReplayStore(object_store)
-    await store.publish(TENANT_ID, RUN_ID, _source())
+    await store.publish(ORGANIZATION_ID, RUN_ID, _source())
 
     with pytest.raises(RunReplayIntegrityError, match="does not match"):
-        await store.publish(TENANT_ID, RUN_ID, _source(content="different"))
+        await store.publish(ORGANIZATION_ID, RUN_ID, _source(content="different"))
 
 
 @pytest.mark.parametrize("corruption", ["attempt_index", "item_index"])
@@ -98,7 +98,7 @@ async def test_rejects_semantically_inconsistent_snapshot_body(
     corruption: str,
 ) -> None:
     store = RunReplayStore(object_store)
-    snapshot = await store.publish(TENANT_ID, RUN_ID, _source())
+    snapshot = await store.publish(ORGANIZATION_ID, RUN_ID, _source())
     if corruption == "attempt_index":
         corrupted = snapshot.model_copy(update={"source_run_attempt_ids": ()})
     else:
@@ -106,7 +106,7 @@ async def test_rejects_semantically_inconsistent_snapshot_body(
     await _overwrite_snapshot(object_store, corrupted)
 
     with pytest.raises(RunReplayIntegrityError, match="index does not match"):
-        await store.read(TENANT_ID, RUN_ID)
+        await store.read(ORGANIZATION_ID, RUN_ID)
 
 
 @pytest.mark.parametrize("corruption", ["event_order", "event_identity"])
@@ -115,7 +115,7 @@ async def test_rejects_invalid_snapshot_event_sequence(
     corruption: str,
 ) -> None:
     store = RunReplayStore(object_store)
-    snapshot = await store.publish(TENANT_ID, RUN_ID, _source())
+    snapshot = await store.publish(ORGANIZATION_ID, RUN_ID, _source())
     if corruption == "event_order":
         events = tuple(reversed(snapshot.events))
         corrupted = snapshot.model_copy(
@@ -137,7 +137,7 @@ async def test_rejects_invalid_snapshot_event_sequence(
     await _overwrite_snapshot(object_store, corrupted)
 
     with pytest.raises(RunReplayIntegrityError, match=expected):
-        await store.read(TENANT_ID, RUN_ID)
+        await store.read(ORGANIZATION_ID, RUN_ID)
 
 
 async def test_marks_open_item_interrupted_at_closed_stream_boundary(object_store: ObjectStore) -> None:
@@ -148,7 +148,7 @@ async def test_marks_open_item_interrupted_at_closed_stream_boundary(object_stor
         stream_key_digest_sha256=source.stream_key_digest_sha256,
     )
 
-    snapshot = await RunReplayStore(object_store).publish(TENANT_ID, RUN_ID, incomplete)
+    snapshot = await RunReplayStore(object_store).publish(ORGANIZATION_ID, RUN_ID, incomplete)
 
     assert len(snapshot.items) == 1
     assert snapshot.items[0].state == "interrupted"
@@ -158,15 +158,15 @@ async def test_rejects_empty_or_oversized_snapshot_source(object_store: ObjectSt
     source = _source()
     empty = CompleteRunStream((), source.closed_at, source.stream_key_digest_sha256)
     with pytest.raises(RetainedReplayUnavailable, match="event count"):
-        await RunReplayStore(object_store).publish(TENANT_ID, RUN_ID, empty)
+        await RunReplayStore(object_store).publish(ORGANIZATION_ID, RUN_ID, empty)
     with pytest.raises(RetainedReplayUnavailable, match="encoded size"):
-        await RunReplayStore(object_store, max_bytes=10).publish(TENANT_ID, RUN_ID, source)
+        await RunReplayStore(object_store, max_bytes=10).publish(ORGANIZATION_ID, RUN_ID, source)
 
 
 async def _overwrite_snapshot(object_store: ObjectStore, snapshot: RunReplaySnapshot) -> None:
     body = canonical_model_bytes(snapshot)
     await object_store.put(
-        run_replay_key(TENANT_ID, RUN_ID),
+        run_replay_key(ORGANIZATION_ID, RUN_ID),
         body,
         content_type=RUN_REPLAY_CONTENT_TYPE,
         metadata={

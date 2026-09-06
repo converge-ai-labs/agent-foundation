@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pytest
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
+from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.domain import PrincipalRef
@@ -36,7 +38,6 @@ from a13n_service.skills.domain import (
 from a13n_service.skills.errors import GitHubCredentialError, SkillError
 from a13n_service.skills.github import AcquiredGitHubSkill
 from a13n_service.skills.models import (
-    SkillIdempotencyRecord,
     SkillRecord,
     SkillRevisionRecord,
     SkillUploadRecord,
@@ -178,7 +179,7 @@ async def staged_source(uploads: SkillUploadService, *, key: str, content: bytes
         idempotency_key=key,
         archive=content,
     )
-    assert receipt.status_code == 201
+    assert receipt.created is True
     return ZipUploadSkillSource(upload_id=receipt.result.upload_id)
 
 
@@ -229,7 +230,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         idempotency_key="create-key",
     )
 
-    assert created.status_code == 201
+    assert created.created is True
     assert created.result.outcome == "published"
     assert created.result.skill.version == 1
     assert created.result.skill.key == "deploy-helper"
@@ -241,7 +242,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         upload = await session.get(SkillUploadRecord, source.upload_id)
         assert upload is not None
         assert upload.consumed_by_revision_id == created.result.revision.id
-        evidence = tuple((await session.scalars(select(SkillIdempotencyRecord))).all())
+        evidence = tuple((await session.scalars(select(IdempotencyEvidenceRecord))).all())
         assert len(evidence) == 2
 
     updated = await catalog.update(
@@ -266,7 +267,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         request=CreateSkillRevisionRequest(expected_version=1, source=same_source),
         idempotency_key="revision-same",
     )
-    assert same.status_code == 200
+    assert same.created is False
     assert same.result.outcome == "already_current"
     assert same.result.skill.version == 1
     assert same.result.revision.id == created.result.revision.id
@@ -278,7 +279,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         request=CreateSkillRevisionRequest(expected_version=1, source=new_source),
         idempotency_key="revision-new",
     )
-    assert published.status_code == 201
+    assert published.created is True
     assert published.result.skill.version == 2
     assert published.result.revision.version == 2
     revision_page = await catalog.list_revisions(
@@ -519,7 +520,7 @@ async def test_read_content_tombstone_and_viewer_authorization(
             if_match=resource_etag(skill.id, skill.updated_at),
             request=UpdateSkillRequest(name="Denied"),
         )
-    assert denied.value.status_code == 404
+    assert application_error_status(denied.value) == 404
 
     await catalog.delete(
         actor=actor(),

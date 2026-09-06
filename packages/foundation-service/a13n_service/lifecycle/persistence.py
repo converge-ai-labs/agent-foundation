@@ -51,7 +51,7 @@ async def append_lifecycle_event(
 
     latest = await database.scalar(
         select(func.max(LifecycleEventRecord.resource_seq)).where(
-            LifecycleEventRecord.tenant_id == draft.tenant_id,
+            LifecycleEventRecord.organization_id == draft.organization_id,
             LifecycleEventRecord.entity_type == draft.entity_type.value,
             LifecycleEventRecord.entity_id == draft.entity_id,
         )
@@ -61,7 +61,7 @@ async def append_lifecycle_event(
     projected_at = None if draft.project_live else draft.occurred_at
     record = LifecycleEventRecord(
         id=draft.id,
-        tenant_id=draft.tenant_id,
+        organization_id=draft.organization_id,
         entity_type=draft.entity_type.value,
         entity_id=draft.entity_id,
         resource_seq=resource_seq,
@@ -96,7 +96,7 @@ async def append_lifecycle_event(
 async def read_resource_events(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     entity_type: LifecycleEntityType,
     entity_id: str,
     after_resource_seq: int,
@@ -111,7 +111,7 @@ async def read_resource_events(
             func.min(LifecycleEventRecord.resource_seq),
             func.max(LifecycleEventRecord.resource_seq),
         ).where(
-            LifecycleEventRecord.tenant_id == tenant_id,
+            LifecycleEventRecord.organization_id == organization_id,
             LifecycleEventRecord.entity_type == entity_type.value,
             LifecycleEventRecord.entity_id == entity_id,
         )
@@ -125,7 +125,7 @@ async def read_resource_events(
         await database.scalars(
             select(LifecycleEventRecord)
             .where(
-                LifecycleEventRecord.tenant_id == tenant_id,
+                LifecycleEventRecord.organization_id == organization_id,
                 LifecycleEventRecord.entity_type == entity_type.value,
                 LifecycleEventRecord.entity_id == entity_id,
                 LifecycleEventRecord.resource_seq > after_resource_seq,
@@ -165,7 +165,7 @@ async def claim_lifecycle_projections(
     )
     earlier = aliased(LifecycleEventRecord)
     no_earlier_unsettled_run_event = ~exists().where(
-        earlier.tenant_id == LifecycleEventRecord.tenant_id,
+        earlier.organization_id == LifecycleEventRecord.organization_id,
         earlier.run_id == LifecycleEventRecord.run_id,
         earlier.seq < LifecycleEventRecord.seq,
         earlier.projection_state.in_(

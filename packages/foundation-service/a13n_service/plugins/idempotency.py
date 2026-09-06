@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_utf8_key,
+    digest_visible_ascii_key,
     load_evidence,
     new_evidence,
 )
@@ -23,18 +22,13 @@ from .errors import PluginError
 
 
 def plugin_key_digest(key: str) -> str:
-    """Preserve Plugin's non-empty, at-most-512-byte UTF-8 key policy."""
+    """Validate the shared visible ASCII HTTP key contract."""
     try:
-        return digest_utf8_key(key)
+        return digest_visible_ascii_key(key)
     except InvalidIdempotencyKey as error:
-        raise PluginError("invalid_request", "Idempotency-Key is invalid.", status_code=400) from error
-
-
-def plugin_request_digest(payload: dict[str, object]) -> str:
-    """Digest Plugin's existing canonical JSON request representation."""
-
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return hashlib.sha256(encoded).hexdigest()
+        raise PluginError(
+            "invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request
+        ) from error
 
 
 async def load_plugin_evidence(
@@ -84,6 +78,7 @@ def _scope(actor: AuthenticatedActor, *, operation: str, scope_id: str) -> Evide
         actor_id=actor.principal.principal_id,
         operation=operation,
         scope_id=scope_id,
+        organization_id=actor.boundary_organization_id,
     )
 
 
@@ -91,5 +86,4 @@ __all__ = [
     "load_plugin_evidence",
     "new_plugin_evidence",
     "plugin_key_digest",
-    "plugin_request_digest",
 ]

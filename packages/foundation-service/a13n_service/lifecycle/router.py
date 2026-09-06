@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
@@ -22,7 +23,7 @@ def _service(request: Request) -> LifecycleEventService:
         raise LifecycleEventError(
             "lifecycle_events_unavailable",
             "Lifecycle events are unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.lifecycle_events
 

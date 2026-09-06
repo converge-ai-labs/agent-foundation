@@ -7,7 +7,6 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.hooks.persistence import HookSubscriptionInvariantError, create_inline_hook_subscription
-from a13n_service.interactions.lifecycle import append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import short_session, transaction
@@ -15,7 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import RUN_ID, SECRET_ID, seed_run_and_secret
-from tests.interactions.conftest import NOW, SESSION_ID, TENANT_ID, THREAD_ID, USER_ID, WORKSPACE_ID
+from tests.interactions.conftest import NOW, ORGANIZATION_ID, SESSION_ID, THREAD_ID, USER_ID, WORKSPACE_ID
+from tests.lifecycle_support import test_lifecycle_writer
 
 pytestmark = pytest.mark.anyio
 
@@ -39,7 +39,7 @@ async def test_inline_creation_precedes_matching_and_outbox_keeps_exact_revision
         assert run is not None
         subscription = await create_inline_hook_subscription(
             database,
-            organization_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             session_id=SESSION_ID,
             thread_id=THREAD_ID,
@@ -49,7 +49,7 @@ async def test_inline_creation_precedes_matching_and_outbox_keeps_exact_revision
             subscription=_input("run.accepted", "run.completed"),
             now=NOW,
         )
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",
@@ -65,7 +65,7 @@ async def test_inline_creation_precedes_matching_and_outbox_keeps_exact_revision
         assert head is not None
         replacement = HookSubscriptionRevisionRecord(
             id="hsubr_7272727272727272",
-            organization_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             hook_subscription_id=head.id,
             version=2,
@@ -103,7 +103,7 @@ async def test_scope_name_and_head_state_are_conjunctive(
         assert run is not None
         disabled = await create_inline_hook_subscription(
             database,
-            organization_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             session_id=SESSION_ID,
             thread_id=THREAD_ID,
@@ -114,7 +114,7 @@ async def test_scope_name_and_head_state_are_conjunctive(
             now=NOW,
         )
         disabled.enabled = False
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",
@@ -144,7 +144,7 @@ async def test_inline_creation_requires_current_workspace_secret(
         async with transaction(hook_interaction_sessions) as database:
             await create_inline_hook_subscription(
                 database,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 session_id=SESSION_ID,
                 thread_id=THREAD_ID,
@@ -166,7 +166,7 @@ async def test_outbox_rolls_back_with_lifecycle_and_state_transaction(
             assert run is not None
             await create_inline_hook_subscription(
                 database,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 session_id=SESSION_ID,
                 thread_id=THREAD_ID,
@@ -176,7 +176,7 @@ async def test_outbox_rolls_back_with_lifecycle_and_state_transaction(
                 subscription=_input("run.accepted"),
                 now=NOW,
             )
-            await append_run_lifecycle(
+            await test_lifecycle_writer().append_run_lifecycle(
                 database,
                 run,
                 "run.accepted",
@@ -201,7 +201,7 @@ async def test_postgresql_enforces_current_revision_and_matches_with_jsonb_gin(
         assert run is not None
         subscription = await create_inline_hook_subscription(
             database,
-            organization_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             session_id=SESSION_ID,
             thread_id=THREAD_ID,
@@ -211,7 +211,7 @@ async def test_postgresql_enforces_current_revision_and_matches_with_jsonb_gin(
             subscription=_input("run.accepted"),
             now=NOW,
         )
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",

@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.agents.models import AgentRevisionRecord
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, is_evidence_unique_race
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request, is_evidence_unique_race
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.audit import security_audit_record
@@ -60,7 +61,6 @@ from .idempotency import (
     load_plugin_evidence,
     new_plugin_evidence,
     plugin_key_digest,
-    plugin_request_digest,
 )
 from .models import PluginRecord, PluginRuntimeStateRecord, PluginVersionRecord
 from .objects import PluginObjectStore
@@ -197,7 +197,7 @@ class PluginService:
             )
             operation = "plugin.version.upload" if plugin_id is not None else "plugin.upload"
             scope_id = plugin_id or "plugins"
-            request_digest = plugin_request_digest(
+            request_digest = digest_request(
                 {
                     "plugin_id": plugin_id,
                     "content_digest": staged.content_digest,
@@ -267,7 +267,9 @@ class PluginService:
         try:
             after = decode_plugin_cursor(cursor, scope=scope) if cursor is not None else None
         except PluginCursorError as error:
-            raise PluginError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise PluginError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         await self._authorize(actor, WorkspaceAction.plugin_read)
         query = select(PluginRecord)
         if not include_archived:
@@ -316,7 +318,9 @@ class PluginService:
         try:
             after = decode_plugin_version_cursor(cursor, scope=scope) if cursor is not None else None
         except PluginCursorError as error:
-            raise PluginError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise PluginError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         await self._authorize(actor, WorkspaceAction.plugin_read)
         async with short_session(self._sessions) as session:
             if await session.get(PluginRecord, plugin_id) is None:
@@ -369,7 +373,7 @@ class PluginService:
         organization_id = await self._authorize(actor, WorkspaceAction.plugin_manage)
         operation = f"plugin.{action}"
         key_digest = plugin_key_digest(idempotency_key)
-        request_digest = plugin_request_digest({"plugin_id": plugin_id, "action": action})
+        request_digest = digest_request({"plugin_id": plugin_id, "action": action})
         replay = await self._load_plugin_replay(
             actor=actor,
             operation=operation,
@@ -792,7 +796,7 @@ class PluginService:
                 )
             return workspace.organization_id
         except AuthorizationError as error:
-            raise PluginError("forbidden", "The operation is not allowed.", status_code=403) from error
+            raise PluginError("forbidden", "The operation is not allowed.", category=ErrorCategory.forbidden) from error
 
     def _require_runtime_command_dispatcher(self) -> PluginRuntimeCommandDispatcher:
         if self._runtime_mode is PluginRuntimeMode.on_demand:

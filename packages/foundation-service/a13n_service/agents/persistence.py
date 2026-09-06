@@ -5,19 +5,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.durable_operations.idempotency import (
-    EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
+    digest_request,
     digest_visible_ascii_key,
-    load_evidence,
-    new_evidence,
 )
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.durable_operations.requests import ReplayReceipt, evidence_record
+from a13n_service.durable_operations.requests import load_replay as load_request_replay
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -259,12 +259,12 @@ async def load_revision_create_result(session: AsyncSession, revision_id: str) -
 
 def require_custom(agent: Agent) -> None:
     if agent.source is AgentSource.builtin:
-        raise AgentError("agent_state_conflict", "Built-in Agents are read-only.", status_code=409)
+        raise AgentError("agent_state_conflict", "Built-in Agents are read-only.", category=ErrorCategory.conflict)
 
 
 def require_custom_mutable(record: AgentRecord) -> None:
     if record.source != AgentSource.custom.value:
-        raise AgentError("agent_state_conflict", "Built-in Agents are read-only.", status_code=409)
+        raise AgentError("agent_state_conflict", "Built-in Agents are read-only.", category=ErrorCategory.conflict)
     if record.archived_at is not None:
         raise agent_archived()
 
@@ -280,7 +280,7 @@ def require_etag(record: AgentRecord, if_match: str) -> None:
         raise AgentError(
             "precondition_failed",
             "The Agent representation has changed.",
-            status_code=412,
+            category=ErrorCategory.stale_version,
             details={"current_etag": current},
         )
 
@@ -300,25 +300,33 @@ def apply_lifecycle_transition(
     if action == "enable":
         if record.archived_at is not None or record.enabled:
             raise AgentError(
-                "agent_state_conflict", "The Agent cannot be enabled from its current state.", status_code=409
+                "agent_state_conflict",
+                "The Agent cannot be enabled from its current state.",
+                category=ErrorCategory.conflict,
             )
         record.enabled = True
         return
     if action == "disable":
         if record.archived_at is not None or not record.enabled:
             raise AgentError(
-                "agent_state_conflict", "The Agent cannot be disabled from its current state.", status_code=409
+                "agent_state_conflict",
+                "The Agent cannot be disabled from its current state.",
+                category=ErrorCategory.conflict,
             )
         record.enabled = False
         return
     if action == "archive":
         if record.source != AgentSource.custom.value or record.enabled or record.archived_at is not None:
-            raise AgentError("agent_state_conflict", "Only a disabled custom Agent can be archived.", status_code=409)
+            raise AgentError(
+                "agent_state_conflict", "Only a disabled custom Agent can be archived.", category=ErrorCategory.conflict
+            )
         record.archived_at = now
         return
     if record.archived_at is None or record.source != AgentSource.custom.value:
         raise AgentError(
-            "agent_state_conflict", "The Agent cannot be unarchived from its current state.", status_code=409
+            "agent_state_conflict",
+            "The Agent cannot be unarchived from its current state.",
+            category=ErrorCategory.conflict,
         )
     record.archived_at = None
     record.enabled = False
@@ -353,7 +361,7 @@ async def require_not_in_use(session: AsyncSession, target: AgentRecord) -> None
                 raise AgentError(
                     "agent_in_use",
                     "The Agent is referenced by an enabled Agent graph.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 )
             child_revision_id = edge.get("child_agent_revision_id")
             if isinstance(child_revision_id, str) and child_revision_id not in visited:
@@ -382,9 +390,10 @@ def add_command_evidence_and_audit(
     result_kind: str,
     result_ref: str,
     now: datetime,
+    response: BaseModel,
 ) -> None:
     session.add(
-        new_agent_evidence(
+        evidence_record(
             actor=actor,
             organization_id=record.organization_id,
             workspace_id=record.workspace_id,
@@ -393,6 +402,7 @@ def add_command_evidence_and_audit(
             identity=identity,
             result_kind=result_kind,
             result_ref=result_ref,
+            response=response,
             now=now,
         )
     )
@@ -413,7 +423,7 @@ def request_identity(idempotency_key: str, request) -> IdempotencyIdentity:
         key_digest = digest_visible_ascii_key(idempotency_key)
     except InvalidIdempotencyKey as error:
         raise invalid_idempotency_key() from error
-    return IdempotencyIdentity(key_digest, canonical_digest(request))
+    return IdempotencyIdentity(key_digest, digest_request(request))
 
 
 def payload_identity(idempotency_key: str, payload: JsonObject) -> IdempotencyIdentity:
@@ -421,7 +431,7 @@ def payload_identity(idempotency_key: str, payload: JsonObject) -> IdempotencyId
         key_digest = digest_visible_ascii_key(idempotency_key)
     except InvalidIdempotencyKey as error:
         raise invalid_idempotency_key() from error
-    return IdempotencyIdentity(key_digest, canonical_digest(payload))
+    return IdempotencyIdentity(key_digest, digest_request(payload))
 
 
 async def load_replay(
@@ -432,53 +442,22 @@ async def load_replay(
     scope_id: str,
     identity: IdempotencyIdentity,
     now: datetime,
-) -> str | None:
+) -> ReplayReceipt | None:
+    # Agent commands require a Workspace even though shared receipts also support Organizations.
+    _ = actor.workspace_id
     try:
-        evidence = await load_evidence(
+        return await load_request_replay(
             session,
-            scope=EvidenceScope(
-                workspace_id=actor.workspace_id,
-                actor_type=actor.principal.principal_type.value,
-                actor_id=actor.principal.principal_id,
-                operation=operation,
-                scope_id=scope_id,
-            ),
+            actor=actor,
+            operation=operation,
+            scope_id=scope_id,
             identity=identity,
             now=now,
         )
-    except IdempotencyConflict as error:
-        raise idempotency_conflict() from error
-    if evidence is None:
-        return None
-    return evidence.result_ref
-
-
-def new_agent_evidence(
-    *,
-    actor: AuthenticatedActor,
-    organization_id: str,
-    workspace_id: str,
-    operation: str,
-    scope_id: str,
-    identity: IdempotencyIdentity,
-    result_kind: str,
-    result_ref: str,
-    now: datetime,
-) -> IdempotencyEvidenceRecord:
-    return new_evidence(
-        organization_id=organization_id,
-        scope=EvidenceScope(
-            workspace_id=workspace_id,
-            actor_type=actor.principal.principal_type.value,
-            actor_id=actor.principal.principal_id,
-            operation=operation,
-            scope_id=scope_id,
-        ),
-        identity=identity,
-        result_kind=result_kind,
-        result_ref=result_ref,
-        now=now,
-    )
+    except ApplicationError as error:
+        if error.code == "idempotency_conflict":
+            raise idempotency_conflict() from error
+        raise
 
 
 def new_agent_audit(

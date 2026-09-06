@@ -9,6 +9,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
@@ -27,7 +28,7 @@ def _assets(request: Request) -> AssetService:
         raise AssetError(
             "asset_management_unavailable",
             "Asset Management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.assets
 
@@ -110,7 +111,7 @@ def _require_octet_stream(request: Request) -> None:
         raise AssetError(
             "invalid_request",
             "The request body must be exactly application/octet-stream.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
 
 
@@ -121,12 +122,16 @@ def _content_length(request: Request) -> int | None:
     try:
         parsed = int(value)
     except ValueError as error:
-        raise AssetError("invalid_request", "Content-Length is invalid.", status_code=400) from error
+        raise AssetError(
+            "invalid_request", "Content-Length is invalid.", category=ErrorCategory.invalid_request
+        ) from error
     if parsed < 0:
-        raise AssetError("invalid_request", "Content-Length is invalid.", status_code=400)
+        raise AssetError("invalid_request", "Content-Length is invalid.", category=ErrorCategory.invalid_request)
     runtime = get_process_runtime(request)
     if runtime is None:
-        raise AssetError("asset_management_unavailable", "Asset Management is unavailable.", status_code=503)
+        raise AssetError(
+            "asset_management_unavailable", "Asset Management is unavailable.", category=ErrorCategory.unavailable
+        )
     settings = runtime.settings
     if parsed > settings.asset_max_size_bytes:
         raise asset_limit()

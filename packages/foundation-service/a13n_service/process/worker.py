@@ -153,7 +153,7 @@ async def build_worker_runtime(
         )
         execution_loop = build_execution_loop(
             settings,
-            shared.storage.sessions,
+            shared,
             OnDemandExecutionPreflight(
                 shared.storage.sessions,
                 PluginRuntimeLockStore(manifest),
@@ -166,9 +166,7 @@ async def build_worker_runtime(
             ),
         )
     else:
-        runner_discovery = RunnerDiscoveryLoop(
-            settings, shared.storage.sessions, PluginRuntimeLockStore(manifest), plugin_runtime
-        )
+        runner_discovery = RunnerDiscoveryLoop(settings, shared, PluginRuntimeLockStore(manifest), plugin_runtime)
     runtime = WorkerRuntime(
         external_tools=external_tools,
         plugin_materializer=materializer,

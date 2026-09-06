@@ -11,19 +11,25 @@ from sqlalchemy import and_, exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import canonical_digest
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
+    digest_request,
     digest_visible_ascii_key,
     is_evidence_unique_race,
     load_evidence,
     new_evidence,
 )
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
-from a13n_service.ids import new_object_id
+from a13n_service.interactions.commands import (
+    ContinueRunCommand,
+    InteractionCommandError,
+    InteractionCommands,
+    WaitingContinueRunCommand,
+)
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     QueuedSubmission,
@@ -50,9 +56,6 @@ from a13n_service.interactions.queue import (
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
-from .commands import ContinueRunRequest, GatewayCommandError, NativeInteractionCommands, WaitingContinueRunRequest
-from .models import GatewayCommandReceiptRecord
-
 
 class DeleteQueuedSubmissionRequest(StrictModel):
     expected_version: int = Field(ge=1)
@@ -66,14 +69,14 @@ class _QueueScope:
     agent_id: str
 
 
-class NativeQueuedSubmissionService:
+class QueuedSubmissionService:
     """Apply queue IAM and durable idempotency around the core queue store."""
 
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
         store: QueuedSubmissionStore,
-        commands: NativeInteractionCommands,
+        commands: InteractionCommands,
         *,
         clock: Clock = utc_now,
     ) -> None:
@@ -114,7 +117,7 @@ class NativeQueuedSubmissionService:
                 live_queue = await database.scalar(
                     select(QueuedSubmissionRecord.id)
                     .where(
-                        QueuedSubmissionRecord.tenant_id == scope.organization_id,
+                        QueuedSubmissionRecord.organization_id == scope.organization_id,
                         QueuedSubmissionRecord.thread_id == thread.id,
                         QueuedSubmissionRecord.position.is_not(None),
                     )
@@ -123,10 +126,10 @@ class NativeQueuedSubmissionService:
                     .with_for_update()
                 )
                 if live_queue is not None:
-                    raise GatewayCommandError(
+                    raise InteractionCommandError(
                         "thread_queue_precedence_changed",
                         "Queued intent gained precedence before Run acceptance.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
             selected_thread = await database.get(ThreadRecord, thread.id)
             if selected_thread is None:
@@ -144,7 +147,7 @@ class NativeQueuedSubmissionService:
                 receipt=wrapped,
             )
 
-        continuation = ContinueRunRequest(
+        continuation = ContinueRunCommand(
             expected_thread_version=request.expected_thread_version,
             input=request.input,
             agent_id=request.agent_id,
@@ -186,16 +189,16 @@ class NativeQueuedSubmissionService:
             if admission is ThreadSubmissionAdmission.waiting_continue:
                 assert current is not None
                 if current.sealed_state is None or request.waiting_resolution is None:
-                    raise GatewayCommandError(
+                    raise InteractionCommandError(
                         "run_waiting_state_invalid",
                         "The current waiting Run has no complete sealed state.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 receipt = await self._commands.continue_waiting(
                     actor=actor,
                     run_id=current.id,
                     idempotency_key=idempotency_key,
-                    request=WaitingContinueRunRequest(
+                    request=WaitingContinueRunCommand(
                         expected_thread_version=request.expected_thread_version,
                         sealed_state_digest_sha256=request.waiting_resolution.sealed_state_digest_sha256,
                         input=request.input,
@@ -231,10 +234,10 @@ class NativeQueuedSubmissionService:
             if replayed is not None:
                 return replayed
             raise
-        raise GatewayCommandError(
+        raise InteractionCommandError(
             "thread_submission_rejected",
             "The Thread cannot accept or queue this submission.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         )
 
     async def list(
@@ -250,7 +253,7 @@ class NativeQueuedSubmissionService:
         )
         try:
             return await self._store.list(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread_id,
                 state=state,
                 limit=limit,
@@ -281,7 +284,7 @@ class NativeQueuedSubmissionService:
         )
         try:
             return await self._store.get(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 queued_submission_id=queued_submission_id,
             )
         except QueuedSubmissionConflict as error:
@@ -327,7 +330,7 @@ class NativeQueuedSubmissionService:
                 (target_agent_id, WorkspaceAction.agent_invoke),
             ),
             invoke=lambda replay, commit: self._store.enqueue(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread_id,
                 expected_thread_version=expected_thread_version,
                 authority_principal=actor.principal,
@@ -374,7 +377,7 @@ class NativeQueuedSubmissionService:
                 (target_agent_id, WorkspaceAction.agent_invoke),
             ),
             invoke=lambda replay, commit: self._store.update(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 queued_submission_id=queued_submission_id,
                 expected_version=request.expected_version,
                 actor_principal=actor.principal,
@@ -416,7 +419,7 @@ class NativeQueuedSubmissionService:
             response_type=ThreadQueueMutationReceipt,
             final_authorizations=((scope.agent_id, WorkspaceAction.queued_submission_delete),),
             invoke=lambda replay, commit: self._store.delete(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 queued_submission_id=queued_submission_id,
                 expected_version=request.expected_version,
                 replay=replay,
@@ -456,7 +459,7 @@ class NativeQueuedSubmissionService:
             response_type=ThreadQueueMutationReceipt,
             final_authorizations=((scope.agent_id, WorkspaceAction.queued_submission_reorder),),
             invoke=lambda replay, commit: self._store.reorder(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread_id,
                 expected_queue_version=request.expected_queue_version,
                 queued_submission_ids=request.queued_submission_ids,
@@ -533,7 +536,7 @@ class NativeQueuedSubmissionService:
 
         try:
             queued = await self._store.enqueue(
-                tenant_id=scope.organization_id,
+                organization_id=scope.organization_id,
                 thread_id=thread.id,
                 expected_thread_version=request.expected_thread_version,
                 authority_principal=actor.principal,
@@ -565,14 +568,14 @@ class NativeQueuedSubmissionService:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .outerjoin(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )
@@ -590,7 +593,7 @@ class NativeQueuedSubmissionService:
                 if thread_record.head_run_id is None
                 else await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == thread_record.tenant_id,
+                        RunRecord.organization_id == thread_record.organization_id,
                         RunRecord.id == thread_record.head_run_id,
                     )
                 )
@@ -599,7 +602,7 @@ class NativeQueuedSubmissionService:
                 await database.scalar(
                     select(
                         exists().where(
-                            QueuedSubmissionRecord.tenant_id == thread_record.tenant_id,
+                            QueuedSubmissionRecord.organization_id == thread_record.organization_id,
                             QueuedSubmissionRecord.thread_id == thread_record.id,
                             QueuedSubmissionRecord.position.is_not(None),
                         )
@@ -626,9 +629,11 @@ class NativeQueuedSubmissionService:
             )
             target_agent_id = request.agent_id or (current.agent_id if current else None)
             if target_agent_id is None:
-                raise GatewayCommandError("agent_required", "First input requires an Agent selection.", status_code=400)
+                raise InteractionCommandError(
+                    "agent_required", "First input requires an Agent selection.", category=ErrorCategory.invalid_request
+                )
             scope = _QueueScope(
-                session_record.tenant_id,
+                session_record.organization_id,
                 session_record.workspace_id,
                 thread.id,
                 current.agent_id if current else target_agent_id,
@@ -671,6 +676,7 @@ class NativeQueuedSubmissionService:
             actor_id=actor.principal.principal_id,
             operation=operation,
             scope_id=scope_id,
+            organization_id=actor.boundary_organization_id,
         )
 
         async def replay(database: AsyncSession) -> ReceiptT | None:
@@ -714,10 +720,10 @@ class NativeQueuedSubmissionService:
             async with short_session(self._sessions) as database:
                 replayed = await replay(database)
             if replayed is None:
-                raise GatewayCommandError(
+                raise InteractionCommandError(
                     "idempotency_reconciliation_failed",
                     "The queue command outcome could not be reconciled.",
-                    status_code=503,
+                    category=ErrorCategory.unavailable,
                 ) from error
             return replayed
 
@@ -731,25 +737,14 @@ class NativeQueuedSubmissionService:
         receipt: BaseModel,
     ) -> None:
         now = self._clock()
-        receipt_id = new_object_id("gwrcpt")
-        database.add(
-            GatewayCommandReceiptRecord(
-                id=receipt_id,
-                organization_id=scope.organization_id,
-                workspace_id=scope.workspace_id,
-                response_kind=type(receipt).__name__,
-                request_digest_sha256=identity.request_digest,
-                response_json=receipt.model_dump(mode="json", by_alias=True),
-                created_at=now,
-            )
-        )
         database.add(
             new_evidence(
                 organization_id=scope.organization_id,
                 scope=evidence_scope,
                 identity=identity,
-                result_kind="gateway_receipt",
-                result_ref=receipt_id,
+                result_kind="thread_command",
+                result_ref=scope.thread_id,
+                receipt=receipt.model_dump(mode="json", by_alias=True),
                 now=now,
             )
         )
@@ -771,6 +766,7 @@ class NativeQueuedSubmissionService:
             actor_id=actor.principal.principal_id,
             operation=operation,
             scope_id=scope_id,
+            organization_id=actor.boundary_organization_id,
         )
         try:
             async with short_session(self._sessions) as database:
@@ -795,18 +791,18 @@ class NativeQueuedSubmissionService:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(SessionRecord.tenant_id, SessionRecord.workspace_id, RunRecord.agent_id)
+                    select(SessionRecord.organization_id, SessionRecord.workspace_id, RunRecord.agent_id)
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )
@@ -839,7 +835,7 @@ class NativeQueuedSubmissionService:
             row = (
                 await database.execute(
                     select(
-                        SessionRecord.tenant_id,
+                        SessionRecord.organization_id,
                         SessionRecord.workspace_id,
                         ThreadRecord.id,
                         RunRecord.agent_id,
@@ -847,21 +843,21 @@ class NativeQueuedSubmissionService:
                     .join(
                         ThreadRecord,
                         and_(
-                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.organization_id == SessionRecord.organization_id,
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
                     .join(
                         QueuedSubmissionRecord,
                         and_(
-                            QueuedSubmissionRecord.tenant_id == ThreadRecord.tenant_id,
+                            QueuedSubmissionRecord.organization_id == ThreadRecord.organization_id,
                             QueuedSubmissionRecord.thread_id == ThreadRecord.id,
                         ),
                     )
                     .join(
                         RunRecord,
                         and_(
-                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.organization_id == ThreadRecord.organization_id,
                             RunRecord.id == ThreadRecord.current_run_id,
                         ),
                     )
@@ -940,28 +936,21 @@ async def _load_receipt[ReceiptT: BaseModel](
     evidence = await load_evidence(database, scope=evidence_scope, identity=identity, now=now)
     if evidence is None:
         return None
-    if evidence.result_kind != "gateway_receipt":
-        raise IdempotencyConflict
-    record = await database.get(GatewayCommandReceiptRecord, evidence.result_ref)
-    if (
-        record is None
-        or record.response_kind != response_type.__name__
-        or record.request_digest_sha256 != identity.request_digest
-    ):
-        raise IdempotencyConflict
-    return response_type.model_validate(record.response_json)
+    if evidence.result_kind != "thread_command" or evidence.receipt_json is None:
+        raise RuntimeError("Thread command evidence has no original receipt")
+    return response_type.model_validate(evidence.receipt_json)
 
 
 def _identity(key: str, request: StrictModel) -> IdempotencyIdentity:
     try:
         key_digest = digest_visible_ascii_key(key)
     except InvalidIdempotencyKey as error:
-        raise GatewayCommandError(
+        raise InteractionCommandError(
             "invalid_request",
             "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         ) from error
-    return IdempotencyIdentity(key_digest=key_digest, request_digest=canonical_digest(request))
+    return IdempotencyIdentity(key_digest=key_digest, request_digest=digest_request(request))
 
 
 def _evidence_scope(actor: AuthenticatedActor, *, operation: str, scope_id: str) -> EvidenceScope:
@@ -971,24 +960,27 @@ def _evidence_scope(actor: AuthenticatedActor, *, operation: str, scope_id: str)
         actor_id=actor.principal.principal_id,
         operation=operation,
         scope_id=scope_id,
+        organization_id=actor.boundary_organization_id,
     )
 
 
-def _not_found() -> GatewayCommandError:
-    return GatewayCommandError("resource_not_found", "The requested resource was not found.", status_code=404)
+def _not_found() -> InteractionCommandError:
+    return InteractionCommandError(
+        "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+    )
 
 
-def _idempotency_conflict() -> GatewayCommandError:
-    return GatewayCommandError(
+def _idempotency_conflict() -> InteractionCommandError:
+    return InteractionCommandError(
         "idempotency_conflict",
         "The Idempotency-Key was already used with different request content.",
-        status_code=409,
+        category=ErrorCategory.conflict,
     )
 
 
-def _queue_error(error: Exception) -> GatewayCommandError:
-    status_code = 400 if isinstance(error, ValueError) else 409
-    return GatewayCommandError("queued_submission_conflict", str(error), status_code=status_code)
+def _queue_error(error: Exception) -> InteractionCommandError:
+    category = ErrorCategory.invalid_request if isinstance(error, ValueError) else ErrorCategory.conflict
+    return InteractionCommandError("queued_submission_conflict", str(error), category=category)
 
 
-__all__ = ["DeleteQueuedSubmissionRequest", "NativeQueuedSubmissionService"]
+__all__ = ["DeleteQueuedSubmissionRequest", "QueuedSubmissionService"]

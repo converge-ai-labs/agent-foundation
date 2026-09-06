@@ -1,7 +1,7 @@
 """Safe MCPConnection management errors."""
 
-from a13n_service.public_errors import PublicError
+from a13n_service.application_errors import ApplicationError
 
 
-class MCPConnectionError(PublicError):
+class MCPConnectionError(ApplicationError):
     pass

@@ -21,24 +21,30 @@ def upgrade() -> None:
     op.create_table(
         "sessions",
         sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "tenant_id"],
+            ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
             name=op.f("fk_sessions_workspace_id_workspaces"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_sessions")),
-        sa.UniqueConstraint("tenant_id", "id", name="uq_sessions_tenant_id"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_sessions_organization_id"),
     )
     op.create_index(
-        "ix_sessions_workspace_created", "sessions", ["tenant_id", "workspace_id", "created_at", "id"], unique=False
+        "ix_sessions_workspace_created",
+        "sessions",
+        ["organization_id", "workspace_id", "created_at", "id"],
+        unique=False,
     )
     op.create_index(
-        "ix_sessions_workspace_updated", "sessions", ["tenant_id", "workspace_id", "updated_at", "id"], unique=False
+        "ix_sessions_workspace_updated",
+        "sessions",
+        ["organization_id", "workspace_id", "updated_at", "id"],
+        unique=False,
     )
     op.create_table(
         "threads",
@@ -46,7 +52,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("queue_version", sa.BigInteger(), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("session_id", sa.String(length=72), nullable=False),
         sa.Column("role", sa.String(length=16), nullable=False),
         sa.Column("origin_kind", sa.String(length=16), nullable=False),
@@ -65,8 +71,8 @@ def upgrade() -> None:
         sa.CheckConstraint("queue_version >= 0", name=op.f("ck_threads_queue_version_non_negative")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_threads_version_positive")),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "origin_thread_id", "origin_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "origin_thread_id", "origin_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_threads_origin_run_same_thread",
             ondelete="RESTRICT",
             initially="DEFERRED",
@@ -74,14 +80,14 @@ def upgrade() -> None:
             use_alter=True,
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "origin_thread_id"],
-            ["threads.tenant_id", "threads.id"],
-            name=op.f("fk_threads_tenant_id_threads"),
+            ["organization_id", "origin_thread_id"],
+            ["threads.organization_id", "threads.id"],
+            name=op.f("fk_threads_organization_id_threads"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "session_id", "id", "current_run_id"],
-            ["runs.tenant_id", "runs.session_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "session_id", "id", "current_run_id"],
+            ["runs.organization_id", "runs.session_id", "runs.thread_id", "runs.id"],
             name="fk_threads_current_run_same_thread",
             ondelete="RESTRICT",
             initially="DEFERRED",
@@ -89,8 +95,8 @@ def upgrade() -> None:
             use_alter=True,
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "session_id", "id", "head_run_id"],
-            ["runs.tenant_id", "runs.session_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "session_id", "id", "head_run_id"],
+            ["runs.organization_id", "runs.session_id", "runs.thread_id", "runs.id"],
             name="fk_threads_head_run_same_thread",
             ondelete="RESTRICT",
             initially="DEFERRED",
@@ -98,9 +104,9 @@ def upgrade() -> None:
             use_alter=True,
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "session_id"],
-            ["sessions.tenant_id", "sessions.id"],
-            name=op.f("fk_threads_tenant_id_sessions"),
+            ["organization_id", "session_id"],
+            ["sessions.organization_id", "sessions.id"],
+            name=op.f("fk_threads_organization_id_sessions"),
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
@@ -109,21 +115,21 @@ def upgrade() -> None:
             name="fk_threads_default_environment_id_environments",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_threads")),
-        sa.UniqueConstraint("tenant_id", "id", name="uq_threads_tenant_id"),
-        sa.UniqueConstraint("tenant_id", "session_id", "id", name="uq_threads_session_id"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_threads_organization_id"),
+        sa.UniqueConstraint("organization_id", "session_id", "id", name="uq_threads_session_id"),
     )
-    op.create_index("ix_threads_origin_run", "threads", ["tenant_id", "origin_run_id", "id"], unique=False)
-    op.create_index("ix_threads_origin_thread", "threads", ["tenant_id", "origin_thread_id", "id"], unique=False)
+    op.create_index("ix_threads_origin_run", "threads", ["organization_id", "origin_run_id", "id"], unique=False)
+    op.create_index("ix_threads_origin_thread", "threads", ["organization_id", "origin_thread_id", "id"], unique=False)
     op.create_index(
-        "ix_threads_session_created", "threads", ["tenant_id", "session_id", "created_at", "id"], unique=False
+        "ix_threads_session_created", "threads", ["organization_id", "session_id", "created_at", "id"], unique=False
     )
     op.create_index(
-        "ix_threads_session_updated", "threads", ["tenant_id", "session_id", "updated_at", "id"], unique=False
+        "ix_threads_session_updated", "threads", ["organization_id", "session_id", "updated_at", "id"], unique=False
     )
     op.create_index(
         "uq_threads_session_root",
         "threads",
-        ["tenant_id", "session_id"],
+        ["organization_id", "session_id"],
         unique=True,
         postgresql_where=sa.text("role = 'root'"),
         sqlite_where=sa.text("role = 'root'"),
@@ -135,7 +141,7 @@ def upgrade() -> None:
         sa.Column("environment_use_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("authority_principal_type", sa.String(length=32), nullable=False),
         sa.Column("authority_principal_id", sa.String(length=72), nullable=False),
         sa.Column("session_id", sa.String(length=72), nullable=False),
@@ -152,12 +158,6 @@ def upgrade() -> None:
         sa.Column("agent_id", sa.String(length=72), nullable=False),
         sa.Column("agent_revision_id", sa.String(length=72), nullable=False),
         sa.Column("effective_agent_config_digest", sa.String(length=64), nullable=False),
-        sa.Column("encrypted_config_object_key", sa.String(length=1024), nullable=True),
-        sa.Column("encrypted_config_ciphertext_digest_sha256", sa.String(length=64), nullable=True),
-        sa.Column("encrypted_config_protected_value_digest_sha256", sa.String(length=64), nullable=True),
-        sa.Column("encrypted_config_size_bytes", sa.BigInteger(), nullable=True),
-        sa.Column("encrypted_config_encryption_key_id", sa.String(length=256), nullable=True),
-        sa.Column("encrypted_config_schema_version", sa.String(length=32), nullable=True),
         sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
         sa.Column("model_execution_observation_json", sa.JSON(), nullable=False),
         sa.Column("connector_connection_selections_json", sa.JSON(), nullable=False),
@@ -256,12 +256,8 @@ def upgrade() -> None:
             name=op.f("ck_runs_wait_reason_valid"),
         ),
         sa.CheckConstraint(
-            "(encrypted_config_ciphertext_digest_sha256 IS NULL OR length(encrypted_config_ciphertext_digest_sha256) = 64) AND (encrypted_config_protected_value_digest_sha256 IS NULL OR length(encrypted_config_protected_value_digest_sha256) = 64) AND (input_object_digest_sha256 IS NULL OR length(input_object_digest_sha256) = 64) AND (output_object_digest_sha256 IS NULL OR length(output_object_digest_sha256) = 64) AND (sealed_state_digest_sha256 IS NULL OR length(sealed_state_digest_sha256) = 64)",
+            "(input_object_digest_sha256 IS NULL OR length(input_object_digest_sha256) = 64) AND (output_object_digest_sha256 IS NULL OR length(output_object_digest_sha256) = 64) AND (sealed_state_digest_sha256 IS NULL OR length(sealed_state_digest_sha256) = 64)",
             name=op.f("ck_runs_optional_digests_sha256"),
-        ),
-        sa.CheckConstraint(
-            "(encrypted_config_object_key IS NULL AND encrypted_config_ciphertext_digest_sha256 IS NULL AND encrypted_config_protected_value_digest_sha256 IS NULL AND encrypted_config_size_bytes IS NULL AND encrypted_config_encryption_key_id IS NULL AND encrypted_config_schema_version IS NULL) OR (encrypted_config_object_key IS NOT NULL AND encrypted_config_ciphertext_digest_sha256 IS NOT NULL AND encrypted_config_protected_value_digest_sha256 IS NOT NULL AND encrypted_config_size_bytes > 0 AND encrypted_config_encryption_key_id IS NOT NULL AND encrypted_config_schema_version IS NOT NULL)",
-            name=op.f("ck_runs_encrypted_config_group_valid"),
         ),
         sa.CheckConstraint(
             "(input_json IS NOT NULL) <> (input_object_key IS NOT NULL)",
@@ -302,8 +298,8 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "id", "current_run_attempt_id"],
-            ["run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"],
+            ["organization_id", "id", "current_run_attempt_id"],
+            ["run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"],
             name="fk_runs_current_attempt_same_run",
             ondelete="RESTRICT",
             initially="DEFERRED",
@@ -311,8 +307,8 @@ def upgrade() -> None:
             use_alter=True,
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "id", "sealed_state_committed_by_run_attempt_id"],
-            ["run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"],
+            ["organization_id", "id", "sealed_state_committed_by_run_attempt_id"],
+            ["run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"],
             name="fk_runs_sealed_attempt_same_run",
             ondelete="RESTRICT",
             initially="DEFERRED",
@@ -320,22 +316,22 @@ def upgrade() -> None:
             use_alter=True,
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "parent_run_id"],
-            ["runs.tenant_id", "runs.id"],
-            name="fk_runs_parent_same_tenant",
+            ["organization_id", "parent_run_id"],
+            ["runs.organization_id", "runs.id"],
+            name="fk_runs_parent_same_organization",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "session_id", "thread_id"],
-            ["threads.tenant_id", "threads.session_id", "threads.id"],
-            name=op.f("fk_runs_tenant_id_threads"),
+            ["organization_id", "session_id", "thread_id"],
+            ["threads.organization_id", "threads.session_id", "threads.id"],
+            name=op.f("fk_runs_organization_id_threads"),
             ondelete="RESTRICT",
             initially="DEFERRED",
             deferrable=True,
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "thread_id", "retry_of_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "thread_id", "retry_of_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_runs_retry_same_thread",
             ondelete="RESTRICT",
         ),
@@ -345,19 +341,23 @@ def upgrade() -> None:
             name=op.f("ck_runs_environment_selection_valid"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_runs")),
-        sa.UniqueConstraint("tenant_id", "id", name="uq_runs_tenant_id"),
-        sa.UniqueConstraint("tenant_id", "session_id", "thread_id", "id", name="uq_runs_scope_identity"),
-        sa.UniqueConstraint("tenant_id", "thread_id", "id", name="uq_runs_tenant_thread_id"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_runs_organization_id"),
+        sa.UniqueConstraint("organization_id", "session_id", "thread_id", "id", name="uq_runs_scope_identity"),
+        sa.UniqueConstraint("organization_id", "thread_id", "id", name="uq_runs_organization_thread_id"),
     )
     op.create_index("ix_runs_environment_id", "runs", ["environment_id"], unique=False)
-    op.create_index("ix_runs_parent", "runs", ["tenant_id", "parent_run_id", "id"], unique=False)
-    op.create_index("ix_runs_retry", "runs", ["tenant_id", "retry_of_run_id", "id"], unique=False)
-    op.create_index("ix_runs_session_created", "runs", ["tenant_id", "session_id", "created_at", "id"], unique=False)
-    op.create_index("ix_runs_thread_created", "runs", ["tenant_id", "thread_id", "created_at", "id"], unique=False)
+    op.create_index("ix_runs_parent", "runs", ["organization_id", "parent_run_id", "id"], unique=False)
+    op.create_index("ix_runs_retry", "runs", ["organization_id", "retry_of_run_id", "id"], unique=False)
+    op.create_index(
+        "ix_runs_session_created", "runs", ["organization_id", "session_id", "created_at", "id"], unique=False
+    )
+    op.create_index(
+        "ix_runs_thread_created", "runs", ["organization_id", "thread_id", "created_at", "id"], unique=False
+    )
     op.create_index(
         "ix_runs_worker_scan",
         "runs",
-        ["tenant_id", "queue_name", "status", "available_at", "priority", "created_at", "id"],
+        ["organization_id", "queue_name", "status", "available_at", "priority", "created_at", "id"],
         unique=False,
         postgresql_where=sa.text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
         sqlite_where=sa.text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
@@ -365,7 +365,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_runs_active_thread",
         "runs",
-        ["tenant_id", "thread_id"],
+        ["organization_id", "thread_id"],
         unique=True,
         postgresql_where=sa.text("status IN ('accepted', 'running')"),
         sqlite_where=sa.text("status IN ('accepted', 'running')"),
@@ -373,7 +373,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_runs_idempotency",
         "runs",
-        ["tenant_id", "idempotency_key"],
+        ["organization_id", "idempotency_key"],
         unique=True,
         postgresql_where=sa.text("idempotency_key IS NOT NULL"),
         sqlite_where=sa.text("idempotency_key IS NOT NULL"),
@@ -381,7 +381,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_runs_live_root_thread",
         "runs",
-        ["tenant_id", "thread_id"],
+        ["organization_id", "thread_id"],
         unique=True,
         postgresql_where=sa.text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
         sqlite_where=sa.text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
@@ -389,14 +389,14 @@ def upgrade() -> None:
     op.create_index(
         "uq_runs_thread_authority",
         "runs",
-        ["tenant_id", "thread_id", "id", "authority_principal_type", "authority_principal_id"],
+        ["organization_id", "thread_id", "id", "authority_principal_type", "authority_principal_id"],
         unique=True,
     )
     op.create_table(
         "run_attempts",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("run_id", sa.String(length=72), nullable=False),
         sa.Column("attempt_number", sa.Integer(), nullable=False),
         sa.Column("fence", sa.BigInteger(), nullable=False),
@@ -457,40 +457,42 @@ def upgrade() -> None:
         sa.CheckConstraint("length(worker_id) BETWEEN 1 AND 256", name=op.f("ck_run_attempts_worker_id_bounded")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_run_attempts_version_positive")),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "run_id", "replaces_run_attempt_id"],
-            ["run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"],
-            name=op.f("fk_run_attempts_tenant_id_run_attempts"),
+            ["organization_id", "run_id", "replaces_run_attempt_id"],
+            ["run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"],
+            name=op.f("fk_run_attempts_organization_id_run_attempts"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "run_id"],
-            ["runs.tenant_id", "runs.id"],
-            name=op.f("fk_run_attempts_tenant_id_runs"),
+            ["organization_id", "run_id"],
+            ["runs.organization_id", "runs.id"],
+            name=op.f("fk_run_attempts_organization_id_runs"),
             ondelete="RESTRICT",
             initially="DEFERRED",
             deferrable=True,
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_run_attempts")),
-        sa.UniqueConstraint("tenant_id", "run_id", "id", name="uq_run_attempts_run_id"),
+        sa.UniqueConstraint("organization_id", "run_id", "id", name="uq_run_attempts_run_id"),
     )
     op.create_index(
         "ix_run_attempts_live_lease",
         "run_attempts",
-        ["tenant_id", "status", "lease_expires_at", "run_id"],
+        ["organization_id", "status", "lease_expires_at", "run_id"],
         unique=False,
         postgresql_where=sa.text("status IN ('leased', 'running')"),
         sqlite_where=sa.text("status IN ('leased', 'running')"),
     )
-    op.create_index("uq_run_attempts_fence", "run_attempts", ["tenant_id", "run_id", "fence"], unique=True)
-    op.create_index("uq_run_attempts_number", "run_attempts", ["tenant_id", "run_id", "attempt_number"], unique=True)
-    op.create_index("uq_run_attempts_tenant_id", "run_attempts", ["tenant_id", "id"], unique=True)
+    op.create_index("uq_run_attempts_fence", "run_attempts", ["organization_id", "run_id", "fence"], unique=True)
+    op.create_index(
+        "uq_run_attempts_number", "run_attempts", ["organization_id", "run_id", "attempt_number"], unique=True
+    )
+    op.create_index("uq_run_attempts_organization_id", "run_attempts", ["organization_id", "id"], unique=True)
     if op.get_bind().dialect.name == "postgresql":
         op.create_foreign_key(
             "fk_threads_current_run_same_thread",
             "threads",
             "runs",
-            ["tenant_id", "session_id", "id", "current_run_id"],
-            ["tenant_id", "session_id", "thread_id", "id"],
+            ["organization_id", "session_id", "id", "current_run_id"],
+            ["organization_id", "session_id", "thread_id", "id"],
             ondelete="RESTRICT",
             deferrable=True,
             initially="DEFERRED",
@@ -499,8 +501,8 @@ def upgrade() -> None:
             "fk_threads_head_run_same_thread",
             "threads",
             "runs",
-            ["tenant_id", "session_id", "id", "head_run_id"],
-            ["tenant_id", "session_id", "thread_id", "id"],
+            ["organization_id", "session_id", "id", "head_run_id"],
+            ["organization_id", "session_id", "thread_id", "id"],
             ondelete="RESTRICT",
             deferrable=True,
             initially="DEFERRED",
@@ -509,8 +511,8 @@ def upgrade() -> None:
             "fk_threads_origin_run_same_thread",
             "threads",
             "runs",
-            ["tenant_id", "origin_thread_id", "origin_run_id"],
-            ["tenant_id", "thread_id", "id"],
+            ["organization_id", "origin_thread_id", "origin_run_id"],
+            ["organization_id", "thread_id", "id"],
             ondelete="RESTRICT",
             deferrable=True,
             initially="DEFERRED",
@@ -519,8 +521,8 @@ def upgrade() -> None:
             "fk_runs_current_attempt_same_run",
             "runs",
             "run_attempts",
-            ["tenant_id", "id", "current_run_attempt_id"],
-            ["tenant_id", "run_id", "id"],
+            ["organization_id", "id", "current_run_attempt_id"],
+            ["organization_id", "run_id", "id"],
             ondelete="RESTRICT",
             deferrable=True,
             initially="DEFERRED",
@@ -529,8 +531,8 @@ def upgrade() -> None:
             "fk_runs_sealed_attempt_same_run",
             "runs",
             "run_attempts",
-            ["tenant_id", "id", "sealed_state_committed_by_run_attempt_id"],
-            ["tenant_id", "run_id", "id"],
+            ["organization_id", "id", "sealed_state_committed_by_run_attempt_id"],
+            ["organization_id", "run_id", "id"],
             ondelete="RESTRICT",
             deferrable=True,
             initially="DEFERRED",
@@ -547,7 +549,7 @@ def downgrade() -> None:
         op.drop_constraint("fk_threads_origin_run_same_thread", "threads", type_="foreignkey")
         op.drop_constraint("fk_threads_head_run_same_thread", "threads", type_="foreignkey")
         op.drop_constraint("fk_threads_current_run_same_thread", "threads", type_="foreignkey")
-    op.drop_index("uq_run_attempts_tenant_id", table_name="run_attempts")
+    op.drop_index("uq_run_attempts_organization_id", table_name="run_attempts")
     op.drop_index("uq_run_attempts_number", table_name="run_attempts")
     op.drop_index("uq_run_attempts_fence", table_name="run_attempts")
     op.drop_index(

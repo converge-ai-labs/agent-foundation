@@ -55,12 +55,14 @@ from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
+    ORGANIZATION_ID,
     SESSION_ID,
-    TENANT_ID,
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
@@ -70,18 +72,22 @@ from .conftest import (
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("scope", ["tenant", "run", "thread"])
+@pytest.mark.parametrize("scope", ["organization", "run", "thread"])
 async def test_writer_claim_and_checkpoint_reject_wrong_state_scope(
     interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore, scope: str
 ) -> None:
     states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker())
+    claim = await AttemptScheduler(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker()
+    )
     assert isinstance(claim, ClaimedAttempt)
     authority = _authority(claim)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
-    original = await states.read(TENANT_ID, run.id)
-    if scope == "tenant":
-        altered = replace(original, info=replace(original.info, key=original.info.key.replace(TENANT_ID, "org_other")))
+    execution = AttemptExecutionService(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
+    original = await states.read(ORGANIZATION_ID, run.id)
+    if scope == "organization":
+        altered = replace(
+            original, info=replace(original.info, key=original.info.key.replace(ORGANIZATION_ID, "org_other"))
+        )
     else:
         altered = replace(original, envelope=original.envelope.model_copy(update={f"{scope}_id": "other"}))
     with pytest.raises(AttemptMutationError, match="does not belong"):
@@ -90,7 +96,7 @@ async def test_writer_claim_and_checkpoint_reject_wrong_state_scope(
         await execution.publish_checkpoint(
             authority, states, altered, _completed_state(original.envelope, claim.attempt.id, claim.attempt.fence)
         )
-    assert await states.read(TENANT_ID, run.id) == original
+    assert await states.read(ORGANIZATION_ID, run.id) == original
 
 
 @pytest.mark.parametrize("candidate_kind", ["waiting", "completed"])
@@ -103,12 +109,15 @@ async def test_takeover_seals_existing_candidate_without_another_harness_run(
     states, run, initial = await _accept_root(interaction_sessions, object_store)
     first = await AttemptScheduler(
         interaction_sessions,
+        lifecycle=test_lifecycle_writer(),
         clock=lambda: NOW + timedelta(seconds=1),
         attempt_id_factory=lambda: "rat_1111111111111111",
     ).claim(run.id, _worker(lease_seconds=1))
     assert isinstance(first, ClaimedAttempt)
     first_execution = AttemptExecutionService(
-        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1, milliseconds=100)
+        interaction_sessions,
+        lifecycle=test_lifecycle_writer(),
+        clock=lambda: NOW + timedelta(seconds=1, milliseconds=100),
     )
     first_authority = _authority(first)
     first_preparation = await first_execution.commit_preparation_success(first_authority)
@@ -120,18 +129,24 @@ async def test_takeover_seals_existing_candidate_without_another_harness_run(
     candidate_factory = _waiting_state if candidate_kind == "waiting" else _completed_state
     candidate = candidate_factory(initial, first.attempt.id, first.attempt.fence)
     published = await first_execution.publish_checkpoint(
-        first_authority, states, await states.read(TENANT_ID, run.id), candidate
+        first_authority, states, await states.read(ORGANIZATION_ID, run.id), candidate
     )
     second = await AttemptScheduler(
         interaction_sessions,
+        lifecycle=test_lifecycle_writer(),
         clock=lambda: NOW + timedelta(seconds=3),
         attempt_id_factory=lambda: "rat_2222222222222222",
     ).claim(run.id, _worker(worker_id="worker-2"))
     assert isinstance(second, ClaimedAttempt)
     second_authority = _authority(second)
-    second_execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=4))
+    second_execution = AttemptExecutionService(
+        interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW + timedelta(seconds=4)
+    )
     outcomes = RunOutcomeService(
-        interaction_sessions, RunPayloadStore(object_store), clock=lambda: NOW + timedelta(seconds=4)
+        interaction_sessions,
+        RunPayloadStore(object_store),
+        lifecycle=test_lifecycle_writer(),
+        clock=lambda: NOW + timedelta(seconds=4),
     )
     with pytest.raises(RunOutcomeError, match="current fenced Attempt"):
         await outcomes.commit_state_outcome(second_authority, published, expected_thread_version=1)
@@ -183,6 +198,7 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_1111111111111111",
+        lifecycle=test_lifecycle_writer(),
     )
     worker = _worker()
 
@@ -194,7 +210,9 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     assert claim.attempt.fence == 1
     assert await scheduler.claim(run.id, worker) is None
 
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -217,7 +235,7 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     output_reference: RunPayloadObjectRef | None = None
     if object_backed:
         output_reference = await payloads.create(
-            TENANT_ID,
+            ORGANIZATION_ID,
             RunPayloadEnvelope(
                 run_id=run.id,
                 payload_kind="output",
@@ -231,11 +249,11 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         claim.attempt.fence,
         outcome=(CompletedOutcomeCandidate(output_object=output_reference) if output_reference is not None else None),
     )
-    stored = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), candidate)
+    stored = await execution.publish_checkpoint(
+        authority, states, await states.read(ORGANIZATION_ID, run.id), candidate
+    )
     outcome = await RunOutcomeService(
-        interaction_sessions,
-        payloads,
-        clock=lambda: NOW + timedelta(seconds=3),
+        interaction_sessions, payloads, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
 
     assert outcome.run_status is RunStatus.completed
@@ -276,7 +294,7 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         assert completed.payload["final_run_attempt_id"] == claim.attempt.id
         assert succeeded.payload["resulting_run_lifecycle_event_id"] == completed.id
     if output_reference is not None:
-        assert await payloads.read(TENANT_ID, output_reference) == RunPayloadEnvelope(
+        assert await payloads.read(ORGANIZATION_ID, output_reference) == RunPayloadEnvelope(
             run_id=run.id,
             payload_kind="output",
             payload_schema_version="1",
@@ -294,10 +312,13 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_dddddddddddddddd",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -313,7 +334,9 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
         claim.attempt.fence,
         outcome=CompletedOutcomeCandidate(
             output_object=RunPayloadObjectRef(
-                object_key=(f"tenants/{TENANT_ID}/runs/run_eeeeeeeeeeeeeeee/payloads/output/{'e' * 64}.json"),
+                object_key=(
+                    f"organizations/{ORGANIZATION_ID}/runs/run_eeeeeeeeeeeeeeee/payloads/output/{'e' * 64}.json"
+                ),
                 digest_sha256="e" * 64,
                 size_bytes=123,
                 content_type="application/vnd.converge.run-payload+json",
@@ -324,7 +347,7 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
     stored = await execution.publish_checkpoint(
         authority,
         states,
-        await states.read(TENANT_ID, run.id),
+        await states.read(ORGANIZATION_ID, run.id),
         candidate,
     )
 
@@ -333,6 +356,7 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
             interaction_sessions,
             RunPayloadStore(interaction_object_store),
             clock=lambda: NOW + timedelta(seconds=3),
+            lifecycle=test_lifecycle_writer(),
         ).commit_state_outcome(authority, stored, expected_thread_version=1)
 
     async with short_session(interaction_sessions) as database:
@@ -353,11 +377,14 @@ async def test_expired_attempt_is_failed_charged_and_replaced_with_a_higher_fenc
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "first-token",
         attempt_id_factory=lambda: next(ids),
+        lifecycle=test_lifecycle_writer(),
     )
     first = await first_scheduler.claim(run.id, _worker(lease_seconds=1))
     assert isinstance(first, ClaimedAttempt)
     execution = AttemptExecutionService(
-        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1, milliseconds=100)
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1, milliseconds=100),
+        lifecycle=test_lifecycle_writer(),
     )
     authority = _authority(first)
     preparation = await execution.commit_preparation_success(authority)
@@ -375,6 +402,7 @@ async def test_expired_attempt_is_failed_charged_and_replaced_with_a_higher_fenc
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "second-token",
         attempt_id_factory=lambda: next(ids),
+        lifecycle=test_lifecycle_writer(),
     )
     second = await takeover.claim(run.id, _worker(worker_id="worker-2"))
 
@@ -401,10 +429,13 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_4444444444444444",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
 
     validated = await execution.validate(_authority(claim))
     assert (validated.run_version, validated.attempt_version) == (
@@ -468,6 +499,7 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
         clock=lambda: NOW + timedelta(seconds=8),
         token_factory=lambda: "recovery-token",
         attempt_id_factory=lambda: "rat_cccccccccccccccc",
+        lifecycle=test_lifecycle_writer(),
     )
     replacement = await recovery.claim(run.id, _worker(worker_id="worker-2"))
     assert isinstance(replacement, ClaimedAttempt)
@@ -488,7 +520,9 @@ async def test_zero_recovery_budget_seals_without_creating_an_attempt(
         interaction_object_store,
         max_recovery_attempts=0,
     )
-    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1))
+    scheduler = AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    )
 
     result = await scheduler.claim(run.id, _worker())
 
@@ -515,8 +549,7 @@ async def test_unknown_recovery_policy_fails_closed_before_attempt_creation(
     )
 
     result = await AttemptScheduler(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=1),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
 
     assert isinstance(result, SealedClaim)
@@ -543,13 +576,13 @@ async def test_preparation_rechecks_fixed_deadline_and_fails_closed(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
 
     preparation = await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=3),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
     ).commit_preparation_success(_authority(claim))
 
     assert isinstance(preparation, AttemptPreparationRejected)
@@ -569,22 +602,23 @@ async def test_cancel_seals_without_state_replacement(
     interaction_object_store: ObjectStore,
 ) -> None:
     states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    before = await states.read(TENANT_ID, run.id)
+    before = await states.read(ORGANIZATION_ID, run.id)
     failure = SafeFailure(code="cancelled_by_user", message="The Run was cancelled.")
 
     receipt = await RunOutcomeService(
         interaction_sessions,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=1),
+        lifecycle=test_lifecycle_writer(),
     ).cancel(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         expected_run_version=1,
         expected_thread_version=1,
         failure=failure,
     )
 
-    after = await states.read(TENANT_ID, run.id)
+    after = await states.read(ORGANIZATION_ID, run.id)
     assert receipt.run_status is RunStatus.cancelled
     assert after.info.version == before.info.version
     async with short_session(interaction_sessions) as database:
@@ -605,15 +639,17 @@ async def test_yield_prefers_a_different_build_without_consuming_recovery_budget
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "first-token",
         attempt_id_factory=lambda: next(ids),
+        lifecycle=test_lifecycle_writer(),
     )
     first = await scheduler.claim(run.id, _worker())
     assert isinstance(first, ClaimedAttempt)
     await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=2),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
     ).yield_attempt(_authority(first), reason=RunAttemptYieldReason.service_drain)
 
-    same_build = AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
+    same_build = AttemptScheduler(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
+    )
     assert await same_build.scan(_worker(), queue_name="default") == ()
     assert await same_build.claim(run.id, _worker()) is None
 
@@ -622,6 +658,7 @@ async def test_yield_prefers_a_different_build_without_consuming_recovery_budget
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "second-token",
         attempt_id_factory=lambda: next(ids),
+        lifecycle=test_lifecycle_writer(),
     )
     second = await new_build.claim(run.id, _worker(build_id="build-2"))
     assert isinstance(second, ClaimedAttempt)
@@ -651,10 +688,13 @@ async def _wait_for_approval(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_8888888888888888",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -665,12 +705,13 @@ async def _wait_for_approval(
     )
     authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
     waiting = _waiting_state(state, claim.attempt.id, claim.attempt.fence)
-    stored = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), waiting)
+    stored = await execution.publish_checkpoint(authority, states, await states.read(ORGANIZATION_ID, run.id), waiting)
 
     receipt = await RunOutcomeService(
         interaction_sessions,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=3),
+        lifecycle=test_lifecycle_writer(),
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
 
     return run, receipt
@@ -701,12 +742,14 @@ async def test_postgresql_concurrent_claim_has_exactly_one_winner(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "token-1",
         attempt_id_factory=lambda: "rat_9999999999999999",
+        lifecycle=test_lifecycle_writer(),
     )
     second = AttemptScheduler(
         postgres_interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "token-2",
         attempt_id_factory=lambda: "rat_aaaaaaaaaaaaaaaa",
+        lifecycle=test_lifecycle_writer(),
     )
 
     results = await asyncio.gather(
@@ -744,7 +787,7 @@ async def _accept_root(
     run = Run(
         id=seed.run_id,
         version=1,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         authority_principal=PrincipalRef(principal_type=PrincipalType.user, principal_id=USER_ID),
         session_id=SESSION_ID,
         thread_id=state.thread_id,
@@ -783,10 +826,11 @@ async def _accept_root(
         RunPayloadStore(objects),
         InlineHookValidator(EndpointPolicy()),
         clock=lambda: NOW,
+        lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(
         session=Session(
             id=SESSION_ID,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             created_at=NOW,
             updated_at=NOW,
@@ -795,7 +839,7 @@ async def _accept_root(
             id=state.thread_id,
             version=1,
             queue_version=0,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             session_id=SESSION_ID,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -816,7 +860,7 @@ def _worker(
     build_id: str = "build-1",
 ) -> WorkerClaim:
     return WorkerClaim(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         worker_id=worker_id,
         worker_generation=f"{worker_id}-generation",
         worker_build_id=build_id,
@@ -836,7 +880,7 @@ def _authority(
     lease_expires_at = claim.attempt.lease_expires_at
     lease_duration = lease_expires_at - claim.attempt.heartbeat_at
     return AttemptContext(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=claim.thread_id,
         run_id=claim.attempt.run_id,
         run_attempt_id=claim.attempt.id,
@@ -953,11 +997,14 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
             )
         )
         await database.flush()
-        for kind, identifier, role in (("organization", TENANT_ID, "member"), ("workspace", WORKSPACE_ID, "admin")):
+        for kind, identifier, role in (
+            ("organization", ORGANIZATION_ID, "member"),
+            ("workspace", WORKSPACE_ID, "admin"),
+        ):
             database.add(
                 RoleBindingRecord(
                     id=f"rb_tools_{kind}",
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     workspace_id=WORKSPACE_ID if kind == "workspace" else None,
                     principal_type="user",
                     principal_id=USER_ID,
@@ -969,7 +1016,9 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
                     updated_at=NOW,
                 )
             )
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker())
+    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
     assert isinstance(claim, ClaimedAttempt)
     context = _authority(claim)
     monkeypatch.setattr(execution, "utc_now", lambda: NOW)
@@ -997,8 +1046,10 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     if revocation == "cancelled":
         async with short_session(interaction_sessions) as database:
             thread = await database.get(ThreadRecord, THREAD_ID)
-        await RunOutcomeService(interaction_sessions, states, clock=lambda: NOW).cancel(
-            tenant_id=TENANT_ID,
+        await RunOutcomeService(
+            interaction_sessions, states, clock=lambda: NOW, lifecycle=test_lifecycle_writer()
+        ).cancel(
+            organization_id=ORGANIZATION_ID,
             run_id=run.id,
             expected_run_version=context.expected_run_version,
             expected_thread_version=thread.version,

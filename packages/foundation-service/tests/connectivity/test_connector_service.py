@@ -102,6 +102,8 @@ async def test_connector_provider_management_is_idempotent_and_keeps_credentials
     replay = await create_connector(connectors)
 
     assert replay == created
+    assert created.organization_id == ORG_ID
+    assert created.configuration == {"tenant": "tenant-1", "endpoint": "https://connector.example"}
     assert created.credential_configured is True
     assert "secret" not in repr(created)
     tested = await connectors.test(

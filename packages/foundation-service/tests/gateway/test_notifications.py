@@ -4,13 +4,13 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.gateway.notifications import NotificationError, NotificationService, NotificationSubscription
-from a13n_service.interactions.lifecycle import append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import RUN_ID, hook_actor, seed_hook_actor_access, seed_run_and_secret
 from tests.interactions.conftest import NOW, THREAD_ID
+from tests.lifecycle_support import test_lifecycle_writer
 
 pytestmark = pytest.mark.anyio
 
@@ -35,7 +35,7 @@ async def test_notification_subscription_delivers_only_future_metadata(
     async with transaction(lifecycle_interaction_sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
         assert run is not None
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",

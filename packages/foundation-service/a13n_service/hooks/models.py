@@ -54,7 +54,7 @@ class HookSubscriptionRecord(Base):
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
-        UniqueConstraint("id", "organization_id", "workspace_id", name="uq_hook_subscriptions_tenant_id"),
+        UniqueConstraint("id", "organization_id", "workspace_id", name="uq_hook_subscriptions_organization_id"),
         UniqueConstraint("organization_id", "inline_run_id", name="uq_hook_subscriptions_inline_run"),
         Index(
             "ix_hook_subscriptions_active_workspace",
@@ -108,17 +108,17 @@ class HookSubscriptionRevisionRecord(Base):
         ),
         ForeignKeyConstraint(
             ("organization_id", "session_id"),
-            ("sessions.tenant_id", "sessions.id"),
+            ("sessions.organization_id", "sessions.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ("organization_id", "thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("threads.organization_id", "threads.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ("organization_id", "run_id"),
-            ("runs.tenant_id", "runs.id"),
+            ("runs.organization_id", "runs.id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint(
@@ -137,7 +137,7 @@ class HookSubscriptionRevisionRecord(Base):
             "workspace_id",
             name="uq_hook_subscription_revisions_head_authority",
         ),
-        Index("uq_hook_subscription_revisions_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_hook_subscription_revisions_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("ix_hook_subscription_revisions_hook_names", "hook_names", postgresql_using="gin"),
         Index(
             "ix_hook_subscription_revisions_session",

@@ -24,7 +24,7 @@ Domains and extension packages can own revision files and locations, but the art
 
 The final distribution metadata registry explicitly includes every concrete ORM model. Importing a storage helper, scanning installed packages, or discovering modules by naming convention never changes the schema. A model absent from the final registry is absent from migration comparison and is therefore not a deployed table for that distribution.
 
-The artifact's fixed distribution descriptor supplies the resolved metadata registry and ordered revision locations to every schema operation. Revision generation, current-head verification, migration application, and readiness all consume that same resolved composition. The migration runner never reconstructs distribution contents from ambient imports, package installation, runtime tenant state, or a separately parsed edition value.
+The artifact's fixed distribution descriptor supplies the resolved metadata registry and ordered revision locations to every schema operation. Revision generation, current-head verification, migration application, and readiness all consume that same resolved composition. The migration runner never reconstructs distribution contents from ambient imports, package installation, runtime organization state, or a separately parsed edition value.
 
 The following internal Python shape is representative; concrete fields and invariants remain owned by the domain:
 

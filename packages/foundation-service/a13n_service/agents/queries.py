@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -81,7 +82,9 @@ class AgentQueries:
         try:
             after = decode_agent_cursor(cursor, scope=scope) if cursor is not None else None
         except AgentCursorError as error:
-            raise AgentError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise AgentError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         try:
             async with transaction(self._sessions) as session:
                 authorization = await authorize_agent_collection(
@@ -144,7 +147,9 @@ class AgentQueries:
         try:
             after = decode_revision_cursor(cursor, scope=scope) if cursor is not None else None
         except AgentCursorError as error:
-            raise AgentError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise AgentError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             workspace = await authorize_agent_scope(
                 session,

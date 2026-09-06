@@ -12,6 +12,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
@@ -165,10 +166,12 @@ class ModelProviderService:
             raise ModelError(
                 "model_provider_name_conflict",
                 "A Model Provider with this name already exists in the Workspace.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
         except SecretProtectionError as error:
-            raise ModelError("invalid_provider_credential", str(error), status_code=400) from error
+            raise ModelError(
+                "invalid_provider_credential", str(error), category=ErrorCategory.invalid_request
+            ) from error
 
     async def get(self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str) -> ModelProvider:
         async with transaction(self._sessions) as session:
@@ -196,14 +199,18 @@ class ModelProviderService:
         enabled: bool | None = None,
     ) -> ModelProviderCollection:
         if not 1 <= limit <= 100:
-            raise ModelError("invalid_request", "limit must be between 1 and 100.", status_code=400)
+            raise ModelError(
+                "invalid_request", "limit must be between 1 and 100.", category=ErrorCategory.invalid_request
+            )
         if name is not None and (not name.strip() or len(name) > 128):
-            raise ModelError("invalid_request", "name search is invalid.", status_code=400)
+            raise ModelError("invalid_request", "name search is invalid.", category=ErrorCategory.invalid_request)
         if provider_type is not None:
             try:
                 self._registry.definition(provider_type)
             except ValueError as error:
-                raise ModelError("invalid_request", "provider_type is not trusted.", status_code=400) from error
+                raise ModelError(
+                    "invalid_request", "provider_type is not trusted.", category=ErrorCategory.invalid_request
+                ) from error
         scope = {
             "workspace_id": workspace_id,
             "organization_boundary": actor.boundary_organization_id,
@@ -217,7 +224,9 @@ class ModelProviderService:
         try:
             position = decode_model_cursor(cursor, scope=scope) if cursor is not None else None
         except CursorError as error:
-            raise ModelError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise ModelError(
+                "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_read
@@ -295,7 +304,9 @@ class ModelProviderService:
                 try:
                     record.replace_credential(credential, self._protector)
                 except SecretProtectionError as error:
-                    raise ModelError("invalid_provider_credential", str(error), status_code=400) from error
+                    raise ModelError(
+                        "invalid_provider_credential", str(error), category=ErrorCategory.invalid_request
+                    ) from error
             if "enabled" in request.model_fields_set:
                 assert request.enabled is not None
                 record.enabled = request.enabled
@@ -332,7 +343,7 @@ class ModelProviderService:
                 raise ModelError(
                     "model_provider_name_conflict",
                     "A Model Provider with this name already exists in the Workspace.",
-                    status_code=409,
+                    category=ErrorCategory.conflict,
                 ) from error
             return record.to_resource()
 
@@ -341,16 +352,20 @@ class ModelProviderService:
     ) -> ModelDescriptionCollection:
         provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
         if not provider.enabled:
-            raise ModelError("model_provider_disabled", "The Model Provider is disabled.", status_code=409)
+            raise ModelError(
+                "model_provider_disabled", "The Model Provider is disabled.", category=ErrorCategory.conflict
+            )
         if not self._registry.definition(provider.type).supports_model_discovery:
             raise ModelError(
                 "model_discovery_unsupported",
                 "The Model Provider type does not support model discovery.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             )
         if self._operations is None:
             raise ModelError(
-                "provider_discovery_unavailable", "Provider model discovery is unavailable.", status_code=503
+                "provider_discovery_unavailable",
+                "Provider model discovery is unavailable.",
+                category=ErrorCategory.unavailable,
             )
         failure: ModelError | None = None
         result: ModelDescriptionCollection | None = None
@@ -364,9 +379,15 @@ class ModelProviderService:
         except ModelError as error:
             failure = error
         except TimeoutError:
-            failure = ModelError("provider_discovery_timeout", "Provider model discovery timed out.", status_code=504)
+            failure = ModelError(
+                "provider_discovery_timeout", "Provider model discovery timed out.", category=ErrorCategory.timeout
+            )
         except (ModelResolutionError, ProviderOperationError, httpx2.HTTPError):
-            failure = ModelError("provider_discovery_failed", "Provider model discovery failed.", status_code=502)
+            failure = ModelError(
+                "provider_discovery_failed",
+                "Provider model discovery failed.",
+                category=ErrorCategory.dependency_failure,
+            )
         async with transaction(self._sessions) as session:
             session.add(
                 audit_record(
@@ -422,7 +443,9 @@ class ModelProviderService:
     ) -> ModelConnectionTestResult:
         if self._operations is None:
             raise ModelError(
-                "provider_connection_tester_unavailable", "Provider testing is unavailable.", status_code=503
+                "provider_connection_tester_unavailable",
+                "Provider testing is unavailable.",
+                category=ErrorCategory.unavailable,
             )
         provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
         result = await test_connection(
@@ -477,14 +500,18 @@ class ModelProviderService:
                 resolve_dns=self._resolve_dns_on_save,
             )
         except (ValueError, EndpointPolicyError) as error:
-            raise ModelError("invalid_model_provider", "The Model Provider is invalid.", status_code=400) from error
+            raise ModelError(
+                "invalid_model_provider", "The Model Provider is invalid.", category=ErrorCategory.invalid_request
+            ) from error
         return self._registry.with_validated_endpoint(provider_type, validated, endpoint)
 
     def _validate_credential(self, provider_type: str, credential: str | None) -> None:
         try:
             validate_provider_credential(self._registry.credential_format(provider_type), credential)
         except (ValueError, ProviderCredentialError) as error:
-            raise ModelError("invalid_provider_credential", str(error), status_code=400) from error
+            raise ModelError(
+                "invalid_provider_credential", str(error), category=ErrorCategory.invalid_request
+            ) from error
 
 
 async def require_provider(
@@ -504,5 +531,7 @@ async def require_provider(
         query = query.where(ModelProviderRecord.workspace_id == workspace_id).with_for_update()
     record = await session.scalar(query)
     if record is None:
-        raise ModelError("model_provider_not_found", "The Model Provider was not found.", status_code=404)
+        raise ModelError(
+            "model_provider_not_found", "The Model Provider was not found.", category=ErrorCategory.not_found
+        )
     return record

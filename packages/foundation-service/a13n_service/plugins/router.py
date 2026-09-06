@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime, get_process_runtime
@@ -29,7 +30,9 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, ma
 def _plugins(request: Request) -> PluginService:
     control = get_control_runtime(request)
     if control is None:
-        raise PluginError("plugin_management_unavailable", "Plugin Management is unavailable.", status_code=503)
+        raise PluginError(
+            "plugin_management_unavailable", "Plugin Management is unavailable.", category=ErrorCategory.unavailable
+        )
     return control.plugins
 
 
@@ -178,7 +181,9 @@ async def change_plugin_lifecycle(
 def _require_octet_stream(request: Request) -> None:
     if request.headers.get("content-type", "").strip().lower() != "application/octet-stream":
         raise PluginError(
-            "invalid_request", "The request body must be exactly application/octet-stream.", status_code=400
+            "invalid_request",
+            "The request body must be exactly application/octet-stream.",
+            category=ErrorCategory.invalid_request,
         )
 
 
@@ -189,12 +194,16 @@ def _content_length(request: Request) -> int | None:
     try:
         parsed = int(value)
     except ValueError as error:
-        raise PluginError("invalid_request", "Content-Length is invalid.", status_code=400) from error
+        raise PluginError(
+            "invalid_request", "Content-Length is invalid.", category=ErrorCategory.invalid_request
+        ) from error
     if parsed < 0:
-        raise PluginError("invalid_request", "Content-Length is invalid.", status_code=400)
+        raise PluginError("invalid_request", "Content-Length is invalid.", category=ErrorCategory.invalid_request)
     runtime = get_process_runtime(request)
     if runtime is None:
-        raise PluginError("plugin_management_unavailable", "Plugin Management is unavailable.", status_code=503)
+        raise PluginError(
+            "plugin_management_unavailable", "Plugin Management is unavailable.", category=ErrorCategory.unavailable
+        )
     settings = runtime.settings
     if parsed > settings.plugin_max_wheel_bytes:
         raise plugin_artifact_limit()

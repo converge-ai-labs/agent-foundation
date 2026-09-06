@@ -22,7 +22,7 @@ def upgrade() -> None:
         "lifecycle_events",
         sa.Column("seq", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), autoincrement=True, nullable=False),
         sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("entity_type", sa.String(length=32), nullable=False),
         sa.Column("entity_id", sa.String(length=72), nullable=False),
         sa.Column("resource_seq", sa.BigInteger(), nullable=False),
@@ -66,30 +66,30 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("resource_seq >= 1", name=op.f("ck_lifecycle_events_resource_seq_positive")),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "run_id", "run_attempt_id"],
-            ["run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id"],
-            name=op.f("fk_lifecycle_events_tenant_id_run_attempts"),
+            ["organization_id", "run_id", "run_attempt_id"],
+            ["run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"],
+            name=op.f("fk_lifecycle_events_organization_id_run_attempts"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "run_id"],
-            ["runs.tenant_id", "runs.id"],
-            name=op.f("fk_lifecycle_events_tenant_id_runs"),
+            ["organization_id", "run_id"],
+            ["runs.organization_id", "runs.id"],
+            name=op.f("fk_lifecycle_events_organization_id_runs"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "session_id"],
-            ["sessions.tenant_id", "sessions.id"],
-            name=op.f("fk_lifecycle_events_tenant_id_sessions"),
+            ["organization_id", "session_id"],
+            ["sessions.organization_id", "sessions.id"],
+            name=op.f("fk_lifecycle_events_organization_id_sessions"),
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("seq", name=op.f("pk_lifecycle_events")),
         sa.UniqueConstraint("id", name="uq_lifecycle_events_id"),
         sa.UniqueConstraint(
-            "tenant_id", "entity_type", "entity_id", "resource_seq", name="uq_lifecycle_events_resource_seq"
+            "organization_id", "entity_type", "entity_id", "resource_seq", name="uq_lifecycle_events_resource_seq"
         ),
         sa.UniqueConstraint(
-            "tenant_id",
+            "organization_id",
             "mutation_id",
             "event_type",
             "entity_type",
@@ -98,7 +98,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "ix_lifecycle_events_attempt", "lifecycle_events", ["tenant_id", "run_attempt_id", "seq"], unique=False
+        "ix_lifecycle_events_attempt", "lifecycle_events", ["organization_id", "run_attempt_id", "seq"], unique=False
     )
     op.create_index(
         "ix_lifecycle_events_projection_due",
@@ -111,18 +111,20 @@ def upgrade() -> None:
     op.create_index(
         "ix_lifecycle_events_resource",
         "lifecycle_events",
-        ["tenant_id", "entity_type", "entity_id", "seq"],
+        ["organization_id", "entity_type", "entity_id", "seq"],
         unique=False,
     )
-    op.create_index("ix_lifecycle_events_run", "lifecycle_events", ["tenant_id", "run_id", "seq"], unique=False)
-    op.create_index("ix_lifecycle_events_tenant_seq", "lifecycle_events", ["tenant_id", "seq"], unique=False)
+    op.create_index("ix_lifecycle_events_run", "lifecycle_events", ["organization_id", "run_id", "seq"], unique=False)
+    op.create_index(
+        "ix_lifecycle_events_organization_seq", "lifecycle_events", ["organization_id", "seq"], unique=False
+    )
     _create_fact_immutability_trigger()
 
 
 def downgrade() -> None:
     """Remove the domain schema in reverse dependency order."""
     _drop_fact_immutability_trigger()
-    op.drop_index("ix_lifecycle_events_tenant_seq", table_name="lifecycle_events")
+    op.drop_index("ix_lifecycle_events_organization_seq", table_name="lifecycle_events")
     op.drop_index("ix_lifecycle_events_run", table_name="lifecycle_events")
     op.drop_index("ix_lifecycle_events_resource", table_name="lifecycle_events")
     op.drop_index(
@@ -139,7 +141,7 @@ def _create_fact_immutability_trigger() -> None:
     fact_columns = (
         "seq",
         "id",
-        "tenant_id",
+        "organization_id",
         "entity_type",
         "entity_id",
         "resource_seq",

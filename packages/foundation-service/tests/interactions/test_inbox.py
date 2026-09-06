@@ -32,7 +32,9 @@ from fakeredis.aioredis import FakeRedis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, TENANT_ID, effective_agent_config
+from tests.lifecycle_support import test_lifecycle_writer
+
+from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, ORGANIZATION_ID, effective_agent_config
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _accept_root, _authority, _waiting_state, _worker
 
@@ -51,7 +53,7 @@ async def test_steer_accepts_before_or_after_claim_without_advancing_thread(
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
 
     first = await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         input=_input("first"),
         entry_id="inb_1111111111111111",
@@ -62,17 +64,18 @@ async def test_steer_accepts_before_or_after_claim_without_advancing_thread(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_1111111111111111",
+        lifecycle=test_lifecycle_writer(),
     )
     assert isinstance(await scheduler.claim(run.id, _worker()), ClaimedAttempt)
     second = await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         input=_input("second"),
         entry_id="inb_2222222222222222",
     )
 
     assert (first.delivery_sequence, second.delivery_sequence) == (1, 2)
-    status = await store.get_steer(tenant_id=TENANT_ID, run_id=run.id, steer_id=first.steer_id)
+    status = await store.get_steer(organization_id=ORGANIZATION_ID, run_id=run.id, steer_id=first.steer_id)
     assert status.status is ThreadInboxStatus.pending
     assert status.target_run_id == run.id
     async with short_session(interaction_sessions) as database:
@@ -94,6 +97,7 @@ async def test_steer_capacity_rejection_is_atomic(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_1212121212121212",
+        lifecycle=test_lifecycle_writer(),
     )
     assert isinstance(await scheduler.claim(run.id, _worker()), ClaimedAttempt)
     store = ThreadInboxStore(
@@ -103,7 +107,7 @@ async def test_steer_capacity_rejection_is_atomic(
         clock=lambda: NOW + timedelta(seconds=2),
     )
     await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         input=_input("first"),
         entry_id="inb_1212121212121212",
@@ -111,7 +115,7 @@ async def test_steer_capacity_rejection_is_atomic(
 
     with pytest.raises(ThreadInboxConflict, match="capacity"):
         await store.append_steer(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             run_id=run.id,
             input=_input("second"),
             entry_id="inb_1313131313131313",
@@ -129,11 +133,11 @@ async def test_redis_control_stream_is_bounded_expiring_and_acknowledged_after_r
     redis = FakeRedis()
     signals = RedisThreadControlSignals(redis, max_length=2, ttl_seconds=60)
     try:
-        await signals.publish(tenant_id=TENANT_ID, thread_id="thread-11111111111111111111111111111111")
-        await signals.publish(tenant_id=TENANT_ID, thread_id="thread-11111111111111111111111111111111")
+        await signals.publish(organization_id=ORGANIZATION_ID, thread_id="thread-11111111111111111111111111111111")
+        await signals.publish(organization_id=ORGANIZATION_ID, thread_id="thread-11111111111111111111111111111111")
 
         wakeups = await signals.read_new(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             thread_id="thread-11111111111111111111111111111111",
             consumer="worker-1-generation-1",
         )
@@ -141,13 +145,13 @@ async def test_redis_control_stream_is_bounded_expiring_and_acknowledged_after_r
         assert len(wakeups) == 2
         assert (
             await signals.acknowledge(
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 thread_id="thread-11111111111111111111111111111111",
                 stream_ids=tuple(item.stream_id for item in wakeups),
             )
             == 2
         )
-        key = f"a13n:control:{TENANT_ID}:thread-11111111111111111111111111111111"
+        key = f"a13n:control:{ORGANIZATION_ID}:thread-11111111111111111111111111111111"
         assert 0 < await redis.ttl(key) <= 60
         assert await redis.xlen(key) <= 2
     finally:
@@ -159,15 +163,15 @@ async def test_redis_control_stream_reclaims_unacknowledged_wakeup() -> None:
     signals = RedisThreadControlSignals(redis, max_length=2, ttl_seconds=60)
     thread_id = "thread-12121212121212121212121212121212"
     try:
-        await signals.publish(tenant_id=TENANT_ID, thread_id=thread_id)
+        await signals.publish(organization_id=ORGANIZATION_ID, thread_id=thread_id)
         first = await signals.read_new(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             thread_id=thread_id,
             consumer="worker-1-generation-1",
         )
 
         reclaimed = await signals.claim_abandoned(
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             thread_id=thread_id,
             consumer="worker-1-generation-2",
             min_idle_ms=0,
@@ -176,7 +180,7 @@ async def test_redis_control_stream_reclaims_unacknowledged_wakeup() -> None:
         assert tuple(signal.stream_id for signal in reclaimed) == tuple(signal.stream_id for signal in first)
         assert (
             await signals.acknowledge(
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 thread_id=thread_id,
                 stream_ids=tuple(signal.stream_id for signal in reclaimed),
             )
@@ -196,19 +200,20 @@ async def test_checkpoint_consumes_only_exact_fifo_prefix(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_2222222222222222",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(run.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
     authority = _authority(claimed)
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
     await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         input=_input("first"),
         entry_id="inb_3333333333333333",
     )
     await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         input=_input("second"),
         entry_id="inb_4444444444444444",
@@ -234,11 +239,10 @@ async def test_checkpoint_consumes_only_exact_fifo_prefix(
             ),
         )
 
-    current = await states.read(TENANT_ID, run.id)
+    current = await states.read(ORGANIZATION_ID, run.id)
     successor = _state_with_receipts(current.envelope, authority, tuple(entry.receipt for entry in entries))
     stored = await AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=4),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
     await reconciler.confirm_checkpoint(authority, stored)
 
@@ -264,12 +268,13 @@ async def test_interrupt_supersedes_pending_steer_and_releases_budget(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_3333333333333333",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(run.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
     steer = await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         input=_input("stop before this"),
         entry_id="inb_5555555555555555",
@@ -279,8 +284,9 @@ async def test_interrupt_supersedes_pending_steer_and_releases_budget(
         interaction_sessions,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=3),
+        lifecycle=test_lifecycle_writer(),
     ).cancel(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=run.id,
         expected_run_version=claimed.run_version,
         expected_thread_version=1,
@@ -288,7 +294,7 @@ async def test_interrupt_supersedes_pending_steer_and_releases_budget(
     )
 
     assert receipt.run_status.value == "cancelled"
-    status = await store.get_steer(tenant_id=TENANT_ID, run_id=run.id, steer_id=steer.steer_id)
+    status = await store.get_steer(organization_id=ORGANIZATION_ID, run_id=run.id, steer_id=steer.steer_id)
     assert status.status is ThreadInboxStatus.superseded
     assert status.target_run_id is None
     async with short_session(interaction_sessions) as database:
@@ -307,10 +313,13 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "lease-secret",
         attempt_id_factory=lambda: "rat_4444444444444444",
+        lifecycle=test_lifecycle_writer(),
     )
     claimed = await scheduler.claim(source.id, _worker())
     assert isinstance(claimed, ClaimedAttempt)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -326,7 +335,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
     )
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
     steer = await store.append_steer(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=source.id,
         input=_input("after feedback"),
         entry_id="inb_6666666666666666",
@@ -335,16 +344,17 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
     stored = await execution.publish_checkpoint(
         authority,
         states,
-        await states.read(TENANT_ID, source.id),
+        await states.read(ORGANIZATION_ID, source.id),
         waiting,
     )
     outcome = await RunOutcomeService(
         interaction_sessions,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=4),
+        lifecycle=test_lifecycle_writer(),
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
     assert outcome.run_status.value == "waiting"
-    rolled = await store.get_steer(tenant_id=TENANT_ID, run_id=source.id, steer_id=steer.steer_id)
+    rolled = await store.get_steer(organization_id=ORGANIZATION_ID, run_id=source.id, steer_id=steer.steer_id)
     assert rolled.target_run_id is None
     assert rolled.source_waiting_run_id == source.id
 
@@ -387,6 +397,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         RunPayloadStore(interaction_object_store),
         InlineHookValidator(EndpointPolicy()),
         clock=lambda: NOW + timedelta(seconds=5),
+        lifecycle=test_lifecycle_writer(),
     ).advance_thread(
         run=successor,
         state=successor_state,
@@ -397,7 +408,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
     )
 
     assert receipt.thread_version == 3
-    rebound = await store.get_steer(tenant_id=TENANT_ID, run_id=source.id, steer_id=steer.steer_id)
+    rebound = await store.get_steer(organization_id=ORGANIZATION_ID, run_id=source.id, steer_id=steer.steer_id)
     assert rebound.status is ThreadInboxStatus.pending
     assert rebound.target_run_id == successor.id
     assert rebound.source_waiting_run_id == source.id
@@ -415,11 +426,10 @@ async def _publish_receipts(
     receipts,
     sessions: async_sessionmaker[AsyncSession],
 ):
-    current = await states.read(TENANT_ID, initial.run_id)
+    current = await states.read(ORGANIZATION_ID, initial.run_id)
     successor = _state_with_receipts(initial, authority, receipts)
     return await AttemptExecutionService(
-        sessions,
-        clock=lambda: NOW + timedelta(seconds=3),
+        sessions, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
 
 

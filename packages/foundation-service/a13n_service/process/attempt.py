@@ -79,7 +79,7 @@ class ProductionAttemptFactory:
         settings, shared, resources = self._settings, self._shared, self._execution
         attempt = claim.attempt
         context = AttemptContext(
-            tenant_id=attempt.tenant_id,
+            organization_id=attempt.organization_id,
             thread_id=claim.thread_id,
             run_id=attempt.run_id,
             run_attempt_id=attempt.id,
@@ -112,7 +112,7 @@ class ProductionAttemptFactory:
             lambda: control.current_context,
             max_binary_bytes=settings.asset_max_size_bytes,
         )
-        execution = AttemptExecutionService(shared.storage.sessions)
+        execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)
         control = RunAttemptControl(
             context=context,
             execution=execution,
@@ -149,7 +149,9 @@ class ProductionAttemptFactory:
             adapter=_AttemptOutcomeAdapter(control, payloads),
             committer=DatabaseRunTerminalCommitter(
                 shared.storage.sessions,
-                RunOutcomeService(shared.storage.sessions, payloads, control_signals=signals),
+                RunOutcomeService(
+                    shared.storage.sessions, payloads, lifecycle=shared.lifecycle, control_signals=signals
+                ),
                 execution,
             ),
             cleanup=_AttemptCleanup(stack, projector),
@@ -171,7 +173,7 @@ class ProductionAttempt:
     async def run(self) -> object:
         attempt, run = self._claim.attempt, self._claim.run
         correlation = RunAttemptCorrelation(
-            organization_id=run.tenant_id,
+            organization_id=run.organization_id,
             workspace_id=self._claim.workspace_id,
             session_id=run.session_id,
             thread_id=run.thread_id,
@@ -211,7 +213,7 @@ class _AttemptProjector:
             context = self._context
             self._projector = RunStreamHarnessProjector(
                 self._stream,
-                tenant_id=context.tenant_id,
+                organization_id=context.organization_id,
                 run_id=context.run_id,
                 thread_id=context.thread_id,
                 run_attempt_id=context.run_attempt_id,
@@ -250,7 +252,7 @@ class _AttemptOutcomeAdapter:
         context = self._control.current_context
         config = self._control.current_state.envelope.effective_agent_config
         return await StoredHarnessOutcomeAdapter(
-            tenant_id=context.tenant_id,
+            organization_id=context.organization_id,
             run_id=context.run_id,
             payloads=self._payloads,
             max_output_bytes=config.protocol.limits.max_output_bytes,

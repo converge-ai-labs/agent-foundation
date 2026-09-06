@@ -67,7 +67,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_a2a_push_configurations")),
-        sa.UniqueConstraint("organization_id", "id", name="uq_a2a_push_configurations_tenant_id"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_a2a_push_configurations_organization_id"),
     )
     op.create_index(
         "ix_a2a_push_configurations_task",

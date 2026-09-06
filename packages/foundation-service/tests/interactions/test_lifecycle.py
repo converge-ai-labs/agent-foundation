@@ -51,8 +51,8 @@ from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
+    ORGANIZATION_ID,
     SESSION_ID,
-    TENANT_ID,
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
@@ -69,27 +69,27 @@ class _FailOnceCloseRunStream(RedisRunStream):
         super().__init__(redis)
         self._fail_close = True
 
-    async def close(self, tenant_id: str, run_id: str, *, closed_at: datetime) -> None:
+    async def close(self, organization_id: str, run_id: str, *, closed_at: datetime) -> None:
         if self._fail_close:
             self._fail_close = False
             raise RuntimeError("transient close failure")
-        await super().close(tenant_id, run_id, closed_at=closed_at)
+        await super().close(organization_id, run_id, closed_at=closed_at)
 
 
 class _FailingAppendRunStream(RedisRunStream):
-    async def append(self, tenant_id: str, event: RunStreamEvent) -> str:
+    async def append(self, organization_id: str, event: RunStreamEvent) -> str:
         raise RuntimeError("persistent append failure")
 
 
 class _FailingAppendAndMarkerRunStream(_FailingAppendRunStream):
-    async def mark_incomplete(self, tenant_id: str, run_id: str) -> None:
+    async def mark_incomplete(self, organization_id: str, run_id: str) -> None:
         raise RuntimeError("persistent marker failure")
 
 
 class _FailingRunReplayStore(RunReplayStore):
     async def publish(
         self,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         source: CompleteRunStream,
     ) -> RunReplaySnapshot:
@@ -98,7 +98,7 @@ class _FailingRunReplayStore(RunReplayStore):
 
 def _draft(**changes: object) -> LifecycleEventDraft:
     values: dict[str, object] = {
-        "tenant_id": TENANT_ID,
+        "organization_id": ORGANIZATION_ID,
         "entity_type": "run",
         "entity_id": RUN_ID,
         "entity_version": 1,
@@ -140,7 +140,7 @@ def test_rejects_unbounded_payload() -> None:
 async def _seed_run(sessions: async_sessionmaker[AsyncSession]) -> None:
     session = Session(
         id=SESSION_ID,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         workspace_id=WORKSPACE_ID,
         created_at=NOW,
         updated_at=NOW,
@@ -149,7 +149,7 @@ async def _seed_run(sessions: async_sessionmaker[AsyncSession]) -> None:
         id=THREAD_ID,
         version=1,
         queue_version=0,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         session_id=SESSION_ID,
         role=ThreadRole.root,
         origin_kind=ThreadOriginKind.new,
@@ -160,7 +160,7 @@ async def _seed_run(sessions: async_sessionmaker[AsyncSession]) -> None:
     run = Run(
         id=RUN_ID,
         version=1,
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         authority_principal={"principal_type": "user", "principal_id": USER_ID},
         session_id=SESSION_ID,
         thread_id=THREAD_ID,
@@ -211,7 +211,7 @@ async def test_appends_contiguous_resource_sequence_and_reads_pages(
     async with short_session(interaction_sessions) as database:
         page = await read_resource_events(
             database,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             entity_type=LifecycleEntityType.run,
             entity_id=RUN_ID,
             after_resource_seq=0,
@@ -240,7 +240,7 @@ async def test_reports_resource_replay_gap_after_retention(
         with pytest.raises(LifecycleReplayGap) as captured:
             await read_resource_events(
                 database,
-                tenant_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 entity_type=LifecycleEntityType.run,
                 entity_id=RUN_ID,
                 after_resource_seq=0,
@@ -264,7 +264,7 @@ async def test_reads_workspace_events_by_global_sequence(
     async with short_session(interaction_sessions) as database:
         page = await read_workspace_lifecycle_events(
             database,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             after_seq=first.seq,
             limit=50,
@@ -288,7 +288,7 @@ async def test_rolls_back_lifecycle_fact_with_owning_mutation(
     async with short_session(interaction_sessions) as database:
         page = await read_resource_events(
             database,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             entity_type=LifecycleEntityType.run,
             entity_id=RUN_ID,
             after_resource_seq=0,
@@ -333,13 +333,13 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     )
 
     assert await projector.project_once(limit=16) == 1
-    first_page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    first_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
     assert tuple(entry.event.event_type for entry in first_page.items) == ("run.accepted",)
     assert not first_page.closed
     assert await projector.project_once(limit=16) == 1
 
-    terminal_page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
-    snapshot = await replay.read(TENANT_ID, RUN_ID)
+    terminal_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    snapshot = await replay.read(ORGANIZATION_ID, RUN_ID)
     assert terminal_page.closed
     assert tuple(entry.event.event_type for entry in terminal_page.items) == ("run.accepted", "run.completed")
     assert tuple(entry.event.event_type for entry in snapshot.events) == ("run.accepted", "run.completed")
@@ -385,7 +385,7 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
     assert await projector.project_once() == 1
     item_id = deterministic_item_id(RUN_ID, "text_message", "message-1")
     first_item_stream_id = await stream.append(
-        TENANT_ID,
+        ORGANIZATION_ID,
         RunStreamEvent(
             event_id=deterministic_run_stream_event_id("test", "open-item"),
             event_type="agui.text_message_start",
@@ -400,13 +400,13 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
     )
 
     assert await projector.project_once() == 1
-    failed_page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    failed_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
     assert not failed_page.closed
     assert failed_page.items[-1].event.event_type == "item.interrupted"
     assert await projector.project_once() == 1
 
-    page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
-    snapshot = await replay.read(TENANT_ID, RUN_ID)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    snapshot = await replay.read(ORGANIZATION_ID, RUN_ID)
     interrupted = page.items[-1]
     assert page.closed
     assert tuple(entry.event.event_type for entry in page.items) == (
@@ -465,7 +465,7 @@ async def test_background_projector_drains_successive_claim_batches(
                 await anyio.sleep(0.01)
         tasks.cancel_scope.cancel()
 
-    page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
     assert tuple(entry.event.event_type for entry in page.items) == ("run.accepted", "run.running")
 
 
@@ -517,7 +517,7 @@ async def test_projection_failure_retries_then_abandons_without_mutating_fact(
     async with transaction(interaction_sessions) as database:
         source = await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
     stream = RedisRunStream(redis_client)
-    await stream.close(TENANT_ID, RUN_ID, closed_at=NOW)
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
     times = iter((NOW, NOW, NOW + timedelta(seconds=2), NOW + timedelta(seconds=2)))
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
@@ -544,7 +544,7 @@ async def test_projection_failure_retries_then_abandons_without_mutating_fact(
         assert abandoned.projection_error_json is not None
         assert abandoned.projection_error_json["code"] == "run_stream_projection_failed"
     with pytest.raises(RunStreamReplayGap):
-        await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+        await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
 
 
 async def test_abandoned_projection_prevents_complete_snapshot_from_later_terminal_event(
@@ -590,9 +590,9 @@ async def test_abandoned_projection_prevents_complete_snapshot_from_later_termin
     assert await terminal_projector.project_once() == 1
 
     with pytest.raises(RunStreamReplayGap):
-        await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+        await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
     with pytest.raises(RetainedReplayUnavailable):
-        await replay.read(TENANT_ID, RUN_ID)
+        await replay.read(ORGANIZATION_ID, RUN_ID)
     async with short_session(interaction_sessions) as database:
         states = tuple(
             await database.scalars(select(LifecycleEventRecord.projection_state).order_by(LifecycleEventRecord.seq))
@@ -656,11 +656,11 @@ async def test_replay_publication_failure_preserves_complete_live_source(
     assert await projector.project_once() == 1
     assert await projector.project_once() == 1
 
-    page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
     assert page.closed
     assert tuple(entry.event.event_type for entry in page.items) == ("run.accepted", "run.completed")
     with pytest.raises(RetainedReplayUnavailable):
-        await RunReplayStore(interaction_object_store).read(TENANT_ID, RUN_ID)
+        await RunReplayStore(interaction_object_store).read(ORGANIZATION_ID, RUN_ID)
     async with short_session(interaction_sessions) as database:
         record = await database.get(LifecycleEventRecord, terminal.seq)
         assert record is not None

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 from a13n_harness import SafeFailure
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.interactions.lifecycle import RunEventType, append_run_lifecycle
+from a13n_service.interactions.lifecycle import RunEventType
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.domain import LifecycleProjectionState
 from a13n_service.lifecycle.models import LifecycleEventRecord
@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.hooks.support import RUN_ID, seed_run_and_secret
 from tests.interactions.conftest import NOW
+from tests.lifecycle_support import test_lifecycle_writer
 
 pytestmark = pytest.mark.anyio
 
@@ -32,7 +33,7 @@ async def _append_event(
     async with transaction(sessions) as database:
         run = await database.get(RunRecord, run_id)
         assert run is not None
-        return await append_run_lifecycle(
+        return await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             event_type,
@@ -227,7 +228,7 @@ async def test_retention_sweeps_events_in_bounded_batches(
         assert list(await database.scalars(select(LifecycleEventRecord.id))) == []
 
 
-async def test_retention_preserves_tenant_cursor_prefix_across_resources(
+async def test_retention_preserves_organization_cursor_prefix_across_resources(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await seed_run_and_secret(lifecycle_interaction_sessions)

@@ -40,7 +40,7 @@ class AccountTargetRecord(Base):
         UniqueConstraint("account_id", "target_kind", "external_target_id", name="uq_account_targets_object"),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("target_kind IN ('conversation', 'repository')", name="target_kind_valid"),
-        Index("uq_account_targets_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_account_targets_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("ix_account_targets_listing", "account_id", "updated_at", "id"),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)

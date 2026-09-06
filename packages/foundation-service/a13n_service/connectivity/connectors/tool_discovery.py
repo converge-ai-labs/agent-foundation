@@ -5,6 +5,7 @@ from typing import Protocol
 from anyio import fail_after, to_thread
 from mcp.types import Tool, ToolAnnotations
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
 from a13n_service.connectivity.tool_validation import validate_tools
 
@@ -39,19 +40,25 @@ async def discover_tools(runtime: ToolCatalog) -> tuple[tuple[ConnectorTool, ...
             if provider_version is None:
                 provider_version = page.provider_version
             elif page.provider_version != provider_version:
-                raise ConnectorError("discovery_incompatible", "Tools changed during discovery.", status_code=409)
+                raise ConnectorError(
+                    "discovery_incompatible", "Tools changed during discovery.", category=ErrorCategory.conflict
+                )
             tools.extend(page.items)
             if len(tools) > DISCOVERY_MAX_TOOLS:
-                raise ConnectorError("discovery_too_large", "Too many tools.", status_code=409)
+                raise ConnectorError("discovery_too_large", "Too many tools.", category=ErrorCategory.conflict)
             definitions = tuple(mcp_tool(tool) for tool in page.items)
             size += await to_thread.run_sync(validate_tools, definitions)
             if size > DISCOVERY_MAX_BYTES or names.intersection(tool.name for tool in definitions):
-                raise ConnectorError("discovery_incompatible", "Invalid tool discovery.", status_code=409)
+                raise ConnectorError(
+                    "discovery_incompatible", "Invalid tool discovery.", category=ErrorCategory.conflict
+                )
             names.update(tool.name for tool in definitions)
             cursor = page.next_cursor
             if cursor is None:
                 return tuple(tools), provider_version
             if cursor in seen_cursors:
-                raise ConnectorError("discovery_incompatible", "Invalid discovery cursor.", status_code=409)
+                raise ConnectorError(
+                    "discovery_incompatible", "Invalid discovery cursor.", category=ErrorCategory.conflict
+                )
             seen_cursors.add(cursor)
-    raise ConnectorError("discovery_too_large", "Too many discovery pages.", status_code=409)
+    raise ConnectorError("discovery_too_large", "Too many discovery pages.", category=ErrorCategory.conflict)

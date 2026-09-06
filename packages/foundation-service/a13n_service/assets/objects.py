@@ -111,7 +111,7 @@ class AssetObjectStore:
 
 
 def asset_content_key(*, organization_id: str, workspace_id: str, asset_id: str) -> str:
-    return f"tenants/{organization_id}/workspaces/{workspace_id}/assets/version-1/{asset_id}/content"
+    return f"organizations/{organization_id}/workspaces/{workspace_id}/assets/version-1/{asset_id}/content"
 
 
 def asset_object_metadata(

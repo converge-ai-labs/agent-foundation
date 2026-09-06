@@ -61,7 +61,7 @@ class ChildCancellationReconciler:
     async def reconcile_parent(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         parent_run_id: str,
         after_child_thread_id: str | None = None,
         limit: int = 100,
@@ -71,7 +71,7 @@ class ChildCancellationReconciler:
         if not 1 <= limit <= 1000:
             raise ValueError("child cancellation batch limit must be between 1 and 1000")
         candidates = await self._read_authorized_candidates(
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             parent_run_id=parent_run_id,
             after_child_thread_id=after_child_thread_id,
             limit=limit,
@@ -81,7 +81,7 @@ class ChildCancellationReconciler:
         for candidate in candidates:
             try:
                 await self._outcomes.cancel(
-                    tenant_id=tenant_id,
+                    organization_id=organization_id,
                     run_id=candidate.run_id,
                     expected_run_version=candidate.run_version,
                     expected_thread_version=candidate.thread_version,
@@ -106,14 +106,14 @@ class ChildCancellationReconciler:
     async def _read_authorized_candidates(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         parent_run_id: str,
         after_child_thread_id: str | None,
         limit: int,
     ) -> tuple[_CancellationCandidate, ...]:
         async with short_session(self._sessions) as database:
             parent = await database.scalar(
-                select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id == parent_run_id)
+                select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id == parent_run_id)
             )
             if parent is None:
                 raise ChildCancellationError(
@@ -128,20 +128,20 @@ class ChildCancellationReconciler:
                 .join(
                     ChildRunRelationshipRecord,
                     and_(
-                        ChildRunRelationshipRecord.tenant_id == ThreadRecord.tenant_id,
+                        ChildRunRelationshipRecord.organization_id == ThreadRecord.organization_id,
                         ChildRunRelationshipRecord.child_thread_id == ThreadRecord.id,
                     ),
                 )
                 .join(
                     RunRecord,
                     and_(
-                        RunRecord.tenant_id == ThreadRecord.tenant_id,
+                        RunRecord.organization_id == ThreadRecord.organization_id,
                         RunRecord.id == ChildRunRelationshipRecord.child_run_id,
                         RunRecord.id == ThreadRecord.current_run_id,
                     ),
                 )
                 .where(
-                    ChildRunRelationshipRecord.tenant_id == tenant_id,
+                    ChildRunRelationshipRecord.organization_id == organization_id,
                     ChildRunRelationshipRecord.parent_run_id == parent_run_id,
                     ChildRunRelationshipRecord.cancellation_policy
                     == ChildCancellationPolicy.request_child_cancel.value,
@@ -180,7 +180,7 @@ class ChildCancellationReconciler:
 async def _require_session(database: AsyncSession, parent: RunRecord) -> SessionRecord:
     session = await database.scalar(
         select(SessionRecord).where(
-            SessionRecord.tenant_id == parent.tenant_id,
+            SessionRecord.organization_id == parent.organization_id,
             SessionRecord.id == parent.session_id,
         )
     )

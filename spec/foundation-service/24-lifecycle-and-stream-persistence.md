@@ -20,6 +20,8 @@ The Thread-scoped Redis control signal Stream is a separate business-payload-fre
 
 Only `lifecycle_events` is introduced here, under the service-wide [Relational Schema Lifecycle](04-relational-schema.md). Run waiting state belongs to [Run Persistence](12-run-persistence.md). Tool observations remain presentation or telemetry unless an owning Capability defines its own durable task protocol; this document introduces no generic tool lifecycle authority.
 
+The process composes the required transactional delivery writers explicitly. Each accepted lifecycle mutation, its lifecycle fact, and enabled Webhook/A2A delivery intents commit in the same short transaction; any writer failure rolls back that bundle. Disabled A2A delivery performs no subscription matching. Delivery publication remains outside the transaction.
+
 ## Lifecycle Event Model
 
 The following conceptual schema defines one durable fact:
@@ -41,7 +43,7 @@ type LifecycleProjectionState = Literal[
 class LifecycleEvent:
     seq: int
     id: str
-    tenant_id: str
+    organization_id: str
 
     entity_type: LifecycleEntityType
     entity_id: str
@@ -73,11 +75,11 @@ class LifecycleEvent:
 
 `seq` is a database-assigned positive monotonic Workspace cursor. It orders committed facts in one database history but is not contiguous after filtering to one resource and does not invent causal or Run-parent order. It therefore cannot detect a resource-local delivery gap.
 
-`resource_seq` is a positive, contiguous lifecycle sequence beginning at `1` within one `(tenant_id, entity_type, entity_id)` resource. The owning state transaction allocates it while holding the resource mutation lock, so committed events for that resource have no internal sequence gap before retention. It is the ordering and gap-detection value shared by lifecycle Webhooks and the resource-scoped lifecycle API. `entity_version` is the resource version after the event's owning mutation; it is monotonic but need not be contiguous and is not a lifecycle cursor.
+`resource_seq` is a positive, contiguous lifecycle sequence beginning at `1` within one `(organization_id, entity_type, entity_id)` resource. The owning state transaction allocates it while holding the resource mutation lock, so committed events for that resource have no internal sequence gap before retention. It is the ordering and gap-detection value shared by lifecycle Webhooks and the resource-scoped lifecycle API. `entity_version` is the resource version after the event's owning mutation; it is monotonic but need not be contiguous and is not a lifecycle cursor.
 
-`id` is the stable public event identity. `mutation_id` identifies the owning state mutation; `(tenant_id, mutation_id, event_type, entity_type, entity_id)` is unique so transaction retry cannot append the same fact twice.
+`id` is the stable public event identity. `mutation_id` identifies the owning state mutation; `(organization_id, mutation_id, event_type, entity_type, entity_id)` is unique so transaction retry cannot append the same fact twice.
 
-Entity and correlation fields are typed, tenant-scoped references. A Run event requires `run_id`; an attempt event requires `run_id` and `run_attempt_id`. Optional Session and Thread fields are query correlations only. `payload` is bounded, versioned, redacted JSON and never contains credentials, arbitrary provider bodies, complete message history, or a Run state object.
+Entity and correlation fields are typed, organization-scoped references. A Run event requires `run_id`; an attempt event requires `run_id` and `run_attempt_id`. Optional Session and Thread fields are query correlations only. `payload` is bounded, versioned, redacted JSON and never contains credentials, arbitrary provider bodies, complete message history, or a Run state object.
 
 Fact columns through `created_at` are immutable. Projection columns may change as the event is mirrored to Redis but cannot change the fact or authorize a state transition.
 
@@ -98,17 +100,17 @@ The `lifecycle_events` table contains the conceptual fields above and preserves 
 
 1. `seq` is the primary key and `id` is globally unique.
 2. Resource sequences, entity versions, and schema versions are positive; projection attempts are non-negative.
-3. `(tenant_id, entity_type, entity_id, resource_seq)` is unique and supports ordered resource-local recovery.
-4. Indexes on `(tenant_id, seq)`, `(tenant_id, entity_type, entity_id, seq)`, `(tenant_id, run_id, seq)`, and `(tenant_id, run_attempt_id, seq)` support tenant polling, stable forward pagination, and entity or Run correlation.
+3. `(organization_id, entity_type, entity_id, resource_seq)` is unique and supports ordered resource-local recovery.
+4. Indexes on `(organization_id, seq)`, `(organization_id, entity_type, entity_id, seq)`, `(organization_id, run_id, seq)`, and `(organization_id, run_attempt_id, seq)` support organization polling, stable forward pagination, and entity or Run correlation.
 5. A partial index on `(projection_state, projection_next_attempt_at, seq)` for `pending`, `projecting`, and `retry_wait` supports bounded projectors.
 6. Projection lease fields exist only for `projecting`; `projection_next_attempt_at` exists for `pending` and `retry_wait`; and `projected_at` exists only for `projected`.
 7. A state mutation and its required lifecycle events commit in the same short relational transaction. A missing required event aborts that mutation.
 
-Retention deletes bounded event ranges older than the configured horizon. The API rejects a cursor below the lowest retained tenant sequence and returns that boundary explicitly. A resource-scoped lifecycle read likewise reports its lowest retained `resource_seq`; a caller can claim gap-free event recovery only while its requested predecessor remains within that boundary. A lifecycle event referenced by a retained Outbox record remains pinned until that delivery is no longer deliverable or redriveable under the bounded [Outbox retention contract](06-durable-operations-and-outbox.md#outbox-contract). Lifecycle events have no cold archive.
+Retention deletes bounded event ranges older than the configured horizon. The API rejects a cursor below the lowest retained organization sequence and returns that boundary explicitly. A resource-scoped lifecycle read likewise reports its lowest retained `resource_seq`; a caller can claim gap-free event recovery only while its requested predecessor remains within that boundary. A lifecycle event referenced by a retained Outbox record remains pinned until that delivery is no longer deliverable or redriveable under the bounded [Outbox retention contract](06-durable-operations-and-outbox.md#outbox-contract). Lifecycle events have no cold archive.
 
 ## Run Redis Stream
 
-Every accepted Run has one stable tenant-scoped Redis Stream shared by all its `RunAttempt` values. The internal stream locator is not a bearer reference, and each event identifies its own attempt and Harness Run. Checkpoint resume neither allocates another presentation stream nor uses a stream cursor as state input.
+Every accepted Run has one stable organization-scoped Redis Stream shared by all its `RunAttempt` values. The internal stream locator is not a bearer reference, and each event identifies its own attempt and Harness Run. Checkpoint resume neither allocates another presentation stream nor uses a stream cursor as state input.
 
 A `run_attempt.yielded` fact closes only that Attempt generation. It does not close the Run Stream, emit another `run.running`, reset its Redis replay cursor, or allocate a replacement stream. A planned-handoff successor appends observations under its fresh Attempt and Harness Run identities to the same open Run Stream. Only the eventual Run terminal outcome closes the stream and makes retained replay publication eligible.
 
@@ -148,10 +150,10 @@ Native WebSocket notifications are an ephemeral wake-up projection of current re
 Agent Stream Protocol projection assigns stable Item IDs and emits their changes in `RunStreamEvent`. Once a Run's live stream closes, a projection worker compacts the complete retained presentation into one immutable object at this deterministic internal key:
 
 ```text
-tenants/{tenant_id}/runs/{run_id}/replay/version-{schema_version}.json
+organizations/{organization_id}/runs/{run_id}/replay/version-{schema_version}.json
 ```
 
-For version `1`, this resolves to `tenants/{tenant_id}/runs/{run_id}/replay/version-1.json`; the version segment names the snapshot schema, not a replay sequence or Run state version.
+For version `1`, this resolves to `organizations/{organization_id}/runs/{run_id}/replay/version-1.json`; the version segment names the snapshot schema, not a replay sequence or Run state version.
 
 `RunReplaySnapshot` follows the common [Run object serialization rules](12-run-persistence.md#other-object-storage-schemas). Its content type is `application/vnd.converge.run-replay+json`. Object metadata records `schema-version=1`, `run-id`, and the lowercase SHA-256 digest of the canonical stored bytes; object stat supplies the exact byte size. These values are validated before decoding.
 
@@ -188,7 +190,7 @@ class RunReplaySnapshot:
 
 Snapshot publication is create-only. An existing object is accepted only after its digest metadata and complete body validate. A snapshot exists only for a closed, complete, nonempty stream within the configured event-count, Item-count, payload-size, and encoded-size bounds. An incomplete, trimmed, empty, or oversized source reports retained replay as unavailable; version `1` has no partial snapshot or chunk manifest.
 
-The service derives the object key only after a tenant-authorized Run lookup and never treats it as direct authorization. A missing snapshot after Redis expiry means retained presentation is unavailable; Run input, output, and state remain governed by their own records. Item content cannot prove tool execution, provider side effects, or Run completion.
+The service derives the object key only after an organization-authorized Run lookup and never treats it as direct authorization. A missing snapshot after Redis expiry means retained presentation is unavailable; Run input, output, and state remain governed by their own records. Item content cannot prove tool execution, provider side effects, or Run completion.
 
 ## Failure Semantics
 

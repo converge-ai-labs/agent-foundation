@@ -14,7 +14,9 @@ from a13n_service.storage import short_session
 from anyio import Event, create_task_group, fail_after, sleep
 from sqlalchemy import select
 
-from .conftest import NOW, TENANT_ID
+from tests.lifecycle_support import test_lifecycle_writer
+
+from .conftest import NOW, ORGANIZATION_ID
 from .test_attempt_execution import _accept_root
 
 pytestmark = pytest.mark.anyio
@@ -81,7 +83,7 @@ class _Scheduler(AttemptScheduler):
 
 
 def _loop(sessions, preflight, *, scan_limit=32):
-    scheduler = _Scheduler(sessions, clock=lambda: NOW + timedelta(seconds=1))
+    scheduler = _Scheduler(sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW + timedelta(seconds=1))
     loop = WorkerExecutionLoop(
         scheduler,
         preflight,
@@ -116,7 +118,7 @@ async def test_loop_reserves_before_claim_and_keeps_capacity_until_attempt_stops
             preflight.attempt.finish.set()
             await loop.wait_stopped()
     assert loop.active_count == 0
-    assert preflight.claims[0].attempt.tenant_id == TENANT_ID
+    assert preflight.claims[0].attempt.organization_id == ORGANIZATION_ID
 
 
 async def test_drain_during_preflight_never_claims(interaction_sessions, interaction_object_store):
@@ -171,7 +173,9 @@ async def test_discovery_is_bounded_and_cursor_does_not_repeat_a_candidate(
     interaction_sessions, interaction_object_store
 ):
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1))
+    scheduler = AttemptScheduler(
+        interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW + timedelta(seconds=1)
+    )
     args = dict(worker_build_id="build-1", handoff_preference_window=timedelta(seconds=30), limit=1)
     page = await scheduler.discover(**args)
     assert tuple(candidate.run_id for candidate in page) == (run.id,)

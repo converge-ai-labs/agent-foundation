@@ -40,7 +40,7 @@ class Thread:
     id: str
     version: int
     queue_version: int
-    tenant_id: str
+    organization_id: str
     session_id: str
 
     role: ThreadRole
@@ -85,7 +85,7 @@ The two Run references have distinct meanings:
 | `head_run_id`    | Exact sealed `waiting` or `completed` Run whose frozen state is the currently selected continuation head; null until the Thread first selects such an outcome |
 | `current_run_id` | Most recently accepted Run, regardless of status; null until the first Run is accepted                                                                        |
 
-Foundation never derives either value from timestamps, event order, object listings, or replay data. When present, both references name Runs with the same `tenant_id`, `session_id`, and `thread_id` as the Thread row.
+Foundation never derives either value from timestamps, event order, object listings, or replay data. When present, both references name Runs with the same `organization_id`, `session_id`, and `thread_id` as the Thread row.
 
 An empty Thread has no current outcome or active Run. Once present, the current Run's status supplies the Thread's current execution and latest outcome projection. A current Run in `accepted` or `running` is the Thread's sole active Run. A current Run in `waiting`, `completed`, `failed`, or `cancelled` is sealed and the Thread has no active Run. The Thread stores no separate status or active-Run pointer. Intermediate claim and recovery transitions remain Run lifecycle facts and do not advance the Thread state version.
 
@@ -107,38 +107,38 @@ Thread mutations apply these resource-local effects. The linked operation contra
 
 The conceptual model materializes as one row in `threads`. Supported relational backends preserve the same validation and query semantics.
 
-| Column group       | Columns                                                     | Relational contract                                                                                                      |
-| ------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Identity and scope | `id`, `version`, `queue_version`, `tenant_id`, `session_id` | `id` is the primary key; advancement version is positive; queue version is non-negative; Session membership is immutable |
-| Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_run_id`  | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
-| Advancement        | `head_run_id`, `current_run_id`                             | Same-Thread Run references updated only by accepted advancement or outcome commit                                        |
-| Environment        | `default_environment_id`                                    | Mutable same-Workspace default; Run acceptance freezes its own selection and updates this field atomically               |
-| Time               | `created_at`, `updated_at`                                  | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
+| Column group       | Columns                                                           | Relational contract                                                                                                      |
+| ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Identity and scope | `id`, `version`, `queue_version`, `organization_id`, `session_id` | `id` is the primary key; advancement version is positive; queue version is non-negative; Session membership is immutable |
+| Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_run_id`        | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
+| Advancement        | `head_run_id`, `current_run_id`                                   | Same-Thread Run references updated only by accepted advancement or outcome commit                                        |
+| Environment        | `default_environment_id`                                          | Mutable same-Workspace default; Run acceptance freezes its own selection and updates this field atomically               |
+| Time               | `created_at`, `updated_at`                                        | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
 
-The independent `thread_inbox_counters` row owned by [Active Execution](19-agent-control-active-execution.md#thread-inbox) is keyed by the same tenant and Thread. Its allocation and pending-budget updates do not change `version`, `queue_version`, `updated_at`, `current_run_id`, or `head_run_id`; it is delivery-order authority rather than another Thread resource field.
+The independent `thread_inbox_counters` row owned by [Active Execution](19-agent-control-active-execution.md#thread-inbox) is keyed by the same organization and Thread. Its allocation and pending-budget updates do not change `version`, `queue_version`, `updated_at`, `current_run_id`, or `head_run_id`; it is delivery-order authority rather than another Thread resource field.
 
 The relational contract preserves these constraints:
 
-1. `(tenant_id, id)` is unique, and every Run has a same-tenant foreign key to its Thread.
-2. `(tenant_id, session_id, id)` is unique, and every Thread references one persisted Session in the same tenant.
-3. A partial unique constraint on `(tenant_id, session_id)` for `role="root"` enforces one root Thread per Session.
+1. `(organization_id, id)` is unique, and every Run has a same-organization foreign key to its Thread.
+2. `(organization_id, session_id, id)` is unique, and every Thread references one persisted Session in the same organization.
+3. A partial unique constraint on `(organization_id, session_id)` for `role="root"` enforces one root Thread per Session.
 4. `current_run_id` is null exactly before the first Run, and otherwise names the most recently accepted same-Thread Run. `head_run_id` is null until a same-Thread Run seals as `waiting` or `completed`, and otherwise names only such a selected Run.
 5. At most one Run per Thread is `accepted` or `running`; when such a Run exists it is `current_run_id`. The Run table's partial uniqueness constraint enforces the single-active rule.
-6. Origin reference combinations match `origin_kind`; malformed or cross-tenant origins are rejected.
+6. Origin reference combinations match `origin_kind`; malformed or cross-organization origins are rejected.
 7. A root Thread may exist before its first Run. Combined root start, Fork and child acceptance publish the Thread and first Run atomically.
 8. `queue_version` starts at zero, is non-negative, and changes only under the queued-submission mutation contract; consumption updates it in the same transaction that advances the Thread, while terminal failure can update it without accepting a Run.
 
 The accepted access paths are:
 
-| Access path                      | Index or uniqueness contract                                             |
-| -------------------------------- | ------------------------------------------------------------------------ |
-| Exact Thread read and state lock | Unique `(tenant_id, id)`                                                 |
-| Session Thread listing           | `(tenant_id, session_id, created_at, id)`                                |
-| Updated Thread listing           | `(tenant_id, session_id, updated_at, id)`                                |
-| Queue mutation lock              | Unique `(tenant_id, id)` plus `queue_version`                            |
-| Current or head Run join         | Same-tenant unique Run references stored on the Thread                   |
-| Origin traversal                 | `(tenant_id, origin_run_id, id)` and `(tenant_id, origin_thread_id, id)` |
-| One root Thread per Session      | Partial unique `(tenant_id, session_id)` for root role                   |
+| Access path                      | Index or uniqueness contract                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| Exact Thread read and state lock | Unique `(organization_id, id)`                                                       |
+| Session Thread listing           | `(organization_id, session_id, created_at, id)`                                      |
+| Updated Thread listing           | `(organization_id, session_id, updated_at, id)`                                      |
+| Queue mutation lock              | Unique `(organization_id, id)` plus `queue_version`                                  |
+| Current or head Run join         | Same-organization unique Run references stored on the Thread                         |
+| Origin traversal                 | `(organization_id, origin_run_id, id)` and `(organization_id, origin_thread_id, id)` |
+| One root Thread per Session      | Partial unique `(organization_id, session_id)` for root role                         |
 
 Run-table indexes for Worker claims, Run listing, search, and DAG traversal remain owned by the Run contract. They do not replace the Thread row or its state version.
 
@@ -162,7 +162,7 @@ A retained origin reference keeps the minimum safe source identity required by l
 
 ## Security and Authorization
 
-Every create, read, advance, queue mutation, fork, retry, feedback, and retention operation authorizes the Thread through its current tenant, Session, Workspace policy, and action. Origin and Run references grant no access by possession. A concealed Thread returns the same bounded not-found behavior as another concealed resource.
+Every create, read, advance, queue mutation, fork, retry, feedback, and retention operation authorizes the Thread through its current organization, Session, Workspace policy, and action. Origin and Run references grant no access by possession. A concealed Thread returns the same bounded not-found behavior as another concealed resource.
 
 The Thread row contains correlation and control state only. It never exposes raw prompts, outputs, Harness state, pending payloads, credentials, provider state, private child content, or storage locators. Cross-Session fork validates both source read authority and destination mutation authority before publishing the new state.
 

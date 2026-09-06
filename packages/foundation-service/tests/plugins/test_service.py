@@ -103,15 +103,10 @@ async def test_upload_creates_stable_plugin_and_immutable_versions(plugin_servic
 
 
 @pytest.mark.anyio
-async def test_plugin_upload_preserves_utf8_idempotency_keys(plugin_service: PluginService) -> None:
-    wheel = build_wheel()
-
-    first = await _upload(plugin_service, wheel, key="重试-🔁")
-    replay = await _upload(plugin_service, wheel, key="重试-🔁")
-
-    assert first.created is True
-    assert replay.created is False
-    assert replay.version.id == first.version.id
+async def test_plugin_upload_rejects_non_ascii_idempotency_keys(plugin_service: PluginService) -> None:
+    with pytest.raises(PluginError) as caught:
+        await _upload(plugin_service, build_wheel(), key="重试-🔁")
+    assert caught.value.code == "invalid_request"
 
 
 @pytest.mark.anyio

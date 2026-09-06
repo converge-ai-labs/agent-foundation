@@ -60,7 +60,7 @@ class AgentRecord(Base):
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account', 'system')", name="updated_by_type_valid"),
-        Index("uq_agents_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_agents_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("uq_agents_workspace_name", "workspace_id", "normalized_name", unique=True),
         Index("ix_agents_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_agents_workspace_availability", "workspace_id", "enabled", "archived_at", "updated_at", "id"),
@@ -124,7 +124,7 @@ class AgentRevisionRecord(Base):
         CheckConstraint("length(content_digest) = 64", name="content_digest_sha256"),
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         UniqueConstraint("agent_id", "version", name="uq_agent_revisions_agent_number"),
-        Index("uq_agent_revisions_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_agent_revisions_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index(
             "ix_agent_revisions_agent_desc",
             "agent_id",

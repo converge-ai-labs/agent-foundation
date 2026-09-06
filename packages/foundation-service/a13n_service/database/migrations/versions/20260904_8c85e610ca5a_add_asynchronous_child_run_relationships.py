@@ -22,13 +22,13 @@ def upgrade() -> None:
     op.create_index(
         "uq_run_attempts_generation_identity",
         "run_attempts",
-        ["tenant_id", "run_id", "id", "fence"],
+        ["organization_id", "run_id", "id", "fence"],
         unique=True,
     )
     op.create_table(
         "child_run_relationships",
         sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("tenant_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("parent_run_id", sa.String(length=72), nullable=False),
         sa.Column("parent_run_attempt_id", sa.String(length=72), nullable=False),
         sa.Column("parent_run_attempt_generation", sa.BigInteger(), nullable=False),
@@ -55,43 +55,43 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("parent_run_id <> child_run_id", name=op.f("ck_child_run_relationships_child_run_distinct")),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "child_thread_id", "child_run_id"],
-            ["runs.tenant_id", "runs.thread_id", "runs.id"],
+            ["organization_id", "child_thread_id", "child_run_id"],
+            ["runs.organization_id", "runs.thread_id", "runs.id"],
             name="fk_child_run_relationships_child_run",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "child_thread_id"],
-            ["threads.tenant_id", "threads.id"],
+            ["organization_id", "child_thread_id"],
+            ["threads.organization_id", "threads.id"],
             name="fk_child_run_relationships_child_thread",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "parent_run_id", "parent_run_attempt_id", "parent_run_attempt_generation"],
-            ["run_attempts.tenant_id", "run_attempts.run_id", "run_attempts.id", "run_attempts.fence"],
+            ["organization_id", "parent_run_id", "parent_run_attempt_id", "parent_run_attempt_generation"],
+            ["run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id", "run_attempts.fence"],
             name="fk_child_run_relationships_parent_attempt",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["tenant_id", "parent_run_id"],
-            ["runs.tenant_id", "runs.id"],
+            ["organization_id", "parent_run_id"],
+            ["runs.organization_id", "runs.id"],
             name="fk_child_run_relationships_parent_run",
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_child_run_relationships")),
-        sa.UniqueConstraint("tenant_id", "child_run_id", name="uq_child_run_relationships_child_run"),
-        sa.UniqueConstraint("tenant_id", "id", name="uq_child_run_relationships_tenant_id"),
+        sa.UniqueConstraint("organization_id", "child_run_id", name="uq_child_run_relationships_child_run"),
+        sa.UniqueConstraint("organization_id", "id", name="uq_child_run_relationships_organization_id"),
     )
     op.create_index(
         "ix_child_run_relationships_child_thread",
         "child_run_relationships",
-        ["tenant_id", "child_thread_id", "created_at", "id"],
+        ["organization_id", "child_thread_id", "created_at", "id"],
         unique=False,
     )
     op.create_index(
         "ix_child_run_relationships_parent",
         "child_run_relationships",
-        ["tenant_id", "parent_run_id", "created_at", "id"],
+        ["organization_id", "parent_run_id", "created_at", "id"],
         unique=False,
     )
     with op.batch_alter_table("thread_inbox") as batch_op:
@@ -107,13 +107,13 @@ def upgrade() -> None:
         )
         batch_op.create_unique_constraint(
             "uq_thread_inbox_async_subagent_relationship",
-            ["tenant_id", "async_subagent_relationship_id"],
+            ["organization_id", "async_subagent_relationship_id"],
         )
         batch_op.create_foreign_key(
             "fk_thread_inbox_async_subagent_relationship",
             "child_run_relationships",
-            ["tenant_id", "async_subagent_relationship_id"],
-            ["tenant_id", "id"],
+            ["organization_id", "async_subagent_relationship_id"],
+            ["organization_id", "id"],
             ondelete="RESTRICT",
         )
     # ### end Alembic commands ###

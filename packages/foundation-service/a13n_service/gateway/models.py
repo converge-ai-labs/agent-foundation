@@ -33,18 +33,18 @@ class AguiThreadBindingRecord(Base):
         ),
         ForeignKeyConstraint(
             ("organization_id", "session_id"),
-            ("sessions.tenant_id", "sessions.id"),
+            ("sessions.organization_id", "sessions.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ("organization_id", "root_thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("threads.organization_id", "threads.id"),
             name="fk_agui_thread_bindings_root_thread",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ("organization_id", "active_thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("threads.organization_id", "threads.id"),
             name="fk_agui_thread_bindings_active_thread",
             ondelete="RESTRICT",
         ),
@@ -108,7 +108,7 @@ class AguiRunBindingRecord(Base):
         ),
         ForeignKeyConstraint(
             ("organization_id", "run_id"),
-            ("runs.tenant_id", "runs.id"),
+            ("runs.organization_id", "runs.id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint("length(request_digest_sha256) = 64", name="request_digest_sha256"),
@@ -139,29 +139,6 @@ class AguiRunBindingRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class GatewayCommandReceiptRecord(Base):
-    """Immutable response snapshot for non-Run idempotent Gateway commands."""
-
-    __tablename__ = "gateway_command_receipts"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ("workspace_id", "organization_id"),
-            ("workspaces.id", "workspaces.organization_id"),
-            ondelete="CASCADE",
-        ),
-        CheckConstraint("length(request_digest_sha256) = 64", name="request_digest_sha256"),
-        Index("ix_gateway_command_receipts_scope", "organization_id", "workspace_id", "created_at", "id"),
-    )
-
-    id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    response_kind: Mapped[str] = mapped_column(String(64), nullable=False)
-    request_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    response_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
 class A2AContextBindingRecord(Base):
     """One A2A Context mapped to one Foundation Session root Thread."""
 
@@ -174,12 +151,12 @@ class A2AContextBindingRecord(Base):
         ),
         ForeignKeyConstraint(
             ("organization_id", "session_id"),
-            ("sessions.tenant_id", "sessions.id"),
+            ("sessions.organization_id", "sessions.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ("organization_id", "root_thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("threads.organization_id", "threads.id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint("client_principal_type IN ('user', 'service_account')", name="principal_type_valid"),
@@ -228,16 +205,16 @@ class A2ATaskBindingRecord(Base):
         ),
         ForeignKeyConstraint(
             ("organization_id", "thread_id"),
-            ("threads.tenant_id", "threads.id"),
+            ("threads.organization_id", "threads.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ("organization_id", "current_run_id"),
-            ("runs.tenant_id", "runs.id"),
+            ("runs.organization_id", "runs.id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint("length(client_tool_surface_digest) = 64", name="client_tool_surface_digest_sha256"),
-        UniqueConstraint("organization_id", "id", name="uq_a2a_tasks_tenant_id"),
+        UniqueConstraint("organization_id", "id", name="uq_a2a_tasks_organization_id"),
         Index("ix_a2a_tasks_context_created", "context_binding_id", "created_at", "id"),
         Index("ix_a2a_tasks_current_run", "organization_id", "current_run_id", "id"),
     )
@@ -269,7 +246,7 @@ class A2AMessageBindingRecord(Base):
         ),
         ForeignKeyConstraint(
             ("organization_id", "run_id"),
-            ("runs.tenant_id", "runs.id"),
+            ("runs.organization_id", "runs.id"),
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
@@ -287,6 +264,7 @@ class A2AMessageBindingRecord(Base):
             name="uq_a2a_messages_client_agent_message",
         ),
         Index("ix_a2a_messages_run", "organization_id", "run_id", "id"),
+        Index("ix_a2a_messages_task_history", "workspace_id", "task_id", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -327,7 +305,7 @@ class A2APushConfigurationRecord(ResourceCredential[str], Base):
             "(state = 'active' AND deleted_at IS NULL) OR (state = 'disabled' AND deleted_at IS NOT NULL)",
             name="lifecycle_valid",
         ),
-        UniqueConstraint("organization_id", "id", name="uq_a2a_push_configurations_tenant_id"),
+        UniqueConstraint("organization_id", "id", name="uq_a2a_push_configurations_organization_id"),
         Index(
             "ix_a2a_push_configurations_task",
             "organization_id",
@@ -360,5 +338,4 @@ __all__ = [
     "A2ATaskBindingRecord",
     "AguiRunBindingRecord",
     "AguiThreadBindingRecord",
-    "GatewayCommandReceiptRecord",
 ]

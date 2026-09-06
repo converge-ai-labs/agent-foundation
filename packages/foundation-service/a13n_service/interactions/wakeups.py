@@ -32,7 +32,7 @@ class ThreadControlWakeups:
         context = self._context
         with fail_after(context.reconciliation_timeout.total_seconds()):
             signals = await self._signals.claim_abandoned(
-                tenant_id=context.tenant_id,
+                organization_id=context.organization_id,
                 thread_id=context.thread_id,
                 consumer=self._consumer,
                 min_idle_ms=max(1, int(context.lease_duration.total_seconds() * 1000)),
@@ -40,7 +40,7 @@ class ThreadControlWakeups:
             )
             if not signals:
                 signals = await self._signals.read_new(
-                    tenant_id=context.tenant_id,
+                    organization_id=context.organization_id,
                     thread_id=context.thread_id,
                     consumer=self._consumer,
                     count=16,
@@ -55,7 +55,7 @@ class ThreadControlWakeups:
             raise ValueError("Thread acknowledgement does not match the delivered wakeup batch")
         with fail_after(self._context.reconciliation_timeout.total_seconds()):
             await self._signals.acknowledge(
-                tenant_id=self._context.tenant_id,
+                organization_id=self._context.organization_id,
                 thread_id=self._context.thread_id,
                 stream_ids=tuple(item.stream_id for item in self._pending),
             )

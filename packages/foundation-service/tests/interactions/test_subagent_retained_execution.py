@@ -36,11 +36,13 @@ from a13n_service.subagents.models import ChildRunRelationshipRecord
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
-    TENANT_ID,
+    ORGANIZATION_ID,
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
@@ -208,7 +210,7 @@ async def test_later_parent_roster_revision_can_resume_retained_child_checkpoint
         delegated.child_run_id,
         attempt_id="rat_7373737373737373",
     )
-    parent_state = await states.read(TENANT_ID, context.parent_run_id)
+    parent_state = await states.read(ORGANIZATION_ID, context.parent_run_id)
     await _seed_replacement_child_revision(interaction_sessions)
     later_operator, later_context = await _continue_parent(
         interaction_sessions,
@@ -251,6 +253,7 @@ async def _complete_delegated_child(
         clock=lambda: NOW + timedelta(seconds=clock_seconds),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: attempt_id,
+        lifecycle=test_lifecycle_writer(),
     ).claim(child_run_id, _worker())
     assert child_claim is not None
     child = await _run(sessions, child_run_id)
@@ -281,7 +284,7 @@ async def _continue_parent(
 ) -> tuple[DurableSubagentOperator, SubagentOperatorContext]:
     parent = await _run(sessions, prior_context.parent_run_id)
     completed = await _complete_run(sessions, objects, states, parent, prior_authority.current_context)
-    completed_state = await states.read(completed.tenant_id, completed.id, expected_thread_id=completed.thread_id)
+    completed_state = await states.read(completed.organization_id, completed.id, expected_thread_id=completed.thread_id)
     next_config = parent_config or completed_state.envelope.effective_agent_config
     next_run_id = "run_7070707070707070"
     next_state = initialize_completed_continuation_state(
@@ -310,6 +313,7 @@ async def _continue_parent(
         RunPayloadStore(objects),
         _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     ).advance_thread(
         run=next_run,
         state=next_state,
@@ -323,6 +327,7 @@ async def _continue_parent(
         clock=lambda: NOW + timedelta(seconds=7),
         token_factory=lambda: "next-parent-lease",
         attempt_id_factory=lambda: "rat_7070707070707070",
+        lifecycle=test_lifecycle_writer(),
     ).claim(next_run_id, _worker())
     assert next_claim is not None
     context = SubagentOperatorContext(
@@ -359,7 +364,7 @@ async def _additional_parent_thread(
         await _run(sessions, source_context.parent_run_id),
         source_authority.current_context,
     )
-    source_state = await states.read(source.tenant_id, source.id, expected_thread_id=source.thread_id)
+    source_state = await states.read(source.organization_id, source.id, expected_thread_id=source.thread_id)
     config = source_state.envelope.effective_agent_config
     state = initialize_fork_state(
         RunStateSeed(
@@ -384,13 +389,14 @@ async def _additional_parent_thread(
         RunPayloadStore(objects),
         _inline_hooks(),
         clock=lambda: NOW,
+        lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(
         session=None,
         thread=Thread(
             id=thread_id,
             version=1,
             queue_version=0,
-            tenant_id=run.tenant_id,
+            organization_id=run.organization_id,
             session_id=run.session_id,
             role=ThreadRole.child,
             origin_kind=ThreadOriginKind.fork,
@@ -408,6 +414,7 @@ async def _additional_parent_thread(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "other-parent-lease",
         attempt_id_factory=lambda: "rat_7272727272727272",
+        lifecycle=test_lifecycle_writer(),
     ).claim(run.id, _worker())
     assert claim is not None
     context = SubagentOperatorContext(
@@ -468,7 +475,12 @@ def _operator_for_parent(
                 clock=lambda: NOW + timedelta(seconds=8),
             ),
             ThreadInboxStore(sessions, clock=lambda: NOW + timedelta(seconds=8)),
-            RunOutcomeService(sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=8)),
+            RunOutcomeService(
+                sessions,
+                RunPayloadStore(objects),
+                clock=lambda: NOW + timedelta(seconds=8),
+                lifecycle=test_lifecycle_writer(),
+            ),
             parent_agent_instance_id=context.parent_agent_instance_id,
             host_refs=dict(context.host_refs),
             default_wait_timeout_seconds=0.01,
@@ -496,7 +508,7 @@ async def _seed_replacement_child_revision(sessions: async_sessionmaker[AsyncSes
         database.add(
             AgentRevisionRecord(
                 id=REPLACEMENT_CHILD_REVISION_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 agent_id=CHILD_AGENT_ID,
                 version=2,

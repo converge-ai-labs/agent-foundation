@@ -63,7 +63,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
-from .conftest import ATTEMPT_ID, NOW, RUN_ID, TENANT_ID, initial_state
+from .conftest import ATTEMPT_ID, NOW, ORGANIZATION_ID, RUN_ID, initial_state
 
 pytestmark = pytest.mark.anyio
 
@@ -191,7 +191,7 @@ class _RecordingTerminalCommitter:
 
 def _context(thread_id: str) -> AttemptContext:
     return AttemptContext(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=thread_id,
         run_id=RUN_ID,
         run_attempt_id=ATTEMPT_ID,
@@ -288,12 +288,12 @@ def _waiting_gate_state() -> RunStateEnvelope:
 
 async def _stored_state(objects: ObjectStore, envelope: RunStateEnvelope) -> tuple[RunStateStore, StoredRunState]:
     states = RunStateStore(objects)
-    return states, await states.create(TENANT_ID, envelope)
+    return states, await states.create(ORGANIZATION_ID, envelope)
 
 
 def _outcome_adapter(objects: ObjectStore) -> StoredHarnessOutcomeAdapter:
     return StoredHarnessOutcomeAdapter(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(objects),
         max_output_bytes=1024,

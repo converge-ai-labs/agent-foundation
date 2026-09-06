@@ -37,7 +37,7 @@ class _PreparedLauncher:
     def create(self, claimed: ClaimedAttempt, capacity_slot: CapacitySlot) -> ManagedAttempt:
         attempt = claimed.attempt
         if (
-            attempt.tenant_id != self.candidate.tenant_id
+            attempt.organization_id != self.candidate.organization_id
             or attempt.run_id != self.candidate.run_id
             or attempt.runtime_lock_digest != self.candidate.runtime_lock_digest
         ):
@@ -71,7 +71,7 @@ class OnDemandExecutionPreflight:
                 async with short_session(self._sessions) as database:
                     digest = await database.scalar(
                         select(RunRecord.runtime_lock_digest).where(
-                            RunRecord.tenant_id == candidate.tenant_id, RunRecord.id == candidate.run_id
+                            RunRecord.organization_id == candidate.organization_id, RunRecord.id == candidate.run_id
                         )
                     )
                     if digest is None or digest != candidate.runtime_lock_digest:

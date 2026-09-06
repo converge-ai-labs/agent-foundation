@@ -6,18 +6,18 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.management import (
-    ConnectivityManagementValueError,
-)
-from a13n_service.connectivity.management import (
-    idempotency_key_digest as shared_idempotency_key_digest,
-)
+from a13n_service.connectivity.management import CommandReceipt
 from a13n_service.connectivity.management import (
     replay_command as shared_replay_command,
 )
-from a13n_service.connectivity.models import ConnectivityCommandRecord
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyConflict,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+)
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -38,7 +38,7 @@ def require_adapter(
         return adapters.create(provider_key, config_version=config_version)
     except ValueError as error:
         raise NativeError(
-            "unsupported_ingress_adapter", "Ingress adapter is not registered.", status_code=400
+            "unsupported_ingress_adapter", "Ingress adapter is not registered.", category=ErrorCategory.invalid_request
         ) from error
 
 
@@ -51,7 +51,9 @@ async def authorize(
     try:
         return await authorize_workspace(session, actor=actor, workspace_id=workspace_id, action=action)
     except AuthorizationError as error:
-        raise NativeError("resource_not_found", "The requested resource was not found.", status_code=404) from error
+        raise NativeError(
+            "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
+        ) from error
 
 
 async def replay_command(
@@ -63,7 +65,8 @@ async def replay_command(
     scope_id: str,
     idempotency_key_digest: str,
     fingerprint: str,
-) -> ConnectivityCommandRecord | None:
+    now: datetime,
+) -> CommandReceipt | None:
     try:
         return await shared_replay_command(
             session,
@@ -73,28 +76,33 @@ async def replay_command(
             scope_id=scope_id,
             idempotency_key_digest=idempotency_key_digest,
             fingerprint=fingerprint,
+            now=now,
         )
-    except ConnectivityManagementValueError as error:
+    except IdempotencyConflict as error:
         raise NativeError(
-            "idempotency_conflict", "Idempotency key was used for another request.", status_code=409
+            "idempotency_conflict", "Idempotency key was used for another request.", category=ErrorCategory.conflict
         ) from error
 
 
 def require_version(current: int, expected: int) -> None:
     if current != expected:
-        raise NativeError("version_conflict", "Resource version has changed.", status_code=409)
+        raise NativeError("version_conflict", "Resource version has changed.", category=ErrorCategory.conflict)
 
 
 def require_limit(limit: int) -> None:
     if not 1 <= limit <= 100:
-        raise NativeError("invalid_request", "Collection limit must be between 1 and 100.", status_code=400)
+        raise NativeError(
+            "invalid_request", "Collection limit must be between 1 and 100.", category=ErrorCategory.invalid_request
+        )
 
 
 def idempotency_key_digest(value: str) -> str:
     try:
-        return shared_idempotency_key_digest(value)
-    except ConnectivityManagementValueError as error:
-        raise NativeError("invalid_request", "Idempotency-Key is invalid.", status_code=400) from error
+        return digest_visible_ascii_key(value)
+    except InvalidIdempotencyKey as error:
+        raise NativeError(
+            "invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request
+        ) from error
 
 
 def audit(

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
@@ -36,7 +37,9 @@ async def resolve_routing(
     try:
         kind, identifier = adapter.event_target(event)
     except ValueError as error:
-        raise NativeError("invalid_provider_event", "Provider event target is invalid.", status_code=400) from error
+        raise NativeError(
+            "invalid_provider_event", "Provider event target is invalid.", category=ErrorCategory.invalid_request
+        ) from error
     target = await session.scalar(
         select(AccountTargetRecord).where(
             AccountTargetRecord.account_id == account.id,
@@ -61,12 +64,18 @@ async def resolve_routing(
             event, policy, account.provider_config_json, config_version=account.provider_config_version
         )
     except ValueError as error:
-        raise NativeError("invalid_provider_event", "Provider event cannot be classified.", status_code=400) from error
+        raise NativeError(
+            "invalid_provider_event", "Provider event cannot be classified.", category=ErrorCategory.invalid_request
+        ) from error
     if isinstance(classification, ProviderIrrelevantEventRouting):
         return IrrelevantRouting(classification.reason_code)
     ref = event.refs.get(classification.external_ref_key)
     if ref is None:
-        raise NativeError("correlation_ref_missing", "Provider event has no conversation reference.", status_code=400)
+        raise NativeError(
+            "correlation_ref_missing",
+            "Provider event has no conversation reference.",
+            category=ErrorCategory.invalid_request,
+        )
     binding = await session.scalar(
         select(AgentThreadBindingRecord)
         .where(

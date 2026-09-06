@@ -51,7 +51,7 @@ class InboxInputNotReady(Exception):
 
 
 class ThreadControlSignalPublisher(Protocol):
-    async def publish(self, *, tenant_id: str, thread_id: str) -> None: ...
+    async def publish(self, *, organization_id: str, thread_id: str) -> None: ...
 
 
 class ThreadInboxStore:
@@ -77,7 +77,7 @@ class ThreadInboxStore:
     async def append_steer(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         input: AcceptedAgentInput,
         entry_id: str | None = None,
@@ -90,7 +90,7 @@ class ThreadInboxStore:
         steer_id = entry_id or new_thread_inbox_entry_id()
         payload = input.model_dump(mode="json", by_alias=True, exclude_none=True)
         async with transaction(self._sessions) as database:
-            thread, run = await _lock_current_run(database, tenant_id=tenant_id, run_id=run_id)
+            thread, run = await _lock_current_run(database, organization_id=organization_id, run_id=run_id)
             if final_validator is not None:
                 await final_validator(database)
             target_run_id: str | None
@@ -105,7 +105,7 @@ class ThreadInboxStore:
                 raise ThreadInboxConflict("steer target is not the current accepted, running, or selected waiting Run")
             entry = await allocate_steer(
                 database,
-                tenant_id=tenant_id,
+                organization_id=organization_id,
                 thread_id=thread.id,
                 accepted_against_run_id=run.id,
                 target_run_id=target_run_id,
@@ -127,14 +127,14 @@ class ThreadInboxStore:
             )
             if transaction_hook is not None:
                 await transaction_hook(database, receipt)
-        await self._best_effort_signal(tenant_id=tenant_id, thread_id=receipt.thread_id)
+        await self._best_effort_signal(organization_id=organization_id, thread_id=receipt.thread_id)
         return receipt
 
-    async def get_steer(self, *, tenant_id: str, run_id: str, steer_id: str) -> SteerStatus:
+    async def get_steer(self, *, organization_id: str, run_id: str, steer_id: str) -> SteerStatus:
         async with short_session(self._sessions) as database:
             row = await database.scalar(
                 select(ThreadInboxRecord).where(
-                    ThreadInboxRecord.tenant_id == tenant_id,
+                    ThreadInboxRecord.organization_id == organization_id,
                     ThreadInboxRecord.id == steer_id,
                     ThreadInboxRecord.kind == ThreadInboxKind.steer.value,
                     ThreadInboxRecord.accepted_against_run_id == run_id,
@@ -144,7 +144,7 @@ class ThreadInboxStore:
                 raise ThreadInboxConflict("steer receipt was not found")
             thread = await database.scalar(
                 select(ThreadRecord).where(
-                    ThreadRecord.tenant_id == tenant_id,
+                    ThreadRecord.organization_id == organization_id,
                     ThreadRecord.id == row.thread_id,
                 )
             )
@@ -179,11 +179,11 @@ class ThreadInboxStore:
                 finalized_at=entry.finalized_at,
             )
 
-    async def _best_effort_signal(self, *, tenant_id: str, thread_id: str) -> None:
+    async def _best_effort_signal(self, *, organization_id: str, thread_id: str) -> None:
         if self._signals is None:
             return
         try:
-            await self._signals.publish(tenant_id=tenant_id, thread_id=thread_id)
+            await self._signals.publish(organization_id=organization_id, thread_id=thread_id)
         except Exception:
             logger.warning(
                 "thread_control_signal_failed",
@@ -238,7 +238,7 @@ class DatabaseThreadInboxReconciler:
                     await database.scalars(
                         select(ThreadInboxRecord)
                         .where(
-                            ThreadInboxRecord.tenant_id == run.tenant_id,
+                            ThreadInboxRecord.organization_id == run.organization_id,
                             ThreadInboxRecord.thread_id == run.thread_id,
                             ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                         )
@@ -286,8 +286,8 @@ class RedisThreadControlSignals:
         self._ttl_seconds = ttl_seconds
         self._group = group
 
-    async def publish(self, *, tenant_id: str, thread_id: str) -> None:
-        key = _signal_key(tenant_id, thread_id)
+    async def publish(self, *, organization_id: str, thread_id: str) -> None:
+        key = _signal_key(organization_id, thread_id)
         await self._ensure_group(key)
         pipeline = self._redis.pipeline(transaction=True)
         pipeline.xadd(
@@ -302,7 +302,7 @@ class RedisThreadControlSignals:
     async def read_new(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         consumer: str,
         count: int = 16,
@@ -311,7 +311,7 @@ class RedisThreadControlSignals:
         """Read new wakeups; callers reconcile PostgreSQL before acknowledging."""
 
         _validate_signal_read(consumer=consumer, count=count, block_ms=block_ms)
-        key = _signal_key(tenant_id, thread_id)
+        key = _signal_key(organization_id, thread_id)
         await self._ensure_group(key)
         streams = await self._redis.xreadgroup(
             self._group,
@@ -326,7 +326,7 @@ class RedisThreadControlSignals:
     async def claim_abandoned(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         consumer: str,
         min_idle_ms: int,
@@ -335,7 +335,7 @@ class RedisThreadControlSignals:
         """Claim bounded wakeups left pending by a prior Worker generation."""
 
         _validate_signal_read(consumer=consumer, count=count, block_ms=min_idle_ms)
-        key = _signal_key(tenant_id, thread_id)
+        key = _signal_key(organization_id, thread_id)
         await self._ensure_group(key)
         claimed = await self._redis.xautoclaim(
             key,
@@ -352,7 +352,7 @@ class RedisThreadControlSignals:
     async def acknowledge(
         self,
         *,
-        tenant_id: str,
+        organization_id: str,
         thread_id: str,
         stream_ids: Sequence[bytes],
     ) -> int:
@@ -360,7 +360,7 @@ class RedisThreadControlSignals:
 
         if not stream_ids:
             return 0
-        key = _signal_key(tenant_id, thread_id)
+        key = _signal_key(organization_id, thread_id)
         acknowledged = await self._redis.xack(key, self._group, *stream_ids)
         await self._redis.expire(key, self._ttl_seconds)
         return int(acknowledged)
@@ -382,27 +382,29 @@ class ThreadControlSignal:
 async def _lock_current_run(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     run_id: str,
 ) -> tuple[ThreadRecord, RunRecord]:
     thread_id = await database.scalar(
-        select(RunRecord.thread_id).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id)
+        select(RunRecord.thread_id).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id)
     )
     if thread_id is None:
         raise ThreadInboxConflict("steer target Run was not found")
     thread = await database.scalar(
-        select(ThreadRecord).where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == thread_id).with_for_update()
+        select(ThreadRecord)
+        .where(ThreadRecord.organization_id == organization_id, ThreadRecord.id == thread_id)
+        .with_for_update()
     )
     run = await database.scalar(
-        select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id).with_for_update()
+        select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id).with_for_update()
     )
     if thread is None or run is None or thread.current_run_id != run.id:
         raise ThreadInboxConflict("steer target is not the current Run")
     return thread, run
 
 
-def _signal_key(tenant_id: str, thread_id: str) -> bytes:
-    return f"a13n:control:{tenant_id}:{thread_id}".encode()
+def _signal_key(organization_id: str, thread_id: str) -> bytes:
+    return f"a13n:control:{organization_id}:{thread_id}".encode()
 
 
 def _validate_signal_read(*, consumer: str, count: int, block_ms: int | None) -> None:

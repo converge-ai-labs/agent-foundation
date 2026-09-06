@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionError, AgentReconstructor
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.endpoint_policy import EndpointPolicyError
 from a13n_service.environments.access import authorize_environment_resource
@@ -24,7 +25,6 @@ from a13n_service.ids import new_object_id
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
-from a13n_service.public_errors import PublicError
 from a13n_service.skills.runtime import SkillRuntimeError, SkillRuntimePreparer
 from a13n_service.storage import ObjectNotFound, ObjectStoreUnavailable, short_session
 
@@ -66,8 +66,17 @@ class ProductionAttemptPreparer:
             return await self._prepare(context)
         except (AgentInputError, SkillRuntimeError, ModelResolutionError) as error:
             raise _failure(error.code, retryable=error.code == "skill_materialization_unavailable") from error
-        except PublicError as error:
-            raise _failure(error.code, retryable=error.status_code in {429, 502, 503, 504}) from error
+        except ApplicationError as error:
+            raise _failure(
+                error.code,
+                retryable=error.category
+                in {
+                    ErrorCategory.rate_limited,
+                    ErrorCategory.dependency_failure,
+                    ErrorCategory.unavailable,
+                    ErrorCategory.timeout,
+                },
+            ) from error
         except (ObjectStoreUnavailable, httpx2.TransportError) as error:
             raise _failure("run_dependency_unavailable", retryable=True) from error
         except AgentDefinitionReconstructionError as error:
@@ -89,8 +98,6 @@ class ProductionAttemptPreparer:
         # Never execute a weaker Agent by silently dropping an accepted dependency.
         if config.resolved_subagents or config.secret_requirements or config.asset_publication is not None:
             raise _failure("worker_dependency_unsupported")
-        if run.encrypted_config_payload is not None:
-            raise _failure("worker_dependency_unsupported")
         if config.skills and run.environment_id is None:
             raise _failure("skill_environment_unavailable")
         actor = AuthenticatedActor(
@@ -101,12 +108,12 @@ class ProductionAttemptPreparer:
         )
         await self._authorize_environment(dependencies, actor)
         await self._providers.resolve(
-            organization_id=run.tenant_id,
+            organization_id=run.organization_id,
             workspace_id=dependencies.workspace_id,
             snapshot=config.resolved_model.execution,
         )
         skills = await self._skills.prepare(
-            organization_id=run.tenant_id,
+            organization_id=run.organization_id,
             workspace_id=dependencies.workspace_id,
             locks=config.skills,
             fence=self._inputs,
@@ -140,7 +147,7 @@ class ProductionAttemptPreparer:
                     identity=AgentIdentityRef(issuer="foundation", subject=run.agent_id),
                     agent_instance_id=new_object_id("agent"),
                     host_refs={
-                        "organization_id": run.tenant_id,
+                        "organization_id": run.organization_id,
                         "workspace_id": dependencies.workspace_id,
                         "session_id": run.session_id,
                         "run_id": run.id,
@@ -148,7 +155,7 @@ class ProductionAttemptPreparer:
                 ),
                 model_resolver=SnapshotRunModelResolver(
                     snapshot=config.resolved_model.execution,
-                    organization_id=run.tenant_id,
+                    organization_id=run.organization_id,
                     workspace_id=dependencies.workspace_id,
                     provider_resolver=self._providers,
                     model_factory=self._models,
@@ -166,7 +173,7 @@ class ProductionAttemptPreparer:
             row = await database.scalar(
                 select(EnvironmentRecord).where(
                     EnvironmentRecord.id == run.environment_id,
-                    EnvironmentRecord.organization_id == run.tenant_id,
+                    EnvironmentRecord.organization_id == run.organization_id,
                 )
             )
             if row is None or row.workspace_id not in {None, dependencies.workspace_id}:

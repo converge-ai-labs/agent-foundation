@@ -66,7 +66,7 @@ async def add_run_with_environment(
             .where(
                 EnvironmentRecord.id == run.environment_id,
                 EnvironmentRecord.workspace_id == workspace_id,
-                EnvironmentRecord.organization_id == run.tenant_id,
+                EnvironmentRecord.organization_id == run.organization_id,
             )
             .with_for_update()
         )

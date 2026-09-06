@@ -201,7 +201,7 @@ class DurableSubagentOperator(SubagentOperator):
             return SubagentSteerResult(execution_id=request.execution_id, accepted=False)
         try:
             receipt = await self._inbox.append_steer(
-                tenant_id=execution.run.tenant_id,
+                organization_id=execution.run.organization_id,
                 run_id=execution.run.id,
                 input=AcceptedAgentInput(
                     schema_version="1",
@@ -239,7 +239,7 @@ class DurableSubagentOperator(SubagentOperator):
             )
         try:
             await self._outcomes.cancel(
-                tenant_id=execution.run.tenant_id,
+                organization_id=execution.run.organization_id,
                 run_id=execution.run.id,
                 expected_run_version=execution.run.version,
                 expected_thread_version=execution.thread.version,

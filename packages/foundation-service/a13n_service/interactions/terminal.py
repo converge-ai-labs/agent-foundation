@@ -62,7 +62,7 @@ class DatabaseRunTerminalCommitter:
         *,
         preparation: AttemptPreparationAccepted | None = None,
     ) -> Callable[[AttemptContext], Awaitable[RunTerminalReceipt]]:
-        if state.info.key != run_state_key(authority.tenant_id, authority.run_id):
+        if state.info.key != run_state_key(authority.organization_id, authority.run_id):
             raise AttemptAuthorityError("The outcome state key does not belong to the Attempt")
         async with short_session(self._sessions) as database:
             replay = await self._sealed_receipt(database, authority, state)
@@ -70,7 +70,7 @@ class DatabaseRunTerminalCommitter:
 
         async def commit(current: AttemptContext) -> RunTerminalReceipt:
             if (
-                current.tenant_id != authority.tenant_id
+                current.organization_id != authority.organization_id
                 or current.run_id != authority.run_id
                 or current.run_attempt_id != authority.run_attempt_id
                 or current.fence != authority.fence
@@ -163,7 +163,7 @@ class DatabaseRunTerminalCommitter:
             or sealed.digest_sha256 != state.digest_sha256
             or sealed.size_bytes != state.info.size
             or state.writer_fence != authority.fence
-            or state.info.key != run_state_key(authority.tenant_id, authority.run_id)
+            or state.info.key != run_state_key(authority.organization_id, authority.run_id)
             or state.envelope.run_id != run.id
             or state.envelope.thread_id != thread.id
             or attempt.status != RunAttemptStatus.succeeded.value
@@ -180,14 +180,16 @@ class DatabaseRunTerminalCommitter:
                 select(RunRecord, RunAttemptRecord, ThreadRecord)
                 .join(
                     RunAttemptRecord,
-                    (RunAttemptRecord.tenant_id == RunRecord.tenant_id) & (RunAttemptRecord.run_id == RunRecord.id),
+                    (RunAttemptRecord.organization_id == RunRecord.organization_id)
+                    & (RunAttemptRecord.run_id == RunRecord.id),
                 )
                 .join(
                     ThreadRecord,
-                    (ThreadRecord.tenant_id == RunRecord.tenant_id) & (ThreadRecord.id == RunRecord.thread_id),
+                    (ThreadRecord.organization_id == RunRecord.organization_id)
+                    & (ThreadRecord.id == RunRecord.thread_id),
                 )
                 .where(
-                    RunRecord.tenant_id == authority.tenant_id,
+                    RunRecord.organization_id == authority.organization_id,
                     RunRecord.id == authority.run_id,
                     ThreadRecord.id == authority.thread_id,
                     RunAttemptRecord.id == authority.run_attempt_id,

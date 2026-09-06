@@ -20,6 +20,7 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness.errors import RunError
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import ControlWatcher, LeaseMonitor, RunAttemptExecutor
 from a13n_service.interactions.attempts import (
@@ -28,6 +29,7 @@ from a13n_service.interactions.attempts import (
     AttemptExecutionService,
     AttemptMutationReceipt,
     AttemptPreparationAccepted,
+    AttemptPreparationError,
     AttemptPreparationRejected,
     AttemptPreparationResult,
 )
@@ -53,7 +55,7 @@ from anyio import Event, create_task_group, fail_after, sleep_forever
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from .conftest import ATTEMPT_ID, NOW, RUN_ID, TENANT_ID, initial_state
+from .conftest import ATTEMPT_ID, NOW, ORGANIZATION_ID, RUN_ID, initial_state
 
 pytestmark = pytest.mark.anyio
 
@@ -308,12 +310,12 @@ async def _stored_state(
     envelope: RunStateEnvelope,
 ) -> tuple[RunStateStore, StoredRunState]:
     states = RunStateStore(objects)
-    return states, await states.create(TENANT_ID, envelope)
+    return states, await states.create(ORGANIZATION_ID, envelope)
 
 
 def _context(thread_id: str, *, renewal_interval: timedelta = timedelta(milliseconds=1)) -> AttemptContext:
     return AttemptContext(
-        tenant_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         thread_id=thread_id,
         run_id=RUN_ID,
         run_attempt_id=ATTEMPT_ID,
@@ -528,6 +530,40 @@ async def test_lease_monitor_fences_control_and_cancels_scope_on_authority_loss(
     with pytest.raises(RunError) as error:
         await control.reconcile()
     assert error.value.code == "foundation_control_fenced"
+
+
+@pytest.mark.parametrize("category", list(ErrorCategory))
+async def test_environment_preparation_classifies_application_errors(monkeypatch, category):
+    context = _context(initial_state().thread_id)
+    failure = ApplicationError("environment_test", "Bounded test failure.", category=category)
+    monkeypatch.setattr(
+        "a13n_service.interactions.attempt_executor.prepare_run_environment", AsyncMock(side_effect=failure)
+    )
+    executor = RunAttemptExecutor(
+        context=context,
+        control=Mock(current_context=context),
+        driver=Mock(),
+        preparer=Mock(),
+        wakeups=Mock(),
+        adapter=Mock(),
+        committer=Mock(),
+        cleanup=Mock(),
+        capacity_slot=Mock(),
+        environments=Mock(),
+    )
+    with pytest.raises(AttemptPreparationError) as captured:
+        await executor._prepare_environment()
+    assert captured.value.failure.code == failure.code
+    assert captured.value.retryable is (
+        category
+        in {
+            ErrorCategory.rate_limited,
+            ErrorCategory.dependency_failure,
+            ErrorCategory.unavailable,
+            ErrorCategory.timeout,
+        }
+    )
+    assert captured.value.__cause__ is failure
 
 
 @pytest.mark.parametrize("close_failure", ["error", "timeout"])

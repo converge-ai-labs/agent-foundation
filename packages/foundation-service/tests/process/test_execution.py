@@ -10,7 +10,7 @@ from a13n_harness import SafeFailure
 from a13n_service.agents.domain import CreateAgentRequest
 from a13n_service.app import create_app
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.gateway.commands import StartRunRequest
+from a13n_service.gateway.requests import StartRunRequest
 from a13n_service.interactions.inbox import RedisThreadControlSignals, ThreadInboxStore
 from a13n_service.interactions.input import AcceptedAgentInput
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
@@ -21,6 +21,8 @@ from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.storage import short_session
 from anyio import Event, fail_after, sleep, sleep_forever
 from sqlalchemy import select
+
+from tests.lifecycle_support import test_lifecycle_writer
 
 from ..interactions.conftest import agent_config
 from ..models.conftest import ORG_ID, WORKSPACE_ID, actor, seed_models
@@ -93,7 +95,7 @@ async def _start(runtime, agent_id):
         idempotency_key="worker-run",
         request=StartRunRequest(
             agent_id=agent_id, input={"schema_version": "1", "content": [{"type": "text", "text": "hello"}]}
-        ),
+        ).to_command(),
     )
 
 
@@ -199,9 +201,10 @@ async def test_cancel_interrupts_live_native_model_and_releases_capacity(tmp_pat
         await RunOutcomeService(
             sessions,
             RunPayloadStore(runtime.shared.storage.objects),
+            lifecycle=test_lifecycle_writer(),
             control_signals=RedisThreadControlSignals(runtime.shared.storage.redis),
         ).cancel(
-            tenant_id=ORG_ID,
+            organization_id=ORG_ID,
             run_id=run.id,
             expected_run_version=run.version,
             expected_thread_version=thread_version,
@@ -331,7 +334,7 @@ async def test_unavailable_steering_asset_fails_only_the_owned_run(tmp_path, mon
         sessions = runtime.shared.storage.sessions
         # Model an accepted Asset whose access disappeared before live delivery.
         await ThreadInboxStore(sessions, signals=RedisThreadControlSignals(runtime.shared.storage.redis)).append_steer(
-            tenant_id=ORG_ID,
+            organization_id=ORG_ID,
             run_id=accepted.run_id,
             input=AcceptedAgentInput.model_validate(
                 {

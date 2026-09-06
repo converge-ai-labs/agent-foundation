@@ -7,6 +7,7 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
@@ -149,7 +150,7 @@ class SkillSourcePreparer:
             raise SkillError(
                 "github_unavailable",
                 "GitHub acquisition is unavailable.",
-                status_code=503,
+                category=ErrorCategory.unavailable,
             )
         credential = await self._resolve_credential(
             actor=actor,
@@ -168,7 +169,7 @@ class SkillSourcePreparer:
         except GitHubAcquisitionError as error:
             raise github_acquisition_error(error) from error
         except SkillPackageError as error:
-            raise SkillError(error.code, str(error), status_code=400) from error
+            raise SkillError(error.code, str(error), category=ErrorCategory.invalid_request) from error
         except SkillPackageStoreError as error:
             raise package_store_error(error) from error
         return PreparedSkillSource(package=acquired.package, provenance=acquired.provenance, upload_id=None)
@@ -202,5 +203,5 @@ def _github_credential_unavailable() -> SkillError:
     return SkillError(
         "github_auth_failed",
         "The selected GitHub credential is unavailable.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
     )

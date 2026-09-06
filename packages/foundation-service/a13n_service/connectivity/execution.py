@@ -100,7 +100,7 @@ class ExternalToolRuntime:
             )
             return AttemptToolScope(
                 actor,
-                run.tenant_id,
+                run.organization_id,
                 conversation.workspace_id,
                 FrozenRunConnectivity(
                     _CONNECTORS.validate_python(run.connector_connection_selections_json),

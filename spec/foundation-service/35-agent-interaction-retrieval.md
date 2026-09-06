@@ -37,14 +37,14 @@ Without the policy, the Capability and its tools are absent. The fields set uppe
 - `run_summaries` excludes Items; `visible_items` allows authorized user-visible Items;
 - run and service limits can reduce numeric limits but cannot increase them.
 
-The definition stores no tenant or user identity, credential, token, or Session allowlist.
+The definition stores no organization or user identity, credential, token, or Session allowlist.
 
 At run start, Foundation creates a process-local grant from:
 
 ```text
 definition policy
   ∩ trusted Run restrictions
-  ∩ current tenant, principal, product, visibility, archive, and retention policy
+  ∩ current organization, principal, product, visibility, archive, and retention policy
   ∩ service limits and run deadline
 ```
 
@@ -124,13 +124,13 @@ Harness decides whether the tool may run. Foundation separately decides which in
 
 Policy schema version `1` exposes these tools:
 
-| Tool                        | Required semantic data                                                                                                                                 | Source entity and fields                                                                                                                                                                                                                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_interaction_sessions` | A cursor/limit-bounded page of authorized Sessions, ordered by latest Run activity                                                                     | Authorized `Run` rows grouped by `session_id`; use Run status and activity timestamps                                                                                                                                                                                                          |
-| `list_interaction_threads`  | A cursor/limit-bounded page of authorized Threads in one selected Session, including recent Run status and activity                                    | Authorized `Thread` rows filtered by `session_id`; join only the exact `current_run_id` for status and activity                                                                                                                                                                                |
-| `search_interaction_runs`   | A cursor/limit-bounded page of Run references, status, timestamps, and input/output snippets matching a query and optional Session or Thread filter    | Authorized `Run` rows; search only `input_text` and `output_text`, and return `id`, `session_id`, `thread_id`, status, and timestamps                                                                                                                                                          |
-| `list_thread_runs`          | A cursor/limit-bounded page of one selected Thread's Run lineage, status, timestamps, and input/output snippets, optionally constrained to one Session | Authorized `Run` rows filtered by `thread_id` and optional `session_id`; use `id`, `parent_run_id`, status, timestamps, `input_text`, and `output_text`                                                                                                                                        |
-| `read_interaction_run`      | One selected Run's identity, lineage, status, failure or waiting summary, bounded input/output text, and an optional Item-cursor/limit-bounded page    | The authorized `Run` row supplies identity, `parent_run_id`, status, timestamps, failure, pending summary, `input_text`, and `output_text`; verified `RunReplaySnapshot.items` from the derived `tenants/{tenant_id}/runs/{run_id}/replay/version-1.json` supplies retained Items when allowed |
+| Tool                        | Required semantic data                                                                                                                                 | Source entity and fields                                                                                                                                                                                                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_interaction_sessions` | A cursor/limit-bounded page of authorized Sessions, ordered by latest Run activity                                                                     | Authorized `Run` rows grouped by `session_id`; use Run status and activity timestamps                                                                                                                                                                                                                      |
+| `list_interaction_threads`  | A cursor/limit-bounded page of authorized Threads in one selected Session, including recent Run status and activity                                    | Authorized `Thread` rows filtered by `session_id`; join only the exact `current_run_id` for status and activity                                                                                                                                                                                            |
+| `search_interaction_runs`   | A cursor/limit-bounded page of Run references, status, timestamps, and input/output snippets matching a query and optional Session or Thread filter    | Authorized `Run` rows; search only `input_text` and `output_text`, and return `id`, `session_id`, `thread_id`, status, and timestamps                                                                                                                                                                      |
+| `list_thread_runs`          | A cursor/limit-bounded page of one selected Thread's Run lineage, status, timestamps, and input/output snippets, optionally constrained to one Session | Authorized `Run` rows filtered by `thread_id` and optional `session_id`; use `id`, `parent_run_id`, status, timestamps, `input_text`, and `output_text`                                                                                                                                                    |
+| `read_interaction_run`      | One selected Run's identity, lineage, status, failure or waiting summary, bounded input/output text, and an optional Item-cursor/limit-bounded page    | The authorized `Run` row supplies identity, `parent_run_id`, status, timestamps, failure, pending summary, `input_text`, and `output_text`; verified `RunReplaySnapshot.items` from the derived `organizations/{organization_id}/runs/{run_id}/replay/version-1.json` supplies retained Items when allowed |
 
 None of these tools reads Run `state.json`, exact input or output bodies, payload objects, `RunReplaySnapshot.events`, Redis streams, or object listings.
 
@@ -157,7 +157,7 @@ All tools use the same asynchronous `InteractionHistoryReader`. Its methods foll
 | A cursor is invalid or belongs to another scope/query      | Return an invalid-cursor failure; do not restart at the first page.                             |
 | Replay is missing, incomplete, corrupt, or unsupported     | Return Run detail with Items marked unavailable; never return complete-looking partial history. |
 
-Generic argument validation, cancellation, deadlines, redaction, and result-size failures follow the Harness tool execution contract. Failures expose bounded safe codes, not storage details, policy rules, principal attributes, raw exceptions, or cross-tenant existence signals.
+Generic argument validation, cancellation, deadlines, redaction, and result-size failures follow the Harness tool execution contract. Failures expose bounded safe codes, not storage details, policy rules, principal attributes, raw exceptions, or cross-organization existence signals.
 
 ## Compatibility and Trade-offs
 

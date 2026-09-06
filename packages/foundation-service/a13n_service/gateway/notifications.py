@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -20,7 +21,6 @@ from a13n_service.iam import (
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import short_session
 
 NotificationTopic = Literal[
@@ -31,7 +31,7 @@ NotificationTopic = Literal[
 ]
 
 
-class NotificationError(PublicError):
+class NotificationError(ApplicationError):
     """Safe notification subscription failure."""
 
 
@@ -47,7 +47,7 @@ class NotificationSubscription(BaseModel):
 @dataclass(frozen=True, slots=True)
 class AuthorizedNotificationSubscription:
     definition: NotificationSubscription
-    tenant_id: str
+    organization_id: str
     workspace_id: str
     visible_agent_ids: frozenset[str] | None
     after_seq: int
@@ -83,7 +83,7 @@ class NotificationService:
             raise NotificationError(
                 "duplicate_subscription_id",
                 "Subscription IDs must be unique.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         async with short_session(self._sessions) as database:
             return tuple(
@@ -103,19 +103,19 @@ class NotificationService:
                 .join(
                     SessionRecord,
                     and_(
-                        SessionRecord.tenant_id == LifecycleEventRecord.tenant_id,
+                        SessionRecord.organization_id == LifecycleEventRecord.organization_id,
                         SessionRecord.id == LifecycleEventRecord.session_id,
                     ),
                 )
                 .join(
                     RunRecord,
                     and_(
-                        RunRecord.tenant_id == LifecycleEventRecord.tenant_id,
+                        RunRecord.organization_id == LifecycleEventRecord.organization_id,
                         RunRecord.id == LifecycleEventRecord.run_id,
                     ),
                 )
                 .where(
-                    LifecycleEventRecord.tenant_id == subscription.tenant_id,
+                    LifecycleEventRecord.organization_id == subscription.organization_id,
                     SessionRecord.workspace_id == subscription.workspace_id,
                     LifecycleEventRecord.seq > subscription.after_seq,
                 )
@@ -169,7 +169,7 @@ class NotificationService:
             raise NotificationError(
                 "invalid_subscription_topic",
                 "session.updated is not available for Thread subscriptions.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             )
         try:
             if subscription.scope == "workspace":
@@ -188,7 +188,7 @@ class NotificationService:
                         workspace_id=workspace_id,
                         action=action,
                     )
-                tenant_id = notification_scope.workspace.organization_id
+                organization_id = notification_scope.workspace.organization_id
                 visible_agent_ids = notification_scope.visible_agent_ids
             else:
                 thread = await database.scalar(
@@ -196,7 +196,7 @@ class NotificationService:
                     .join(
                         SessionRecord,
                         and_(
-                            SessionRecord.tenant_id == ThreadRecord.tenant_id,
+                            SessionRecord.organization_id == ThreadRecord.organization_id,
                             SessionRecord.id == ThreadRecord.session_id,
                         ),
                     )
@@ -209,7 +209,7 @@ class NotificationService:
                     raise AuthorizationError("thread_not_found", concealed=True)
                 run = await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.tenant_id == thread.tenant_id,
+                        RunRecord.organization_id == thread.organization_id,
                         RunRecord.id == thread.current_run_id,
                     )
                 )
@@ -226,20 +226,22 @@ class NotificationService:
                             agent_id=run.agent_id,
                             action=action,
                         )
-                tenant_id = thread.tenant_id
+                organization_id = thread.organization_id
                 visible_agent_ids = frozenset({run.agent_id}) if run else None
             high = await database.scalar(
-                select(func.max(LifecycleEventRecord.seq)).where(LifecycleEventRecord.tenant_id == tenant_id)
+                select(func.max(LifecycleEventRecord.seq)).where(
+                    LifecycleEventRecord.organization_id == organization_id
+                )
             )
         except AuthorizationError as error:
             raise NotificationError(
                 "resource_not_found",
                 "The requested subscription resource was not found.",
-                status_code=404,
+                category=ErrorCategory.not_found,
             ) from error
         return AuthorizedNotificationSubscription(
             definition=subscription,
-            tenant_id=tenant_id,
+            organization_id=organization_id,
             workspace_id=workspace_id,
             visible_agent_ids=visible_agent_ids,
             after_seq=high or 0,

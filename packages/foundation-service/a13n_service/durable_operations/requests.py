@@ -2,41 +2,46 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
+from dataclasses import dataclass
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
+    digest_request,
     digest_visible_ascii_key,
     load_evidence,
     new_evidence,
 )
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import AuthenticatedActor
-from a13n_service.public_errors import PublicError
 
 
-def request_identity(idempotency_key: str, request: BaseModel) -> IdempotencyIdentity:
+@dataclass(frozen=True, slots=True)
+class ReplayReceipt:
+    result_kind: str
+    result_ref: str
+    response: dict[str, JsonValue]
+
+    def restore[T: BaseModel](self, model: type[T]) -> T:
+        return model.model_validate(self.response)
+
+
+def request_identity(idempotency_key: str, request: object) -> IdempotencyIdentity:
     try:
         key_digest = digest_visible_ascii_key(idempotency_key)
     except InvalidIdempotencyKey as error:
-        raise PublicError("idempotency_key_invalid", "Invalid Idempotency-Key.", status_code=400) from error
-    request_digest = hashlib.sha256(
-        json.dumps(
-            request.model_dump(mode="json", by_alias=True, exclude_unset=True),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode()
-    ).hexdigest()
-    return IdempotencyIdentity(key_digest, request_digest)
+        raise ApplicationError(
+            "idempotency_key_invalid", "Invalid Idempotency-Key.", category=ErrorCategory.invalid_request
+        ) from error
+    digest = digest_request(request)
+    return IdempotencyIdentity(key_digest, digest)
 
 
 async def load_replay(
@@ -47,7 +52,7 @@ async def load_replay(
     scope_id: str,
     identity: IdempotencyIdentity,
     now: datetime,
-) -> tuple[str, str] | None:
+) -> ReplayReceipt | None:
     try:
         evidence = await load_evidence(
             session,
@@ -57,19 +62,22 @@ async def load_replay(
                 actor_id=actor.principal.principal_id,
                 operation=operation,
                 scope_id=scope_id,
+                organization_id=actor.boundary_organization_id,
             ),
             identity=identity,
             now=now,
         )
     except IdempotencyConflict as error:
-        raise PublicError(
+        raise ApplicationError(
             "idempotency_conflict",
             "The Idempotency-Key was already used with different request content.",
-            status_code=409,
+            category=ErrorCategory.conflict,
         ) from error
     if evidence is None:
         return None
-    return evidence.result_kind, evidence.result_ref
+    if evidence.receipt_json is None:
+        raise RuntimeError("resource command evidence has no original receipt")
+    return ReplayReceipt(evidence.result_kind, evidence.result_ref, evidence.receipt_json)
 
 
 def evidence_record(
@@ -83,6 +91,7 @@ def evidence_record(
     result_kind: str,
     result_ref: str,
     now: datetime,
+    response: BaseModel,
 ) -> IdempotencyEvidenceRecord:
     return new_evidence(
         organization_id=organization_id,
@@ -92,9 +101,11 @@ def evidence_record(
             actor_id=actor.principal.principal_id,
             operation=operation,
             scope_id=scope_id,
+            organization_id=actor.boundary_organization_id,
         ),
         identity=identity,
         result_kind=result_kind,
         result_ref=result_ref,
+        receipt=response.model_dump(mode="json", by_alias=True),
         now=now,
     )

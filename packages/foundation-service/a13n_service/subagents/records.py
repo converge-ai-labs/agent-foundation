@@ -7,11 +7,11 @@ from .models import ChildRunRelationshipRecord
 def child_run_relationship_record(
     value: ChildRunRelationship,
     *,
-    tenant_id: str,
+    organization_id: str,
 ) -> ChildRunRelationshipRecord:
     return ChildRunRelationshipRecord(
         id=value.id,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         parent_run_id=value.parent_run_id,
         parent_run_attempt_id=value.parent_run_attempt_id,
         parent_run_attempt_generation=value.parent_run_attempt_generation,

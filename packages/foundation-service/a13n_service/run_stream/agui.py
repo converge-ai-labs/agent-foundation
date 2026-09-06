@@ -50,7 +50,7 @@ class HarnessAguiRunStreamWriter:
         self,
         stream: RedisRunStream,
         *,
-        tenant_id: str,
+        organization_id: str,
         run_id: str,
         thread_id: str,
         run_attempt_id: str,
@@ -58,7 +58,7 @@ class HarnessAguiRunStreamWriter:
         observer: HarnessAguiObserver | None = None,
     ) -> None:
         self._stream = stream
-        self._tenant_id = tenant_id
+        self._organization_id = organization_id
         self._run_id = run_id
         self._thread_id = thread_id
         self._run_attempt_id = run_attempt_id
@@ -77,7 +77,7 @@ class HarnessAguiRunStreamWriter:
                 payload.update(item.fields)
             payload = _bounded_payload(event_type, payload)
             stream_id = await self._stream.append(
-                self._tenant_id,
+                self._organization_id,
                 RunStreamEvent(
                     event_id=deterministic_run_stream_event_id(
                         "harness",
@@ -134,7 +134,7 @@ class HarnessAguiRunStreamWriter:
                 "message": "The tool returned a failed presentation outcome.",
             }
         await self._stream.append(
-            self._tenant_id,
+            self._organization_id,
             RunStreamEvent(
                 event_id=deterministic_run_stream_event_id(
                     "item",

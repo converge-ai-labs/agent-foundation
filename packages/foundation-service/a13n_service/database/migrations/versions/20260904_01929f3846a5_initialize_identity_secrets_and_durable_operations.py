@@ -147,6 +147,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=True),
+        sa.Column("boundary_scope_id", sa.String(length=72), nullable=False),
         sa.Column("actor_type", sa.String(length=32), nullable=False),
         sa.Column("actor_id", sa.String(length=72), nullable=False),
         sa.Column("operation", sa.String(length=64), nullable=False),
@@ -155,6 +156,7 @@ def upgrade() -> None:
         sa.Column("request_digest", sa.String(length=64), nullable=False),
         sa.Column("result_kind", sa.String(length=32), nullable=False),
         sa.Column("result_ref", sa.String(length=72), nullable=False),
+        sa.Column("receipt_json", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
@@ -176,8 +178,18 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_idempotency_evidence")),
+        sa.CheckConstraint(
+            "boundary_scope_id = coalesce(workspace_id, organization_id)",
+            name=op.f("ck_idempotency_evidence_boundary_scope_valid"),
+        ),
         sa.UniqueConstraint(
-            "actor_type", "actor_id", "operation", "scope_id", "key_digest", name="uq_idempotency_evidence_replay_scope"
+            "boundary_scope_id",
+            "actor_type",
+            "actor_id",
+            "operation",
+            "scope_id",
+            "key_digest",
+            name="uq_idempotency_evidence_replay_scope",
         ),
     )
     op.create_index("ix_idempotency_evidence_expiry", "idempotency_evidence", ["expires_at", "id"], unique=False)

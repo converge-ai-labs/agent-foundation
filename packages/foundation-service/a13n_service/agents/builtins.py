@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -121,7 +122,7 @@ class BuiltinAgents:
                     raise AgentError(
                         "agent_state_conflict",
                         "The built-in Agent is not available.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
 
                 try:
@@ -213,7 +214,7 @@ class BuiltinAgents:
             raise AgentError(
                 "agent_name_conflict",
                 "An Agent with this name already exists in the Workspace.",
-                status_code=409,
+                category=ErrorCategory.conflict,
             ) from error
 
     async def _builtin_registration_replay(

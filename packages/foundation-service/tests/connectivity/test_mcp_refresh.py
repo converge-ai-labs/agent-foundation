@@ -66,7 +66,8 @@ async def test_reconnect_refreshes_expired_credentials_before_pending_discovery(
         expected_version=ready.version,
         idempotency_key="reconnect",
     )
-    assert result.status == "ready"
+    assert result.status == "pending"
+    assert (await connections.get(actor=actor(), connection_id=result.id)).status == "ready"
     assert sum(request.url.path == "/token" for request in remote.requests) == 1
     assert all(request.headers.get("authorization") != "Bearer expired-token" for request in remote.requests)
     assert (await oauth_refresh.current(ready.id)).headers == {"Authorization": "Bearer refreshed-oauth-secret"}

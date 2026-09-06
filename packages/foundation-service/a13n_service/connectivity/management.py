@@ -2,23 +2,36 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel, JsonValue, SecretStr
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.connectivity.models import ConnectivityCommandRecord
-from a13n_service.durable_operations.idempotency import InvalidIdempotencyKey, digest_visible_ascii_key
+from a13n_service.durable_operations.idempotency import (
+    EvidenceScope,
+    IdempotencyIdentity,
+    digest_request,
+    load_evidence,
+    new_evidence,
+)
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam.authorization import AuthenticatedActor
-from a13n_service.ids import new_object_id
 
 
-class ConnectivityManagementValueError(ValueError):
-    pass
+@dataclass(frozen=True, slots=True)
+class CommandReceipt:
+    resource_id: str
+    result_version: int
+    created_at: datetime
+    resource: dict[str, JsonValue] | None
+
+    def restore[T: BaseModel](self, model: type[T]) -> T:
+        if self.resource is None:
+            raise RuntimeError("command receipt has no resource projection")
+        return model.model_validate(self.resource)
 
 
 async def replay_command(
@@ -30,20 +43,32 @@ async def replay_command(
     scope_id: str,
     idempotency_key_digest: str,
     fingerprint: str,
-) -> ConnectivityCommandRecord | None:
-    record = await session.scalar(
-        select(ConnectivityCommandRecord).where(
-            ConnectivityCommandRecord.workspace_id == workspace_id,
-            ConnectivityCommandRecord.actor_type == actor.principal.principal_type.value,
-            ConnectivityCommandRecord.actor_id == actor.principal.principal_id,
-            ConnectivityCommandRecord.operation == operation,
-            ConnectivityCommandRecord.scope_id == scope_id,
-            ConnectivityCommandRecord.idempotency_key_digest == idempotency_key_digest,
-        )
+    now: datetime,
+) -> CommandReceipt | None:
+    evidence = await load_evidence(
+        session,
+        scope=EvidenceScope(
+            workspace_id,
+            actor.principal.principal_type.value,
+            actor.principal.principal_id,
+            operation,
+            scope_id,
+            organization_id=actor.boundary_organization_id,
+        ),
+        identity=IdempotencyIdentity(idempotency_key_digest, fingerprint),
+        now=now,
     )
-    if record is not None and record.request_fingerprint != fingerprint:
-        raise ConnectivityManagementValueError("idempotency_conflict")
-    return record
+    if evidence is None:
+        return None
+    payload = evidence.receipt_json
+    if payload is None or not isinstance(payload.get("version"), int):
+        raise RuntimeError("command evidence is missing its receipt")
+    version = payload["version"]
+    assert isinstance(version, int)
+    resource = payload.get("resource")
+    return CommandReceipt(
+        evidence.result_ref, version, evidence.created_at, resource if isinstance(resource, dict) else None
+    )
 
 
 def record_command(
@@ -60,24 +85,28 @@ def record_command(
     resource_id: str,
     result_version: int,
     now: datetime,
-    result: dict[str, JsonValue] | None = None,
-) -> ConnectivityCommandRecord:
-    record = ConnectivityCommandRecord(
-        id=new_object_id("idem"),
+    resource: BaseModel | None,
+) -> IdempotencyEvidenceRecord:
+    record = new_evidence(
         organization_id=organization_id,
-        workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
-        operation=operation,
-        scope_id=scope_id,
-        idempotency_key_digest=idempotency_key_digest,
-        request_fingerprint=fingerprint,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        result_version=result_version,
-        created_at=now,
-        result_json=result,
+        scope=EvidenceScope(
+            workspace_id,
+            actor.principal.principal_type.value,
+            actor.principal.principal_id,
+            operation,
+            scope_id,
+            organization_id=actor.boundary_organization_id,
+        ),
+        identity=IdempotencyIdentity(idempotency_key_digest, fingerprint),
+        result_kind=resource_type,
+        result_ref=resource_id,
+        now=now,
+        receipt={
+            "version": result_version,
+            "resource": None if resource is None else resource.model_dump(mode="json", by_alias=True),
+        },
     )
+
     session.add(record)
     return record
 
@@ -89,20 +118,9 @@ def clear_credentials(value: dict[str, SecretStr]) -> dict[str, str]:
 def fingerprint(value: BaseModel, *, credentials: Mapping[str, object] | None = None) -> str:
     payload = value.model_dump(mode="json", exclude={"credentials"})
     if credentials is not None:
-        payload["credentials_sha256"] = canonical_digest(credentials)
-    return canonical_digest(payload)
-
-
-def canonical_digest(value: object) -> str:
-    return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+        payload["credentials_sha256"] = digest_request(credentials)
+    return digest_request(payload)
 
 
 def canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def idempotency_key_digest(value: str) -> str:
-    try:
-        return digest_visible_ascii_key(value)
-    except InvalidIdempotencyKey as error:
-        raise ConnectivityManagementValueError("invalid_idempotency_key") from error

@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
@@ -21,7 +22,9 @@ Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 def _traces(request: Request) -> TraceQueryService:
     control = get_control_runtime(request)
     if control is None:
-        raise TraceQueryError("trace_query_unavailable", "Trace Query is unavailable.", status_code=503)
+        raise TraceQueryError(
+            "trace_query_unavailable", "Trace Query is unavailable.", category=ErrorCategory.unavailable
+        )
     return control.trace_queries
 
 

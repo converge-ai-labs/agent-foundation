@@ -19,7 +19,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
 from .inbox_persistence import apply_run_outcome, has_pending_run_delivery, lock_inbox_related_runs
-from .lifecycle import append_run_attempt_lifecycle, append_run_with_attempt_lifecycle
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunStateStore, StoredRunState, run_state_key
 from .state import RunStateEnvelope
@@ -49,7 +49,7 @@ class AttemptPreparationError(RuntimeError):
 class AttemptContext:
     """Claim-derived process-local correlation, authority, and fixed execution policy."""
 
-    tenant_id: str
+    organization_id: str
     thread_id: str
     run_id: str
     run_attempt_id: str
@@ -120,8 +120,10 @@ class AttemptExecutionService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._clock = clock
 
@@ -180,7 +182,7 @@ class AttemptExecutionService:
                 run.started_at = now
             run.updated_at = now
             run.version += 1
-            await append_run_attempt_lifecycle(
+            await self._lifecycle.append_run_attempt_lifecycle(
                 database,
                 run,
                 attempt,
@@ -216,7 +218,7 @@ class AttemptExecutionService:
             await schedule_environment_maintenance(database, run=run, now=now)
             await apply_run_outcome(database, run=run, outcome="failed", now=now)
             seal_failed_run(run, thread, failure, now)
-            await append_run_with_attempt_lifecycle(
+            await self._lifecycle.append_run_with_attempt_lifecycle(
                 database,
                 run,
                 "run.failed",
@@ -362,7 +364,7 @@ class AttemptExecutionService:
                 run.available_at = available_at
                 run.updated_at = now
                 run.version += 1
-                await append_run_attempt_lifecycle(
+                await self._lifecycle.append_run_attempt_lifecycle(
                     database,
                     run,
                     attempt,
@@ -374,7 +376,7 @@ class AttemptExecutionService:
                 await schedule_environment_maintenance(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, failure, now)
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     run,
                     "run.failed",
@@ -406,7 +408,7 @@ class AttemptExecutionService:
             run.available_at = now
             run.updated_at = now
             run.version += 1
-            await append_run_attempt_lifecycle(
+            await self._lifecycle.append_run_attempt_lifecycle(
                 database,
                 run,
                 attempt,
@@ -421,7 +423,7 @@ def _require_state_scope(authority: AttemptContext, state: StoredRunState) -> No
     if (
         state.envelope.run_id != authority.run_id
         or state.envelope.thread_id != authority.thread_id
-        or state.info.key != run_state_key(authority.tenant_id, authority.run_id)
+        or state.info.key != run_state_key(authority.organization_id, authority.run_id)
     ):
         raise AttemptMutationError("Run state does not belong to the claimed Attempt")
 
@@ -447,7 +449,7 @@ async def lock_attempt_lease(
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     thread_id = await database.scalar(
         select(RunRecord.thread_id).where(
-            RunRecord.tenant_id == authority.tenant_id,
+            RunRecord.organization_id == authority.organization_id,
             RunRecord.id == authority.run_id,
         )
     )
@@ -455,13 +457,13 @@ async def lock_attempt_lease(
         raise AttemptAuthorityError("Run authority was not found")
     thread = await database.scalar(
         select(ThreadRecord)
-        .where(ThreadRecord.tenant_id == authority.tenant_id, ThreadRecord.id == thread_id)
+        .where(ThreadRecord.organization_id == authority.organization_id, ThreadRecord.id == thread_id)
         .with_for_update()
     )
     if lock_inbox_origins:
         locked_runs = await lock_inbox_related_runs(
             database,
-            tenant_id=authority.tenant_id,
+            organization_id=authority.organization_id,
             thread_id=thread_id,
             required_run_ids=(authority.run_id,),
         )
@@ -470,7 +472,7 @@ async def lock_attempt_lease(
             (
                 await database.scalars(
                     select(RunRecord)
-                    .where(RunRecord.tenant_id == authority.tenant_id, RunRecord.id == authority.run_id)
+                    .where(RunRecord.organization_id == authority.organization_id, RunRecord.id == authority.run_id)
                     .with_for_update()
                 )
             ).all()
@@ -479,7 +481,7 @@ async def lock_attempt_lease(
     attempt = await database.scalar(
         select(RunAttemptRecord)
         .where(
-            RunAttemptRecord.tenant_id == authority.tenant_id,
+            RunAttemptRecord.organization_id == authority.organization_id,
             RunAttemptRecord.run_id == authority.run_id,
             RunAttemptRecord.id == authority.run_attempt_id,
         )
@@ -511,15 +513,15 @@ async def read_attempt_lease(
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
             RunAttemptRecord,
-            (RunAttemptRecord.tenant_id == RunRecord.tenant_id)
+            (RunAttemptRecord.organization_id == RunRecord.organization_id)
             & (RunAttemptRecord.run_id == RunRecord.id)
             & (RunAttemptRecord.id == authority.run_attempt_id),
         )
         .join(
             ThreadRecord,
-            (ThreadRecord.tenant_id == RunRecord.tenant_id) & (ThreadRecord.id == RunRecord.thread_id),
+            (ThreadRecord.organization_id == RunRecord.organization_id) & (ThreadRecord.id == RunRecord.thread_id),
         )
-        .where(RunRecord.tenant_id == authority.tenant_id, RunRecord.id == authority.run_id)
+        .where(RunRecord.organization_id == authority.organization_id, RunRecord.id == authority.run_id)
     )
     row = result.one_or_none()
     if row is None:

@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
@@ -43,7 +44,7 @@ def _uploads(request: Request) -> SkillUploadService:
         raise SkillError(
             "skill_management_unavailable",
             "Skill Management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.skill_uploads
 
@@ -54,7 +55,7 @@ def _catalog(request: Request) -> SkillCatalogService:
         raise SkillError(
             "skill_management_unavailable",
             "Skill Management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.skill_catalog
 
@@ -65,7 +66,7 @@ def _publication(request: Request) -> SkillPublicationService:
         raise SkillError(
             "skill_management_unavailable",
             "Skill Management is unavailable.",
-            status_code=503,
+            category=ErrorCategory.unavailable,
         )
     return control.skill_publication
 
@@ -89,7 +90,7 @@ async def stage_skill_upload(
         idempotency_key=idempotency_key,
         archive=archive,
     )
-    response.status_code = result.status_code
+    response.status_code = 201 if result.created else 200
     return result.result
 
 
@@ -123,7 +124,7 @@ async def create_skill(
         request=body,
         idempotency_key=idempotency_key,
     )
-    response.status_code = result.status_code
+    response.status_code = 201 if result.created else 200
     response.headers["ETag"] = resource_etag(result.result.skill.id, result.result.skill.updated_at)
     return result.result
 
@@ -147,7 +148,7 @@ async def create_skill_revision(
         request=body,
         idempotency_key=idempotency_key,
     )
-    response.status_code = result.status_code
+    response.status_code = 201 if result.created else 200
     return result.result
 
 
@@ -260,7 +261,7 @@ async def _read_zip_body(request: Request) -> bytes:
         raise SkillError(
             "invalid_request",
             "The request body must be exactly one application/zip package.",
-            status_code=400,
+            category=ErrorCategory.invalid_request,
         )
     content_length = request.headers.get("content-length")
     if content_length is not None:
@@ -271,7 +272,7 @@ async def _read_zip_body(request: Request) -> bytes:
             raise SkillError(
                 "invalid_request",
                 "Content-Length is invalid.",
-                status_code=400,
+                category=ErrorCategory.invalid_request,
             ) from error
     body = bytearray()
     async for chunk in request.stream():
@@ -285,7 +286,7 @@ def _archive_limit() -> SkillError:
     return SkillError(
         "skill_package_limit",
         "The uploaded ZIP exceeds the package size limit.",
-        status_code=400,
+        category=ErrorCategory.invalid_request,
     )
 
 

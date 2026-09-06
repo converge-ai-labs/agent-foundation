@@ -58,28 +58,14 @@ class MergedAgentRunConfig(StrictModel):
         return self
 
 
-class AgentRunSensitiveValues(StrictModel):
-    """Ephemeral sensitive leaves extracted before effective config is persisted."""
-
-
-class MergedAgentRun(StrictModel):
-    """Merged invocation input before managed resources are resolved and frozen."""
-
-    config: MergedAgentRunConfig
-    sensitive_values: AgentRunSensitiveValues = Field(repr=False)
-
-
 def merge_agent_run_override(
     base: AgentConfig,
     override: AgentRunOverride | None,
-) -> MergedAgentRun:
+) -> MergedAgentRunConfig:
     """Apply the finite typed override contract without resolving managed resources."""
 
     if override is None:
-        return MergedAgentRun(
-            config=MergedAgentRunConfig.model_validate(base.model_dump(mode="python", by_alias=True)),
-            sensitive_values=AgentRunSensitiveValues(),
-        )
+        return MergedAgentRunConfig.model_validate(base.model_dump(mode="python", by_alias=True))
 
     fields = override.model_fields_set
     model = base.model
@@ -236,24 +222,21 @@ def merge_agent_run_override(
             )
             retries = RetryConfig(tools=tools, output=output)
 
-    return MergedAgentRun(
-        config=MergedAgentRunConfig(
-            model=model,
-            instructions=instructions,
-            input_adapter=base.input_adapter,
-            plugins=plugins,
-            skills=skills,
-            connector_tools=connector_tools,
-            mcp_tools=mcp_tools,
-            subagents=subagents,
-            client_tools=client_tools,
-            output_spec=output_spec,
-            retries=retries,
-            secret_requirements=base.secret_requirements,
-            asset_publication=base.asset_publication,
-            protocol=protocol,
-        ),
-        sensitive_values=AgentRunSensitiveValues(),
+    return MergedAgentRunConfig(
+        model=model,
+        instructions=instructions,
+        input_adapter=base.input_adapter,
+        plugins=plugins,
+        skills=skills,
+        connector_tools=connector_tools,
+        mcp_tools=mcp_tools,
+        subagents=subagents,
+        client_tools=client_tools,
+        output_spec=output_spec,
+        retries=retries,
+        secret_requirements=base.secret_requirements,
+        asset_publication=base.asset_publication,
+        protocol=protocol,
     )
 
 

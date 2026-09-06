@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
@@ -107,7 +108,7 @@ class IngressEventService:
         async with short_session(self._sessions) as session:
             account = await require_account(session, account_id)
             if account.status != "active":
-                raise NativeError("account_unavailable", "Account is unavailable.", status_code=404)
+                raise NativeError("account_unavailable", "Account is unavailable.", category=ErrorCategory.not_found)
             snapshot = AccountSnapshot(
                 account.id,
                 account.workspace_id,
@@ -124,7 +125,9 @@ class IngressEventService:
             if not isinstance(credentials, dict):
                 raise ValueError("invalid credentials")
         except (SecretProtectionError, ValueError) as error:
-            raise NativeError("account_unavailable", "Account credentials are unavailable.", status_code=503) from error
+            raise NativeError(
+                "account_unavailable", "Account credentials are unavailable.", category=ErrorCategory.unavailable
+            ) from error
         return snapshot, adapter, credentials
 
     async def _admit(
@@ -139,10 +142,12 @@ class IngressEventService:
                 select(WorkspaceRecord).where(WorkspaceRecord.id == snapshot.workspace_id).with_for_update()
             )
             if workspace is None or workspace.deleted_at is not None:
-                raise NativeError("workspace_unavailable", "Workspace is unavailable.", status_code=409)
+                raise NativeError("workspace_unavailable", "Workspace is unavailable.", category=ErrorCategory.conflict)
             account = await require_account(session, snapshot.id, lock=True)
             if account.version != snapshot.version or account.credential_generation != snapshot.credential_generation:
-                raise NativeError("account_changed", "Account changed during authentication.", status_code=503)
+                raise NativeError(
+                    "account_changed", "Account changed during authentication.", category=ErrorCategory.unavailable
+                )
             duplicate = await session.scalar(
                 select(IngressAdmissionRecord).where(
                     IngressAdmissionRecord.account_id == account.id,
@@ -155,7 +160,7 @@ class IngressEventService:
                     raise NativeError(
                         "delivery_identity_conflict",
                         "Delivery identity was reused with different content.",
-                        status_code=409,
+                        category=ErrorCategory.conflict,
                     )
                 return await _receipt(session, duplicate, duplicate=True)
             routing = await resolve_routing(session, adapter=adapter, account=account, event=event)
@@ -164,7 +169,7 @@ class IngressEventService:
             value = event.model_dump(mode="json", exclude={"external_event_id"})
             size = len(canonical_json(value).encode())
             if size > self._batch_max_bytes:
-                raise NativeError("event_too_large", "Event exceeds batch capacity.", status_code=413)
+                raise NativeError("event_too_large", "Event exceeds batch capacity.", category=ErrorCategory.size_limit)
             await self._require_capacity(session, account, size)
             binding = routing.binding
             if binding is None:
@@ -221,7 +226,11 @@ class IngressEventService:
             or account_count + 1 > self._account_pending_max_count
             or account_bytes + size > self._account_pending_max_bytes
         ):
-            raise NativeError("admission_capacity_exhausted", "Account admission capacity is full.", status_code=503)
+            raise NativeError(
+                "admission_capacity_exhausted",
+                "Account admission capacity is full.",
+                category=ErrorCategory.unavailable,
+            )
 
     async def _batch(
         self,

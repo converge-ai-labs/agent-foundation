@@ -8,8 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from a13n_service.application_errors import ApplicationError
+from a13n_service.http_errors import application_error_headers, application_error_status
 from a13n_service.iam import AuthenticationError
-from a13n_service.public_errors import PublicError
 
 
 def install_api_conventions(app: FastAPI) -> None:
@@ -26,15 +27,15 @@ def install_api_conventions(app: FastAPI) -> None:
     async def authentication_error(request: Request, _error: AuthenticationError) -> JSONResponse:
         return _error_response(request, 401, "authentication_required", "Authentication is required.")
 
-    @app.exception_handler(PublicError)
-    async def public_error_handler(request: Request, error: PublicError) -> JSONResponse:
+    @app.exception_handler(ApplicationError)
+    async def public_error_handler(request: Request, error: ApplicationError) -> JSONResponse:
         return _error_response(
             request,
-            error.status_code,
+            application_error_status(error),
             error.code,
             error.message,
             error.details,
-            headers=error.headers,
+            headers=application_error_headers(error),
         )
 
     @app.exception_handler(RequestValidationError)

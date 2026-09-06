@@ -14,8 +14,10 @@ from a13n_service.interactions.input_runtime import AttemptInputRuntime
 from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.state import RunPayloadEnvelope
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from ..models.conftest import actor
-from .conftest import NOW, TENANT_ID, effective_agent_config
+from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_preparation import _claimed
 
 pytestmark = pytest.mark.anyio
@@ -55,7 +57,7 @@ async def test_materializes_verified_root_input_after_heartbeat(
         value = {"schema_version": "1", "content": [{"type": "text", "text": "hello"}]}
         if storage == "object":
             reference = await payloads.create(
-                TENANT_ID,
+                ORGANIZATION_ID,
                 RunPayloadEnvelope(
                     schema_version="1", run_id=run.id, payload_kind="input", payload_schema_version="1", payload=value
                 ),
@@ -63,9 +65,9 @@ async def test_materializes_verified_root_input_after_heartbeat(
             run = run.model_copy(update={"input": None, "input_object": reference})
         else:
             run = run.model_copy(update={"input": value})
-        await AttemptExecutionService(interaction_sessions, clock=lambda: NOW).heartbeat(
-            authority, lease_duration=timedelta(seconds=30)
-        )
+        await AttemptExecutionService(
+            interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW
+        ).heartbeat(authority, lease_duration=timedelta(seconds=30))
         source, deferred = await runtime.prepare(
             run, actor(), effective_agent_config().input_adapter, input_pending=True
         )

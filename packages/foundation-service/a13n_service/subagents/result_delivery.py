@@ -36,7 +36,7 @@ class AsyncSubagentResultMaterializer:
         authority = await self._read_authorized(entry)
         terminal_item = await load_async_subagent_terminal_item(
             self._replays,
-            tenant_id=entry.tenant_id,
+            organization_id=entry.organization_id,
             child=authority.child,
             expected_item_id=authority.payload.terminal_result_item_id,
         )
@@ -49,7 +49,7 @@ class AsyncSubagentResultMaterializer:
             authority = await read_async_subagent_result_authority(database, entry)
             target = await database.scalar(
                 select(RunRecord).where(
-                    RunRecord.tenant_id == entry.tenant_id,
+                    RunRecord.organization_id == entry.organization_id,
                     RunRecord.id == entry.target_run_id,
                 )
             )
@@ -57,7 +57,7 @@ class AsyncSubagentResultMaterializer:
                 raise AsyncSubagentResultError("async result incorporation authority is incomplete")
             session = await database.scalar(
                 select(SessionRecord).where(
-                    SessionRecord.tenant_id == entry.tenant_id,
+                    SessionRecord.organization_id == entry.organization_id,
                     SessionRecord.id == target.session_id,
                 )
             )

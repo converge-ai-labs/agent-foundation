@@ -21,7 +21,7 @@ Resource routes, fields, commands, and authorization actions remain owned by the
 
 A Worker-only process returns no product route, product OpenAPI document, authenticated product stream, provider-event route, or network MCP listener. Its in-process a13n MCP tool groups belong to Run execution and expose no HTTP route. A Connectivity-only process exposes only provider event ingress and operational surfaces; it exposes no `/api/v1`, AG-UI, A2A, or product stream route. The service does not host a browser application or provide HTML history fallback. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
 
-The internal operator surface is excluded from the public product OpenAPI, SDKs, and tenant IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
+The internal operator surface is excluded from the public product OpenAPI, SDKs, and product IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
 
 ## Request Boundary
 
@@ -114,4 +114,4 @@ A new common ingress check can be added when it rejects only requests outside th
 08. Client disconnect and transport delivery never define Run cancellation or completion.
 09. Drain rejects new work before closing streams and ingress.
 10. An open HTTP socket does not make an unready process product-available.
-11. Internal network placement alone never authenticates an operator route, and internal routes never become public SDK or tenant-role surfaces.
+11. Internal network placement alone never authenticates an operator route, and internal routes never become public SDK or product-role surfaces.

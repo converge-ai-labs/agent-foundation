@@ -6,7 +6,6 @@ from datetime import timedelta
 import httpx2
 import pytest
 from a13n_service.api import install_api_conventions
-from a13n_service.interactions.lifecycle import append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.router import router
 from a13n_service.lifecycle.service import LifecycleEventService
@@ -15,6 +14,7 @@ from fastapi import FastAPI, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.hooks.support import RUN_ID, hook_actor, seed_hook_actor_access, seed_run_and_secret
 from tests.interactions.conftest import NOW, USER_ID, WORKSPACE_ID
+from tests.lifecycle_support import test_lifecycle_writer
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ async def lifecycle_api_client(
     async with transaction(lifecycle_interaction_sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
         assert run is not None
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",

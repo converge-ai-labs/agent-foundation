@@ -26,10 +26,10 @@ from ._outcome_transitions import (
 from ._transitions import charge_attempt_usage, terminalize_attempt
 from .acceptance import (
     RunAcceptanceReceipt,
-    _require_session,
-    _validate_advancement,
-    _validate_queued_run_input,
+    require_session,
+    validate_advancement,
     validate_prepared_run,
+    validate_queued_run_input,
 )
 from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority
 from .control_domain import QueuedSubmission, QueuedSubmissionFailure, QueuedSubmissionState
@@ -39,10 +39,7 @@ from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
 from .inline_hooks import InlineHookAcceptance
 from .input import AcceptedAgentInput
-from .lifecycle import (
-    append_accepted_run_lifecycle,
-    append_run_with_attempt_lifecycle,
-)
+from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter, StoredRunState
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
@@ -78,8 +75,10 @@ class CompletionQueueHandoffService:
         payloads: RunPayloadStore,
         inline_hooks: InlineHookValidator,
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
     ) -> None:
+        self._lifecycle = lifecycle
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
@@ -103,7 +102,7 @@ class CompletionQueueHandoffService:
         """Atomically seal a completed source and accept the prepared queue head."""
 
         await self._inline_hooks.validate_queued_destination(
-            tenant_id=successor_run.tenant_id,
+            organization_id=successor_run.organization_id,
             queued_submission_id=queued_submission_id,
             submission_digest_sha256=submission_digest_sha256,
         )
@@ -132,9 +131,9 @@ class CompletionQueueHandoffService:
                         (successor_run.environment_id,) if successor_run.environment_id else ()
                     ),
                 )
-                _validate_successor_scope(successor_run, thread.tenant_id, thread.session_id, thread.id)
+                _validate_successor_scope(successor_run, thread.organization_id, thread.session_id, thread.id)
 
-                await _validate_advancement(
+                await validate_advancement(
                     database,
                     thread,
                     source,
@@ -142,7 +141,7 @@ class CompletionQueueHandoffService:
                     candidate_payload=input_payload,
                     next_head_run_id=source.id,
                 )
-                session_record_value = await _require_session(database, successor_run)
+                session_record_value = await require_session(database, successor_run)
                 successor_record = await add_run_with_environment(
                     database,
                     run=successor_run,
@@ -152,7 +151,7 @@ class CompletionQueueHandoffService:
                 )
                 await bind_unbound_async_entries(
                     database,
-                    tenant_id=successor_run.tenant_id,
+                    organization_id=successor_run.organization_id,
                     thread_id=thread.id,
                     target_run_id=successor_run.id,
                     now=now,
@@ -185,7 +184,7 @@ class CompletionQueueHandoffService:
                     now=now,
                 )
                 mutation_id = new_mutation_id()
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     source,
                     "run.completed",
@@ -196,7 +195,7 @@ class CompletionQueueHandoffService:
                     actor_type="worker",
                     actor_id=attempt.worker_id,
                 )
-                await append_accepted_run_lifecycle(
+                await self._lifecycle.append_accepted_run_lifecycle(
                     database,
                     successor_record,
                     mutation_id=mutation_id,
@@ -254,7 +253,7 @@ class CompletionQueueHandoffService:
                 try:
                     failed = await fail_first_submission(
                         database,
-                        tenant_id=source.tenant_id,
+                        organization_id=source.organization_id,
                         thread_id=thread.id,
                         queued_submission_id=queued_submission_id,
                         submission_digest_sha256=submission_digest_sha256,
@@ -273,7 +272,7 @@ class CompletionQueueHandoffService:
                 thread.updated_at = now
                 await database.flush()
                 mutation_id = new_mutation_id()
-                await append_run_with_attempt_lifecycle(
+                await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     source,
                     "run.completed",
@@ -311,7 +310,7 @@ class CompletionQueueHandoffService:
         validate_prepared_run(successor_run, successor_state)
         _validate_combined_successor(authority, source_state, successor_run, successor_state)
         input_payload = await self._verify_input_payload(successor_run)
-        _validate_queued_run_input(successor_run, input_payload, accepted_input)
+        validate_queued_run_input(successor_run, input_payload, accepted_input)
         return candidate, input_payload
 
     async def _verify_source(
@@ -326,7 +325,7 @@ class CompletionQueueHandoffService:
             raise RunAcceptanceError("combined_handoff_invalid", "Combined handoff requires completed source state")
         if candidate.output_object is not None:
             await self._payloads.verify_reference(
-                authority.tenant_id,
+                authority.organization_id,
                 authority.run_id,
                 "output",
                 candidate.output_object,
@@ -336,13 +335,13 @@ class CompletionQueueHandoffService:
     async def _verify_input_payload(self, run: Run) -> RunPayloadEnvelope | None:
         if run.input_object is None:
             return None
-        return await self._payloads.verify_reference(run.tenant_id, run.id, "input", run.input_object)
+        return await self._payloads.verify_reference(run.organization_id, run.id, "input", run.input_object)
 
     async def _publish_initial(self, run: Run, state: RunStateEnvelope) -> None:
         try:
-            await self._states.create(run.tenant_id, state)
+            await self._states.create(run.organization_id, state)
         except StaleStateWriter:
-            existing = await self._states.read(run.tenant_id, run.id, expected_thread_id=run.thread_id)
+            existing = await self._states.read(run.organization_id, run.id, expected_thread_id=run.thread_id)
             if existing.envelope != state:
                 raise RunAcceptanceError(
                     "run_state_conflict",
@@ -357,7 +356,7 @@ def _validate_combined_successor(
     state: RunStateEnvelope,
 ) -> None:
     if (
-        run.tenant_id != authority.tenant_id
+        run.organization_id != authority.organization_id
         or run.parent_run_id != authority.run_id
         or run.thread_id != source_state.envelope.thread_id
         or run.lineage_kind is not RunLineageKind.continue_
@@ -378,8 +377,8 @@ def _validate_combined_successor(
         raise ValueError("combined handoff successor state is not derived from the completed source")
 
 
-def _validate_successor_scope(run: Run, tenant_id: str, session_id: str, thread_id: str) -> None:
-    if (run.tenant_id, run.session_id, run.thread_id) != (tenant_id, session_id, thread_id):
+def _validate_successor_scope(run: Run, organization_id: str, session_id: str, thread_id: str) -> None:
+    if (run.organization_id, run.session_id, run.thread_id) != (organization_id, session_id, thread_id):
         raise RunAcceptanceError(
             "combined_handoff_invalid",
             "Combined successor does not belong to the source Thread",
@@ -470,7 +469,7 @@ async def _consume_queue_head(
     try:
         consumed = await consume_first_submission(
             database,
-            tenant_id=run.tenant_id,
+            organization_id=run.organization_id,
             thread_id=run.thread_id,
             queued_submission_id=queued_submission_id,
             submission_digest_sha256=submission_digest_sha256,

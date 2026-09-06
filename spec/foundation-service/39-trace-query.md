@@ -175,7 +175,7 @@ sequenceDiagram
 
 No database session or transaction remains open during the backend call. The provider always constrains its request to `foundation.run_attempt` roots and the exact Organization and Workspace correlation. Foundation then validates every returned trace against authoritative RunAttempt ownership and the caller's current visibility. Both List and Get authorize `trace.read` from the IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry). Workspace Viewer authority can read Workspace-visible traces; a direct Agent Viewer sees only traces for associated authorized Runs even without Workspace-wide visibility. The action does not bypass the associated Run read predicate or create broader observability authority.
 
-The `a13n.*` attributes and provider project key are correlation, not authorization evidence. Uncorrelated, cross-tenant, nonexistent, or currently unauthorized results are never returned. Exact reads conceal absent and unauthorized traces with the same `404 trace_not_found` result. List reads omit unrelated backend data and fail safely when a provider response cannot be bounded or interpreted.
+The `a13n.*` attributes and provider project key are correlation, not authorization evidence. Uncorrelated, cross-organization, nonexistent, or currently unauthorized results are never returned. Exact reads conceal absent and unauthorized traces with the same `404 trace_not_found` result. List reads omit unrelated backend data and fail safely when a provider response cannot be bounded or interpreted.
 
 Input, output, and metadata can contain sensitive business content admitted by the producer policy. The service returns them only after exact resource authorization. Query credentials, provider request headers, raw provider errors, and unnormalized provider payloads never cross the public boundary.
 
@@ -213,7 +213,7 @@ Verification covers:
 
 - disabled query, valid Langfuse v4, unavailable backend, invalid credentials, unsupported server version, malformed responses, and request cancellation;
 - list and detail normalization, compact/full content behavior, root input/output search, deterministic ordering, and opaque cursor binding;
-- Workspace, direct Agent, cross-tenant, missing-correlation, concealed-resource, and revoked-access cases;
+- Workspace, direct Agent, cross-organization, missing-correlation, concealed-resource, and revoked-access cases;
 - no database session across provider I/O and no provider credential or raw error disclosure;
 - provider registration conflicts and an independently implemented test provider through the same port; and
 - independence of tracing, OTLP export, Agent readiness, Agent work, backend retention, and query availability.

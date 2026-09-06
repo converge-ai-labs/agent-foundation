@@ -47,19 +47,19 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "active_thread_id"],
-            ["threads.tenant_id", "threads.id"],
+            ["threads.organization_id", "threads.id"],
             name="fk_agui_thread_bindings_active_thread",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "root_thread_id"],
-            ["threads.tenant_id", "threads.id"],
+            ["threads.organization_id", "threads.id"],
             name="fk_agui_thread_bindings_root_thread",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "session_id"],
-            ["sessions.tenant_id", "sessions.id"],
+            ["sessions.organization_id", "sessions.id"],
             name=op.f("fk_agui_thread_bindings_organization_id_sessions"),
             ondelete="RESTRICT",
         ),
@@ -116,7 +116,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "run_id"],
-            ["runs.tenant_id", "runs.id"],
+            ["runs.organization_id", "runs.id"],
             name=op.f("fk_agui_run_bindings_organization_id_runs"),
             ondelete="RESTRICT",
         ),

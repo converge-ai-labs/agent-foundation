@@ -15,6 +15,7 @@ from a13n_service.agents.domain import (
     canonical_digest,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
 from a13n_service.interactions.attempts import AttemptAuthorityError, AttemptExecutionService, AttemptPreparationError
@@ -23,11 +24,14 @@ from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectIntegrityError, RunStateStore
 from a13n_service.interactions.preparation import AttemptDependencyLoader
+from a13n_service.interactions.prepare_harness import ProductionAttemptPreparer
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.storage import ObjectNotFound, ObjectStoreUnavailable, short_session, transaction
 from a13n_service.temporal import assume_utc
 from anyio import Event, create_task_group, fail_after, sleep_forever
+
+from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import (
     AGENT_ID,
@@ -35,7 +39,7 @@ from .conftest import (
     MODEL_ID,
     MODEL_KEY,
     NOW,
-    TENANT_ID,
+    ORGANIZATION_ID,
     USER_ID,
     WORKSPACE_ID,
     agent_config,
@@ -44,6 +48,36 @@ from .conftest import (
 from .test_attempt_execution import _accept_root, _authority, _worker
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("category", list(ErrorCategory))
+async def test_production_preparation_classifies_application_errors(monkeypatch, category):
+    failure = ApplicationError("dependency_test", "Bounded test failure.", category=category)
+    monkeypatch.setattr(ProductionAttemptPreparer, "_prepare", AsyncMock(side_effect=failure))
+    preparer = ProductionAttemptPreparer(
+        sessions=Mock(),
+        control=Mock(),
+        catalog=Mock(),
+        inputs=Mock(),
+        skills=Mock(),
+        providers=Mock(),
+        models=Mock(),
+        tools=Mock(),
+        stack=Mock(),
+    )
+    with pytest.raises(AttemptPreparationError) as captured:
+        await preparer.prepare(Mock())
+    assert captured.value.failure.code == failure.code
+    assert captured.value.retryable is (
+        category
+        in {
+            ErrorCategory.rate_limited,
+            ErrorCategory.dependency_failure,
+            ErrorCategory.unavailable,
+            ErrorCategory.timeout,
+        }
+    )
+    assert captured.value.__cause__ is failure
 
 
 async def _authorize_fixture(sessions):
@@ -65,12 +99,12 @@ async def _authorize_fixture(sessions):
             [
                 RoleBindingRecord(
                     id="rb_org1234567890abcd",
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     workspace_id=None,
                     principal_type="user",
                     principal_id=USER_ID,
                     resource_type="organization",
-                    resource_id=TENANT_ID,
+                    resource_id=ORGANIZATION_ID,
                     role_key="member",
                     created_by_user_id=USER_ID,
                     created_at=NOW,
@@ -78,7 +112,7 @@ async def _authorize_fixture(sessions):
                 ),
                 RoleBindingRecord(
                     id="rb_ws1234567890abcde",
-                    organization_id=TENANT_ID,
+                    organization_id=ORGANIZATION_ID,
                     workspace_id=WORKSPACE_ID,
                     principal_type="user",
                     principal_id=USER_ID,
@@ -101,7 +135,9 @@ async def _authorize_fixture(sessions):
 async def _claimed(sessions, objects):
     await _authorize_fixture(sessions)
     states, run, _ = await _accept_root(sessions, objects)
-    claim = await AttemptScheduler(sessions, clock=lambda: NOW).claim(run.id, _worker())
+    claim = await AttemptScheduler(sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker()
+    )
     assert isinstance(claim, ClaimedAttempt)
     return states, run, _authority(claim)
 
@@ -110,10 +146,10 @@ async def test_dependency_loading_uses_frozen_revision_and_survives_heartbeat(
     interaction_sessions, interaction_object_store
 ):
     states, run, authority = await _claimed(interaction_sessions, interaction_object_store)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    execution = AttemptExecutionService(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     await execution.heartbeat(authority, lease_duration=timedelta(seconds=30))
     loader = AttemptDependencyLoader(interaction_sessions, clock=lambda: NOW)
-    loaded = await loader.load(authority, await states.read(TENANT_ID, run.id))
+    loaded = await loader.load(authority, await states.read(ORGANIZATION_ID, run.id))
     assert loaded.run.id == run.id
     assert loaded.workspace_id == WORKSPACE_ID
     assert loaded.root_revision.id == AGENT_REVISION_ID
@@ -123,7 +159,7 @@ async def test_dependency_loading_uses_frozen_revision_and_survives_heartbeat(
     with pytest.raises(AttemptAuthorityError):
         await execution.validate(authority)
     with pytest.raises(AttemptAuthorityError):
-        await loader.load(replace(authority, lease_token="wrong"), await states.read(TENANT_ID, run.id))
+        await loader.load(replace(authority, lease_token="wrong"), await states.read(ORGANIZATION_ID, run.id))
 
 
 @pytest.mark.parametrize("revocation", ["principal", "membership", "agent_disabled", "agent_archived"])
@@ -132,7 +168,7 @@ async def test_dependency_loading_rechecks_current_authority(
 ):
     states, run, authority = await _claimed(interaction_sessions, interaction_object_store)
     loader = AttemptDependencyLoader(interaction_sessions, clock=lambda: NOW)
-    state = await states.read(TENANT_ID, run.id)
+    state = await states.read(ORGANIZATION_ID, run.id)
     await loader.load(authority, state)
     async with transaction(interaction_sessions) as database:
         if revocation == "principal":
@@ -151,7 +187,7 @@ async def test_dependency_loading_rechecks_current_authority(
 
 async def test_dependency_loading_rejects_changed_configuration_body(interaction_sessions, interaction_object_store):
     states, run, authority = await _claimed(interaction_sessions, interaction_object_store)
-    state = await states.read(TENANT_ID, run.id)
+    state = await states.read(ORGANIZATION_ID, run.id)
     changed = replace(
         state,
         envelope=state.envelope.model_copy(
@@ -225,10 +261,12 @@ async def test_dependency_loading_rechecks_transitive_frozen_children(
         }
     )
     states, run, _ = await _accept_root(interaction_sessions, interaction_object_store, effective_config=config)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker())
+    claim = await AttemptScheduler(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker()
+    )
     assert isinstance(claim, ClaimedAttempt)
     loader = AttemptDependencyLoader(interaction_sessions, clock=lambda: NOW)
-    state = await states.read(TENANT_ID, run.id)
+    state = await states.read(ORGANIZATION_ID, run.id)
     if child_problem is None:
         loaded = await loader.load(_authority(claim), state)
         assert set(loaded.child_revisions) == {edge.child_agent_revision_id for edge in edges}
@@ -255,12 +293,14 @@ async def test_state_load_failure_settles_before_harness_entry(
     interaction_sessions, interaction_object_store, error, code, retryable, budget
 ):
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store, max_recovery_attempts=budget)
-    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker())
+    claim = await AttemptScheduler(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW).claim(
+        run.id, _worker()
+    )
     assert isinstance(claim, ClaimedAttempt)
     authority = _authority(claim)
     states = Mock(spec=RunStateStore)
     states.read = AsyncMock(side_effect=error)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    execution = AttemptExecutionService(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     inbox = DatabaseThreadInboxReconciler(interaction_sessions, AsyncMock(), clock=lambda: NOW)
     control = RunAttemptControl(context=authority, execution=execution, states=states, inbox=inbox)
     driver = Mock(spec=HarnessDriver)
@@ -308,7 +348,7 @@ async def test_slow_state_read_does_not_block_lease_renewal(interaction_sessions
     states, run, authority = await _claimed(interaction_sessions, interaction_object_store)
     reading, renewed = Event(), Event()
     read = states.read
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    execution = AttemptExecutionService(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
 
     async def slow_read(*args, **kwargs):
         reading.set()
@@ -334,7 +374,7 @@ async def test_dependency_failure_never_enters_harness_or_hides_programming_erro
     states, _, authority = await _claimed(interaction_sessions, interaction_object_store)
     if classified == "timeout":
         authority = replace(authority, preparation_timeout=timedelta(milliseconds=10))
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    execution = AttemptExecutionService(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     control = RunAttemptControl(
         context=authority,
         execution=execution,
@@ -388,7 +428,7 @@ async def test_state_publication_does_not_block_renewal(
     interaction_sessions, interaction_object_store, monkeypatch, operation
 ):
     states, _, authority = await _claimed(interaction_sessions, interaction_object_store)
-    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW)
+    execution = AttemptExecutionService(interaction_sessions, lifecycle=test_lifecycle_writer(), clock=lambda: NOW)
     control = RunAttemptControl(context=authority, execution=execution, states=states, inbox=Mock())
     await control.load_state()
     publishing, renewed = Event(), Event()

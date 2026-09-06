@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam.models import OrganizationRecord
 from a13n_service.iam.resource_scope import visible_workspace
 
@@ -27,5 +28,7 @@ async def require_available_key(
         query = query.where(visible_workspace(ModelRecord.workspace_id, workspace_id))
     if await session.scalar(query.limit(1)) is not None:
         raise ModelError(
-            "model_key_conflict", "A Model with this key already exists in an overlapping scope.", status_code=409
+            "model_key_conflict",
+            "A Model with this key already exists in an overlapping scope.",
+            category=ErrorCategory.conflict,
         )

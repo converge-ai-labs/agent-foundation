@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
@@ -18,10 +19,9 @@ from a13n_service.iam.authorization import (
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.ids import new_object_id
-from a13n_service.public_errors import PublicError
 
 
-class ModelError(PublicError):
+class ModelError(ApplicationError):
     """Safe stable error raised by the Model Management application layer."""
 
 
@@ -38,7 +38,7 @@ async def authorize_models(
         raise ModelError(
             "resource_not_found" if error.concealed else "permission_denied",
             "The requested resource was not found." if error.concealed else "Permission denied.",
-            status_code=404 if error.concealed else 403,
+            category=ErrorCategory.not_found if error.concealed else ErrorCategory.forbidden,
         ) from error
 
 
@@ -48,7 +48,7 @@ def require_etag(resource_id: str, updated_at: datetime, if_match: str) -> None:
         raise ModelError(
             "precondition_failed",
             "The resource changed after it was read.",
-            status_code=412,
+            category=ErrorCategory.stale_version,
             details={"current_etag": current},
         )
 

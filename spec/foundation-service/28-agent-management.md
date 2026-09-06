@@ -271,7 +271,7 @@ Within `model`, an absent `model_key` inherits the Agent selection; a supplied k
 
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
-Plugin override replacement and resolution follow the [managed Plugin selection contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Typed sensitive leaves are extracted into a Run-owned encrypted payload and excluded from ordinary config projections.
+Plugin override replacement and resolution follow the [managed Plugin selection contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Run overrides select managed resources and accept no direct credential values. The owning resource domain resolves current credentials at its execution boundary.
 
 The resolved non-secret result has this conceptual shape:
 
@@ -388,7 +388,7 @@ Durable acceptance:
 2. requires the Agent to be enabled and unarchived;
 3. validates that the exact Revision belongs to the Agent, remains retained and executable, and satisfies current authorization and compatibility requirements;
 4. applies the typed config override and capability overlay and resolves every final selection, including every Skill binding to an exact Revision lock;
-5. freezes the complete non-secret `EffectiveAgentConfig`, encrypted sensitive payload, and exact Runtime lock;
+5. freezes the complete non-secret `EffectiveAgentConfig` and exact Runtime lock;
 6. when an Environment is selected, fixes the Run's Environment ID and access ceiling independently of `EffectiveAgentConfig`, and updates the Thread default; and
 7. persists `agent_id`, exact `agent_revision_id`, selector kind, effective-config digest, and `runtime_lock_digest` on the accepted execution state.
 
@@ -402,7 +402,7 @@ For each outbound model request, the Worker or Runner rechecks the current Model
 
 ## Persistence
 
-The `agents` table stores stable identity, tenancy, name, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, normalized_name)` is unique.
+The `agents` table stores stable identity, organization ownership, name, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, normalized_name)` is unique.
 
 The `agent_revisions` table stores complete config, frozen resolution, digests, provenance, actor, and creation time. `(agent_id, version)` is unique. The Agent head and current Revision advance atomically. Runs and downstream records store `agent_revision_id`, not only an Agent ID or version.
 

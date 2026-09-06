@@ -63,7 +63,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_hook_subscriptions")),
-        sa.UniqueConstraint("id", "organization_id", "workspace_id", name="uq_hook_subscriptions_tenant_id"),
+        sa.UniqueConstraint("id", "organization_id", "workspace_id", name="uq_hook_subscriptions_organization_id"),
         sa.UniqueConstraint("organization_id", "inline_run_id", name="uq_hook_subscriptions_inline_run"),
     )
     op.create_index(
@@ -118,19 +118,19 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "run_id"],
-            ["runs.tenant_id", "runs.id"],
+            ["runs.organization_id", "runs.id"],
             name=op.f("fk_hook_subscription_revisions_organization_id_runs"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "session_id"],
-            ["sessions.tenant_id", "sessions.id"],
+            ["sessions.organization_id", "sessions.id"],
             name=op.f("fk_hook_subscription_revisions_organization_id_sessions"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "thread_id"],
-            ["threads.tenant_id", "threads.id"],
+            ["threads.organization_id", "threads.id"],
             name=op.f("fk_hook_subscription_revisions_organization_id_threads"),
             ondelete="RESTRICT",
         ),
@@ -188,7 +188,7 @@ def upgrade() -> None:
         sqlite_where=sa.text("thread_id IS NOT NULL"),
     )
     op.create_index(
-        "uq_hook_subscription_revisions_id_tenant",
+        "uq_hook_subscription_revisions_id_organization",
         "hook_subscription_revisions",
         ["id", "organization_id", "workspace_id"],
         unique=True,
@@ -212,7 +212,7 @@ def downgrade() -> None:
     _drop_revision_guards()
     if op.get_bind().dialect.name == "postgresql":
         op.drop_constraint("fk_hook_subscriptions_current_revision", "hook_subscriptions", type_="foreignkey")
-    op.drop_index("uq_hook_subscription_revisions_id_tenant", table_name="hook_subscription_revisions")
+    op.drop_index("uq_hook_subscription_revisions_id_organization", table_name="hook_subscription_revisions")
     op.drop_index(
         "ix_hook_subscription_revisions_thread",
         table_name="hook_subscription_revisions",

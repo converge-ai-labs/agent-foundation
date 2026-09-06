@@ -23,8 +23,7 @@ from a13n_service.plugins.runner_bootstrap import BootstrappedPluginRuntime
 from a13n_service.process.components import Components
 from a13n_service.process.environment import build_environment_catalog
 from a13n_service.process.execution import build_attempt_factory, build_execution_loop, build_external_tools
-from a13n_service.process.resources import build_execution_resources
-from a13n_service.process.runtime import SharedRuntime
+from a13n_service.process.resources import build_execution_resources, build_shared_runtime
 from a13n_service.run_stream import RedisRunStream
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
@@ -73,7 +72,7 @@ async def open_runner_execution(
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
             if settings.pricing_auto_update:
                 stack.enter_context(prices.update_in_background())
-            shared = SharedRuntime(storage, settings.secret_protector())
+            shared = build_shared_runtime(settings, storage)
             resources = await build_execution_resources(
                 shared,
                 built_in_provider_registry(),
@@ -110,7 +109,7 @@ async def open_runner_execution(
             )
             loop = build_execution_loop(
                 settings,
-                storage.sessions,
+                shared,
                 RunnerExecutionPreflight(runtime, factory),
                 identity,
                 runtime_lock_digest=runtime.runtime_lock.digest,

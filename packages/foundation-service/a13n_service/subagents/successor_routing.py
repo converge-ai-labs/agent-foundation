@@ -54,29 +54,31 @@ class LockedAsyncResultSelection:
 async def lock_and_route_async_result(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
     now: datetime,
 ) -> AsyncSubagentSuccessorReceipt | LockedAsyncResultSelection:
     """Apply origin gate and non-successor routes under Thread authority."""
 
     thread = await database.scalar(
-        select(ThreadRecord).where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == thread_id).with_for_update()
+        select(ThreadRecord)
+        .where(ThreadRecord.organization_id == organization_id, ThreadRecord.id == thread_id)
+        .with_for_update()
     )
     if thread is None:
         raise AsyncSubagentSuccessorError("parent Thread was not found")
     if thread.current_run_id is None:
         raise AsyncSubagentSuccessorError("Empty Thread has no child-result source")
-    current = await _lock_run(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+    current = await _lock_run(database, organization_id=organization_id, run_id=thread.current_run_id)
     head = (
         None
         if thread.head_run_id is None
-        else await _lock_run(database, tenant_id=tenant_id, run_id=thread.head_run_id)
+        else await _lock_run(database, organization_id=organization_id, run_id=thread.head_run_id)
     )
     required_run_ids = (current.id,) if head is None else (current.id, head.id)
     counter, entries = await lock_unbound_async_entries(
         database,
-        tenant_id=tenant_id,
+        organization_id=organization_id,
         thread_id=thread_id,
         required_run_ids=required_run_ids,
         now=now,
@@ -99,7 +101,7 @@ async def lock_and_route_async_result(
             outcome="retained_waiting",
             inbox_entry_id=first_entry_id,
         )
-    if await _has_queued_submission(database, tenant_id=tenant_id, thread_id=thread_id):
+    if await _has_queued_submission(database, organization_id=organization_id, thread_id=thread_id):
         return AsyncSubagentSuccessorReceipt(
             thread_id=thread_id,
             outcome="queue_precedence",
@@ -111,7 +113,7 @@ async def lock_and_route_async_result(
     origin_run_id = entries[0].origin_run_id
     if origin_run_id is None:
         raise AsyncSubagentSuccessorError("asynchronous result origin Run is missing")
-    origin = await _lock_run(database, tenant_id=tenant_id, run_id=origin_run_id)
+    origin = await _lock_run(database, organization_id=organization_id, run_id=origin_run_id)
     if origin.status in {RunStatus.failed.value, RunStatus.cancelled.value}:
         raise AsyncSubagentSuccessorError("origin gate left an ineligible result pending")
     return LockedAsyncResultSelection(
@@ -157,7 +159,7 @@ def _selected_completed_parent(
 async def _has_queued_submission(
     database: AsyncSession,
     *,
-    tenant_id: str,
+    organization_id: str,
     thread_id: str,
 ) -> bool:
     rows = tuple(
@@ -165,7 +167,7 @@ async def _has_queued_submission(
             await database.scalars(
                 select(QueuedSubmissionRecord.id)
                 .where(
-                    QueuedSubmissionRecord.tenant_id == tenant_id,
+                    QueuedSubmissionRecord.organization_id == organization_id,
                     QueuedSubmissionRecord.thread_id == thread_id,
                     QueuedSubmissionRecord.position.is_not(None),
                 )
@@ -177,9 +179,9 @@ async def _has_queued_submission(
     return bool(rows)
 
 
-async def _lock_run(database: AsyncSession, *, tenant_id: str, run_id: str) -> RunRecord:
+async def _lock_run(database: AsyncSession, *, organization_id: str, run_id: str) -> RunRecord:
     run = await database.scalar(
-        select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id).with_for_update()
+        select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id).with_for_update()
     )
     if run is None:
         raise AsyncSubagentSuccessorError("Thread-selected Run was not found")

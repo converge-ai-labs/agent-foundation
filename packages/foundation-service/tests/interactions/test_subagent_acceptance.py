@@ -38,12 +38,14 @@ from a13n_service.subagents.models import ChildRunRelationshipRecord
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.lifecycle_support import test_lifecycle_writer
+
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
     NOW,
+    ORGANIZATION_ID,
     SESSION_ID,
-    TENANT_ID,
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
@@ -85,13 +87,13 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_2222222222222222",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
     authority = _authority(claim)
     execution = AttemptExecutionService(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=2),
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
     )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
@@ -170,6 +172,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         clock=lambda: NOW + timedelta(seconds=4),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_2323232323232323",
+        lifecycle=test_lifecycle_writer(),
     ).claim(accepted.child_run_id, _worker())
     assert child_claim is not None
 
@@ -185,6 +188,7 @@ async def test_child_acceptance_rejects_stale_generation_before_publishing_state
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_5555555555555555",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -211,7 +215,7 @@ async def test_child_acceptance_rejects_stale_generation_before_publishing_state
         ).accept(prepared, authority)
 
     with pytest.raises(ObjectNotFound):
-        await states.read(TENANT_ID, prepared.run.id)
+        await states.read(ORGANIZATION_ID, prepared.run.id)
 
 
 async def test_child_acceptance_reauthorizes_persisted_parent_principal(
@@ -225,6 +229,7 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_7777777777777777",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -256,7 +261,7 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
         await service.accept(prepared, authority)
 
     with pytest.raises(ObjectNotFound):
-        await states.read(TENANT_ID, prepared.run.id)
+        await states.read(ORGANIZATION_ID, prepared.run.id)
 
 
 async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postgresql(
@@ -271,6 +276,7 @@ async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postg
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_9999999999999999",
+        lifecycle=test_lifecycle_writer(),
     )
     claim = await scheduler.claim(parent.id, _worker())
     assert claim is not None
@@ -320,6 +326,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "parent-lease",
         attempt_id_factory=lambda: "rat_3434343434343434",
+        lifecycle=test_lifecycle_writer(),
     ).claim(parent.id, _worker())
     assert parent_claim is not None
     parent_authority = _authority(parent_claim)
@@ -350,6 +357,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         clock=lambda: NOW + timedelta(seconds=3),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: "rat_4545454545454545",
+        lifecycle=test_lifecycle_writer(),
     ).claim(accepted.child_run_id, _worker())
     assert child_claim is not None
     completed_child = await _complete_run(
@@ -359,7 +367,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         first.run,
         _authority(child_claim),
     )
-    source_state = await states.read(TENANT_ID, completed_child.id, expected_thread_id=first.thread.id)
+    source_state = await states.read(ORGANIZATION_ID, completed_child.id, expected_thread_id=first.thread.id)
     async with short_session(interaction_sessions) as database:
         source_thread_record = await database.get(ThreadRecord, first.thread.id)
         source_relationship_record = await database.get(ChildRunRelationshipRecord, accepted.relationship.id)
@@ -396,7 +404,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
 
     assert receipt.child_thread_id == source_thread.id
     assert receipt.child_run_id == resumed.run.id
-    resumed_state = await states.read(TENANT_ID, resumed.run.id, expected_thread_id=source_thread.id)
+    resumed_state = await states.read(ORGANIZATION_ID, resumed.run.id, expected_thread_id=source_thread.id)
     assert resumed_state.envelope.checkpoint_seq == 0
     assert resumed_state.envelope.harness.message_history == source_state.envelope.harness.message_history
     async with short_session(interaction_sessions) as database:
@@ -426,7 +434,9 @@ async def _complete_run(
     time_offset_seconds: int = 3,
     expected_thread_version: int = 1,
 ) -> Run:
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=time_offset_seconds))
+    execution = AttemptExecutionService(
+        sessions, clock=lambda: NOW + timedelta(seconds=time_offset_seconds), lifecycle=test_lifecycle_writer()
+    )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
     entered = await execution.enter_harness(
@@ -439,7 +449,7 @@ async def _complete_run(
         expected_run_version=entered.run_version,
         expected_attempt_version=entered.attempt_version,
     )
-    current = await states.read(TENANT_ID, run.id)
+    current = await states.read(ORGANIZATION_ID, run.id)
     candidate = _completed_state(
         current.envelope,
         authority.run_attempt_id,
@@ -451,6 +461,7 @@ async def _complete_run(
         sessions,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=time_offset_seconds + 1),
+        lifecycle=test_lifecycle_writer(),
     ).commit_state_outcome(authority, stored, expected_thread_version=expected_thread_version)
     async with short_session(sessions) as database:
         row = await database.get(RunRecord, run.id)
@@ -549,10 +560,11 @@ async def _accept_parent(
         RunPayloadStore(objects),
         _inline_hooks(),
         clock=lambda: NOW,
+        lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(
         session=Session(
             id=SESSION_ID,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             created_at=NOW,
             updated_at=NOW,
@@ -561,7 +573,7 @@ async def _accept_parent(
             id=THREAD_ID,
             version=1,
             queue_version=0,
-            tenant_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             session_id=SESSION_ID,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -593,12 +605,12 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             RoleBindingRecord(
                 id="rbac_2222222222222222",
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=None,
                 principal_type="user",
                 principal_id=USER_ID,
                 resource_type="organization",
-                resource_id=TENANT_ID,
+                resource_id=ORGANIZATION_ID,
                 role_key="member",
                 created_by_user_id=USER_ID,
                 created_at=NOW,
@@ -608,7 +620,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             RoleBindingRecord(
                 id="rbac_3333333333333333",
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 principal_type="user",
                 principal_id=USER_ID,
@@ -623,7 +635,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             AgentRecord(
                 id=CHILD_AGENT_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Child Agent",
@@ -647,7 +659,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
         database.add(
             AgentRevisionRecord(
                 id=CHILD_REVISION_ID,
-                organization_id=TENANT_ID,
+                organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
                 agent_id=CHILD_AGENT_ID,
                 version=1,

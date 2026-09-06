@@ -16,10 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import InputAdapterConfig
+from a13n_service.application_errors import ApplicationError
 from a13n_service.assets.service import AssetService
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor
-from a13n_service.public_errors import PublicError
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
@@ -90,7 +90,9 @@ class AttemptInputRuntime(AbstractCapability[AgentContext]):
             return ImmediateHarnessInput(), None
         value = run.input
         if run.input_object is not None:
-            value = (await self._payloads.verify_reference(run.tenant_id, run.id, "input", run.input_object)).payload
+            value = (
+                await self._payloads.verify_reference(run.organization_id, run.id, "input", run.input_object)
+            ).payload
         deferred = None
         accepted: AcceptedAgentInput | None
         if run.input_kind is RunInputKind.agent_input:
@@ -145,7 +147,7 @@ class AttemptInputRuntime(AbstractCapability[AgentContext]):
                 adapter=self._adapter,
                 environment=self if self._environment is not None else None,
             )
-        except (PublicError, EndpointPolicyError, httpx2.TransportError) as error:
+        except (ApplicationError, EndpointPolicyError, httpx2.TransportError) as error:
             raise AgentInputError(
                 "input_source_unavailable", "The accepted input source could not be acquired."
             ) from error
@@ -192,7 +194,7 @@ class AttemptInputRuntime(AbstractCapability[AgentContext]):
         async with short_session(self._sessions) as database:
             record = await database.scalar(
                 select(RunRecord).where(
-                    RunRecord.tenant_id == run.tenant_id,
+                    RunRecord.organization_id == run.organization_id,
                     RunRecord.id == feedback.waiting_run_id,
                     RunRecord.thread_id == run.thread_id,
                 )
@@ -200,7 +202,7 @@ class AttemptInputRuntime(AbstractCapability[AgentContext]):
             parent = record.to_resource() if record is not None else None
         if parent is None or parent.sealed_state is None:
             raise AgentInputError("waiting_feedback_invalid", "The sealed feedback parent is unavailable.")
-        state = await self._states.read(run.tenant_id, parent.id)
+        state = await self._states.read(run.organization_id, parent.id)
         sealed = parent.sealed_state
         if (
             state.digest_sha256 != sealed.digest_sha256

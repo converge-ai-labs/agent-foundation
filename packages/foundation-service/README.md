@@ -132,7 +132,7 @@ Run State has one current envelope schema (`1`) with a required independent `wri
 
 With `FOUNDATION_PLUGIN_RUNTIME_MODE=on_demand`, `all` and `worker` roles start the production execution loop. It preflights the exact accepted Runtime lock before claiming capacity, reauthorizes the persisted Principal, reconstructs the accepted Agent configuration, and executes through the native Harness and Model Provider adapters. Current Provider credentials are resolved again for outbound model calls. Supported preparation includes locked Skills, authorized Environment selection, Connector/MCP capabilities, native text/structured/binary inputs, and sealed waiting feedback. Asset inputs use `asset.use`, verify stored content, and recheck access before delivery. Recovery does not reacquire initial input that a checkpoint already marked applied.
 
-Both execution profiles explicitly fail preparation with `worker_dependency_unsupported` for child-Agent graphs, Secret requirements, Asset publication capabilities, or encrypted configuration payloads. Custom input adapters and asynchronous child-result inputs are also unsupported. These dependencies are never silently omitted.
+Both execution profiles explicitly fail preparation with `worker_dependency_unsupported` for child-Agent graphs, Secret requirements, or Asset publication capabilities. Custom input adapters and asynchronous child-result inputs are also unsupported. These dependencies are never silently omitted.
 
 The `runner` profile executes Runs in fresh, exact-lock child processes. Its Supervisor restores the committed active catalog, discovers eligible historical Run locks with bounded scans, and restarts exited execution children using the same lock. Control initializes the first empty catalog so Plugin-free Agents work before the first activation. A staged child opens its own production resources and verifies the schema before readiness, but claims nothing until enabled. Environment maintenance and lifecycle projection remain in the parent Worker. The Supervisor-to-child channel carries lifecycle and effective startup configuration only; it never transports Run inputs, credentials for an Attempt, or execution RPCs.
 
@@ -339,3 +339,9 @@ uv build --package a13n-service
 ```
 
 Container-owned integration tests exercise PostgreSQL, Redis, and S3 HTTP behavior. The S3 startup-probe test also demonstrates that an endpoint missing required conditional-delete semantics is rejected rather than silently accepted.
+
+## HTTP retries and accepted receipts
+
+Ordinary retryable management commands accept `Idempotency-Key` values containing 1–512 visible ASCII bytes. Reuse the same key and semantic request after a lost response: for 24 hours from the original commit, an authorized replay returns the original accepted result before checking mutable version preconditions. A changed request with the same scoped key conflicts. Replaying does not extend expiry; after expiry, inspect the resource and apply its current preconditions before deciding to repeat a mutation. AG-UI/A2A external IDs and durable execution identities have their own retention contracts.
+
+MCP mutation responses preserve the accepted connection snapshot. Read the connection to observe subsequent discovery readiness. Run overrides select managed resources and reject direct credential fields; the owning resource resolves its current credentials.

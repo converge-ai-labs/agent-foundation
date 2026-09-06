@@ -15,7 +15,6 @@ from a13n_service.hooks.outbox import (
 )
 from a13n_service.hooks.persistence import create_inline_hook_subscription
 from a13n_service.hooks.publisher import WebhookPublisher
-from a13n_service.interactions.lifecycle import append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets import SecretProtector
 from a13n_service.secrets.models import SecretRecord
@@ -26,7 +25,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import RUN_ID, SECRET_ID, seed_run_and_secret
-from tests.interactions.conftest import NOW, SESSION_ID, TENANT_ID, THREAD_ID, USER_ID, WORKSPACE_ID
+from tests.interactions.conftest import NOW, ORGANIZATION_ID, SESSION_ID, THREAD_ID, USER_ID, WORKSPACE_ID
+from tests.lifecycle_support import test_lifecycle_writer
 
 pytestmark = pytest.mark.anyio
 
@@ -79,7 +79,7 @@ async def _prepare_delivery(
     encrypted = protector.encrypt(
         _SIGNING_VALUE,
         secret_id=SECRET_ID,
-        organization_id=TENANT_ID,
+        organization_id=ORGANIZATION_ID,
         workspace_id=WORKSPACE_ID,
         owner_type="workspace",
         owner_id=WORKSPACE_ID,
@@ -96,7 +96,7 @@ async def _prepare_delivery(
         assert run is not None
         subscription = await create_inline_hook_subscription(
             database,
-            organization_id=TENANT_ID,
+            organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             session_id=SESSION_ID,
             thread_id=THREAD_ID,
@@ -112,7 +112,7 @@ async def _prepare_delivery(
             ),
             now=NOW,
         )
-        await append_run_lifecycle(
+        await test_lifecycle_writer().append_run_lifecycle(
             database,
             run,
             "run.accepted",
