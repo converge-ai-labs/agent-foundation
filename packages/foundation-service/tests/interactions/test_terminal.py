@@ -13,7 +13,6 @@ from a13n_service.interactions.attempts import (
 )
 from a13n_service.interactions.harness_results import RunTerminalDisposition
 from a13n_service.interactions.inbox import ThreadInboxStore
-from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.interactions.objects import RunPayloadStore
@@ -67,11 +66,12 @@ async def test_terminal_adapter_adopts_predecessor_and_reconciles_exact_committe
             entry_id="inb_1234567890abcdef",
         )
         if candidate_kind == "completed":
-            with pytest.raises(ThreadInboxConflict, match="eligible pending"):
-                await committer.commit_state_outcome(authority, state, preparation=preparation)
+            receipt = await committer.commit_state_outcome(authority, state, preparation=preparation)
+            assert receipt.disposition is RunTerminalDisposition.retrying
             async with short_session(interaction_sessions) as database:
                 stored_run = await database.get(RunRecord, run.id)
                 assert stored_run.status == "running"
+                assert stored_run.current_run_attempt_id is None
                 assert stored_run.sealed_state_digest_sha256 is None
             assert await states.read(TENANT_ID, run.id) == state
             return

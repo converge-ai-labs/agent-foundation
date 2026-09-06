@@ -140,6 +140,8 @@ A `leased` Attempt can yield before Harness entry by retaining the already compl
 
 A replacement `leased` Attempt can also succeed without Harness entry by adopting a predecessor's complete waiting or completed candidate under the [Run outcome contract](12-run-persistence.md#resume-semantics). This path requires the matching successful preparation decision, the current writer claim, and the usual relational outcome checks. It preserves null `harness_run_id` and `started_at`, the original checkpoint provenance, and the replacement Attempt's own terminal attribution; it never invents a Harness Run to satisfy lifecycle validation.
 
+If eligible pending Thread-inbox delivery blocks an unsealed completed candidate, the replacement instead follows that contract's fenced transition back to progress before entering its one Harness Run. This does not allocate another Run, restore the failed producer's authority, or reset recovery usage or budgets. If new delivery races adoption, that Attempt records retryable failure and the usual successor budget applies again.
+
 ## `run_attempts` Relational Schema
 
 Each worker generation is one `run_attempts` row:

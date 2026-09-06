@@ -22,6 +22,7 @@ from .attempts import (
 )
 from .domain import RunAttemptStatus, RunStatus
 from .harness_results import RunTerminalDisposition, RunTerminalReceipt
+from .inbox_persistence import RunCompletionBlocked
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import StoredRunState, run_state_key
 from .outcomes import RunOutcomeService
@@ -69,6 +70,23 @@ class DatabaseRunTerminalCommitter:
             except RunOutcomePreconditionChanged:
                 if retry == 2:
                     raise
+            except RunCompletionBlocked:
+                mutation = await self._execution.fail(
+                    authority,
+                    SafeFailure(
+                        code="completion_blocked_by_pending_delivery",
+                        message="Pending Thread input requires a replacement Attempt.",
+                    ),
+                    retryable=True,
+                )
+                return RunTerminalReceipt(
+                    RunTerminalDisposition.retrying
+                    if mutation.thread_version is None
+                    else RunTerminalDisposition.failed,
+                    mutation.run_version,
+                    mutation.attempt_version,
+                    mutation.thread_version,
+                )
             else:
                 assert receipt.attempt_version is not None
                 return RunTerminalReceipt(

@@ -138,6 +138,37 @@ class RunStateStore:
             run_attempt_id=run_attempt_id,
             fence=fence,
         )
+        return await self._replace(state, successor)
+
+    async def resume_completed(
+        self,
+        state: StoredRunState,
+        *,
+        run_attempt_id: str,
+        fence: int,
+    ) -> StoredRunState:
+        """Publish only the recovery transition authorized by the Attempt service."""
+
+        previous = state.envelope
+        if (
+            previous.checkpoint_kind != "completed"
+            or fence != state.writer_fence
+            or fence <= previous.last_checkpoint_fence
+            or run_attempt_id == previous.last_checkpoint_run_attempt_id
+        ):
+            raise ValueError("completed recovery requires a claimed replacement Attempt")
+        payload = previous.model_dump(mode="python", by_alias=True)
+        payload.update(
+            checkpoint_kind="progress",
+            checkpoint_seq=previous.checkpoint_seq + 1,
+            last_checkpoint_run_attempt_id=run_attempt_id,
+            last_checkpoint_fence=fence,
+            outcome_candidate=None,
+        )
+        successor = RunStateEnvelope.model_validate(payload)
+        return await self._replace(state, successor)
+
+    async def _replace(self, state: StoredRunState, successor: RunStateEnvelope) -> StoredRunState:
         body = canonical_model_bytes(successor)
         self._require_bounded(body)
         digest = hashlib.sha256(body).hexdigest()

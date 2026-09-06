@@ -140,8 +140,17 @@ class RunAttemptExecutor[OutputT]:
                     await tasks.start(LeaseMonitor(self._context, self._control).run)
                     await tasks.start(ControlWatcher(self._context, self._control, self._wakeups).run)
                     invocation = await self._preparer.prepare(self._context)
-                    if self._control.current_state.envelope.outcome_candidate is None:
-                        environment = await prepare_run_environment(self._environments, self._context)
+                    had_candidate = self._control.current_state.envelope.outcome_candidate is not None
+                    if not had_candidate:
+                        environment = await prepare_run_environment(self._environments, self._control.current_context)
+                    decision = await self._control.commit_preparation()
+                    if (
+                        not isinstance(decision, AttemptPreparationRejected)
+                        and had_candidate
+                        and self._control.current_state.envelope.outcome_candidate is None
+                    ):
+                        environment = await prepare_run_environment(self._environments, self._control.current_context)
+                        decision = await self._control.commit_preparation()
                     if environment is None:
                         invocation = replace(invocation, environment=NoHarnessEnvironment())
                     else:
@@ -152,7 +161,6 @@ class RunAttemptExecutor[OutputT]:
                                 EnvironmentMount(environment, access=EnvironmentAccess(access))
                             ),
                         )
-                    decision = await self._control.commit_preparation()
                     if isinstance(decision, AttemptPreparationRejected):
                         finalization = decision
                     elif self._control.current_state.envelope.outcome_candidate is not None:

@@ -18,7 +18,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
-from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
+from .inbox_persistence import apply_run_outcome, has_pending_run_delivery, lock_inbox_related_runs
 from .lifecycle import append_run_attempt_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunStateStore, StoredRunState, run_state_key
@@ -276,6 +276,38 @@ class AttemptExecutionService:
         _require_state_scope(authority, current)
         await self.validate(authority)
         return await states.claim_writer(current, fence=authority.fence)
+
+    async def resume_completed_candidate(
+        self,
+        authority: AttemptContext,
+        states: RunStateStore,
+        current: StoredRunState,
+        *,
+        preparation: AttemptPreparationAccepted,
+    ) -> StoredRunState:
+        """Reopen only a predecessor's unsealed completion blocked by pending delivery."""
+
+        _require_state_scope(authority, current)
+        if (
+            current.envelope.checkpoint_kind != "completed"
+            or current.writer_fence != authority.fence
+            or current.envelope.last_checkpoint_fence >= authority.fence
+            or current.envelope.last_checkpoint_run_attempt_id == authority.run_attempt_id
+            or preparation.run_attempt_id != authority.run_attempt_id
+            or preparation.fence != authority.fence
+            or preparation.mutation.run_version != authority.expected_run_version
+            or preparation.mutation.attempt_version > authority.expected_attempt_version
+        ):
+            raise AttemptMutationError("completed recovery requires a prepared, claimed replacement Attempt")
+        now = assume_utc(self._clock())
+        async with transaction(self._sessions) as database:
+            run, attempt, _ = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
+            if attempt.status != RunAttemptStatus.leased.value or attempt.harness_run_id is not None:
+                raise AttemptMutationError("completed recovery must precede the replacement's Harness entry")
+            pending = await has_pending_run_delivery(database, run=run, state=current, now=now)
+        if not pending:
+            return current
+        return await states.resume_completed(current, run_attempt_id=authority.run_attempt_id, fence=authority.fence)
 
     async def fail(
         self,

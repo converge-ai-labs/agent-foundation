@@ -38,6 +38,9 @@ class _RecordingCoordinator:
     async def bind_model_attempt(self, binding: HarnessContextBinding) -> None:
         self.calls.append(("bind", binding))
 
+    async def before_input_node(self, boundary: HarnessHookBoundary) -> None:
+        self.calls.append(("before_input", boundary))
+
     async def before_model_request(
         self,
         boundary: HarnessHookBoundary,
@@ -167,7 +170,7 @@ async def test_control_capability_is_outermost_and_preserves_harness_values() ->
 
     assert result.output_or_raise() == "done"
     names = [name for name, _ in coordinator.calls]
-    assert names == ["bind", "before_model", "after_model", "after_tools"]
+    assert names == ["bind", "before_input", "before_model", "after_model", "after_tools"]
     assert ordinary_outer.calls == ["before_model", "after_model"]
     assert trace == [
         "control_before_model",
@@ -176,7 +179,7 @@ async def test_control_capability_is_outermost_and_preserves_harness_values() ->
         "control_after_model",
     ]
     boundaries = [value for name, value in coordinator.calls if name != "bind"]
-    assert len({id(boundary) for boundary in boundaries}) == 3
+    assert len({id(boundary) for boundary in boundaries}) == 4
     assert len(driver.contexts) == 1
 
 

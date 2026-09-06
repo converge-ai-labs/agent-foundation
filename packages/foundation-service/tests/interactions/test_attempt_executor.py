@@ -48,7 +48,7 @@ from a13n_service.interactions.run_control import AdaptedThreadInboxEntry, RunAt
 from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry, RunStateEnvelope
 from a13n_service.storage import ObjectStore
 from anyio import Event, create_task_group, sleep_forever
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from .conftest import ATTEMPT_ID, NOW, RUN_ID, TENANT_ID, initial_state
@@ -62,6 +62,13 @@ class _Execution(AttemptExecutionService):
     heartbeat_seen: Event = field(default_factory=Event)
     lose_heartbeat: bool = False
     reject_preparation: bool = False
+    pending_completion: bool = False
+
+    async def resume_completed_candidate(self, context, states, current, *, preparation):
+        self.trace.append("attempt:completion-recovery")
+        if self.pending_completion:
+            return await states.resume_completed(current, run_attempt_id=context.run_attempt_id, fence=context.fence)
+        return current
 
     async def validate(self, context: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:validate")
@@ -367,18 +374,18 @@ def _terminal_receipt(context: AttemptContext) -> RunTerminalReceipt:
 
 
 @pytest.mark.parametrize("reject_preparation", [False, True])
-@pytest.mark.parametrize("prepared_outcome", [False, True])
+@pytest.mark.parametrize("prepared_outcome", ["none", "adopt", "resume"])
 async def test_executor_supervises_two_children_before_cleanup_and_capacity_release(
     interaction_object_store: ObjectStore,
     reject_preparation: bool,
-    prepared_outcome: bool,
+    prepared_outcome: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trace: list[str] = []
     envelope = initial_state()
     states, stored = await _stored_state(interaction_object_store, envelope)
     context = _context(envelope.thread_id)
-    if prepared_outcome:
+    if prepared_outcome != "none":
         stored = await states.claim_writer(stored, fence=context.fence)
         stored = await states.replace(
             stored,
@@ -390,15 +397,23 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
                     "input_disposition": "applied",
                     "last_checkpoint_run_attempt_id": context.run_attempt_id,
                     "last_checkpoint_fence": context.fence,
-                    "harness": HarnessState.new(),
+                    "harness": HarnessState.new(
+                        thread_id=envelope.thread_id,
+                        message_history=[
+                            ModelRequest(parts=[UserPromptPart(content="original request")]),
+                            ModelResponse(parts=[TextPart(content="already done")]),
+                        ],
+                    ),
                     "outcome_candidate": CompletedOutcomeCandidate(output="already done"),
                 }
             ),
             run_attempt_id=context.run_attempt_id,
             fence=context.fence,
         )
-        context = replace(context, run_attempt_id="attempt-2", fence=2)
-    execution = _Execution(trace, reject_preparation=reject_preparation)
+        context = replace(context, run_attempt_id="att_2222222222222222", fence=2)
+    execution = _Execution(
+        trace, reject_preparation=reject_preparation, pending_completion=prepared_outcome == "resume"
+    )
     inbox = _Inbox(trace)
     control = RunAttemptControl(
         context=context,
@@ -448,10 +463,14 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     )
 
     receipt = await executor.run()
-    if prepared_outcome:
+    if prepared_outcome == "adopt" or (prepared_outcome == "resume" and reject_preparation):
         environment_preparer.assert_not_awaited()
     else:
-        environment_preparer.assert_awaited_once_with(lifecycle, context)
+        environment_preparer.assert_awaited_once()
+        prepared_lifecycle, prepared_context = environment_preparer.call_args.args
+        assert prepared_lifecycle is lifecycle
+        assert prepared_context.run_attempt_id == context.run_attempt_id
+        assert prepared_context.expected_attempt_version > context.expected_attempt_version
     await control.reconcile()
     await control.renew_lease()
     await control.request_handoff(RunAttemptYieldReason.service_drain)
@@ -464,7 +483,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     else:
         assert isinstance(receipt, RunTerminalReceipt)
         assert receipt.disposition is RunTerminalDisposition.completed
-        if prepared_outcome:
+        if prepared_outcome == "adopt":
             assert not projector.events
             assert "attempt:enter" not in trace
             assert "attempt:model" not in trace
@@ -473,6 +492,10 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
             assert control.current_state.envelope.outcome_candidate == CompletedOutcomeCandidate(output="already done")
         else:
             assert projector.events
+            assert trace.count("attempt:enter") == 1
+            if prepared_outcome == "resume":
+                assert trace.count("attempt:preparation-commit") == 2
+                assert trace.index("attempt:completion-recovery") < trace.index("attempt:enter")
     assert execution.heartbeat_seen.is_set()
     assert wakeups.acknowledged.is_set()
     assert trace.index("inbox:confirm") < trace.index("attempt:prepare")

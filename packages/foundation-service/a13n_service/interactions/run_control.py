@@ -222,6 +222,23 @@ class RunAttemptControl:
                 await self._fence()
                 raise
 
+    async def before_input_node(self, boundary: HarnessHookBoundary) -> None:
+        """Offer durable input before restored terminal history bypasses model hooks."""
+
+        async with self._gate.lock:
+            self._require_boundary(boundary)
+            try:
+                await self._prepare_boundary()
+                if (
+                    self._state.envelope.input_disposition == "applied"
+                    and self._gate.delivery_gate is _DeliveryGate.open
+                    and self._gate.handoff_reason is None
+                ):
+                    await self._offer_pending(boundary)
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
     async def before_model_request(
         self,
         boundary: HarnessHookBoundary,
@@ -327,6 +344,10 @@ class RunAttemptControl:
                     self._gate.phase = _CoordinatorPhase.terminal
                 else:
                     self._state = await self._execution.claim_state_writer(self._context, self._states, self._state)
+                    if isinstance(self._state.envelope.outcome_candidate, CompletedOutcomeCandidate):
+                        self._state = await self._execution.resume_completed_candidate(
+                            self._context, self._states, self._state, preparation=decision
+                        )
                 return decision
             except (AttemptAuthorityError, StaleStateWriter):
                 await self._fence()
@@ -380,6 +401,11 @@ class RunAttemptControl:
                     RunTerminalDisposition.completed
                     if isinstance(candidate, CompletedOutcomeCandidate)
                     else RunTerminalDisposition.waiting,
+                    *(
+                        (RunTerminalDisposition.retrying, RunTerminalDisposition.failed)
+                        if isinstance(candidate, CompletedOutcomeCandidate)
+                        else ()
+                    ),
                 )
                 self._gate.phase = _CoordinatorPhase.terminal
                 return receipt
@@ -465,7 +491,15 @@ class RunAttemptControl:
                             if isinstance(projection.candidate, CompletedOutcomeCandidate)
                             else RunTerminalDisposition.waiting
                         )
-                        _require_terminal_disposition(receipt, expected)
+                        _require_terminal_disposition(
+                            receipt,
+                            expected,
+                            *(
+                                (RunTerminalDisposition.retrying, RunTerminalDisposition.failed)
+                                if expected is RunTerminalDisposition.completed
+                                else ()
+                            ),
+                        )
                 self._gate.phase = _CoordinatorPhase.terminal
                 return receipt
             except AttemptAuthorityError:
