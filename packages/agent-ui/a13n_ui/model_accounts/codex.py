@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from a13n_harness.model_auth import CodexCredentials
-from anyio import Lock, to_thread
+from anyio import CancelScope, Lock, to_thread
+from anyio.lowlevel import checkpoint
 
 from ._common import (
     JsonSnapshot,
@@ -406,8 +407,15 @@ class CodexAccountStore:
                     provider=Provider.CODEX,
                 )
         document = _merge_credential(dict(latest.snapshot.document or {}), result, current_time)
-        await write_json_if_unchanged(self._path(), document, latest.snapshot.digest, provider=Provider.CODEX)
-        return await self.inspect(now=current_time)
+        # Cancellation before publication prevents the write. After this boundary,
+        # complete persistence and its projection before reporting the outcome.
+        await checkpoint()
+        projection: AccountProjection | None = None
+        with CancelScope(shield=True):
+            await write_json_if_unchanged(self._path(), document, latest.snapshot.digest, provider=Provider.CODEX)
+            projection = await self.inspect(now=current_time)
+        assert projection is not None
+        return projection
 
     async def logout(self) -> bool:
         """Remove the shared Codex subscription token set with a CAS write."""

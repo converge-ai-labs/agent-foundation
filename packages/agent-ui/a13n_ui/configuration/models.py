@@ -117,14 +117,21 @@ class EnvironmentVariableSource(StrictModel):
 
 class ApiKeyAuthentication(StrictModel):
     kind: Literal["api_key"]
-    env: str = Field(min_length=1, max_length=256)
+    env: str | None = Field(default=None, min_length=1, max_length=256)
+    credential_ref: ResourceId | None = None
 
     @field_validator("env")
     @classmethod
-    def _valid_environment_name(cls, value: str) -> str:
-        if not _ENV_NAME.fullmatch(value):
+    def _valid_environment_name(cls, value: str | None) -> str | None:
+        if value is not None and not _ENV_NAME.fullmatch(value):
             raise ValueError("env must be a valid environment variable name")
         return value
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if (self.env is None) == (self.credential_ref is None):
+            raise ValueError("API key authentication requires exactly one of env or credential_ref")
+        return self
 
 
 class CodexSubscriptionAuthentication(StrictModel):

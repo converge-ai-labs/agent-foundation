@@ -43,6 +43,7 @@ class SetupSelection(StrictModel):
     providers: tuple[Literal["codex", "grok"], ...] = ()
     api_key_model: SetupApiKeyModel | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
+    connect_default: bool = False
     default_agent: ResourceId = "agent-default"
     project: ResourceId = "project-local"
     project_path: str = Field(min_length=1, max_length=4096)
@@ -69,12 +70,13 @@ class SetupPublication(StrictModel):
 
 
 def _capture(path: Path) -> dict[str, bytes]:
-    for recovery in path.parent.glob(".a13n-ui-setup-recovery-*"):
-        if (recovery / path.name).exists():
-            raise ConfigurationError(
-                f"An interrupted setup retained root configuration at {recovery / path.name}. Review and restore or move that recovery file before retrying.",
-                code="setup_recovery_required",
-            )
+    for parent in (path.parent, *(path.parent / name for name in _DIRECTORIES)):
+        for recovery in parent.glob(".a13n-ui-setup-recovery-*"):
+            if any(recovery.iterdir()):
+                raise ConfigurationError(
+                    f"An interrupted setup retained configuration at {recovery}. Review and restore or move it before retrying.",
+                    code="setup_recovery_required",
+                )
     entries: dict[str, bytes] = {}
     digest = _source_digest_or_none(path)
     if digest is not None:
@@ -198,6 +200,14 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
     return {name: yaml.safe_dump(value, sort_keys=False) for name, value in resources.items()}
 
 
+def _same_connection(actual: dict[str, object], desired: dict[str, object]) -> bool:
+    def authentication(resource: dict[str, object]) -> object:
+        value = resource.get("authentication")
+        return {key: item for key, item in value.items() if item is not None} if isinstance(value, dict) else value
+
+    return actual.get("route") == desired.get("route") and authentication(actual) == authentication(desired)
+
+
 async def preview_setup(
     path: Path,
     selection: SetupSelection,
@@ -206,16 +216,44 @@ async def preview_setup(
     content_plugin_root: Path | None = None,
 ) -> SetupPreview:
     baseline = await to_thread.run_sync(_capture, path)
-    existing_ids: set[str] = set()
+    existing: dict[str, tuple[str, dict[str, object]]] = {}
     for name, content in baseline.items():
         if name != path.name and name.endswith(".yaml"):
             resource = _parse_yaml_mapping(path.parent / name, content, code="configuration_resource_invalid")
             if isinstance(resource, dict) and isinstance(resource.get("id"), str):
-                existing_ids.add(resource["id"])
+                existing[resource["id"]] = (name, resource)
+    templates = _templates(selection)
+    connection_model: str | None = None
+    if selection.api_key_model is not None:
+        connection_model = "model-api-key"
+        old_model = existing.get(connection_model)
+        if old_model is not None:
+            desired = yaml.safe_load(templates["models/api-key.yaml"])
+            if not _same_connection(old_model[1], desired):
+                suffix = hashlib.sha256(json.dumps(desired, sort_keys=True).encode()).hexdigest()[:12]
+                connection_model = f"model-api-key-{suffix}"
+                desired["id"] = connection_model
+                del templates["models/api-key.yaml"]
+                templates[f"models/api-key-{suffix}.yaml"] = yaml.safe_dump(desired, sort_keys=False)
+                starter = yaml.safe_load(templates["agents/api-key.yaml"])
+                starter["model"] = connection_model
+                templates["agents/api-key.yaml"] = yaml.safe_dump(starter, sort_keys=False)
+    elif selection.providers:
+        provider = selection.default_agent.removeprefix("agent-")
+        connection_model = f"model-{provider if provider in selection.providers else selection.providers[0]}"
+    if connection_model is not None and connection_model in existing:
+        desired = next(
+            yaml.safe_load(text) for text in templates.values() if yaml.safe_load(text)["id"] == connection_model
+        )
+        if not _same_connection(existing[connection_model][1], desired):
+            raise ConfigurationError(
+                "The existing Model was edited and no longer matches this connection. Review the Model resource before retrying.",
+                code="configuration_mutation_conflict",
+            )
     files: dict[str, str] = {}
-    for name, text in _templates(selection).items():
+    for name, text in templates.items():
         resource_id = yaml.safe_load(text)["id"]
-        if resource_id in existing_ids:
+        if resource_id in existing:
             continue
         if name in baseline:
             raise ConfigurationError(
@@ -223,6 +261,20 @@ async def preview_setup(
                 code="configuration_mutation_conflict",
             )
         files[name] = text
+    if selection.connect_default and connection_model is not None:
+        current_agent = existing.get(selection.default_agent)
+        if current_agent is not None:
+            name, resource = current_agent
+            updated = {**resource, "model": connection_model}
+            if selection.instructions.strip():
+                updated["instructions"] = selection.instructions
+            files[name] = yaml.safe_dump(updated, sort_keys=False)
+        else:
+            for name, text in list(files.items()):
+                resource = yaml.safe_load(text)
+                if resource["id"] == selection.default_agent:
+                    resource["model"] = connection_model
+                    files[name] = yaml.safe_dump(resource, sort_keys=False)
     root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
     if not isinstance(root, dict):
         raise ConfigurationError("The root configuration must be a mapping.", code="configuration_invalid")
@@ -252,7 +304,7 @@ async def preview_setup(
     return SetupPreview(
         generation=_generation(baseline),
         files=files,
-        preserved_paths=tuple(sorted(name for name in baseline if name != path.name)),
+        preserved_paths=tuple(sorted(name for name in baseline if name not in files)),
         project_paths=tuple(root.path for root in loaded.projects[selection.project].roots),
         candidate_digest=loaded.source_digest,
     )
@@ -341,8 +393,8 @@ async def publish_setup(
             if baseline.get(name) == content:
                 continue
             expected = hashlib.sha256(baseline[name]).hexdigest() if name in baseline else None
-            if name == path.name and expected is not None:
-                await to_thread.run_sync(_publish_root_defaults, path, content, expected)
+            if expected is not None:
+                await to_thread.run_sync(_publish_root_defaults, path.parent / name, content, expected)
             else:
                 await to_thread.run_sync(_publish_content, path.parent / name, content, expected)
             published.append(name)

@@ -318,12 +318,15 @@ async def test_codex_cli_login_uses_harness_oauth_flow(
         def authorization_url(self) -> str:
             return "https://auth.example/authorize"
 
-        async def exchange_code_from_callback(self) -> CodexCredentials:
+        async def exchange_code_from_callback(self, *, timeout_seconds: float) -> CodexCredentials:
+            assert timeout_seconds == 900
             return credentials
 
-    monkeypatch.setattr(cli_module, "CodexOAuthFlow", Flow)
+    monkeypatch.setattr("a13n_ui.model_accounts.login.CodexOAuthFlow", Flow)
 
-    result = await cli_module._codex_cli_login(object())
+    from a13n_ui.model_accounts.codex import CodexLoginRequest
+
+    result = await cli_module._codex_cli_login(CodexLoginRequest(replacing_shared_account=False), device_code=False)
 
     assert result is credentials
     assert "https://auth.example/authorize" in capsys.readouterr().err
@@ -356,10 +359,10 @@ async def test_grok_cli_login_uses_native_browser_oauth_flow(
             return "https://auth.example/authorize"
 
         async def exchange_code_from_callback(self, *, timeout_seconds: float) -> GrokCredentials:
-            assert timeout_seconds == 600
+            assert timeout_seconds == 900
             return credentials
 
-    monkeypatch.setattr(cli_module, "GrokOAuthFlow", Flow)
+    monkeypatch.setattr("a13n_ui.model_accounts.login.GrokOAuthFlow", Flow)
 
     result = await cli_module._grok_cli_login(
         GrokLoginRequest(scope=DEFAULT_GROK_OAUTH_SCOPE, replacing_shared_account=False),
@@ -395,6 +398,7 @@ async def test_grok_cli_login_uses_device_authorization_when_requested(
         verification_uri = "https://issuer.example/device"
         verification_uri_complete = None
         user_code = "ABCD-1234"
+        expires_in = 600
 
         async def wait_for_credentials(self) -> GrokCredentials:
             return credentials
@@ -406,7 +410,7 @@ async def test_grok_cli_login_uses_device_authorization_when_requested(
             assert kwargs["client_id"] == "client-id"
             return Authorization()
 
-    monkeypatch.setattr(cli_module, "GrokDeviceAuthorizationFlow", DeviceFlow)
+    monkeypatch.setattr("a13n_ui.model_accounts.login.GrokDeviceAuthorizationFlow", DeviceFlow)
 
     result = await cli_module._grok_cli_login(
         GrokLoginRequest(
@@ -626,3 +630,20 @@ def _failed_outcome(failure: Any) -> RootOperationView:
             composition_id="1" * 64,
         ),
     )
+
+
+def test_cli_key_input_is_hidden_and_login_defaults_to_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    from click.testing import CliRunner
+
+    requests = []
+    monkeypatch.setattr(cli_module, "_execute", requests.append)
+    runner = CliRunner()
+    response = runner.invoke(cli_module.cli, ["auth", "key", "set", "key-test"], input="secret-command-key\n")
+    assert response.exit_code == 0, response.output
+    assert "secret-command-key" not in response.output
+    assert "secret-command-key" not in repr(requests[0])
+    assert requests[0].credential_key.get_secret_value() == "secret-command-key"
+    assert runner.invoke(cli_module.cli, ["auth", "login", "codex"]).exit_code == 0
+    assert requests[-1].device_code is True
+    assert runner.invoke(cli_module.cli, ["auth", "login", "grok", "--browser"]).exit_code == 0
+    assert requests[-1].device_code is False

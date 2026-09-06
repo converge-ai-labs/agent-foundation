@@ -89,6 +89,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Keys */
+        get: operations["api_keys_api_auth_keys_get"];
+        /** Put Api Key */
+        put: operations["put_api_key_api_auth_keys_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/keys/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Api Key */
+        delete: operations["delete_api_key_api_auth_keys__reference__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Login */
+        post: operations["start_login_api_auth_logins_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logins/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Login Status */
+        get: operations["login_status_api_auth_logins__session_id__get"];
+        put?: never;
+        post?: never;
+        /** Cancel Login */
+        delete: operations["cancel_login_api_auth_logins__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -336,6 +406,10 @@ export interface components {
             model_id?: string | null;
             /** Source Path */
             source_path: string;
+        };
+        /** ApiKeyStatus */
+        ApiKeyStatus: {
+            credential_ref: components["schemas"]["ResourceId"];
         };
         /**
          * AppState
@@ -726,6 +800,40 @@ export interface components {
             /** Payload Omitted */
             payload_omitted: boolean;
         };
+        /** LoginStatus */
+        LoginStatus: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "codex" | "grok";
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "device" | "browser";
+            /**
+             * State
+             * @default starting
+             * @enum {string}
+             */
+            state: "starting" | "waiting" | "succeeded" | "failed" | "cancelled" | "expired";
+            /** Verification Url */
+            verification_url?: string | null;
+            /** User Code */
+            user_code?: string | null;
+            /**
+             * Expires In
+             * @default 900
+             */
+            expires_in: number;
+            /** Error Code */
+            error_code?: string | null;
+            /** Message */
+            message?: string | null;
+        };
         /** ProjectSummary */
         ProjectSummary: {
             /** Project Id */
@@ -771,6 +879,7 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        ResourceId: string;
         /**
          * RootActivityState
          * @enum {string}
@@ -1283,9 +1392,9 @@ export interface components {
              */
             kind: "api_key";
             /** Env */
-            env: string;
+            env?: string | null;
+            credential_ref?: components["schemas"]["ResourceId"] | null;
         };
-        ResourceId: string;
         /** SetupApiKeyModel */
         SetupApiKeyModel: {
             /** Route */
@@ -1305,6 +1414,11 @@ export interface components {
              * @default
              */
             instructions: string;
+            /**
+             * Connect Default
+             * @default false
+             */
+            connect_default: boolean;
             /** @default agent-default */
             default_agent: components["schemas"]["ResourceId"];
             /** @default project-local */
@@ -1343,6 +1457,34 @@ export interface components {
             profile_id: "environment-native" | "environment-sandbox";
             /** Project Path */
             project_path: string;
+        };
+        /** ApiKeyInput */
+        ApiKeyInput: {
+            credential_ref: components["schemas"]["ResourceId"];
+            /**
+             * Key
+             * Format: password
+             */
+            key: string;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "codex" | "grok";
+            /**
+             * Method
+             * @default device
+             * @enum {string}
+             */
+            method: "device" | "browser";
+            /**
+             * Allow Account Switch
+             * @default false
+             */
+            allow_account_switch: boolean;
         };
         /** ApprovalDecision */
         ApprovalDecision: {
@@ -1576,6 +1718,167 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvironmentReadiness"];
+                };
+            };
+        };
+    };
+    api_keys_api_auth_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyStatus"][];
+                };
+            };
+        };
+    };
+    put_api_key_api_auth_keys_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyStatus"];
+                };
+            };
+        };
+    };
+    delete_api_key_api_auth_keys__reference__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_login_api_auth_logins_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+        };
+    };
+    login_status_api_auth_logins__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_login_api_auth_logins__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

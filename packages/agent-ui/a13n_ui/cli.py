@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
 from enum import Enum, StrEnum
 from pathlib import Path
@@ -15,13 +15,11 @@ from typing import Any
 import click
 from a13n_harness.model_auth import (
     CodexCredentials,
-    CodexOAuthFlow,
     GrokCredentials,
-    GrokDeviceAuthorizationFlow,
-    GrokOAuthFlow,
 )
 from a13n_logging import LogFormat, configure_logging
-from pydantic import BaseModel
+from anyio import fail_after
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from a13n_ui.app import AgentUiApp, open_agent_ui_app
 from a13n_ui.configuration import (
@@ -33,9 +31,6 @@ from a13n_ui.content_plugins import ContentPluginStore, InstalledContentPlugin
 from a13n_ui.environment_profiles import EnvironmentMode, environment_profile_id_for_mode
 from a13n_ui.errors import AgentUiError, ConfigurationError
 from a13n_ui.model_accounts import (
-    DEFAULT_GROK_OAUTH_SCOPE,
-    DEFAULT_GROK_OAUTH_SCOPES,
-    DEFAULT_GROK_OIDC_SCOPES,
     GrokLoginRequest,
     Provider,
 )
@@ -94,6 +89,7 @@ class CliRequest:
     provider: str | None = None
     allow_account_switch: bool = False
     device_code: bool = False
+    credential_key: SecretStr | None = field(default=None, repr=False)
     web_host: str = "127.0.0.1"
     web_port: int = 8765
     web_api_key: str | None = None
@@ -592,10 +588,47 @@ def auth_status_command(ctx: click.Context, provider: str | None, output_format:
     )
 
 
+@auth_group.group("key")
+def auth_key_group() -> None:
+    """Manage Host-local plaintext API keys without returning key bytes."""
+
+
+@auth_key_group.command("list")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text")
+@click.pass_context
+def auth_key_list(ctx: click.Context, output_format: str) -> None:
+    _execute(_request(ctx, command="auth", action="key-list", output_format=OutputFormat(output_format)))
+
+
+@auth_key_group.command("set")
+@click.argument("reference")
+@click.pass_context
+def auth_key_set(ctx: click.Context, reference: str) -> None:
+    """Add or replace a key using a hidden prompt, never a command-line key."""
+    from a13n_ui.model_accounts.api_keys import ApiKeyInput
+
+    secret = SecretStr(click.prompt("API key", hide_input=True, err=True))
+    try:
+        value = ApiKeyInput(credential_ref=reference, key=secret)
+    except ValidationError:
+        raise click.BadParameter("Use a valid reference such as key-primary and a nonempty key.") from None
+    _execute(_request(ctx, command="auth", action="key-set", ref=value.credential_ref, credential_key=value.key))
+
+
+@auth_key_group.command("delete")
+@click.argument("reference")
+@click.confirmation_option(prompt="Delete this key? Future model resolution using it will fail.")
+@click.pass_context
+def auth_key_delete(ctx: click.Context, reference: str) -> None:
+    _execute(_request(ctx, command="auth", action="key-delete", ref=reference))
+
+
 @auth_group.command("login")
 @click.argument("provider", type=_PROVIDER_CHOICE)
 @click.option("--allow-account-switch", is_flag=True)
-@click.option("--device-code", is_flag=True, help="Use Grok device authorization instead of browser callback.")
+@click.option(
+    "--device-code/--browser", default=True, help="Device authorization (default) or a local browser callback."
+)
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
 def auth_login_command(
@@ -714,30 +747,15 @@ async def _run(request: CliRequest) -> int:
             dangerously_bypass_permission=request.dangerously_bypass_permission,
         )
         return 0
-    if (
-        request.command == "auth"
-        and request.action == "login"
-        and request.provider == Provider.CODEX.value
-        and request.device_code
-    ):
-        raise ConfigurationError(
-            "--device-code is available only for Grok login.",
-            code="auth_device_code_unsupported",
-        )
-    use_grok_device_code = (
-        request.command == "auth"
-        and request.action == "login"
-        and request.provider == Provider.GROK.value
-        and request.device_code
-    )
+    use_device_code = request.device_code
 
     def app_factory() -> AbstractAsyncContextManager[AgentUiApp]:
         return open_agent_ui_app(
             settings,
             configuration_path=source.path,
             configuration_error=source.candidate_error,
-            codex_login=_codex_cli_login,
-            grok_login=lambda request: _grok_cli_login(request, device_code=use_grok_device_code),
+            codex_login=lambda request: _codex_cli_login(request, device_code=use_device_code),
+            grok_login=lambda request: _grok_cli_login(request, device_code=use_device_code),
         )
 
     if request.command in {None, "tui"} or (request.command == "setup" and request.output_format is OutputFormat.text):
@@ -829,50 +847,33 @@ def _tui_launch_options(request: CliRequest) -> TuiLaunchOptions:
     return TuiLaunchOptions(thread_id=request.thread_id, defaults=defaults, show_setup=request.command == "setup")
 
 
-async def _codex_cli_login(request: object) -> CodexCredentials:
-    del request
-    flow = CodexOAuthFlow()
-    click.echo(f"Open this URL to authenticate Codex:\n{flow.authorization_url()}", err=True)
-    return await flow.exchange_code_from_callback()
+def _present_login(**values: object) -> None:
+    if values.get("verification_url"):
+        click.echo(f"Open this URL to authenticate:\n{values['verification_url']}", err=True)
+    if values.get("user_code"):
+        click.echo(f"Confirm this code in your browser: {values['user_code']}", err=True)
+    if values.get("message"):
+        click.echo(values["message"], err=True)
+    click.echo("Waiting for authorization (Ctrl+C to cancel)...", err=True)
 
 
-async def _grok_cli_login(request: object, *, device_code: bool) -> GrokCredentials:
+async def _codex_cli_login(request: object, *, device_code: bool = True) -> CodexCredentials:
+    from a13n_ui.model_accounts.codex import CodexLoginRequest
+    from a13n_ui.model_accounts.login import authorize_codex
+
+    if not isinstance(request, CodexLoginRequest):
+        raise TypeError("Codex login requires CodexLoginRequest")
+    with fail_after(900):
+        return await authorize_codex(request, "device" if device_code else "browser", _present_login)
+
+
+async def _grok_cli_login(request: object, *, device_code: bool = True) -> GrokCredentials:
+    from a13n_ui.model_accounts.login import authorize_grok
+
     if not isinstance(request, GrokLoginRequest):
         raise TypeError("Grok login requires GrokLoginRequest")
-    try:
-        issuer, client_id = request.scope.rsplit("::", 1)
-    except ValueError as exc:
-        raise ConfigurationError(
-            "The selected Grok authentication scope is invalid.",
-            code="account_scope_incompatible",
-        ) from exc
-    if not issuer or not client_id:
-        raise ConfigurationError(
-            "The selected Grok authentication scope is invalid.",
-            code="account_scope_incompatible",
-        )
-    scopes = DEFAULT_GROK_OAUTH_SCOPES if request.scope == DEFAULT_GROK_OAUTH_SCOPE else DEFAULT_GROK_OIDC_SCOPES
-    if device_code:
-        authorization = await GrokDeviceAuthorizationFlow.start(
-            issuer=issuer,
-            client_id=client_id,
-            scopes=scopes,
-            referrer="agent-ui",
-        )
-        url = authorization.verification_uri_complete or authorization.verification_uri
-        click.echo(f"Open this URL to authenticate Grok:\n{url}", err=True)
-        click.echo(f"Confirm this code in your browser: {authorization.user_code}", err=True)
-        click.echo("Waiting for Grok authorization...", err=True)
-        return await authorization.wait_for_credentials()
-
-    flow = await GrokOAuthFlow.discover(
-        issuer=issuer,
-        client_id=client_id,
-        scopes=scopes,
-        referrer="agent-ui",
-    )
-    click.echo(f"Open this URL to authenticate Grok:\n{flow.authorization_url()}", err=True)
-    return await flow.exchange_code_from_callback(timeout_seconds=600)
+    with fail_after(900):
+        return await authorize_grok(request, "device" if device_code else "browser", _present_login)
 
 
 async def _run_management(
@@ -993,6 +994,20 @@ async def _run_management(
 
     if request.command != "auth" or request.action is None:
         raise RuntimeError("Unsupported Agent UI CLI command")
+    if request.action.startswith("key-"):
+        from a13n_ui.model_accounts.api_keys import ApiKeyInput
+
+        if request.action == "key-list":
+            _print_projection(await app.list_api_keys(), request.output_format)
+        elif request.action == "key-set" and request.ref is not None and request.credential_key is not None:
+            _print_projection(
+                await app.put_api_key(ApiKeyInput(credential_ref=request.ref, key=request.credential_key)),
+                request.output_format,
+            )
+        elif request.action == "key-delete" and request.ref is not None:
+            await app.delete_api_key(request.ref)
+            _print_projection({"credential_ref": request.ref, "deleted": True}, request.output_format)
+        return 0
     if request.action == "status" and request.provider is None:
         result: object = {
             "accounts": [

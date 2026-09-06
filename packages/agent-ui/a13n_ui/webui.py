@@ -26,6 +26,8 @@ from a13n_ui.app import AgentUiApp, AppStatus
 from a13n_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_ui.errors import AgentUiError
 from a13n_ui.live import LiveCursor, LiveEvent, SummaryCursor, SummaryInvalidation
+from a13n_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
+from a13n_ui.model_accounts.login import LoginRequest, LoginStatus
 from a13n_ui.setup import EnvironmentReadiness, SetupStatus
 from a13n_ui.surfaces import (
     DecisionBatchView,
@@ -322,6 +324,30 @@ def create_webui(
         if readiness is None:
             raise AgentUiError("Environment preflight was cancelled.", code="preflight_cancelled")
         return readiness
+
+    @server.get("/api/auth/keys", response_model=tuple[ApiKeyStatus, ...])
+    async def api_keys() -> tuple[ApiKeyStatus, ...]:
+        return await app().list_api_keys()
+
+    @server.put("/api/auth/keys", response_model=ApiKeyStatus, openapi_extra=_body(ApiKeyInput))
+    async def put_api_key(request: Request) -> ApiKeyStatus:
+        return await app().put_api_key(await _document(request, ApiKeyInput))
+
+    @server.delete("/api/auth/keys/{reference}")
+    async def delete_api_key(reference: str) -> None:
+        await app().delete_api_key(reference)
+
+    @server.post("/api/auth/logins", response_model=LoginStatus, openapi_extra=_body(LoginRequest))
+    async def start_login(request: Request) -> LoginStatus:
+        return await app().start_login(await _document(request, LoginRequest))
+
+    @server.get("/api/auth/logins/{session_id}", response_model=LoginStatus)
+    async def login_status(session_id: str) -> LoginStatus:
+        return await app().login_status(session_id)
+
+    @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
+    async def cancel_login(session_id: str) -> LoginStatus:
+        return await app().cancel_login(session_id)
 
     @server.get("/api/projects", response_model=tuple[ProjectSummary, ...])
     async def projects() -> tuple[ProjectSummary, ...]:

@@ -284,3 +284,32 @@ def test_openapi_export_does_not_open_app() -> None:
 
     document = openapi_document(create_webui(forbidden, api_key="key"))
     assert "/api/setup/apply" in document["paths"]
+
+
+@pytest.mark.anyio
+async def test_webui_key_management_is_authenticated_and_never_returns_secret(
+    tmp_path: Path, account_home: None
+) -> None:
+    @asynccontextmanager
+    async def factory():
+        async with open_agent_ui_app(_settings(tmp_path / "state"), host_mode="webui") as app:
+            yield app
+
+    server = create_webui(factory, api_key="server-access")
+    async with (
+        server.router.lifespan_context(server),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://127.0.0.1") as client,
+    ):
+        assert (
+            await client.put("/api/auth/keys", json={"credential_ref": "key-test", "key": "private-key"})
+        ).status_code == 401
+        client.headers["Authorization"] = "Bearer server-access"
+        saved = await client.put("/api/auth/keys", json={"credential_ref": "key-test", "key": "private-key"})
+        assert saved.status_code == 200
+        assert saved.json() == {"credential_ref": "key-test"}
+        assert (await client.get("/api/auth/keys")).json() == [{"credential_ref": "key-test"}]
+        bad = await client.put("/api/auth/keys", json={"credential_ref": "INVALID", "key": "private-key"})
+        assert bad.status_code == 400
+        assert "private-key" not in bad.text
+        assert (await client.delete("/api/auth/keys/key-test")).status_code == 200
+        assert (await client.get("/api/auth/keys")).json() == []

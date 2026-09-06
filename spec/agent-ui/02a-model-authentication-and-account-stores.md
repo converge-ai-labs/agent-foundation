@@ -27,7 +27,8 @@ The conceptual union is:
 ```python
 class ApiKeyAuthentication(BaseModel):
     kind: Literal["api_key"]
-    env: str
+    env: str | None = None
+    credential_ref: str | None = None  # exactly one source
 
 
 class CodexSubscriptionAuthentication(BaseModel):
@@ -74,6 +75,12 @@ The two products do not share one JSON schema. Codex stores one auth envelope co
 
 A physical `auth.json` file is not unconditionally authoritative. The adapter first resolves the upstream product's effective credential-store policy. Codex can select file, keyring, automatic, or ephemeral storage. Grok Build can override the file path and can receive process-supplied credentials that are not a writable shared login store. Agent UI follows the supported file policy or reports the selected mode as unsupported and requires the user or embedding Host to switch the upstream product policy explicitly; it never claims that an in-memory selection changed upstream configuration, merges stores, or creates a shadow credential source.
 
+## Host-local API Keys
+
+API-key authentication selects exactly one `env` name or `credential_ref` resource ID. A reference resolves in the Host data root's independent `auth.json`, not the configuration tree. The file contains a versioned map of references to plaintext keys; it contains no subscription tokens. Agent UI supports explicit add/replace/delete and lists only reference IDs. Reads, diagnostics, exports, and frozen Run recipes never return key bytes or masked key fragments. Environment references remain supported without implicit fallback.
+
+The Host rereads a referenced key when constructing a Model for a Run. Updating or deleting a key affects future resolution, not already constructed clients. Missing references fail before a provider request. Writes serialize across cooperating processes, preserve unrelated references, and atomically replace the file with POSIX mode `0600` in a private directory. Invalid files fail without overwrite. This is a local plaintext store, not encryption or a keyring.
+
 ## Credential Source Behavior
 
 For every Harness `load()`, the adapter rereads the selected product store and returns one complete credential set. It does not retain a long-lived token snapshot. A missing, malformed, incompatible, or differently scoped store fails explicitly.
@@ -116,19 +123,24 @@ This default creates only the matching in-memory adapter. No file entry exists u
 
 ### Browser and Device Presentation
 
-Grok browser login discovers OIDC metadata, binds a random available `127.0.0.1` callback port, creates an authorization-code plus PKCE S256 flow with state and nonce, and waits at most ten minutes for the exact callback. Agent UI writes the authorization URL and progress to stderr and may ask the operating system to open it; failure to open a browser leaves the copyable URL usable. The callback and token exchange complete before the product-store write.
+CLI and TUI default to device authorization for both providers. The Host presents a verification URL and user code; the user may open the URL in any browser. No browser is opened automatically and no local callback is needed. Grok uses RFC 8628; Codex uses its vendor-specific device-code/authorization-code exchange and registered device callback. Unsupported device authorization fails explicitly without fallback.
 
-`auth login grok --device-code` selects native RFC 8628 device authorization. Agent UI writes the validated verification URL, user code, and waiting progress to stderr, optionally opens the URL, and delegates bounded polling to Harness. `--device-code` is rejected for Codex. The device code, browser authorization code, PKCE verifier, OAuth tokens, and raw claims never use stdout or stderr.
+WebUI offers explicit browser and device actions. Codex browser authorization retains `http://localhost:1455/auth/callback`; Grok discovery uses its compatible loopback callback. Neither callback is rewritten to the remote WebUI origin. Browser login requires the user's browser to reach the Host's loopback listener; otherwise the user selects device authorization. PKCE, state, nonce, and token validation remain Harness-owned.
+
+Interactive sessions are process-local and bounded to fifteen minutes, with starting, waiting, succeeded, failed, cancelled, and expired states. One session can be active per App, with at most sixteen recent terminal results retained. Polling and cancellation do not block conversation operations. App shutdown cancels pending authorization. Cancellation before credential publication prevents the write; once publication starts, its write and resulting projection are shielded to report the actual outcome. Persistence errors may require inspecting account status before retrying. Session reads return only presentation information, never the device secret, authorization code, PKCE verifier, OAuth tokens, or raw claims. Terminal results discard the presentation URL and user code.
 
 ### CLI Contract
 
 ```text
+a13n-ui auth key list [--format json]
+a13n-ui auth key set <reference>
+a13n-ui auth key delete <reference> [--yes]
 a13n-ui auth status [codex|grok]
-a13n-ui auth login <codex|grok> [--allow-account-switch] [--device-code]
+a13n-ui auth login <codex|grok> [--allow-account-switch] [--device-code|--browser]
 a13n-ui auth logout <codex|grok>
 ```
 
-`status` without a provider returns both provider projections in stable `codex`, then `grok` order; selecting a provider returns one. `login` and `logout` require a provider. Login uses browser authorization unless Grok device authorization is explicitly selected. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.
+`status` without a provider returns both provider projections in stable `codex`, then `grok` order; selecting a provider returns one. `login` and `logout` require a provider. Login defaults to device authorization; `--browser` explicitly selects a Host-local callback. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.
 
 Every command supports detached text and JSON result rendering. Authorization progress and URLs use stderr in both formats; the final credential-free projection uses stdout. Login cancellation or failure exits nonzero and leaves the previous shared account unchanged.
 
@@ -174,6 +186,6 @@ Provider file schemas, path policy, and login presentation may evolve with upstr
 06. Authentication kind is explicit and never falls back across providers.
 07. Run compositions capture authentication provenance, never credential bytes.
 08. Unknown or incompatible account stores fail without overwrite.
-09. Agent UI executable surfaces natively support Codex and Grok browser login; Grok alone also supports explicit device-code login.
+09. Both providers support native device authorization; browser login is an explicit alternative and preserves the provider-compatible redirect.
 10. A first Grok login uses the reviewed production profile, while an existing unambiguous compatible scope retains its own issuer and client identity.
-11. Auth command results and diagnostics never expose token material, authorization codes, device codes, PKCE values, or raw identity claims.
+11. Auth results and diagnostics never expose token material, authorization codes, secret device codes, PKCE values, or raw identity claims; the human-facing user code is shown only during authorization.

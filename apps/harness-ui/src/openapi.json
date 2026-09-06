@@ -147,6 +147,195 @@
         }
       }
     },
+    "/api/auth/keys": {
+      "get": {
+        "summary": "Api Keys",
+        "operationId": "api_keys_api_auth_keys_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyStatus"
+                  },
+                  "type": "array",
+                  "title": "Response Api Keys Api Auth Keys Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Api Key",
+        "operationId": "put_api_key_api_auth_keys_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/keys/{reference}": {
+      "delete": {
+        "summary": "Delete Api Key",
+        "operationId": "delete_api_key_api_auth_keys__reference__delete",
+        "parameters": [
+          {
+            "name": "reference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reference"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logins": {
+      "post": {
+        "summary": "Start Login",
+        "operationId": "start_login_api_auth_logins_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logins/{session_id}": {
+      "get": {
+        "summary": "Login Status",
+        "operationId": "login_status_api_auth_logins__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancel Login",
+        "operationId": "cancel_login_api_auth_logins__session_id__delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "summary": "Projects",
@@ -950,6 +1139,19 @@
           "source_path"
         ],
         "title": "AgentSummary"
+      },
+      "ApiKeyStatus": {
+        "properties": {
+          "credential_ref": {
+            "$ref": "#/components/schemas/ResourceId"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "credential_ref"
+        ],
+        "title": "ApiKeyStatus"
       },
       "AppState": {
         "type": "string",
@@ -1997,6 +2199,100 @@
         "title": "LiveEvent",
         "description": "Detached bounded AG-UI event correlated to one complete root lineage."
       },
+      "LoginStatus": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "grok"
+            ],
+            "title": "Provider"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "device",
+              "browser"
+            ],
+            "title": "Method"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "waiting",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "expired"
+            ],
+            "title": "State",
+            "default": "starting"
+          },
+          "verification_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Url"
+          },
+          "user_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Code"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "default": 900
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "provider",
+          "method"
+        ],
+        "title": "LoginStatus"
+      },
       "ProjectSummary": {
         "properties": {
           "project_id": {
@@ -2127,6 +2423,12 @@
           "reason"
         ],
         "title": "ResetFrame"
+      },
+      "ResourceId": {
+        "type": "string",
+        "maxLength": 128,
+        "minLength": 3,
+        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
       },
       "RootActivityState": {
         "type": "string",
@@ -3608,25 +3910,35 @@
             "title": "Kind"
           },
           "env": {
-            "type": "string",
-            "maxLength": 256,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Env"
+          },
+          "credential_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "kind",
-          "env"
+          "kind"
         ],
         "title": "ApiKeyAuthentication"
-      },
-      "ResourceId": {
-        "type": "string",
-        "maxLength": 128,
-        "minLength": 3,
-        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
       },
       "SetupApiKeyModel": {
         "properties": {
@@ -3677,6 +3989,11 @@
             "maxLength": 1048576,
             "title": "Instructions",
             "default": ""
+          },
+          "connect_default": {
+            "type": "boolean",
+            "title": "Connect Default",
+            "default": false
           },
           "default_agent": {
             "$ref": "#/components/schemas/ResourceId",
@@ -3767,6 +4084,60 @@
           "project_path"
         ],
         "title": "PreflightRequest"
+      },
+      "ApiKeyInput": {
+        "properties": {
+          "credential_ref": {
+            "$ref": "#/components/schemas/ResourceId"
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 32768,
+            "minLength": 1,
+            "format": "password",
+            "title": "Key",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "credential_ref",
+          "key"
+        ],
+        "title": "ApiKeyInput"
+      },
+      "LoginRequest": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "grok"
+            ],
+            "title": "Provider"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "device",
+              "browser"
+            ],
+            "title": "Method",
+            "default": "device"
+          },
+          "allow_account_switch": {
+            "type": "boolean",
+            "title": "Allow Account Switch",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider"
+        ],
+        "title": "LoginRequest"
       },
       "ApprovalDecision": {
         "additionalProperties": false,

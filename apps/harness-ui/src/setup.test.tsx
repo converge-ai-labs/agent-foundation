@@ -100,6 +100,10 @@ it("keeps API-key references and additional instructions across Back navigation"
   mocks.post.mockResolvedValue({ data: preview });
   mount();
   fireEvent.click(screen.getByRole("radio", { name: "API key — BYOK" }));
+  fireEvent.change(
+    screen.getByRole("combobox", { name: "Credential source" }),
+    { target: { value: "env" } },
+  );
   fireEvent.change(screen.getByRole("textbox", { name: "Model route" }), {
     target: { value: "openai:gpt-5" },
   });
@@ -245,4 +249,36 @@ it("cancels a pending probe without enabling Sandbox", async () => {
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+});
+
+it("does not submit stale new-Agent instructions for a read-only existing Agent", async () => {
+  mocks.get.mockResolvedValue({ data: [] });
+  mocks.post.mockResolvedValue({ data: preview });
+  mount({
+    agents: { "agent-existing": "Existing" },
+    default_agent: "agent-existing",
+  });
+  fireEvent.click(screen.getByRole("radio", { name: "API key — BYOK" }));
+  fireEvent.change(
+    screen.getByRole("combobox", { name: "Credential source" }),
+    { target: { value: "env" } },
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Model route" }), {
+    target: { value: "openai:test" },
+  });
+  click("Continue");
+  click("Continue");
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Additional instructions (optional)" }),
+    { target: { value: "For new Agent only" } },
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "Default agent" }), {
+    target: { value: "agent-existing" },
+  });
+  click("Preview configuration");
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledOnce());
+  expect(mocks.post.mock.calls[0][1].body).toMatchObject({
+    default_agent: "agent-existing",
+    instructions: "",
+  });
 });

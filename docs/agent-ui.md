@@ -13,18 +13,20 @@ One foreground process owns one App and its active root and child work. There is
 
 On an empty installation, the terminal and browser offer setup before your first conversation. Reopen it with `a13n-ui setup`, the terminal `/setup` command, or the browser Setup action.
 
-1. **Model connection.** Choose API key (BYOK) or subscription (BYOS), or **Not now**. BYOK configures a model route and a host environment-variable reference; it does not store a key. BYOS discovers compatible Codex/Grok login, with all available providers initially selected. Discovery makes no login, refresh, or model request.
+1. **Model connection.** Choose API key (BYOK) or subscription (BYOS), or **Not now**. BYOK saves a key in the Host-local plaintext `auth.json` and configures its reference, or uses an existing host environment variable. BYOS discovers compatible Codex/Grok login, with all available providers initially selected. Discovery makes no login, refresh, or model request.
 2. **Execution environment.** Confirm a new Project's directory or reuse existing roots. Sandbox must pass its production readiness check for every root before Continue is enabled. Retry or cancel a failed check, or explicitly choose Full Control to run as your host user without isolation. This step works even if you skipped model connection.
 3. **Your Agent.** A default Agent is already selected. Choose model-specific options and optional additional instructions, inspect the proposed files, then **Finish setup**. Back preserves your choices. Preview writes nothing, and only Finish setup publishes files.
 
-**Not now** is not Cancel setup: it lets you complete the remaining steps with a default Agent that has no Model yet. You can enter the conversation shell and keep a draft, but that Agent cannot execute until a Model is configured. Reopen Setup to choose a connected starter or existing Agent; existing Agent files are preserved rather than silently rebound. Restarting does not reopen onboarding just because you deferred the connection.
+**Not now** is not Cancel setup: it lets you complete the remaining steps with a default Agent that has no Model yet. You can enter the conversation shell and keep a draft, but that Agent cannot execute until a Model is configured. Reopen Setup to choose a connected starter or existing Agent; enable **Connect the selected Agent to this model** to bind its model while preserving its other fields. Restarting does not reopen onboarding just because you deferred the connection.
 
-The subscription step currently reuses external login, not an embedded authorization flow. If no compatible login exists, complete an explicit login in another terminal on the server host, then use Refresh accounts:
+The subscription step reuses existing login or starts authorization directly. Terminal setup uses a device URL and user code; open the URL in any browser. WebUI offers browser login and device authorization. The CLI also defaults to device authorization:
 
 ```console
 a13n-ui auth login codex
 a13n-ui auth login grok
 ```
+
+Use `--browser` only when your browser can reach the Host's loopback callback. Codex retains `http://localhost:1455/auth/callback`; a remote WebUI URL cannot replace that registered redirect. Device authorization needs no callback and is the appropriate choice for a remote Host. No browser opens automatically, and unsupported device authorization never silently falls back. Login progress supports cancellation and expires within fifteen minutes.
 
 Do not paste OAuth tokens into setup. Login uses the compatible provider store. A different shared account requires the normal explicit account-switch confirmation. Availability is not a guarantee that every model is entitled to your subscription.
 
@@ -43,7 +45,13 @@ Starter Agents enable file/shell tools and project-aware skills. Every Agent rec
 
 ### API-key configuration
 
-The API-key step takes a supported `provider:model-name` route and the name of an environment variable, for example `OPENAI_API_KEY`. The variable must exist in the **Agent UI server process**, not just the browser or another terminal. Set it using your normal local secret-management mechanism before launching Agent UI. Do not paste the key into either field. Direct Key entry/storage and in-wizard subscription authorization remain unimplemented; a completed wizard is not proof that credentials or model access work.
+The API-key step takes a supported `provider:model-name` route. Choose **Host-local saved key** to add or replace a password-masked key with a reference such as `key-primary`, or select an existing reference. **Delete key** removes that reference; future model resolution using it fails explicitly. The UI never reads a saved key back. Saving does not make a provider request or prove model entitlement.
+
+Keys save immediately to the Host data root's independent `auth.json`, with private directory permissions and POSIX file mode `0600`. This file stores plaintext: protect the Host and its backups. It is not project configuration and contains no subscription tokens. Configuration previews, snapshots, and exports contain only the reference, never key bytes. Cancelling setup does not undo a credential save or completed subscription login.
+
+The CLI provides `a13n-ui auth key list`, `a13n-ui auth key set key-primary` (hidden prompt), and `a13n-ui auth key delete key-primary` (confirmation). It never accepts a key as a command-line argument.
+
+Alternatively choose **Host environment variable**, for example `OPENAI_API_KEY`. The variable must exist in the **Agent UI server process**, not just a browser or another terminal. Enter its name, not the key. This source has no implicit fallback to a saved key.
 
 ### Files and recovery
 
@@ -54,11 +62,11 @@ a13n-ui config path
 a13n-ui config validate
 ```
 
-On Unix-like systems the default root is `~/.a13n-ui/a13n-ui.yaml`; `--config PATH` selects another tree. Models, Agents, and Projects are ordinary YAML files in sibling `models/`, `agents/`, and `projects/` directories. Resources are created once, and existing edits are not overwritten by a later setup or upgrade. New defaults affect future conversations, not existing ones.
+On Unix-like systems the default root is `~/.a13n-ui/a13n-ui.yaml`; `--config PATH` selects another tree. Models, Agents, and Projects are ordinary YAML files in sibling `models/`, `agents/`, and `projects/` directories. Resources are created once. Explicitly connecting the selected Agent updates its model; existing instructions, other fields, and other Agents are preserved. Setup instructions customize newly created Agents; edit an existing Agent file to change its instructions. A changed API-key model gets a new resource rather than rewriting a shared Model. Upgrades never rewrite these resources. New defaults affect future conversations, not existing ones.
 
 Publication creates resources first and updates root defaults last. A multi-file filesystem update is not a transaction: a failure may leave completed files, and the result reports those paths. Review them and preview again. Do not assume closing a tab or a failed response rolled publication back. Browser navigation is temporarily blocked while Apply is pending.
 
-When updating an existing root, setup temporarily retains it in a private `.a13n-ui-setup-recovery-*` directory beside the configuration file. A crash or competing save can leave the retained original there. Further setup publication stops until you inspect both versions and restore or move the retained original. Do not delete the recovery file without inspecting it. Setup never deletes a competing save to force its own version into place.
+When updating an existing root or explicitly selected Agent, setup temporarily retains it in a private `.a13n-ui-setup-recovery-*` directory beside the configuration file. A crash or competing save can leave the retained original there. Further setup publication stops until you inspect both versions and restore or move the retained original. Do not delete the recovery file without inspecting it. Setup never deletes a competing save to force its own version into place.
 
 ## Sandbox or Full Control
 

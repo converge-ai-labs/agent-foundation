@@ -20,6 +20,7 @@ from a13n_ui.environment_paths import EnvironmentPathLayout
 from a13n_ui.errors import CompositionError
 from a13n_ui.extensions import AgentUiExtensionCatalog
 from a13n_ui.mcp_adapters import AgentUiMCP
+from a13n_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_ui.model_runtime import AgentUiModelResolver, SubscriptionSource, model_recipe_id
 
 from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
@@ -72,7 +73,9 @@ class AgentReconstructor:
         catalog: AgentUiExtensionCatalog | None = None,
         *,
         user_skills_root: Path | None = None,
+        api_keys: ApiKeyStore | None = None,
     ) -> None:
+        self._api_keys = api_keys
         self._catalog = catalog or AgentUiExtensionCatalog()
         self._user_skills_root = user_skills_root
 
@@ -130,6 +133,7 @@ class AgentReconstructor:
             model_resolver=AgentUiModelResolver(
                 model_recipes,
                 subscription_sources=subscription_sources,
+                api_keys=self._api_keys,
             ),
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
         )

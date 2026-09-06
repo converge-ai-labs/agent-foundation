@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, result, message, type Model } from "./client";
 
+import { ApiKeyConnection, SubscriptionLogin } from "./connections";
+
 type Selection = Model<"SetupSelection">;
 type Connection = "subscription" | "api_key" | "later";
 export function Setup({
@@ -20,9 +22,12 @@ export function Setup({
     status.providers.filter((p) => p.selected).map((p) => p.provider),
   );
   const [route, setRoute] = useState("");
+  const [keySource, setKeySource] = useState<"stored" | "env">("stored");
+  const [keyRef, setKeyRef] = useState<string | null>(null);
   const [keyEnv, setKeyEnv] = useState("OPENAI_API_KEY");
   const [model, setModel] = useState<Selection["codex_model"]>("gpt-5.6-terra");
   const [review, setReview] = useState(true);
+  const [connectDefault, setConnectDefault] = useState(true);
   const [instructions, setInstructions] = useState("");
   const [agent, setAgent] = useState(status.default_agent ?? "");
   const [project, setProject] = useState(
@@ -62,9 +67,16 @@ export function Setup({
     providers: selectedProviders,
     api_key_model:
       connection === "api_key"
-        ? { route, authentication: { kind: "api_key", env: keyEnv } }
+        ? {
+            route,
+            authentication:
+              keySource === "env"
+                ? { kind: "api_key", env: keyEnv }
+                : { kind: "api_key", credential_ref: keyRef },
+          }
         : null,
-    instructions,
+    instructions: status.agents[agent] ? "" : instructions,
+    connect_default: connection !== "later" && connectDefault,
     default_agent: agent,
     project,
     project_path: path,
@@ -159,7 +171,10 @@ export function Setup({
     environment === "environment-native" || !!readiness?.ready;
   const connectionReady =
     connection === "api_key"
-      ? !!route.trim() && /^[A-Za-z_][A-Za-z0-9_]*$/.test(keyEnv)
+      ? !!route.trim() &&
+        (keySource === "stored"
+          ? !!keyRef
+          : /^[A-Za-z_][A-Za-z0-9_]*$/.test(keyEnv))
       : providers.length > 0 || Object.keys(status.agents).length > 0;
   return (
     <section className="setup">
@@ -167,7 +182,8 @@ export function Setup({
       <h1>Make yourself at home.</h1>
       <p className="muted">
         Connect a model now or later, choose its execution authority, then make
-        an Agent yours. Nothing is written until you finish.
+        an Agent yours. Credentials save immediately; configuration is published
+        only after preview and Finish.
       </p>
       <ol className="setup-steps" aria-label="Setup progress">
         {["Model connection", "Execution environment", "Agent"].map(
@@ -195,7 +211,10 @@ export function Setup({
               type="radio"
               name="connection"
               checked={connection === "api_key"}
-              onChange={() => setConnection("api_key")}
+              onChange={() => {
+                setConnection("api_key");
+                setAgent("agent-api-key");
+              }}
             />
             API key — BYOK
           </label>
@@ -210,11 +229,15 @@ export function Setup({
           </label>
           {connection === "subscription" && (
             <>
-              <p className="muted">
-                Use an existing Codex or Grok login. To add an account, complete
-                login in a terminal on the server host, then refresh below.
-                In-app browser login is not connected to this wizard yet.
-              </p>
+              <SubscriptionLogin
+                connected={async (provider) => {
+                  await reload();
+                  setProviders((previous) => [
+                    ...new Set([...previous, provider]),
+                  ]);
+                  setAgent(`agent-${provider}`);
+                }}
+              />
               {status.providers.map((provider) => (
                 <div key={provider.provider}>
                   <label>
@@ -248,12 +271,6 @@ export function Setup({
           )}
           {connection === "api_key" && (
             <>
-              <p className="muted">
-                Configure an API-key model using a host environment variable.
-                This step does not save a key or verify provider access. Set the
-                variable before starting Agent UI; a browser's environment is
-                not the server environment.
-              </p>
               <label>
                 Model route
                 <input
@@ -263,17 +280,37 @@ export function Setup({
                 />
               </label>
               <label>
-                API key environment variable
-                <input
-                  value={keyEnv}
-                  onChange={(e) => setKeyEnv(e.target.value)}
-                  autoComplete="off"
-                />
+                Credential source
+                <select
+                  value={keySource}
+                  onChange={(e) =>
+                    setKeySource(e.target.value as "stored" | "env")
+                  }
+                >
+                  <option value="stored">Host-local saved key</option>
+                  <option value="env">Host environment variable</option>
+                </select>
               </label>
-              <p className="muted">
-                Enter the variable name, not the API key. Direct key storage is
-                not available in this wizard yet.
-              </p>
+              {keySource === "stored" ? (
+                <ApiKeyConnection
+                  selectedReference={keyRef}
+                  onSelect={setKeyRef}
+                />
+              ) : (
+                <label>
+                  API key environment variable
+                  <input
+                    aria-label="API key environment variable"
+                    value={keyEnv}
+                    onChange={(e) => setKeyEnv(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <span>
+                    Enter the variable name, not the key. The variable must
+                    exist on the Host.
+                  </span>
+                </label>
+              )}
             </>
           )}
           {connection === "later" && (
@@ -372,6 +409,15 @@ export function Setup({
         <fieldset disabled={!!busy}>
           <legend>Ready-to-use Agent defaults</legend>
           <label>
+            <input
+              type="checkbox"
+              checked={connectDefault}
+              onChange={(e) => setConnectDefault(e.target.checked)}
+            />
+            Connect the selected Agent to this model, preserving its other
+            fields
+          </label>
+          <label>
             Default agent
             <select value={agent} onChange={(e) => setAgent(e.target.value)}>
               {Object.entries(agents).map(([id, name]) => (
@@ -382,7 +428,8 @@ export function Setup({
             </select>
           </label>
           <p className="muted">
-            Existing Agents are preserved unchanged. New defaults affect new
+            Only the selected Agent's model and explicitly entered instructions
+            change when connection is enabled. New defaults affect new
             conversations only. An unconfigured Agent cannot send until you
             connect a model.
           </p>
@@ -461,7 +508,7 @@ export function Setup({
           <h2>Review files before applying</h2>
           <p className="muted">
             Destination: <code>{status.configuration_path}</code>. Existing
-            resources are preserved; defaults publish last.
+            unselected resources are preserved; defaults publish last.
           </p>
           {Object.entries(preview.files).map(([name, source]) => (
             <details key={name} open>

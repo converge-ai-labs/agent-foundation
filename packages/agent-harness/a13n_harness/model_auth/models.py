@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic_ai.exceptions import ModelAPIError
 
@@ -18,6 +18,14 @@ class ModelAuthenticationError(ModelAPIError):
 
 class CredentialRefreshError(ModelAuthenticationError):
     """A provider rejected or returned an invalid refresh response."""
+
+
+class DeviceAuthorizationError(CredentialRefreshError):
+    """A safe terminal outcome from a provider's device authorization protocol."""
+
+    def __init__(self, provider: str, reason: Literal["expired", "denied", "unsupported"]) -> None:
+        self.reason = reason
+        super().__init__(provider, f"Device authorization {reason}.")
 
 
 class CredentialPersistenceError(ModelAuthenticationError):
@@ -70,6 +78,7 @@ __all__ = [
     "CodexCredentials",
     "CredentialPersistenceError",
     "CredentialRefreshError",
+    "DeviceAuthorizationError",
     "GrokCredentialSource",
     "GrokCredentials",
     "ModelAuthenticationError",

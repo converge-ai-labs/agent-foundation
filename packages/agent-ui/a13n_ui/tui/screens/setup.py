@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import ValidationError
+from anyio import CancelScope, sleep
+from pydantic import SecretStr, ValidationError
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import BindingType
@@ -16,6 +17,8 @@ from textual.widgets import Button, Checkbox, Input, Label, Select, Static, Text
 from a13n_ui.app import AgentUiApp
 from a13n_ui.configuration.setup import SetupPreview, SetupSelection
 from a13n_ui.errors import AgentUiError
+from a13n_ui.model_accounts.api_keys import ApiKeyInput
+from a13n_ui.model_accounts.login import LoginRequest
 from a13n_ui.setup import SetupStatus
 
 
@@ -41,6 +44,7 @@ class SetupScreen(ModalScreen[bool]):
         self._step = 1
         self._busy = ""
         self._initialized = False
+        self._saved_keys: set[str] = set()
         self._ready_roots: tuple[str, ...] | None = None
 
     def compose(self) -> ComposeResult:
@@ -63,18 +67,34 @@ class SetupScreen(ModalScreen[bool]):
                     yield Checkbox("Codex subscription", id="setup-codex")
                     yield Checkbox("Grok subscription", id="setup-grok")
                     yield Static(
-                        "Add an account in another terminal on this host: a13n-ui auth login codex or a13n-ui auth login grok. Finish login, then refresh. This wizard reuses existing login; it does not present the authorization flow.",
+                        "Device authorization works from any browser and needs no callback on this Host. Account credentials save immediately to the compatible product store.",
                         markup=False,
                     )
+                    yield Checkbox("Allow replacing a different shared account", id="setup-account-switch")
+                    yield Button("Connect Codex with device code", id="setup-login-codex")
+                    yield Button("Connect Grok with device code", id="setup-login-grok")
                     yield Button("Refresh accounts", id="setup-retry")
                 with Vertical(id="setup-api-key"):
                     yield Static(
-                        "Use an existing API key from the host environment. No key is saved or tested here. Set the variable before launching Agent UI; enter its name below, not the secret.",
+                        "Keys save immediately to this Host's private plaintext auth.json. Configuration contains only a reference. Saving does not test provider access.",
                         markup=False,
                     )
                     yield Label("Model route (provider:model-name)")
                     yield Input(placeholder="provider:model-name", id="setup-api-route")
-                    yield Label("API key environment variable")
+                    yield Select[str](
+                        [("Host-local saved key", "stored"), ("Host environment variable", "env")],
+                        value="stored",
+                        allow_blank=False,
+                        id="setup-key-source",
+                    )
+                    yield Label("Credential reference (new or existing)")
+                    yield Input("key-primary", id="setup-key-ref")
+                    yield Input(placeholder="API key (never shown again)", password=True, id="setup-key-secret")
+                    yield Static("", id="setup-saved-keys", markup=False)
+                    yield Button("Save / replace key", id="setup-key-save")
+                    yield Checkbox("Confirm deletion of this credential reference", id="setup-key-delete-confirm")
+                    yield Button("Delete key", id="setup-key-delete")
+                    yield Label("API key environment variable (environment source only)")
                     yield Input("OPENAI_API_KEY", id="setup-api-env")
             with Vertical(id="setup-step-2"):
                 yield Label("Execution environment")
@@ -103,8 +123,13 @@ class SetupScreen(ModalScreen[bool]):
                 yield Label("Your default Agent")
                 yield Select[str]([], id="setup-agent")
                 yield Static(
-                    "Existing Agents are preserved. An unconfigured Agent cannot send until you connect a model. Defaults affect new conversations only.",
+                    "Connecting changes only the selected Agent's model and explicitly entered instructions. An unconfigured Agent cannot send until you connect a model. Defaults affect new conversations only.",
                     markup=False,
+                )
+                yield Checkbox(
+                    "Connect selected Agent to this model (preserve other Agent fields)",
+                    value=True,
+                    id="setup-connect-default",
                 )
                 yield Label("Codex model (subscription access varies)", id="setup-model-label")
                 yield Select[str](
@@ -129,15 +154,26 @@ class SetupScreen(ModalScreen[bool]):
                 yield Button("Continue", id="setup-next", variant="primary")
                 yield Button("Not now", id="setup-skip")
                 yield Button("Finish setup", id="setup-apply", variant="primary", disabled=True)
-                yield Button("Cancel check", id="setup-cancel-check")
+                yield Button("Cancel operation", id="setup-cancel-check")
                 yield Button("Cancel setup", id="setup-cancel")
 
     def on_mount(self) -> None:
+        self._load_keys()
         self._render_step()
         if self._status is not None:
             self._project_status(self._status)
         else:
             self._discover()
+
+    @work(exclusive=True, group="setup-key-discovery")
+    async def _load_keys(self) -> None:
+        try:
+            self._saved_keys = {item.credential_ref for item in await self._application.list_api_keys()}
+            self.query_one("#setup-saved-keys", Static).update(
+                "Saved references: " + ", ".join(sorted(self._saved_keys))
+            )
+        except AgentUiError as exc:
+            self._message(str(exc))
 
     def _message(self, value: str) -> None:
         self.query_one("#setup-message", Static).update(value)
@@ -170,7 +206,7 @@ class SetupScreen(ModalScreen[bool]):
             "next": self._step < 3,
             "skip": self._step == 1,
             "apply": self._step == 3,
-            "cancel-check": self._busy == "setup-probe",
+            "cancel-check": self._busy == "setup-probe" or self._busy.startswith("setup-login-"),
         }.items():
             button = self.query_one(f"#setup-{name}", Button)
             button.display = visible
@@ -233,7 +269,8 @@ class SetupScreen(ModalScreen[bool]):
                         f"{p.provider}: {p.action}" + (f" — {p.diagnostic}" if p.diagnostic else "")
                         for p in status.providers
                     ),
-                    status.diagnostic or "Connect now or choose Not now. Nothing is written until Finish setup.",
+                    status.diagnostic
+                    or "Credentials save immediately; configuration publishes after preview and Finish setup.",
                 ]
             )
         )
@@ -294,11 +331,22 @@ class SetupScreen(ModalScreen[bool]):
                 ),
                 "api_key_model": {
                     "route": self.query_one("#setup-api-route", Input).value,
-                    "authentication": {"kind": "api_key", "env": self.query_one("#setup-api-env", Input).value},
+                    "authentication": {"kind": "api_key", "env": self.query_one("#setup-api-env", Input).value}
+                    if self.query_one("#setup-key-source", Select).value == "env"
+                    else {
+                        "kind": "api_key",
+                        "credential_ref": self.query_one("#setup-key-ref", Input).value
+                        if self.query_one("#setup-key-ref", Input).value in self._saved_keys
+                        and not self.query_one("#setup-key-secret", Input).value
+                        else None,
+                    },
                 }
                 if mode == "api_key"
                 else None,
-                "instructions": self.query_one("#setup-instructions", TextArea).text,
+                "instructions": ""
+                if self.query_one("#setup-instructions", TextArea).read_only
+                else self.query_one("#setup-instructions", TextArea).text,
+                "connect_default": mode != "later" and self.query_one("#setup-connect-default", Checkbox).value,
                 "default_agent": self.query_one("#setup-agent", Select).value,
                 "project": self.query_one("#setup-project", Select).value,
                 "project_path": self.query_one("#setup-directory", Input).value,
@@ -318,7 +366,7 @@ class SetupScreen(ModalScreen[bool]):
         elif action == "setup-cancel-check":
             self.workers.cancel_group(self, "setup-operation")
             self._ready_roots = None
-            self._message("Sandbox check cancelled. Retry or explicitly choose Full Control.")
+            self._message("Operation cancelled. Previously saved credentials are retained.")
         elif action == "setup-retry":
             self._discover()
         elif action in {"setup-back", "setup-next", "setup-skip"}:
@@ -346,15 +394,79 @@ class SetupScreen(ModalScreen[bool]):
                             self._message("Add an account and refresh, or choose Not now.")
                             return
                     except ValidationError:
-                        self._message("Enter a model route and valid environment-variable name, or choose Not now.")
+                        self._message(
+                            "Enter a model route and save/select a credential or valid environment variable, or choose Not now."
+                        )
                         return
                 self._step = min(3, self._step + 1)
             self._render_step()
             self.query_one(f"#setup-step-{self._step}").scroll_visible()
+        elif action in {"setup-login-codex", "setup-login-grok", "setup-key-save", "setup-key-delete"}:
+            self._connect(action)
         elif action in {"setup-probe", "setup-preview", "setup-apply"}:
             if action == "setup-apply" and (self._step != 3 or not self._environment_ready()):
                 return
             self._operate(action)
+
+    @work(exclusive=True, group="setup-operation")
+    async def _connect(self, action: str) -> None:
+        self._busy = action
+        self._render_step()
+        session_id: str | None = None
+        try:
+            if action.startswith("setup-login-"):
+                provider = action.removeprefix("setup-login-")
+                request = LoginRequest.model_validate(
+                    {
+                        "provider": provider,
+                        "allow_account_switch": self.query_one("#setup-account-switch", Checkbox).value,
+                    }
+                )
+                status = await self._application.start_login(request)
+                session_id = status.session_id
+                while status.state in {"starting", "waiting"}:
+                    self._message(
+                        f"{provider}: {status.state}\n{status.verification_url or ''}\nUser code: {status.user_code or 'preparing...'}\nExpires within {status.expires_in} seconds. Use Cancel operation to stop."
+                    )
+                    await sleep(1)
+                    status = await self._application.login_status(session_id)
+                if status.state == "succeeded":
+                    self._project_status(await self._application.setup_status(rediscover=True))
+                    self.query_one(f"#setup-{provider}", Checkbox).value = True
+                    self._agents()
+                    self.query_one("#setup-agent", Select).value = f"agent-{provider}"
+                self._message(f"{provider}: {status.state}. {status.message or ''} {status.error_code or ''}")
+            else:
+                reference = self.query_one("#setup-key-ref", Input).value
+                if action == "setup-key-delete":
+                    if not self.query_one("#setup-key-delete-confirm", Checkbox).value:
+                        self._message(
+                            "Confirm credential deletion first. Future resolution using this reference will fail."
+                        )
+                        return
+                    await self._application.delete_api_key(reference)
+                else:
+                    secret = self.query_one("#setup-key-secret", Input)
+                    value = ApiKeyInput(credential_ref=reference, key=SecretStr(secret.value))
+                    secret.value = ""
+                    await self._application.put_api_key(value)
+                self._saved_keys = {item.credential_ref for item in await self._application.list_api_keys()}
+                self.query_one("#setup-saved-keys", Static).update(
+                    "Saved references: " + ", ".join(sorted(self._saved_keys))
+                )
+                self._invalidate()
+                self._message("Credential saved." if action == "setup-key-save" else "Credential deleted.")
+        except (AgentUiError, ValidationError) as exc:
+            self._message(
+                str(exc) if isinstance(exc, AgentUiError) else "Enter a valid credential reference and a nonempty key."
+            )
+        finally:
+            if session_id is not None:
+                with CancelScope(shield=True):
+                    await self._application.cancel_login(session_id)
+            self._busy = ""
+            if self.is_mounted:
+                self._render_step()
 
     @work(exclusive=True, group="setup-operation")
     async def _operate(self, action: str) -> None:

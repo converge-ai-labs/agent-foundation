@@ -525,3 +525,119 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
         outcome = await app.wait_root_operation(receipt.receipt_id)
         assert outcome.status.value == "completed", outcome.model_dump_json()
     assert calls == [True]
+
+
+@pytest.mark.anyio
+async def test_saved_key_connects_deferred_default_agent_and_first_native_conversation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_ui.app import open_agent_ui_app
+    from a13n_ui.model_accounts.api_keys import ApiKeyInput
+    from a13n_ui.prompts import DEFAULT_SYSTEM_PROMPT
+    from a13n_ui.settings import AgentUiSettings, StorageSettings
+    from pydantic import SecretStr
+    from pydantic_ai.messages import ModelRequest, SystemPromptPart
+    from pydantic_ai.models.function import FunctionModel
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "codex").mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("GROK_AUTH_PATH", str(tmp_path / "grok.json"))
+    monkeypatch.delenv("GROK_AUTH", raising=False)
+    seen = []
+
+    async def stream(messages, info):
+        assert any(
+            isinstance(p, SystemPromptPart) and p.content == DEFAULT_SYSTEM_PROMPT
+            for m in messages
+            if isinstance(m, ModelRequest)
+            for p in m.parts
+        )
+        assert "Keep my instructions." in info.instructions
+        yield "Connected."
+
+    def infer(route, *, provider_factory):
+        provider = provider_factory("openai-responses")
+        seen.append(provider.client.api_key)
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr("a13n_ui.model_runtime.infer_model", infer)
+    path = tmp_path / "config" / "config.yaml"
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+    ) as app:
+        deferred = _selection(
+            tmp_path, providers=(), default_agent="agent-default", instructions="Keep my instructions."
+        )
+        preview = await app.preview_setup(deferred)
+        assert (await app.apply_setup(deferred, expected_generation=preview.generation)).completed
+        await app.put_api_key(ApiKeyInput(credential_ref="key-test", key=SecretStr("first-secret")))
+        selected = deferred.model_copy(update={"instructions": "", "connect_default": True})
+        selected = SetupSelection.model_validate(
+            {
+                **selected.model_dump(),
+                "api_key_model": {
+                    "route": "openai:test",
+                    "authentication": {"kind": "api_key", "credential_ref": "key-test"},
+                },
+            }
+        )
+        preview = await app.preview_setup(selected)
+        assert "first-secret" not in preview.model_dump_json()
+        assert "agents/default.yaml" in preview.files
+        assert (await app.apply_setup(selected, expected_generation=preview.generation)).completed
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Hello")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status.value == "completed"
+        await app.put_api_key(ApiKeyInput(credential_ref="key-test", key=SecretStr("rotated-secret")))
+        next_thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=next_thread.thread_id, prompt="Hello again")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status.value == "completed"
+        assert seen == ["first-secret", "rotated-secret"]
+        await app.delete_api_key("key-test")
+        next_thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=next_thread.thread_id, prompt="Missing key")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status.value != "completed"
+        assert seen == ["first-secret", "rotated-secret"]
+    loaded = await load_agent_ui_configuration(path)
+    assert loaded.agents["agent-default"].instructions == "Keep my instructions."
+    for file in path.parent.rglob("*.yaml"):
+        assert "secret" not in file.read_text()
+
+
+@pytest.mark.anyio
+async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    first = _selection(
+        tmp_path,
+        providers=(),
+        default_agent="agent-api-key",
+        connect_default=True,
+        api_key_model={"route": "openai:first", "authentication": {"kind": "api_key", "env": "MY_KEY"}},
+    )
+    preview = await preview_setup(path, first, validate_candidate=_validate())
+    assert (
+        await publish_setup(path, first, expected_generation=preview.generation, validate_candidate=_validate())
+    ).completed
+    old_model = (tmp_path / "models" / "api-key.yaml").read_bytes()
+    second = SetupSelection.model_validate(
+        {
+            **first.model_dump(),
+            "api_key_model": {"route": "openai:second", "authentication": {"kind": "api_key", "env": "MY_KEY"}},
+        }
+    )
+    preview = await preview_setup(path, second, validate_candidate=_validate())
+    assert "models/api-key.yaml" not in preview.files
+    assert (
+        await publish_setup(path, second, expected_generation=preview.generation, validate_candidate=_validate())
+    ).completed
+    assert (tmp_path / "models" / "api-key.yaml").read_bytes() == old_model
+    loaded = await load_agent_ui_configuration(path)
+    assert loaded.agents["agent-api-key"].model != "model-api-key"
+    # A content-derived name is not authority: users can edit the generated resource.
+    generated = next((tmp_path / "models").glob("api-key-*.yaml"))
+    edited = generated.read_text().replace("MY_KEY", "DIFFERENT_ACCOUNT_KEY")
+    generated.write_text(edited)
+    with pytest.raises(ConfigurationError, match="no longer matches"):
+        await preview_setup(path, second, validate_candidate=_validate())
+    assert generated.read_text() == edited

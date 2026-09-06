@@ -83,6 +83,8 @@ from a13n_ui.model_accounts import (
     resolve_grok_policy,
     resolve_grok_scope,
 )
+from a13n_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
+from a13n_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
 from a13n_ui.root_execution import RootRunExecutor
 from a13n_ui.root_run import RootRunCoordinator
@@ -207,6 +209,8 @@ class AgentUiApp:
     ) -> None:
         self._settings = settings
         self._store = store
+        self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
+        self._logins: LoginSessions | None = None
         self._configuration_path = configuration_path
         self._content_plugin_root = store.layout.content_plugins
         self._catalog = catalog
@@ -236,6 +240,36 @@ class AgentUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
+
+    async def start_login(self, request: LoginRequest) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return self._logins.start(request)
+
+    async def login_status(self, session_id: str) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return self._logins.status(session_id)
+
+    async def cancel_login(self, session_id: str) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return await self._logins.cancel(session_id)
+
+    async def list_api_keys(self) -> tuple[ApiKeyStatus, ...]:
+        async with self._operation():
+            return await self._api_keys.list()
+
+    async def put_api_key(self, value: ApiKeyInput) -> ApiKeyStatus:
+        async with self._operation():
+            return await self._api_keys.put(value)
+
+    async def delete_api_key(self, reference: str) -> None:
+        async with self._operation():
+            await self._api_keys.delete(reference)
 
     @property
     def state(self) -> AppState:
@@ -1325,7 +1359,7 @@ async def open_agent_ui_app(
                 runtime_factories=selected_integrations.provider_runtime_factories,
             )
             environment_service = EnvironmentRunService(store, environment_reconstructor)
-            agent_reconstructor = AgentReconstructor(catalog)
+            agent_reconstructor = AgentReconstructor(catalog, api_keys=ApiKeyStore(store.layout.root / "auth.json"))
             live_hub = AgentUiLiveHub()
             summary_hub = AgentUiSummaryHub(epoch=live_hub.epoch)
             cleanup_timeout = min(
@@ -1465,6 +1499,7 @@ async def open_agent_ui_app(
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
+                    app._logins = LoginSessions(background, app._account)
                     if configuration_path is not None:
                         background.start_soon(app._observe_configuration)
                     try:

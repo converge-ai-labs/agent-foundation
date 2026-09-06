@@ -280,3 +280,57 @@ async def test_terminal_not_now_checks_environment_before_agent_and_finishes_wit
     await terminal.controller.close()
     assert "Use short answers." in (path.parent / "agents" / "default.yaml").read_text()
     assert not (path.parent / "models").exists()
+
+
+@pytest.mark.anyio
+async def test_terminal_saves_key_and_publishes_only_reference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from textual.widgets import Input, TextArea
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "codex").mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("GROK_AUTH_PATH", str(tmp_path / "grok.json"))
+    monkeypatch.delenv("GROK_AUTH", raising=False)
+    path = tmp_path / "config" / "config.yaml"
+
+    @asynccontextmanager
+    async def factory():
+        async with open_agent_ui_app(
+            AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+        ) as application:
+            yield application
+
+    terminal = AgentUiTerminalApp(app_factory=factory, launch_directory=tmp_path)
+    async with terminal.run_test(size=(110, 65)) as pilot:
+        async with asyncio.timeout(5):
+            while not isinstance(terminal.screen, SetupScreen):
+                await pilot.pause(0.02)
+        screen = terminal.screen
+        await pilot.pause()
+        screen.query_one("#setup-connection", Select).value = "api_key"
+        screen.query_one("#setup-api-route", Input).value = "openai:test"
+        screen.query_one("#setup-key-secret", Input).value = "private-terminal-key"
+        await pilot.pause()
+        screen.query_one("#setup-key-save", Button).press()
+        async with asyncio.timeout(5):
+            while "key-primary" not in screen._saved_keys or screen._busy:
+                await pilot.pause(0.02)
+        assert screen.query_one("#setup-key-secret", Input).value == ""
+        assert not path.exists()
+        screen.query_one("#setup-next", Button).press()
+        await pilot.pause()
+        screen.query_one("#setup-next", Button).press()
+        await pilot.pause()
+        screen.query_one("#setup-preview", Button).press()
+        async with asyncio.timeout(5):
+            while screen._preview is None:
+                await pilot.pause(0.02)
+        text = screen.query_one("#setup-files", TextArea).text
+        assert "credential_ref: key-primary" in text
+        assert "private-terminal-key" not in text
+        screen.query_one("#setup-apply", Button).press()
+        async with asyncio.timeout(5):
+            while terminal.terminal_state.lifecycle is not TerminalLifecycle.READY:
+                await pilot.pause(0.02)
+    await terminal.controller.close()
+    assert "credential_ref: key-primary" in (path.parent / "models" / "api-key.yaml").read_text()
