@@ -1250,8 +1250,14 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                 ),
             )
         )
-        assert 0 < partial_write.accepted_bytes < len(partial_payload)
-        assert partial_write.stdin_open is False
+        # Accepted bytes measure envd's bounded stdin writer, not bytes read by
+        # the payload. Windows' buffered writer may accept this entire chunk
+        # before observing that the reader closed its pipe.
+        assert 0 < partial_write.accepted_bytes <= len(partial_payload)
+        if sys.platform != "win32":
+            assert partial_write.accepted_bytes < len(partial_payload)
+        if partial_write.accepted_bytes < len(partial_payload):
+            assert partial_write.stdin_open is False
         await session.client.process_wait(
             ProcessWaitParams(
                 context=EIPCallContext(
@@ -1286,16 +1292,25 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                 ),
             )
         )
-        signaled = await session.client.process_signal(
-            ProcessSignalParams(
-                context=EIPCallContext(
-                    operation_id="process-signal-e2e",
-                ),
-                handle=signaled_process.process.handle,
-                signal=RequestedProcessSignal.TERMINATE,
-            )
+        signal_params = ProcessSignalParams(
+            context=EIPCallContext(operation_id="process-signal-e2e"),
+            handle=signaled_process.process.handle,
+            signal=RequestedProcessSignal.TERMINATE,
         )
-        assert signaled.accepted is True
+        if session.descriptor.execution_features.signal_terminate:
+            signaled = await session.client.process_signal(signal_params)
+            assert signaled.accepted is True
+        else:
+            assert "process.signal" not in session.descriptor.available_methods
+            with pytest.raises(EIPMethodError) as unsupported_signal:
+                await session.client.process_signal(signal_params)
+            assert unsupported_signal.value.error.data.error_type is ErrorType.UNSUPPORTED
+            await session.client.process_kill(
+                ProcessKillParams(
+                    context=EIPCallContext(operation_id="process-signal-fallback-kill-e2e"),
+                    handle=signaled_process.process.handle,
+                )
+            )
         signaled_terminal = await session.client.process_wait(
             ProcessWaitParams(
                 context=EIPCallContext(
