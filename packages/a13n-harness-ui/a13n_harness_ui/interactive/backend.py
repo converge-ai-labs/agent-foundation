@@ -33,6 +33,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
     TranscriptPage,
 )
+from a13n_harness_ui.thread_files import ComposerInput
 
 from .decisions import DecisionInteraction
 from .rendering import Status, StreamRenderer
@@ -407,7 +408,7 @@ class SessionBackend:
         self,
         renderer: StreamRenderer,
         *,
-        prompt: RunInputValue | None = None,
+        prompt: RunInputValue | ComposerInput | None = None,
         response: ThreadDeferredResponse | None = None,
         flush: Callable[[], Awaitable[None]] | None = None,
         admitted: Callable[[], None] | None = None,
@@ -429,7 +430,7 @@ class SessionBackend:
         self,
         renderer: StreamRenderer,
         *,
-        prompt: RunInputValue | None,
+        prompt: RunInputValue | ComposerInput | None,
         response: ThreadDeferredResponse | None,
         flush: Callable[[], Awaitable[None]] | None,
         admitted: Callable[[], None] | None,

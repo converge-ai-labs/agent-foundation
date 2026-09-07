@@ -189,6 +189,14 @@ The same adapter decision applies to the dedicated Direct Local user Skill mount
 
 Harness UI selects preparation under its own Host policy; Service Template preparation and retention settings are not Harness UI resources. Harness scope entry never performs a second provider connection.
 
+### Thread File Mount
+
+Each App-prepared root or child Run receives a `thread-files` mount for its own Thread file area. The [storage contract](03-local-storage-and-recovery.md#thread-files-and-automatic-scratch-cleanup) owns its persistence and cleanup. The mount contains `tmp/` for scratch work and `attachments/` for submitted inputs. Built-in Full Control and Sandbox modes bind this area as a separate root using the selected adapter and profile; model-facing paths follow the same canonical-host-path rule as Project roots. Scratch files are usable through real Environment file operations and explicit shell cwd selection, not merely through a path mentioned in a prompt.
+
+A Sandbox command selected in a Project root does not gain access to the Thread file mount. To process an attachment with a shell, select a cwd under the Thread file root; that sandbox can access its own scratch and attachments, not arbitrary Project or Host paths. Custom adapters receive a Host Direct Local file-only mount rather than silently interpreting a Host directory as a remote Provider workspace. Availability and permission ceilings remain authoritative. Release-owned guidance tells the model to preserve attachments and to copy valuable results out of scratch.
+
+This mount is not a Project binding or a durable shell-process recovery store. It publishes no Environment-state head. Finalization closes its Run-local Environment like other mounts while retaining the files themselves. Child Threads have their own file area; no parent's file authority is implicitly inherited.
+
 ## Host-authoritative Environment State
 
 Full Control and Sandbox bind Project roots directly as Provider configuration, preserve their Host paths in the Harness aggregate namespace, and ordinarily retain no portable re-entry state. Their identical path presentation does not change their distinct Direct Local and isolated EIP execution authority. A stateful Provider can return `EnvironmentState` for one root.

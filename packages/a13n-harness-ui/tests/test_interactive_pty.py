@@ -158,7 +158,8 @@ main(["setup"])
         _stop(process, master)
 
 
-def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path) -> None:
+@pytest.mark.parametrize("pasted", ["line1\nline2", "long pasted text\n" * 100])
+def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path, pasted: str) -> None:
     script = r"""
 import asyncio, json, time
 from contextlib import asynccontextmanager
@@ -181,7 +182,7 @@ class Backend:
         self.status.model = "fixture-model"
         return True
     async def execute(self, renderer, *, prompt=None, flush=None, admitted=None, skill_references=()):
-        Path("submitted.json").write_text(json.dumps(prompt[0].content))
+        Path("submitted.json").write_text(json.dumps(prompt.text))
         if admitted is not None:
             admitted()
         self.receipt_id = "receipt-fixture"
@@ -218,12 +219,12 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=load))
         assert b"\x1b[?1049l" not in output
         os.write(master, b"draft")
         assert not (tmp_path / "submitted.json").exists()
-        os.write(master, b"\x1b[200~line1\nline2\x1b[201~")
+        os.write(master, b"\x1b[200~" + pasted.encode() + b"\x1b[201~")
         time.sleep(0.1)
         assert not (tmp_path / "submitted.json").exists()
         os.write(master, b"\r")
         output += _read_until(master, b"fixture-stream")
-        assert json.loads((tmp_path / "submitted.json").read_text()) == "draftline1\nline2"
+        assert json.loads((tmp_path / "submitted.json").read_text()) == "draft" + pasted
         os.write(master, b"/mode detailed\r")
         output += _read_until(master, b"fixture.py")
         # Detailed mode retains formatted arguments; terminal diffing may split headings.

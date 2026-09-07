@@ -18,7 +18,7 @@ import uvicorn
 from anyio import create_task_group
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -46,6 +46,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
     TranscriptPage,
 )
+from a13n_harness_ui.thread_files import MAX_ATTACHMENT_BYTES, AttachmentUpload, ThreadAttachment
 
 API_VERSION = "1"
 _MAX_BODY = 1024 * 1024
@@ -66,7 +67,8 @@ class CreateThreadRequest(SurfaceModel):
 
 
 class PromptRequest(SurfaceModel):
-    prompt: str = Field(min_length=1, max_length=256 * 1024)
+    prompt: str = Field(default="", max_length=256 * 1024)
+    attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
 
 
 class SetupApplyRequest(SurfaceModel):
@@ -401,10 +403,60 @@ def create_webui(
             thread_id=thread_id, mutation=await _document(request, ThreadMetadataMutation)
         )
 
+    @server.post(
+        "/api/threads/{thread_id}/attachments",
+        response_model=ThreadAttachment,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+            }
+        },
+    )
+    async def upload_attachment(
+        thread_id: str, request: Request, name: Annotated[str, Query(min_length=1, max_length=255)]
+    ) -> ThreadAttachment:
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > MAX_ATTACHMENT_BYTES:
+                raise HarnessUiError("Attachment exceeds 10 MiB.", code="request_too_large")
+            data.extend(chunk)
+        media_type = request.headers.get("content-type", "").split(";", 1)[0]
+        try:
+            return await app().stage_thread_attachment(
+                thread_id=thread_id,
+                upload=AttachmentUpload(
+                    name, bytes(data), media_type if media_type and media_type != "application/octet-stream" else None
+                ),
+            )
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="attachment_invalid") from exc
+
+    @server.get("/api/threads/{thread_id}/attachments/{attachment_id}")
+    async def download_attachment(thread_id: str, attachment_id: str) -> Response:
+        try:
+            attachment, data = await app().read_thread_attachment(thread_id=thread_id, attachment_id=attachment_id)
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="attachment_invalid") from exc
+        return Response(
+            data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(attachment.name, safe='')}",
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     @server.post("/api/threads/{thread_id}/submit", response_model=RootRunReceipt, openapi_extra=_body(PromptRequest))
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
         document = await _document(request, PromptRequest)
-        return await app().submit_thread(thread_id=thread_id, prompt=document.prompt)
+        try:
+            return await app().submit_thread(
+                thread_id=thread_id, prompt=document.prompt, attachment_ids=document.attachment_ids
+            )
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="input_invalid") from exc
 
     @server.post(
         "/api/threads/{thread_id}/decisions", response_model=RootRunReceipt, openapi_extra=_body(DecisionResponseBatch)

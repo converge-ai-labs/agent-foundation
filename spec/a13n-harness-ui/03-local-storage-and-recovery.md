@@ -18,6 +18,7 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | ------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
 | Desired resource definitions and global defaults                                                  | YAML and local Markdown files | Human-editable desired behavior                                   |
 | Installed Content Plugin directories                                                              | Data-root files               | Current optional plugin availability and editable files           |
+| Thread scratch and submitted attachments                                                          | Data-root Thread directories  | Disposable working files and retained input files                 |
 | Accepted configuration generation and resource indexes                                            | SQLite plus immutable object  | Current complete validated file and plugin generation             |
 | Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                        | Identity, mutable presentation, defaults, and first-Run bootstrap |
 | Empty initial `HarnessState`                                                                      | Immutable object              | Harness-generated Thread identity before any selected Run         |
@@ -46,7 +47,17 @@ Resource lookup rows are rebuildable projections of the accepted file generation
 
 One App serializes root admission per Thread and state changes per child execution. Separate local App processes can open the same store, but they do not share root receipts, active tasks, or control and do not take over one another's executions. Thread metadata and Thread configuration updates compare their independent expected integer versions; continuation, child checkpoint, accepted generation, and Environment state selection compare expected references. A mismatch fails explicitly and never overwrites the newer head.
 
-Harness UI does not use process lock files, PID inspection, heartbeats, or time-based leases to infer whether another App is alive. Current execution ownership is process-local.
+Harness UI does not use PID inspection, heartbeats, or time-based leases to infer whether another App is alive. Current execution ownership is process-local. Hard OS locks used for Thread file cleanup protect resource use only; they neither establish execution ownership nor authorize takeover.
+
+## Thread Files and Automatic Scratch Cleanup
+
+The App owns a lazily created file area for each existing root or child Thread, keyed by its Harness-generated Thread ID. It introduces no pre-Run session identity. Under the data root, `threads/<thread-id>/tmp/` holds disposable working files and staged uploads; `threads/<thread-id>/attachments/` holds retained submitted inputs. These paths are not Project roots, continuation objects, or a separate resume authority. Runs and process restarts reuse the same Thread file area. Archive, terminal navigation, normal Run completion, and App shutdown do not delete it.
+
+An upload is staged under a unique Thread-scoped handle with its normalized original name, media type, and byte count. Different uploads with the same name do not overwrite one another. Submission promotes referenced files into retained storage before scheduling the Run. Promotion is idempotent for an already retained handle. Admission failure or a process interruption may leave an unreferenced retained file; cleanup favors retaining that file over deleting an input potentially referenced by execution. Submitted image bytes also enter native Harness input and selected checkpoints. Only a selected continuation restores conversation history; a retained upload does not prove that its submission completed.
+
+The startup janitor and an hourly App task remove only expired `tmp/` trees. The default inactivity threshold is three days, configurable through `StorageSettings.scratch_retention_seconds`. Age is measured from the App's last recorded use or release, not from archive status, PID inspection, or a Run-status guess. Each App conservatively protects every Thread file area it touches until App shutdown. Independent Apps hold independent hard OS file-use locks, allowing concurrent use without serializing their Runs. Cleanup tests those locks under a short registration gate and skips a Thread if any holder remains. Process death releases OS locks, making an old scratch tree eligible without a heartbeat timeout. Cleanup errors are diagnostic and do not prevent normal startup; there is no manual confirmation requirement.
+
+Pruning never deletes retained attachments, SQLite rows, immutable objects, Project files, or external symlink targets. File-use lock bookkeeping is outside the deletable scratch tree. A discarded staged upload can expire; reading its old handle then fails explicitly. Surfaces do not treat a host path as a portable upload identifier or implement their own deletion policy. Important generated results belong in an explicitly chosen durable destination, not scratch storage.
 
 ## Observed Thread Usage
 

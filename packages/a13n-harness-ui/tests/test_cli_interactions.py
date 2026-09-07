@@ -370,7 +370,7 @@ async def test_same_input_batch_cancellation_prevents_admission(tmp_path: Path) 
 async def test_rejected_resume_preserves_images_and_command(tmp_path: Path, newer_draft: bool) -> None:
     from unittest.mock import AsyncMock, Mock
 
-    from a13n_harness_ui.interactive.attachments import DraftImage
+    from a13n_harness_ui.interactive.attachments import AttachmentUpload
     from a13n_harness_ui.interactive.backend import SessionBackend
 
     release = asyncio.Event()
@@ -382,7 +382,7 @@ async def test_rejected_resume_preserves_images_and_command(tmp_path: Path, newe
     backend = Mock(spec=SessionBackend)
     backend.resume = AsyncMock(side_effect=reject)
     backend.interaction = AsyncMock(return_value=None)
-    image = DraftImage("image.png", b"test fixture", "image/png")
+    image = AttachmentUpload("image.png", b"test fixture", "image/png")
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest(), directory=tmp_path)
         shell.backend = backend
@@ -459,3 +459,54 @@ async def test_rejected_steering_can_be_recovered_without_overwriting_newer_draf
         await shell.command(shell.registry.parse("/recover"))
         assert shell.composer.text == "/steer important guidance"
         backend.steer.assert_awaited_once_with("important guidance")
+
+
+def test_cursor_edit_expands_paste_and_atomic_backspace_preserves_other_text(tmp_path: Path) -> None:
+    with create_pipe_input(), create_app_session(output=DummyOutput()):
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        original = "line\n" * 300
+        marker = shell.pastes.insert(original)
+        shell.composer.buffer.document = Document("prefix " + marker, len("prefix " + marker))
+        assert shell.composer.text == "prefix " + marker
+        shell.composer.buffer.cursor_position = len("prefix ") + 1
+        assert shell.composer.text == "prefix " + original
+        assert shell.composer.buffer.cursor_position == len("prefix ") + 1
+        assert shell.pastes.expand(shell.composer.text) == "prefix " + original
+        shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+async def test_long_paste_delete_replacement_and_undo_keep_payload(tmp_path: Path) -> None:
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        # Exercise actual key dispatch without starting the App adapter lifecycle.
+        task = asyncio.create_task(shell.app.run_async())
+        try:
+            async with asyncio.timeout(3):
+                while not shell.app.is_running:
+                    await asyncio.sleep(0.01)
+            original = "source line\n" * 100
+            pipe.send_text("\x1b[200~" + original + "\x1b[201~")
+            await asyncio.sleep(0.1)
+            marker = shell.composer.text
+            assert marker.startswith("[Pasted text")
+            pipe.send_text("\x7f")
+            await asyncio.sleep(0.1)
+            assert shell.composer.text == ""
+            pipe.send_text("\x1b[200~replacement\x1b[201~")
+            await asyncio.sleep(0.1)
+            pipe.send_text("\x1f\x1f")
+            await asyncio.sleep(0.1)
+            assert shell.composer.text == marker
+            assert shell.pastes.expand(shell.composer.text) == original
+            pipe.send_text("\x1be")
+            await asyncio.sleep(0.1)
+            assert shell.composer.text == original
+            pipe.send_text("\x1f")
+            await asyncio.sleep(0.1)
+            assert shell.composer.text == marker
+            assert shell.pastes.expand(shell.composer.text) == original
+        finally:
+            shell.app.exit()
+            await task
+            shell.renderer.transcript.close()

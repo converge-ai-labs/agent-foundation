@@ -542,15 +542,16 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         plan = await executor._environments.prepare(published.value)
         project_root = Path(published.value.project_roots[0]).as_posix()
 
-        assert tuple(plan.environments) == ("workspace", "user-skills")
+        assert tuple(plan.environments) == ("workspace", "user-skills", "thread-files")
         assert isinstance(plan.environments["workspace"], LocalEnvdEnvironment)
         assert tuple(item.mount_path for item in plan._mounts) == (
             project_root,
             user_skills.resolve().as_posix(),
+            (tmp_path / "state/threads" / published.value.thread_id).as_posix(),
         )
         local_envd = plan.environments["workspace"]
         assert isinstance(local_envd, LocalEnvdEnvironment)
-        assert prepared == [local_envd]
+        assert prepared == [local_envd, plan.environments["thread-files"]]
         assert local_envd._configuration.workspace.path.as_posix() == project_root
         assert local_envd._configuration.execution_network.value == "deny"
         if os.name == "posix":
@@ -599,6 +600,22 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
         ) as environment:
             assert environment.snapshot.mounts[0].mount_path == project_root
             assert environment.resolve_path(f"{project_root}/readme.md").path == "/readme.md"
+            scratch = tmp_path / "state/threads" / stored.thread_id / "tmp"
+            assert environment.resolve_path(f"{scratch.as_posix()}/scratch.txt").path == "/tmp/scratch.txt"
+            if os.name == "posix":
+                scratch_command = await environment.shell.exec_captured(
+                    CommandRequest(
+                        command=ShellCommand(profile_id="default", script="printf scratch > scratch.txt; pwd"),
+                        cwd=scratch.as_posix(),
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
+                        ),
+                    )
+                )
+                assert scratch_command.output.stdout.inline is not None
+                assert scratch_command.output.stdout.inline.decode().strip() == scratch.as_posix()
+                assert (scratch / "scratch.txt").read_text() == "scratch"
+
             with pytest.raises(EnvironmentError) as legacy:
                 environment.resolve_path("/workspace/readme.md")
             assert legacy.value.code == "environment_selection_invalid"
@@ -704,11 +721,13 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
         plan = await executor._environments.prepare(composition)
 
         expected_aliases = ("workspace", "content-plugin-1") + (("user-skills",) if skills_enabled else ())
-        assert tuple(plan.environments) == expected_aliases
+        assert tuple(plan.environments) == (*expected_aliases, "thread-files")
         assert tuple(item.mount_path for item in plan._mounts) == (
             (tmp_path / "workspace").resolve().as_posix(),
             plugin_skills.parent.resolve().as_posix(),
-        ) + ((user_skills.resolve().as_posix(),) if skills_enabled else ())
+        ) + ((user_skills.resolve().as_posix(),) if skills_enabled else ()) + (
+            (tmp_path / "state/threads" / composition.thread_id).as_posix(),
+        )
         plugin_mount = plan._mounts[1]
         assert plugin_mount.permission_ceiling.operations == frozenset(
             action for action in EnvironmentAction if action.value.startswith("environment.file.")
@@ -772,7 +791,7 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
         published = await executor._compositions.publish(source, selection)
         plan = await executor._environments.prepare(published.value)
 
-        assert tuple(plan.environments) == ("workspace", "user-skills")
+        assert tuple(plan.environments) == ("workspace", "user-skills", "thread-files")
         assert plan.default_environment == "workspace"
         assert user_skills.is_dir()
         async with plan.runtime.bind(
@@ -787,6 +806,7 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
             assert tuple(item.mount_path for item in environment.snapshot.mounts) == (
                 Path(published.value.project_roots[0]).as_posix(),
                 user_skills.resolve().as_posix(),
+                (tmp_path / "state/threads" / stored.thread_id).as_posix(),
             )
         finalization = await plan.finalize(timeout_seconds=1)
 
@@ -838,7 +858,7 @@ async def test_native_skills_reuse_a_project_mount_at_the_user_skill_root(
         plan = await executor._environments.prepare(composition)
 
         expected_aliases = ("workspace",) if project_position == "first" else ("workspace", "workspace-2")
-        assert tuple(plan.environments) == expected_aliases
+        assert tuple(plan.environments) == (*expected_aliases, "thread-files")
         reconstructed = AgentReconstructor(user_skills_root=user_skills).reconstruct(
             composition,
             subagent_operator=None,

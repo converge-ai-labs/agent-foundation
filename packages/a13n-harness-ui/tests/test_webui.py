@@ -322,3 +322,49 @@ async def test_webui_key_management_is_authenticated_and_never_returns_secret(
         assert "private-key" not in bad.text
         assert (await client.delete("/api/auth/keys/key-test")).status_code == 200
         assert (await client.get("/api/auth/keys")).json() == []
+
+
+@pytest.mark.anyio
+async def test_attachment_http_upload_download_submit_and_thread_scope(tmp_path: Path) -> None:
+    opened = []
+
+    @asynccontextmanager
+    async def factory():
+        async with open_harness_ui_app(
+            _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path), host_mode="webui"
+        ) as app:
+            app._root_runs._executor._agents = _CompletedReconstructor()
+            opened.append(app)
+            yield app
+
+    server = create_webui(factory, api_key="test-secret")
+    async with (
+        server.router.lifespan_context(server),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://127.0.0.1") as client,
+    ):
+        thread = await opened[0].create_thread()
+        url = f"/api/threads/{thread.thread_id}/attachments"
+        assert (await client.post(url, params={"name": "notes.txt"}, content=b"notes")).status_code == 401
+        client.headers["Authorization"] = "Bearer test-secret"
+        response = await client.post(url, params={"name": "../notes.txt"}, content=b"notes")
+        assert response.status_code == 200, response.text
+        attachment = response.json()
+        assert attachment["name"] == "notes.txt"
+        attachment_id = attachment["attachment_id"]
+        response = await client.get(f"{url}/{attachment_id}")
+        assert response.status_code == 200 and response.content == b"notes"
+        assert response.headers["content-disposition"].startswith("attachment;")
+        other = await opened[0].create_thread()
+        assert (await client.get(f"/api/threads/{other.thread_id}/attachments/{attachment_id}")).status_code == 400
+        response = await client.post(
+            f"/api/threads/{thread.thread_id}/submit", json={"attachment_ids": [attachment_id]}
+        )
+        assert response.status_code == 200, response.text
+        await opened[0].wait_root_operation(response.json()["receipt_id"])
+        assert (
+            tmp_path / "state/threads" / thread.thread_id / "attachments" / attachment_id / "content"
+        ).read_bytes() == b"notes"
+        assert (
+            await client.post(url, params={"name": "too-big"}, content=b"x" * (10 * 1024 * 1024 + 1))
+        ).status_code == 413
+        assert (await client.post(url, params={"name": "invalid.png"}, content=b"not image")).status_code == 400

@@ -50,10 +50,12 @@ from a13n_harness_ui.extensions import (
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
+from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProjectAdapter, NativeProjectAdapter
 from a13n_harness_ui.managed_runtime import ManagedEnvdRuntime
 from a13n_harness_ui.settings import EnvdRuntimeSettings
 from a13n_harness_ui.storage import EnvironmentBindingKey, LocalStore, ObjectRef, StoredEnvironmentState
 from a13n_harness_ui.storage.objects import ObjectKind
+from a13n_harness_ui.thread_files import ThreadFiles
 
 type ProviderRuntimeFactory = Callable[[EnvironmentProvider], object | Awaitable[object | None] | None]
 
@@ -382,10 +384,12 @@ class EnvironmentRunService:
         reconstructor: EnvironmentSnapshotReconstructor,
         *,
         user_skills_root: Path | None = None,
+        thread_files: ThreadFiles | None = None,
     ) -> None:
         self._store = store
         self._reconstructor = reconstructor
         self._user_skills_root = user_skills_root
+        self._thread_files = thread_files
 
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
         profile = composition.environment_profile
@@ -452,6 +456,9 @@ class EnvironmentRunService:
                             mount_path=(path_layout.user_skills if canonical_host_paths else None)
                         )
                     )
+            if self._thread_files is not None:
+                root = await self._thread_files.touch(composition.thread_id)
+                mounts.append(await self._prepare_thread_files_mount(reconstructed, root))
             for mount in mounts:
                 await mount.environment.prepare()
             extensions = await self._reconstructor.create_extensions(composition)
@@ -480,6 +487,44 @@ class EnvironmentRunService:
             profile=profile,
             mounts=mounts,
             runtime=runtime,
+        )
+
+    async def _prepare_thread_files_mount(
+        self, reconstructed: ReconstructedEnvironmentProfile, root: Path
+    ) -> _PreparedMount:
+        if isinstance(reconstructed.adapter, (NativeProjectAdapter, LocalEnvdProjectAdapter)):
+            environment = await self._reconstructor.bind(reconstructed, root=root, state=None)
+            operations = frozenset(EnvironmentAction)
+        else:
+            # Host files are not silently interpreted as a remote provider root.
+            provider = DirectLocalEnvironmentProvider()
+            configuration = provider.validate_configuration(
+                schema_version="1",
+                value={
+                    "root": {"path": os.fspath(root), "read_only": False},
+                    "shell_profiles": [],
+                    "allowed_executables": [],
+                    "allowed_ports": [],
+                    "allowed_environment_keys": [],
+                },
+            )
+            environment = provider.create_environment(
+                environment_id=f"thread-files-{root.name}",
+                configuration=configuration,
+                state=None,
+                runtime=DirectLocalProviderRuntime(),
+            )
+            operations = frozenset(
+                action for action in EnvironmentAction if action.value.startswith("environment.file.")
+            )
+        return _PreparedMount(
+            alias="thread-files",
+            key=None,
+            expected_state_ref=None,
+            supplied_state=None,
+            environment=environment,
+            permission_ceiling=EnvironmentPermissionSet(operations=operations),
+            mount_path=root.as_posix() if reconstructed.adapter.preserves_host_paths else None,
         )
 
     async def _prepare_content_plugin_mount(

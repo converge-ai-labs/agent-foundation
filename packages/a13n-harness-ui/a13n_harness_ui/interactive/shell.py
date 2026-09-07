@@ -11,12 +11,14 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from prompt_toolkit.application import Application
+from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, KeyPressEvent, merge_key_bindings
 from prompt_toolkit.key_binding.key_bindings import KeyBindingsBase
+from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import Layout
 from prompt_toolkit.layout.containers import ConditionalContainer, Float, FloatContainer, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -29,12 +31,14 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import TextArea
 
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
+from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput
 
-from .attachments import DraftImage, add_images, clipboard_images, read_image
+from .attachments import add_images, clipboard_images, read_attachment
 from .commands import CommandRegistry, Invocation
 from .diagnostics import exception_report
 from .history import HistoryBrowser
 from .local_shell import run_local_shell, validate_local_shell_support
+from .pastes import PendingPastes
 from .rendering import Status, StreamRenderer, terminal_text
 from .selection import Choice, Selection, resolve_choice
 from .theme import prompt_toolkit_style_rules, resolve_theme
@@ -87,11 +91,12 @@ class CliShell:
         self.menu_title = ""
         self.menu_handler: Callable[[str | tuple[str, ...]], Awaitable[None]] | None = None
         self._saved_draft: Document | None = None
+        self.pastes = PendingPastes()
         self.mouse = True
-        self.images: tuple[DraftImage, ...] = ()
-        self._saved_images: tuple[DraftImage, ...] = ()
+        self.images: tuple[AttachmentUpload, ...] = ()
+        self._saved_images: tuple[AttachmentUpload, ...] = ()
         self._draft_generation = 0
-        self._recoverable: tuple[Document, tuple[DraftImage, ...]] | None = None
+        self._recoverable: tuple[Document, tuple[AttachmentUpload, ...]] | None = None
         self._clipboard_task: asyncio.Task[None] | None = None
         self._last_interrupt = float("-inf")
         self.view = TranscriptControl(self.renderer.transcript)
@@ -109,6 +114,7 @@ class CliShell:
             complete_while_typing=True,
         )
         self.composer.buffer.on_text_changed += self._draft_changed
+        self.composer.buffer.on_cursor_position_changed += self._paste_cursor_changed
         original_mouse_handler = self.composer.control.mouse_handler
 
         def composer_mouse(mouse_event: MouseEvent):
@@ -213,6 +219,12 @@ class CliShell:
 
     def _draft_changed(self, buffer: object) -> None:
         self._last_interrupt = float("-inf")
+
+    def _paste_cursor_changed(self, buffer: Buffer) -> None:
+        expanded = self.pastes.edit(buffer.text, buffer.cursor_position)
+        if expanded is not None:
+            text, position = expanded
+            buffer.document = Document(text, position)
 
     def _style(self) -> Style:
         rules = prompt_toolkit_style_rules(self.renderer.transcript.theme)
@@ -479,16 +491,30 @@ class CliShell:
                             "Still preparing or working. Your draft is preserved; /cancel stops active work."
                         )
                     if self.images:
-                        raise ValueError("Active-run guidance accepts text only. Text and images remain in your draft.")
+                        raise ValueError(
+                            "Active-run guidance accepts text only. Text and attachments remain in your draft."
+                        )
                     assert self.backend is not None
                     # Freeze at Enter, before scheduling: never retarget a later Run.
                     steering_receipt = self.backend.receipt_id
             except ValueError as exc:
                 self.emit(str(exc))
                 return
+            text = self.pastes.expand(text)
             if self.interaction is None and self.menu_handler is None:
+                # History stores authored content, never unresolved fold markers.
+                event.current_buffer.text = text
                 event.current_buffer.append_to_history()
             event.current_buffer.reset()
+            # Reset clears undo history. Only saved/recoverable drafts can now
+            # refer to folded payloads; edits and undo retain them until here.
+            self.pastes.retain(
+                tuple(
+                    document.text
+                    for document in (self._saved_draft, None if self._recoverable is None else self._recoverable[0])
+                    if document is not None
+                )
+            )
             if self._input_task is not None and not self._input_task.done():
                 self.app.create_background_task(self.handle(text, steering_receipt=steering_receipt))
             else:
@@ -580,7 +606,7 @@ class CliShell:
             if event.current_buffer.text:
                 event.current_buffer.delete()
             elif self.images:
-                self.emit("Images are still attached. /quit exits; Ctrl+C clears this draft.")
+                self.emit("Files are still attached. /quit exits; Ctrl+C clears this draft.")
             else:
                 event.app.exit()
 
@@ -588,6 +614,38 @@ class CliShell:
         def toggle_tasks(event: KeyPressEvent) -> None:
             self.renderer.tasks.expanded = not self.renderer.tasks.expanded
             event.app.invalidate()
+
+        @keys.add(Keys.BracketedPaste)
+        def paste_text(event: KeyPressEvent) -> None:
+            pasted = event.data
+            if self.interaction is None and self.menu_handler is None:
+                pasted = self.pastes.insert(pasted)
+            else:
+                pasted = pasted.replace("\r\n", "\n").replace("\r", "\n")
+            event.current_buffer.insert_text(pasted)
+            if len(event.data) > 1000:
+                self.emit("Long paste folded. Alt+E expands it for editing; Backspace removes the block.")
+
+        @keys.add("escape", "e")
+        def expand_pastes(event: KeyPressEvent) -> None:
+            text = self.pastes.expand(event.current_buffer.text)
+            event.current_buffer.document = Document(text, len(text))
+
+        @keys.add("backspace")
+        def delete_before(event: KeyPressEvent) -> None:
+            buffer = event.current_buffer
+            if buffer.selection_state is not None:
+                buffer.cut_selection()
+                return
+            buffer.delete_before_cursor(self.pastes.deletion(buffer.text, buffer.cursor_position, backward=True))
+
+        @keys.add("delete")
+        def delete_after(event: KeyPressEvent) -> None:
+            buffer = event.current_buffer
+            if buffer.selection_state is not None:
+                buffer.cut_selection()
+                return
+            buffer.delete(self.pastes.deletion(buffer.text, buffer.cursor_position, backward=False))
 
         @keys.add("c-v")
         @keys.add("escape", "v")
@@ -888,7 +946,7 @@ class CliShell:
 
         self.job = asyncio.create_task(execute())
 
-    def _restore_rejected_command(self, text: str, generation: int, images: tuple[DraftImage, ...]) -> None:
+    def _restore_rejected_command(self, text: str, generation: int, images: tuple[AttachmentUpload, ...]) -> None:
         draft = Document(text, len(text))
         if not self.composer.text and self._draft_generation == generation:
             self.composer.buffer.document = draft
@@ -969,13 +1027,15 @@ class CliShell:
 
     async def acquire_images(self, path: str | None = None) -> None:
         if self.interaction is not None or self.selection is not None:
-            self.emit("Images belong to conversation drafts. Finish or cancel this interaction first.")
+            self.emit("Attachments belong to conversation drafts. Finish or cancel this interaction first.")
             return
         generation = self._draft_generation
         try:
             incoming = await asyncio.to_thread(
                 lambda: (
-                    (read_image((self.directory / Path(path).expanduser()).resolve()),) if path else clipboard_images()
+                    (read_attachment((self.directory / Path(path).expanduser()).resolve()),)
+                    if path
+                    else clipboard_images()
                 )
             )
             if generation != self._draft_generation or self.closing:
@@ -984,7 +1044,7 @@ class CliShell:
             self.images = add_images(self.images, incoming)
             self.app.invalidate()
         except Exception as exc:
-            self.emit(f"Image not attached: {exc}")
+            self.emit(f"File not attached: {exc}")
 
     def start_clipboard(self) -> None:
         if self._clipboard_task is not None and not self._clipboard_task.done():
@@ -993,9 +1053,6 @@ class CliShell:
         self._clipboard_task = asyncio.create_task(self.acquire_images())
 
     def send_prompt(self, text: str) -> None:
-        from pydantic_ai import BinaryContent
-        from pydantic_ai.messages import TextContent
-
         assert self.backend is not None
         if self.busy:
             self.emit("The active operation changed. Your draft is preserved; send again explicitly.")
@@ -1011,8 +1068,7 @@ class CliShell:
             self._recoverable = None
 
         source_id = f"input-{uuid4().hex}"
-        authored = TextContent(text, metadata={"source_id": source_id})
-        prompt = (authored, *(BinaryContent(data=image.data, media_type=image.media_type) for image in images))
+        prompt = ComposerInput(text=text, attachments=images, source_id=source_id)
         self.renderer.local_input(source_id, text)
         self.app.invalidate()
         execution = self.backend.execute(
@@ -1207,7 +1263,7 @@ class CliShell:
                 index = int(argument) - 1
                 self.images = self.images[:index] + self.images[index + 1 :]
             else:
-                raise ValueError("Use /remove <image number> or /remove all.")
+                raise ValueError("Use /remove <attachment number> or /remove all.")
             self._draft_generation += 1
         elif name == "recover":
             if self._recoverable is None:

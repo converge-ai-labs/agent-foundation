@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -19,8 +20,9 @@ from a13n_harness.model_auth import CodexCredentials, GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_ai import prices
+from pydantic_ai import BinaryContent, prices
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import TextContent, UserContent
 
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -143,6 +145,14 @@ from a13n_harness_ui.surfaces import (
 )
 from a13n_harness_ui.terminal_projection import TerminalProjectionService
 from a13n_harness_ui.thread_capability import ThreadCollaborationCapability, ThreadToolController
+from a13n_harness_ui.thread_files import (
+    MAX_ATTACHMENTS,
+    MAX_INPUT_BYTES,
+    AttachmentUpload,
+    ComposerInput,
+    ThreadAttachment,
+    ThreadFiles,
+)
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
 
@@ -206,6 +216,7 @@ class HarnessUiApp:
         projections: ThreadProjectionService,
         terminal_projections: TerminalProjectionService,
         root_runs: RootRunCoordinator,
+        thread_files: ThreadFiles,
         subagent_operator: HarnessUiSubagentOperator,
         live_hub: HarnessUiLiveHub,
         summary_hub: HarnessUiSummaryHub,
@@ -233,6 +244,7 @@ class HarnessUiApp:
         self._threads = threads
         self._projections = projections
         self._terminal_projections = terminal_projections
+        self._thread_files = thread_files
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -855,22 +867,81 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
 
+    async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
+        async with self._operation():
+            await self._threads.get(thread_id)
+            return await self._thread_files.stage(thread_id, upload)
+
+    async def read_thread_attachment(self, *, thread_id: str, attachment_id: str) -> tuple[ThreadAttachment, bytes]:
+        async with self._operation():
+            await self._threads.get(thread_id)
+            return await self._thread_files.read(thread_id, attachment_id)
+
+    async def prune_thread_files(self) -> tuple[str, ...]:
+        async with self._operation():
+            return await self._thread_files.prune()
+
+    async def _prune_thread_files_periodically(self) -> None:
+        while True:
+            await sleep(3600)
+            await self._thread_files.prune()
+
+    async def _prepare_input(
+        self, thread_id: str, prompt: RunInputValue | ComposerInput, attachment_ids: tuple[str, ...]
+    ) -> RunInputValue:
+        if isinstance(prompt, ComposerInput):
+            if not prompt.text.strip() and not prompt.attachments and not attachment_ids:
+                raise ValueError("A root message must not be blank.")
+            if len(prompt.attachments) + len(attachment_ids) > MAX_ATTACHMENTS:
+                raise ValueError("An input supports up to eight attachments.")
+            if sum(len(item.data) for item in prompt.attachments) > MAX_INPUT_BYTES:
+                raise ValueError("An input supports up to 20 MiB of attachments.")
+            staged = tuple([await self._thread_files.stage(thread_id, upload) for upload in prompt.attachments])
+            attachment_ids += tuple(item.attachment_id for item in staged)
+            prompt = (TextContent(prompt.text, metadata={"source_id": prompt.source_id}),)
+        if len(attachment_ids) > MAX_ATTACHMENTS:
+            raise ValueError("An input supports up to eight attachments.")
+        attachments = [await self._thread_files.read(thread_id, item) for item in attachment_ids]
+        if sum(item.size for item, _ in attachments) > MAX_INPUT_BYTES:
+            raise ValueError("An input supports up to 20 MiB of attachments.")
+        parts: list[UserContent] = [prompt] if isinstance(prompt, str) else list(prompt)
+        for item, data in attachments:
+            # Retention precedes scheduling. A failed admission can leave a retained
+            # orphan, but can never leave an accepted Run referencing pruneable input.
+            await self._thread_files.retain(thread_id, item.attachment_id)
+            path = f"attachments/{item.attachment_id}/content"
+            metadata = {"harness_ui": {"attachment": item.model_dump(), "mount": "thread-files", "path": path}}
+            parts.append(
+                TextContent(
+                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.",
+                    metadata=metadata,
+                )
+            )
+            if item.media_type.startswith("image/"):
+                parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
+        await self._thread_files.touch(thread_id)
+        return detach_input(tuple(parts))
+
     async def submit_thread(
         self,
         *,
         thread_id: str,
-        prompt: RunInputValue,
+        prompt: RunInputValue | ComposerInput,
+        attachment_ids: tuple[str, ...] = (),
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
     ) -> RootRunReceipt:
-        prompt = detach_input(prompt)
+        prompt = deepcopy(prompt)
+        attachment_ids = tuple(attachment_ids)
         async with self._operation():
             catalog = await self._terminal_projections.skill_catalog(thread_id=thread_id)
             self._terminal_projections.validate_references_against(
                 catalog,
                 skill_references,
             )
+            await self._threads.get(thread_id)
+            prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
             receipt = await self._root_runs.submit_prompt(
                 thread_id=thread_id,
                 prompt=prompt,
@@ -1479,7 +1550,10 @@ async def open_harness_ui_app(
                 local_runtime_parent=store.layout.runtimes,
                 runtime_factories=selected_integrations.provider_runtime_factories,
             )
-            environment_service = EnvironmentRunService(store, environment_reconstructor)
+            thread_files = ThreadFiles(store.layout.root, retention_seconds=settings.storage.scratch_retention_seconds)
+            resources.push_async_callback(thread_files.close)
+            await thread_files.prune()
+            environment_service = EnvironmentRunService(store, environment_reconstructor, thread_files=thread_files)
             agent_reconstructor = AgentReconstructor(catalog, api_keys=ApiKeyStore(store.layout.root / "auth.json"))
             live_hub = HarnessUiLiveHub()
             summary_hub = HarnessUiSummaryHub(epoch=live_hub.epoch)
@@ -1590,6 +1664,7 @@ async def open_harness_ui_app(
                 projections=projections,
                 terminal_projections=terminal_projections,
                 root_runs=root_runs,
+                thread_files=thread_files,
                 subagent_operator=operator,
                 live_hub=live_hub,
                 summary_hub=summary_hub,
@@ -1622,6 +1697,7 @@ async def open_harness_ui_app(
                 app._state = AppState.ready
                 async with create_task_group() as background:
                     app._logins = LoginSessions(background, app._account)
+                    background.start_soon(app._prune_thread_files_periodically)
                     if configuration_path is not None:
                         background.start_soon(app._observe_configuration)
                     try:

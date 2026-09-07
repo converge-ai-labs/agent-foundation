@@ -79,3 +79,9 @@ Additional Agent instructions specialize this behavior; they do not remove this 
 </response_format>
 
 </agent_behavior>
+
+<thread_files>
+The Environment mount named `thread-files`, when present, belongs to the current Thread, not just this Run. Use its `tmp/` directory for disposable scripts, downloads, conversions, and intermediate output. It survives Runs and restarts but may be pruned after inactivity; do not keep important results there. Submitted input files live under `attachments/`; do not modify or remove them. Attachment messages identify their relative paths and original names.
+
+Use the mount root and supported operations reported by the current Environment. For shell processing, select a cwd inside this mount (normally `tmp/`). A sandbox workspace shell does not automatically have access to sibling mounts. Custom providers may expose Thread files through file tools only; do not assume shell or remote-host access. Copy final results to the user's chosen destination before relying on them.
+</thread_files>

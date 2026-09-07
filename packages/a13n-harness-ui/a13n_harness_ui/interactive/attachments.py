@@ -1,43 +1,18 @@
-"""Explicit, bounded local image acquisition. Never called by text paste."""
+"""Explicit, bounded local attachment acquisition. Never called by text paste."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import mimetypes
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageGrab, UnidentifiedImageError
+from PIL import Image, ImageGrab
 
-MAX_IMAGE_BYTES = 10 * 1024 * 1024
-MAX_DRAFT_BYTES = 20 * 1024 * 1024
-MAX_IMAGES = 8
-_MEDIA = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp", "GIF": "image/gif"}
+from a13n_harness_ui.input_images import MAX_IMAGE_BYTES, image_bytes
+from a13n_harness_ui.thread_files import MAX_ATTACHMENTS, MAX_INPUT_BYTES, AttachmentUpload
 
 
-@dataclass(frozen=True, slots=True)
-class DraftImage:
-    name: str
-    data: bytes
-    media_type: str
-
-
-def image_bytes(name: str, data: bytes) -> DraftImage:
-    if len(data) > MAX_IMAGE_BYTES:
-        raise ValueError("Image exceeds 10 MiB. Resize it before attaching.")
-    try:
-        with Image.open(BytesIO(data)) as image:
-            media_type = _MEDIA.get(image.format or "")
-            if media_type is None:
-                raise ValueError("Choose a PNG, JPEG, WebP, or GIF image.")
-            if image.width * image.height > 32_000_000:
-                raise ValueError("Image exceeds 32 megapixels. Resize it before attaching.")
-            image.verify()
-    except (UnidentifiedImageError, OSError) as exc:
-        raise ValueError("This file is not a valid supported image.") from exc
-    return DraftImage(name, data, media_type)
-
-
-def read_image(path: Path) -> DraftImage:
+def read_image(path: Path) -> AttachmentUpload:
     if not path.is_file():
         raise ValueError("Attach a regular image file.")
     with path.open("rb") as stream:
@@ -45,7 +20,20 @@ def read_image(path: Path) -> DraftImage:
     return image_bytes(path.name, data)
 
 
-def clipboard_images() -> tuple[DraftImage, ...]:
+def read_attachment(path: Path) -> AttachmentUpload:
+    if not path.is_file():
+        raise ValueError("Attach a regular file.")
+    with path.open("rb") as stream:
+        data = stream.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError("Attachment exceeds 10 MiB.")
+    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    if media_type.startswith("image/"):
+        return image_bytes(path.name, data)
+    return AttachmentUpload(path.name, data, media_type)
+
+
+def clipboard_images() -> tuple[AttachmentUpload, ...]:
     try:
         value = ImageGrab.grabclipboard()
         if isinstance(value, Image.Image):
@@ -55,9 +43,9 @@ def clipboard_images() -> tuple[DraftImage, ...]:
             value.save(stream, format="PNG")
             return (image_bytes("clipboard.png", stream.getvalue()),)
         if isinstance(value, list):
-            if len(value) > MAX_IMAGES:
+            if len(value) > MAX_ATTACHMENTS:
                 raise ValueError("Clipboard contains more than eight files.")
-            return tuple(read_image(Path(path)) for path in value)
+            return tuple(read_attachment(Path(path)) for path in value)
     except (OSError, NotImplementedError) as exc:
         raise ValueError(
             "Image clipboard unavailable. Use /attach <image-path>; Linux needs wl-paste or xclip."
@@ -65,8 +53,10 @@ def clipboard_images() -> tuple[DraftImage, ...]:
     raise ValueError("No image in the clipboard. Paste text normally, or use /attach <image-path>.")
 
 
-def add_images(current: tuple[DraftImage, ...], incoming: tuple[DraftImage, ...]) -> tuple[DraftImage, ...]:
+def add_images(
+    current: tuple[AttachmentUpload, ...], incoming: tuple[AttachmentUpload, ...]
+) -> tuple[AttachmentUpload, ...]:
     result = current + incoming
-    if len(result) > MAX_IMAGES or sum(len(image.data) for image in result) > MAX_DRAFT_BYTES:
-        raise ValueError("A draft supports up to eight images and 20 MiB total. Use /remove first.")
+    if len(result) > MAX_ATTACHMENTS or sum(len(image.data) for image in result) > MAX_INPUT_BYTES:
+        raise ValueError("A draft supports up to eight attachments and 20 MiB total. Use /remove first.")
     return result
