@@ -43,8 +43,9 @@ from a13n_service.interactions.harness_runtime import (
     HarnessInvocation,
     ImmediateHarnessInput,
 )
+from a13n_service.interactions.inbox_delivery import AdaptedThreadInboxEntry
 from a13n_service.interactions.objects import RunStateStore, StoredRunState
-from a13n_service.interactions.run_control import AdaptedThreadInboxEntry, RunAttemptControl
+from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry, RunStateEnvelope
 from a13n_service.storage import ObjectStore
 from anyio import Event, create_task_group, sleep, sleep_forever
@@ -518,7 +519,7 @@ async def test_active_reconciliation_uses_driver_steer_without_consuming_receipt
     await control.bind_model_attempt(HarnessContextBinding(object(), object(), object()))
     await control.reconcile()
 
-    assert driver.steered == ["steer"]
+    assert driver.steered == [AdaptedThreadInboxEntry(1, receipt, "steer").tagged_input(context.run_id)]
     assert control.current_state.envelope.host.consumed_inbox_entries == ()
 
 

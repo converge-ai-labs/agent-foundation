@@ -92,6 +92,12 @@ class _RuntimeCoordinator:
     async def after_stream_entry(self) -> None:
         self.trace.append("coordinator:stream-entry")
 
+    async def before_model_node(self, boundary: HarnessHookBoundary) -> None:
+        pass
+
+    async def before_nested_model_request(self) -> None:
+        raise AssertionError("this test has no nested provider request")
+
     async def bind_model_attempt(self, binding: HarnessContextBinding) -> None:
         assert isinstance(binding, HarnessContextBinding)
         self.trace.append("coordinator:bind")

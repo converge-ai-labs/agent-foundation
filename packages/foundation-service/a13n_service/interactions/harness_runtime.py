@@ -39,7 +39,7 @@ from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import EnqueuedMessagesEvent, ModelMessage
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
@@ -382,8 +382,6 @@ class HarnessDriver:
                     "Harness stream emitted an observation after its terminal result.",
                     code="foundation_stream_event_after_terminal",
                 )
-            if isinstance(item.event, EnqueuedMessagesEvent):
-                await self._control.record_delivery(item.event.enqueue_id)
             await self._project_live(item)
         if terminal is None:
             raise RunError(

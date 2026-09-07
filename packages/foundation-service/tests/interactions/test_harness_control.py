@@ -35,6 +35,12 @@ class _RecordingCoordinator:
     trace: list[str] = field(default_factory=list)
     calls: list[tuple[str, object]] = field(default_factory=list)
 
+    async def before_model_node(self, boundary: HarnessHookBoundary) -> None:
+        pass
+
+    async def before_nested_model_request(self) -> None:
+        raise AssertionError("this test has no nested provider request")
+
     async def bind_model_attempt(self, binding: HarnessContextBinding) -> None:
         self.calls.append(("bind", binding))
 
@@ -102,7 +108,7 @@ class _OuterRecordingCapability(AbstractCapability[AgentContext]):
     id: str | None = "test.outer"
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="outermost")
+        return CapabilityOrdering()
 
     async def before_model_request(
         self,

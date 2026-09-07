@@ -12,7 +12,6 @@ from a13n_harness import (
     AgentContext,
     HarnessRunResult,
     HarnessState,
-    RunInputValue,
     SafeFailure,
 )
 from a13n_harness.errors import RunError
@@ -48,6 +47,7 @@ from .harness_results import (
     RunTerminalDisposition,
     RunTerminalReceipt,
 )
+from .inbox_delivery import AdaptedThreadInboxEntry, incorporated_receipts, merge_receipts
 from .objects import RunStateStore, StaleStateWriter, StoredRunState
 from .state import (
     CompletedOutcomeCandidate,
@@ -58,19 +58,6 @@ from .state import (
 )
 
 logger = get_logger(__name__)
-
-
-@dataclass(frozen=True, slots=True)
-class AdaptedThreadInboxEntry:
-    """One authorized FIFO entry materialized for native Harness enqueue."""
-
-    delivery_sequence: int
-    receipt: ConsumedThreadInboxEntry
-    input: RunInputValue
-
-    def __post_init__(self) -> None:
-        if self.delivery_sequence < 1:
-            raise ValueError("Thread inbox delivery sequence must be positive")
 
 
 class ThreadInboxReconciler(Protocol):
@@ -108,14 +95,15 @@ class _RunControlGate:
 
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     identity: HarnessRunIdentity | None = None
-    offered: dict[str, ConsumedThreadInboxEntry] = field(default_factory=dict)
-    delivered: set[str] = field(default_factory=set)
+    offered: dict[str, AdaptedThreadInboxEntry] = field(default_factory=dict)
+    incorporated: dict[str, ConsumedThreadInboxEntry] = field(default_factory=dict)
     delivery_gate: _DeliveryGate = _DeliveryGate.open
     handoff_reason: RunAttemptYieldReason | None = None
     phase: _CoordinatorPhase = _CoordinatorPhase.active
     pending_checkpoint: RunStateEnvelope | None = None
     checkpoint_confirmed: bool = False
     model_attempt_bound: bool = False
+    model_attempt_checkpoint: bool = True
 
 
 class RunAttemptControl:
@@ -227,14 +215,6 @@ class RunAttemptControl:
                 await self._fence()
                 raise
 
-    async def record_delivery(self, enqueue_id: str) -> None:
-        """Observe native incorporation; only a subsequent checkpoint consumes it."""
-
-        async with self._gate.lock:
-            self._require_open()
-            if enqueue_id in self._gate.offered:
-                self._gate.delivered.add(enqueue_id)
-
     async def bind_model_attempt(self, binding: HarnessContextBinding) -> None:
         async with self._gate.lock:
             self._require_open()
@@ -242,6 +222,20 @@ class RunAttemptControl:
             try:
                 await self._validate_authority()
                 self._gate.model_attempt_bound = True
+                self._gate.model_attempt_checkpoint = True
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
+    async def before_model_node(self, boundary: HarnessHookBoundary) -> None:
+        """Offer eligible input before Pydantic drains the next model request."""
+
+        async with self._gate.lock:
+            self._require_boundary(boundary)
+            try:
+                await self._prepare_boundary()
+                if self._gate.delivery_gate is _DeliveryGate.open and self._gate.handoff_reason is None:
+                    await self._offer_pending(boundary)
             except AttemptAuthorityError:
                 await self._fence()
                 raise
@@ -253,11 +247,16 @@ class RunAttemptControl:
     ) -> None:
         async with self._gate.lock:
             self._require_boundary(boundary)
+            self._record_incorporation(request_context.messages)
             try:
                 waiting_first_request = self._gate.delivery_gate is _DeliveryGate.first_response
                 try:
                     await self._prepare_boundary()
-                    if not waiting_first_request:
+                    if not waiting_first_request and (
+                        self._gate.model_attempt_checkpoint
+                        or self._state.envelope.input_disposition == "pending"
+                        or self._gate.handoff_reason is not None
+                    ):
                         await self._checkpoint(boundary, request_context.messages)
                         await self._confirm_state()
                 except (ObjectStoreUnavailable, TimeoutError) as error:
@@ -267,13 +266,26 @@ class RunAttemptControl:
                         return
                 if not waiting_first_request:
                     await self._offer_pending(boundary)
-                async with self._authority_lock:
-                    self._require_open()
-                    mutation = await self._execution.increment_model_request(self._context)
-                    self._advance(mutation)
+                await self._increment_model_request()
             except AttemptAuthorityError:
                 await self._fence()
                 raise
+
+    async def before_nested_model_request(self) -> None:
+        """Fence and charge nested provider I/O without exporting its temporary history."""
+
+        async with self._gate.lock:
+            try:
+                await self._increment_model_request()
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
+    async def _increment_model_request(self) -> None:
+        async with self._authority_lock:
+            self._require_open()
+            mutation = await self._execution.increment_model_request(self._context)
+            self._advance(mutation)
 
     async def after_model_response(
         self,
@@ -392,8 +404,8 @@ class RunAttemptControl:
                     return
                 driver = self._require_driver()
                 for entry in await self._eligible_entries():
-                    enqueue_id = await driver.steer(entry.input)
-                    self._gate.offered[enqueue_id] = entry.receipt
+                    await driver.steer(entry.tagged_input(self._context.run_id))
+                    self._gate.offered[entry.receipt.inbox_entry_id] = entry
             except AttemptAuthorityError:
                 await self._fence()
                 raise
@@ -547,23 +559,24 @@ class RunAttemptControl:
         await self._checkpoint_state(await boundary.export_state(messages))
 
     async def _checkpoint_state(self, harness: HarnessState) -> None:
+        self._record_incorporation(harness.message_history)
         await self._retry_publication()
         prior = self._state.envelope
-        receipts = (*prior.host.consumed_inbox_entries, *self._delivered_receipts())
+        receipts = merge_receipts(prior.host.consumed_inbox_entries, self._gate.incorporated.values())
         host = HostContinuationState(consumed_inbox_entries=receipts)
         if prior.input_disposition == "applied" and prior.harness == harness and prior.host == host:
+            self._gate.model_attempt_checkpoint = False
             return
         await self._publish(self._successor(harness, host, "progress", None))
+        self._gate.model_attempt_checkpoint = False
 
     async def _publish_terminal(self, projection: HarnessOutcomeProjection) -> None:
+        self._record_incorporation(projection.harness.message_history)
         await self._retry_publication()
         prior = self._state.envelope
         host = HostContinuationState(
             deferred=projection.deferred,
-            consumed_inbox_entries=(
-                *prior.host.consumed_inbox_entries,
-                *self._delivered_receipts(),
-            ),
+            consumed_inbox_entries=merge_receipts(prior.host.consumed_inbox_entries, self._gate.incorporated.values()),
         )
         checkpoint_kind = "completed" if isinstance(projection.candidate, CompletedOutcomeCandidate) else "waiting"
         await self._publish(
@@ -618,11 +631,9 @@ class RunAttemptControl:
         self._state = published
         self._gate.pending_checkpoint = None
         self._gate.checkpoint_confirmed = False
-        consumed = set(published.envelope.host.consumed_inbox_entries)
-        for enqueue_id, receipt in tuple(self._gate.offered.items()):
-            if receipt in consumed:
-                del self._gate.offered[enqueue_id]
-                self._gate.delivered.discard(enqueue_id)
+        for receipt in published.envelope.host.consumed_inbox_entries:
+            self._gate.offered.pop(receipt.inbox_entry_id, None)
+            self._gate.incorporated.pop(receipt.inbox_entry_id, None)
 
     async def _retry_publication(self) -> None:
         candidate = self._gate.pending_checkpoint
@@ -646,15 +657,27 @@ class RunAttemptControl:
         await self._validate_authority()
         logger.info("run_handoff_checkpoint_pending", extra={"run_attempt_id": self._context.run_attempt_id})
 
-    def _delivered_receipts(self) -> tuple[ConsumedThreadInboxEntry, ...]:
-        return tuple(
-            receipt for enqueue_id, receipt in self._gate.offered.items() if enqueue_id in self._gate.delivered
-        )
+    def _record_incorporation(self, messages: Sequence[ModelMessage]) -> None:
+        found = incorporated_receipts(messages, self._gate.offered.values(), run_id=self._context.run_id)
+        represented = {receipt.inbox_entry_id for receipt in found} | self._gate.incorporated.keys()
+        missing_prefix = False
+        for entry_id in self._gate.offered:
+            if entry_id not in represented:
+                missing_prefix = True
+            elif missing_prefix:
+                raise RunError("Incorporated inbox input is not a FIFO prefix.", code="foundation_inbox_order_invalid")
+        for receipt in found:
+            if receipt.inbox_entry_id not in self._gate.incorporated:
+                self._gate.incorporated[receipt.inbox_entry_id] = receipt
+                logger.info(
+                    "run_inbox_incorporated",
+                    extra={"run_id": self._context.run_id, "inbox_entry_id": receipt.inbox_entry_id},
+                )
 
     async def _offer_pending(self, boundary: HarnessHookBoundary) -> None:
         for entry in await self._eligible_entries():
-            enqueue_id = await boundary.enqueue(entry.input, priority="asap")
-            self._gate.offered[enqueue_id] = entry.receipt
+            await boundary.enqueue(entry.tagged_input(self._context.run_id), priority="asap")
+            self._gate.offered[entry.receipt.inbox_entry_id] = entry
 
     async def _eligible_entries(self) -> tuple[AdaptedThreadInboxEntry, ...]:
         if self._gate.offered:
@@ -662,6 +685,19 @@ class RunAttemptControl:
         entries = tuple(await self._inbox.read_eligible(self._context))
         await self._validate_authority()
         _validate_delivery_batch(entries, self._state.envelope)
+        # The same provenance check handles a restored raw checkpoint without
+        # receipts. No content-only or historical-format recovery path exists.
+        represented = incorporated_receipts(
+            self._state.envelope.harness.message_history, entries, run_id=self._context.run_id
+        )
+        if represented:
+            prefix = tuple(entry.receipt for entry in entries[: len(represented)])
+            if represented != prefix:
+                raise RunError("Checkpointed inbox input is not a FIFO prefix.", code="foundation_inbox_order_invalid")
+            self._gate.incorporated.update((receipt.inbox_entry_id, receipt) for receipt in represented)
+            await self._checkpoint_state(self._state.envelope.harness)
+            await self._confirm_state()
+            return entries[len(represented) :]
         return entries
 
     def _require_boundary(self, boundary: HarnessHookBoundary) -> None:
@@ -775,7 +811,6 @@ def _require_terminal_disposition(
 
 
 __all__ = [
-    "AdaptedThreadInboxEntry",
     "RunAttemptControl",
     "ThreadInboxReconciler",
 ]

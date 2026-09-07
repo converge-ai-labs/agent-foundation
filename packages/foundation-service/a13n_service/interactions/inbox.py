@@ -32,11 +32,11 @@ from .control_domain import (
 )
 from .control_models import ThreadInboxRecord
 from .inbox_allocation import allocate_steer
+from .inbox_delivery import AdaptedThreadInboxEntry
 from .inbox_persistence import ThreadInboxConflict, reconcile_checkpoint
 from .input import AcceptedAgentInput
 from .models import RunRecord, ThreadRecord
 from .objects import StoredRunState
-from .run_control import AdaptedThreadInboxEntry
 from .state import ConsumedThreadInboxEntry
 
 logger = logging.getLogger("a13n_service.interactions.inbox")

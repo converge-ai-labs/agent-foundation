@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import cache
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from a13n_harness import AgentContext, AgentDefinition, HarnessState, RunInputValue
 from a13n_harness.errors import DefinitionError
 from pydantic_ai import Agent, CallToolsNode, RunContext
-from pydantic_ai.agent import AbstractAgent
+from pydantic_ai.agent import AbstractAgent, ModelRequestNode
 from pydantic_ai.capabilities import (
     AbstractCapability,
     AgentNode,
@@ -105,7 +106,9 @@ class RunControlPort(Protocol):
 
     async def after_stream_entry(self) -> None: ...
 
-    async def record_delivery(self, enqueue_id: str) -> None: ...
+    async def before_model_node(self, boundary: HarnessHookBoundary) -> None: ...
+
+    async def before_nested_model_request(self) -> None: ...
 
     async def bind_model_attempt(self, binding: HarnessContextBinding) -> None: ...
 
@@ -141,13 +144,17 @@ class RunControlCapability(AbstractCapability[AgentContext]):
         driver: HarnessControlDriver,
         *,
         binding: HarnessContextBinding | None = None,
+        running: ContextVar[bool] | None = None,
+        nested: bool = False,
     ) -> None:
         self._control = control
         self._driver = driver
         self._binding = binding
+        self._running = running if running is not None else ContextVar("foundation_model_attempt_active", default=False)
+        self._nested = nested
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="outermost")
+        return CapabilityOrdering(position="outermost", wrapped_by=tuple(_native_anonymous_capabilities()))
 
     def for_agent(self, agent: AbstractAgent[AgentContext, object]) -> AbstractCapability[AgentContext]:
         # Pydantic has already sorted the complete construction tree, including plugins.
@@ -160,19 +167,44 @@ class RunControlCapability(AbstractCapability[AgentContext]):
         self,
         ctx: RunContext[AgentContext],
     ) -> AbstractCapability[AgentContext]:
+        # Same-Agent compaction nests a native run inside the active attempt.
+        # Its temporary summary prompt must never become a Foundation checkpoint.
+        if self._running.get():
+            return RunControlCapability(self._control, self._driver, running=self._running, nested=True)
         binding = self._driver.bind_model_attempt(ctx)
         await self._control.bind_model_attempt(binding)
         return RunControlCapability(
             self._control,
             self._driver,
             binding=binding,
+            running=self._running,
         )
+
+    async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
+        token = self._running.set(True)
+        try:
+            return await handler()
+        finally:
+            self._running.reset(token)
+
+    async def before_node_run(
+        self, ctx: RunContext[AgentContext], *, node: AgentNode[AgentContext]
+    ) -> AgentNode[AgentContext]:
+        # Offer before the native drain, then confirm from the drained history in
+        # before_model_request. This also includes accepted inbox on the first request.
+        if not self._nested and isinstance(node, ModelRequestNode):
+            async with self._driver.hook_boundary(ctx, self._binding) as boundary:
+                await self._control.before_model_node(boundary)
+        return node
 
     async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        if self._nested:
+            await self._control.before_nested_model_request()
+            return request_context
         async with self._driver.hook_boundary(ctx, self._binding) as boundary:
             await self._control.before_model_request(boundary, request_context)
         return request_context
@@ -185,6 +217,8 @@ class RunControlCapability(AbstractCapability[AgentContext]):
         response: ModelResponse,
     ) -> ModelResponse:
         del request_context
+        if self._nested:
+            return response
         async with self._driver.hook_boundary(ctx, self._binding) as boundary:
             await self._control.after_model_response(boundary, response)
         return response
@@ -196,7 +230,7 @@ class RunControlCapability(AbstractCapability[AgentContext]):
         node: AgentNode[AgentContext],
         result: NodeResult[AgentContext],
     ) -> NodeResult[AgentContext]:
-        if isinstance(node, CallToolsNode):
+        if not self._nested and isinstance(node, CallToolsNode):
             async with self._driver.hook_boundary(ctx, self._binding) as boundary:
                 await self._control.after_tool_batch(boundary, result, ctx.messages)
         return result
@@ -232,7 +266,7 @@ def validate_control_order(capabilities: Sequence[AbstractCapability[AgentContex
         "a13n.steering",
         "a13n.model-context-coordinator",
     }
-    hooks = ("before_model_request", "after_model_request", "after_node_run")
+    hooks = ("before_node_run", "before_model_request", "after_model_request", "after_node_run")
     for cap in capabilities:
         if cap is controls[0]:
             return

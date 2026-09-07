@@ -21,6 +21,7 @@ from a13n_harness import (
     RunBindings,
     SafeFailure,
 )
+from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_service.interactions.attempts import (
     AttemptContext,
     AttemptExecutionService,
@@ -40,8 +41,9 @@ from a13n_service.interactions.harness_runtime import (
     HarnessInvocation,
     ImmediateHarnessInput,
 )
+from a13n_service.interactions.inbox_delivery import AdaptedThreadInboxEntry
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore, StoredRunState
-from a13n_service.interactions.run_control import AdaptedThreadInboxEntry, RunAttemptControl
+from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.state import (
     ConsumedThreadInboxEntry,
     DeferredContinuationState,
@@ -54,9 +56,11 @@ from pydantic import TypeAdapter
 from pydantic_ai import Tool
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.messages import (
+    EnqueuedMessagesEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextContent,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -64,7 +68,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
-from .conftest import ATTEMPT_ID, NOW, ORGANIZATION_ID, RUN_ID, initial_state
+from .conftest import ATTEMPT_ID, NOW, ORGANIZATION_ID, RUN_ID, initial_state, progress_state
 
 pytestmark = pytest.mark.anyio
 
@@ -117,7 +121,6 @@ class _RecordingAttemptExecution(AttemptExecutionService):
 class _RecordingThreadInbox:
     trace: list[str]
     entries: tuple[AdaptedThreadInboxEntry, ...] = ()
-    _delivered: bool = field(default=False, init=False)
 
     async def confirm_checkpoint(
         self,
@@ -126,6 +129,8 @@ class _RecordingThreadInbox:
     ) -> AttemptMutationReceipt:
         assert state.envelope.run_id == authority.run_id
         self.trace.append("inbox:confirm")
+        consumed = set(state.envelope.host.consumed_inbox_entries)
+        self.entries = tuple(entry for entry in self.entries if entry.receipt not in consumed)
         return _receipt(authority)
 
     async def read_eligible(
@@ -134,9 +139,6 @@ class _RecordingThreadInbox:
     ) -> Sequence[AdaptedThreadInboxEntry]:
         assert authority.run_id == RUN_ID
         self.trace.append("inbox:read")
-        if self._delivered:
-            return ()
-        self._delivered = True
         return self.entries
 
 
@@ -374,6 +376,7 @@ async def _consume(
     outcome_adapter: StoredHarnessOutcomeAdapter,
     terminal_committer: _RecordingTerminalCommitter,
     capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
+    model_recovery: ModelRecoveryPolicy | None = None,
 ) -> tuple[HarnessRunResult[str], RunTerminalReceipt | AttemptMutationReceipt]:
     result = await _run(
         control=control,
@@ -382,6 +385,7 @@ async def _consume(
         model=model,
         projector=projector,
         capabilities=capabilities,
+        model_recovery=model_recovery,
     )
     finalization = await control.finalize(
         result,
@@ -424,6 +428,215 @@ async def test_checkpoint_commits_inbox_receipt_only_after_native_delivery(
     assert trace.index("inbox:read") < trace.index("model:1")
     assert coordinator.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
     assert coordinator.current_state.envelope.input_disposition == "applied"
+
+
+@pytest.mark.parametrize("scenario", ["compacted", "compaction_failed", "model_recovery"])
+async def test_compaction_precedes_receipt_publication_without_losing_incorporation(interaction_object_store, scenario):
+    compaction_fails = scenario == "compaction_failed"
+    trace: list[str] = []
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    inbox = _RecordingThreadInbox(trace)
+    control = RunAttemptControl(
+        context=_context(stored.envelope.thread_id),
+        execution=_RecordingAttemptExecution(trace),
+        states=states,
+        state=stored,
+        inbox=inbox,
+    )
+    compact_calls = 0
+    ordinary_calls = 0
+
+    async def step() -> str:
+        inbox.entries = (_inbox_entry(),)
+        return "stepped"
+
+    async def stream(messages, info):
+        nonlocal compact_calls, ordinary_calls
+        if info.model_settings and info.model_settings.get("tool_choice") == "none":
+            compact_calls += 1
+            if compact_calls == 1:
+                assert "new direction" in _business_prompts(tuple(messages))
+                assert control.current_state.envelope.host.consumed_inbox_entries == ()
+            if compaction_fails:
+                raise RuntimeError("compaction failed")
+            yield "The earlier work was summarized."
+            return
+        ordinary_calls += 1
+        if ordinary_calls == 1:
+            yield {0: DeltaToolCall(name="step", json_args="{}", tool_call_id="step-1")}
+        else:
+            assert ("new direction" in _business_prompts(tuple(messages))) is compaction_fails
+            if scenario == "model_recovery" and ordinary_calls == 2:
+                raise RuntimeError("recover after compaction")
+            yield "done"
+
+    result, _ = await _consume(
+        control=control,
+        bindings=RunBindings.embedded(),
+        state=stored,
+        model=FunctionModel(stream_function=stream),
+        projector=_RecordingEventProjector(),
+        outcome_adapter=_outcome_adapter(interaction_object_store),
+        terminal_committer=_RecordingTerminalCommitter(),
+        capabilities=(
+            Capability(id="test.step", tools=[Tool(step)]),
+            CompactionCapability(CompactionPolicy(trigger_tokens=1)),
+        ),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    assert compact_calls >= 1
+    assert ordinary_calls == (3 if scenario == "model_recovery" else 2)
+    assert trace.count("attempt:model") == ordinary_calls + compact_calls
+    assert (
+        "new direction" in _business_prompts(control.current_state.envelope.harness.message_history)
+    ) is compaction_fails
+    assert control.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+
+
+async def test_checkpoint_does_not_wait_for_driver_event_consumption(interaction_object_store, monkeypatch):
+    trace: list[str] = []
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    inbox = _RecordingThreadInbox(trace, entries=(_inbox_entry(),))
+    control = RunAttemptControl(
+        context=_context(stored.envelope.thread_id),
+        execution=_RecordingAttemptExecution(trace),
+        states=states,
+        state=stored,
+        inbox=inbox,
+    )
+    checkpointed = Event()
+
+    class DelayedProjector(_RecordingEventProjector):
+        async def project(self, event):
+            await checkpointed.wait()
+            super().project(event)
+
+    projector = DelayedProjector()
+    replace_state = states.replace
+
+    async def publish(prior, successor, **kwargs):
+        published = await replace_state(prior, successor, **kwargs)
+        if successor.host.consumed_inbox_entries:
+            assert not projector.events
+            checkpointed.set()
+        return published
+
+    monkeypatch.setattr(states, "replace", publish)
+    with fail_after(3):
+        result = await _run(
+            control=control, bindings=RunBindings.embedded(), state=stored, model=_model(trace, []), projector=projector
+        )
+    assert result.output_or_raise() == "turn-1"
+    assert control.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+    assert any(
+        isinstance(event, HarnessEvent) and isinstance(event.event, EnqueuedMessagesEvent) for event in projector.events
+    )
+    assert inbox.entries == ()
+
+
+@pytest.mark.parametrize("saved", ["raw", "compacted", "unmarked"])
+async def test_recovery_reconciles_known_inbox_identity_before_reoffering(interaction_object_store, saved):
+    entry = _inbox_entry()
+    states, initial = await _stored_state(interaction_object_store, initial_state())
+    content = entry.tagged_input(RUN_ID) if saved == "raw" else "new direction" if saved == "unmarked" else "summary"
+    envelope = progress_state(initial.envelope).model_copy(
+        update={
+            "harness": HarnessState.new(
+                thread_id=initial.envelope.thread_id, message_history=[ModelRequest(parts=[UserPromptPart(content)])]
+            ),
+            "host": HostContinuationState(consumed_inbox_entries=(entry.receipt,) if saved == "compacted" else ()),
+        }
+    )
+    stored = await states.replace(initial, envelope, run_attempt_id=ATTEMPT_ID, fence=1)
+    inbox = _RecordingThreadInbox([], entries=(entry,))
+    control = RunAttemptControl(
+        context=_context(stored.envelope.thread_id),
+        execution=_RecordingAttemptExecution([]),
+        states=states,
+        state=stored,
+        inbox=inbox,
+    )
+    calls = []
+    result = await _run(control=control, bindings=RunBindings.embedded(), state=stored, model=_model([], calls))
+    assert result.output_or_raise() == "turn-1"
+    assert _business_prompts(calls[0]).count("new direction") == {"raw": 1, "compacted": 0, "unmarked": 2}[saved]
+    assert control.current_state.envelope.host.consumed_inbox_entries == (entry.receipt,)
+    assert inbox.entries == ()
+
+
+@pytest.mark.parametrize("write_committed", [False, True])
+async def test_uncertain_terminal_checkpoint_keeps_input_pending_until_recovery(
+    interaction_object_store, monkeypatch, write_committed
+):
+    from a13n_service.storage import ObjectStoreUnavailable
+
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    inbox = _RecordingThreadInbox([])
+    control = RunAttemptControl(
+        context=_context(stored.envelope.thread_id),
+        execution=_RecordingAttemptExecution([]),
+        states=states,
+        state=stored,
+        inbox=inbox,
+    )
+
+    async def step():
+        inbox.entries = (_inbox_entry(),)
+        return "stepped"
+
+    result = await _run(
+        control=control,
+        bindings=RunBindings.embedded(),
+        state=stored,
+        model=_tool_model([], []),
+        capabilities=(Capability(id="test.step", tools=[Tool(step, name="_step")]),),
+    )
+    assert result.output_or_raise() == "done"
+    assert control.current_state.envelope.host.consumed_inbox_entries == ()
+    original_replace = states.replace
+
+    async def lose_response(prior, successor, **kwargs):
+        if write_committed:
+            await original_replace(prior, successor, **kwargs)
+        raise ObjectStoreUnavailable("checkpoint response lost")
+
+    monkeypatch.setattr(states, "replace", lose_response)
+    with pytest.raises(ObjectStoreUnavailable):
+        await control.finalize(
+            result, adapter=_outcome_adapter(interaction_object_store), committer=_RecordingTerminalCommitter()
+        )
+    assert inbox.entries == (_inbox_entry(),)
+    assert control.current_state.envelope.host.consumed_inbox_entries == ()
+    monkeypatch.setattr(states, "replace", original_replace)
+    restored = await states.read(ORGANIZATION_ID, RUN_ID)
+    replacement = RunAttemptControl(
+        context=_context(stored.envelope.thread_id),
+        execution=_RecordingAttemptExecution([]),
+        states=states,
+        state=restored,
+        inbox=inbox,
+    )
+    if write_committed:
+        await replacement.recover_outcome(_RecordingTerminalCommitter())
+    else:
+        calls = []
+        resumed = await _run(
+            control=replacement, bindings=RunBindings.embedded(), state=restored, model=_model([], calls)
+        )
+        assert resumed.output_or_raise() == "turn-1"
+        assert _business_prompts(calls[0]).count("new direction") == 1
+        if "new direction" in _business_prompts(replacement.current_state.envelope.harness.message_history):
+            assert replacement.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+        await replacement.finalize(
+            resumed,
+            adapter=_outcome_adapter(interaction_object_store),
+            committer=_RecordingTerminalCommitter(),
+        )
+    assert replacement.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+    assert inbox.entries == ()
 
 
 async def test_waiting_successor_withholds_inbox_until_first_response(
@@ -575,7 +788,6 @@ async def test_steer_during_tool_is_not_consumed_before_it_enters_checkpoint(int
 
     async def step() -> str:
         inbox.entries = (_inbox_entry(),)
-        inbox._delivered = False
         await coordinator.reconcile()
         await coordinator.request_handoff(RunAttemptYieldReason.service_drain)
         return "stepped"
@@ -987,12 +1199,12 @@ def _business_prompts(messages: tuple[ModelMessage, ...]) -> list[str]:
         if not isinstance(message, ModelRequest):
             continue
         for part in message.parts:
-            if (
-                isinstance(part, UserPromptPart)
-                and isinstance(part.content, str)
-                and part.content in {"accepted input", "new direction"}
-            ):
-                prompts.append(part.content)
+            if isinstance(part, UserPromptPart):
+                content = (part.content,) if isinstance(part.content, str) else part.content
+                for item in content:
+                    text = item.content if isinstance(item, TextContent) else item
+                    if isinstance(text, str) and text in {"accepted input", "new direction"}:
+                        prompts.append(text)
     return prompts
 
 
