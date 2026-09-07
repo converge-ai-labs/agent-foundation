@@ -277,4 +277,4 @@ Serialize the state-changing `observe()` and `resume()` calls. Properties and `s
 
 - Read the [Agent Harness guide](../agent-harness/index.md) for building, streaming, and resuming Agents.
 - Read the [package README](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/agent-stream-protocol) for package and release details.
-- Consult the [Agent Stream Protocol specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-stream-protocol) for the normative observation and compatibility contract.
+- Consult the [Agent Stream Protocol specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-stream-protocol) for the normative observation contract and schema boundary.

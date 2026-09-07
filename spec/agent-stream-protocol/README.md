@@ -8,9 +8,9 @@ One process-local observer binds to one Harness Run, can apply an optional Host 
 
 ## Document Catalog
 
-| Document                         | Owning contract                                                                                                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md) | Dependency direction, observer state and reconstruction, event conversion, custom fallback, Host processing, accumulation, lifecycle ownership, and compatibility |
+| Document                         | Owning contract                                                                                                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md) | Dependency direction, observer state and reconstruction, event conversion, custom fallback, Host processing, accumulation, lifecycle ownership, and the schema boundary |
 
 ## Reading Paths
 

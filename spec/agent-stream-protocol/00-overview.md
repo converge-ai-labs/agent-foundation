@@ -177,11 +177,11 @@ The observer's in-memory accumulation and history reconstruction are convenience
 
 A Host can derive a compact child display with one observer per child Run. Its replay-stable processor may drop encrypted reasoning and unrelated custom events, redact or truncate declared Tool content fields, and clear `RUN_FINISHED.result` when closed text already represents the final answer. The Host then compacts only closed message, reasoning, and completed Tool lifecycles. Open multipart state and running Tool calls remain observer state and are not publishable as a closed checkpoint. These are Host retention choices; Agent Stream Protocol owns neither the compact display schema nor its persistence or checkpoint acknowledgement.
 
-## Failure and Compatibility
+## Failure and Schema Boundary
 
 An invalid source type, source event without a Pydantic-compatible JSON representation, changed Run correlation, conflicting multipart identity, failed AG-UI construction, invalid processor replacement, or processor exception is reported to the caller. A failed `resume()` additionally leaves the observer fresh so the Host can retry with another complete history iterable. Completed output is normalized to JSON before accumulation; when a valid code-first output has no JSON representation, `RUN_FINISHED.result` is omitted and `rawEvent.result_omitted` records that presentation fact while the source Harness result remains available to the Host. The observer does not convert its own failure into a synthetic Harness or AG-UI lifecycle fact.
 
-Standard AG-UI names and fields retain their upstream meaning. The selected Harness/Protocol release and its pinned AG-UI dependency define conversion and source-history compatibility. A Host pins that release with its renderer and owns migration or retention compatibility for source or projected events it stores. New public Harness event variants remain observable through `CUSTOM` even before a dedicated standard mapping is added.
+Standard AG-UI names and fields retain their upstream meaning. The selected Harness/Protocol release and its pinned AG-UI dependency define one current observation schema. Hosts and renderers consume that schema together; source history supplied to `resume()` uses the same current public source types. Superseded pre-public event formats have no migration, name aliases, or dual-read path. Native user-defined and unknown Capability events remain observable through their original `kind` and payload; this is current extensibility, not support for an older observation schema.
 
 ## Invariants
 
