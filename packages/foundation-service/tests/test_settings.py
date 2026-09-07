@@ -241,3 +241,22 @@ def test_connectivity_bounds_and_public_origin_fail_closed() -> None:
         connectivity_http_origins=("http://foundation.internal:8080",),
     )
     assert settings.validated_connectivity_public_origin() == "http://foundation.internal:8080"
+
+
+def test_environment_capacity_configuration(monkeypatch):
+    defaults = Settings(_env_file=None)
+    assert defaults.environment_max_targets_per_workspace == 1000
+    assert defaults.environment_max_active_per_workspace == 100
+    assert defaults.environment_maintenance_batch_size == 64
+    monkeypatch.setenv("FOUNDATION_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE", "2000")
+    monkeypatch.setenv("FOUNDATION_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE", "200")
+    configured = Settings(_env_file=None)
+    assert configured.environment_max_targets_per_workspace == 2000
+    assert configured.environment_max_active_per_workspace == 200
+    for field in (
+        "environment_max_targets_per_workspace",
+        "environment_max_active_per_workspace",
+        "environment_maintenance_batch_size",
+    ):
+        with pytest.raises(ValueError):
+            Settings(_env_file=None, **{field: 0})

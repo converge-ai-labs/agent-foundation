@@ -53,6 +53,7 @@ class RunEnvironment(Environment):
         self._configured_descriptor = descriptor
         self._delegate: Environment | None = None
         self._generation = 0
+        self._credential_generation: int | None = None
         self.access = access
 
     @property
@@ -88,32 +89,42 @@ class RunEnvironment(Environment):
     async def _prepare(
         self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]
     ) -> None:
-        if self._delegate is not None:
-            self._cache_state(self._delegate.dump_state())
-            delegate, self._delegate = self._delegate, None
-            try:
-                with fail_after(10, shield=True):
-                    await delegate.close()
-            except Exception:
-                logger.exception("Discarded Environment connection cleanup failed")
-        async with asyncio.timeout(self._coordinator.timeout_seconds + 10):
+        delay = 0.1
+        async with asyncio.timeout(self._coordinator.lease_duration.total_seconds()):
             while True:
                 try:
                     operation = await self._coordinator.acquire(self.environment_id, "prepare", attempt=self._attempt)
                     break
                 except EnvironmentOperationBusy:
-                    await asyncio.sleep(0.1)
-        result = await self._coordinator.execute(operation)
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 1)
+        delegate, self._delegate = self._delegate, None
+        if delegate is not None:
+            self._cache_state(delegate.dump_state())
+            reusable = (
+                delegate.recover_on_unavailable
+                and delegate.dump_state() == operation.state
+                and self._credential_generation == operation.credential.generation
+            )
+            if not reusable:
+                try:
+                    with fail_after(10, shield=True):
+                        await delegate.close()
+                except Exception:
+                    logger.exception("Discarded Environment connection cleanup failed")
+                delegate = None
+        result = await self._coordinator.execute(operation, recovering=delegate)
         delegate = result.environment
         self._cache_state(delegate.dump_state())
         try:
-            await delegate.enter(
-                thread_id=thread_id,
-                run_id=run_id,
-                agent_instance_id=agent_instance_id,
-                mount_id=mount_id,
-                host_refs=host_refs,
-            )
+            if not delegate.is_entered:
+                await delegate.enter(
+                    thread_id=thread_id,
+                    run_id=run_id,
+                    agent_instance_id=agent_instance_id,
+                    mount_id=mount_id,
+                    host_refs=host_refs,
+                )
         except BaseException as error:
             try:
                 with fail_after(10, shield=True):
@@ -122,6 +133,7 @@ class RunEnvironment(Environment):
                 error.add_note(f"Environment cleanup also failed: {cleanup_error!r}")
             raise
         self._delegate, self._generation = delegate, result.generation
+        self._credential_generation = operation.credential.generation
 
     def _bind_mount(self, mount_id: str) -> None:
         if self._delegate is not None:
@@ -131,7 +143,7 @@ class RunEnvironment(Environment):
         if self._delegate is None:
             raise RuntimeError("Environment was not prepared")
         await self._coordinator.validate_use(self._attempt, self.environment_id)
-        await self._delegate.ensure_ready(operations)
+        await self._delegate.check_ready(operations)
 
     def dump_state(self) -> EnvironmentState | None:
         return self._delegate.dump_state() if self._delegate else super().dump_state()

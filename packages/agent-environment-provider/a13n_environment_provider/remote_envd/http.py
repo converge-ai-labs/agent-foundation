@@ -79,6 +79,11 @@ class HttpEnvdEnvironmentProvider(RemoteEnvdProvider):
     def key(self) -> str:
         return HTTP_PROVIDER_KEY
 
+    def backend_identity(self, configuration: BaseModel) -> str:
+        if not isinstance(configuration, HttpEnvdBackendConfiguration):
+            raise TypeError("HTTP Envd requires HttpEnvdBackendConfiguration")
+        return configuration.endpoint
+
     async def create_runtime(
         self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext
     ) -> HttpEnvdProviderRuntime:

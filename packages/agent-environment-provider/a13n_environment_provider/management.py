@@ -6,7 +6,7 @@ import socket
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import TracebackType
 from typing import Literal
@@ -173,6 +173,11 @@ class Environment(ABC):
     async def _stop(self) -> None:
         raise NotImplementedError("This Provider does not support resumable stop")
 
+    @property
+    def keepalive_horizon(self) -> timedelta:
+        """Desired retention interval, bounded by this target configuration."""
+        return timedelta(seconds=300)
+
     async def keepalive(self, *, deadline: datetime, operation_id: str) -> datetime | None:
         return None
 
@@ -180,13 +185,29 @@ class Environment(ABC):
         """Return a detached copy of the last validated cached state without external I/O."""
         return self._known_state.model_copy(deep=True) if self._known_state is not None else None
 
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+        """Check an entered connection without preparing or recovering its target."""
+        if self._lifecycle != "entered":
+            raise RuntimeError("Environment readiness requires an entered adapter")
+        await self._ensure_ready(operations)
+        if self._lifecycle != "entered":
+            raise RuntimeError("Environment is closed")
+
+    async def recover(self) -> None:
+        """Refresh this scope under explicit Host authority, retaining native observations."""
+        async with self._prepare_lock:
+            if self._lifecycle != "entered" or not self.recover_on_unavailable:
+                raise RuntimeError("Environment does not support in-scope recovery")
+            self._prepared = False
+            await self._prepare_locked()
+
     async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if self._lifecycle != "entered":
             raise RuntimeError("Environment operations require an entered adapter")
         await self.prepare()
         revision = self._preparation_revision
         try:
-            await self._ensure_ready(operations)
+            await self.check_ready(operations)
         except EnvironmentError as error:
             async with self._prepare_lock:
                 if self._lifecycle != "entered":
@@ -205,7 +226,7 @@ class Environment(ABC):
                         code="environment_rebuilt" if changed else "environment_connection_refreshed",
                         details={"environment_id": self.environment_id, "generation": self.descriptor.generation},
                     ) from error
-            await self._ensure_ready(operations)
+            await self.check_ready(operations)
         if self._lifecycle != "entered":
             raise RuntimeError("Environment is closed")
 
@@ -302,10 +323,14 @@ class EnvironmentProvider(ABC):
         """Canonical backend target identity; exclude credentials and session state.
 
         Stateless adapters return None. Durable providers must override this method.
-        The host namespaces this identity by the immutable backend configuration.
+        The Host namespaces this identity through backend_identity().
         """
         del configuration, state
         return None
+
+    def backend_identity(self, configuration: BaseModel) -> JsonValue:
+        """Return the backend namespace; overrides exclude connection tuning fields."""
+        return configuration.model_dump(mode="json")
 
     @property
     @abstractmethod

@@ -121,6 +121,7 @@ def upgrade() -> None:
         sa.Column("operation_action", sa.String(length=16), nullable=True),
         sa.Column("operation_owner", sa.String(length=72), nullable=True),
         sa.Column("operation_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("next_maintenance_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error", sa.JSON(), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
@@ -173,6 +174,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("target_identity", name="uq_environments_provider_target"),
     )
     op.create_index("ix_environments_maintenance", "environments", ["next_maintenance_at", "id"], unique=False)
+    op.create_index("ix_environments_capacity", "environments", ["workspace_id", "ownership", "status"], unique=False)
     op.create_table(
         "environment_commands",
         sa.Column("principal_type", sa.String(length=32), nullable=False),

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import socket
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -35,6 +35,7 @@ from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
+from .capacity import DEFAULT_CAPACITY_LIMITS, CapacityLimits
 from .configuration import load_configuration
 from .domain import EnvironmentConfiguration, EnvironmentStatus, JsonObject, TemplateConfiguration, retention_action
 from .errors import is_target_identity_conflict
@@ -44,7 +45,9 @@ from .models import (
     EnvironmentProviderRecord,
     EnvironmentRecord,
 )
+from .policy import FAILURE_BACKOFF, RENEWAL_MARGIN
 from .retention import has_active_use, refresh_retention
+from .scheduling import next_maintenance
 
 if TYPE_CHECKING:
     from a13n_service.interactions.attempts import AttemptContext
@@ -68,7 +71,7 @@ class LifecycleOperation:
     fence: int
     owner: str
     action: Action
-    target_identity: str | None
+    previous_status: str
     run_id: str | None = None
     attempt_id: str | None = None
 
@@ -89,6 +92,7 @@ class EnvironmentLifecycle:
         *,
         timeout_seconds: float = 60,
         clock: Clock = utc_now,
+        capacity: CapacityLimits = DEFAULT_CAPACITY_LIMITS,
     ) -> None:
         self.sessions = sessions
         self.catalog = catalog
@@ -96,6 +100,11 @@ class EnvironmentLifecycle:
         self.storage_root = storage_root
         self.timeout_seconds = timeout_seconds
         self.clock = clock
+        self.capacity = capacity
+
+    @property
+    def lease_duration(self) -> timedelta:
+        return timedelta(seconds=self.timeout_seconds + 10)
 
     async def acquire(
         self, environment_id: str, action: Action, *, attempt: AttemptContext | None = None
@@ -111,6 +120,7 @@ class EnvironmentLifecycle:
                 run, _, _ = await lock_attempt_lease(session, attempt, now)
                 if run.environment_id != environment_id:
                     raise ValueError("Environment is not the Run's accepted selection")
+                await self.capacity.lock_workspace(session, environment_id)
             row = await session.scalar(
                 select(EnvironmentRecord).where(EnvironmentRecord.id == environment_id).with_for_update()
             )
@@ -146,7 +156,9 @@ class EnvironmentLifecycle:
             if action in {"stop", "delete"}:
                 if row.ownership != "managed" or await has_active_use(session, row.id):
                     raise ValueError("Environment cannot be stopped or deleted while in use or externally owned")
+            previous_status = row.status
             if run is not None:
+                await self.capacity.admit(session, row)
                 run.environment_use_started_at = run.environment_use_started_at or now
                 if row.retention_condition != "active":
                     row.retention_condition = "active"
@@ -154,7 +166,7 @@ class EnvironmentLifecycle:
             row.operation_generation += 1
             owner = new_object_id("envowner")
             row.operation_owner = owner
-            row.operation_expires_at = now + timedelta(seconds=self.timeout_seconds + 10)
+            row.operation_expires_at = now + self.lease_duration
             row.next_maintenance_at = now
             configuration = await load_configuration(session, row)
             if action in {"stop", "delete"} and not resuming_operation:
@@ -180,7 +192,7 @@ class EnvironmentLifecycle:
                 row.operation_generation,
                 owner,
                 action,
-                row.target_identity,
+                previous_status,
                 attempt.run_id if attempt else None,
                 attempt.run_attempt_id if attempt else None,
             )
@@ -245,33 +257,46 @@ class EnvironmentLifecycle:
             configuration=configuration, environment_id=operation.environment_id, state=operation.state, runtime=runtime
         )
 
-    async def execute(self, operation: LifecycleOperation) -> LifecycleResult:
-        environment = None
+    async def execute(
+        self, operation: LifecycleOperation, *, recovering: OperationEnvironment | None = None
+    ) -> LifecycleResult:
+        if recovering is not None and operation.action != "prepare":
+            raise ValueError("Only preparation can recover an existing operation scope")
+        environment = recovering
+        effect_known = False
+        expires_at = None
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 if operation.action in {"stop", "delete"}:
                     await self.authorize_command(operation)
-                environment = await self.construct(operation)
+                if environment is None:
+                    environment = await self.construct(operation)
                 observation = None
                 if operation.action == "reconcile":
                     observation = await environment.reconcile()
                 elif operation.action == "prepare":
-                    await environment.prepare()
-                elif operation.state is None and operation.action in {"stop", "delete"}:
+                    if recovering is None:
+                        await environment.prepare()
+                    else:
+                        await environment.recover()
+                elif operation.previous_status in {"unprepared", "deleted"} and operation.action in {"stop", "delete"}:
                     pass
                 elif operation.action == "stop":
                     await environment.stop()
                 elif operation.action == "delete":
                     await environment.destroy()
                 else:
-                    deadline = assume_utc(self.clock()) + timedelta(seconds=300)
+                    deadline = assume_utc(self.clock()) + environment.keepalive_horizon
                     retained_until = await environment.keepalive(deadline=deadline, operation_id=operation.operation_id)
+                    effect_known = True
+                    expires_at = retained_until
                     if retained_until is None or assume_utc(retained_until) < deadline:
                         raise EnvironmentError(
                             "Provider did not confirm the required retention deadline",
                             code="environment_keepalive_failed",
                         )
-                generation = await self.publish(operation, environment, observation=observation)
+                effect_known = True
+                generation = await self.publish(operation, environment, observation=observation, expires_at=expires_at)
             return LifecycleResult(environment, generation)
         except BaseException as error:
             if is_target_identity_conflict(error):
@@ -282,7 +307,9 @@ class EnvironmentLifecycle:
             # operations retain their identity for reconciliation, never a new create.
             try:
                 with fail_after(10, shield=True):
-                    await self.publish(operation, environment, error=error)
+                    await self.publish(
+                        operation, environment, error=error, effect_known=effect_known, expires_at=expires_at
+                    )
             except BaseException as publication_error:
                 error.add_note(f"Lifecycle failure publication also failed: {publication_error!r}")
             finally:
@@ -300,6 +327,8 @@ class EnvironmentLifecycle:
         environment: OperationEnvironment | None,
         *,
         error: BaseException | None = None,
+        effect_known: bool = False,
+        expires_at: datetime | None = None,
         observation: Literal["running", "stopped", "absent"] | None = None,
     ) -> int:
         succeeded = error is None
@@ -308,7 +337,7 @@ class EnvironmentLifecycle:
         resolved = (
             succeeded
             or environment is None
-            or isinstance(error, EnvironmentError)
+            or effect_known
             or (
                 isinstance(error, EnvironmentProviderError)
                 and error.certainty != EnvironmentProviderOutcomeCertainty.UNKNOWN
@@ -324,7 +353,7 @@ class EnvironmentLifecycle:
                 value=operation.configuration.configuration,
             )
             identity = scoped_target_identity(
-                operation.provider_type,
+                provider,
                 operation.provider_configuration,
                 provider.target_identity(configuration=configuration, state=state),
             )
@@ -344,22 +373,35 @@ class EnvironmentLifecycle:
             if identity is not None and identity != row.target_identity:
                 row.generation += 1
                 row.target_identity = identity
+                row.expires_at = None
+            if operation.action == "keepalive" and expires_at is not None:
+                row.expires_at = expires_at
             if succeeded:
                 if operation.action == "prepare" and row.generation == 0:
                     row.generation = 1
                 if operation.action == "delete":
                     row.status, row.state, row.target_identity = "deleted", None, None
                 elif operation.action == "stop":
-                    row.status = "stopped"
+                    row.status = (
+                        operation.previous_status
+                        if operation.previous_status in {"unprepared", "deleted"}
+                        else "stopped"
+                    )
                 elif operation.action == "prepare":
                     row.status = "running"
                 elif operation.action == "reconcile":
                     assert observation is not None
                     row.status = "unavailable" if observation == "absent" else observation
+                if operation.action in {"stop", "delete"}:
+                    row.expires_at = None
                 row.last_error = None
             else:
                 if operation.action in {"prepare", "reconcile"}:
-                    row.status = "unavailable"
+                    row.status = (
+                        operation.previous_status
+                        if resolved and state is None and operation.previous_status in {"unprepared", "deleted"}
+                        else "unavailable"
+                    )
                 row.last_error = {
                     "code": "environment_operation_failed" if resolved else "environment_operation_unresolved"
                 }
@@ -371,7 +413,12 @@ class EnvironmentLifecycle:
                 row.operation_id = row.operation_action = row.operation_owner = None
                 row.operation_expires_at = None
             row.updated_at = now
-            row.next_maintenance_at = now + timedelta(seconds=10)
+            deadline = (
+                next_maintenance(row, operation.configuration, requires_keepalive=provider.requires_keepalive, now=now)
+                if isinstance(operation.configuration, TemplateConfiguration)
+                else None
+            )
+            row.next_maintenance_at = max(deadline, now + FAILURE_BACKOFF) if not succeeded and deadline else deadline
             session.add(
                 security_audit_record(
                     audit_id=new_object_id("aud"),
@@ -407,21 +454,14 @@ class EnvironmentLifecycle:
                 return
             configuration = await load_configuration(session, row)
             assert isinstance(configuration, TemplateConfiguration)
+            provider = await session.get(EnvironmentProviderRecord, row.provider_id)
+            if provider is None:
+                raise ValueError("Environment Provider is unavailable")
+            implementation = self.catalog.require(provider.type)
             condition = await refresh_retention(session, row, now)
-            row.next_maintenance_at = now + timedelta(seconds=10)
             if row.operation_id is not None:
-                if row.operation_expires_at is not None and assume_utc(row.operation_expires_at) > now:
-                    return
-                if row.operation_action in {"stop", "delete", "keepalive"}:
-                    action = (
-                        "stop"
-                        if row.operation_action == "stop"
-                        else "delete"
-                        if row.operation_action == "delete"
-                        else "keepalive"
-                    )
-                elif row.operation_action == "prepare":
-                    action = "reconcile"
+                if row.operation_expires_at is None or assume_utc(row.operation_expires_at) <= now:
+                    action = abandoned_action(row.operation_action)
             else:
                 action = retention_action(
                     configuration.retention,
@@ -430,15 +470,27 @@ class EnvironmentLifecycle:
                     status=EnvironmentStatus(row.status),
                     now=now,
                 )
-                provider = await session.get(EnvironmentProviderRecord, row.provider_id)
                 if (
                     action is None
                     and row.status == "running"
-                    and provider is not None
-                    and self.catalog.require(provider.type).requires_keepalive
+                    and implementation.requires_keepalive
+                    and (row.expires_at is None or assume_utc(row.expires_at) <= now + RENEWAL_MARGIN)
                 ):
                     action = "keepalive"
+            row.next_maintenance_at = next_maintenance(
+                row, configuration, requires_keepalive=implementation.requires_keepalive, now=now
+            )
         if action is not None:
             operation = await self.acquire(environment_id, action)
             result = await self.execute(operation)
             await result.environment.close()
+
+
+def abandoned_action(action: str | None) -> Action:
+    match action:
+        case "prepare" | "reconcile":
+            return "reconcile"
+        case "stop" | "delete" | "keepalive":
+            return action
+        case _:
+            raise ValueError("Invalid persisted Environment lifecycle action")

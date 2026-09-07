@@ -421,7 +421,7 @@ class EnvironmentService:
             target_identity = implementation.target_identity(configuration=configuration, state=request.state)
         except (ValueError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment registration state is invalid") from error
-        target_identity = scoped_target_identity(provider.type, provider.configuration, target_identity)
+        target_identity = scoped_target_identity(implementation, provider.configuration, target_identity)
         row = EnvironmentRecord(
             id=new_object_id("env"),
             organization_id=provider.organization_id,
