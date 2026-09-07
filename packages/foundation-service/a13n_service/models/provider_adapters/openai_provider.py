@@ -22,10 +22,11 @@ from .types import RuntimeProvider
 def build[NativeOpenAIProvider: Provider[AsyncOpenAI]](
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
     provider_factory: Callable[..., NativeOpenAIProvider],
 ) -> NativeOpenAIProvider:
     client = AsyncOpenAI(
+        max_retries=0,
         api_key=require_credential(provider),
         base_url=require_endpoint(provider),
         http_client=http_client,

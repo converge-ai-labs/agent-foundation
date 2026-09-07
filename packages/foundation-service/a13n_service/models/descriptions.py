@@ -5,21 +5,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from .domain import ModelDescription
+from .domain import ModelCandidate, ModelDescription
 from .settings import settings_schema
 
 if TYPE_CHECKING:
     from .providers import ProviderRegistry
 
 
-def default_description(model_api: str, upstream_model: str, display_name: str | None = None) -> ModelDescription:
-    schema = settings_schema(model_api)
-    return ModelDescription(
+def default_candidate(model_api: str, upstream_model: str, display_name: str | None = None) -> ModelCandidate:
+    return ModelCandidate(
         upstream_model=upstream_model,
         display_name=display_name,
         suggested_model_api=model_api,
-        settings_schema=schema,
-        parameter_support={f"/{name}": "unknown" for name in schema["properties"]},
     )
 
 
@@ -32,11 +29,27 @@ def describe_model(
     display_name: str | None = None,
     metadata: Mapping[str, Any] | None = None,
 ) -> ModelDescription:
-    selected = model_api or registry.definition(provider_type).default_model_api
+    candidate = describe_candidate(
+        registry, provider_type, upstream_model, model_api=model_api, display_name=display_name, metadata=metadata
+    )
+    return ModelDescription(**candidate.model_dump(), settings_schema=settings_schema(candidate.suggested_model_api))
+
+
+def describe_candidate(
+    registry: ProviderRegistry,
+    provider_type: str,
+    upstream_model: str,
+    *,
+    model_api: str | None = None,
+    display_name: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+) -> ModelCandidate:
+    integration = registry.integration(provider_type)
+    selected = model_api or integration.supported_model_apis[0]
     registry.validate_model_api(provider_type, selected)
-    discovery = registry.integration(provider_type).model_discovery
+    discovery = integration.model_discovery
     if discovery is None or metadata is None:
-        return default_description(selected, upstream_model, display_name)
+        return default_candidate(selected, upstream_model, display_name)
     return discovery.describe(selected, upstream_model, display_name, metadata)
 
 

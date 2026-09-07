@@ -178,7 +178,7 @@ def test_model_cursor_preserves_legacy_wire() -> None:
         "NDU2WiIsInYiOiIxIn0"
     )
 
-    assert encode_model_cursor(updated_at=_STAMP, model_id="mdl_1234567890abcdef", scope=_SCOPE) == cursor
+    assert encode_model_cursor(updated_at=_STAMP, item_id="mdl_1234567890abcdef", scope=_SCOPE) == cursor
     assert decode_model_cursor(cursor, scope=_SCOPE) == (_UTC_STAMP, "mdl_1234567890abcdef")
     _assert_public_errors(ModelCursorError, lambda value, scope: decode_model_cursor(value, scope=scope), cursor)
     with pytest.raises(ModelCursorError, match=_INVALID_CURSOR):

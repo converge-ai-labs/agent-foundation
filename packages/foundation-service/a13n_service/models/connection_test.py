@@ -16,8 +16,9 @@ from pydantic_ai.settings import ModelSettings
 
 from .domain import ModelConnectionTestResult, ModelExecutionSnapshot
 from .model_factory import NativeModelFactory
-from .provider_adapters.base import ProviderOperationError
+from .provider_adapters.base import ProviderOperationError, ProviderOperationUnsupported
 from .provider_runtime import LiveProviderResolver
+from .requests import LiveProviderModel
 from .settings import JsonObject, validate_settings
 
 
@@ -36,12 +37,13 @@ class NativeModelConnectionTester:
         organization_id: str,
         workspace_id: str | None,
     ) -> None:
-        provider = await self._provider_resolver.resolve(
+        model = await LiveProviderModel.create(
+            snapshot=snapshot,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            snapshot=snapshot,
+            provider_resolver=self._provider_resolver,
+            model_factory=self._model_factory,
         )
-        model = self._model_factory.build(snapshot, provider)
         async with model:
             response = await model.request(
                 [ModelRequest(parts=[UserPromptPart("Reply with OK.")])],
@@ -59,6 +61,12 @@ async def test_connection(
     try:
         with fail_after(timeout_seconds):
             await operation
+    except ProviderOperationUnsupported:
+        success, code, message = (
+            False,
+            "connection_test_unsupported",
+            f"The {subject} has no supported connection test.",
+        )
     except TimeoutError:
         success, code, message = False, "connection_timeout", f"The {subject} connection timed out."
     except (ModelResolutionError, ModelAPIError, UnexpectedModelBehavior, httpx2.HTTPError, ProviderOperationError):

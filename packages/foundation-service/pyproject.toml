@@ -25,6 +25,7 @@ dependencies = [
     "fastmcp>=3.0,<4",
     "mcp>=1.26,<2",
     "google-auth>=2.40,<3",
+    "google-genai>=1.0,<3",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
     "openai>=3.5,<4",

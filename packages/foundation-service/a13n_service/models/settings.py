@@ -38,64 +38,6 @@ _PRIVATE_SETTINGS = frozenset(
         "anthropic_code_execution_tool_version",
     }
 )
-_RESERVED = frozenset(
-    {
-        "model",
-        "models",
-        "modelid",
-        "deployment",
-        "deploymentid",
-        "preset",
-        "presets",
-        "apikey",
-        "authorization",
-        "credentials",
-        "credential",
-        "baseurl",
-        "endpoint",
-        "url",
-        "messages",
-        "input",
-        "instructions",
-        "system",
-        "tools",
-        "toolresults",
-        "toolresult",
-        "functions",
-        "stream",
-        "streamoptions",
-        "responseformat",
-        "outputschema",
-        "jsonschema",
-        "contents",
-        "systeminstruction",
-        "toolconfig",
-        "cachedcontent",
-        "conversation",
-        "previousresponseid",
-        "inferenceprofile",
-        "transforms",
-        "format",
-        "schema",
-        "responsemimetype",
-        "responseschema",
-        "responsejsonschema",
-        "outputconfig",
-        "outputformat",
-        "systemprompt",
-        "httpoptions",
-        "clientoptions",
-        "headers",
-        "extraheaders",
-        "auth",
-        "authentication",
-        "accesskey",
-        "secretkey",
-        "sessiontoken",
-        "awsaccesskeyid",
-        "awssecretaccesskey",
-    }
-)
 _SAFE_HEADERS = frozenset({"http-referer", "x-title"})
 _ESCAPE_FIELDS = frozenset({"extra_body", "bedrock_additional_model_requests_fields"})
 
@@ -203,38 +145,21 @@ def validate_settings_bounds(settings: JsonObject) -> JsonObject:
     return settings
 
 
-def _request_key(key: str) -> str:
-    return key.replace("_", "").replace("-", "").casefold()
-
-
-def _validate_escape(value: JsonValue, path: list[str | int], addressed: set[str]) -> None:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            if _request_key(key) in _RESERVED:
-                raise _invalid([*path, key], "reserved_request_field")
-            if _request_key(key) in addressed:
-                raise _invalid([*path, key], "conflicting_native_setting")
-            _validate_escape(child, [*path, key], addressed)
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            _validate_escape(child, [*path, index], addressed)
-
-
-def outbound_parameter(name: str) -> str:
-    """Native settings names that address the same upstream field."""
-    aliases = {
-        "max_tokens": "max_tokens",
-        "stop_sequences": "stop",
-        "google_thinking_config": "thinkingConfig",
-        "google_logprobs": "responseLogprobs",
-        "google_top_logprobs": "logprobs",
-    }
-    if name in aliases:
-        return aliases[name]
-    for prefix in ("openai_", "anthropic_", "openrouter_", "google_", "bedrock_"):
-        if name.startswith(prefix):
-            return name.removeprefix(prefix)
-    return name
+def _validate_body_paths(model_api: str, field: str, body: JsonValue) -> None:
+    for path in BUILT_IN_MODEL_APIS[model_api].protected_body_paths:
+        value = body
+        visited: list[str | int] = [field]
+        for part in path:
+            # A scalar ancestor replaces the protected object just as surely as
+            # supplying its leaf. Unrelated nested extension data remains opaque.
+            if not isinstance(value, dict):
+                raise _invalid(visited, "reserved_request_field")
+            if part not in value:
+                break
+            value = value[part]
+            visited.append(part)
+        else:
+            raise _invalid(visited, "reserved_request_field")
 
 
 def validate_settings(model_api: str, settings: JsonObject) -> JsonObject:
@@ -242,18 +167,8 @@ def validate_settings(model_api: str, settings: JsonObject) -> JsonObject:
     error = next(Draft202012Validator(settings_schema(model_api)).iter_errors(settings), None)
     if error is not None:
         raise _invalid(list(error.absolute_path), "invalid_type_or_value")
-    addressed = {_request_key(outbound_parameter(key)) for key in settings if key not in _ESCAPE_FIELDS}
-    if "max_tokens" in settings:
-        addressed.update({"maxcompletiontokens", "maxoutputtokens", "maxtokens"})
-    if "thinking" in settings:
-        addressed.update({"reasoning", "reasoningeffort", "thinking", "thinkingconfig"})
-    if any(key.startswith("openai_reasoning_") for key in settings):
-        addressed.add("reasoning")
-    if "openai_text_verbosity" in settings:
-        addressed.add("verbosity")
     for field in _ESCAPE_FIELDS & settings.keys():
-        extra = settings[field]
-        _validate_escape(extra, [field], addressed)
+        _validate_body_paths(model_api, field, settings[field])
     return settings
 
 

@@ -12,9 +12,9 @@ from .types import EmptyProviderConfiguration, RuntimeProvider
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    pydantic_provider_name: str,
+    model_api: str,
 ) -> ZaiProvider:
-    return openai_provider.build(provider, http_client, pydantic_provider_name, ZaiProvider)
+    return openai_provider.build(provider, http_client, model_api, ZaiProvider)
 
 
 INTEGRATION = ProviderIntegration(

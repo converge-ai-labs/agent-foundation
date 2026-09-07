@@ -19,7 +19,7 @@ from .domain import (
     ModelCollection,
     ModelConnectionTestResult,
     ModelDescription,
-    ModelDescriptionCollection,
+    ModelDiscovery,
     ModelProvider,
     ModelProviderCollection,
     ModelTestRequest,
@@ -145,11 +145,11 @@ async def update_model_provider(
 
 @router.post(
     "/workspaces/{workspace_id}/model-providers/{provider_id}/discover-models",
-    response_model=ModelDescriptionCollection,
+    response_model=ModelDiscovery,
 )
 async def discover_provider_models(
     request: Request, actor: Actor, workspace_id: str, provider_id: str
-) -> ModelDescriptionCollection:
+) -> ModelDiscovery:
     return await _provider_service(request).discover_models(
         actor=actor,
         workspace_id=workspace_id,
@@ -337,11 +337,11 @@ async def organization_update_model_provider(
 
 @router.post(
     "/organizations/{organization_id}/model-providers/{provider_id}/discover-models",
-    response_model=ModelDescriptionCollection,
+    response_model=ModelDiscovery,
 )
 async def organization_discover_provider_models(
     request: Request, actor: Actor, organization_id: str, provider_id: str
-) -> ModelDescriptionCollection:
+) -> ModelDiscovery:
     require_organization_boundary(actor, organization_id)
     return await _provider_service(request).discover_models(
         actor=actor,

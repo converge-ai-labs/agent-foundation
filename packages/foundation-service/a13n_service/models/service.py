@@ -220,7 +220,7 @@ class ModelService:
         page = records[:limit]
         next_cursor = None
         if len(records) > limit and page:
-            next_cursor = encode_model_cursor(updated_at=page[-1].updated_at, model_id=page[-1].id, scope=scope)
+            next_cursor = encode_model_cursor(updated_at=page[-1].updated_at, item_id=page[-1].id, scope=scope)
         return ModelCollection(items=tuple(record.to_resource() for record in page), next_cursor=next_cursor)
 
     async def update(

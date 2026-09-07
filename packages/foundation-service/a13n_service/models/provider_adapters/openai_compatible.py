@@ -57,7 +57,7 @@ class Config(ProviderConfiguration):
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
 ) -> OpenAIProvider:
     configuration = provider.configuration
     credential = provider.credential or ""
@@ -65,6 +65,7 @@ def _build_provider(
     if configuration["auth_mode"] == "api_key_header":
         default_headers = {str(configuration["api_key_header_name"]): credential}
     client = AsyncOpenAI(
+        max_retries=0,
         api_key=credential,
         base_url=str(configuration["base_url"]),
         default_headers=default_headers,
@@ -100,9 +101,8 @@ INTEGRATION = ProviderIntegration(
     type="openai_compatible",
     display_name="OpenAI-Compatible",
     configuration_model=Config,
-    supported_model_apis=("openai.responses", "openai.chat_completions"),
+    supported_model_apis=("openai.chat_completions", "openai.responses"),
     build_provider=_build_provider,
-    default_model_api="openai.chat_completions",
     credential_required=False,
     endpoint=_endpoint,
     endpoint_configuration_field="base_url",

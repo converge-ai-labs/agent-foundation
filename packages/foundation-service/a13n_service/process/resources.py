@@ -50,7 +50,7 @@ async def build_execution_resources(
             event_hooks={"request": [validate_model_request]},
         )
     )
-    native_model_factory = NativeModelFactory(model_http_client, model_provider_registry)
+    native_model_factory = NativeModelFactory(model_http_client, model_provider_registry, model_endpoint_policy)
     return ExecutionResources(
         model_provider_registry=model_provider_registry,
         model_endpoint_policy=model_endpoint_policy,

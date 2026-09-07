@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from a13n_harness import AgentContext
 from a13n_harness.errors import ModelResolutionError
-from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model as PydanticModel
-from pydantic_ai.models import ModelRequestParameters, ModelResolutionContext, StreamedResponse
-from pydantic_ai.models.wrapper import WrapperModel
-from pydantic_ai.settings import ModelSettings
+from pydantic_ai.models import ModelResolutionContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -27,8 +22,9 @@ from .model_factory import NativeModelFactory
 from .models import ModelProviderRecord, ModelRecord
 from .provider_runtime import LiveProviderResolver
 from .providers import ProviderRegistry
+from .requests import LiveProviderModel
 from .service_common import ModelError
-from .settings import JsonObject, effective_settings, validate_settings
+from .settings import JsonObject, effective_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,80 +116,6 @@ class AcceptedModelSelector:
         return ModelExecutionSnapshot.freeze(model)
 
 
-class LiveProviderModel(WrapperModel):
-    """Preserve Model identity while refreshing its Provider for every outbound call."""
-
-    def __init__(
-        self,
-        *,
-        initial: PydanticModel[Any],
-        snapshot: ModelExecutionSnapshot,
-        organization_id: str,
-        workspace_id: str,
-        provider_resolver: LiveProviderResolver,
-        model_factory: NativeModelFactory,
-        harness_thread_id: str | None = None,
-    ) -> None:
-        super().__init__(initial)
-        self._snapshot = snapshot
-        self._organization_id = organization_id
-        self._workspace_id = workspace_id
-        self._provider_resolver = provider_resolver
-        self._model_factory = model_factory
-        self._harness_thread_id = harness_thread_id
-
-    async def __aenter__(self) -> LiveProviderModel:
-        return self
-
-    async def __aexit__(self, *_: object) -> None:
-        return None
-
-    async def _fresh(self) -> PydanticModel[Any]:
-        provider = await self._provider_resolver.resolve(
-            organization_id=self._organization_id,
-            workspace_id=self._workspace_id,
-            snapshot=self._snapshot,
-        )
-        return self._model_factory.build(self._snapshot, provider)
-
-    async def request(
-        self,
-        messages: list[ModelMessage],
-        model_settings: ModelSettings | None,
-        model_request_parameters: ModelRequestParameters,
-    ) -> ModelResponse:
-        self._validate_request_settings(model_settings)
-        model = await self._fresh()
-        async with model:
-            return await model.request(messages, model_settings, model_request_parameters)
-
-    @asynccontextmanager
-    async def request_stream(
-        self,
-        messages: list[ModelMessage],
-        model_settings: ModelSettings | None,
-        model_request_parameters: ModelRequestParameters,
-        run_context: Any = None,
-    ) -> AsyncIterator[StreamedResponse]:
-        self._validate_request_settings(model_settings)
-        model = await self._fresh()
-        async with model:
-            async with model.request_stream(messages, model_settings, model_request_parameters, run_context) as stream:
-                yield stream
-
-    def _validate_request_settings(self, settings: ModelSettings | None) -> None:
-        value = dict(settings or {})
-        headers = value.get("extra_headers")
-        if isinstance(headers, dict) and self._harness_thread_id is not None:
-            headers = dict(headers)
-            if headers.get("x-session-id") == self._harness_thread_id:
-                del headers["x-session-id"]
-            value["extra_headers"] = headers
-        # Accepted caller settings retain the strict schema. Only Harness's exact
-        # fresh Thread correlation is permitted in addition at the outbound boundary.
-        validate_settings(self._snapshot.model_api, cast(JsonObject, value))
-
-
 class SnapshotRunModelResolver:
     def __init__(
         self,
@@ -221,14 +143,7 @@ class SnapshotRunModelResolver:
                 code="accepted_model_mismatch",
                 details={"model_id": model_id},
             )
-        provider = await self._provider_resolver.resolve(
-            organization_id=self._organization_id,
-            workspace_id=self._workspace_id,
-            snapshot=self._snapshot,
-        )
-        initial = self._model_factory.build(self._snapshot, provider)
-        return LiveProviderModel(
-            initial=initial,
+        return await LiveProviderModel.create(
             snapshot=self._snapshot,
             organization_id=self._organization_id,
             workspace_id=self._workspace_id,

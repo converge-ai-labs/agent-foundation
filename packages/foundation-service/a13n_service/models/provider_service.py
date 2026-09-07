@@ -28,7 +28,7 @@ from .domain import (
     CreateModelProviderRequest,
     ModelConnectionTestResult,
     ModelDescription,
-    ModelDescriptionCollection,
+    ModelDiscovery,
     ModelProvider,
     ModelProviderCollection,
     UpdateModelProviderRequest,
@@ -50,7 +50,7 @@ class ProviderOperations(Protocol):
 
     def discover(
         self, *, provider_id: str, organization_id: str, workspace_id: str | None
-    ) -> Awaitable[ModelDescriptionCollection]: ...
+    ) -> Awaitable[ModelDiscovery]: ...
 
     def describe(
         self,
@@ -261,7 +261,7 @@ class ModelProviderService:
         page = records[:limit]
         next_cursor = None
         if len(records) > limit and page:
-            next_cursor = encode_model_cursor(updated_at=page[-1].updated_at, model_id=page[-1].id, scope=scope)
+            next_cursor = encode_model_cursor(updated_at=page[-1].updated_at, item_id=page[-1].id, scope=scope)
         return ModelProviderCollection(items=tuple(item.to_resource() for item in page), next_cursor=next_cursor)
 
     async def update(
@@ -349,7 +349,7 @@ class ModelProviderService:
 
     async def discover_models(
         self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str
-    ) -> ModelDescriptionCollection:
+    ) -> ModelDiscovery:
         provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
         if not provider.enabled:
             raise ModelError(
@@ -368,7 +368,7 @@ class ModelProviderService:
                 category=ErrorCategory.unavailable,
             )
         failure: ModelError | None = None
-        result: ModelDescriptionCollection | None = None
+        result: ModelDiscovery | None = None
         try:
             with fail_after(self._command_timeout_seconds):
                 result = await self._operations.discover(

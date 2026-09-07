@@ -227,3 +227,18 @@ async def test_model_identity_conflict_is_not_misreported_as_duplicate_key(
         await model_service.create(
             actor=actor(), workspace_id=WORKSPACE_ID, request=request.model_copy(update={"key": "different"})
         )
+
+
+@pytest.mark.anyio
+async def test_provider_collection_cursor_roundtrips_across_pages(provider_service):
+    for i in range(3):
+        await provider_service.create(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            request=CreateModelProviderRequest(type="openai", name=f"Account {i}", credential="secret"),
+        )
+    first = await provider_service.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=2)
+    assert first.next_cursor is not None
+    second = await provider_service.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=2, cursor=first.next_cursor)
+    assert second.next_cursor is None
+    assert len({p.id for p in (*first.items, *second.items)}) == 3

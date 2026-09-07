@@ -15,13 +15,15 @@ from .types import EmptyProviderConfiguration, RuntimeProvider
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
 ) -> OpenAIProvider:
-    return OpenAIProvider(
+    native = OpenAIProvider(
         api_key=require_credential(provider),
         base_url=provider.endpoint,
         http_client=http_client,
     )
+    native.client.max_retries = 0
+    return native
 
 
 INTEGRATION = ProviderIntegration(

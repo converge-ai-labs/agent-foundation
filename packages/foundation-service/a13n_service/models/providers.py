@@ -54,10 +54,7 @@ class ProviderRegistry:
             unknown_apis = sorted(set(integration.supported_model_apis) - BUILT_IN_MODEL_APIS.keys())
             if unknown_apis:
                 raise ValueError(f"unknown model APIs for {integration.type!r}: {', '.join(unknown_apis)}")
-            if not integration.supported_model_apis or (
-                integration.default_model_api is not None
-                and integration.default_model_api not in integration.supported_model_apis
-            ):
+            if not integration.supported_model_apis:
                 raise ValueError("the default Model API must be a supported binding")
             indexed[integration.type] = integration
         self._integrations = MappingProxyType(indexed)
@@ -124,6 +121,6 @@ def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
         configuration_schema=integration.configuration_model.model_json_schema(),
         credential_schema=credential_schema,
         supported_model_apis=integration.supported_model_apis,
-        default_model_api=integration.default_model_api or integration.supported_model_apis[0],
+        default_model_api=integration.supported_model_apis[0],
         supports_model_discovery=integration.model_discovery is not None,
     )

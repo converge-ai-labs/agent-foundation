@@ -244,7 +244,7 @@ class ModelExecutionSnapshot(BaseModel):
         )
 
 
-class ModelDescription(BaseModel):
+class ModelCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     upstream_model: UpstreamModel
@@ -253,11 +253,15 @@ class ModelDescription(BaseModel):
     suggested_settings: dict[str, JsonValue] = Field(default_factory=dict)
     profile: ModelProfile = Field(default_factory=ModelProfile)
     limits: ModelLimits = Field(default_factory=ModelLimits)
-    settings_schema: dict[str, object]
     parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]] = Field(default_factory=dict)
 
 
-class ModelDescriptionCollection(BaseModel):
+class ModelDescription(ModelCandidate):
+    settings_schema: dict[str, object]
+
+
+class ModelDiscovery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    items: tuple[ModelDescription, ...]
+    items: tuple[ModelCandidate, ...]
+    settings_schemas: dict[str, dict[str, object]]

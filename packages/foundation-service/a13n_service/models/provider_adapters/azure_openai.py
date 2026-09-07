@@ -32,14 +32,16 @@ class Config(ProviderConfiguration):
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
 ) -> AzureProvider:
-    return AzureProvider(
+    native = AzureProvider(
         azure_endpoint=str(provider.configuration["resource_endpoint"]),
         api_version=cast(str | None, provider.configuration.get("api_version")),
         api_key=require_credential(provider),
         http_client=http_client,
     )
+    native.client.max_retries = 0
+    return native
 
 
 def _request(provider: RuntimeProvider) -> ModelListRequest:

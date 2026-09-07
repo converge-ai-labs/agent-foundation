@@ -12,9 +12,9 @@ from .types import EmptyProviderConfiguration, RuntimeProvider
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    pydantic_provider_name: str,
+    model_api: str,
 ) -> DeepSeekProvider:
-    return openai_provider.build(provider, http_client, pydantic_provider_name, DeepSeekProvider)
+    return openai_provider.build(provider, http_client, model_api, DeepSeekProvider)
 
 
 INTEGRATION = ProviderIntegration(

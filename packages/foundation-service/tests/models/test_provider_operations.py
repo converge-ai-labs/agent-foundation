@@ -266,7 +266,7 @@ async def test_adapter_owns_upstream_paging(provider_type, cursor_key):
         )
         result = await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
     assert [item.upstream_model for item in result.items] == ["a", "b", "z"]
-    assert set(result.model_dump()) == {"items"}
+    assert set(result.model_dump()) == {"items", "settings_schemas"}
     assert len(requests) == 2
 
 
@@ -287,3 +287,73 @@ async def test_discovery_rejects_oversized_output_instead_of_returning_partial_c
         )
         with pytest.raises(ProviderOperationError, match="output byte limit"):
             await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
+
+
+@pytest.mark.anyio
+async def test_description_and_probe_stop_before_unneeded_pages():
+    calls = []
+
+    async def handler(request):
+        calls.append(request)
+        assert "after" not in request.url.params
+        return httpx2.Response(
+            200, json={"data": [{"id": "target", "name": "Target"}], "has_more": True, "last_id": "target"}
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        ops = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(RuntimeProvider("openai", {}, "https://models.example/v1", "secret")),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        await ops.test(provider_id="p", organization_id="o", workspace_id="w")
+        result = await ops.describe(
+            provider_id="p",
+            organization_id="o",
+            workspace_id="w",
+            provider_type="openai",
+            upstream_model="target",
+            model_api=None,
+        )
+    assert result.display_name == "Target"
+    assert len(calls) == 2
+    assert "temperature" in result.settings_schema["properties"]
+
+
+@pytest.mark.anyio
+async def test_catalog_deduplicates_schemas_and_fits_ten_thousand_models():
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(200, json={"data": [{"id": f"model-{i:05}"} for i in range(10000)]})
+        )
+    ) as client:
+        ops = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(RuntimeProvider("openai", {}, "https://models.example/v1", "secret")),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        result = await ops.discover(provider_id="p", organization_id="o", workspace_id="w")
+    assert len(result.items) == 10000
+    assert set(result.settings_schemas) == {"openai.responses", "openai.chat_completions"}
+    assert all("settings_schema" not in item.model_dump() for item in result.items)
+    assert len(result.model_dump_json().encode()) < 6 * 1024 * 1024
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider_type", ["google_vertex", "aws_bedrock"])
+async def test_missing_provider_probe_is_unsupported_not_a_connection_failure(provider_type):
+    from a13n_service.models.connection_test import test_connection
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: pytest.fail("must not dispatch"))
+    ) as client:
+        ops = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(RuntimeProvider(provider_type, {}, None, "secret")),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        result = await test_connection(
+            ops.test(provider_id="p", organization_id="o", workspace_id="w"), timeout_seconds=1, subject="Provider"
+        )
+    assert result.code == "connection_test_unsupported"
+    assert result.success is False

@@ -32,7 +32,7 @@ Content-Type: application/json
 }
 ```
 
-Keep the returned Provider `id`. Reads expose `credential_configured`, never the credential itself. A successful save validates configuration; use the Provider's `/test` endpoint to check its current connection and authentication.
+Keep the returned Provider `id`. Reads expose `credential_configured`, never the credential itself. A successful save validates configuration; use the Provider's `/test` endpoint to check its current connection and authentication. A list-based test reads only the first page. If the integration has no safe Provider-level probe, the result is `connection_test_unsupported`; test a saved Model to check inference instead.
 
 ## Discover candidates or enter an ID
 
@@ -43,7 +43,7 @@ POST /api/v1/workspaces/<workspace-id>/model-providers/<provider-id>/discover-mo
 Authorization: Bearer <foundation-token>
 ```
 
-The response contains one complete `items` array, ordered by upstream ID and deduplicated. Search and paginate these results in your client; repeat the request to refresh. Discovery accepts no `limit` or `cursor`, and returns no `next_cursor`.
+The response contains one complete `items` array, ordered by upstream ID and deduplicated, plus a `settings_schemas` map keyed by calling API. Each item contains suggested configuration and metadata without repeating the schema. Use `settings_schemas[item.suggested_model_api]` to render its parameters; the map also includes the Provider's other supported APIs. Search and paginate these results in your client; repeat the request to refresh. Discovery accepts no `limit` or `cursor`, and returns no `next_cursor`.
 
 Discovery creates no Models. A successful empty list, an upstream failure, and `model_discovery_unsupported` are different outcomes. The service follows upstream pages internally, with limits of 100 pages, 4 MiB per upstream response, 10,000 unique models, and 32 MiB of discovery output. Exceeding a bound returns an error, never a silently truncated catalog.
 
@@ -120,7 +120,7 @@ Omitting `settings` preserves existing defaults. Changing the upstream ID or API
 
 The returned JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Missing parameter help text does not prevent configuration or execution. Unknown top-level keys, invalid value shapes, and attempts to replace model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. `parameter_support` is advisory: unknown support permits manual configuration, and local validation does not guarantee upstream acceptance.
 
-Use `extra_body` only when the schema exposes it. Bedrock Converse uses `bedrock_additional_model_requests_fields`; Google Generate Content has no arbitrary-body field in this binding. Escape-hatch fields obey the same reserved-field rules, and specifying the same outbound parameter through both a native setting and an escape hatch is rejected. Settings are limited to 64 KiB of UTF-8 JSON and 16 container levels, including after merging. Parameter errors include a safe field path without echoing the submitted value.
+Use `extra_body` only when the schema exposes it. Bedrock Converse uses `bedrock_additional_model_requests_fields`; Google Generate Content has no arbitrary-body field in this binding. These fields allow arbitrary upstream extensions. You are responsible for whether those extensions work, including their precedence when they overlap native settings; Foundation does not guess vendor-specific types or reject those overlaps. It protects only the calling API's explicit request-control paths and Provider-owned connection fields. For example, `extra_body.tool_choice` cannot override Harness tool control, and Responses protects `text.format` while permitting `text.verbosity`. Unrelated nested data with the same field names remains allowed. Settings are limited to 64 KiB of UTF-8 JSON and 16 container levels, including after merging. Parameter errors include a safe field path without echoing the submitted value.
 
 In Agent configuration, the `model` field selects the Workspace key and optional overrides:
 
@@ -140,3 +140,7 @@ For Model defaults `{"temperature": 0.3, "max_tokens": 1024}` and Agent settings
 | `{"settings": {"temperature": 0.5}}` | `{"temperature": 0.5, "max_tokens": 1024}` |
 
 Selecting another Model key uses its defaults and revalidates the inherited Agent settings. Accepted Runs retain their API, upstream ID, and merged settings across replacement attempts. Later Model edits affect new Runs. Provider credentials and connection configuration are resolved afresh for each outbound request, including within an existing Run.
+
+## Request retries
+
+Every outbound inference attempt checks the current Model and Provider state. Credential rotation therefore applies to the next attempt, and disabling either resource stops it. Foundation retries HTTP 429 and 503 responses up to three total attempts, respecting `Retry-After` up to 30 seconds. Other failures and streams already handed to Harness are not automatically replayed. Non-streamed completion and streamed connection setup, including retry waits, have a 600-second deadline by default; set `settings.timeout` to change it. After stream handoff, native transport timeouts and Run cancellation govern consumption. Bedrock Converse uses blocking SDK calls with a 5-second connect timeout and a 600-second read timeout; cancellation and shorter Foundation deadlines can only take effect when the current SDK call returns. Model tests follow the same rules under their shorter command deadline.

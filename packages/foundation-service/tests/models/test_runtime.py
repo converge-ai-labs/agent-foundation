@@ -21,7 +21,7 @@ from a13n_service.models.provider_adapters.base import ProviderOperationError
 from a13n_service.models.provider_runtime import LiveProviderResolver, RuntimeProvider
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry
-from a13n_service.models.runtime import LiveProviderModel
+from a13n_service.models.requests import LiveProviderModel
 from a13n_service.models.service import ModelService
 from a13n_service.models.service_common import ModelError
 from a13n_service.storage import short_session
@@ -114,7 +114,7 @@ async def test_connection_test_sends_saved_settings_and_single_model_identity(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         tester = NativeModelConnectionTester(
             provider_resolver=LiveProviderResolver(model_sessions, registry, _AllowEndpoints(), protector()),
-            model_factory=NativeModelFactory(client, registry),
+            model_factory=NativeModelFactory(client, registry, _AllowEndpoints()),
         )
         await tester(
             snapshot=ModelExecutionSnapshot.freeze(model),
@@ -239,16 +239,20 @@ async def test_factory_uses_explicit_calling_api_binding() -> None:
     }
     providers = _runtime_providers()
     async with httpx2.AsyncClient() as client:
-        factory = NativeModelFactory(client, built_in_provider_registry())
+        factory = NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints())
         with patch(
             "a13n_service.models.provider_adapters.google_vertex.parse_google_service_account",
             return_value=AnonymousCredentials(),
         ):
             for definition in built_in_provider_registry().definitions():
                 for model_api in definition.supported_model_apis:
-                    assert isinstance(
-                        factory.build(_snapshot(model_api), providers[definition.type]), expected_types[model_api]
-                    )
+                    native = await factory.build(_snapshot(model_api), providers[definition.type])
+                    async with native:
+                        assert isinstance(native, expected_types[model_api])
+                        if isinstance(native, (OpenAIResponsesModel, OpenAIChatModel, AnthropicModel)):
+                            assert native.client.max_retries == 0
+                        if isinstance(native, BedrockConverseModel):
+                            assert native.client.meta.config.retries["total_max_attempts"] == 1
 
 
 def _snapshot(api: str) -> ModelExecutionSnapshot:

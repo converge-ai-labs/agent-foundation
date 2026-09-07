@@ -3,6 +3,7 @@
 from typing import Annotated
 
 import httpx2
+from google.genai.types import HttpRetryOptions
 from pydantic import StringConstraints
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
@@ -19,13 +20,14 @@ class Config(ProviderConfiguration):
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
 ) -> GoogleCloudProvider:
     return GoogleCloudProvider(
         credentials=parse_google_service_account(require_credential(provider)),
         project=str(provider.configuration["project_id"]),
         location=str(provider.configuration["location"]),
         http_client=http_client,
+        retry_options=HttpRetryOptions(attempts=1),
     )
 
 

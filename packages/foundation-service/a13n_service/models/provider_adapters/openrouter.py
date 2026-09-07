@@ -7,9 +7,9 @@ import httpx2
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from ..descriptions import positive_token_limit
-from ..domain import ModelDescription, ModelLimits, ModelProfile
+from ..domain import ModelCandidate, ModelLimits, ModelProfile
 from ..service_common import ModelError
-from ..settings import JsonObject, outbound_parameter, settings_schema, validate_settings
+from ..settings import JsonObject, settings_schema, validate_settings
 from .base import (
     ModelListSchema,
     ProviderIntegration,
@@ -23,15 +23,17 @@ from .types import EmptyProviderConfiguration, RuntimeProvider
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
 ) -> OpenRouterProvider:
-    return OpenRouterProvider(api_key=require_credential(provider), http_client=http_client)
+    native = OpenRouterProvider(api_key=require_credential(provider), http_client=http_client)
+    native.client.max_retries = 0
+    return native
 
 
 class OpenRouterDiscovery(OpenAIModelDiscovery):
     def describe(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
-    ) -> ModelDescription:
+    ) -> ModelCandidate:
         result = super().describe(model_api, upstream_model, display_name, metadata)
         schema = settings_schema(model_api)
         support = dict(result.parameter_support)
@@ -43,7 +45,7 @@ class OpenRouterDiscovery(OpenAIModelDiscovery):
                 if name.startswith("openrouter_") and name != "openrouter_reasoning":
                     support[f"/{name}"] = "supported"
                 elif name not in {"extra_headers", "extra_body", "timeout", "thinking", "service_tier"}:
-                    support[f"/{name}"] = "supported" if outbound_parameter(name) in parameters else "unsupported"
+                    support[f"/{name}"] = "supported" if _outbound_parameter(name) in parameters else "unsupported"
             architecture = metadata.get("architecture")
             modalities = architecture.get("input_modalities") if isinstance(architecture, Mapping) else None
             profile = ModelProfile(
@@ -65,7 +67,7 @@ class OpenRouterDiscovery(OpenAIModelDiscovery):
         raw_defaults = metadata.get("default_parameters")
         if isinstance(raw_defaults, Mapping):
             for key in schema["properties"]:
-                value = raw_defaults.get(outbound_parameter(key))
+                value = raw_defaults.get(_outbound_parameter(key))
                 if value is not None:
                     try:
                         validate_settings(model_api, {key: value})
@@ -91,3 +93,10 @@ INTEGRATION = ProviderIntegration(
     endpoint="https://openrouter.ai/api/v1",
     model_discovery=OpenRouterDiscovery(bearer_models_request, ModelListSchema("data", "id", ("name",))),
 )
+
+
+def _outbound_parameter(name: str) -> str:
+    """Map native names only for advisory OpenRouter catalog information."""
+    if name == "stop_sequences":
+        return "stop"
+    return name.removeprefix("openrouter_")

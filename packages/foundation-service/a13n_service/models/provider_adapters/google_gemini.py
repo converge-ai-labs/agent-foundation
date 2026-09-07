@@ -4,10 +4,11 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx2
+from google.genai.types import HttpRetryOptions
 from pydantic_ai.providers.google import GoogleProvider
 
 from ..descriptions import positive_token_limit
-from ..domain import ModelDescription, ModelLimits
+from ..domain import ModelCandidate, ModelLimits
 from .base import (
     DiscoveredModelIdentity,
     JsonModelDiscoveryAdapter,
@@ -25,12 +26,13 @@ from .types import EmptyProviderConfiguration, RuntimeProvider
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
 ) -> GoogleProvider:
     return GoogleProvider(
         api_key=require_credential(provider),
         base_url=provider.endpoint,
         http_client=http_client,
+        retry_options=HttpRetryOptions(attempts=1),
     )
 
 
@@ -60,7 +62,7 @@ class GeminiDiscovery(JsonModelDiscoveryAdapter):
 
     def describe(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
-    ) -> ModelDescription:
+    ) -> ModelCandidate:
         result = super().describe(model_api, upstream_model, display_name, metadata)
         limits = ModelLimits(
             context_window_tokens=positive_token_limit(metadata.get("inputTokenLimit")),

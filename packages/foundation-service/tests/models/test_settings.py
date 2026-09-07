@@ -40,16 +40,11 @@ def test_every_binding_has_a_self_contained_native_settings_contract(api: str) -
         {"openrouter_models": ["other"]},
         {"openrouter_preset": "other"},
         {"extra_body": {"model": "other"}},
-        {"extra_body": {"route": {"api_key": "secret"}}},
         {"extra_body": {"tools": []}},
-        {"extra_body": {"text": {"format": {"json_schema": {}}}}},
         {"extra_headers": {"authorization": "secret"}},
         {"extra_headers": {"host": "evil.example"}},
         {"openrouter_provider": {"only": "not-an-array"}},
         {"openrouter_provider": {"mystery": True}},
-        {"max_tokens": 100, "extra_body": {"max_completion_tokens": 90}},
-        {"thinking": "high", "extra_body": {"reasoning": {"effort": "low"}}},
-        {"openrouter_provider": {"only": ["a"]}, "extra_body": {"provider": {"only": ["b"]}}},
     ],
 )
 def test_invalid_and_reserved_settings_are_rejected(settings: dict) -> None:
@@ -88,7 +83,7 @@ def test_description_defaults_are_suggestions_and_manual_ids_need_no_catalog() -
     assert unknown.suggested_model_api == "openai.responses"
     assert unknown.profile.input_modalities is None
     assert unknown.suggested_settings == {}
-    assert set(unknown.parameter_support.values()) == {"unknown"}
+    assert unknown.parameter_support == {}
     known = describe_model(
         registry,
         "openrouter",
@@ -106,7 +101,7 @@ def test_description_defaults_are_suggestions_and_manual_ids_need_no_catalog() -
     assert known.limits.context_window_tokens == 128000
     assert known.parameter_support["/openrouter_provider"] == "supported"
     assert known.parameter_support["/seed"] == "unsupported"
-    assert known.parameter_support["/extra_body"] == "unknown"
+    assert known.parameter_support.get("/extra_body", "unknown") == "unknown"
 
 
 def test_malformed_optional_catalog_metadata_keeps_trusted_description() -> None:
@@ -145,3 +140,51 @@ def test_missing_source_documentation_does_not_disable_parameter_validation(monk
                 validate_settings(api, {"temperature": "invalid"})
     finally:
         settings_schema.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("api", "body"),
+    [
+        ("openai.chat_completions", {"tool_choice": "none"}),
+        ("openai.responses", {"text": {"format": {"type": "text"}}}),
+        ("openai.responses", {"text": None}),
+        ("openai.responses", {"text": []}),
+        ("anthropic.messages", {"output_config": {"format": {"type": "json_schema"}}}),
+        ("anthropic.messages", {"output_config": "replace"}),
+        ("openrouter.chat_completions", {"models": ["different"]}),
+        ("bedrock.converse", {"toolConfig": {}}),
+    ],
+)
+def test_only_explicit_protocol_paths_are_protected(api, body):
+    field = "bedrock_additional_model_requests_fields" if api == "bedrock.converse" else "extra_body"
+    with pytest.raises(ModelError) as invalid:
+        validate_settings(api, {field: body})
+    assert invalid.value.details["reason"] == "reserved_request_field"
+
+
+@pytest.mark.parametrize(
+    "api",
+    [
+        "openai.responses",
+        "openai.chat_completions",
+        "openrouter.chat_completions",
+        "anthropic.messages",
+        "bedrock.converse",
+    ],
+)
+def test_extensions_are_opaque_and_native_collisions_are_upstream_owned(api):
+    field = "bedrock_additional_model_requests_fields" if api == "bedrock.converse" else "extra_body"
+    settings = {
+        "temperature": 0.2,
+        "stop_sequences": ["END"],
+        field: {
+            "temperature": "upstream-decides",
+            "custom": {"model": "label", "stop": "nested-data", "schema": {"format": "value"}},
+        },
+    }
+    assert validate_settings(api, settings) == settings
+
+
+def test_sibling_of_protected_nested_path_is_free_to_use():
+    settings = {"extra_body": {"text": {"verbosity": "brief"}}}
+    assert validate_settings("openai.responses", settings) == settings

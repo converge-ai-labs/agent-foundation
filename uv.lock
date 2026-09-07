@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -167,6 +167,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "google-auth" },
+    { name = "google-genai" },
     { name = "httpx2" },
     { name = "jsonschema" },
     { name = "mcp" },
@@ -209,6 +210,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.116,<1" },
     { name = "fastmcp", specifier = ">=3.0,<4" },
     { name = "google-auth", specifier = ">=2.40,<3" },
+    { name = "google-genai", specifier = ">=1.0,<3" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
     { name = "mcp", specifier = ">=1.26,<2" },

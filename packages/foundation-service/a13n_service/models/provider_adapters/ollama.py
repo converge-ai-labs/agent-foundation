@@ -25,9 +25,11 @@ class Config(ProviderConfiguration):
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _pydantic_provider_name: str,
+    _model_api: str,
 ) -> OllamaProvider:
-    return OllamaProvider(base_url=str(provider.configuration["base_url"]), http_client=http_client)
+    native = OllamaProvider(base_url=str(provider.configuration["base_url"]), http_client=http_client)
+    native.client.max_retries = 0
+    return native
 
 
 def _request(provider: RuntimeProvider) -> ModelListRequest:

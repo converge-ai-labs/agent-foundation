@@ -48,9 +48,9 @@ class Config(ProviderConfiguration):
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    pydantic_provider_name: str,
+    model_api: str,
 ) -> AlibabaProvider:
-    return openai_provider.build(provider, http_client, pydantic_provider_name, AlibabaProvider)
+    return openai_provider.build(provider, http_client, model_api, AlibabaProvider)
 
 
 def _endpoint(configuration: Mapping[str, object]) -> str:

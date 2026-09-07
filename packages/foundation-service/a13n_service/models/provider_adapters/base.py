@@ -10,13 +10,17 @@ import httpx2
 from a13n_harness.errors import ModelResolutionError
 from pydantic_ai.providers import Provider
 
-from ..descriptions import default_description
-from ..domain import ModelDescription
+from ..descriptions import default_candidate
+from ..domain import ModelCandidate
 from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider, ValidatedProviderConfiguration
 
 
 class ProviderOperationError(ValueError):
     """An expected failure of provider discovery or connection testing."""
+
+
+class ProviderOperationUnsupported(ProviderOperationError):
+    """The integration has no safe native operation for this command."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +50,7 @@ class ModelDiscoveryAdapter(Protocol):
 
     def describe(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
-    ) -> ModelDescription: ...
+    ) -> ModelCandidate: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,8 +102,8 @@ class JsonModelDiscoveryAdapter:
 
     def describe(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
-    ) -> ModelDescription:
-        return default_description(model_api, upstream_model, display_name)
+    ) -> ModelCandidate:
+        return default_candidate(model_api, upstream_model, display_name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,9 +113,8 @@ class ProviderIntegration:
     type: str
     display_name: str
     configuration_model: type[ProviderConfiguration]
-    supported_model_apis: tuple[str, ...]
+    supported_model_apis: tuple[str, ...]  # First API is the authoring default.
     build_provider: NativeProviderBuilder
-    default_model_api: str | None = None
     credential_format: CredentialFormat | None = CredentialFormat.api_key
     credential_required: bool = True
     endpoint: str | EndpointResolver | None = None
