@@ -23,6 +23,7 @@ from a13n_harness.events import (
 from a13n_harness.observation import observe_operation
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
+from .events import HandoffSummaryEvent
 
 _HANDOFF_INSTRUCTION = tool_instruction("summarize")
 
@@ -149,6 +150,14 @@ class HandoffToolset:
                     summary_size=len(rendered.encode("utf-8")),
                     files_count=len(state.files),
                 ),
+            )
+            await ctx.emit(
+                HandoffSummaryEvent(
+                    operation_id=operation_id,
+                    tool_call_id=ctx.tool_call_id,
+                    summary=rendered,
+                    files=state.files,
+                )
             )
             return "Summary accepted. The next model boundary will continue from restored context."
 

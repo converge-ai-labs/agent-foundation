@@ -168,6 +168,9 @@ def empty_agent_ui_configuration(
 def _scan_tree(path: Path) -> tuple[tuple[str, Path, tuple[int, int, int, int]], ...]:
     root = (path.name, path, _regular_file_fingerprint(path))
     entries: list[tuple[str, Path, tuple[int, int, int, int]]] = [root]
+    guidance = path.parent / "AGENTS.md"
+    if os.path.lexists(guidance):
+        entries.append(("AGENTS.md", guidance, _regular_file_fingerprint(guidance)))
     for directory_name in (*_YAML_DIRECTORIES, "subagents"):
         directory = path.parent / directory_name
         entries.extend(_scan_directory(directory, markdown=directory_name == "subagents"))
@@ -265,6 +268,13 @@ def _parse_complete_tree(
                     source_digest=digest,
                     resource_kind="root",
                     content=text,
+                )
+            )
+            continue
+        if relative_path == "AGENTS.md":
+            sources.append(
+                SourceDocument(
+                    relative_path=relative_path, source_digest=digest, resource_kind="instructions", content=text
                 )
             )
             continue

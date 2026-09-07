@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Generator
-from contextlib import AbstractAsyncContextManager, suppress
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,6 +20,7 @@ from prompt_toolkit.layout.containers import ConditionalContainer, Float, FloatC
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
+from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
@@ -29,9 +30,9 @@ from a13n_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox
 
 from .attachments import DraftImage, add_images, clipboard_images, read_image
 from .commands import CommandRegistry, Invocation
+from .local_shell import run_local_shell, validate_local_shell_support
 from .rendering import Status, StreamRenderer, terminal_text
 from .selection import Choice, Selection, resolve_choice
-from .setup import SetupWizard
 from .theme import prompt_toolkit_style_rules, resolve_theme
 from .transcript import TranscriptControl
 
@@ -40,13 +41,6 @@ if TYPE_CHECKING:
 
     from .backend import SessionBackend
     from .decisions import DecisionInteraction
-
-
-def _load_runtime() -> Callable[..., AbstractAsyncContextManager[SessionBackend]]:
-    # Heavy imports run in a worker; the prompt event loop never performs them.
-    from .runtime import open_session
-
-    return open_session
 
 
 class SlashCompleter(Completer):
@@ -66,13 +60,12 @@ class CliShell:
         request: CliRequest,
         *,
         directory: Path | None = None,
-        runtime_loader: Callable[[], Callable[..., AbstractAsyncContextManager[SessionBackend]]] = _load_runtime,
+        status: Status | None = None,
     ) -> None:
         self.request = request
         self.directory = directory or Path.cwd()
-        self.runtime_loader = runtime_loader
         self.registry = CommandRegistry()
-        self.status = Status(mode=request.display or "concise", mode_explicit=request.display is not None)
+        self.status = status or Status(mode=request.display or "concise", mode_explicit=request.display is not None)
         self.renderer = StreamRenderer(self.status)
         self.backend: SessionBackend | None = None
         self.ready = False
@@ -80,14 +73,13 @@ class CliShell:
         self.job: asyncio.Task[None] | None = None
         self.job_kind: str | None = None
         self._input_task: asyncio.Task[None] | None = None
-        self.wizard: SetupWizard | None = None
         self.interaction: DecisionInteraction | None = None
         self.selection: Selection | None = None
+        self.selector_focused = True
         self.menu_title = ""
         self.menu_handler: Callable[[str | tuple[str, ...]], Awaitable[None]] | None = None
         self._saved_draft: Document | None = None
-        self._stop = asyncio.Event()
-        self.mouse = False
+        self.mouse = True
         self.images: tuple[DraftImage, ...] = ()
         self._saved_images: tuple[DraftImage, ...] = ()
         self._draft_generation = 0
@@ -107,6 +99,14 @@ class CliShell:
             completer=SlashCompleter(self.registry),
             complete_while_typing=False,
         )
+        original_mouse_handler = self.composer.control.mouse_handler
+
+        def composer_mouse(mouse_event: MouseEvent):
+            if mouse_event.event_type in {MouseEventType.MOUSE_DOWN, MouseEventType.MOUSE_UP}:
+                self.selector_focused = False
+            return original_mouse_handler(mouse_event)
+
+        self.composer.control.mouse_handler = composer_mouse
         self.output_window = Window(
             self.view, wrap_lines=False, always_hide_cursor=True, get_vertical_scroll=lambda window: self.view.top
         )
@@ -117,7 +117,7 @@ class CliShell:
             filter=Condition(
                 lambda: (
                     self.app.output.get_size().rows >= 3
-                    and (self.wizard is not None or self.interaction is not None or self.selection is not None)
+                    and (self.interaction is not None or self.selection is not None)
                 )
             ),
         )
@@ -185,13 +185,7 @@ class CliShell:
         return Dimension(min=1, preferred=height, max=height)
 
     def _panel(self) -> FormattedText:
-        prompt = (
-            self.wizard.prompt()
-            if self.wizard
-            else self.interaction.prompt()
-            if self.interaction
-            else self.menu_title or "Choose an option"
-        )
+        prompt = self.interaction.prompt() if self.interaction else self.menu_title or "Choose an option"
         # Full context remains scrollable above. Keep the decision and composer
         # usable on short terminals rather than allowing a panel to own the screen.
         fragments = [("class:session-selector.title", terminal_text(prompt.split("\n")[0]) + "\n")]
@@ -217,15 +211,33 @@ class CliShell:
                 elif used + get_cwidth(char) <= width:
                     clipped.append((style, char))
                     used += get_cwidth(char)
-        return FormattedText(clipped)
+        return FormattedText([(style, text, self._panel_mouse) for style, text in clipped])
+
+    def _panel_mouse(self, event: MouseEvent) -> None:
+        if self.selection is None:
+            return
+        count = min(8, max(1, self._panel_height().max - 2))
+        if event.event_type == MouseEventType.SCROLL_UP:
+            self.selection.scroll(-3, count)
+        elif event.event_type == MouseEventType.SCROLL_DOWN:
+            self.selection.scroll(3, count)
+        elif event.event_type == MouseEventType.MOUSE_UP:
+            row = event.position.y - 1
+            index = self.selection.start(count) + row
+            if 0 <= row < count and 0 <= index < len(self.selection.choices):
+                self.selection.cursor = index
+                self.selector_focused = True
+        self.app.invalidate()
 
     def _toolbar(self) -> FormattedText:
         return FormattedText([("", self.status.line(self.app.output.get_size().columns))])
 
     def _composer_header(self) -> FormattedText:
-        label = "Setup" if self.wizard else "Answer required" if self.interaction else "Message"
-        hint = "draft only · preparing" if not self.ready else "draft only · running" if self.busy else "Enter to send"
-        if self.wizard or self.selection or self.interaction:
+        label = "Answer required" if self.interaction else "Message"
+        hint = "Enter to add guidance" if self.can_steer else "draft only · working" if self.busy else "Enter to send"
+        if not self.ready:
+            hint = "draft only · preparing"
+        if self.selection or self.interaction:
             hint = "Enter to confirm · Esc to go back"
         width = max(1, self.app.output.get_size().columns)
         title = f" {label} "
@@ -240,16 +252,23 @@ class CliShell:
 
     def _hints(self) -> str:
         width = self.app.output.get_size().columns
-        if self.wizard or self.selection or self.interaction:
-            return " ↑↓ choose · Enter confirm · Esc back · /cancel" if width >= 60 else " Enter confirm · Esc back"
+        if self.selection or self.interaction:
+            return (
+                f" {'Menu' if self.selector_focused else 'Composer'} · Ctrl+Space focus · ↑↓ choose · Enter confirm · Esc back"
+                if width >= 60
+                else " Enter confirm · Esc back"
+            )
+        submit_hint = "Enter steer" if self.can_steer else "Draft only" if self.busy else "Enter send"
         if width < 60:
-            return " Enter send · Alt+Enter newline · /help"
+            return f" {submit_hint} · Alt+Enter newline · /help"
         action = "Ctrl+C cancel" if self.busy else "Ctrl+C clear"
         follow = "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest output"
         history = " · /history: earlier output" if self.renderer.transcript.evicted else ""
-        return f" Enter send · Alt+Enter newline · {action} · {follow} · /help{history}"
+        mode = "scroll" if self.mouse else "select"
+        return f" [{mode}] Esc toggle · {submit_hint} · Alt+Enter newline · {action} · {follow}{history}"
 
     def _save_draft(self) -> None:
+        self.selector_focused = True
         if self._saved_draft is None:
             self._saved_draft = self.composer.buffer.document
             self._saved_images = self.images
@@ -265,19 +284,12 @@ class CliShell:
             self.images = self._saved_images
             self._saved_images = ()
             self._draft_generation += 1
-        if not self.busy and self.wizard is None and self.interaction is None:
+        if not self.busy and self.interaction is None:
             self.status.state = "ready"
         self.app.invalidate()
 
-    def start_setup(self) -> None:
-        self._save_draft()
-        self.wizard = SetupWizard()
-        self.selection = self.wizard.selection_prompt()
-        self.status.state = "setup"
-        self.emit(self.wizard.prompt())
-
     async def _activate_decisions(self) -> None:
-        if self.backend is None or self.closing or self.wizard is not None or self.menu_handler is not None:
+        if self.backend is None or self.closing or self.menu_handler is not None:
             return
         pending = await self.backend.interaction()
         if pending is None:
@@ -297,19 +309,30 @@ class CliShell:
     def busy(self) -> bool:
         return self.job is not None and not self.job.done()
 
+    @property
+    def can_steer(self) -> bool:
+        return (
+            self.busy
+            and self.job_kind == "run"
+            and self.status.state != "cancelling"
+            and self.backend is not None
+            and self.backend.receipt_id is not None
+        )
+
     def emit(self, text: str) -> None:
         self.renderer.finish()
         self.renderer.append(text + "\n")
         self.app.invalidate()
 
     async def flush(self) -> None:
+        self.renderer.transcript.detailed = self.status.mode == "detailed"
         self.renderer.drain()
         self.app.invalidate()
 
     async def _flusher(self) -> None:
         last_second = -1
         while not self.closing:
-            size = max((len(block.source) for block in self.renderer.transcript.blocks.values()), default=0)
+            size = max((block.size for block in self.renderer.transcript.blocks.values()), default=0)
             await asyncio.sleep(0.2 if size > 128 * 1024 else 0.1 if size > 32 * 1024 else 1 / 15)
             if self.renderer.transcript.dirty:
                 await self.flush()
@@ -328,7 +351,8 @@ class CliShell:
                 event.current_buffer.complete_state = None
                 return
             text = event.current_buffer.text
-            if self.selection is not None and not text.strip():
+            steering_receipt: str | None = None
+            if self.selection is not None and self.selector_focused and not text.strip():
                 try:
                     text = self.selection.answer()
                 except ValueError as exc:
@@ -341,26 +365,38 @@ class CliShell:
                     local = {"help", "mode", "status", "quit", "cancel", "theme", "mouse"}
                     if not self.ready and name not in local:
                         raise ValueError("Still preparing. Your draft is preserved; /help is available.")
-                    if (self.wizard or self.interaction or self.menu_handler) and name not in local | {"review"}:
+                    if (self.interaction or self.menu_handler) and name not in local | {"review"}:
                         raise ValueError("Finish this interaction or /cancel first. Your input is preserved.")
                     if self._input_task is not None and not self._input_task.done() and name not in local:
                         raise ValueError("Finishing the previous action. Your input is preserved.")
-                elif self.busy or (self._input_task is not None and not self._input_task.done()) or not self.ready:
-                    raise ValueError("Still preparing or working. Your draft is preserved; /cancel stops active work.")
-                elif not text.strip() and not self.wizard and not self.images:
+                elif text.startswith("!"):
+                    self._validate_local_shell(text)
+                elif (self._input_task is not None and not self._input_task.done()) or not self.ready:
+                    raise ValueError("Finishing the previous action. Your draft is preserved.")
+                elif not text.strip() and not self.images:
                     return
+                elif self.busy:
+                    if not self.can_steer:
+                        raise ValueError(
+                            "Still preparing or working. Your draft is preserved; /cancel stops active work."
+                        )
+                    if self.images:
+                        raise ValueError("Active-run guidance accepts text only. Text and images remain in your draft.")
+                    assert self.backend is not None
+                    # Freeze at Enter, before scheduling: never retarget a later Run.
+                    steering_receipt = self.backend.receipt_id
             except ValueError as exc:
                 self.emit(str(exc))
                 return
-            if self.wizard is None and self.interaction is None and self.menu_handler is None:
+            if self.interaction is None and self.menu_handler is None:
                 event.current_buffer.append_to_history()
             event.current_buffer.reset()
             if self._input_task is not None and not self._input_task.done():
-                self.app.create_background_task(self.handle(text))
+                self.app.create_background_task(self.handle(text, steering_receipt=steering_receipt))
             else:
-                self._input_task = asyncio.create_task(self.handle(text))
+                self._input_task = asyncio.create_task(self.handle(text, steering_receipt=steering_receipt))
 
-        selecting = Condition(lambda: self.selection is not None and not self.composer.text)
+        selecting = Condition(lambda: self.selection is not None and self.selector_focused and not self.composer.text)
 
         @keys.add("up", filter=selecting)
         def select_previous(event: KeyPressEvent) -> None:
@@ -377,12 +413,32 @@ class CliShell:
             assert self.selection is not None
             self.selection.toggle()
 
+        @keys.add("c-space")
+        def focus_region(event: KeyPressEvent) -> None:
+            if self.selection is not None:
+                self.selector_focused = not self.selector_focused
+
         @keys.add(
             "escape",
             filter=Condition(
                 lambda: (
-                    self.wizard is not None
-                    or self.interaction is not None
+                    self.interaction is None
+                    and self.menu_handler is None
+                    and (self._input_task is None or self._input_task.done())
+                )
+            ),
+        )
+        def mouse_mode(event: KeyPressEvent) -> None:
+            if event.current_buffer.complete_state is not None:
+                event.current_buffer.cancel_completion()
+            else:
+                self.mouse = not self.mouse
+
+        @keys.add(
+            "escape",
+            filter=Condition(
+                lambda: (
+                    self.interaction is not None
                     or self.menu_handler is not None
                     or (self._input_task is not None and not self._input_task.done())
                 )
@@ -392,12 +448,7 @@ class CliShell:
             if self.busy or (self._input_task is not None and not self._input_task.done()):
                 event.app.create_background_task(self.cancel())
                 return
-            if self.wizard is not None and self.wizard.back():
-                self.selection = self.wizard.selection_prompt()
-                event.current_buffer.reset()
-                self.emit(self.wizard.prompt())
-            else:
-                event.app.create_background_task(self.cancel())
+            event.app.create_background_task(self.cancel())
 
         @keys.add("escape", "enter")
         def newline(event: KeyPressEvent) -> None:
@@ -407,7 +458,6 @@ class CliShell:
         def interrupt(event: KeyPressEvent) -> None:
             if (
                 self.busy
-                or self.wizard is not None
                 or self.interaction is not None
                 or self.menu_handler is not None
                 or (self._input_task is not None and not self._input_task.done())
@@ -436,6 +486,8 @@ class CliShell:
         def toggle(event: KeyPressEvent) -> None:
             self.status.mode_explicit = True
             self.status.mode = "detailed" if self.status.mode == "concise" else "concise"
+            self.renderer.transcript.detailed = self.status.mode == "detailed"
+            self.renderer.transcript.dirty = True
 
         @keys.add("pageup")
         def page_up(event: KeyPressEvent) -> None:
@@ -451,45 +503,19 @@ class CliShell:
 
         return keys
 
-    async def _lifetime(self) -> None:
-        try:
-            factory = await asyncio.to_thread(self.runtime_loader)
-            if self.closing:
-                return
-            async with factory(self.request, self.directory, self.status, self.emit) as backend:
-                self.backend = backend
-                configured = await backend.initialize()
-                self.renderer.transcript.theme = resolve_theme(self.status.theme)
-                self.renderer.transcript.dirty = True
-                self.app.style = self._style()
-                self.ready = True
-                self.status.state = "ready" if configured else "setup needed"
-                if self.request.command == "setup" or not configured:
-                    self.start_setup()
-                elif self.request.thread_id:
-                    self.emit(f"Resumed {self.request.thread_id}. /history shows saved messages.")
-                    await self._activate_decisions()
-                else:
-                    self.emit(f"Ready · {self.status.model} · {self.status.environment}")
-                await self._stop.wait()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self.ready = False
-            self.status.state = "startup failed"
-            self.emit(
-                f"Startup failed: {exc}\nUse `a13n-ui config validate` or `a13n-ui doctor` to diagnose. /quit exits."
-            )
-        finally:
-            self.backend = None
-
-    async def run(self) -> None:
+    async def run(self, backend: SessionBackend) -> None:
+        self.backend = backend
+        self.ready = True
+        self.renderer.transcript.theme = resolve_theme(self.status.theme)
+        self.renderer.transcript.dirty = True
+        self.app.style = self._style()
+        self.status.state = "ready"
         self.emit(
-            f"Agent CLI · {self.directory}\n/help for commands · Alt+Enter newline · Ctrl+O detail · PageUp scroll\nPreparing locally; you can type now. No model request is made until you send a prompt."
+            f"Agent CLI · {self.directory}\n/help for commands · Alt+Enter newline · Ctrl+O detail · PageUp scroll\nEnter sends a message, or adds guidance while the agent is running. !command runs on this host."
         )
         if not local_sandbox_supported():
             self.emit(WINDOWS_EXECUTION_NOTICE)
-        lifetime = asyncio.create_task(self._lifetime())
+        await self._activate_decisions()
         flusher = asyncio.create_task(self._flusher())
         try:
             with patch_stdout():
@@ -503,8 +529,6 @@ class CliShell:
             if self.job is not None:
                 with suppress(asyncio.CancelledError):
                     await self.job
-            self._stop.set()
-            await lifetime
             if self._clipboard_task is not None:
                 self._clipboard_task.cancel()
                 await asyncio.gather(self._clipboard_task, return_exceptions=True)
@@ -512,6 +536,8 @@ class CliShell:
             with suppress(asyncio.CancelledError):
                 await flusher
             self.renderer.finish()
+            self.renderer.transcript.close()
+            self.backend = None
 
     async def cancel(self) -> None:
         if (
@@ -524,17 +550,13 @@ class CliShell:
             self.emit("Action cancelled. Completed writes are not rolled back; preview current state before retry.")
         if self.backend is not None and not self.busy:
             await self.backend.cancel()
-        if (self.wizard is not None or self.interaction is not None or self.menu_handler is not None) and not self.busy:
-            was_setup = self.wizard is not None
-            self.wizard = None
+        if (self.interaction is not None or self.menu_handler is not None) and not self.busy:
             self.interaction = None
             self.menu_handler = None
             self._restore_draft()
             self.status.state = "ready"
             self.emit(
-                "Setup cancelled. No new publication requested."
-                if was_setup
-                else "Interaction cancelled. Completed writes are retained; pending decisions remain unapproved. /status reopens decisions."
+                "Interaction cancelled. Completed writes are retained; pending decisions remain unapproved. /status reopens decisions."
             )
             return
         if not self.busy:
@@ -575,7 +597,8 @@ class CliShell:
                 if result:
                     self.emit(result)
             except asyncio.CancelledError:
-                self.emit("Cancelled. Deferred requests remain unapproved.")
+                if kind != "local shell":
+                    self.emit("Cancelled. Deferred requests remain unapproved.")
             except Exception as exc:
                 self.emit(f"Error: {exc}")
                 if failure_input is not None:
@@ -600,9 +623,51 @@ class CliShell:
             self.composer.buffer.document = draft
         else:
             self._recoverable = (draft, images)
-            self.emit("Command rejected. /recover restores its draft; no automatic retry occurred.")
+            self.emit("Input was not confirmed. /recover restores its draft; no automatic retry occurred.")
 
-    async def handle(self, text: str) -> None:
+    def _validate_local_shell(self, text: str) -> None:
+        validate_local_shell_support()
+        if not text[1:].strip():
+            raise ValueError("Usage: !command — run a command on this host, outside the model Sandbox.")
+        if self.busy or self.interaction is not None or self.menu_handler is not None or not self.ready:
+            raise ValueError(
+                "Finish active work or /cancel before running a local shell command. Your draft is preserved."
+            )
+        if (
+            self._input_task is not None
+            and self._input_task is not asyncio.current_task()
+            and not self._input_task.done()
+        ):
+            raise ValueError("Finishing the previous action. Your draft is preserved.")
+
+    async def _local_shell(self, command: str) -> str:
+        await run_local_shell(command, self.directory, self.renderer.local_shell)
+        return ""
+
+    async def handle(self, text: str, *, steering_receipt: str | None = None) -> None:
+        if text.startswith("!"):
+            try:
+                self._validate_local_shell(text)
+            except ValueError as exc:
+                self.emit(str(exc))
+                self._restore_rejected_command(text, self._draft_generation, self.images)
+                return
+            self.launch(self._local_shell(text[1:]), kind="local shell", failure_input=text)
+            return
+        if steering_receipt is not None:
+            self._draft_generation += 1
+            generation = self._draft_generation
+            try:
+                assert self.backend is not None
+                result = await self.backend.steer(text, receipt_id=steering_receipt)
+                self.emit(f"[Steer · accepted · {steering_receipt}]\n> {text}\n{result}")
+            except asyncio.CancelledError:
+                self._restore_rejected_command(text, generation, ())
+                raise
+            except Exception as exc:
+                self.emit(str(exc))
+                self._restore_rejected_command(text, generation, ())
+            return
         if text.startswith("/"):
             generation, images = self._draft_generation, self.images
             try:
@@ -616,8 +681,6 @@ class CliShell:
             await self.menu_answer(text)
         elif self.backend is None:
             self.emit("Still preparing. No prompt was sent.")
-        elif self.wizard is not None:
-            await self.setup_answer(text)
         elif self.interaction is not None:
             await self.decision_answer(text)
         elif text.strip() or self.images:
@@ -632,7 +695,7 @@ class CliShell:
         )
 
     async def acquire_images(self, path: str | None = None) -> None:
-        if self.wizard is not None or self.interaction is not None or self.selection is not None:
+        if self.interaction is not None or self.selection is not None:
             self.emit("Images belong to conversation drafts. Finish or cancel this interaction first.")
             return
         generation = self._draft_generation
@@ -661,7 +724,7 @@ class CliShell:
 
         assert self.backend is not None
         if self.busy:
-            self.emit("Still working. Your draft is preserved; /steer sends additional text guidance.")
+            self.emit("The active operation changed. Your draft is preserved; send again explicitly.")
             return
         images, self.images = self.images, ()
         self._draft_generation += 1
@@ -693,7 +756,6 @@ class CliShell:
                         self._recoverable = (draft, images)
                         self.emit("Prompt was not admitted. /recover restores it; no automatic retry occurred.")
 
-        self.renderer.append("You: " + (text or "(images)") + (f" [{len(images)} image(s)]" if images else ""))
         self.view.latest()
         self.launch(send(), kind="run")
 
@@ -737,36 +799,10 @@ class CliShell:
             self.emit(f"Action failed: {exc}. Retry explicitly or /cancel; completed publications are not rolled back.")
             self.composer.buffer.document = Document(text, len(text))
 
-    def offer_login(self, provider: str) -> None:
-        async def choose(value: str | tuple[str, ...]) -> None:
-            if value == "login":
-
-                async def login() -> str:
-                    assert self.backend is not None
-                    try:
-                        account = await self.backend.app.login_model_account(provider)
-                        return f"Account: {account.provider.value} · {account.availability.value} · action: {account.required_action.value}"
-                    finally:
-                        if not self.closing:
-                            self.offer_import()
-
-                self.launch(login(), kind="login")
-            else:
-                self.offer_import()
-
-        self.open_menu(
-            "Configuration saved. Authenticate now? Existing account credentials are not imported.",
-            (
-                Choice("later", "Not now", "Use an existing account or /login later"),
-                Choice("login", "Sign in", "Explicit device authorization"),
-            ),
-            choose,
-        )
-
     def offer_import(self) -> None:
         async def product(value: str | tuple[str, ...]) -> None:
             if value == "skip":
-                self.emit("Setup complete. /import can migrate subagents later.")
+                self.emit("Import skipped. /import can migrate subagents later.")
                 return
             assert isinstance(value, str)
 
@@ -813,7 +849,7 @@ class CliShell:
             )
 
         self.open_menu(
-            "Step 3/3 · Optional subagent migration",
+            "Optional subagent migration",
             (
                 Choice("skip", "Skip", "No external files scanned"),
                 Choice("codex", "Codex", "Import definitions; inherit parent model and tools"),
@@ -841,30 +877,6 @@ class CliShell:
             self.emit(f"Answer not submitted: {exc}")
             self.composer.buffer.document = Document(text, len(text))
 
-    async def setup_answer(self, text: str) -> None:
-        if self.backend is None or self.wizard is None:
-            return
-        try:
-            if self.wizard.question is not None:
-                self.wizard.accept(text)
-                if self.wizard.question is None:
-                    self.emit(await self.backend.preview_setup(self.wizard))
-                self.selection = self.wizard.selection_prompt()
-                self.emit(self.wizard.prompt())
-            elif resolve_choice(text, ("no", "yes")) == "yes":
-                self.emit(await self.backend.publish_setup(self.wizard))
-                values = self.wizard.values.copy()
-                self.wizard = None
-                if values.get("access") == "byos":
-                    self.offer_login(values.get("provider", "codex"))
-                else:
-                    self._restore_draft()
-            else:
-                self.emit(self.wizard.prompt())
-        except Exception as exc:
-            self.emit(f"Setup failed: {exc}\n/cancel leaves setup. Existing files are preserved.")
-            self.composer.buffer.document = Document(text, len(text))
-
     async def command(self, invocation: Invocation) -> None:
         name = invocation.command.name
         argument = invocation.arguments[0] if invocation.arguments else None
@@ -879,8 +891,10 @@ class CliShell:
             self.renderer.finish()
             self.status.mode = argument or ("detailed" if self.status.mode == "concise" else "concise")
             self.emit(
-                f"Display: {self.status.mode}. Applies to subsequent stream events; use /history to review saved details."
+                f"Display: {self.status.mode}. Ctrl+O expands/folds retained tool details; /history reads saved content."
             )
+            self.renderer.transcript.detailed = self.status.mode == "detailed"
+            self.renderer.transcript.dirty = True
         elif name == "theme":
             if argument not in {None, "auto", "dark", "light"}:
                 raise ValueError("Choose auto, dark, or light.")
@@ -921,27 +935,24 @@ class CliShell:
         elif name == "status":
             self.emit(
                 self.status.line()
-                + f"\nWorkspace: {self.directory}\nSession: {self.status.session_id or '(new)'}\nEnvironment: {self.status.environment}\nContext is the last reported request footprint, not accumulated usage or an estimate of the next prompt."
+                + f"\nContext: {self.status.context_tokens if self.status.context_tokens is not None else 'unknown'}/{self.status.context_window or 'unknown'} tokens (working budget)\nModel: {self.status.model}\nDisplay: {self.status.mode}\nWorkspace: {self.directory}\nSession: {self.status.session_id or '(new)'}\nEnvironment: {self.status.environment}\nContext is the last reported request footprint, not accumulated usage or an estimate of the next prompt."
             )
             if self.backend is not None and not self.busy:
                 self.launch(self.backend.pending())
         elif self.backend is None:
             raise ValueError("The App is not ready. No operation was started.")
-        elif self.wizard is not None:
-            raise ValueError("Finish setup or use /cancel before another command.")
         elif self.interaction is not None and name != "review":
             raise ValueError(
                 "Answer the selectable prompt or use /cancel before another command. Pending requests stay unapproved."
             )
         elif name == "steer":
             assert argument is not None
-            self.emit(await self.backend.steer(argument))
-        elif name == "setup":
-            self.start_setup()
+            result = await self.backend.steer(argument)
+            self.emit(f"[Steer · accepted]\n> {argument}\n{result}")
         elif name in {"model", "thinking", "environment", "resume"} and argument is None:
             choices = await self.backend.choices(name)
             if not choices:
-                self.emit("No choices available. /setup configures a model; /new starts a session.")
+                self.emit("No choices available. a13n-ui setup configures a model; /new starts a session.")
                 return
 
             async def selected(value: str | tuple[str, ...]) -> None:

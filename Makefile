@@ -10,7 +10,7 @@ CHECK_TARGETS := \
 	lint \
 	typecheck \
 	examples-check \
-	harness-ui-check \
+	agent-ui-webui-check \
 	rust-check \
 	sdk-python-check \
 	sdk-go-check \
@@ -28,8 +28,8 @@ install: ## Install locked dependencies and Git hooks
 	@uv sync --locked --all-packages
 	@echo "Synchronizing the standalone Python SDK"
 	@uv sync --project sdk/python --locked
-	@echo "Installing Harness UI dependencies"
-	@npm --prefix apps/harness-ui ci
+	@echo "Installing Agent UI WebUI dependencies"
+	@npm --prefix apps/agent-ui ci
 	@echo "Installing TypeScript SDK dependencies"
 	@npm --prefix sdk/typescript ci
 	@echo "Installing pre-commit hooks"
@@ -158,7 +158,7 @@ agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a dis
 	@uv run --locked python -m a13n_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
-format: sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
+format: sync agent-ui-webui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
 	@run_formatters() { \
 		formatter_status=0; \
 		for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
@@ -172,7 +172,7 @@ format: sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repos
 	@cargo fmt --all
 	@(cd sdk/rust && cargo fmt)
 	@(cd sdk/rust/agent-foundation-cli && cargo fmt)
-	@npm --prefix apps/harness-ui run format
+	@npm --prefix apps/agent-ui run format
 	@npm --prefix sdk/typescript run format
 
 .PHONY: deps-check
@@ -442,30 +442,30 @@ foundation-cli-check: foundation-cli-isolation-check foundation-cli-format-check
 .PHONY: foundation-cli-check-all
 foundation-cli-check-all: foundation-cli-check foundation-cli-test foundation-cli-build ## Run the complete Foundation CLI gate
 
-apps/harness-ui/node_modules/.package-lock.json: apps/harness-ui/package.json apps/harness-ui/package-lock.json
-	@npm --prefix apps/harness-ui ci
+apps/agent-ui/node_modules/.package-lock.json: apps/agent-ui/package.json apps/agent-ui/package-lock.json
+	@npm --prefix apps/agent-ui ci
 
-.PHONY: harness-ui-sync
-harness-ui-sync: apps/harness-ui/node_modules/.package-lock.json ## Install locked Harness UI dependencies
+.PHONY: agent-ui-webui-sync
+agent-ui-webui-sync: apps/agent-ui/node_modules/.package-lock.json ## Install locked Agent UI WebUI dependencies
 
-.PHONY: harness-ui-format
-harness-ui-format: harness-ui-sync ## Format Harness UI sources
-	@npm --prefix apps/harness-ui run format
+.PHONY: agent-ui-webui-format
+agent-ui-webui-format: agent-ui-webui-sync ## Format Agent UI WebUI sources
+	@npm --prefix apps/agent-ui run format
 
-.PHONY: harness-ui-build
-harness-ui-build: harness-ui-sync ## Build Harness UI production assets
-	@npm --prefix apps/harness-ui run build
+.PHONY: agent-ui-webui-build
+agent-ui-webui-build: agent-ui-webui-sync ## Build Agent UI WebUI production assets
+	@npm --prefix apps/agent-ui run build
 
-.PHONY: harness-ui-check
-harness-ui-check: harness-ui-sync ## Run Harness UI formatting and type checks
-	@npm --prefix apps/harness-ui run check
+.PHONY: agent-ui-webui-check
+agent-ui-webui-check: agent-ui-webui-sync ## Run Agent UI WebUI formatting and type checks
+	@npm --prefix apps/agent-ui run check
 
-.PHONY: harness-ui-check-all
-harness-ui-check-all: harness-ui-sync ## Run the complete Harness UI gate
-	@npm --prefix apps/harness-ui run check:all
+.PHONY: agent-ui-webui-check-all
+agent-ui-webui-check-all: agent-ui-webui-sync ## Run the complete Agent UI WebUI gate
+	@npm --prefix apps/agent-ui run check:all
 
 .PHONY: agent-ui-assets
-agent-ui-assets: sync harness-ui-build ## Prepare generated Harness UI files for Python packaging
+agent-ui-assets: sync agent-ui-webui-build ## Prepare generated Agent UI WebUI files for Python packaging
 	@uv run --locked python scripts/prepare-agent-ui-assets.py
 
 sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json
@@ -571,12 +571,12 @@ check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
-check-all: eip-check examples-check-all harness-ui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
+check-all: eip-check examples-check-all agent-ui-webui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
 	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/agent-foundation-cli/target packages/agent-ui/a13n_ui/static
-	@npm --prefix apps/harness-ui run clean
+	@npm --prefix apps/agent-ui run clean
 	@npm --prefix sdk/typescript run clean
 
 .PHONY: help

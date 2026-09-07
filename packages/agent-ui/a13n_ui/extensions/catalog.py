@@ -17,6 +17,8 @@ from a13n_harness.capabilities import DocumentsCapability, WebCapability
 from a13n_harness.capabilities.context import (
     CompactionCapability,
     CompactionPolicy,
+    FileContextCapability,
+    FileContextConfiguration,
     HandoffCapability,
     HandoffConfiguration,
     RuntimeContextCapability,
@@ -60,6 +62,7 @@ _BUILTIN_PROVIDER_KEYS = frozenset(
 _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "dynamic_environment": DynamicEnvironmentCapability,
     "compaction": CompactionCapability,
+    "file_context": FileContextCapability,
     "handoff": HandoffCapability,
     "runtime_context": RuntimeContextCapability,
     "documents": DocumentsCapability,
@@ -439,6 +442,11 @@ def _construct_capability(
         return CompactionCapability(
             CompactionPolicy.model_validate(configuration, strict=True) if configuration else None
         )
+    if capability_type is FileContextCapability:
+        file_configuration: dict[str, Any] = dict(configuration)
+        if isinstance(file_configuration.get("paths"), list):
+            file_configuration["paths"] = tuple(file_configuration["paths"])
+        return FileContextCapability(FileContextConfiguration.model_validate(file_configuration, strict=True))
     if capability_type is HandoffCapability:
         return HandoffCapability(HandoffConfiguration.model_validate(configuration, strict=True))
     if capability_type is RuntimeContextCapability:

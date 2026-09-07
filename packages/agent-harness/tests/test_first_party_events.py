@@ -307,6 +307,66 @@ async def test_compaction_events_share_operation_identity_and_provider_usage_sna
     assert next(iter(operation_ids)).startswith("compaction-")
 
 
+@pytest.mark.parametrize("fails", [False, True])
+async def test_compaction_summary_is_native_content_not_lifecycle_metadata(fails: bool) -> None:
+    from a13n_harness.capabilities import CompactionSummaryEvent
+
+    summary = "Keep this complete summary.\n" * 3000
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        if info.model_settings and info.model_settings.get("tool_choice") == "none":
+            if fails:
+                raise RuntimeError("compactor unavailable")
+            yield summary
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="Original task")]),
+            ModelResponse(parts=[TextPart(content="Prior answer")], usage=RequestUsage(input_tokens=2200)),
+        )
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2000)),),
+    )
+    events = []
+    async with executable.stream("Continue", bindings=RunBindings.embedded(), previous_state=previous) as stream:
+        async for item in stream:
+            events.append(item)
+    summaries = [
+        item.event
+        for item in events
+        if isinstance(item, HarnessEvent) and isinstance(item.event, CompactionSummaryEvent)
+    ]
+    extensions = [
+        item.event
+        for item in events
+        if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent)
+    ]
+    if fails:
+        assert summaries == []
+        assert any(item.payload.get("type") == "compaction_failed" for item in extensions)
+    else:
+        assert len(summaries) == 1
+        assert summaries[0].summary == summary.strip()
+        assert summaries[0].kind == "a13n.context.compaction_summary"
+        assert summaries[0].capability_id == "a13n.compaction"
+        completed = next(item.payload for item in extensions if item.payload.get("type") == "compaction_completed")
+        assert summaries[0].operation_id == completed["operation_id"]
+        assert "summary" not in completed
+        terminal = events[-1]
+        assert isinstance(terminal, HarnessRunResultEvent) and terminal.result.state is not None
+        assert any(
+            isinstance(part, TextPart) and part.content == summary.strip()
+            for message in terminal.result.state.message_history
+            for part in message.parts
+        )
+
+
 async def test_compaction_uses_native_context_window_and_run_context_usage() -> None:
     calls = 0
 

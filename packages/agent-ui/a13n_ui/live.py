@@ -20,6 +20,7 @@ from anyio import (
     WouldBlock,
     create_memory_object_stream,
 )
+from anyio.lowlevel import checkpoint
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
@@ -194,11 +195,11 @@ class AgentUiLiveHub:
     ) -> None:
         """Publish detached events while marking slow subscribers for reset."""
 
-        async with self._lock:
-            if self._closed:
-                return
-            stale: list[_LiveSubscriber] = []
-            for source in events:
+        for source in events:
+            async with self._lock:
+                if self._closed:
+                    return
+                stale: list[_LiveSubscriber] = []
                 self._sequence += 1
                 payload, omitted = _bounded_payload(source)
                 event = LiveEvent(
@@ -210,7 +211,7 @@ class AgentUiLiveHub:
                     thread_id=thread_id,
                     run_id=run_id,
                     execution_id=execution_id,
-                    event_type=str(source.type),
+                    event_type=source.type.value,
                     payload=payload,
                     payload_omitted=omitted,
                 )
@@ -224,8 +225,11 @@ class AgentUiLiveHub:
                         subscriber.gap = True
                     except (BrokenResourceError, ClosedResourceError):
                         stale.append(subscriber)
-            for subscriber in stale:
-                self._discard_subscriber(subscriber)
+                for subscriber in stale:
+                    self._discard_subscriber(subscriber)
+            # A large framed event must not overflow even a ready consumer merely
+            # because its producer submitted one batch. Never await under the lock.
+            await checkpoint()
 
     async def snapshot(self, *, root_thread_id: str | None = None) -> tuple[LiveEvent, ...]:
         async with self._lock:

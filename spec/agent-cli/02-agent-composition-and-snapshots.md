@@ -227,6 +227,10 @@ Semantically identical imports are unchanged or deduplicated. A different existi
 
 ## Resolution
 
+Every resolved Agent node captures the accepted configuration directory's global `AGENTS.md` guidance separately from authored native Agent instructions. Reconstruction injects that captured guidance through user-role model-context blocks on eligible input requests; it never places it in the model/native `instructions` field. Current empty guidance explicitly supersedes earlier global blocks. Legacy captures without this field retain their original reconstruction behavior rather than reading current files.
+
+Agent UI also includes the Harness File Context Capability by default, reading only `AGENTS.md` in the bound Environment's current working directory. It does not search ancestors, `AGENTS.override.md`, or `RULES.md`. An explicitly configured File Context Capability retains its configured paths and bounds without adding a duplicate Capability. Global guidance precedes working-directory file guidance. Both sources use the Harness [model-context metadata contract](../agent-harness/09-context-and-memory.md#model-context-projection-contract), remaining model-visible but hidden in ordinary live and retained presentation.
+
 For each Run, Agent UI:
 
 1. captures the accepted file-and-Content-Plugin generation and Thread configuration version;

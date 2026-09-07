@@ -70,6 +70,7 @@ class StrictModel(BaseModel):
 
 class ProcessConfiguration(StrictModel):
     pricing_auto_update: bool = True
+    terminal_update_check: bool = True
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: Literal["pretty", "json"] = "pretty"
 
@@ -502,6 +503,23 @@ class LoadedAgentUiConfiguration(StrictModel):
                 _require_reference(child.model, self.models, f"{child.id}.model")
         _reject_agent_cycles(self.agents)
         return self
+
+    @property
+    def global_guidance(self) -> tuple[str, ...]:
+        """Global user-role AGENTS.md content from this accepted generation."""
+        source = next(
+            (
+                item
+                for item in self.sources
+                if item.relative_path == "AGENTS.md" and item.resource_kind == "instructions"
+            ),
+            None,
+        )
+        if source is not None and source.content.strip():
+            return (
+                f"Global guidance from the Agent UI configuration directory (AGENTS.md):\n\n{source.content.strip()}",
+            )
+        return ()
 
     @property
     def yaml_digest(self) -> str:

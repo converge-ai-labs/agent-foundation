@@ -21,6 +21,8 @@ Agent Foundation is a Python-first open-source toolkit for building agents and m
 
 Agent UI and Foundation Service both build on Agent Harness. `a13n` is short for Agent Foundation, so the managed service distribution is simply `a13n-service`.
 
+Agent UI interaction is provided by the terminal CLI. Its optional `a13n-ui webui` server retains the HTTP API, but the bundled browser page currently displays only Hello World; it is not a browser chat or management application.
+
 ## Highlights
 
 - **Pydantic AI native**: use upstream models, messages, tools, events, output validation, and Agent-loop semantics.

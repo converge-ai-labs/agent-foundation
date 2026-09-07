@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: apps/harness-ui/package-lock.json
+          cache-dependency-path: apps/agent-ui/package-lock.json
 
       - name: Prepare bundled browser assets
         run: make agent-ui-assets

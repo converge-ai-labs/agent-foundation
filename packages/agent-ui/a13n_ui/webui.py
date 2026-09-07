@@ -518,7 +518,7 @@ def create_webui(
         if not index.is_file():
             return _error(
                 "assets_unavailable",
-                "Bundled browser assets are unavailable. Build apps/harness-ui before source development.",
+                "Bundled browser assets are unavailable. Build apps/agent-ui before source development.",
                 503,
             )
         return FileResponse(

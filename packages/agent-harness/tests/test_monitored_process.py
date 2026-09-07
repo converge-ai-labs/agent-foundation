@@ -74,7 +74,12 @@ class _ToolDeps:
 
 
 def _ctx() -> Any:
-    return SimpleNamespace(deps=_ToolDeps())
+    events = []
+
+    async def emit(event) -> None:
+        events.append(event)
+
+    return SimpleNamespace(deps=_ToolDeps(), emit=emit, events=events)
 
 
 @asynccontextmanager
@@ -245,6 +250,11 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
 
         assert "process_id" not in quick
         process_id = cast(str, live["process_id"])
+        callbacks = [event for event in ctx.events if event.callback]
+        assert len(callbacks) == 1
+        assert callbacks[0].process_id == process_id
+        assert callbacks[0].phase == "exited"
+        assert callbacks[0].exit_code == 0
         assert ctx.deps._steering.notifications == [
             (
                 f"Background process {process_id} has exited. Call shell_wait for available output.",

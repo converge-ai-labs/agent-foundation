@@ -60,6 +60,7 @@ from a13n_harness.environment.advanced import (
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
 )
+from a13n_harness.model_context import user_prompt_content
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -190,11 +191,12 @@ def _definition_capabilities():
 
 def _request_text(messages: Sequence[ModelMessage]) -> str:
     return "\n".join(
-        part.content
+        item.content
         for message in messages
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
     )
 
 

@@ -39,6 +39,21 @@ def default_agent_ui_settings() -> AgentUiSettings:
     return AgentUiSettings(storage=StorageSettings(data_root=path.parent / "data"))
 
 
+def resolve_agent_ui_data_root(path: Path | None = None, *, data_root: Path | None = None) -> Path:
+    """Resolve the bootstrap locator without scanning configuration or plugins."""
+    selected = (path or default_agent_ui_settings_path()).expanduser().resolve(strict=False)
+    configured_data_root = data_root
+    if configured_data_root is None:
+        environment_value = os.environ.get(_DATA_ROOT_ENV)
+        configured_data_root = Path(environment_value) if environment_value else selected.parent / "data"
+    resolved_data_root = configured_data_root.expanduser()
+    if not resolved_data_root.is_absolute():
+        resolved_data_root = Path.cwd() / resolved_data_root
+    resolved_data_root = resolved_data_root.resolve(strict=False)
+
+    return resolved_data_root
+
+
 async def load_agent_ui_settings(
     path: Path | None = None,
     *,
@@ -54,14 +69,7 @@ async def load_agent_ui_settings(
             code="settings_path_invalid",
             details={"path": str(selected)},
         )
-    configured_data_root = data_root
-    if configured_data_root is None:
-        environment_value = os.environ.get(_DATA_ROOT_ENV)
-        configured_data_root = Path(environment_value) if environment_value else selected.parent / "data"
-    resolved_data_root = configured_data_root.expanduser()
-    if not resolved_data_root.is_absolute():
-        resolved_data_root = Path.cwd() / resolved_data_root
-    resolved_data_root = resolved_data_root.resolve(strict=False)
+    resolved_data_root = resolve_agent_ui_data_root(selected, data_root=data_root)
 
     candidate_error: ConfigurationError | None = None
     if not selected.exists():
@@ -92,6 +100,7 @@ async def load_agent_ui_settings(
         log_level=process.log_level,
         log_format=process.log_format,
         pricing_auto_update=process.pricing_auto_update,
+        terminal_update_check=process.terminal_update_check,
     )
     return AgentUiSettingsSource(
         configuration=configuration,

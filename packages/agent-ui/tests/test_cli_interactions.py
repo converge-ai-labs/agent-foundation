@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -130,11 +129,12 @@ def test_question_and_approval_batch_is_typed_and_complete() -> None:
 
 def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     wizard = SetupWizard()
-    wizard.accept("2")
+    wizard.accept("3")
     assert wizard.question is not None and wizard.question.key == "route"
     wizard.accept("")
     wizard.accept("key:work")
     wizard.accept("1")
+    wizard.customize()
     wizard.accept("Keep replies concise")
     assert wizard.question is None
     selection = wizard.selection("/workspace")
@@ -175,13 +175,12 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
         async def cancel(self):
             return None
 
-    @asynccontextmanager
-    async def factory(*args):
-        yield Backend()
+    backend = Backend()
+    await backend.initialize()
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
-        shell = CliShell(CliRequest(), directory=tmp_path, runtime_loader=lambda: factory)
-        task = asyncio.create_task(shell.run())
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        task = asyncio.create_task(shell.run(backend))
         try:
             await ready.wait()
             async with asyncio.timeout(3):
@@ -264,13 +263,9 @@ async def test_same_input_batch_cancellation_prevents_admission(tmp_path: Path) 
     backend.interaction = AsyncMock(return_value=None)
     backend.refresh = AsyncMock()
 
-    @asynccontextmanager
-    async def factory(*args):
-        yield backend
-
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
-        shell = CliShell(CliRequest(), directory=tmp_path, runtime_loader=lambda: factory)
-        task = asyncio.create_task(shell.run())
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        task = asyncio.create_task(shell.run(backend))
         try:
             async with asyncio.timeout(3):
                 while not shell.ready or not shell.app.is_running:
@@ -374,7 +369,7 @@ async def test_rejected_steering_can_be_recovered_without_overwriting_newer_draf
         shell = CliShell(CliRequest(), directory=tmp_path)
         shell.backend = backend
         task = asyncio.create_task(shell.handle("/steer important guidance"))
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), 3)
         shell.composer.buffer.document = Document("new draft")
         release.set()
         await task

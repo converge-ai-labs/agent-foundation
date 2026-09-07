@@ -1,23 +1,28 @@
 # Agent CLI
 
-Agent CLI (`a13n-ui`, installed from the `a13n-ui` distribution) is an interactive coding CLI built on Agent Foundation Harness. Its native full-terminal interface supports Windows, macOS, and Linux, with reflowing Markdown, selectable interactions, and image drafts. One foreground process owns one `AgentUiApp`, the current conversation, and its active work. The optional `a13n-ui webui` command starts the bundled browser interface in a foreground server. There is no detached daemon or detached execution mode.
+Agent CLI (`a13n-ui`, installed from the `a13n-ui` distribution) is an interactive coding CLI built on Agent Foundation Harness. Its native full-terminal interface supports Windows, macOS, and Linux, with reflowing Markdown, selectable interactions, and image drafts. One foreground process owns one `AgentUiApp`, the current conversation, and its active work. The optional `a13n-ui webui` command starts the HTTP API and a bundled Hello World page in a foreground server; browser chat and management are not implemented. There is no detached daemon or detached execution mode.
 
 ```console
+uv tool install a13n-ui
 cd your-repository
 a13n-ui
 ```
 
-You can type immediately while the App prepares. Enter during startup preserves your draft rather than submitting it unexpectedly. A model request begins only when you explicitly send a prompt. The current directory is the workspace; you do not need to create or manage a Project.
+Startup checks local configuration before opening full-terminal chat. If no Model is configured, a standalone setup wizard opens in the normal terminal first. A model request begins only when you explicitly send a prompt. The current directory is the workspace; you do not need to create or manage a Project.
 
 ## First use
 
-Missing model configuration opens setup automatically and preserves anything you typed during startup. `/setup` or `a13n-ui setup` reopens it:
+Setup runs automatically when needed. To change configuration later, leave chat and run `a13n-ui setup`; there is no `/setup` command inside chat.
 
-1. **Connect a model:** choose BYOS (Codex/Grok subscription) or BYOK (an API route and an environment-variable or stored-key reference). Never paste a raw secret into the composer. Codex defaults to Sol, high reasoning, and a balanced 350k working budget.
-2. **Configure the coding Agent:** choose Full Control or Sandbox, optional subscription shell review, and optional additional Agent instructions. Built-in system instructions remain active. Preview files and explicitly choose Publish. Existing edited resources are preserved.
-3. **Optional BYOS follow-up:** sign in now or later, then optionally migrate Codex or Claude Code subagents. Select product, project/user scope, definitions, and explicit import-and-enable confirmation. Skip does not scan external files. `/import` makes the same flow available later, including for BYOK.
+1. **Connect a model:** choose Codex subscription, Grok subscription, or an API key. Existing compatible Codex/Grok logins are detected and reused without another login prompt, including credentials that can refresh when used. API-key access asks for a model route and an environment-variable or stored-key reference, never the raw key.
+2. **Choose execution permissions:** Full Control runs as your host account; Sandbox uses isolated execution and checks prerequisites before saving. There is no automatic fallback between them.
+3. **Review and save:** confirm the connection, starter settings, workspace, permissions, and files to publish. Codex defaults to Sol, high reasoning, a 350k working budget, and enabled shell review. Choose **Adjust model options** only if you want to change the model, context budget, reasoning, shell review, or additional instructions. Existing edited resources are preserved.
 
-Use Up/Down and Enter, or type option numbers. Space toggles multiple selections. Esc returns to the previous setup question; `/cancel` restores the conversation draft. Publication confirmation never defaults to approval. After configuration has been published, cancelling login or import does not undo those files.
+Use Up/Down and Enter, or type option numbers. Esc goes back; Ctrl+C or Ctrl+D cancels. Cancelling first-use setup returns to the command shell without opening chat. After successful first-use setup, chat opens automatically. Running `a13n-ui setup` explicitly returns to the command shell after saving or cancelling.
+
+If the selected account is missing, setup offers explicit device sign-in or configuration without signing in. Unsupported or malformed stores show repair guidance and a recheck action; they are not overwritten. Discovery never refreshes tokens or starts authentication. Cancelling setup does not undo a completed login or configuration publication.
+
+Subagent migration is separate: use `/import` in chat to select Codex or Claude Code definitions, project/user scope, and an explicit import-and-enable confirmation. Setup does not scan or import external definitions.
 
 Imports preserve instructions and explicitly inherit the parent model and visible tools rather than activating foreign tool names. Preview lists unsupported settings and conflicts. Successful import enrolls selected definitions in the selected Agent's roster; file publication and enrollment are separate operations, and partial completion is reported for deliberate retry.
 
@@ -39,6 +44,10 @@ Reasoning choices are `low`, `medium`, `high`, and `xhigh`. `/thinking default` 
 
 Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The native subscription adapter strips unsupported settings such as `max_tokens`; `openai_store` is forced false.
 
+### Local guidance
+
+Agent UI loads two guidance sources: `AGENTS.md` beside the selected `a13n-ui.yaml` (normally `~/.a13n-ui/AGENTS.md`), and `AGENTS.md` in the current working directory. Both are user-role contextual content, not the provider's `instructions` field. No ancestor scan or `RULES.md` / `AGENTS.override.md` fallback is performed. Global guidance is captured with each accepted configuration generation; working-directory guidance uses the Environment's bounded file reader. Injected guidance is hidden in the terminal and `/history` using application-only `display: false` metadata, while remaining available to the model and retained native history.
+
 ## Everyday interaction
 
 | Action                                              | Command or key                                   |
@@ -59,17 +68,33 @@ Codex subscription requests do **not** receive an API output-token cap copied fr
 | Read/change execution permissions                   | `/environment`, `/environment sandbox`           |
 | Show current settings, usage, and pending decisions | `/status`                                        |
 | Locate configuration and explain precedence         | `/config`                                        |
-| Send additional guidance to the current Run         | `/steer message`                                 |
+| Send additional guidance to the current Run         | Enter while running                              |
 | Cancel active work                                  | `/cancel`                                        |
 | Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                               |
 
-Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model. Ordinary input entered while a Run is active is preserved, not silently steered or queued. Use `/steer <message>` for explicit text-only guidance to the current receipt, or wait for completion/cancel first. Acceptance means the input was queued inside the current Harness Run for a model boundary, not that the model has already consumed it. A preparing or completed receipt rejects steering; the CLI preserves rejected guidance and never resends it as a new prompt.
+Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model.
+
+**Enter sends a message while idle, or adds text guidance while the agent is running.** The input hint changes with the current state. `/steer <message>` is still available as an optional explicit alternative. Guidance is appended through the current Harness Run's native input queue; the CLI does not reorder messages or maintain a separate next-turn queue. Acceptance is distinct from delivery at a model boundary, and neither promises an immediate interruption of an in-flight tool or request.
+
+Preparing, cancelling, or completed operations do not accept guidance. Rejected or unconfirmed input stays in the draft, or is available through `/recover` if you have started another draft. It is never silently redirected to a new Run or resent automatically. Active-run Enter with images preserves the entire draft because this CLI steering path accepts text only. In an approval or question selector, Enter confirms that interaction instead.
 
 Commands preserve Windows backslashes. Quote paths containing spaces, such as `/attach "C:\\My Photos\\image.png"`. `/result request-id {"answer": "two words"}` takes raw JSON without an extra shell-quoting layer.
 
-**Concise** output emphasizes assistant text, errors, decisions, and necessary results. **Detailed** output also shows tool calls, file-edit arguments, bounded results, child output, and exposed reasoning. Tool results include call identity and elapsed time; child blocks include their execution or Run identity. A live switch affects subsequent events, not previously displayed blocks; `/history` can display retained details in the selected mode.
+**Concise** keeps provider-exposed thinking independently expanded. Successful edit and multi-edit operations show expanded diffs from the native `FileEditAppliedEvent`, using the actual before/after file contents rather than proposed replacement snippets. Failed and no-op edits produce no applied-edit panel. Ordinary tool arguments and results remain folded; their full source is retained within the transcript display budget rather than replaced with a preview. **Detailed** expands retained tool blocks and shows subsequent child output. Ctrl+O switches without replaying events; `/history` reads saved details regardless of mode.
 
-The compact status bar shows the model, reasoning, last request footprint/working budget, elapsed time, state, and output mode. `?` means unavailable, not zero. The footprint is the last reported request, not an exact estimate of your next prompt. Child and auxiliary usage are not summed into it. `/status` shows complete details even in a narrow terminal.
+Summarize displays its body from the native `HandoffSummaryEvent` after the handoff summary has been persisted. This is the **prepared** state, distinct from **completed** when the handoff is consumed at the next boundary. The full available summary and file reminders are expanded, with lifecycle status separate from the body.
+
+Compaction displays its generated summary in an independently expanded Markdown block, correlated to the operation ID. The body comes from the native custom event, not inferred saved history or an assistant answer. Lifecycle metadata remains separate; neither summary visibility nor a completed lifecycle event asserts that a new continuation has been saved.
+
+The status bar prioritizes state, model, reasoning effort, `ctx N%`, and elapsed time. Context percentage uses the last reported root request divided by your configured working budget. `--` means unavailable, not zero; genuine zero is `0%`. Child and auxiliary usage are not summed into it. `/status` shows exact counters and complete settings even in a narrow terminal.
+
+### Local host commands
+
+Enter `!command` to run a command yourself on the local POSIX host, for example `!git status`. This is user-owned shell execution in the CLI's working directory with the host process environment, **outside the model's selected Environment and Sandbox**. Selecting Sandbox for model tools does not sandbox `!command`. The command and its output are not injected into model context.
+
+Local commands are accepted only while idle and outside interaction menus. A busy-state or menu rejection preserves the draft and attached images. Stdout and stderr are displayed as output events, followed by exit status and elapsed time. Commands are noninteractive: stdin receives EOF. Each command has a 120-second deadline and a combined 256 KiB output display limit; output beyond that limit is still drained rather than allowed to block the process.
+
+Ctrl+C or `/cancel` terminates the owned process group and waits for cleanup before returning to idle. `!command` is explicitly unsupported on Windows until equivalent process-group cleanup is available; ordinary Windows CLI use and model tools remain supported under their existing execution contracts.
 
 ### Approvals and questions
 
@@ -79,9 +104,9 @@ Structured questions support single choice, multiple choice with Space, and type
 
 ### Theme, scrolling, copy, and images
 
-- `/theme auto|dark|light` changes UI and Markdown syntax colors for this session; `display.theme` sets the file default. Auto uses passive terminal metadata, never an interactive terminal query.
+- `/theme auto|dark|light` changes UI and Markdown syntax colors for this session; `display.theme` sets the file default. Auto preserves your terminal foreground/background and ANSI palette; passive metadata selects syntax variants without consuming input.
 - PageUp/PageDown scroll the bounded display history; Ctrl+End returns to following live output. `/history` retrieves durable pages after display eviction.
-- `/mouse on` captures wheel scrolling; `/mouse off` (the default) leaves native terminal selection/copy available. Code rendering avoids padded backgrounds and OSC hyperlinks.
+- Scroll mode (`/mouse on`) is the default. Wheel events belong to the hovered transcript, selector, or composer. In selectors, scrolling only browses; click highlights and Enter confirms. Ctrl+Space switches selector/composer keyboard focus. Esc closes an interaction/completion first, otherwise toggles scroll/select. Select mode (`/mouse off`) restores native selection/copy; application wheel routing is unavailable there. PageUp/PageDown and Ctrl+End work in either mode. Scrolling up freezes follow; returning to the bottom resumes it. Code rendering avoids padded backgrounds and OSC hyperlinks.
 - Ctrl+V, Alt+V, or `/paste-image` explicitly reads clipboard images. Normal text paste remains text and never submits itself. Some terminals intercept Ctrl+V; use Alt+V or the command there.
 - `/attach "path/to/image.png"` is the portable fallback. Linux clipboard images need `wl-paste` or `xclip`; no helper is installed automatically.
 - Chips show draft images. `/remove 1` removes one; `/remove all` or idle Ctrl+C clears them. Up to eight validated PNG/JPEG/WebP/GIF images are accepted, with 10 MiB per image, 20 MiB total, and 32 megapixels per image.
@@ -116,6 +141,7 @@ A typical root document is:
 schema_version: "2"
 process:
   pricing_auto_update: true
+  terminal_update_check: true
   log_level: INFO
   log_format: pretty
 defaults:
@@ -225,16 +251,18 @@ a13n-ui auth login --help
 
 One-shot mode prints the final text or a structured operation object, then exits. It shares workspace, model, continuation, and permission semantics with interactive mode. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
 
-Help and version do not load provider or database modules. App initialization happens behind the editable prompt; model construction, Environment acquisition, and selected MCP connections happen only when needed. CLI and WebUI share the reusable `AgentUiApp` application boundary; the CLI does not own a parallel execution engine.
+Help and version do not load provider or database modules. App initialization precedes chat, with setup owning a single redrawn alternate-screen view; model construction, Environment acquisition, and selected MCP connections happen only when needed. The CLI and HTTP adapter share the reusable `AgentUiApp` application boundary; the Hello World page does not call that API, and the CLI does not own a parallel execution engine.
 
 ## Browser UI
+
+The bundled page displays only **Hello World**. It does not authenticate, consume the URL's API-key fragment, open live streams, or provide conversation, setup, or management controls. The HTTP API and foreground server remain available independently.
 
 ```bash
 a13n-ui webui                       # 127.0.0.1:8765, generated per-process API key
 a13n-ui webui --host 127.0.0.1 --port 9000
 ```
 
-Open the URL printed by the server. The generated key is carried only in the URL fragment and is required for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
+Open the ordinary URL printed by the server to view the page; static assets require no API key. The server also prints a generated key and a convenience URL carrying it only in the fragment. The placeholder does not consume that fragment. API clients must send the key in `Authorization: Bearer <key>` for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
 
 The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, run `make agent-ui-assets` before `uv run --locked a13n-ui webui`.
 
@@ -245,3 +273,17 @@ Windows supports **Full Control only** for the built-in local modes. Setup and t
 ## Source Environment Troubleshooting
 
 After switching branches, run `make sync` (or launch with `make a13n-ui`) to synchronize the locked workspace. This branch requires Pydantic AI 2.40 or newer; an older environment can fail with `cannot import name 'prices' from 'pydantic_ai'`. Do not work around this by importing upstream private modules. Installed users should upgrade `a13n-ui` using the package manager that owns their environment.
+
+## Logs, Updates, and Exit
+
+Interactive diagnostics go to `<data-root>/logs/terminal.log` (5 MiB, three rotated backups), not the conversation or normal-screen scrollback. Skipped plugins produce one actionable notice for each unchanged path/reason; use the log for details. No legacy plugin files are removed automatically.
+
+Installed release builds check public PyPI metadata in the background at most daily with a short timeout. Offline failure is silent. Set `process.terminal_update_check: false` to disable it. Source/development builds at `0.0.0`, setup-only, help/version, and noninteractive commands do not check. Updates are never installed automatically. For a uv-tool installation:
+
+```console
+uv tool upgrade a13n-ui
+```
+
+After cleanup, the normal terminal shows a resume command for the actual saved root thread, preserving explicit configuration/data-root options and identifying the workspace to run it from. An interrupted operation may not have produced a new resumable continuation; resume uses the last saved one.
+
+Large active messages use a lightweight plain-text preview and reflow to Markdown when complete. Rendered rows are loaded in pages as you scroll, rather than dropping older rows at a fixed viewport limit. The source cache is still bounded; explicit eviction notices direct you to `/history`. That command can only recover content retained and exposed by the App, not data omitted upstream.

@@ -29,6 +29,7 @@ from a13n_harness.tools.metadata import (
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
+from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
 from .process_manager import _PROCESS_OBSERVATION_ACTIONS, _ProcessController, _project_status
 from .shell_results import (
@@ -165,6 +166,13 @@ class ShellToolset:
             request,
             alias=alias,
             expected_mount_id=expected_mount_id,
+        )
+        await ctx.emit(
+            ShellStatusEvent(
+                process_id=None,
+                phase=result.status.phase,
+                exit_code=result.status.exit_code,
+            )
         )
         projected = cast(
             dict[str, JsonValue],

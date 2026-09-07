@@ -15,9 +15,11 @@ if TYPE_CHECKING:
 def start(request: CliRequest) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise click.ClickException("Interactive mode requires a terminal. Use `a13n-ui run <prompt>` for automation.")
-    from a13n_ui.interactive.shell import CliShell
+    from a13n_ui.interactive.startup import run_terminal
 
     try:
-        asyncio.run(CliShell(request).run())
+        asyncio.run(run_terminal(request))
     except KeyboardInterrupt:
         raise click.exceptions.Exit(130) from None
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc

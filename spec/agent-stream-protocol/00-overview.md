@@ -91,7 +91,7 @@ A processor is replay-stable: its result derives only from the supplied source i
 1. stage the multipart conversion state for the source item;
 2. convert the source item to one or more AG-UI events;
 3. call the optional processor once for each converted event;
-4. omit only events for which the processor returns `None`;
+4. omit only events for which the processor returns `None`, then frame retained oversized custom events;
 5. commit the staged conversion state and accumulate retained events;
 6. return detached copies of the events added by that call.
 
@@ -114,7 +114,11 @@ The observer uses standard AG-UI events for direct semantic matches:
 | Completed terminal `HarnessRunResultEvent`           | `RUN_FINISHED` with success outcome and a JSON-safe result when available               |
 | Failed or cancelled terminal `HarnessRunResultEvent` | `RUN_ERROR` with the Harness-owned public failure or cancellation code                  |
 | Suspension, non-success tool return, or retry prompt | Namespaced `CUSTOM` preserving the authoritative Harness correlation and public payload |
-| Native Pydantic AI `CapabilityEvent`                 | Namespaced `CUSTOM` preserving Capability, Tool-call, Harness correlation, and payload  |
+| Other native Pydantic AI `CapabilityEvent`           | Namespaced `CUSTOM` preserving Capability, Tool-call, Harness correlation, and payload  |
+
+Native `a13n.context.model_input` Capability events map each input content item to standard user-role `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END` events. Every event carries the same `role` and `metadata`, so a bounded consumer does not need a retained start event to enforce visibility. IDs derive from the source Run, sequence, and item index. The shared `ContentMetadata` projection contains `display` (default true), optional `source_id`, and `media` (default false); arbitrary native application metadata is not forwarded. Retained-history adapters use this same metadata projection. `display: false` content remains in observation and native history, but consumers omit it from normal presentation. It is not a security boundary. Processors cannot change role, identity, or visibility metadata.
+
+Input content uses text deltas of at most 8192 code points without truncating the source body. Other Capability events, including compaction summaries, handoff summaries, file edits, and shell status, remain custom events with their native names and payloads. The observer does not manufacture assistant messages or render diffs for those events. Clients interpret the shared native facts into their own panels.
 
 The observer maintains only the state needed to translate multipart events consistently: the current Harness model-request index, open part identities, accumulated tool name, and whether text or reasoning content has already been emitted. Harness model-request lifecycle observations remain visible as `CUSTOM`; they also provide the request index used when a Pydantic part has no native identity.
 
@@ -127,7 +131,8 @@ A text or reasoning part delta or end without a preceding start is normalized in
 An observation without a direct standard representation is never silently dropped. It becomes:
 
 - `a13n.harness.tool.<name>` for a typed Tool extra extension;
-- `a13n.harness.<kind>` for another `HarnessExtensionEvent`; or
+- `a13n.harness.<kind>` for another `HarnessExtensionEvent`;
+- the unchanged native `CapabilityEvent.kind` for a Capability event; or
 - `a13n.pydantic_ai.<event_kind>` for another Pydantic AI event.
 
 The Tool specialization makes semantic events such as `a13n.harness.tool.filesystem.changed` directly subscribable without changing the source representation. Its `CUSTOM.value.event` remains the complete `HarnessExtensionEvent`, including Tool call correlation and the namespaced Tool event name.
@@ -144,9 +149,15 @@ The `CUSTOM.value` is:
 }
 ```
 
-A Harness extension uses `model_dump(mode="json", by_alias=True)`. A Pydantic AI-compatible event uses the concrete runtime value's Pydantic JSON-mode serializer with aliases enabled; the observer does not snapshot the installed `AgentStreamEvent` union or maintain an event-kind registry. A native `CapabilityEvent` therefore uses `a13n.pydantic_ai.capability` and retains its concrete `kind`, `capability_id`, optional Tool-call correlation, and Capability-owned public payload inside `CUSTOM.value.event`. Serialization warnings are conversion failures rather than permission to emit a partial representation. A value may satisfy the Harness process-local `AgentStreamEventProtocol` while lacking a Pydantic-compatible JSON serializer; such a value fails conversion atomically, and the observer does not invent a serializer for it. The shared Harness/Protocol release defines these source fields; the fallback does not introduce a manual event allowlist, custom schema registry, or independent version negotiation.
+A Harness extension uses `model_dump(mode="json", by_alias=True)`. A Pydantic AI-compatible event uses the concrete runtime value's Pydantic JSON-mode serializer with aliases enabled; the observer does not snapshot the installed `AgentStreamEvent` union or maintain an event-kind registry. A native `CapabilityEvent` uses its concrete `kind` as the custom name and retains `kind`, `capability_id`, optional Tool-call correlation, and its public payload inside `CUSTOM.value.event`. Unknown native Capability events use the native event-family serializer to recover the original flattened payload. User-defined kinds require no first-party converter or allowlist. Serialization warnings are conversion failures rather than permission to emit a partial representation. A value may satisfy the Harness process-local `AgentStreamEventProtocol` while lacking a Pydantic-compatible JSON serializer; such a value fails conversion atomically, and the observer does not invent a serializer for it. The shared Harness/Protocol release defines these source fields; the fallback does not introduce a manual event allowlist, custom schema registry, or independent version negotiation.
 
 A source item with a direct standard mapping is not duplicated as a second custom event. The processor receives both the source item and each converted event, and a Host can separately retain source records when its product requires them.
+
+### Large Custom Events
+
+All oversized custom events use a generic lossless framing codec after whole-event processing and validation. A custom event whose JSON encoding is at most 48 KiB remains intact. Larger events become ordered `CUSTOM` frames named `a13n.stream.fragment`, each carrying `{id, index, count, data}`. The ID derives from the source Thread, Run, sequence, and retained converted-event index; zero-based indices and count describe the fragments of the original custom event JSON. Data chunks contain at most 4096 code points, keeping each encoded frame below the App's 64 KiB payload bound. Framing does not rename domain fields, render content, or imply another event lifecycle.
+
+`fragment_custom_event` exposes the same codec to other producers. Clients reassemble frames before interpreting the original custom name and value. `CustomEventAssembler` supports interleaved identities and retains at most eight pending events with a combined 64 MiB text budget by default. Invalid order, inconsistent counts, missing fragments, invalid JSON, or exceeded budgets never produce a partial domain event; the assembler reports an observation gap. Consumers own subscription lifetime and discard incomplete assemblies on reset. Transport loss remains possible and does not invalidate completed tool effects. Processors see the original complete custom name and value before fragmentation, so visibility filtering is independent of event size. Fragments are not independently meaningful domain observations.
 
 ## Lifecycle Ownership
 

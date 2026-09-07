@@ -293,6 +293,22 @@ async def test_subscription_route_reaches_composition_and_native_reconstruction(
     assert reconstructed.executable.definition.agent.model.startswith("agent-ui:model-")
 
 
+async def test_global_guidance_and_default_file_context_are_captured_for_root_and_children(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("Global instruction revision one")
+    source = await load_agent_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    nodes = [composition.root, *(child.definition for child in composition.root.children)]
+    for node in nodes:
+        assert "Global instruction revision one" in node.global_guidance[0]
+        assert sum(item.capability == "file_context" for item in node.capabilities) == 1
+    (tmp_path / "AGENTS.md").write_text("Global instruction revision two")
+    refreshed = AgentCompositionResolver(_catalog()).resolve_run(await load_agent_ui_configuration(path), _selection())
+    assert "revision two" in refreshed.root.global_guidance[0]
+    assert "revision one" in composition.root.global_guidance[0]
+    assert refreshed.generation_digest != composition.generation_digest
+
+
 async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_only(tmp_path: Path) -> None:
     source = await load_agent_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())

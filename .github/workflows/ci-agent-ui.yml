@@ -7,7 +7,7 @@ on:
       - ".github/workflows/ci-agent-ui.yml"
       - ".github/workflows/release-agent-ui.yml"
       - ".gitignore"
-      - "apps/harness-ui/**"
+      - "apps/agent-ui/**"
       - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "packages/agent-stream-protocol/**"
@@ -29,7 +29,7 @@ on:
       - ".github/workflows/ci-agent-ui.yml"
       - ".github/workflows/release-agent-ui.yml"
       - ".gitignore"
-      - "apps/harness-ui/**"
+      - "apps/agent-ui/**"
       - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "packages/agent-stream-protocol/**"
@@ -96,18 +96,18 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: apps/harness-ui/package-lock.json
+          cache-dependency-path: apps/agent-ui/package-lock.json
 
-      - name: Install and check Harness UI
+      - name: Install and check Agent UI WebUI
         if: matrix.name == 'Linux'
         run: |
-          npm --prefix apps/harness-ui ci
-          npm --prefix apps/harness-ui run check:all
+          npm --prefix apps/agent-ui ci
+          npm --prefix apps/agent-ui run check:all
 
       - name: Synchronize Agent UI test environment
         run: uv sync --locked --package a13n-ui --group test --no-default-groups
 
-      - name: Prepare bundled Harness UI assets
+      - name: Prepare bundled Agent UI WebUI assets
         if: matrix.name == 'Linux'
         run: uv run --locked python scripts/prepare-agent-ui-assets.py
 

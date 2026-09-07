@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
 
@@ -91,8 +90,9 @@ def test_huge_delta_and_cache_budgets_are_visible_and_bounded() -> None:
         transcript.render(15)
     assert transcript.source_bytes <= 8192
     assert len(transcript.blocks) <= 8
-    assert len(transcript.rows) <= 41
-    assert sum(block.cache_bytes for block in transcript.blocks.values()) <= 8192
+    # Render rows are paged, not cut off: retained source remains scrollable.
+    assert len(transcript.rows) > 41
+    assert all(not block.rows.pages for block in transcript.blocks.values())
     assert transcript.evicted
 
 
@@ -207,15 +207,14 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images() -> No
 
             return (Choice("model-one", "One"), Choice("model-two", "Two"))
 
-    @asynccontextmanager
-    async def factory(*args):
-        yield Backend()
-
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
-        shell = CliShell(CliRequest(), runtime_loader=lambda: factory)
-        task = asyncio.create_task(shell.run())
+        shell = CliShell(CliRequest())
+        backend = Backend()
+        await backend.initialize()
+        task = asyncio.create_task(shell.run(backend))
         try:
             await initialized.wait()
+            await asyncio.sleep(0.05)
             shell.composer.buffer.document = Document("unsent", 2)
             shell.images = (image_bytes("draft.png", _png()),)
             await shell.command(shell.registry.parse("/model"))
@@ -317,7 +316,12 @@ async def test_small_terminal_keeps_composer_without_reserving_large_panels(
     monkeypatch.setattr(output, "get_size", lambda: Size(rows=rows, columns=columns))
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
         shell = CliShell(CliRequest())
-        shell.start_setup()
+        from a13n_ui.interactive.selection import Choice
+
+        async def choose(value):
+            return None
+
+        shell.open_menu("Select model", (Choice("one", "One"), Choice("two", "Two")), choose)
         task = asyncio.create_task(shell.app.run_async())
         try:
             async with asyncio.timeout(3):
@@ -387,15 +391,14 @@ async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(
         async def interaction(self):
             return None
 
-    @asynccontextmanager
-    async def factory(*args):
-        yield Backend()
-
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
-        shell = CliShell(CliRequest(), runtime_loader=lambda: factory)
-        task = asyncio.create_task(shell.run())
+        shell = CliShell(CliRequest())
+        backend = Backend()
+        await backend.initialize()
+        task = asyncio.create_task(shell.run(backend))
         try:
             await initialized.wait()
+            await asyncio.sleep(0.05)
             pipe.send_text("/model\r")
             await asyncio.wait_for(entered.wait(), 3)
             shell.composer.buffer.document = Document("next draft", 3)

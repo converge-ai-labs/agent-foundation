@@ -57,6 +57,7 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     ModelContextRequestKind,
     _commit_projection,
+    user_prompt_content,
 )
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry
@@ -235,7 +236,10 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert restored[0].instructions is not None
     assert "Keep the native instruction field." in restored[0].instructions
     contents = [
-        part.content for part in restored[0].parts if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        item.content
+        for part in restored[0].parts
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
     ]
     joined = "\n".join(contents)
     assert "# Context Summary" in joined
@@ -335,7 +339,9 @@ async def test_handoff_preserves_structured_multimodal_original_request() -> Non
         for message in calls[1]
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+        if isinstance(part, UserPromptPart)
+        and not isinstance(part.content, str)
+        and any(isinstance(item, BinaryContent) for item in part.content)
     ]
     assert len(restored_contents) == 1
     restored = restored_contents[0]
@@ -971,7 +977,8 @@ async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) ->
     text = _user_text(seen[0])
     content = text.split('<file path="/workspace/AGENTS.md">', 1)[1].split("</file>", 1)[0]
     assert len(content.strip().encode("utf-8")) <= 512
-    assert len(content.strip()) <= 127
+    assert "File context truncated by configured limits" in content
+    assert len(content.split("\n[File context", 1)[0].strip()) <= 127
 
 
 async def test_workspace_and_file_context_are_input_only_while_runtime_and_handoff_follow_tools(
@@ -1093,10 +1100,7 @@ def _user_text(messages: list[ModelMessage]) -> str:
         for part in message.parts:
             if not isinstance(part, UserPromptPart):
                 continue
-            if isinstance(part.content, str):
-                text.append(part.content)
-            else:
-                text.extend(item for item in part.content if isinstance(item, str))
+            text.extend(item.content for item in user_prompt_content(part))
     return "\n".join(text)
 
 
@@ -1157,5 +1161,12 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         "handoff_completed",
     ]
     assert len({payload["operation_id"] for payload in context_payloads}) == 1
+    from a13n_harness.toolsets.events import HandoffSummaryEvent
+
+    summaries = [item.event for item in events if isinstance(item.event, HandoffSummaryEvent)]
+    assert len(summaries) == 1
+    assert summaries[0].operation_id == context_payloads[1]["operation_id"]
+    assert summaries[0].tool_call_id in {"summary-concurrent-1", "summary-concurrent-2"}
     restored_text = str(calls[1])
+    assert summaries[0].summary in _user_text(calls[1])
     assert ("first-summary-only" in restored_text) != ("second-summary-only" in restored_text)

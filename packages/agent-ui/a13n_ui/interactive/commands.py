@@ -65,7 +65,6 @@ COMMANDS = (
         busy=True,
         raw_tail=True,
     ),
-    Command("setup", "Configure a provider and explicit context settings; existing files are preserved."),
     Command("import", "Preview and optionally enable external subagents with parent inheritance."),
     Command("model", "List configured models or select one for this session.", "[model-id]", maximum=1),
     Command(
@@ -165,8 +164,8 @@ class CommandRegistry:
             lines += [
                 "",
                 "Enter: send   Alt+Enter: newline   Tab: complete   Ctrl+C: clear/cancel   Ctrl+D: exit",
-                "Bracketed multiline paste stays in the draft until Enter. /mode and /steer work during a run.",
-                "Quote paths containing spaces. /result takes raw JSON; /steer takes literal text.",
+                "Enter adds text guidance during a run. Bracketed multiline paste stays a draft until Enter.",
+                "Quote paths containing spaces. /result takes raw JSON. Configure outside chat with a13n-ui setup.",
                 "Ctrl+V / Alt+V: paste image   PgUp/PgDn: scroll   Ctrl+End: latest   /mouse off: native copy",
             ]
         return "\n".join(lines)

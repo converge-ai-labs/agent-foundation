@@ -12,13 +12,12 @@ class TerminalCodeBlock(CodeBlock):
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         code = str(self.text).rstrip()
-        background_color = "white" if self.theme == "ansi_light" else "black"
         syntax = Syntax(
             code,
             self.lexer_name,
             theme=self.theme,
             word_wrap=True,
-            background_color=background_color,
+            background_color="default",
             padding=0,
         )
         # Rendering highlighted Text directly avoids Syntax's shared line width.

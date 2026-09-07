@@ -135,6 +135,8 @@ The terminal projection calls `BoundEnvironment.project_model_context(request)` 
 
 `ModelContextBlock.source_id` is stable, non-blank, bounded provenance, not ordering or authority. Contents are bounded text and retain the trust level of their source. Middleware never receives mutable messages. The final Harness commit, which no Host or Capability can bypass, validates source IDs, block counts, per-block and aggregate UTF-8 byte limits, and the two fixed placements; records Harness ownership metadata; and rejects malformed output before model dispatch. Limits apply after the complete outer chain, so replacement or short-circuit cannot bypass them.
 
+Context blocks are committed as native `UserPromptPart` sequences containing `TextContent`, with application-only metadata `display: false` and the block's `source_id`. These flags survive native message serialization and are not sent to the model provider. They are presentation hints, not redaction or authorization. The owning request still records exact index/hash ownership for history replacement; display metadata alone never authorizes deletion. Cleanup accepts previously persisted string overlays as well as metadata-bearing text, without deleting matching user-authored text.
+
 ## Eligible Requests and Placement
 
 The coordinator classifies the complete final `ModelRequest`, after ordinary history transformation and content filtering, into one of these cases:
@@ -350,6 +352,10 @@ Retained user inputs preserve native structured `UserContent`, including multimo
 The compact summary replaces tool traffic only after the nested request succeeds. It summarizes the cleaned conversation history, omits bookkeeping calls while preserving outcomes needed for continuity, and does not mechanically duplicate structured notes or tasks. Transient Environment, Notes, and Tasks projections are resolved again at the next ordinary request from their current authoritative state. Native multimodal compatibility remains owned by [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters), and oversized tool results remain owned by [Tool Execution](07-tool-execution.md#dispatch-retry-and-results); compaction creates no estimator, spill, target-size trimmer, explicit compact tool, or durable message bus.
 
 Ordinary compact-run failures, including an empty plain-text summary, emit a bounded `compaction_failed` observation and leave the original history unchanged. Cancellation propagates. This fail-open rule does not turn the compact summary into an authoritative durable fact and does not conceal provider context-limit failures if the original request still exceeds its actual window.
+
+### Compaction Summary Observation
+
+After successful nested generation and replacement-history construction, compaction exposes the exact generated summary through the native Capability event channel. The summary remains separate from normal assistant output and is correlated to its compaction operation. Failure and cancellation do not publish successful-summary content. This process-local observation does not promise a persisted continuation or installed outer-history snapshot. [Events and Usage](12-events-observability-and-usage.md) owns the event shape and lifecycle distinction.
 
 ## Mem0 Integration
 

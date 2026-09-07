@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Literal
 
 from a13n_harness import HarnessState
+from a13n_harness.model_context import user_prompt_content
+from a13n_stream_protocol import ContentMetadata
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
@@ -16,7 +18,6 @@ from pydantic_ai.messages import (
     ModelResponse,
     RetryPromptPart,
     SystemPromptPart,
-    TextContent,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -204,6 +205,7 @@ class ThreadProjectionService:
                 "Transcript cursor is outside the selected history.", code="thread_history_cursor_invalid"
             )
         position = max(0, upper_bound - limit)
+        # Display only conversation parts; the saved model history remains exact.
         selected = history[position:upper_bound]
         entries = tuple(_message_entry(index, item) for index, item in enumerate(selected, start=position))
         next_cursor = None
@@ -400,17 +402,15 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
     if isinstance(part, SystemPromptPart):
         return (TranscriptPart(kind="system", text=_bounded_text(part.content)),)
     if isinstance(part, UserPromptPart):
-        if isinstance(part.content, str):
-            return (TranscriptPart(kind="user", text=_bounded_text(part.content)),)
-        projected: list[TranscriptPart] = []
-        for item in part.content:
-            if isinstance(item, str):
-                projected.append(TranscriptPart(kind="user", text=_bounded_text(item)))
-            elif isinstance(item, TextContent):
-                projected.append(TranscriptPart(kind="user", text=_bounded_text(item.content)))
-            else:
-                projected.append(TranscriptPart(kind="media", text=type(item).__name__))
-        return tuple(projected)
+        return tuple(
+            TranscriptPart(
+                kind="media" if metadata.media else "user",
+                text=_bounded_text(item.content),
+                metadata=metadata,
+            )
+            for item in user_prompt_content(part)
+            for metadata in (ContentMetadata.from_native(item.metadata),)
+        )
     if isinstance(part, ToolReturnPart):
         value, omitted = _bounded_json(part.content)
         return (

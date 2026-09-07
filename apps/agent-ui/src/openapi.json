@@ -1595,6 +1595,35 @@
         ],
         "title": "ChildToolCallView"
       },
+      "ContentMetadata": {
+        "properties": {
+          "display": {
+            "type": "boolean",
+            "title": "Display",
+            "default": true
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "media": {
+            "type": "boolean",
+            "title": "Media",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ContentMetadata",
+        "description": "Application-only presentation hints, never model instructions or authorization."
+      },
       "ContinuationSelectionView": {
         "properties": {
           "status": {
@@ -3788,6 +3817,9 @@
       },
       "TranscriptPart": {
         "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ContentMetadata"
+          },
           "kind": {
             "type": "string",
             "enum": [

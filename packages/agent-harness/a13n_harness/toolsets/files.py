@@ -39,6 +39,7 @@ from a13n_harness.usage import ProviderUsage
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
 from ._scoped_files import ScopedFileAccess
+from .events import FileEditAppliedEvent
 from .file_media import (
     MAX_MEDIA_UNDERSTANDING_BYTES,
     MediaUnderstandingError,
@@ -142,9 +143,15 @@ class _FileViewProfile:
 
 
 @dataclass(frozen=True, slots=True)
-class _FileWriteOutcome:
+class _FileEditOutcome:
     path: str
     bytes_written: int
+    before: str | None
+    after: str
+
+    @property
+    def changed(self) -> bool:
+        return self.before != self.after
 
 
 _MEDIA_TYPES = {
@@ -917,10 +924,7 @@ class FileToolset:
         *,
         tool_id: Literal["filesystem.edit", "filesystem.multi_edit"],
     ) -> FileEditResult:
-        changed = False
-
-        async def operation(files: FileOperator):
-            nonlocal changed
+        async def operation(files: FileOperator) -> _FileEditOutcome:
             async with self._mutation_lock:
                 self._guard_execution()
                 create = edits[0].old_string == ""
@@ -957,36 +961,52 @@ class FileToolset:
                     2 if create else 1,
                 )
                 if original_content is not None and content == original_content:
-                    return _FileWriteOutcome(path=file_path, bytes_written=0)
+                    return _FileEditOutcome(path=file_path, bytes_written=0, before=content, after=content)
                 if create:
                     await self._ensure_parent(files, file_path)
                 self._guard_unscoped_step()
                 result = await files.write_text(file_path, content, mode=write_mode)
-                changed = True
-                return result
+                return _FileEditOutcome(
+                    path=result.path,
+                    bytes_written=result.bytes_written,
+                    before=original_content,
+                    after=content,
+                )
 
-        result = await self._execute(
-            file_path,
-            operation,
-            lambda result: {
-                "file_path": result.path,
-                "edits_applied": len(edits),
-                "bytes_written": result.bytes_written,
-                "created": edits[0].old_string == "",
-            },
-        )
-        if result["ok"] and changed:
+        async def observe(outcome: _FileEditOutcome) -> None:
+            if not outcome.changed:
+                return
             await _emit_filesystem_changed(
                 ctx,
                 tool_id=tool_id,
                 changes=(
                     FileChangeProjection(
-                        path=result["file_path"],
-                        action="created" if result["created"] else "modified",
+                        path=outcome.path,
+                        action="created" if outcome.before is None else "modified",
                     ),
                 ),
             )
-        return result
+            if isinstance(ctx, RunContext) and isinstance(ctx.deps, AgentContext):
+                await ctx.emit(
+                    FileEditAppliedEvent(
+                        tool_call_id=ctx.tool_call_id,
+                        file_path=outcome.path,
+                        before=outcome.before or "",
+                        after=outcome.after,
+                    )
+                )
+
+        return await self._execute(
+            file_path,
+            operation,
+            lambda outcome: {
+                "file_path": outcome.path,
+                "edits_applied": len(edits),
+                "bytes_written": outcome.bytes_written,
+                "created": outcome.before is None,
+            },
+            observe=observe,
+        )
 
     async def _ensure_parent(self, files: FileOperator, file_path: str) -> None:
         parent = posixpath.dirname(file_path)
@@ -1004,13 +1024,14 @@ class FileToolset:
             "writable": metadata.writable,
         }
 
-    async def _execute(
+    async def _execute[T](
         self,
         path: str,
-        operation: Callable[[FileOperator], Awaitable[Any]],
-        project: Callable[[Any], Mapping[str, object]],
+        operation: Callable[[FileOperator], Awaitable[T]],
+        project: Callable[[T], Mapping[str, object]],
         *,
         disclose: Callable[[Mapping[str, JsonValue]], Awaitable[Mapping[str, JsonValue]]] | None = None,
+        observe: Callable[[T], Awaitable[None]] | None = None,
     ) -> Any:
         try:
             async with self._file_access.scope(
@@ -1019,12 +1040,15 @@ class FileToolset:
             ) as files:
                 self._guard_execution()
                 result = await operation(files)
-            projected = cast(dict[str, JsonValue], {"ok": True, **dict(project(result))})
-            if disclose is not None:
-                return await disclose(projected)
-            return projected
         except EnvironmentError as exc:
             return _environment_error_result(exc)
+        # Observation cannot turn an already completed write into an execution failure.
+        if observe is not None:
+            await observe(result)
+        projected = cast(dict[str, JsonValue], {"ok": True, **dict(project(result))})
+        if disclose is not None:
+            return await disclose(projected)
+        return projected
 
     def _resolve_media_understanding(
         self,

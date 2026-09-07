@@ -14,10 +14,12 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import (
     BaseToolCallPart,
     BaseToolReturnPart,
+    CapabilityEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
+    TextContent,
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
@@ -32,6 +34,30 @@ _MAX_BLOCKS = 128
 _MAX_SOURCE_ID_LENGTH = 256
 _MAX_BLOCK_BYTES = 2 * 1024 * 1024
 _MAX_AGGREGATE_BYTES = 2 * 1024 * 1024
+
+
+@dataclass(kw_only=True)
+class ModelInputEvent(CapabilityEvent, namespace="a13n.context", name="model_input"):
+    """Current user-role input after context projection, without media payloads."""
+
+    content: list[TextContent]
+
+
+def user_prompt_content(part: UserPromptPart) -> list[TextContent]:
+    """Describe native input for presentation without copying media bytes or URLs.
+
+    Text metadata remains application-only and survives native history round trips.
+    Media is represented by its native type name, never its payload.
+    """
+    items = [part.content] if isinstance(part.content, str) else part.content
+    return [
+        TextContent(item)
+        if isinstance(item, str)
+        else item
+        if isinstance(item, TextContent)
+        else TextContent(f"[{type(item).__name__}]", metadata={"media": True})
+        for item in items
+    ]
 
 
 class ModelContextRequestKind(StrEnum):
@@ -171,6 +197,21 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         assert isinstance(original_request, ModelRequest)
         committed = _commit_projection(request_context.messages, request, projection)
         _persist_projection(ctx.messages, original_request, committed, request, projection)
+        # One boundary may drain several queued requests. Observe the complete
+        # current request batch, not just the final request that owns the overlay.
+        start = len(committed) - 1
+        while start > 0 and isinstance(committed[start - 1], ModelRequest):
+            start -= 1
+        content = [
+            item
+            for message in committed[start:]
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+            for item in user_prompt_content(part)
+        ]
+        if content:
+            await ctx.emit(ModelInputEvent(content=content))
         return await handler(_replace_messages(request_context, committed))
 
 
@@ -275,9 +316,15 @@ def _commit_projection(
     else:
         input_index = len(original_parts)
 
-    inserted_parts = [UserPromptPart(block.content) for block in preamble]
+    inserted_parts = [
+        UserPromptPart([TextContent(block.content, metadata={"display": False, "source_id": block.source_id})])
+        for block in preamble
+    ]
     parts = [*original_parts[:input_index], *inserted_parts, *original_parts[input_index:]]
-    parts.extend(UserPromptPart(block.content) for block in epilogue)
+    parts.extend(
+        UserPromptPart([TextContent(block.content, metadata={"display": False, "source_id": block.source_id})])
+        for block in epilogue
+    )
     inserted_indexes = [*range(input_index, input_index + len(preamble))]
     inserted_indexes.extend(range(len(parts) - len(epilogue), len(parts)))
     inserted_blocks = [*preamble, *epilogue]
@@ -345,11 +392,10 @@ def _remove_owned_overlays(messages: Sequence[ModelMessage]) -> list[ModelMessag
                     "Model context ownership metadata is stale.", code="model_context_overlay_invalid"
                 )
             part = parts[index]
-            if (
-                not isinstance(part, UserPromptPart)
-                or not isinstance(part.content, str)
-                or sha256(part.content.encode("utf-8")).hexdigest() != digest
-            ):
+            content = part.content if isinstance(part, UserPromptPart) else None
+            if isinstance(content, (list, tuple)) and len(content) == 1 and isinstance(content[0], TextContent):
+                content = content[0].content
+            if not isinstance(content, str) or sha256(content.encode("utf-8")).hexdigest() != digest:
                 raise DefinitionError(
                     "Model context ownership metadata is stale.", code="model_context_overlay_invalid"
                 )
@@ -409,4 +455,6 @@ __all__ = [
     "ModelContextProjection",
     "ModelContextProjectionRequest",
     "ModelContextRequestKind",
+    "ModelInputEvent",
+    "user_prompt_content",
 ]

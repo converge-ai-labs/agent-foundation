@@ -30,6 +30,7 @@ from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 
+from .events import ShellStatusEvent
 from .output import tool_output_size
 from .shell_results import (
     OutputPageProjection,
@@ -90,6 +91,7 @@ class _ProcessController:
         self._next_sequence = 1
         self._admission_lock = asyncio.Lock()
         self._context: AgentContext | None = None
+        self._native_context: RunContext[AgentContext] | None = None
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
 
@@ -100,7 +102,22 @@ class _ProcessController:
             self._context = ctx.deps
         elif self._context is not ctx.deps:
             raise RuntimeError("Run process controller cannot cross logical Runs")
-        yield
+        self._native_context = ctx
+        try:
+            yield
+        finally:
+            self._native_context = None
+
+    async def _emit_status(self, entry: _ProcessEntry, *, callback: bool = False) -> None:
+        if self._native_context is not None:
+            await self._native_context.emit(
+                ShellStatusEvent(
+                    process_id=entry.process_id,
+                    phase=entry.latest.status.phase,
+                    exit_code=entry.latest.status.exit_code,
+                    callback=callback,
+                )
+            )
 
     def resource_id(self, process_id: str) -> str:
         """Resolve a model selector to a private provider process identity."""
@@ -146,6 +163,7 @@ class _ProcessController:
 
         assert entry is not None
         try:
+            await self._emit_status(entry)
             if yield_time_seconds > 0:
                 try:
                     baseline = entry.latest
@@ -358,6 +376,7 @@ class _ProcessController:
             }
         )
         self._adopt_info(entry, observed, baseline=inspected)
+        await self._emit_status(entry)
         return observed, output
 
     async def _watch(self, entry: _ProcessEntry) -> None:
@@ -371,6 +390,7 @@ class _ProcessController:
             await entry.model_visible.wait()
             if self._entries.get(entry.process_id) is not entry or self._closed:
                 return
+            await self._emit_status(entry, callback=True)
             if self._context is not None:
                 await self._context._steering.notify(
                     f"Background process {entry.process_id} has exited. Call shell_wait for available output.",

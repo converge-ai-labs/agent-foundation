@@ -27,6 +27,7 @@ from a13n_harness.model_context import (
     _commit_projection,
     _remove_owned_overlays,
     _validate_projection,
+    user_prompt_content,
 )
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
@@ -37,6 +38,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
+    TextContent,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -220,7 +222,9 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     ]
     request = seen[0][-1]
     assert isinstance(request, ModelRequest)
-    text = [part.content for part in request.parts if isinstance(part, UserPromptPart)]
+    text = [
+        item.content for part in request.parts if isinstance(part, UserPromptPart) for item in user_prompt_content(part)
+    ]
     assert text[0].startswith("Current Environment mounts")
     assert text[1] == "hello"
     assert text[-2:] == ["plugin context", "host epilogue"]
@@ -228,7 +232,12 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     assert result.state is not None
     persisted_request = result.state.message_history[0]
     assert isinstance(persisted_request, ModelRequest)
-    persisted_text = [part.content for part in persisted_request.parts if isinstance(part, UserPromptPart)]
+    persisted_text = [
+        item.content
+        for part in persisted_request.parts
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
+    ]
     assert persisted_text == text
     assert persisted_request.metadata == request.metadata
 
@@ -302,13 +311,13 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
 
     injected_context = [
         [
-            part.content
+            item.content
             for message in messages
             if isinstance(message, ModelRequest)
             for part in message.parts
             if isinstance(part, UserPromptPart)
-            and isinstance(part.content, str)
-            and part.content.startswith("capability context ")
+            for item in user_prompt_content(part)
+            if item.content.startswith("capability context ")
         ]
         for messages in (*seen, canonical_messages)
     ]
@@ -321,7 +330,7 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
     for request_number, messages in enumerate(seen, start=1):
         current_request = messages[-1]
         assert isinstance(current_request, ModelRequest)
-        assert current_request.parts[-1].content == f"capability context {request_number}"
+        assert user_prompt_content(current_request.parts[-1])[0].content == f"capability context {request_number}"
 
 
 async def test_host_can_short_circuit_default_projection_without_bypassing_commit() -> None:
@@ -343,7 +352,9 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
 
     request = seen[0][-1]
     assert isinstance(request, ModelRequest)
-    text = [part.content for part in request.parts if isinstance(part, UserPromptPart)]
+    text = [
+        item.content for part in request.parts if isinstance(part, UserPromptPart) for item in user_prompt_content(part)
+    ]
     assert text == ["host preamble", "hello", "host epilogue"]
     assert calls == ["host:before", "host:after"]
 
@@ -375,7 +386,7 @@ def test_tool_result_projection_preserves_complete_batch_before_epilogue() -> No
     assert isinstance(final, ModelRequest)
     assert final.parts[:2] == original.parts
     assert isinstance(final.parts[2], UserPromptPart)
-    assert final.parts[2].content == "after all results"
+    assert user_prompt_content(final.parts[2])[0].content == "after all results"
 
     invalid = ModelContextProjection(
         blocks=(
@@ -516,7 +527,12 @@ def test_projection_validation_normalizes_invalid_source_type_to_definition_erro
     assert exc_info.value.code == "model_context_projection_invalid"
 
 
-async def test_ordinary_preparation_preserves_prior_owned_overlays_for_prompt_cache() -> None:
+async def test_ordinary_preparation_preserves_prior_owned_overlays_for_prompt_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(RunContext, "emit", AsyncMock())
     original = ModelRequest(parts=(UserPromptPart("input"),))
     request = ModelContextProjectionRequest(
         kind=ModelContextRequestKind.INPUT,
@@ -581,7 +597,7 @@ async def test_ordinary_preparation_preserves_prior_owned_overlays_for_prompt_ca
     assert handled[0].messages[:-1] == history[:-1]
     assert handled[0].messages[-1] is ctx.messages[-1]
     assert isinstance(ctx.messages[-1], ModelRequest)
-    assert ctx.messages[-1].parts[-1].content == "current overlay"
+    assert user_prompt_content(ctx.messages[-1].parts[-1])[0].content == "current overlay"
 
 
 def test_overlay_cleanup_uses_ownership_metadata_not_matching_text() -> None:
@@ -608,3 +624,9 @@ def test_overlay_cleanup_uses_ownership_metadata_not_matching_text() -> None:
     assert final.metadata is None
     assert final.parts == original.parts
     assert _remove_owned_overlays([original]) == [original]
+    restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(committed))
+    assert _remove_owned_overlays(restored) == cleaned
+    injected = restored[-1].parts[-1].content[0]
+    assert isinstance(injected, TextContent)
+    assert injected.metadata == {"display": False, "source_id": "test.same-text"}
+    assert restored[-1].parts[0].content == "same text"

@@ -1,8 +1,8 @@
-"""Selectable setup conversation. Selection is inert until an explicit publication."""
+"""Inert setup choices shared by the standalone terminal wizard and its tests."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from a13n_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
 
@@ -18,7 +18,7 @@ class ContextPreset:
 
 CONTEXT_PRESETS = (
     ContextPreset("standard", 272000, "Codex catalog default; conservative working budget."),
-    ContextPreset("balanced", 350000, "YAACLI-sized working budget; recommended for repository work."),
+    ContextPreset("balanced", 350000, "Recommended for repository work."),
     ContextPreset("extended", 872000, "Catalog maximum, not an entitlement guarantee; higher latency and cost."),
 )
 
@@ -32,54 +32,32 @@ class Question:
 
 
 _QUESTIONS = (
-    Question("access", "Step 1/3 · Connect a model", "byos", ("byos", "byok")),
-    Question(
-        "provider",
-        "Subscription provider (BYOS)",
-        "codex",
-        ("codex", "grok"),
-    ),
-    Question("route", "API model route (for example openai-responses:gpt-5.6-sol)", "openai-responses:gpt-5.6-sol"),
+    Question("provider", "Connect a model", "codex", ("codex", "grok", "api")),
+    Question("route", "API model route", "openai-responses:gpt-5.6-sol"),
     Question(
         "credential",
-        "Credential source: env:VARIABLE or key:credential-id. Never paste a secret here.\n"
-        "Manage stored keys separately with `a13n-ui auth key set <id>`.",
+        "Credential reference: env:VARIABLE or key:credential-id. Never paste a secret here.\n"
+        "Store keys separately with `a13n-ui auth key set <id>`.",
         "env:OPENAI_API_KEY",
+    ),
+    Question(
+        "environment",
+        "Execution permissions",
+        "full-control",
+        ("full-control", "sandbox"),
     ),
     Question("model", "Codex model", "gpt-5.6-sol", ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra")),
     Question(
         "context",
-        "Working context budget:\n"
-        + "\n".join(f"  {preset.name}: {preset.tokens:,} — {preset.explanation}" for preset in CONTEXT_PRESETS)
-        + "\nThese are local management budgets, not changes to provider limits.",
+        "Working context budget (does not change provider limits)",
         "balanced",
         tuple(p.name for p in CONTEXT_PRESETS),
     ),
+    Question("thinking", "Reasoning effort", "high", ("low", "medium", "high", "xhigh")),
     Question(
-        "thinking",
-        "Reasoning effort (independent of concise/detailed display)",
-        "high",
-        ("low", "medium", "high", "xhigh"),
+        "review", "Review shell commands; flagged commands and review errors require approval", "yes", ("yes", "no")
     ),
-    Question(
-        "environment",
-        "Step 2/3 · Configure your coding agent\nExecution permissions:\n"
-        "  full-control: commands and file edits run directly on this host.\n"
-        "  sandbox: isolated Environment provider; readiness checked only when executing.\n"
-        "No silent fallback between these modes.",
-        "full-control",
-        ("full-control", "sandbox"),
-    ),
-    Question(
-        "review",
-        "Review shell commands with a model and request approval for flagged/errors?\n"
-        "Codex uses a separate Luna/low reviewer. This is not a filesystem sandbox.",
-        "yes",
-        ("yes", "no"),
-    ),
-    Question(
-        "instructions", "Additional Agent instructions (optional; built-in system instructions remain active)", ""
-    ),
+    Question("instructions", "Additional Agent instructions (optional)", ""),
 )
 
 
@@ -89,53 +67,66 @@ class SetupWizard:
     index: int = 0
     history: list[int] = field(default_factory=list)
     preview_generation: str | None = None
+    advanced: bool = False
+    default_provider: str = "codex"
+    default_environment: str = "full-control"
+    provider_descriptions: dict[str, str] = field(default_factory=dict)
 
     @property
     def question(self) -> Question | None:
-        question = _QUESTIONS[self.index] if self.index < len(_QUESTIONS) else None
-        if question is not None and question.key == "environment" and not local_sandbox_supported():
-            return Question(
-                "environment",
-                "Step 2/3 · Configure your coding agent\n" + WINDOWS_EXECUTION_NOTICE,
-                "full-control",
-                ("full-control",),
-            )
-        return question
+        if self.index >= len(_QUESTIONS) or (self.index >= 4 and not self.advanced):
+            return None
+        question = _QUESTIONS[self.index]
+        default = self.values.get(question.key, question.default)
+        if question.key == "provider":
+            default = self.values.get("provider", self.default_provider)
+        if question.key == "environment":
+            default = self.values.get("environment", self.default_environment)
+            if not local_sandbox_supported():
+                return Question("environment", WINDOWS_EXECUTION_NOTICE, "full-control", ("full-control",))
+        return replace(question, default=default)
 
     def selection_prompt(self) -> Selection | None:
         question = self.question
-        if question is None:
-            return Selection(
-                (
-                    Choice("no", "Keep preview", "Do not write yet"),
-                    Choice("yes", "Publish configuration", "Create missing files only"),
-                )
-            )
-        if not question.choices:
+        if question is None or not question.choices:
             return None
         labels = {
-            "byos": "BYOS — use a subscription account",
-            "byok": "BYOK — use your API key",
+            "codex": "Codex subscription",
+            "grok": "Grok subscription",
+            "api": "API key",
+            "full-control": "Full Control",
+            "sandbox": "Sandbox",
+        }
+        descriptions = {
+            **self.provider_descriptions,
+            "api": "Use a stored key or environment variable",
+            "full-control": "Run directly as your host account; not a sandbox",
+            "sandbox": "Isolated execution; prerequisites checked before saving",
+            **{preset.name: f"{preset.tokens:,} tokens — {preset.explanation}" for preset in CONTEXT_PRESETS},
         }
         return Selection(
-            tuple(Choice(value, labels.get(value, value)) for value in question.choices),
+            tuple(Choice(value, labels.get(value, value), descriptions.get(value, "")) for value in question.choices),
             cursor=question.choices.index(question.default),
         )
+
+    def customize(self) -> None:
+        self.advanced = True
+        self.index = 4
+        self.preview_generation = None
+        self._skip_irrelevant()
 
     def back(self) -> bool:
         if not self.history:
             return False
         self.preview_generation = None
         self.index = self.history.pop()
-        for question in _QUESTIONS[self.index :]:
-            self.values.pop(question.key, None)
         return True
 
     def prompt(self) -> str:
         question = self.question
         if question is None:
-            return "Publish these files? Choose Publish or type yes. /cancel leaves everything unchanged."
-        return f"{question.text}\n[{question.default or 'keep built-in instructions'}] (Enter accepts; Esc goes back; /cancel leaves setup)"
+            return "Review configuration before saving."
+        return question.text
 
     def accept(self, text: str) -> None:
         question = self.question
@@ -150,13 +141,17 @@ class SetupWizard:
             kind, separator, name = selected.partition(":")
             if not separator or kind not in {"env", "key"} or not name or any(c.isspace() for c in name):
                 raise ValueError("Use env:VARIABLE or key:credential-id; do not enter the API key itself.")
+        if question.key == "provider" and self.values.get("provider") != selected:
+            self.values.clear()
+            self.advanced = False
         self.values[question.key] = selected
+        self.preview_generation = None
         self.history.append(self.index)
         self.index += 1
-        if question.key == "access" and selected == "byok":
-            self.values["provider"] = "api"
-            self.index += 1
-        provider = self.values.get("provider", "codex")
+        self._skip_irrelevant()
+
+    def _skip_irrelevant(self) -> None:
+        provider = self.values.get("provider", self.default_provider)
         while self.question is not None:
             key = self.question.key
             if key in {"route", "credential"} and provider != "api":
@@ -164,7 +159,6 @@ class SetupWizard:
             elif key in {"model", "context", "thinking"} and provider != "codex":
                 self.index += 1
             elif key == "review" and provider == "api":
-                self.values[key] = "no"
                 self.index += 1
             else:
                 break
@@ -178,15 +172,17 @@ class SetupWizard:
             "environment_profile": "environment-native"
             if self.values["environment"] == "full-control"
             else "environment-sandbox",
-            "shell_review": self.values["review"] == "yes",
+            "shell_review": provider != "api" and self.values.get("review", "yes") == "yes",
             "connect_default": True,
             "instructions": self.values.get("instructions", ""),
         }
         if provider == "codex":
             result.update(
-                codex_model=self.values["model"],
-                codex_thinking=self.values["thinking"],
-                codex_context_window=next(p.tokens for p in CONTEXT_PRESETS if p.name == self.values["context"]),
+                codex_model=self.values.get("model", "gpt-5.6-sol"),
+                codex_thinking=self.values.get("thinking", "high"),
+                codex_context_window=next(
+                    p.tokens for p in CONTEXT_PRESETS if p.name == self.values.get("context", "balanced")
+                ),
                 proactive_context_management_threshold=0.65,
                 compact_threshold=0.90,
             )
@@ -194,9 +190,6 @@ class SetupWizard:
             kind, _, name = self.values["credential"].partition(":")
             result["api_key_model"] = {
                 "route": self.values["route"],
-                "authentication": {
-                    "kind": "api_key",
-                    "env" if kind == "env" else "credential_ref": name,
-                },
+                "authentication": {"kind": "api_key", "env" if kind == "env" else "credential_ref": name},
             }
         return result

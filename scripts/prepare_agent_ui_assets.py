@@ -20,13 +20,13 @@ def prepare_assets(source: Path, target: Path) -> None:
     source = source.resolve()
     target = target.resolve()
     if not (source / "index.html").is_file():
-        raise ValueError(f"Harness UI build is missing index.html: {source}")
+        raise ValueError(f"Agent UI WebUI build is missing index.html: {source}")
 
     source_files = sorted(path for path in source.rglob("*") if path.is_file())
     if not source_files:
-        raise ValueError(f"Harness UI build contains no files: {source}")
+        raise ValueError(f"Agent UI WebUI build contains no files: {source}")
     if any(path.is_symlink() for path in source.rglob("*")):
-        raise ValueError(f"Harness UI build must not contain symbolic links: {source}")
+        raise ValueError(f"Agent UI WebUI build must not contain symbolic links: {source}")
 
     temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     temporary.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +35,7 @@ def prepare_assets(source: Path, target: Path) -> None:
         files = {path.relative_to(source).as_posix(): _digest(path) for path in source_files}
         manifest = {
             "schema_version": "1",
-            "source": "apps/harness-ui",
+            "source": "apps/agent-ui",
             "files": files,
         }
         (temporary / MANIFEST_NAME).write_text(

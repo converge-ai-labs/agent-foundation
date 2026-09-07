@@ -10,6 +10,15 @@ from typing import Any, cast
 from a13n_harness import AgentContext, AgentDefinition, AgentSpec, ExecutableAgent, HarnessBuilder, SubagentDefinition
 from a13n_harness.capabilities import SubagentCapability, SubagentOperator
 from a13n_harness.errors import HarnessError, PluginError
+from a13n_harness.model_context import (
+    AbstractModelContextCapability,
+    ModelContextBlock,
+    ModelContextNext,
+    ModelContextPlacement,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
+    ModelContextRequestKind,
+)
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
 from a13n_harness.pricing import PricingCatalog
 from pydantic_ai import RunContext
@@ -33,6 +42,39 @@ class ReconstructedAgent:
     executable: ExecutableAgent[str]
     model_resolver: AgentUiModelResolver
     definition_capability_ids: frozenset[str]
+
+
+class _GlobalGuidanceCapability(AbstractModelContextCapability):
+    """Project captured global AGENTS text at user role, never as instructions."""
+
+    id = "agent-ui.global-guidance"
+
+    def __init__(self, sections: tuple[str, ...]) -> None:
+        self.sections = sections
+
+    async def wrap_model_context(
+        self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest, handler: ModelContextNext
+    ) -> ModelContextProjection:
+        projection = await handler(request)
+        if request.kind is not ModelContextRequestKind.INPUT:
+            return projection
+        current = (
+            "These are the current global AGENTS.md instructions; they replace earlier global guidance blocks.\n\n"
+            + "\n\n".join(self.sections)
+            if self.sections
+            else "No global AGENTS.md instructions are configured for this run. Earlier global guidance blocks no longer apply."
+        )
+        content = "# AGENTS.md instructions (global configuration)\n\n<INSTRUCTIONS>\n" + current + "\n</INSTRUCTIONS>"
+        return ModelContextProjection(
+            blocks=(
+                ModelContextBlock(
+                    source_id="agent-ui.global-guidance",
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=content,
+                ),
+                *projection.blocks,
+            )
+        )
 
 
 class _ToolAllowlistCapability(AbstractCapability[AgentContext]):
@@ -172,6 +214,8 @@ class AgentReconstructor:
             selections.append((item.capability, configuration))
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
+        if node.global_guidance is not None:
+            capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
         capabilities.extend(AgentUiMCP(item) for item in node.mcp_servers)
         if node.children:
             if not isinstance(subagent_operator, SubagentOperator):

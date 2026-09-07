@@ -34,7 +34,7 @@ def _write_wheel(
     }
     manifest = {
         "schema_version": "1",
-        "source": "apps/harness-ui",
+        "source": "apps/agent-ui",
         "files": {name: hashlib.sha256(content).hexdigest() for name, content in files.items()},
     }
     with zipfile.ZipFile(path, mode="w") as archive:

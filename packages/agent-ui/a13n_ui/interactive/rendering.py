@@ -8,6 +8,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from a13n_stream_protocol import ContentMetadata, CustomEventAssembler
+
+from .local_shell import LocalShellEvent
+from .panels import capability_panel, tool_arguments, tool_result
 from .transcript import Transcript
 
 
@@ -34,17 +38,25 @@ class Status:
     started: float | None = None
     elapsed: float = 0
     session_id: str | None = None
+    update_notice: str | None = None
 
     def line(self, width: int | None = None) -> str:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
-        used = "?" if self.context_tokens is None else f"{self.context_tokens:,}"
-        window = "?" if self.context_window is None else f"{self.context_window:,}"
-        if width is not None and width < 100:
-            model = self.model.split(":")[-1]
-            return terminal_text(f" {self.state} · {elapsed:.0f}s · {used}/{window} · {model} · {self.thinking}")
-        return terminal_text(
-            f" {self.state} · {self.model} · {self.thinking} · context {used}/{window} · {elapsed:.0f}s · {self.environment} · {self.mode} "
+        context = (
+            "--"
+            if self.context_tokens is None or not self.context_window
+            else f"{100 * self.context_tokens / self.context_window:.0f}%"
         )
+        fields = [
+            self.state.capitalize(),
+            self.model.split(":")[-1],
+            self.thinking,
+            f"ctx {context}",
+            f"{elapsed:.0f}s",
+        ]
+        while width is not None and len(" · ".join(fields)) + 2 > width and len(fields) > 2:
+            fields.pop(2 if len(fields) == 5 else 1)
+        return terminal_text(" " + " · ".join(fields) + " ")
 
 
 @dataclass(slots=True)
@@ -52,6 +64,8 @@ class _ToolPreview:
     name: str
     started: float
     arguments: str = ""
+    parts: list[str] | None = None
+    size: int = 0
     truncated: bool = False
 
 
@@ -70,19 +84,33 @@ class StreamRenderer:
         self._pending: list[str] = []
         self._size = 0
         self._tools: dict[tuple[str, str], _ToolPreview] = {}
+        self._steering: dict[tuple[str, str], str] = {}
         self.assistant_seen = False
         self.gap = False
         self.boundary = False
         self._line_open = False
+        self._local_output: dict[str, int] = {}
+        self._custom_events = CustomEventAssembler()
 
     @property
     def limit(self) -> int:
         return self._limit or self.status.max_tool_argument_chars
 
-    def append(self, text: str, *, display: bool = True, markdown: bool = False) -> None:
+    def append(
+        self,
+        text: str,
+        *,
+        display: bool = True,
+        markdown: bool = False,
+        collapsed_lines: int | None = None,
+        collapsed_chars: int | None = None,
+        kind: str = "text",
+    ) -> None:
         safe = terminal_text(text)
         if display and safe:
-            self.transcript.append(safe, markdown=markdown)
+            self.transcript.append(
+                safe, markdown=markdown, collapsed_lines=collapsed_lines, collapsed_chars=collapsed_chars, kind=kind
+            )
         self._pending.append(safe)
         self._size += len(safe)
         if self._size > 256 * 1024:
@@ -107,6 +135,34 @@ class StreamRenderer:
             self.append("\n", display=False)
         self.boundary = True
 
+    def local_shell(self, event: LocalShellEvent) -> None:
+        """Render host-operation events without fabricating an agent Run or message."""
+        if event.kind == "started":
+            self.finish()
+            self._local_output.clear()
+            self.append(f"[Local shell · running]\n$ {event.command}\n", kind="shell")
+        elif event.kind == "output":
+            stream = event.stream or "stdout"
+            text = terminal_text(event.text)
+            block = self._local_output.get(stream)
+            if block is None or not self.transcript.extend(block, text):
+                self._local_output[stream] = self.transcript.append(
+                    f"{stream}\n{text}",
+                    kind="shell",
+                    streaming=True,
+                )
+            self.append(text, display=False)
+        else:
+            for block in self._local_output.values():
+                self.transcript.complete(block)
+            self._local_output.clear()
+            self.finish()
+            code = f" · exit {event.exit_code}" if event.exit_code is not None else ""
+            self.append(f"[Local shell · {event.phase}{code} · {event.elapsed:.1f}s]\n", kind="shell")
+            if event.truncated:
+                self.append("[Output display limit reached; remaining output was drained and discarded.]\n")
+            self.boundary = True
+
     def ingest(
         self,
         event_type: str,
@@ -119,31 +175,52 @@ class StreamRenderer:
         if payload is None:
             self.gap = True
             return
+        if event_type == "CUSTOM":
+            payload = self._custom_events.accept(payload)
+            self.gap |= self._custom_events.gap
+            if payload is None:
+                return
+        metadata = ContentMetadata.from_native(payload.get("metadata"))
+        if not metadata.display:
+            return
         detailed = self.status.mode == "detailed"
         delta = payload.get("delta") or payload.get("content") or ""
         text = delta if isinstance(delta, str) else json.dumps(delta, ensure_ascii=False)
         thinking = event_type.startswith(("REASONING_MESSAGE", "THINKING_TEXT_MESSAGE"))
-        assistant = event_type.startswith("TEXT_MESSAGE")
+        message = event_type.startswith("TEXT_MESSAGE")
+        user = message and payload.get("role") == "user"
+        assistant = message and not user
         identity = terminal_text(execution_id or run_id)
-        if thinking or assistant:
-            if not child and self.status.state != "cancelling":
+        if thinking or message:
+            if not user and not child and self.status.state != "cancelling":
                 self.status.state = "thinking" if thinking else "responding"
-            if (child or thinking) and not detailed:
+            if child and not detailed:
                 return
-            key = (run_id, str(payload.get("message_id", "default")), "thinking" if thinking else "assistant")
+            key = (
+                run_id,
+                str(payload.get("message_id", "default")),
+                "thinking" if thinking else "user" if user else "assistant",
+            )
             if event_type.endswith("START"):
                 self.finish()
                 self._messages.pop(key, None)
             elif event_type.endswith("END"):
-                self._messages.pop(key, None)
+                block_id = self._messages.pop(key, None)
+                if block_id is not None:
+                    self.transcript.complete(block_id)
                 self.finish()
             elif text:
                 block_id = self._messages.get(key)
                 if block_id is None or not self.transcript.extend(block_id, terminal_text(text)):
                     label = (f"**Subagent · {identity}**\n\n" if child else "") + (
-                        "**Thinking**\n\n" if thinking else ""
+                        "**Thinking**\n\n" if thinking else "> " if user else ""
                     )
-                    self._messages[key] = self.transcript.append(label + terminal_text(text), markdown=True)
+                    self._messages[key] = self.transcript.append(
+                        label + terminal_text(text),
+                        markdown=not user,
+                        streaming=True,
+                        kind="thinking" if thinking else "user" if user else "text",
+                    )
                     if len(self._messages) > 128:
                         self._messages.pop(next(iter(self._messages)))
                 self.append(text, display=False)
@@ -160,32 +237,54 @@ class StreamRenderer:
                 self._tools[key] = preview
                 if not child and self.status.state != "cancelling":
                     self.status.state = preview.name
-                if detailed:
+                if not child or detailed:
                     self.finish()
                     self.append(f"[Tool] {preview.name} · {label}\n")
             elif event_type.endswith(("ARGS", "CHUNK")):
                 if preview is None:
                     preview = self._tools[key] = _ToolPreview("tool", time.monotonic())
-                preview.truncated |= len(preview.arguments) + len(text) > self.limit
-                preview.arguments = (preview.arguments + text)[: self.limit]
+                # Arguments are retained separately from the collapsed preview.
+                # Coalesce chunks at END instead of copying growing JSON per token.
+                if preview.parts is None:
+                    preview.parts = []
+                available = max(
+                    0, (self._limit or self.transcript.max_bytes) - sum(item.size for item in self._tools.values())
+                )
+                if available and text:
+                    preview.parts.append(text[:available])
+                preview.size += min(len(text), available)
+                preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
-                if detailed:
-                    name = preview.name if preview else "tool"
+                name = preview.name if preview else "tool"
+                if not child or detailed:
                     elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
                     self.append(f"[Result] {name} · {label}{elapsed}\n")
-                    lines = text.splitlines()
-                    self.append("\n".join(lines[: self.status.max_tool_result_lines])[: self.limit] + "\n")
-                    if len(lines) > self.status.max_tool_result_lines or len(text) > self.limit:
-                        self.append("[Result truncated; /history shows retained details]\n")
+                    self.append(
+                        tool_result(name, text) + "\n",
+                        collapsed_lines=self.status.max_tool_result_lines,
+                    )
                 self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
                     self.status.state = "working"
                 self.boundary = True
             elif event_type.endswith("END"):
-                # AG-UI END completes argument generation, not tool execution.
-                if detailed and preview and preview.arguments:
-                    self.append(preview.arguments + (" [arguments truncated]" if preview.truncated else "") + "\n")
+                # END completes argument generation, not tool execution.
                 if preview:
+                    preview.arguments = "".join(preview.parts or ())
+                    preview.parts = None
+                    preview.size = 0
+                    if (not child or detailed) and preview.arguments:
+                        self.append(
+                            tool_arguments(preview.name, preview.arguments)
+                            + (
+                                "\n[Arguments exceed display budget; /history reads retained content]"
+                                if preview.truncated
+                                else ""
+                            )
+                            + "\n",
+                            collapsed_chars=self.status.max_tool_argument_chars,
+                            collapsed_lines=self.status.max_tool_result_lines,
+                        )
                     preview.arguments = ""
                 self.boundary = True
             # START-only and malformed streams obey the same bound as ARGS.
@@ -199,7 +298,59 @@ class StreamRenderer:
             value = payload.get("value")
             if isinstance(value, dict):
                 event = value.get("event")
-                mutation = event.get("payload") if isinstance(event, dict) else None
-                if isinstance(mutation, dict) and str(mutation.get("type", "")).startswith("compaction_"):
+                if not isinstance(event, dict):
+                    return
+                name = payload.get("name")
+                panel = capability_panel(name, event)
+                if panel is not None:
+                    if not child or detailed:
+                        self.finish()
+                        self.append(f"[{panel.title}]\n", kind=panel.kind)
+                        self.append(panel.body + "\n", kind=panel.kind, markdown=panel.kind in {"summary", "compact"})
+                    return
+                if event.get("event_kind") == "capability":
+                    if not child or detailed:
+                        self.finish()
+                        self.append(f"[Event · {name}]\n")
+                        self.append(
+                            json.dumps(event, ensure_ascii=False, indent=2) + "\n",
+                            collapsed_lines=self.status.max_tool_result_lines,
+                        )
+                    return
+                mutation = event.get("payload")
+                if isinstance(mutation, dict):
+                    kind = str(mutation.get("type", ""))
+                    if kind.startswith(("compaction_", "handoff_")):
+                        self.finish()
+                        title = "Compact" if kind.startswith("compaction_") else "Summary"
+                        self.append(
+                            f"[{title} · {identity}] {kind}\n"
+                            + json.dumps(mutation, ensure_ascii=False, indent=2)
+                            + "\n"
+                        )
+                    elif kind == "steering_input_enqueued":
+                        source = str(mutation.get("source", "unknown"))
+                        self._steering[(run_id, str(mutation.get("enqueue_id", "unknown")))] = source
+                        while len(self._steering) > 256:
+                            self._steering.pop(next(iter(self._steering)))
+                        title = "Steer" if source == "external" else "Input"
+                        self.append(
+                            f"[{title} · queued · {identity}]\n"
+                            + json.dumps(mutation, ensure_ascii=False, indent=2)
+                            + "\n"
+                        )
+                if name == "a13n.pydantic_ai.enqueued_messages" and event.get("event_kind") == "enqueued_messages":
                     self.finish()
-                    self.append(f"[Context] {mutation['type']}\n")
+                    enqueue_id = str(event.get("enqueue_id", "unknown"))
+                    source = self._steering.pop((run_id, enqueue_id), None)
+                    title = "Steer" if source == "external" else "Input"
+                    self.append(
+                        f"[{title} · delivered · {identity} · {enqueue_id}]\nAdditional input delivered at a model boundary.\n"
+                    )
+                elif name == "a13n.pydantic_ai.function_tool_result":
+                    self.finish()
+                    self.append(
+                        "[Tool · native result/retry]\n"
+                        + json.dumps(event.get("part"), ensure_ascii=False, indent=2)
+                        + "\n"
+                    )

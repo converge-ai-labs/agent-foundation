@@ -134,7 +134,7 @@ def test_capability_event_is_recorded_as_generic_custom_event() -> None:
 
     assert len(events) == 1
     assert isinstance(events[0], CustomEvent)
-    assert events[0].name == "a13n.pydantic_ai.capability"
+    assert events[0].name == "test.external.external_capability_progress"
     assert events[0].value == {
         "thread_id": "thread-1",
         "run_id": "run-1",
@@ -149,6 +149,29 @@ def test_capability_event_is_recorded_as_generic_custom_event() -> None:
             "progress": 2,
         },
     }
+
+
+def test_compaction_summary_preserves_full_native_content_and_operation() -> None:
+    from a13n_harness.capabilities import CompactionSummaryEvent
+
+    summary = "Complete summary line.\n" * 4000
+    events = HarnessAguiObserver().observe(
+        _event(0, CompactionSummaryEvent(operation_id="compaction-1", summary=summary))
+    )
+    from a13n_stream_protocol import CustomEventAssembler
+
+    assembler = CustomEventAssembler()
+    assembled = []
+    for event in events:
+        assert isinstance(event, CustomEvent)
+        assert len(event.model_dump_json().encode()) < 64 * 1024
+        result = assembler.accept(event.model_dump(mode="json"))
+        if result is not None:
+            assembled.append(result)
+    assert len(assembled) == 1
+    assert assembled[0]["name"] == "a13n.context.compaction_summary"
+    assert assembled[0]["value"]["event"]["summary"] == summary
+    assert assembled[0]["value"]["event"]["operation_id"] == "compaction-1"
 
 
 def test_extended_agent_stream_event_uses_generic_custom_event() -> None:
@@ -877,3 +900,39 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
     assert opaque_event.result is None
     assert opaque_event.raw_event["result_omitted"] is True
     TypeAdapter(Event).dump_json(opaque_event)
+
+
+def test_input_projection_preserves_visibility_without_media_payloads() -> None:
+    from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+    from pydantic_ai.messages import BinaryContent, TextContent
+
+    prompt = UserPromptPart(
+        [
+            "AGENTS.md is my actual question",
+            TextContent(
+                "private guidance", metadata={"display": False, "source_id": "test.guidance", "private": "omit"}
+            ),
+            BinaryContent(data=b"x" * (2 * 1024 * 1024), media_type="image/png"),
+        ]
+    )
+    source = ModelInputEvent(content=user_prompt_content(prompt))
+    observer = HarnessAguiObserver()
+    events = observer.observe(_event(0, source))
+    assert len(events) == 9
+    bodies = [event.model_dump(mode="json") for event in events]
+    for index, body in enumerate(bodies):
+        assert body["role"] == "user"
+        assert body["metadata"]["display"] is (index // 3 != 1)
+        assert "private" not in body["metadata"]
+    assert bodies[4]["delta"] == "private guidance"
+    assert bodies[7]["delta"] == "[BinaryContent]"
+    assert len(TypeAdapter(list[Event]).dump_json(list(events))) < 4096
+    assert observer.snapshot() == events
+
+    def show_hidden(_source, event):
+        if isinstance(event, TextMessageContentEvent):
+            event.model_extra["metadata"]["display"] = True
+        return event
+
+    with pytest.raises(AguiObservationError):
+        HarnessAguiObserver(processor=show_hidden).observe(_event(0, source))

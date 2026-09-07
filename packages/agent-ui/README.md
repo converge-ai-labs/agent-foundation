@@ -1,6 +1,6 @@
 # Agent CLI
 
-`a13n-ui` is the interactive coding CLI supplied by the `a13n-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `AgentUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-ui webui` starts the bundled browser interface in a foreground server process. There is no detached daemon.
+`a13n-ui` is the interactive coding CLI supplied by the `a13n-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `AgentUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-ui webui` starts the HTTP API and bundled Hello World page in a foreground server process; browser chat and management are not implemented. There is no detached daemon.
 
 ```console
 cd your-repository
@@ -11,11 +11,11 @@ make a13n-ui
 uvx --from a13n-ui a13n-ui
 ```
 
-The prompt is editable before heavy runtime imports finish. `/help` explains commands, `/setup` configures access and permissions, and `/login codex` starts device authorization. Default Codex setup uses GPT-5.6 Sol, high reasoning, and an explicit 350k working context budget. Setup also offers 272k and 872k budgets with explanations; editable YAML contains actual values and thresholds, not opaque preset names.
+First use opens a single-screen setup wizard before chat: choose a connection, choose execution permissions, and confirm the files to save. Existing compatible Codex/Grok logins are reused without another sign-in prompt. Reconfigure later with `a13n-ui setup`, which returns to the command shell; chat has no `/setup`. `/help` explains chat commands and `/login codex` explicitly starts device authorization. Default Codex setup uses GPT-5.6 Sol, high reasoning, a 350k working context budget, and shell review. Optional customization offers model, reasoning, 272k/350k/872k budgets, review, and additional instructions. Editable YAML contains actual values and thresholds, not opaque preset names.
 
 `/mode concise|detailed` or Ctrl+O switches output live. Concise mode emphasizes text and necessary results; detailed mode includes exposed reasoning, file/tool calls, and bounded results. Display mode never changes model reasoning or tool permissions.
 
-The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` lists this directory's saved conversations. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/model` and `/thinking` affect subsequent Run captures without rewriting resources. The CLI and WebUI reuse the same App boundary; the CLI does not contain a second execution engine.
+The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` lists this directory's saved conversations. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/model` and `/thinking` affect subsequent Run captures without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the Hello World page does not call that API, and the CLI does not contain a second execution engine.
 
 ```console
 a13n-ui --environment-mode sandbox
@@ -26,7 +26,7 @@ a13n-ui config validate
 a13n-ui auth login --help
 ```
 
-Enter submits, Alt+Enter inserts a newline, Ctrl+C clears or cancels, and Ctrl+D on an empty draft exits. Bracketed multiline paste remains unsent until Enter. Rejected/busy commands preserve the draft. Cancellation waits for App-owned cleanup; nothing is approved implicitly or detached on exit.
+Enter sends a prompt while idle or text guidance to the current Run while active; it never queues another Run or reorders input. Alt+Enter inserts a newline, Ctrl+C clears or cancels, and Ctrl+D on an empty draft exits. Bracketed multiline paste remains unsent until Enter. Rejected/busy commands preserve the draft. Cancellation waits for App-owned cleanup; nothing is approved implicitly or detached on exit.
 
 See the [user guide](../../docs/agent-cli.md) for setup, all slash commands, explicit configuration examples and precedence, credentials, permissions, and recovery. The [interactive CLI contract](../../spec/agent-cli/07-interactive-cli.md) owns accepted terminal behavior.
 
@@ -95,7 +95,7 @@ The source manifest declares unversioned dependencies on `a13n-environment-provi
 
 ## Packaging
 
-The wheel and sdist contain the native CLI, reusable App, runtime release manifest, and the YAACLI BSD attribution for adapted presentation components. They also include the WebUI server and compiled browser assets with a verified hash manifest. `make agent-ui-build` builds and bundles the private `apps/harness-ui` frontend. Node.js is needed only for repository/release asset preparation, not wheel installation, runtime, or wheel rebuilds from the sdist.
+The wheel and sdist contain the native CLI, reusable App, runtime release manifest, and the YAACLI BSD attribution for adapted presentation components. They also include the WebUI server and compiled browser assets with a verified hash manifest. `make agent-ui-build` builds and bundles the private `apps/agent-ui` frontend. Node.js is needed only for repository/release asset preparation, not wheel installation, runtime, or wheel rebuilds from the sdist.
 
 ## Versioning
 
@@ -105,12 +105,14 @@ The accepted architecture is defined in the [Agent CLI specification](../../spec
 
 ## Browser UI
 
+The bundled page displays only **Hello World**. It does not authenticate, consume the URL's API-key fragment, open live streams, or provide conversation, setup, or management controls. The HTTP API and foreground server remain available independently.
+
 ```bash
 a13n-ui webui                       # 127.0.0.1:8765, generated per-process API key
 a13n-ui webui --host 127.0.0.1 --port 9000
 ```
 
-Open the URL printed by the server. The generated key is carried only in the URL fragment and is required for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
+Open the ordinary URL printed by the server to view the page; static assets require no API key. The server also prints a generated key and a convenience URL carrying it only in the fragment. The placeholder does not consume that fragment. API clients must send the key in `Authorization: Bearer <key>` for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
 
 The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, run `make agent-ui-assets` before `uv run --locked a13n-ui webui`.
 
@@ -121,3 +123,9 @@ Windows supports **Full Control only** for the built-in local modes. Setup and t
 ## Source Environment Troubleshooting
 
 After switching branches, run `make sync` (or launch with `make a13n-ui`) to synchronize the locked workspace. This branch requires Pydantic AI 2.40 or newer; an older environment can fail with `cannot import name 'prices' from 'pydantic_ai'`. Do not work around this by importing upstream private modules. Installed users should upgrade `a13n-ui` using the package manager that owns their environment.
+
+### Terminal defaults
+
+Install with `uv tool install a13n-ui`; explicitly upgrade a uv-tool installation with `uv tool upgrade a13n-ui`. Interactive update checks are advisory, daily, bounded, and disableable with `process.terminal_update_check: false`; they never install anything.
+
+Provider-exposed thinking and edit/multi-edit diffs are independently expanded. Summary and compaction blocks show their complete public payloads, including generated compaction summaries delivered through the native Capability event channel. Ctrl+O folds/expands retained ordinary tool details. Mouse scroll mode is enabled by default; Esc switches to native selection after closing any active interaction. Automatic themes preserve terminal colors. Diagnostics are rotated files under the data root, and clean exit prints a saved-session resume command. See the [Agent CLI guide](../../docs/agent-cli.md) for keyboard controls and retention boundaries.

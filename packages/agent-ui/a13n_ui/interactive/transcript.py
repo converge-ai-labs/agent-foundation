@@ -4,18 +4,25 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from collections import OrderedDict
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from io import StringIO
+from itertools import islice
+from tempfile import TemporaryDirectory
+from typing import overload
 
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
+from rich.color import ColorType
 from rich.console import Console
+from rich.segment import Segment
 from rich.style import Style as RichStyle
 from rich.text import Text
 
 from .markdown import TerminalMarkdown
+from .rows import RowStore
 from .theme import ResolvedTheme, resolve_theme
 
 _TRUNCATED = "[Display truncated; /history reads retained content]\n"
@@ -32,12 +39,71 @@ def bounded_text(text: str, limit: int) -> str:
 @dataclass(slots=True)
 class Block:
     id: int
-    source: str
+    _source: str
     markdown: bool
+    kind: str = "text"
     revision: int = 0
-    cache_key: tuple[int, int, str] | None = None
-    rows: list[StyleAndTextTuples] = field(default_factory=list)
-    cache_bytes: int = 0
+    cache_key: tuple[int, int, str, bool] | None = None
+    rows: Sequence[StyleAndTextTuples] = field(default_factory=list)
+    pending: list[str] = field(default_factory=list)
+    size: int = 0
+    collapsed_lines: int | None = None
+    collapsed_chars: int | None = None
+    preview_rows: list[StyleAndTextTuples] = field(default_factory=list)
+    streaming: bool = False
+    chunks: list[tuple[str, RowStore]] = field(default_factory=list)
+
+    @property
+    def source(self) -> str:
+        if self.pending:
+            self._source += "".join(self.pending)
+            self.pending.clear()
+        return self._source
+
+    def close(self) -> None:
+        if isinstance(self.rows, RowStore):
+            self.rows.close()
+        for _, rows in self.chunks:
+            rows.close()
+        self.chunks.clear()
+
+
+class TranscriptRows(Sequence[StyleAndTextTuples]):
+    def __init__(self, transcript: Transcript) -> None:
+        self.transcript = transcript
+
+    def __len__(self) -> int:
+        return self.transcript.ends[-1] if self.transcript.ends else 0
+
+    @overload
+    def __getitem__(self, index: int) -> StyleAndTextTuples: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[StyleAndTextTuples]: ...
+
+    def __getitem__(self, index: int | slice) -> StyleAndTextTuples | list[StyleAndTextTuples]:
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(len(self)))]
+        if index < 0:
+            index += len(self)
+        if not 0 <= index < len(self):
+            raise IndexError(index)
+        transcript = self.transcript
+        number = bisect_right(transcript.ends, index)
+        start = transcript.ends[number - 1] if number else 0
+        block = transcript.blocks[transcript.ids[number]]
+        offset = index - start
+        if block.collapsed_chars is not None and not transcript.detailed:
+            return block.preview_rows[offset]
+        if block.collapsed_lines is not None and not transcript.detailed and offset == block.collapsed_lines:
+            return [("class:selection.hint", "[Folded · Ctrl+O or /mode detailed to expand]")]
+        if block.chunks:
+            for _, rows in block.chunks:
+                if offset < len(rows):
+                    return rows[offset]
+                offset -= len(rows)
+            return []
+        return block.rows[offset] if offset < len(block.rows) else []
 
 
 def _style(style: RichStyle | None) -> str:
@@ -46,7 +112,28 @@ def _style(style: RichStyle | None) -> str:
     parts = []
     for key, color in (("fg", style.color), ("bg", style.bgcolor)):
         if color is not None and not color.is_default:
-            parts.append(f"{key}:{color.get_truecolor().hex}")
+            ansi = (
+                "ansiblack",
+                "ansired",
+                "ansigreen",
+                "ansiyellow",
+                "ansiblue",
+                "ansimagenta",
+                "ansicyan",
+                "ansiwhite",
+                "ansibrightblack",
+                "ansibrightred",
+                "ansibrightgreen",
+                "ansibrightyellow",
+                "ansibrightblue",
+                "ansibrightmagenta",
+                "ansibrightcyan",
+                "ansibrightwhite",
+            )
+            if color.type == ColorType.STANDARD and color.number is not None and color.number < 16:
+                parts.append(f"{key}:{ansi[color.number]}")
+            else:
+                parts.append(f"{key}:{color.get_truecolor().hex}")
     for key in ("bold", "italic", "underline", "strike"):
         enabled = {"bold": style.bold, "italic": style.italic, "underline": style.underline, "strike": style.strike}[
             key
@@ -68,29 +155,50 @@ class Transcript:
         *,
         max_bytes: int = 2 * 1024 * 1024,
         max_blocks: int = 500,
-        block_bytes: int = 128 * 1024,
+        block_bytes: int | None = None,
         max_rows: int = 4000,
     ) -> None:
+        self._cache_directory = TemporaryDirectory(prefix="a13n-ui-rows-")
         self.max_bytes = max_bytes
         self.max_blocks = max_blocks
-        self.block_bytes = min(block_bytes, max_bytes)
+        self.block_bytes = min(block_bytes or max_bytes, max_bytes)
         self.max_rows = max_rows
         self.blocks: OrderedDict[int, Block] = OrderedDict()
         self.next_id = 1
         self.evicted = False
         self.theme: ResolvedTheme = resolve_theme("auto")
-        self.rows: list[StyleAndTextTuples] = []
+        self.rows = TranscriptRows(self)
+        self.detailed = False
         self.ends: list[int] = []
         self.ids: list[int] = []
         self.dirty = True
         self.width = 0
         self.source_bytes = 0
 
-    def append(self, source: str, *, markdown: bool = False) -> int:
+    def append(
+        self,
+        source: str,
+        *,
+        markdown: bool = False,
+        collapsed_lines: int | None = None,
+        collapsed_chars: int | None = None,
+        streaming: bool = False,
+        kind: str = "text",
+    ) -> int:
         block_id = self.next_id
         self.next_id += 1
+        self.evicted |= len(source.encode("utf-8")) > self.block_bytes
         source = bounded_text(source, self.block_bytes)
-        self.blocks[block_id] = Block(block_id, source, markdown)
+        self.blocks[block_id] = Block(
+            block_id,
+            source,
+            markdown,
+            kind=kind,
+            size=len(source.encode("utf-8")),
+            collapsed_lines=collapsed_lines,
+            collapsed_chars=collapsed_chars,
+            streaming=streaming,
+        )
         self.source_bytes += len(source.encode("utf-8"))
         self._trim()
         self.dirty = True
@@ -100,9 +208,16 @@ class Transcript:
         block = self.blocks.get(block_id)
         if block is None:
             return False
-        self.source_bytes -= len(block.source.encode("utf-8"))
-        block.source = bounded_text(block.source + delta, self.block_bytes)
-        self.source_bytes += len(block.source.encode("utf-8"))
+        size = len(delta.encode("utf-8"))
+        block.pending.append(delta)
+        block.size += size
+        self.source_bytes += size
+        if block.size > self.block_bytes:
+            source = bounded_text(block.source, self.block_bytes)
+            self.source_bytes -= block.size - len(source.encode("utf-8"))
+            block._source = source
+            block.size = len(source.encode("utf-8"))
+            self.evicted = True
         block.revision += 1
         self._trim()
         self.dirty = True
@@ -111,8 +226,21 @@ class Transcript:
     def _trim(self) -> None:
         while len(self.blocks) > 1 and (len(self.blocks) > self.max_blocks or self.source_bytes > self.max_bytes):
             _, block = self.blocks.popitem(last=False)
-            self.source_bytes -= len(block.source.encode("utf-8"))
+            self.source_bytes -= block.size
+            block.close()
             self.evicted = True
+
+    def complete(self, block_id: int) -> None:
+        block = self.blocks.get(block_id)
+        if block is not None:
+            block.streaming = False
+            block.revision += 1
+            self.dirty = True
+
+    def close(self) -> None:
+        for block in self.blocks.values():
+            block.close()
+        self._cache_directory.cleanup()
 
     def render(self, width: int) -> None:
         width = max(1, min(4096, width))
@@ -120,61 +248,92 @@ class Transcript:
             return
         self.width = width
         console = Console(file=StringIO(), width=width, force_terminal=True, color_system="truecolor")
-        cache_bytes = 0
-        total_rows = 0
-        for block in reversed(self.blocks.values()):
-            key = (block.revision, width, self.theme.variant)
-            if block.cache_key != key:
-                value = (
-                    TerminalMarkdown(block.source, code_theme=self.theme.syntax_theme, hyperlinks=False)
-                    if block.markdown
-                    else Text(block.source)
-                )
-                # render_lines pads to viewport width by default; padding adds
-                # memory and makes copied code contain invisible trailing spaces.
-                lines = console.render_lines(value, console.options, pad=False)
-                block.rows = [
-                    [(_style(segment.style), segment.text) for segment in line if not segment.control]
-                    for line in lines[-self.max_rows :]
-                ]
-                if len(lines) > self.max_rows:
-                    block.rows[0] = [("class:warning", _TRUNCATED.strip())]
-                block.rows.append([])
-                block.cache_key = key
-                block.cache_bytes = sum(
-                    len(fragment[1].encode("utf-8")) + len(fragment[0]) + 64 for row in block.rows for fragment in row
-                )
-            cache_bytes += block.cache_bytes
-            total_rows += len(block.rows)
-            if cache_bytes > self.max_bytes or total_rows > self.max_rows:
-                # Keep semantic sources for reflow, but evict old render caches.
-                # The newest block itself is bounded by whole rows, never ANSI.
-                room = max(1, self.max_rows - (total_rows - len(block.rows)))
-                block.rows = block.rows[-room:]
-                while len(block.rows) > 1 and sum(
-                    len(fragment[1].encode("utf-8")) + len(fragment[0]) + 64 for row in block.rows for fragment in row
-                ) > max(128, self.max_bytes - (cache_bytes - block.cache_bytes)):
-                    block.rows = block.rows[len(block.rows) // 2 :]
-                block.rows[0] = [("class:warning", _TRUNCATED.strip())]
-                block.cache_bytes = sum(
-                    len(fragment[1].encode("utf-8")) + len(fragment[0]) + 64 for row in block.rows for fragment in row
-                )
-                for older in self.blocks.values():
-                    if older.id >= block.id:
-                        break
-                    older.rows = []
-                    older.cache_key = None
-                    older.cache_bytes = 0
-                self.evicted = True
-                break
-        self.rows = []
+
+        def rows(source: str, markdown: bool, kind: str = "text") -> Iterator[StyleAndTextTuples]:
+            value = (
+                TerminalMarkdown(source, code_theme=self.theme.syntax_theme, hyperlinks=False)
+                if markdown
+                else Text(source)
+            )
+            # Stream Rich lines into a disposable disk cache, not a giant padded grid.
+            for line in Segment.split_and_crop_lines(
+                console.render(value, console.options), width, pad=False, include_new_lines=False
+            ):
+                rendered = [(_style(segment.style), segment.text) for segment in line if not segment.control]
+                text = "".join(segment.text for segment in line)
+                accent = ""
+                if kind == "thinking":
+                    accent = "fg:ansimagenta italic"
+                elif kind == "user":
+                    accent = "fg:ansigreen"
+                elif not markdown and text.startswith("["):
+                    accent = "fg:ansicyan bold"
+                elif kind == "edit" and text.startswith(("+", "-")):
+                    accent = "fg:ansigreen" if text.startswith("+") else "fg:ansired"
+                yield [(style + " " + accent, text) for style, text in rendered]
+            yield []
+
         self.ids = []
         self.ends = []
+        count = 0
         for block in self.blocks.values():
-            if block.rows:
-                self.rows.extend(block.rows)
-                self.ends.append(len(self.rows))
-                self.ids.append(block.id)
+            key = (block.revision, width, self.theme.variant, block.streaming)
+            if block.cache_key != key:
+                source = block.source
+                if block.streaming and len(source) > 16384:
+                    # Large in-progress messages use copy-safe plain previews. Stable
+                    # chunks are never reparsed; completion reflows Markdown once.
+                    old = block.chunks if block.cache_key and block.cache_key[1:3] == key[1:3] else []
+                    chunks = []
+                    for i, start in enumerate(range(0, len(source), 8192)):
+                        text = source[start : start + 8192]
+                        if i < len(old) and old[i][0] == text:
+                            chunks.append(old[i])
+                        else:
+                            chunks.append(
+                                (
+                                    text,
+                                    RowStore(
+                                        rows(text, False, block.kind),
+                                        directory=self._cache_directory.name,
+                                        page_size=min(64, max(1, self.max_rows // 2)),
+                                    ),
+                                )
+                            )
+                    for item in old:
+                        if item not in chunks:
+                            item[1].close()
+                    if not old:
+                        block.close()
+                    elif isinstance(block.rows, RowStore):
+                        block.rows.close()
+                    block.rows = []
+                    block.chunks = chunks
+                else:
+                    block.close()
+                    block.rows = RowStore(
+                        rows(source, block.markdown, block.kind),
+                        directory=self._cache_directory.name,
+                        page_size=min(64, max(1, self.max_rows // 2)),
+                    )
+                if block.collapsed_chars is not None:
+                    limit = block.collapsed_lines or 5
+                    block.preview_rows = list(
+                        islice(rows(source[: block.collapsed_chars], block.markdown, block.kind), limit)
+                    )
+                    if len(source) > block.collapsed_chars or len(block.rows) > limit:
+                        block.preview_rows.append(
+                            [("class:selection.hint", "[Folded · Ctrl+O or /mode detailed to expand]")]
+                        )
+                block.cache_key = key
+            length = sum(len(item[1]) for item in block.chunks) if block.chunks else len(block.rows)
+            if block.collapsed_chars is not None and not self.detailed:
+                length = len(block.preview_rows)
+            elif block.collapsed_lines is not None and not self.detailed:
+                length = min(length, block.collapsed_lines + 1)
+            count += max(1, length)
+            self.ids.append(block.id)
+            self.ends.append(count)
         self.dirty = False
 
     def anchor(self, row: int) -> tuple[int, int] | None:
@@ -204,6 +363,11 @@ class TranscriptControl(UIControl):
 
     def create_content(self, width: int, height: int) -> UIContent:
         self.height = max(1, height)
+        for block in self.transcript.blocks.values():
+            if isinstance(block.rows, RowStore):
+                block.rows.pages.clear()
+            for _, rows in block.chunks:
+                rows.pages.clear()
         self.transcript.render(width)
         count = max(1, len(self.transcript.rows))
         self.top = (
@@ -220,8 +384,8 @@ class TranscriptControl(UIControl):
         )
 
     def scroll(self, amount: int) -> None:
-        self.follow = False
         target = max(0, min(len(self.transcript.rows) - self.height, self.top + amount))
+        self.follow = amount > 0 and target >= max(0, len(self.transcript.rows) - self.height)
         self.position = self.transcript.anchor(target)
         self.cursor_row = target
         self.top = target

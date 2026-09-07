@@ -17,6 +17,7 @@ from pydantic_ai import ModelSettings, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import (
     BaseToolReturnPart,
+    CapabilityEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -360,6 +361,38 @@ def _file_context_paths(configuration: FileContextConfiguration) -> tuple[tuple[
     return tuple(selected)
 
 
+async def _read_file_context(
+    files: FileOperator, path: str, configuration: FileContextConfiguration, budget: int
+) -> str:
+    """Read bounded pages to the actual file/line/byte boundary, not just page one."""
+    chunks: list[str] = []
+    offset = 0
+    used = 0
+    has_more = True
+    truncated = False
+    while has_more and offset < configuration.max_lines_per_file and budget - used >= 5:
+        remaining = budget - used
+        line_length = min(configuration.max_line_length, max(1, (remaining - 1) // 4))
+        line_limit = min(configuration.max_lines_per_file - offset, max(1, remaining // (line_length * 4 + 1)))
+        page = await files.read_text(path, line_offset=offset, line_limit=line_limit, max_line_length=line_length)
+        encoded = page.text.encode("utf-8")
+        text = encoded[:remaining].decode("utf-8", errors="ignore")
+        chunks.append(text)
+        used += len(text.encode("utf-8"))
+        offset += page.lines_read
+        truncated |= bool(page.truncated_lines) or len(encoded) > remaining
+        has_more = page.has_more
+        if page.lines_read == 0:
+            break
+    section = "".join(chunks)
+    if truncated or has_more:
+        marker = "\n[File context truncated by configured limits]"
+        section = (
+            section.encode("utf-8")[: max(0, budget - len(marker.encode()))].decode("utf-8", errors="ignore") + marker
+        )
+    return section
+
+
 @dataclass(init=False)
 class FileContextCapability(AbstractModelContextCapability):
     """Load conventional and explicit files as bounded input-only model context."""
@@ -401,31 +434,13 @@ class FileContextCapability(AbstractModelContextCapability):
                 if explicit:
                     failures.append(f"{path}: file_context_budget_exhausted")
                 continue
-            provider_max_line_length = min(
-                self.configuration.max_line_length,
-                max(1, (remaining - 1) // 4),
-            )
-            worst_case_line_bytes = provider_max_line_length * 4 + 1
-            provider_line_limit = min(
-                self.configuration.max_lines_per_file,
-                max(1, remaining // worst_case_line_bytes),
-            )
             try:
-                result = await ctx.deps.environment.files.read_text(
-                    path,
-                    line_offset=0,
-                    line_limit=provider_line_limit,
-                    max_line_length=provider_max_line_length,
-                )
+                section = await _read_file_context(ctx.deps.environment.files, path, self.configuration, remaining)
             except EnvironmentError as exc:
                 if explicit:
                     failures.append(f"{path}: {exc.code}")
                 continue
-            section = result.text
-            encoded = section.encode("utf-8")
-            if len(encoded) > remaining:
-                section = encoded[:remaining].decode("utf-8", errors="ignore")
-            sections.append((result.path, section))
+            sections.append((path, section))
             loaded_paths.add(resolved_key)
             used_bytes += len(section.encode("utf-8"))
         if self.configuration.required and failures:
@@ -654,6 +669,18 @@ class HandoffCapability(AbstractModelContextCapability):
         return replacement
 
 
+@dataclass(kw_only=True)
+class CompactionSummaryEvent(CapabilityEvent, namespace="a13n.context", name="compaction_summary"):
+    """The generated replacement summary, not telemetry or an assistant answer.
+
+    Content follows the native Capability event channel; content-free Harness
+    lifecycle extensions retain their redaction and bounded metadata contract.
+    """
+
+    operation_id: str
+    summary: str
+
+
 class CompactionPolicy(BaseModel):
     """Absolute provider-usage threshold for same-Agent plain-text compaction."""
 
@@ -766,6 +793,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 operation_id=operation_id,
             ),
         )
+        await ctx.emit(CompactionSummaryEvent(operation_id=operation_id, summary=summary))
         return _replace_messages(request_context, messages)
 
 
@@ -1134,6 +1162,7 @@ def _replace_messages(request_context: ModelRequestContext, messages: list[Model
 __all__ = [
     "CompactionCapability",
     "CompactionPolicy",
+    "CompactionSummaryEvent",
     "FileContextCapability",
     "FileContextConfiguration",
     "HandoffCapability",

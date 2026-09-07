@@ -65,10 +65,29 @@ The observer uses standard AG-UI events when the semantics match directly:
 | Successful tool result                                   | `TOOL_CALL_RESULT`                                               |
 | Completed Run result                                     | `RUN_FINISHED`                                                   |
 | Failed or cancelled Run result                           | `RUN_ERROR`                                                      |
-| Native Pydantic AI `CapabilityEvent`                     | `a13n.pydantic_ai.capability` `CUSTOM` event                     |
+| Native Pydantic AI `CapabilityEvent`                     | `CUSTOM` event named by the native `kind`                        |
 | Suspended result or another unmatched public observation | Namespaced `CUSTOM` event                                        |
 
 Unmatched Harness extensions use names such as `a13n.harness.lifecycle`. Unmatched Pydantic AI events use names such as `a13n.pydantic_ai.final_result`. A native `CapabilityEvent` retains its concrete kind, Capability ID, optional Tool-call correlation, and public payload. Every custom value also retains the public Thread, Run, sequence, timestamp, and source-event representation.
+
+### Content and large custom events
+
+Capability events preserve their native name and payload, including user-defined kinds. A file edit remains before/after data, a summary remains summary data, and a shell status remains a status observation. The protocol does not turn them into assistant answers or pre-rendered panels. Clients decide their presentation. Actual model input uses user-role text events with shared `ContentMetadata`; normal displays omit content marked `display: false`.
+
+Custom events larger than 48 KiB use generic `a13n.stream.fragment` frames. Reassemble them before inspecting the original event:
+
+```python
+from a13n_stream_protocol import CustomEventAssembler
+
+assembler = CustomEventAssembler()
+
+# For each CUSTOM payload in one live subscription:
+complete = assembler.accept(payload)
+if complete is not None:
+    render_custom(complete["name"], complete["value"])
+```
+
+The framing preserves the complete JSON structure rather than truncating the source. The assembler bounds pending content and rejects incomplete or inconsistent sequences; check `assembler.gap` and replace the assembler when resetting a subscription. These are best-effort observations, not a durable event log. See the [framing contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/agent-stream-protocol/00-overview.md#large-custom-events) for limits and fields.
 
 ### Serialize events
 

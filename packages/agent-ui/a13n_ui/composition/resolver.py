@@ -266,6 +266,7 @@ class AgentCompositionResolver:
             roster_name=agent.id,
             system_prompt=(PACKAGE_SYSTEM_PROMPT,),
             instructions=(agent.instructions,) if agent.instructions.strip() else (),
+            global_guidance=source.global_guidance,
             model=model,
             capabilities=capabilities,
             harness_plugins=plugins,
@@ -354,6 +355,7 @@ class AgentCompositionResolver:
             roster_name=child.name,
             system_prompt=(PACKAGE_SYSTEM_PROMPT,),
             instructions=(child.body,) if child.body.strip() else (),
+            global_guidance=source.global_guidance,
             model=model,
             capabilities=parent.capabilities,
             harness_plugins=self._plugins(
@@ -420,6 +422,8 @@ class AgentCompositionResolver:
                     model=model,
                 )
             )
+        if not any(item.capability == "file_context" for item in recipes):
+            recipes.append(ResolvedCapabilityRecipe(capability="file_context", configuration={}))
         return tuple(recipes)
 
     def _capabilities(self, agent: AgentResource) -> tuple[SelectedCapability, ...]:

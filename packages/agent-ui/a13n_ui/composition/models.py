@@ -99,6 +99,8 @@ class ResolvedAgentNode(CompositionModel):
     # None identifies legacy captures whose instructions held the combined system prompt.
     system_prompt: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=16)
     instructions: tuple[str, ...] = Field(default=(), max_length=16)
+    # None preserves legacy captures; an empty tuple explicitly clears global guidance.
+    global_guidance: tuple[str, ...] | None = Field(default=None, max_length=1)
     model: ResolvedModelRecipe
     capabilities: tuple[ResolvedCapabilityRecipe, ...] = Field(default=(), max_length=128)
     harness_plugins: tuple[ResolvedPluginRecipe, ...] = Field(default=(), max_length=128)

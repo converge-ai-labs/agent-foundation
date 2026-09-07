@@ -84,6 +84,30 @@ def fallback_theme(preference: object) -> ResolvedTheme:
 
 def prompt_toolkit_style_rules(theme: ResolvedTheme) -> dict[str, str]:
     """Return prompt_toolkit style rules for a resolved theme."""
+    if theme.source != "config":
+        return {
+            "": "bg:default fg:default",
+            "status-bar": "fg:ansibrightblack",
+            "status-bar.warning": "fg:ansiyellow bold",
+            "task-pane": "",
+            "frame.border": "fg:ansibrightblack",
+            "frame.label": "fg:ansicyan bold",
+            "session-selector.title": "bold",
+            "session-selector.key": "fg:ansicyan",
+            "session-selector.hint": "fg:ansibrightblack",
+            "session-selector.selection": "reverse bold",
+            "completion-menu.completion": "bg:default fg:default",
+            "completion-menu.completion.current": "reverse",
+            "completion-menu.meta.completion": "fg:ansibrightblack",
+            "completion-menu.meta.completion.current": "reverse",
+            "input-area": "",
+            "input-area.prompt": "fg:ansigreen bold",
+            "input-area.continuation": "fg:ansibrightblack",
+            "input-area.border": "fg:ansibrightblack",
+            "input-area.label": "fg:ansicyan bold",
+            "input-area.hint": "fg:ansibrightblack",
+            "selected": "reverse",
+        }
     light = theme.variant == "light"
     background, foreground = ("#f8fafc", "#1e293b") if light else ("#121820", "#dbe4ee")
     surface, muted = ("#e9eef4", "#526176") if light else ("#1b2533", "#a0afc2")

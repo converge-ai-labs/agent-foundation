@@ -6,12 +6,12 @@ from pathlib import Path
 from prepare_agent_ui_assets import prepare_assets
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
-DEFAULT_SOURCE = REPOSITORY_ROOT / "apps" / "harness-ui" / "dist"
+DEFAULT_SOURCE = REPOSITORY_ROOT / "apps" / "agent-ui" / "dist"
 DEFAULT_TARGET = REPOSITORY_ROOT / "packages" / "agent-ui" / "a13n_ui" / "static"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Prepare Harness UI files for the Agent UI Python package.")
+    parser = argparse.ArgumentParser(description="Prepare Agent UI WebUI files for the Agent UI Python package.")
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--target", type=Path, default=DEFAULT_TARGET)
     args = parser.parse_args()
@@ -21,7 +21,7 @@ def main() -> None:
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from error
 
-    print(f"Prepared Harness UI assets in {args.target}")
+    print(f"Prepared Agent UI WebUI assets in {args.target}")
 
 
 if __name__ == "__main__":

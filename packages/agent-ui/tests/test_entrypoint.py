@@ -71,15 +71,15 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
     output = bytearray()
     try:
         startup_deadline = time.monotonic() + _ENTRYPOINT_TIMEOUT_SECONDS
-        while b"Agent CLI" not in output and process.poll() is None:
+        while b"Connect a model" not in output and process.poll() is None:
             if time.monotonic() >= startup_deadline:
                 break
             readable, _, _ = select.select([master], [], [], 0.1)
             if readable:
                 output.extend(os.read(master, 65536))
-        assert b"Agent CLI" in output, output.decode(errors="replace")
+        assert b"Connect a model" in output, output.decode(errors="replace")
 
-        os.write(master, b"/quit\r")
+        os.write(master, b"\x03")
         exit_deadline = time.monotonic() + 10
         while process.poll() is None and time.monotonic() < exit_deadline:
             readable, _, _ = select.select([master], [], [], 0.1)

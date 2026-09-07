@@ -17,9 +17,11 @@ class Selection:
     choices: tuple[Choice, ...]
     cursor: int = -1
     multiple: bool = False
+    view_start: int | None = None
     checked: set[int] = field(default_factory=set)
 
     def move(self, offset: int) -> None:
+        self.view_start = None
         if not offset:
             return
         if self.cursor < 0 and offset < 0:
@@ -41,18 +43,27 @@ class Selection:
             raise ValueError("Choose an option with Up/Down, type a number, or enter your own answer.")
         return str(self.cursor + 1)
 
+    def start(self, count: int) -> int:
+        return self.view_start if self.view_start is not None else max(0, self.cursor - count + 1)
+
+    def scroll(self, offset: int, count: int) -> None:
+        self.view_start = max(0, min(max(0, len(self.choices) - count), self.start(count) + offset))
+
     def lines(self, *, max_choices: int = 8, descriptions: bool = True) -> list[tuple[str, str]]:
         result: list[tuple[str, str]] = []
         max_choices = max(1, max_choices)
-        start = max(0, self.cursor - max_choices + 1)
+        start = self.start(max_choices)
         for index, choice in enumerate(self.choices[start : start + max_choices], start):
             focused = index == self.cursor
             marker = "[x]" if index in self.checked else "[ ]" if self.multiple else ">" if focused else " "
             result.append(
-                ("class:selection.focus" if focused else "class:selection", f" {marker} {index + 1}. {choice.label}")
+                (
+                    "class:selection.focus" if focused else "class:selection",
+                    f" {marker} {index + 1}. {' '.join(choice.label.split())}",
+                )
             )
             if choice.description and descriptions:
-                result.append(("class:selection.description", f" — {choice.description}"))
+                result.append(("class:selection.description", f" — {' '.join(choice.description.split())}"))
             result.append(("", "\n"))
         hint = "Up/Down select · Space toggle · Enter confirm" if self.multiple else "Up/Down select · Enter confirm"
         result.append(("class:selection.hint", hint + " · type to answer · Esc back/cancel\n"))

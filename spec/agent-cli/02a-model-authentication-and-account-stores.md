@@ -146,7 +146,7 @@ Every command supports detached text and JSON result rendering. Authorization pr
 
 ## Setup Discovery
 
-[First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers every usable compatible provider as an independently selectable starter. Selecting both creates two Model/Agent resources and one explicit default, not a combined credential or runtime fallback. Discovery never starts login or refresh. A missing or invalid provider does not prevent selecting the other provider or an existing configured Agent.
+[First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers every usable compatible provider as an independently selectable starter. Selecting both creates two Model/Agent resources and one explicit default, not a combined credential or runtime fallback. Discovery never starts login or refresh. The standalone terminal wizard labels reusable accounts and skips its login question for the selected available or refreshable account. Missing credentials offer explicit login or configuration without authentication; invalid or unsupported stores require repair rather than replacement. A missing or invalid provider does not prevent selecting the other provider or an existing configured Agent.
 
 ## Run Capture and Information Boundary
 

@@ -13,6 +13,7 @@ An explicit `--config <path>` selects the root YAML. Otherwise Agent UI selects 
 ```text
 ~/.a13n-ui/
   a13n-ui.yaml
+  AGENTS.md
   models/
     <resource>.yaml
   extensions/
@@ -29,6 +30,8 @@ An explicit `--config <path>` selects the root YAML. Otherwise Agent UI selects 
 
 Each resource file defines exactly one resource. Agent UI scans immediate lower-case `.yaml` files in the YAML directories and immediate non-README `.md` files in `subagents/`. Local Markdown subagents override an installed Content Plugin contribution with the same ID; plugin-to-plugin duplicates use deterministic precedence with diagnostics. It does not recurse, follow a symlinked directory, follow file symlinks, walk parent directories, process YAML includes, or discover ambient product configuration as a live layer.
 
+The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its exact UTF-8 content participates in the accepted generation fingerprint and source digest, under the same stable regular-file read and size limits as other primary sources. Edits and removal take effect on later accepted generations; captured Runs remain immutable. `RULES.md` and `AGENTS.override.md` are not instruction sources. Agent UI does not import guidance from ambient Codex configuration. [Composition](02-agent-composition-and-snapshots.md#resolution) owns injection and capture.
+
 The root file owns restart-bound process settings and global defaults:
 
 ```yaml
@@ -36,6 +39,7 @@ schema_version: "2"
 
 process:
   pricing_auto_update: true
+  terminal_update_check: true
   log_level: INFO
   log_format: pretty
 
@@ -49,6 +53,8 @@ defaults:
 ```
 
 `process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
+
+`process.terminal_update_check` defaults to `true` and enables the terminal-only advisory package update check. It never authorizes installation. The [interactive contract](07-interactive-cli.md#startup-and-terminal-ownership) owns caching, logging, and exit behavior. `process.log_format` continues to control noninteractive logging; interactive diagnostics are always structured files.
 
 The root also accepts `display.theme` (`auto` by default, or `dark`/`light`), `display.mode` (`concise` by default), `display.show_status` (true), `display.max_tool_result_lines` (5, range 1–200), and `display.max_tool_argument_chars` (8192, range 128–65536). The CLI reads these at startup; explicit launch or live mode selections take precedence. These are presentation settings, not model or permission controls. Listener bind address and API key are process-local `a13n-ui webui` arguments, not desired-resource configuration. The [interactive contract](07-interactive-cli.md) owns terminal behavior.
 

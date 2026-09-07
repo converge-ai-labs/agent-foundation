@@ -4,6 +4,7 @@ from .codeact import CodeActCapability, CodeActConfig
 from .context import (
     CompactionCapability,
     CompactionPolicy,
+    CompactionSummaryEvent,
     FileContextCapability,
     FileContextConfiguration,
     HandoffCapability,
@@ -157,6 +158,7 @@ __all__ = [
     "CodeActConfig",
     "CompactionCapability",
     "CompactionPolicy",
+    "CompactionSummaryEvent",
     "CreateTask",
     "DocumentAsset",
     "DocumentConversionError",

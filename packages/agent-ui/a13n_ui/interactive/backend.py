@@ -14,13 +14,12 @@ from a13n_harness.input import RunInputValue
 from a13n_ui.app import AgentUiApp
 from a13n_ui.cli import CliRequest
 from a13n_ui.configuration import ExternalSubagentImportPreview, ResourceMutationRequest
-from a13n_ui.configuration.setup import SetupPreview, SetupSelection
 from a13n_ui.environment_profiles import (
     environment_profile_id_for_mode,
     local_sandbox_supported,
     require_supported_local_profile,
 )
-from a13n_ui.errors import AgentUiError, ConfigurationError
+from a13n_ui.errors import AgentUiError
 from a13n_ui.live import LiveEvent, root_context_samples
 from a13n_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
 from a13n_ui.surfaces import (
@@ -35,7 +34,6 @@ from a13n_ui.surfaces import (
 from .decisions import DecisionInteraction
 from .rendering import Status, StreamRenderer
 from .selection import Choice
-from .setup import SetupWizard
 
 
 class SessionBackend:
@@ -63,7 +61,6 @@ class SessionBackend:
         self.cancel_requested = False
         self._decisions: dict[str, ApprovalDecision | ExternalToolResult] = {}
         self._decision_continuation: str | None = None
-        self.preview: SetupPreview | None = None
         self.import_preview: ExternalSubagentImportPreview | None = None
 
     async def initialize(self) -> bool:
@@ -116,11 +113,11 @@ class SessionBackend:
     async def models(self, selected: str | None = None) -> str:
         configuration = await self.app.current_configuration()
         if configuration is None:
-            raise ValueError("Use /setup first.")
+            raise ValueError("Use `a13n-ui setup` first.")
         if selected is None:
             return (
                 "\n".join(f"{item.id}: {item.route}" for item in configuration.models.values())
-                or "No models. Use /setup."
+                or "No models. Use `a13n-ui setup`."
             )
         if selected == "default":
             selected = None
@@ -161,7 +158,7 @@ class SessionBackend:
         require_supported_local_profile(self.status.environment)
         if self.thread_id is None:
             if not await self.refresh():
-                raise ValueError("No model is configured. Use /setup before sending a prompt.")
+                raise ValueError("No model is configured. Use `a13n-ui setup` before sending a prompt.")
             workspace = await self.app.ensure_cwd_workspace(self.directory)
             thread = await self.app.create_thread(
                 defaults=NewThreadDefaults(
@@ -187,7 +184,7 @@ class SessionBackend:
     async def resume(self, selected: str | None = None) -> str:
         configuration = await self.app.current_configuration()
         if configuration is None:
-            raise ValueError("Use /setup first.")
+            raise ValueError("Use `a13n-ui setup` first.")
         matches = {
             project.id
             for project in configuration.projects.values()
@@ -234,7 +231,7 @@ class SessionBackend:
         lines = []
         for entry in page.entries:
             for part in entry.parts:
-                if self.status.mode == "concise" and part.kind not in {"user", "assistant", "retry"}:
+                if not part.metadata.display:
                     continue
                 value = part.text or json.dumps(part.value, ensure_ascii=False)
                 lines.append(f"[{part.kind}] {part.tool_name or ''}\n{value}")
@@ -401,33 +398,6 @@ class SessionBackend:
             )
         raise ValueError("Unknown selector.")
 
-    async def preview_setup(self, wizard: SetupWizard) -> str:
-        selection = SetupSelection.model_validate(wizard.selection(str(self.directory)))
-        self.preview = await self.app.preview_setup(selection)
-        wizard.preview_generation = self.preview.generation
-        lines = ["Files to create (existing resources are never overwritten):", *self.preview.files.keys()]
-        if self.preview.preserved_paths:
-            lines.append("Preserved: " + ", ".join(self.preview.preserved_paths))
-        if "models/codex.yaml" in self.preview.files:
-            lines += ["Explicit model configuration:", self.preview.files["models/codex.yaml"]]
-        return "\n".join(lines)
-
-    async def publish_setup(self, wizard: SetupWizard) -> str:
-        if wizard.preview_generation is None:
-            raise ValueError("Preview setup before publication.")
-        publication = await self.app.apply_setup(
-            SetupSelection.model_validate(wizard.selection(str(self.directory))),
-            expected_generation=wizard.preview_generation,
-        )
-        if not publication.completed:
-            raise ConfigurationError(
-                publication.error_message or "Setup publication failed", code=publication.error_code or "setup_failed"
-            )
-        await self.refresh()
-        if wizard.values.get("provider") == "api":
-            return "Configuration saved. Set the referenced API-key environment variable or stored key before sending a prompt."
-        return "Configuration saved. Use /login to authenticate a subscription, or send a prompt if already signed in."
-
     def execute(
         self,
         renderer: StreamRenderer,
@@ -540,9 +510,9 @@ class SessionBackend:
             return await self.pending()
         return f"Run {operation.status.value}."
 
-    async def steer(self, message: str) -> str:
-        # Capture once: a delayed control must never target a replacement Run.
-        receipt_id = self.receipt_id
+    async def steer(self, message: str, *, receipt_id: str | None = None) -> str:
+        # The Enter handler supplies its captured target; never substitute a newer receipt.
+        receipt_id = self.receipt_id if receipt_id is None else receipt_id
         if receipt_id is None:
             raise ValueError("No running receipt accepts steering. Your guidance was not sent.")
         result = await self.app.steer_root_operation(receipt_id=receipt_id, message=message)

@@ -1,7 +1,0 @@
-dist
-node_modules
-
-# Mechanically generated contract; checked by generate:check.
-src/openapi.json
-src/api.generated.ts
-src/validators.generated.*

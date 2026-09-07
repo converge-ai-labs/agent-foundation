@@ -27,6 +27,7 @@ from a13n_harness.capabilities.working_state import (
     WORKING_STATE_CAPABILITY_ID,
     _render_working_state_blocks,
 )
+from a13n_harness.model_context import user_prompt_content
 from a13n_harness.state import (
     AgentContextStateSnapshot,
     CapabilityState,
@@ -313,18 +314,20 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
 
     assert result.output_or_raise() == "resumed"
     historical_context = "\n".join(
-        part.content
+        item.content
         for message in resumed_messages[:-1]
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
     )
     latest_request = resumed_messages[-1]
     assert isinstance(latest_request, ModelRequest)
     current_context = "\n".join(
-        part.content
+        item.content
         for part in latest_request.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
     )
     assert '<task id="task-1"' in historical_context
     assert "Review &lt;unsafe&gt;" in historical_context
@@ -460,11 +463,13 @@ async def test_working_state_context_has_hard_utf8_budget() -> None:
 
     assert result.output_or_raise() == "done"
     projected = next(
-        part.content
+        item.content
         for message in seen
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str) and part.content.startswith("<tasks")
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
+        if item.content.startswith("<tasks")
     )
     assert len(projected.encode("utf-8")) <= 1024
     assert "tasks-omitted" in projected

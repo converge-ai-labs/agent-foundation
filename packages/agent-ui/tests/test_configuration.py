@@ -26,6 +26,30 @@ def _write_source_tree(
     return config
 
 
+async def test_global_agents_guidance_is_generation_owned_and_only_loads_agents_md(tmp_path: Path) -> None:
+    config = _write_source_tree(tmp_path)
+    (tmp_path / "RULES.md").write_text("Ignored legacy filename")
+    (tmp_path / "AGENTS.override.md").write_text("Ignored override filename")
+    empty = await load_agent_ui_configuration(config)
+    assert empty.global_guidance == ()
+    (tmp_path / "AGENTS.md").write_text("Global defaults")
+    baseline = await load_agent_ui_configuration(config)
+    assert "Global defaults" in baseline.global_guidance[0]
+    assert baseline.source_digest != empty.source_digest
+    assert baseline.source("AGENTS.md").resource_kind == "instructions"
+    before = await configuration_loader.configuration_tree_fingerprint(config)
+    (tmp_path / "AGENTS.md").write_text("Updated global guidance")
+    assert await configuration_loader.configuration_tree_fingerprint(config) != before
+    updated = await load_agent_ui_configuration(config)
+    assert "Updated global guidance" in updated.global_guidance[0]
+    assert "Global defaults" in baseline.global_guidance[0]
+    assert updated.source_digest != baseline.source_digest
+    (tmp_path / "AGENTS.md").unlink()
+    removed = await load_agent_ui_configuration(config)
+    assert removed.global_guidance == ()
+    assert removed.source_digest == empty.source_digest
+
+
 async def test_loads_multi_file_resources_and_canonical_markdown_set(tmp_path: Path) -> None:
     config = _write_source_tree(
         tmp_path,

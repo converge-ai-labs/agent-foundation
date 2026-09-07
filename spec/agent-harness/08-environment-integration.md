@@ -379,7 +379,7 @@ An active watcher polls status without reconnecting streams. After native termin
 Background process process-<ref> has exited. Call shell_wait for available output.
 ```
 
-The hint contains no output, secret, native handle or durable-delivery promise. Missing/unknown status does not emit an exit hint. Notification loss or cancellation does not change process truth. Published terminal references remain readable until local release or Run close; completion alone does not retire them.
+The hint contains no output, secret, native handle or durable-delivery promise. The same active-attempt boundary can emit the native advisory `ShellStatusEvent` described by [Events and Usage](12-events-observability-and-usage.md); that event carries observed process status, not captured output or a new process-control authority. Missing/unknown status does not emit an exit hint. Notification loss or cancellation does not change process truth. Published terminal references remain readable until local release or Run close; completion alone does not retire them.
 
 ### Run cleanup and recovery ownership
 

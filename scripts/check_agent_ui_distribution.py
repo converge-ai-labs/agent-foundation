@@ -275,8 +275,8 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
         _validate_terminal_package(names, PurePosixPath(root))
         if f"{root}/YAACLI-LICENSE" not in names:
             raise DistributionError("Agent UI sdist is missing the YAACLI BSD notice")
-        if any("apps/harness-ui" in name for name in names):
-            raise DistributionError("Agent UI sdist must not require the Harness UI source tree")
+        if any("apps/agent-ui" in name for name in names):
+            raise DistributionError("Agent UI sdist must not require the Agent UI WebUI source tree")
         pyproject_path = f"{root}/pyproject.toml"
         if pyproject_path not in names:
             raise DistributionError("Agent UI sdist is missing pyproject.toml")

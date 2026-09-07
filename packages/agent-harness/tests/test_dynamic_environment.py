@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import a13n_harness.environment.dynamic as dynamic_environment_module
 import a13n_harness.execution as execution_module
@@ -60,6 +61,7 @@ from a13n_harness.environment.providers import (
     FileScopeSelection,
 )
 from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
+from a13n_harness.model_context import user_prompt_content
 from a13n_harness.plugins import (
     AbstractHarnessPlugin,
     PluginRunExchange,
@@ -587,13 +589,13 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
     assert '<tool-instruction name="copy">' not in info.instructions
     assert '<tool-instruction name="delete">' not in info.instructions
     mount_parts = [
-        part.content
+        item.content
         for message in messages
         if isinstance(message, ModelRequest)
         for part in message.parts
         if isinstance(part, UserPromptPart)
-        and isinstance(part.content, str)
-        and "Current Environment mounts" in part.content
+        for item in user_prompt_content(part)
+        if "Current Environment mounts" in item.content
     ]
     assert len(mount_parts) == 1
     assert '"default_mount":"local"' in mount_parts[0]
@@ -865,12 +867,17 @@ async def test_file_edit_events_keep_called_tool_id_and_skip_content_noop(tmp_pa
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
+    from a13n_harness.toolsets.events import FileEditAppliedEvent
+
+    applied = []
     tool_events: list[HarnessExtensionEvent] = []
     async with executable.stream(
         "edit file",
         bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     ) as run:
         async for item in run:
+            if isinstance(item, HarnessEvent) and isinstance(item.event, FileEditAppliedEvent):
+                applied.append(item.event)
             if (
                 isinstance(item, HarnessEvent)
                 and isinstance(item.event, HarnessExtensionEvent)
@@ -886,6 +893,9 @@ async def test_file_edit_events_keep_called_tool_id_and_skip_content_noop(tmp_pa
     assert tool_events[0].payload["value"]["changes"] == [
         {"path": "edit.txt", "action": "modified", "destination": None},
     ]
+
+    assert len(applied) == 1
+    assert (applied[0].before, applied[0].after, applied[0].tool_call_id) == ("value", "changed", "multi-edit-one")
 
 
 async def test_file_change_event_keeps_only_confirmed_partial_batch_items(tmp_path: Path) -> None:
@@ -2845,7 +2855,7 @@ async def test_direct_mount_path_translates_shell_working_directory(tmp_path: Pa
     ) as environment:
         await runtime._activate()
         toolset = ShellToolset(environment)
-        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace()))
+        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(), emit=AsyncMock()))
 
         result = await toolset.shell_exec_foreground(
             ctx,
@@ -2855,6 +2865,8 @@ async def test_direct_mount_path_translates_shell_working_directory(tmp_path: Pa
 
         assert result["ok"] is True
         assert result["stdout"]["text"].strip() == working_directory.resolve().as_posix()
+        ctx.emit.assert_awaited_once()
+        assert ctx.emit.call_args.args[0].phase == "exited"
 
 
 @requires_posix_process_groups
@@ -2892,7 +2904,7 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
     ) as environment:
         await runtime._activate()
         toolset = ShellToolset(environment)
-        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace()))
+        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(), emit=AsyncMock()))
 
         foreground = await toolset.shell_exec(
             ctx,
@@ -2909,6 +2921,8 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
 
         assert foreground["ok"] is True
         assert foreground["stdout"]["text"] == "foreground"
+        ctx.emit.assert_awaited_once()
+        assert ctx.emit.call_args.args[0].exit_code == 0
         assert "process_id" not in foreground
         assert live["ok"] is True
         assert "process_id" in live

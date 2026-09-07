@@ -50,7 +50,7 @@ def test_renderer_modes_switch_without_replay_and_preserve_control_safety() -> N
     renderer = StreamRenderer(status)
     renderer.ingest("THINKING_TEXT_MESSAGE_CONTENT", {"delta": "hidden summary"})
     renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "Hello "})
-    assert renderer.drain() == "Hello "
+    assert renderer.drain() == "hidden summaryHello "
     assert renderer.drain() == ""
     status.mode = "detailed"
     renderer.ingest("REASONING_MESSAGE_CONTENT", {"delta": "public reasoning"})
@@ -73,7 +73,8 @@ def test_stream_argument_and_result_memory_is_bounded() -> None:
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": "x" * 1000})
     renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
     renderer.ingest("TOOL_CALL_RESULT", {"content": "\n".join(["line"] * 100)})
-    assert len(renderer.drain()) < 400
+    assert len(renderer.drain()) < 2048
+    assert "Arguments exceed display budget" in "".join(block.source for block in renderer.transcript.blocks.values())
 
 
 def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellation() -> None:
@@ -101,7 +102,10 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
 def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("a13n_ui.interactive.setup.local_sandbox_supported", lambda: True)
     wizard = SetupWizard()
-    for value in ("", "", "", "extended", "medium", "sandbox", "no", ""):
+    wizard.accept("codex")
+    wizard.accept("sandbox")
+    wizard.customize()
+    for value in ("", "extended", "medium", "no", ""):
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
@@ -176,6 +180,76 @@ async def test_exact_cwd_workspace_never_retargets_saved_project(
         with pytest.raises(ValueError, match="another workspace"):
             await other.resume(thread_id)
         assert thread_id in await backend.resume()
+
+
+@pytest.mark.anyio
+async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import a13n_ui.model_runtime as runtime
+
+    path = await _seed(tmp_path, monkeypatch)
+    cwd = tmp_path / "workspace"
+    cwd.mkdir()
+    (tmp_path / "AGENTS.md").write_text("DO NOT INJECT ANCESTOR")
+    (path.parent / "AGENTS.md").write_text("GLOBAL GUIDANCE")
+    (path.parent / "AGENTS.override.md").write_text("DO NOT INJECT OVERRIDE")
+    (path.parent / "RULES.md").write_text("DO NOT INJECT RULES")
+    (tmp_path / "codex" / "AGENTS.md").write_text("DO NOT INJECT CODEX HOME")
+    (cwd / "AGENTS.md").write_text(
+        "\n".join(f"Repository rule {index}" for index in range(150)) + "\nFINAL REPOSITORY RULE"
+    )
+    seen = []
+
+    async def stream(messages, info):
+        seen.append((messages, info.instructions))
+        yield "done"
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), cwd, Status())
+        assert await backend.initialize()
+        renderer = StreamRenderer(backend.status)
+        assert await backend.execute(renderer, prompt="Do the task") == ""
+        display = renderer.drain()
+        assert "GLOBAL GUIDANCE" not in display
+        assert "Repository rule" not in display
+        sources = [block.source for block in renderer.transcript.blocks.values()]
+        assert sum(source == "> Do the task" for source in sources) == 1, sources
+        page = await app.get_thread_transcript(thread_id=backend.thread_id, limit=50)
+        hidden = [part for entry in page.entries for part in entry.parts if not part.metadata.display]
+        assert any("GLOBAL GUIDANCE" in (part.text or "") for part in hidden)
+        assert any("FINAL REPOSITORY RULE" in (part.text or "") for part in hidden)
+        # A fresh adapter reads retained native metadata, not transient renderer state.
+        resumed = SessionBackend(app, CliRequest(), cwd, Status())
+        await resumed.resume(backend.thread_id)
+        assert "GLOBAL GUIDANCE" not in await resumed.history()
+        history = await backend.history()
+        assert "Do the task" in history and "done" in history
+        assert "GLOBAL GUIDANCE" not in history
+        assert "Repository rule" not in history
+        (path.parent / "AGENTS.md").unlink()
+        await app.reload_configuration()
+        assert await backend.execute(StreamRenderer(backend.status), prompt="Continue") == ""
+    assert len(seen) == 2
+    assert "No global AGENTS.md instructions are configured" in str(seen[1][0])
+    assert "GLOBAL GUIDANCE" not in (seen[0][1] or "")
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+
+    user_text = "\n".join(
+        str(part.content)
+        for message in seen[0][0]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    )
+    assert "GLOBAL GUIDANCE" in user_text
+    visible = str(seen[0])
+    assert "Repository rule 0" in visible and "FINAL REPOSITORY RULE" in visible
+    assert "DO NOT INJECT" not in visible
+    assert "File context truncated" not in visible
 
 
 @pytest.mark.anyio
@@ -534,3 +608,121 @@ async def test_onboarding_import_enrolls_inheriting_subagent_and_is_retryable(
         configuration = await app.current_configuration()
         assert len(configuration.agents["agent-codex"].subagents) == 1
         assert external.read_text() == source
+
+
+@pytest.mark.anyio
+async def test_active_guidance_reaches_native_model_in_order_without_another_root_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    import a13n_ui.model_runtime as runtime
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+
+    path = await _seed(tmp_path, monkeypatch)
+    entered, release = asyncio.Event(), asyncio.Event()
+    observed = []
+
+    async def stream_model(messages, info):
+        observed.append(messages.copy())
+        if len(observed) == 1:
+            entered.set()
+            yield "Working"
+            await release.wait()
+        else:
+            yield "Guidance received"
+
+    monkeypatch.setattr(
+        runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
+    )
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        renderer = StreamRenderer(backend.status)
+        task = asyncio.create_task(backend.execute(renderer, prompt="Start work"))
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+            receipt = backend.receipt_id
+            assert receipt is not None
+            assert "accepted" in await backend.steer("guidance-first", receipt_id=receipt)
+            assert "accepted" in await backend.steer("guidance-second", receipt_id=receipt)
+            release.set()
+            assert await asyncio.wait_for(task, 10) == ""
+            assert len(observed) == 2
+            contents = [
+                part.content
+                for message in observed[-1]
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            ]
+            assert contents.index("guidance-first") < contents.index("guidance-second")
+            assert backend.receipt_id is None
+            with pytest.raises(ValueError, match="no longer running"):
+                await backend.steer("too late", receipt_id=receipt)
+        finally:
+            release.set()
+            if not task.done():
+                await backend.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("count", [1, 2])
+async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> None:
+    from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, HarnessEvent, RunBindings
+    from a13n_harness.model_context import ModelInputEvent
+    from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
+    from pydantic_ai.capabilities import AbstractCapability
+    from pydantic_ai.messages import EnqueuedMessagesEvent
+
+    queued = [f"ENQUEUE_BODY_{index}" for index in range(count)]
+
+    class EnqueueOnce(AbstractCapability[AgentContext]):
+        id = "test.enqueue-once"
+
+        def __init__(self):
+            self.sent = False
+
+        async def before_model_request(self, ctx, request_context):
+            if not self.sent:
+                self.sent = True
+                for text in queued:
+                    ctx.enqueue(text)
+            return request_context
+
+    async def respond(messages, info):
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond), capabilities=(EnqueueOnce(),)
+    )
+    observer = HarnessAguiObserver()
+    renderer = StreamRenderer(Status())
+    batches, deliveries = [], []
+    try:
+        async with executable.stream("INITIAL_BODY", bindings=RunBindings.embedded()) as stream:
+            async for source in stream:
+                if isinstance(source, HarnessEvent):
+                    if isinstance(source.event, ModelInputEvent):
+                        batches.append(
+                            [
+                                item.content
+                                for item in source.event.content
+                                if ContentMetadata.from_native(item.metadata).display
+                            ]
+                        )
+                    elif isinstance(source.event, EnqueuedMessagesEvent):
+                        deliveries.append(source.event.enqueue_id)
+                for event in observer.observe(source):
+                    renderer.ingest(event.type.value, event.model_dump(mode="json"))
+        rendered = "\n".join(block.source for block in renderer.transcript.blocks.values())
+        assert batches == [["INITIAL_BODY"], queued]
+        assert len(set(deliveries)) == count
+        for text in ["INITIAL_BODY", *queued]:
+            assert rendered.count(text) == 1
+        for enqueue_id in deliveries:
+            assert enqueue_id in rendered
+    finally:
+        renderer.transcript.close()

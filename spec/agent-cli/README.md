@@ -4,7 +4,7 @@
 
 Agent CLI (`a13n-ui`) is the local single-user coding product, distributed by the independent `a13n-ui` library. It embeds Harness in one reusable `AgentUiApp`, reads human-editable resources, discovers trusted extensions and Capabilities, and retains internal Project/Thread identities for durable continuation and execution. Its native full-terminal renderer owns a bounded semantic display cache; the App remains conversation authority.
 
-`a13n-ui` starts the interactive CLI. `a13n-ui webui` explicitly starts one foreground HTTP/SSE server and WebUI-mode App. Both surfaces consume the same commands, projections, receipts, and live subscriptions; there is no detached daemon or IPC mode.
+`a13n-ui` starts the interactive CLI. `a13n-ui webui` explicitly starts one foreground HTTP/SSE server and WebUI-mode App. The CLI and HTTP adapter consume the same commands, projections, receipts, and live subscriptions; the bundled browser page renders only Hello World and does not call the API. There is no detached daemon or IPC mode.
 
 Agent UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but it does not durably accept root receipts, input, or deferred responses, recover active operating-system processes, lease work across workers, or provide distributed failover. Foundation Service remains the durable hosted product.
 
@@ -27,7 +27,7 @@ Agent UI depends on the [Harness](../agent-harness/README.md), [Environment Prov
 | [06-setup-and-environment-readiness.md](06-setup-and-environment-readiness.md)                   | First-use discovery, reviewed starter files, explicit defaults, and selected Environment preflight/recovery                    |
 | [07-interactive-cli.md](07-interactive-cli.md)                                                   | Full-terminal ownership, commands, display modes, startup, cwd sessions, and context choices                                   |
 
-The [WebUI catalog](webui/README.md) owns browser interaction, client runtime, configuration, diagnostics, and accessibility.
+The [WebUI contract](webui/README.md) owns the Hello World browser page and its build/distribution boundary; HTTP/API behavior remains owned by `05`.
 
 ## Reading Paths
 
@@ -45,7 +45,7 @@ Read `01a`, `02b`, and `04`, then [Provider Specifications and Catalog](../agent
 
 ### Implement a Surface
 
-Read `05`. A surface calls `AgentUiApp` commands and queries and consumes detached projections and live events. It does not read SQLite, interpret Harness-private events, construct Providers, or own another Thread model. The terminal follows [Interactive CLI](07-interactive-cli.md); the [WebUI](webui/README.md) reuses the same application authority.
+Read `05`. A surface calls `AgentUiApp` commands and queries and consumes detached projections and live events. It does not read SQLite, interpret Harness-private events, construct Providers, or own another Thread model. The terminal follows [Interactive CLI](07-interactive-cli.md); the HTTP adapter reuses the same application authority, while the [WebUI](webui/README.md) is a Hello World page with no application API client.
 
 ## Authority Rules
 

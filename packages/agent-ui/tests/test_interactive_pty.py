@@ -70,46 +70,68 @@ def _stop(process: subprocess.Popen[bytes], master: int) -> None:
         os.close(master)
 
 
-def test_real_app_landing_is_editable_before_preparation_and_restores_alternate_screen(tmp_path: Path) -> None:
+@pytest.mark.parametrize("command", [[], ["setup"]])
+def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path: Path, command: list[str]) -> None:
     configuration = tmp_path / ".a13n-ui"
     configuration.mkdir()
     (configuration / "a13n-ui.yaml").write_text('schema_version: "2"\nprocess:\n  pricing_auto_update: false\n')
-    started = time.monotonic()
-    process, master = _spawn("from a13n_ui.cli import main; main([])", tmp_path)
+    process, master = _spawn(f"from a13n_ui.cli import main; main({command!r})", tmp_path)
     try:
-        output = _read_until(master, b">")
-        # Generous CI ceiling; the architectural import-isolation test is primary.
-        assert time.monotonic() - started < 1.5
-        os.write(master, b"/help\r")
-        output += _read_until(master, b"Bracketed multiline paste")
-        output += _read_until(master, b"Connect a model")
-        os.write(master, b"\x1b[B\r")
-        output += _read_until(master, b"API model route")
-        os.write(master, b"/cancel\r")
-        output += _read_until(master, b"Setup cancelled")
-        os.write(master, b"/quit\r")
-        output += _read_until(master, b"\x1b[?1049l")
+        output = _read_until(master, b"Connect a model")
+        assert output.count(b"\x1b[?1049h") == 1
+        os.write(master, b"\x1b[B\x1b[B\r")
+        output += _read_until(master, b"API model")
+        os.write(master, b"\r")
+        output += _read_until(master, b"Credential reference")
+        os.write(master, b"\r")
+        output += _read_until(master, b"Execution permissions")
+        os.write(master, b"\r")
+        output += _read_until(master, b"Save this configuration?")
+        assert b"\x1b[?1049l" not in output
+        assert output.count(b"\x1b[?1049h") == 1
+        os.write(master, b"\r")
+        if not command:
+            output += _read_until(master, b"Enter sends a message")
+            assert output.count(b"\x1b[?1049h") == 2
+            os.write(master, b"/quit\r")
+            output += _read_until(master, b"\x1b[?1049l")
+        else:
+            output += _read_until(master, b"Configuration saved")
+            assert output.count(b"\x1b[?1049h") == 1
         process.wait(timeout=5)
         assert process.returncode == 0
-        assert b"\x1b[?1049h" in output
-        assert b"\x1b[?1049l" in output
-        assert not (configuration / "models").exists()
+        assert (configuration / "models").exists()
     finally:
         _stop(process, master)
 
 
-def test_startup_draft_paste_mode_switch_and_cancel_use_one_terminal(tmp_path: Path) -> None:
+def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
+    process, master = _spawn("from a13n_ui.cli import main; main([])", tmp_path)
+    try:
+        output = _read_until(master, b"Connect a model")
+        os.write(master, b"\x03")
+        output += _read_until(master, b"Setup cancelled")
+        process.wait(timeout=5)
+        assert process.returncode == 0
+        assert output.count(b"\x1b[?1049h") == 1
+        assert not (tmp_path / ".a13n-ui/models").exists()
+    finally:
+        _stop(process, master)
+
+
+def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path) -> None:
     script = r"""
 import asyncio, json, time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from a13n_ui.cli import CliRequest
-from a13n_ui.interactive.shell import CliShell
+from a13n_ui.interactive.startup import run_terminal
 
 class Backend:
     def __init__(self, status):
         self.status = status
         self.stop = asyncio.Event()
+        self.receipt_id = None
     async def initialize(self):
         self.status.model = "fixture-model"
         return True
@@ -117,13 +139,18 @@ class Backend:
         Path("submitted.json").write_text(json.dumps(prompt))
         if admitted is not None:
             admitted()
+        self.receipt_id = "receipt-fixture"
         renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "fixture-stream\n"})
         await asyncio.sleep(.7)
         renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "edit"})
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit", "delta": '{"file_path":"fixture.py"}'})
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
         await self.stop.wait()
+        Path("cancelled").touch()
         return "fixture-cancelled"
+    async def steer(self, text, *, receipt_id):
+        Path("steering.json").write_text(json.dumps([text, receipt_id]))
+        return "Guidance accepted"
     async def interaction(self):
         return None
     async def cancel(self):
@@ -137,14 +164,12 @@ def load():
     time.sleep(1.2)
     return factory
 
-asyncio.run(CliShell(CliRequest(), runtime_loader=load).run())
+asyncio.run(run_terminal(CliRequest(), runtime_loader=load))
 """
     process, master = _spawn(script, tmp_path)
     try:
-        output = _read_until(master, b">")
-        os.write(master, b"draft\r")
-        output += _read_until(master, b"Your draft is preserved")
-        output += _read_until(master, b"Ready")
+        output = _read_until(master, b"Enter sends a message")
+        os.write(master, b"draft")
         assert not (tmp_path / "submitted.json").exists()
         os.write(master, b"\x1b[200~line1\nline2\x1b[201~")
         time.sleep(0.1)
@@ -154,9 +179,13 @@ asyncio.run(CliShell(CliRequest(), runtime_loader=load).run())
         assert json.loads((tmp_path / "submitted.json").read_text()) == "draftline1\nline2"
         os.write(master, b"/mode detailed\r")
         output += _read_until(master, b"fixture.py")
-        assert b"[Tool] edit" in output
+        # The argument payload only appears in detailed mode; terminal diffing may split its heading.
+        os.write(master, b"change direction\r")
+        output += _read_until(master, b"Guidance accepted")
+        assert json.loads((tmp_path / "steering.json").read_text()) == ["change direction", "receipt-fixture"]
         os.write(master, b"\x03")
-        output += _read_until(master, b"fixture-cancelled")
+        output += _read_until(master, b"Enter to send")
+        assert (tmp_path / "cancelled").exists()
         os.write(master, b"/quit\r")
         output += _read_until(master, b"\x1b[?1049l")
         process.wait(timeout=5)

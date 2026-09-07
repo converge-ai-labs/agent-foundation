@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
+from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from a13n_ui.live import LiveEvent
@@ -157,6 +158,8 @@ class ThreadDetail(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    metadata: ContentMetadata = Field(default_factory=ContentMetadata)
+
     kind: Literal[
         "system",
         "user",

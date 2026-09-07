@@ -48,7 +48,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.execution import derive_child_identity
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
 from ag_ui.core import Event as AguiEvent
 from ag_ui.core.events import (
     ReasoningMessageContentEvent,
@@ -1516,6 +1516,10 @@ class _DisplayCompactor:
 
     def observe(self, events: Sequence[AguiEvent]) -> None:
         for event in events:
+            extra = event.model_extra or {}
+            metadata = ContentMetadata.from_native(extra.get("metadata"))
+            if not metadata.display or extra.get("role") == "user":
+                continue
             if isinstance(event, TextMessageStartEvent):
                 self._text[event.message_id] = ""
             elif isinstance(event, TextMessageContentEvent):
