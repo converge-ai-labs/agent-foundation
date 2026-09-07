@@ -145,4 +145,6 @@ Selecting another Model key uses its defaults and revalidates the inherited Agen
 
 ## Request retries
 
+Subagents can use a different Model and different settings from their parent. Parent Run acceptance freezes each child's Model selection and merged settings together with the full child graph. Inline execution and independent asynchronous child Runs both use those accepted values.
+
 Every outbound inference attempt checks the current Model and Provider state. Credential rotation therefore applies to the next attempt, and disabling either resource stops it. Foundation retries HTTP 429 and 503 responses up to three total attempts, respecting `Retry-After` up to 30 seconds. Other failures and streams already handed to Harness are not automatically replayed. Non-streamed completion and streamed connection setup, including retry waits, have a 600-second deadline by default; set `settings.timeout` to change it. After stream handoff, native transport timeouts and Run cancellation govern consumption. Bedrock Converse uses blocking SDK calls with a 5-second connect timeout and a 600-second read timeout; cancellation and shorter Foundation deadlines can only take effect when the current SDK call returns. Model tests follow the same rules under their shorter command deadline.

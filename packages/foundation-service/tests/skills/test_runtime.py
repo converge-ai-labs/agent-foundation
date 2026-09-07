@@ -188,8 +188,6 @@ async def test_worker_materializes_every_effective_skill(
     )
 
     assert runtime.manager is not None
-    assert runtime.selection_capability is not None
-    assert runtime.selection_capability.names == frozenset({"review", "deploy"})
     assert tuple(item.name for item in await runtime.manager.scan(files=_files(tmp_path))) == ("deploy", "review")
     assert runtime.materialization_root is not None
     assert runtime.materialization_root.startswith("/environment/workspace/.a13n/skills/version-1/")
@@ -204,7 +202,6 @@ async def test_empty_effective_skill_list_needs_no_runtime(runtime_fixture: Runt
     runtime = await runtime_fixture.runtime.prepare(organization_id=ORG_ID, workspace_id=WORKSPACE_ID, locks=())
 
     assert runtime.manager is None
-    assert runtime.selection_capability is None
     assert runtime.catalog_digest is None
     assert runtime.materialization_root is None
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -82,26 +82,18 @@ class SubagentExecutionStore:
         sessions: async_sessionmaker[AsyncSession],
         authority: AttemptAuthoritySource,
         *,
-        parent_agent_instance_id: str,
-        host_refs: Mapping[str, str],
+        parent_context: Callable[[], SubagentOperatorContext],
         clock: Clock = utc_now,
     ) -> None:
-        if not parent_agent_instance_id:
-            raise ValueError("parent Agent instance ID must not be empty")
         self._sessions = sessions
         self._authority = authority
-        self._parent_agent_instance_id = parent_agent_instance_id
-        self._host_refs = dict(host_refs)
+        self._parent_context = parent_context
         self._clock = clock
 
     def require_context(self, context: SubagentOperatorContext) -> AttemptContext:
         authority = self._authority.current_context
-        if (
-            context.parent_thread_id != authority.thread_id
-            or context.parent_run_id != authority.run_id
-            or context.parent_agent_instance_id != self._parent_agent_instance_id
-            or dict(context.host_refs) != self._host_refs
-        ):
+        expected = self._parent_context()
+        if context != expected:
             raise SubagentOperatorError(
                 "subagent_parent_context_mismatch",
                 "Subagent operation crossed its parent logical Run boundary",

@@ -56,18 +56,20 @@ class HarnessAguiRunStreamWriter:
         run_attempt_id: str,
         harness_run_id: str,
         observer: HarnessAguiObserver | None = None,
+        source_thread_id: str | None = None,
     ) -> None:
         self._stream = stream
         self._organization_id = organization_id
         self._run_id = run_id
         self._thread_id = thread_id
+        self._source_thread_id = source_thread_id or thread_id
         self._run_attempt_id = run_attempt_id
         self._harness_run_id = harness_run_id
         self._observer = HarnessAguiObserver() if observer is None else observer
         self._item_first_stream_ids: dict[str, str] = {}
 
     async def write(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
-        if event.thread_id != self._thread_id or event.run_id != self._harness_run_id:
+        if event.thread_id != self._source_thread_id or event.run_id != self._harness_run_id:
             raise ValueError("Harness observation does not match the selected RunAttempt")
         for index, observation in enumerate(self._observer.observe(event)):
             event_type = _event_type(observation)

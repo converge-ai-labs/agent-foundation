@@ -36,7 +36,7 @@ from .errors import (
     AgentError,
     map_authorization_error,
 )
-from .invocation_resolution import AgentInvocationResolver, PreparedAgentRevisionGraph, RootAgentStatePolicy
+from .invocation_resolution import AgentInvocationResolver, PreparedAgentInvocation, RootAgentStatePolicy
 from .models import AgentRecord
 from .persistence import (
     apply_lifecycle_transition,
@@ -298,7 +298,7 @@ class AgentCommands:
         )
         if replay is not None:
             return replay
-        prepared_lifecycle: PreparedAgentRevisionGraph | None = None
+        prepared_lifecycle: PreparedAgentInvocation | None = None
         if action in {"enable", "unarchive"}:
             current = await self._queries.get(actor=actor, agent_id=agent_id)
             if action == "enable" and (current.archived_at is not None or current.enabled):
@@ -313,7 +313,7 @@ class AgentCommands:
                     "The Agent cannot be unarchived from its current state.",
                     category=ErrorCategory.conflict,
                 )
-            prepared_lifecycle = await self._invocation_resolver.preparation.prepare_retained_revision_graph(
+            prepared_lifecycle = await self._invocation_resolver.preparation.prepare(
                 actor=actor,
                 agent_id=agent_id,
                 root_state_policy=(
@@ -335,7 +335,7 @@ class AgentCommands:
                 require_etag(record, if_match)
                 apply_lifecycle_transition(record, action=action, now=now)
                 if prepared_lifecycle is not None:
-                    await self._invocation_resolver.freezing.freeze_retained_revision_graph(
+                    await self._invocation_resolver.freezing.freeze_in_transaction(
                         session,
                         prepared=prepared_lifecycle,
                     )

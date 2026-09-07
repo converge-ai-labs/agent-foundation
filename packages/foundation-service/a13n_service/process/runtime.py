@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from a13n_service.skills.runtime import SkillRuntimePreparer
     from a13n_service.skills.uploads import SkillUploadService
     from a13n_service.storage import StorageResources
+    from a13n_service.subagents.maintenance import SubagentMaintenance
     from a13n_service.trace_query.service import TraceQueryService
 
 
@@ -65,6 +66,7 @@ class ControlRuntime:
     hook_subscriptions: HookSubscriptionService
     lifecycle_events: LifecycleEventService
     gateway: GatewayRuntime
+    subagent_maintenance: SubagentMaintenance
 
 
 @dataclass(frozen=True, slots=True)

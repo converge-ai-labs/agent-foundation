@@ -17,6 +17,7 @@ from a13n_harness.tools.client import ClientToolsCapability
 from a13n_service.agents.domain import (
     AgentConfig,
     AgentRevision,
+    ChildAgentExecution,
     ConnectorConnectionToolSelection,
     EffectiveAgentConfig,
     EffectiveAgentModel,
@@ -236,6 +237,34 @@ def _edge(
     )
 
 
+def _with_children(effective: EffectiveAgentConfig, children: Mapping[str, AgentRevision]) -> EffectiveAgentConfig:
+    configurations = {
+        revision_id: ChildAgentExecution(
+            agent_id=revision.agent_id,
+            revision_content_digest=revision.content_digest,
+            effective_config=_effective(
+                revision.config,
+                plugins=revision.resolved_plugin_versions,
+                connector_tools=revision.connector_tools,
+                mcp_tools=revision.mcp_tools,
+                subagents=revision.resolved_subagents,
+            ),
+        )
+        for revision_id, revision in children.items()
+    }
+    return _rehash(effective.model_copy(update={"child_configs": configurations}))
+
+
+def _rehash(effective: EffectiveAgentConfig) -> EffectiveAgentConfig:
+    return effective.model_copy(
+        update={
+            "content_digest": canonical_digest(
+                effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
+            )
+        }
+    )
+
+
 def _reconstruct(
     effective: EffectiveAgentConfig,
     *,
@@ -247,11 +276,13 @@ def _reconstruct(
         catalog or HarnessPluginFactoryCatalog(()),
         capability_provider=capability_provider,
     )
+    if children is not None:
+        effective = _with_children(effective, children)
     return reconstructor.reconstruct(
         agent_id=ROOT_AGENT_ID,
         agent_revision_id=ROOT_REVISION_ID,
         effective_config=effective,
-        child_revisions=children or {},
+        subagent_capability=SubagentCapability(),
     )
 
 
@@ -359,8 +390,8 @@ def test_reconstruction_preserves_root_and_child_connectivity_selections() -> No
     )
 
     assert [context.is_root for context in contexts] == [False, True]
-    assert all(context.connector_tools == (connector,) for context in contexts)
-    assert all(context.mcp_tools == (mcp,) for context in contexts)
+    assert all(context.config.connector_tools == (connector,) for context in contexts)
+    assert all(context.config.mcp_tools == (mcp,) for context in contexts)
 
 
 def test_reconstructs_variants_as_distinct_structured_outputs() -> None:
@@ -447,7 +478,7 @@ def test_reconstruction_rejects_missing_or_mismatched_child_revision() -> None:
 
     with pytest.raises(AgentDefinitionReconstructionError) as missing:
         _reconstruct(effective)
-    assert (missing.value.reason, missing.value.path) == ("subagent_revision_missing", "subagents.reviewer")
+    assert missing.value.reason == "subagent_snapshot_mismatch"
 
     child = _revision(agent_id="ap_other12345678901")
     with pytest.raises(AgentDefinitionReconstructionError) as mismatch:
@@ -457,10 +488,15 @@ def test_reconstruction_rejects_missing_or_mismatched_child_revision() -> None:
 
 def test_reconstruction_rejects_tampered_child_and_plugin_provenance() -> None:
     effective = _effective(agent_config(), subagents=(_edge("reviewer"),))
-    child = _revision().model_copy(update={"content_digest": "0" * 64})
-
-    with pytest.raises(AgentDefinitionReconstructionError, match="subagent_revision_digest_mismatch"):
-        _reconstruct(effective, children={child.id: child})
+    child = _revision()
+    effective = _with_children(effective, {child.id: child})
+    child_snapshot = effective.child_configs[child.id]
+    tampered = child_snapshot.model_copy(
+        update={"effective_config": child_snapshot.effective_config.model_copy(update={"instructions": "tampered"})}
+    )
+    effective = _rehash(effective.model_copy(update={"child_configs": {child.id: tampered}}))
+    with pytest.raises(AgentDefinitionReconstructionError, match="effective_config_digest_mismatch"):
+        _reconstruct(effective)
 
     config = agent_config()
     plugin_effective = _effective(config, plugins=(_plugin_selection(),))

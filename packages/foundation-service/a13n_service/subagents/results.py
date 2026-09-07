@@ -65,6 +65,7 @@ class AsyncSubagentResultPublisher:
     ) -> None:
         if max_pending_count < 1 or max_pending_bytes < 1:
             raise ValueError("Thread inbox admission limits must be positive")
+        self._after_relationship_id = ""
         self._sessions = sessions
         self._replays = replays
         self._signals = signals
@@ -209,6 +210,7 @@ class AsyncSubagentResultPublisher:
                         select(
                             ChildRunRelationshipRecord.organization_id,
                             ChildRunRelationshipRecord.child_run_id,
+                            ChildRunRelationshipRecord.id,
                         )
                         .join(
                             RunRecord,
@@ -223,16 +225,18 @@ class AsyncSubagentResultPublisher:
                         .where(
                             RunRecord.status.in_(("completed", "failed", "cancelled")),
                             ThreadInboxRecord.id.is_(None),
+                            ChildRunRelationshipRecord.id > self._after_relationship_id,
                         )
-                        .order_by(RunRecord.sealed_at, ChildRunRelationshipRecord.id)
+                        .order_by(ChildRunRelationshipRecord.id)
                         .limit(limit)
                     )
                 )
                 .tuples()
                 .all()
             )
+        self._after_relationship_id = candidates[-1][2] if len(candidates) == limit else ""
         published = 0
-        for organization_id, child_run_id in candidates:
+        for organization_id, child_run_id, _ in candidates:
             try:
                 await self.publish(organization_id=organization_id, child_run_id=child_run_id)
             except ThreadInboxCapacityExceeded:
@@ -245,6 +249,13 @@ class AsyncSubagentResultPublisher:
                 logger.info(
                     "async_subagent_result_item_deferred",
                     extra={"event": "async_subagent_result_item_deferred", "child_run_id": child_run_id},
+                )
+                continue
+            except AsyncSubagentResultError:
+                logger.warning(
+                    "async_subagent_result_rejected",
+                    extra={"event": "async_subagent_result_rejected", "child_run_id": child_run_id},
+                    exc_info=True,
                 )
                 continue
             published += 1

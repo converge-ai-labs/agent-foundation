@@ -8,7 +8,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
-from a13n_service.environments.domain import ExistingEnvironmentSelection
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
@@ -18,7 +17,11 @@ from a13n_service.interactions.attempts import AttemptContext, lock_attempt_auth
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
-from a13n_service.interactions.environment_selection import child_environment_choice
+from a13n_service.interactions.environment_selection import (
+    ExplicitEnvironment,
+    RetainedRunEnvironment,
+    child_environment_choice,
+)
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
@@ -145,7 +148,7 @@ class ChildRunAcceptanceService:
                     run=child_run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
-                    choice=choice,
+                    intent=ExplicitEnvironment(choice),
                 )
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
@@ -290,12 +293,10 @@ class ChildRunAcceptanceService:
                 )
                 await add_run_with_environment(
                     database,
-                    run=prepared.run.model_copy(update={"environment_access": source_run.environment_access}),
+                    run=prepared.run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
-                    choice=ExistingEnvironmentSelection(environment_id=source_run.environment_id)
-                    if source_run.environment_id
-                    else None,
+                    intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
                 )
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
@@ -380,6 +381,15 @@ def _validate_new_child_parent(
         parent_state=parent_state,
         authority=authority,
     )
+    accepted = parent_state.effective_agent_config.child_configs.get(prepared.run.agent_revision_id)
+    if accepted is None or (
+        prepared.state.effective_agent_config != accepted.effective_config
+        or prepared.run.connector_connection_selections
+        != tuple(item.model_dump(mode="json") for item in accepted.connector_connection_selections)
+        or prepared.run.mcp_connection_selections
+        != tuple(item.model_dump(mode="json") for item in accepted.mcp_connection_selections)
+    ):
+        raise ChildRunAcceptanceError("child_run_config_conflict", "Child Run changed the accepted execution snapshot")
 
 
 def _validate_parent_authority(

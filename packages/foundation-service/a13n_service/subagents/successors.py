@@ -18,6 +18,7 @@ from a13n_service.interactions.control_domain import RunAcceptanceReceipt, Threa
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
+from a13n_service.interactions.environment_selection import RetainedRunEnvironment
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
 from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.interactions.objects import (
@@ -32,6 +33,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .result_payload import (
     AsyncSubagentResultAuthority,
+    AsyncSubagentResultError,
     AsyncSubagentResultItemUnavailable,
     load_async_subagent_terminal_item,
     read_async_subagent_result_authority,
@@ -75,6 +77,7 @@ class AsyncSubagentSuccessorReconciler:
         run_id_factory: Callable[[str, str, str], str] | None = None,
         clock: Clock = utc_now,
     ) -> None:
+        self._after_thread_id = ""
         self._sessions = sessions
         self._states = states
         self._replays = replays
@@ -146,15 +149,17 @@ class AsyncSubagentSuccessorReconciler:
                             ThreadInboxRecord.status == "pending",
                             ThreadInboxRecord.target_run_id.is_(None),
                             ThreadInboxRecord.source_waiting_run_id.is_(None),
+                            ThreadInboxRecord.thread_id > self._after_thread_id,
                         )
                         .group_by(ThreadInboxRecord.organization_id, ThreadInboxRecord.thread_id)
-                        .order_by("first_sequence", ThreadInboxRecord.thread_id)
+                        .order_by(ThreadInboxRecord.thread_id)
                         .limit(limit)
                     )
                 )
                 .tuples()
                 .all()
             )
+        self._after_thread_id = candidates[-1][1] if len(candidates) == limit else ""
         reconciled = 0
         for organization_id, thread_id, _ in candidates:
             try:
@@ -163,6 +168,13 @@ class AsyncSubagentSuccessorReconciler:
                 logger.info(
                     "async_subagent_successor_item_deferred",
                     extra={"event": "async_subagent_successor_item_deferred", "thread_id": thread_id},
+                )
+                continue
+            except (AsyncSubagentResultError, AsyncSubagentSuccessorError):
+                logger.warning(
+                    "async_subagent_successor_rejected",
+                    extra={"event": "async_subagent_successor_rejected", "thread_id": thread_id},
+                    exc_info=True,
                 )
                 continue
             reconciled += 1
@@ -251,6 +263,7 @@ class AsyncSubagentSuccessorReconciler:
                     run=prepared.run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
+                    intent=RetainedRunEnvironment(selected.selected_parent.id, selected.selected_parent.thread_id),
                 )
                 await database.flush()
                 consume_async_result_for_successor(

@@ -19,7 +19,7 @@ class AttemptRunStreamProjector:
     def __init__(self, stream: RedisRunStream, context: AttemptContext) -> None:
         self._stream = stream
         self._context = context
-        self._writer: HarnessAguiRunStreamWriter | None = None
+        self._writers: dict[str, HarnessAguiRunStreamWriter] = {}
         self._harness_run_id: str | None = None
         self._environment: list[EnvironmentHookObservation] = []
         self._incomplete = False
@@ -35,20 +35,26 @@ class AttemptRunStreamProjector:
 
     async def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
         context = self._context
-        if self._writer is None:
+        if self._harness_run_id is None:
+            if event.thread_id != context.thread_id:
+                raise ValueError("First Harness observation must name the owning Thread")
             self._harness_run_id = event.run_id
-            self._writer = HarnessAguiRunStreamWriter(
+        writer = self._writers.get(event.run_id)
+        if writer is None:
+            writer = HarnessAguiRunStreamWriter(
                 self._stream,
                 organization_id=context.organization_id,
                 run_id=context.run_id,
                 thread_id=context.thread_id,
                 run_attempt_id=context.run_attempt_id,
                 harness_run_id=event.run_id,
+                source_thread_id=event.thread_id,
             )
+            self._writers[event.run_id] = writer
         try:
             with fail_after(context.reconciliation_timeout.total_seconds()):
                 await self._flush_environment()
-                await self._writer.write(event)
+                await writer.write(event)
         except BaseException:
             self._incomplete = True
             raise

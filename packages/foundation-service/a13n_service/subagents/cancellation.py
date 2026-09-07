@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from a13n_harness import SafeFailure
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from a13n_service.iam import WorkspaceAction
 from a13n_service.interactions.domain import RunStatus
@@ -17,6 +19,8 @@ from a13n_service.storage import short_session
 from .authorization import ChildRunAuthorizationError, authorize_parent_child_action
 from .domain import ChildCancellationPolicy
 from .models import ChildRunRelationshipRecord
+
+logger = logging.getLogger("a13n_service.subagents.cancellation")
 
 _PARENT_CANCELLATION_OUTCOMES = {RunStatus.failed.value, RunStatus.cancelled.value}
 _ACTIVE_CHILD_OUTCOMES = {RunStatus.accepted.value, RunStatus.running.value}
@@ -55,8 +59,55 @@ class ChildCancellationReconciler:
         sessions: async_sessionmaker[AsyncSession],
         outcomes: RunOutcomeService,
     ) -> None:
+        self._after_parent_id = ""
         self._sessions = sessions
         self._outcomes = outcomes
+
+    async def reconcile_once(self, *, limit: int = 16) -> int:
+        """Rotate through terminated parents; each pass handles at most limit squared children."""
+        if not 1 <= limit <= 64:
+            raise ValueError("child cancellation reconciliation limit must be between 1 and 64")
+        child = aliased(RunRecord)
+        async with short_session(self._sessions) as session:
+            parents = tuple(
+                (
+                    await session.execute(
+                        select(RunRecord.organization_id, RunRecord.id)
+                        .join(ChildRunRelationshipRecord, ChildRunRelationshipRecord.parent_run_id == RunRecord.id)
+                        .join(ThreadRecord, ThreadRecord.id == ChildRunRelationshipRecord.child_thread_id)
+                        .join(child, child.id == ThreadRecord.current_run_id)
+                        .where(
+                            RunRecord.status.in_(_PARENT_CANCELLATION_OUTCOMES),
+                            RunRecord.id > self._after_parent_id,
+                            ChildRunRelationshipRecord.cancellation_policy
+                            == ChildCancellationPolicy.request_child_cancel.value,
+                            child.status.in_(_ACTIVE_CHILD_OUTCOMES),
+                            child.id == ChildRunRelationshipRecord.child_run_id,
+                        )
+                        .distinct()
+                        .order_by(RunRecord.id)
+                        .limit(limit)
+                    )
+                )
+                .tuples()
+                .all()
+            )
+        self._after_parent_id = parents[-1][1] if len(parents) == limit else ""
+        cancelled = 0
+        for organization_id, parent_id in parents:
+            try:
+                batch = await self.reconcile_parent(
+                    organization_id=organization_id, parent_run_id=parent_id, limit=limit
+                )
+            except ChildCancellationError:
+                logger.warning(
+                    "subagent_cancellation_rejected",
+                    extra={"event": "subagent_cancellation_rejected", "parent_run_id": parent_id},
+                    exc_info=True,
+                )
+                continue
+            cancelled += batch.cancelled
+        return cancelled
 
     async def reconcile_parent(
         self,

@@ -1,29 +1,18 @@
-from contextlib import AsyncExitStack
 from datetime import timedelta
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
-from a13n_environment_provider import EnvironmentProviderCatalog
-from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, WorkerClaim
 from a13n_service.models.model_factory import NativeModelFactory
-from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.plugins.models import PluginRuntimeLockRecord
-from a13n_service.plugins.on_demand import OnDemandPluginRuntime, PreparedOnDemandPluginRuntime
 from a13n_service.plugins.runtime import PluginRuntimeLock, default_runtime_target, installed_harness_version
-from a13n_service.process.resources import ExecutionResources
-from a13n_service.process.runtime import SharedRuntime
-from a13n_service.process.worker import build_worker_runtime
-from a13n_service.secrets import SecretProtector
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
-from a13n_service.storage.runtime import StorageResources
-from anyio import CapacityLimiter, create_task_group, fail_after, sleep
-from fakeredis.aioredis import FakeRedis
+from anyio import create_task_group, fail_after, sleep
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import select
 
@@ -31,6 +20,7 @@ from tests.lifecycle_support import test_lifecycle_writer
 
 from . import test_attempt_execution as acceptance
 from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID, effective_agent_config
+from .worker_helpers import worker_runtime
 
 pytestmark = pytest.mark.anyio
 
@@ -131,9 +121,6 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
             initial,
             acceptance._completed_state(initial.envelope, claim.attempt.id, claim.attempt.fence),
         )
-    preflight = AsyncMock(return_value=PreparedOnDemandPluginRuntime(lock.digest, HarnessPluginFactoryCatalog(())))
-    monkeypatch.setattr(OnDemandPluginRuntime, "prepare_for_claim", preflight)
-    monkeypatch.setattr(LiveProviderResolver, "resolve", AsyncMock(return_value=Mock()))
     requests = []
 
     async def model(messages, info):
@@ -142,28 +129,18 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=model)
-    resources = Mock(spec=ExecutionResources)
-    resources.native_model_factory = model_factory
-    resources.plugin_objects = Mock()
-    resources.skill_package_store = Mock()
-    resources.model_provider_registry = Mock()
-    resources.model_endpoint_policy = Mock()
-    resources.model_http_client = Mock()
     settings = Settings(_env_file=None, build_version="test", worker_concurrency=1, worker_poll_interval_seconds=0.02)
-    async with FakeRedis() as redis, AsyncExitStack() as stack:
-        shared = SharedRuntime(
-            StorageResources(
-                Mock(), interaction_sessions, redis, interaction_object_store, tmp_path, CapacityLimiter(4)
-            ),
-            test_lifecycle_writer(),
-            SecretProtector(key=b"k" * 32, encryption_key_id="test"),
-        )
-        runtime, background = await build_worker_runtime(
-            settings, shared, resources, EnvironmentProviderCatalog(), stack
-        )
+    async with worker_runtime(
+        interaction_sessions,
+        interaction_object_store,
+        tmp_path,
+        monkeypatch,
+        settings=settings,
+        lock=lock,
+        model_factory=model_factory,
+    ) as (runtime, _shared, preflight):
         loop = runtime.execution_loop
         assert loop is not None
-        assert any(component.run == loop.run for component in background)
         with fail_after(15):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)

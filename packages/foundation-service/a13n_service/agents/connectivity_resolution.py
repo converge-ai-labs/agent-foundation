@@ -27,19 +27,13 @@ class _ConnectivityConfig(Protocol):
 
 
 async def prepare_revision_connectivity(
-    resolver: ConnectivitySelectionResolver | None,
+    resolver: ConnectivitySelectionResolver,
     *,
     actor: AuthenticatedActor,
     organization_id: str,
     workspace_id: str,
     config: _ConnectivityConfig,
-) -> PreparedConnectivity | None:
-    if not config.connector_tools and not config.mcp_tools:
-        return None
-    if resolver is None:
-        if config.connector_tools:
-            raise agent_revision_create_failed("connector_tool_resolution_unavailable", path="connector_tools")
-        raise agent_revision_create_failed("mcp_tool_resolution_unavailable", path="mcp_tools")
+) -> PreparedConnectivity:
     try:
         return await resolver.prepare(
             actor=actor,
@@ -53,14 +47,10 @@ async def prepare_revision_connectivity(
 
 
 async def freeze_revision_connectivity(
-    resolver: ConnectivitySelectionResolver | None,
+    resolver: ConnectivitySelectionResolver,
     session: AsyncSession,
-    prepared: PreparedConnectivity | None,
+    prepared: PreparedConnectivity,
 ) -> None:
-    if prepared is None:
-        return
-    if resolver is None:
-        raise agent_revision_create_failed("connectivity_resolution_unavailable", path="connectivity")
     try:
         await resolver.freeze(session, prepared=prepared)
     except ConnectivitySelectionError as error:
@@ -68,20 +58,13 @@ async def freeze_revision_connectivity(
 
 
 async def prepare_invocation_connectivity(
-    resolver: ConnectivitySelectionResolver | None,
+    resolver: ConnectivitySelectionResolver,
     *,
     actor: AuthenticatedActor,
     organization_id: str,
     workspace_id: str,
     config: _ConnectivityConfig,
-) -> PreparedConnectivity | None:
-    if not config.connector_tools and not config.mcp_tools:
-        return None
-    if resolver is None:
-        reason = (
-            "connector_tool_resolution_unavailable" if config.connector_tools else "mcp_tool_resolution_unavailable"
-        )
-        raise agent_revision_not_executable(reason)
+) -> PreparedConnectivity:
     try:
         return await resolver.prepare(
             actor=actor,
@@ -95,14 +78,10 @@ async def prepare_invocation_connectivity(
 
 
 async def freeze_invocation_connectivity(
-    resolver: ConnectivitySelectionResolver | None,
+    resolver: ConnectivitySelectionResolver,
     session: AsyncSession,
-    prepared: PreparedConnectivity | None,
-) -> FrozenRunConnectivity | None:
-    if prepared is None:
-        return None
-    if resolver is None:
-        raise agent_revision_not_executable("connectivity_resolution_unavailable")
+    prepared: PreparedConnectivity,
+) -> FrozenRunConnectivity:
     try:
         return await resolver.freeze(session, prepared=prepared)
     except ConnectivitySelectionError as error:

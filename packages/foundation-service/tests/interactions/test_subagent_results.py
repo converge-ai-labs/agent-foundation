@@ -599,3 +599,51 @@ async def _project_all_lifecycle(projector: LifecycleRunStreamProjector) -> None
         if await projector.project_once(limit=200) == 0:
             return
     raise AssertionError("lifecycle projection did not drain")
+
+
+async def test_deferred_result_does_not_starve_the_next_scan_page(
+    interaction_sessions,
+    interaction_object_store,
+    monkeypatch,
+):
+    from a13n_service.subagents.result_payload import AsyncSubagentResultItemUnavailable
+
+    states, parent, authority, first_id = await _accept_child(interaction_sessions, interaction_object_store)
+    parent_state = await states.read(parent.organization_id, parent.id)
+    next_child = _prepared_child(
+        parent,
+        parent_state.envelope,
+        authority.run_attempt_id,
+        authority.fence,
+        effective_agent_config(),
+        suffix="d",
+    )
+    await ChildRunAcceptanceService(
+        interaction_sessions,
+        states,
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW + timedelta(seconds=2),
+    ).accept(next_child, authority)
+    await _fail_child(interaction_sessions, first_id)
+    await _fail_child(interaction_sessions, next_child.run.id)
+    publisher = AsyncSubagentResultPublisher(
+        interaction_sessions,
+        RunReplayStore(interaction_object_store),
+        clock=lambda: NOW + timedelta(seconds=4),
+    )
+    original = publisher.publish
+    attempted = []
+
+    async def publish(*, organization_id, child_run_id):
+        attempted.append(child_run_id)
+        if child_run_id == first_id:
+            raise AsyncSubagentResultItemUnavailable("Result index is delayed")
+        return await original(organization_id=organization_id, child_run_id=child_run_id)
+
+    monkeypatch.setattr(publisher, "publish", publish)
+    assert await publisher.reconcile_once(limit=1) == 0
+    assert await publisher.reconcile_once(limit=1) == 1
+    assert attempted == [first_id, next_child.run.id]
+    assert await publisher.reconcile_once(limit=1) == 0
+    assert await publisher.reconcile_once(limit=1) == 0
+    assert attempted[-1] == first_id

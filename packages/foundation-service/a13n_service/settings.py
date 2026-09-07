@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
     plugin_runtime_mode: PluginRuntimeMode = PluginRuntimeMode.on_demand
     worker_concurrency: int = Field(default=8, ge=1, le=1024)
+    subagent_reconcile_drain_seconds: float = Field(default=30, gt=0, le=3600)
+    subagent_reconcile_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
     worker_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
     worker_lease_seconds: float = Field(default=30, ge=12, le=3600)
     worker_cleanup_seconds: float = Field(default=10, gt=0, le=300)

@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.environments.usage import lock_run_environments, schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
-from a13n_service.interactions.environment_selection import queued_environment_choice
+from a13n_service.interactions.environment_selection import (
+    EnvironmentDefault,
+    queued_environment_choice,
+    requested_environment,
+)
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -147,7 +151,10 @@ class CompletionQueueHandoffService:
                     run=successor_run,
                     state=successor_state,
                     workspace_id=session_record_value.workspace_id,
-                    choice=await queued_environment_choice(database, queued_submission_id),
+                    intent=requested_environment(
+                        await queued_environment_choice(database, queued_submission_id),
+                        default=EnvironmentDefault.thread,
+                    ),
                 )
                 await bind_unbound_async_entries(
                     database,

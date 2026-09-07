@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
-from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness import (
@@ -18,7 +18,6 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness.errors import RunError
-from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import ControlWatcher, LeaseMonitor, RunAttemptExecutor
 from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
@@ -194,12 +193,16 @@ class _Preparer:
     heartbeat_seen: Event
     trace: list[str]
 
-    async def prepare(self, context: AttemptContext) -> HarnessInvocation[str]:
+    @asynccontextmanager
+    async def prepare(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[str]]:
         assert context is self.context
         await self.wakeups.receiving.wait()
         await self.heartbeat_seen.wait()
         self.trace.append("attempt:prepare")
-        return self.invocation
+        try:
+            yield self.invocation
+        finally:
+            self.trace.append("attempt:resources-closed")
 
 
 @dataclass
@@ -237,22 +240,6 @@ class _Committer:
 
     async def reconcile_cancelled(self, context):
         raise AssertionError("successful executor must not reconcile cancellation")
-
-
-@dataclass
-class _Cleanup:
-    wakeups: _Wakeups
-    trace: list[str]
-
-    async def close(
-        self,
-        context: AttemptContext,
-        control: RunAttemptControl,
-        driver: HarnessDriver,
-    ) -> None:
-        del context, control, driver
-        assert self.wakeups.stopped.is_set()
-        self.trace.append("attempt:cleanup")
 
 
 @dataclass
@@ -399,11 +386,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
             )
         ),
     )
-    environment_preparer = AsyncMock(return_value=None)
-    monkeypatch.setattr("a13n_service.interactions.attempt_executor.prepare_run_environment", environment_preparer)
-    lifecycle = Mock(spec=EnvironmentLifecycle)
     executor = RunAttemptExecutor(
-        environments=lifecycle,
         context=context,
         control=control,
         driver=driver,
@@ -411,12 +394,10 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         wakeups=wakeups,
         adapter=_Adapter(),
         committer=_Committer(trace),
-        cleanup=_Cleanup(wakeups, trace),
         capacity_slot=capacity,
     )
 
     receipt = await executor.run()
-    environment_preparer.assert_awaited_once_with(lifecycle, context)
     await control.reconcile()
     await control.renew_lease()
 
@@ -432,7 +413,8 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     assert execution.heartbeat_seen.is_set()
     assert wakeups.acknowledged.is_set()
     assert trace.index("inbox:confirm") < trace.index("attempt:prepare")
-    assert trace[-2:] == ["attempt:cleanup", "capacity:release"]
+    assert "attempt:resources-closed" in trace
+    assert trace[-1] == "capacity:release"
     assert capacity.releases == 1
 
 
@@ -550,28 +532,26 @@ async def test_handoff_closes_runtime_while_renewing_before_yield(
         ),
     )
 
-    class Cleanup:
-        async def close(self, context, control, driver):
-            trace.append("cleanup:start")
-            await sleep(0.01)
-            if cleanup_fails:
-                raise RuntimeError("cleanup unavailable")
-            trace.append("cleanup:end")
+    class ClosingPreparer(_Preparer):
+        @asynccontextmanager
+        async def prepare(self, context):
+            async with super().prepare(context) as prepared:
+                yield prepared
+                trace.append("cleanup:start")
+                await sleep(0.01)
+                if cleanup_fails:
+                    raise RuntimeError("cleanup unavailable")
+                trace.append("cleanup:end")
 
-    monkeypatch.setattr(
-        "a13n_service.interactions.attempt_executor.prepare_run_environment", AsyncMock(return_value=None)
-    )
     await control.request_handoff(RunAttemptYieldReason.service_drain)
     executor = RunAttemptExecutor(
-        environments=Mock(spec=EnvironmentLifecycle),
         context=context,
         control=control,
         driver=driver,
-        preparer=_Preparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
+        preparer=ClosingPreparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
         wakeups=wakeups,
         adapter=_Adapter(),
         committer=_Committer(trace),
-        cleanup=Cleanup(),
         capacity_slot=capacity,
     )
     if cleanup_fails:

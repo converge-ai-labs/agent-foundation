@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
-from dataclasses import dataclass, field
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 import httpx2
@@ -62,6 +63,7 @@ class AttemptToolScope:
     workspace_id: str
     selections: FrozenRunConnectivity
     native_tool_contexts: tuple[NativeToolContext, ...] = field(repr=False)
+    protected_inputs: tuple[object, ...] = field(default=(), repr=False)
 
 
 class ScopeGuard(Protocol):
@@ -88,11 +90,24 @@ class ExternalToolRuntime:
         self._oauth_refresh = oauth_refresh
         self._selections = ConnectivitySelectionResolver(sessions)
 
-    async def _scope(self, context: AttemptContext) -> AttemptToolScope:
+    async def _scope(
+        self,
+        context: AttemptContext,
+        *,
+        child_agent_id: str | None = None,
+        accepted: AttemptToolScope | None = None,
+    ) -> AttemptToolScope:
         async with short_session(self._sessions) as session:
-            return await self._scope_in_session(session, context)
+            return await self._scope_in_session(session, context, child_agent_id=child_agent_id, accepted=accepted)
 
-    async def _scope_in_session(self, session: AsyncSession, context: AttemptContext) -> AttemptToolScope:
+    async def _scope_in_session(
+        self,
+        session: AsyncSession,
+        context: AttemptContext,
+        *,
+        child_agent_id: str | None = None,
+        accepted: AttemptToolScope | None = None,
+    ) -> AttemptToolScope:
         run, _, _ = await read_attempt_authority(session, context, utc_now())
         conversation = await session.get(SessionRecord, run.session_id)
         if conversation is None:
@@ -112,6 +127,28 @@ class ExternalToolRuntime:
             agent_id=run.agent_id,
             action=WorkspaceAction.agent_invoke,
         )
+        if child_agent_id is not None:
+            await authorize_agent(
+                session,
+                actor=actor,
+                workspace_id=conversation.workspace_id,
+                agent_id=child_agent_id,
+                action=WorkspaceAction.agent_invoke,
+            )
+        protected_inputs = (
+            run.connector_connection_selections_json,
+            run.mcp_connection_selections_json,
+            run.native_tool_contexts_json,
+        )
+        if accepted is not None:
+            if (actor, run.organization_id, conversation.workspace_id, protected_inputs) != (
+                accepted.actor,
+                accepted.organization_id,
+                accepted.workspace_id,
+                accepted.protected_inputs,
+            ):
+                raise ValueError("external_tool_scope_changed")
+            return accepted
         return AttemptToolScope(
             actor,
             run.organization_id,
@@ -121,6 +158,7 @@ class ExternalToolRuntime:
                 _MCPS.validate_python(run.mcp_connection_selections_json),
             ),
             parse_native_contexts(run.native_tool_contexts_json),
+            deepcopy(protected_inputs),
         )
 
     @asynccontextmanager
@@ -131,13 +169,46 @@ class ExternalToolRuntime:
 
         async def guard(session: AsyncSession | None = None) -> None:
             current = (
-                await self._scope(current_context())
+                await self._scope(current_context(), accepted=accepted)
                 if session is None
-                else await self._scope_in_session(session, current_context())
+                else await self._scope_in_session(session, current_context(), accepted=accepted)
             )
             if current != accepted:
                 raise ValueError("external_tool_scope_changed")
 
+        async with self._capabilities(accepted, guard) as capabilities:
+            yield capabilities
+
+    @asynccontextmanager
+    async def child_capabilities(
+        self,
+        current_context: Callable[[], AttemptContext],
+        *,
+        agent_id: str,
+        selections: FrozenRunConnectivity,
+    ) -> AsyncIterator[tuple[MCP[AgentContext], ...]]:
+        """Bind an accepted inline child's tools to the owning Attempt, without native ingress context."""
+        parent = await self._scope(current_context(), child_agent_id=agent_id)
+
+        async def guard(session: AsyncSession | None = None) -> None:
+            current = (
+                await self._scope(current_context(), child_agent_id=agent_id, accepted=parent)
+                if session is None
+                else await self._scope_in_session(session, current_context(), child_agent_id=agent_id, accepted=parent)
+            )
+            if current != parent:
+                raise ValueError("external_tool_scope_changed")
+
+        accepted = replace(parent, selections=selections, native_tool_contexts=())
+        async with self._capabilities(accepted, guard) as capabilities:
+            yield capabilities
+
+    @asynccontextmanager
+    async def _capabilities(
+        self,
+        accepted: AttemptToolScope,
+        guard: ScopeGuard,
+    ) -> AsyncIterator[tuple[MCP[AgentContext], ...]]:
         capabilities: list[MCP[AgentContext]] = []
         async with AsyncExitStack() as stack:
             for selection in accepted.selections.connector_connection_selections:

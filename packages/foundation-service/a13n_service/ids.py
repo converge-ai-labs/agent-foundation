@@ -3,6 +3,11 @@
 import re
 import secrets
 import string
+from typing import Annotated
+
+from pydantic import StringConstraints
+
+ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 
 _KIND_PATTERN = re.compile(r"^[a-z][a-z0-9]{1,7}$")
 _ID_ALPHABET = string.ascii_lowercase + string.digits

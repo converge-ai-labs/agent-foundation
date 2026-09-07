@@ -230,6 +230,8 @@ Keepalive maintains a running target while active use or the current pre-stop/pr
 
 ## Children and Forks
 
+Every Run acceptance selects an explicit Environment source: the supplied selection (including explicit no Environment), the Agent default, the current Thread default, or an exact retained Run. Retry and state-preserving continuations name their retained source Run and preserve its access ceiling; they do not infer that source from mutable Thread pointers or Run kind. Authorization and allocation happen in the acceptance transaction. Managed Skills in any inline descendant require the owning Run to have a writable Environment, just as root Skills do.
+
 Child policy is `none`, `shared` or `dedicated`. Shared children copy the spawning Run's Environment and narrow its access ceiling; they never consult a later root Thread default. Dedicated children allocate their own Environment from the exact template revision selected by the frozen child policy. Both use fresh process-local objects and the Environment's preparation/retention contract. Inline children borrow the parent Harness facade and do not acquire an independent durable use.
 
 A Fork normally shares its source Run's Environment, but an explicit selection may choose another or allocate from a template. Neither Fork nor dedicated creation copies the parent's changed files. File transfer or snapshot cloning is not implicit. Parent switching, completion or cancellation cannot stop/delete an Environment still used by another Run or protected by its aggregate retention condition.

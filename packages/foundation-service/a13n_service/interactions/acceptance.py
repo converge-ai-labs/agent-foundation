@@ -11,15 +11,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection
-from a13n_service.environments.selection import Omitted
 from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
 from a13n_service.iam import PrincipalRef
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
-from a13n_service.interactions.environment_selection import queued_environment_choice
+from a13n_service.interactions.environment_selection import (
+    EnvironmentDefault,
+    EnvironmentIntent,
+    RetainedRunEnvironment,
+    queued_environment_choice,
+    requested_environment,
+)
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
 
@@ -86,7 +90,7 @@ class RunAcceptanceService:
         hook_subscription: InlineHookSubscriptionInput | None = None,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
-        environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
+        environment: EnvironmentIntent = EnvironmentDefault.agent,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
@@ -121,7 +125,7 @@ class RunAcceptanceService:
                     run=run,
                     state=state,
                     workspace_id=workspace_id,
-                    choice=environment,
+                    intent=environment,
                 )
                 database.add(inbox_counter_record(thread))
                 hook_subscription_id = await self._inline_hooks.create(
@@ -151,10 +155,9 @@ class RunAcceptanceService:
         hook_subscription: InlineHookSubscriptionInput | None = None,
         hook_source_run_id: str | None = None,
         hook_actor: PrincipalRef | None = None,
-        inherit_parent_environment: bool = False,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
-        environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
+        environment: EnvironmentIntent = EnvironmentDefault.thread,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
@@ -206,23 +209,12 @@ class RunAcceptanceService:
                     source_run_id=hook_source_run_id,
                     actor=hook_actor,
                 )
-                selected_environment = environment
-                if inherit_parent_environment and environment is Omitted.UNSET:
-                    if run.parent_run_id is None:
-                        raise RunAcceptanceError("run_parent_required", "Historical continuation needs a parent Run")
-                    parent = await _load_run(database, run.organization_id, run.parent_run_id)
-                    selected_environment = (
-                        ExistingEnvironmentSelection(environment_id=parent.environment_id)
-                        if parent.environment_id
-                        else None
-                    )
-                    run = run.model_copy(update={"environment_access": parent.environment_access})
                 run_record_value = await add_run_with_environment(
                     database,
                     run=run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
-                    choice=selected_environment,
+                    intent=environment,
                 )
                 if run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
                     await database.flush()
@@ -346,12 +338,18 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await require_session(database, run)
+                choice = await queued_environment_choice(database, queued_submission_id)
+                environment = (
+                    RetainedRunEnvironment(current.id, current.thread_id, requested=choice)
+                    if run.input_kind is RunInputKind.waiting_continue
+                    else requested_environment(choice, default=EnvironmentDefault.thread)
+                )
                 run_record_value = await add_run_with_environment(
                     database,
                     run=run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
-                    choice=await queued_environment_choice(database, queued_submission_id),
+                    intent=environment,
                 )
                 await database.flush()
                 await bind_unbound_async_entries(

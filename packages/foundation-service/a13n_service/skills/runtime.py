@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from a13n_harness.capabilities import SkillManager, SkillSelectionRunCapability, SkillsPolicy
+from a13n_harness.capabilities import SkillManager, SkillsPolicy
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -73,7 +73,6 @@ class PreparedSkillRuntime:
     """Exact Harness inputs for one accepted Run's managed Skill selection."""
 
     manager: SkillManager | None
-    selection_capability: SkillSelectionRunCapability | None
     catalog_digest: str | None
     materialization_root: str | None
 
@@ -101,7 +100,6 @@ class SkillRuntimePreparer:
         if not selected_locks:
             return PreparedSkillRuntime(
                 manager=None,
-                selection_capability=None,
                 catalog_digest=None,
                 materialization_root=None,
             )
@@ -165,9 +163,6 @@ class SkillRuntimePreparer:
         )
         return PreparedSkillRuntime(
             manager=manager,
-            selection_capability=SkillSelectionRunCapability(
-                names=frozenset(item.skill_key for item in selected_locks)
-            ),
             catalog_digest=catalog_digest,
             materialization_root=root,
         )

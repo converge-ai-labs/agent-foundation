@@ -32,7 +32,6 @@ from a13n_service.connectivity.runtime import (
     ConnectivityDataRuntime,
     ConnectivityRuntime,
 )
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
@@ -72,14 +71,14 @@ async def build_connectivity_runtime(
     input_acceptor: InputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
-) -> tuple[ConnectivityRuntime | None, ConnectivitySelectionResolver | None, tuple[BackgroundTask, ...]]:
+) -> tuple[ConnectivityRuntime | None, tuple[BackgroundTask, ...]]:
     """Construct only the Connectivity capabilities owned by this role."""
 
     if not control_plane and not data_plane:
-        return None, None, ()
+        return None, ()
     if ingress_adapters is None:
         raise RuntimeError("Connectivity ingress adapters were not prepared")
-    control, selection_resolver, control_components = (
+    control, control_components = (
         await _build_control_runtime(
             settings,
             storage,
@@ -89,7 +88,7 @@ async def build_connectivity_runtime(
             stack,
         )
         if control_plane
-        else (None, None, ())
+        else (None, ())
     )
     data, data_components = (
         _build_data_runtime(settings, input_acceptor, storage, ingress_adapters, secret_protector)
@@ -101,7 +100,6 @@ async def build_connectivity_runtime(
             control=control,
             data=data,
         ),
-        selection_resolver,
         (*control_components, *data_components),
     )
 
@@ -113,7 +111,7 @@ async def _build_control_runtime(
     connector_providers: ConnectorProviderRegistry | None,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
-) -> tuple[ConnectivityControlRuntime, ConnectivitySelectionResolver, tuple[BackgroundTask, ...]]:
+) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
     public_origin = settings.validated_connectivity_public_origin() if settings.connectivity_public_origin else None
     endpoint_policy = settings.connectivity_endpoint_policy()
     if connector_providers is None:
@@ -130,7 +128,6 @@ async def _build_control_runtime(
             response_max_bytes=settings.connectivity_response_max_bytes,
             timeout_seconds=settings.connectivity_total_timeout_seconds,
         )
-    selection_resolver = ConnectivitySelectionResolver(storage.sessions)
     connector = _build_connector_control(
         settings,
         storage,
@@ -177,7 +174,7 @@ async def _build_control_runtime(
         BackgroundTask("connector reconciler", connector.reconciler.run),
         BackgroundTask("MCP reconciler", mcp.reconciler.run),
     )
-    return runtime, selection_resolver, background_components
+    return runtime, background_components
 
 
 def _build_connector_control(

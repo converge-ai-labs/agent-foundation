@@ -15,7 +15,12 @@ from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.environments.service import EnvironmentService
 from a13n_service.interactions.control_domain import ThreadRunSubmissionIntent
-from a13n_service.interactions.environment_selection import select_run_environment
+from a13n_service.interactions.environment_selection import (
+    EnvironmentDefault,
+    ExplicitEnvironment,
+    RetainedRunEnvironment,
+    select_run_environment,
+)
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.secrets.crypto import SecretProtector
@@ -118,23 +123,32 @@ async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allo
         later = first.model_copy(
             update={"id": "run_second1234567890", "environment_id": None, "environment_access": None}
         )
-        selected = await select_run_environment(session, run=later, workspace_id=WORKSPACE_ID)
+        selected = await select_run_environment(
+            session, run=later, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.thread
+        )
         assert selected.environment_id == other.id != first.environment_id
         retry = later.model_copy(update={"retry_of_run_id": first.id})
-        selected = await select_run_environment(session, run=retry, workspace_id=WORKSPACE_ID)
+        selected = await select_run_environment(
+            session, run=retry, workspace_id=WORKSPACE_ID, intent=RetainedRunEnvironment(first.id, first.thread_id)
+        )
         assert selected.environment_id == first.environment_id
         assert (
-            await select_run_environment(session, run=later, workspace_id=WORKSPACE_ID, choice=None)
+            await select_run_environment(
+                session, run=later, workspace_id=WORKSPACE_ID, intent=ExplicitEnvironment(None)
+            )
         ).environment_id is None
         new = await select_run_environment(
-            session, run=later, workspace_id=WORKSPACE_ID, choice=NewEnvironmentSelection(template_id=template.id)
+            session,
+            run=later,
+            workspace_id=WORKSPACE_ID,
+            intent=ExplicitEnvironment(NewEnvironmentSelection(template_id=template.id)),
         )
         assert new.environment_id not in {first.environment_id, other.id}
         reused = await select_run_environment(
             session,
             run=later,
             workspace_id=WORKSPACE_ID,
-            choice=ExistingEnvironmentSelection(environment_id=first.environment_id),
+            intent=ExplicitEnvironment(ExistingEnvironmentSelection(environment_id=first.environment_id)),
         )
         assert reused.environment_id == first.environment_id
 

@@ -7,7 +7,6 @@ from contextlib import AsyncExitStack
 import httpx2
 from a13n_environment_provider import EnvironmentProviderCatalog
 
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway import GatewayRuntime
 from a13n_service.gateway.a2a import A2AService
@@ -21,6 +20,7 @@ from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
+from a13n_service.process.agents import AgentResources
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
@@ -37,6 +37,7 @@ from .hook import build_hook_bundle
 from .model import build_model_bundle
 from .plugin import build_plugin_bundle
 from .skill import build_skill_bundle
+from .subagent import build_subagent_maintenance
 from .trace import build_trace_query_service
 
 
@@ -47,7 +48,7 @@ async def build_control_runtime(
     execution: ExecutionResources,
     worker: WorkerRuntime | None,
     environment_catalog: EnvironmentProviderCatalog,
-    connectivity_selection: ConnectivitySelectionResolver | None,
+    agent_resources: AgentResources,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,
 ) -> tuple[ControlRuntime, tuple[BackgroundTask, ...]]:
@@ -71,6 +72,7 @@ async def build_control_runtime(
         shared,
         execution,
         local_runner,
+        agent_resources.plugins,
         stack,
     )
     skills = await build_skill_bundle(components, shared, execution, stack)
@@ -79,9 +81,7 @@ async def build_control_runtime(
         settings,
         components,
         shared,
-        models.accepted,
-        plugins.agent_selection,
-        connectivity_selection,
+        agent_resources,
     )
     assets = await build_asset_bundle(settings, shared)
     hooks = await build_hook_bundle(settings, shared, stack)
@@ -200,6 +200,7 @@ async def build_control_runtime(
             else None
         ),
     )
+    subagents = build_subagent_maintenance(settings, shared, gateway_replay)
     runtime = ControlRuntime(
         trace_queries=trace_queries,
         environments=environments,
@@ -214,8 +215,14 @@ async def build_control_runtime(
         hook_subscriptions=hooks.subscriptions,
         lifecycle_events=hooks.lifecycle_events,
         gateway=gateway,
+        subagent_maintenance=subagents,
     )
-    background_tasks = [assets.cleanup_task, hooks.delivery_task, hooks.retention_task]
+    background_tasks = [
+        assets.cleanup_task,
+        hooks.delivery_task,
+        hooks.retention_task,
+        BackgroundTask("Subagent reconciliation", subagents.run, subagents.is_draining),
+    ]
     if a2a_publisher is not None:
         background_tasks.append(BackgroundTask("A2A push publisher", a2a_publisher.run))
     if plugins.background_task is not None:
