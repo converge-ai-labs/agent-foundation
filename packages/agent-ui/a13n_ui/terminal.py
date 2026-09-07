@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def start(request: CliRequest) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        raise click.ClickException("Interactive mode requires a terminal. Use `a13n-cli run <prompt>` for automation.")
+        raise click.ClickException("Interactive mode requires a terminal. Use `a13n-ui run <prompt>` for automation.")
     from a13n_ui.interactive.shell import CliShell
 
     try:

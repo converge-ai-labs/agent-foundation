@@ -68,7 +68,9 @@ include = [
     "scripts/check-release-version.py",
     "scripts/create-github-release.py",
     "scripts/eip_codegen",
+    "scripts/prepare-agent-ui-assets.py",
     "scripts/prepare-release-version.py",
+    "scripts/prepare_agent_ui_assets.py",
     "scripts/release_notes.py",
     "scripts/release_version.py",
 ]

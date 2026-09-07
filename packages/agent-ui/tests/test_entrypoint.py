@@ -41,7 +41,7 @@ def test_terminal_frontend_requires_interactive_input_and_output(
 
     assert result.returncode == 1
     assert "Interactive mode requires a terminal" in result.stderr
-    assert "a13n-cli run <prompt>" in result.stderr
+    assert "a13n-ui run <prompt>" in result.stderr
 
 
 @pytest.mark.skipif(os.name != "posix", reason="PTY terminal restoration requires POSIX")

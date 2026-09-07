@@ -15,7 +15,11 @@ from a13n_ui.app import AgentUiApp
 from a13n_ui.cli import CliRequest
 from a13n_ui.configuration import ExternalSubagentImportPreview, ResourceMutationRequest
 from a13n_ui.configuration.setup import SetupPreview, SetupSelection
-from a13n_ui.environment_profiles import environment_profile_id_for_mode
+from a13n_ui.environment_profiles import (
+    environment_profile_id_for_mode,
+    local_sandbox_supported,
+    require_supported_local_profile,
+)
 from a13n_ui.errors import AgentUiError, ConfigurationError
 from a13n_ui.live import LiveEvent, root_context_samples
 from a13n_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
@@ -138,6 +142,7 @@ class SessionBackend:
     async def set_environment(self, selected: str | None) -> str:
         if selected is not None:
             profile = environment_profile_id_for_mode(selected)
+            require_supported_local_profile(profile)
             if self.thread_id is not None:
                 detail = await self.app.get_thread(self.thread_id)
                 await self.app.update_thread_configuration(
@@ -152,6 +157,8 @@ class SessionBackend:
         return f"Environment: {self.status.environment}. Changes apply on the next turn; no fallback."
 
     async def ensure_session(self) -> str:
+        await self.refresh()
+        require_supported_local_profile(self.status.environment)
         if self.thread_id is None:
             if not await self.refresh():
                 raise ValueError("No model is configured. Use /setup before sending a prompt.")
@@ -203,7 +210,7 @@ class SessionBackend:
         if detail.thread.parent_thread_id is not None or detail.thread.archived:
             raise ValueError("Only non-archived root sessions can be resumed.")
         if detail.thread.configuration.project_id not in matches:
-            raise ValueError("This session belongs to another workspace. Launch a13n-cli from its original directory.")
+            raise ValueError("This session belongs to another workspace. Launch a13n-ui from its original directory.")
         if await self.app.active_root_operation(selected) is not None:
             raise ValueError("This session is already running.")
         self.thread_id = selected
@@ -370,7 +377,11 @@ class SessionBackend:
         if kind == "environment":
             return (
                 Choice("full-control", "Full Control", "Native host shell and files; no sandbox"),
-                Choice("sandbox", "Sandbox", "Isolation; unavailable configurations fail without fallback"),
+                *(
+                    (Choice("sandbox", "Sandbox", "Isolation; unavailable configurations fail without fallback"),)
+                    if local_sandbox_supported()
+                    else ()
+                ),
             )
         if kind == "resume":
             configuration = await self.app.current_configuration()

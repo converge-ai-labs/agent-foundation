@@ -7,6 +7,7 @@ on:
       - ".github/workflows/ci-agent-ui.yml"
       - ".github/workflows/release-agent-ui.yml"
       - ".gitignore"
+      - "apps/harness-ui/**"
       - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "packages/agent-stream-protocol/**"
@@ -14,9 +15,13 @@ on:
       - "pyproject.toml"
       - "scripts/check-agent-ui-distribution.py"
       - "scripts/check_agent_ui_distribution.py"
+      - "scripts/export-agent-ui-openapi.py"
+      - "scripts/prepare-agent-ui-assets.py"
+      - "scripts/prepare_agent_ui_assets.py"
       - "scripts/release_version.py"
       - "scripts/tests/test_check_agent_ui_distribution.py"
       - "scripts/tests/test_prepare_release_version.py"
+      - "scripts/tests/test_prepare_agent_ui_assets.py"
       - "uv.lock"
   push:
     branches: [main]
@@ -24,6 +29,7 @@ on:
       - ".github/workflows/ci-agent-ui.yml"
       - ".github/workflows/release-agent-ui.yml"
       - ".gitignore"
+      - "apps/harness-ui/**"
       - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "packages/agent-stream-protocol/**"
@@ -31,9 +37,13 @@ on:
       - "pyproject.toml"
       - "scripts/check-agent-ui-distribution.py"
       - "scripts/check_agent_ui_distribution.py"
+      - "scripts/export-agent-ui-openapi.py"
+      - "scripts/prepare-agent-ui-assets.py"
+      - "scripts/prepare_agent_ui_assets.py"
       - "scripts/release_version.py"
       - "scripts/tests/test_check_agent_ui_distribution.py"
       - "scripts/tests/test_prepare_release_version.py"
+      - "scripts/tests/test_prepare_agent_ui_assets.py"
       - "uv.lock"
   workflow_dispatch:
 
@@ -80,8 +90,26 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Set up Node.js
+        if: matrix.name == 'Linux'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/harness-ui/package-lock.json
+
+      - name: Install and check Harness UI
+        if: matrix.name == 'Linux'
+        run: |
+          npm --prefix apps/harness-ui ci
+          npm --prefix apps/harness-ui run check:all
+
       - name: Synchronize Agent UI test environment
         run: uv sync --locked --package a13n-ui --group test --no-default-groups
+
+      - name: Prepare bundled Harness UI assets
+        if: matrix.name == 'Linux'
+        run: uv run --locked python scripts/prepare-agent-ui-assets.py
 
       - name: Type-check Agent UI
         if: matrix.name == 'Linux'
@@ -90,6 +118,8 @@ jobs:
           packages/agent-ui/a13n_ui
           scripts/check-agent-ui-distribution.py
           scripts/check_agent_ui_distribution.py
+          scripts/prepare-agent-ui-assets.py
+          scripts/prepare_agent_ui_assets.py
           scripts/release_version.py
 
       - name: Test Agent UI
@@ -98,6 +128,7 @@ jobs:
           uv run --locked python -m pytest
           packages/agent-ui/tests
           scripts/tests/test_check_agent_ui_distribution.py
+          scripts/tests/test_prepare_agent_ui_assets.py
           scripts/tests/test_prepare_release_version.py
 
       - name: Test Agent UI on Windows and macOS
@@ -114,7 +145,7 @@ jobs:
         if: matrix.name == 'Linux'
         run: uv build --package a13n-ui --out-dir dist/agent-ui
 
-      - name: Verify CLI package and sdist wheel rebuild
+      - name: Verify bundled assets and sdist wheel rebuild
         if: matrix.name == 'Linux'
         run: >-
           uv run --locked python scripts/check-agent-ui-distribution.py

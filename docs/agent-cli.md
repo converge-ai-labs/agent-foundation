@@ -1,17 +1,17 @@
 # Agent CLI
 
-Agent CLI (`a13n-cli`, installed from the `a13n-ui` distribution) is an interactive coding CLI built on Agent Foundation Harness. Its native full-terminal interface supports Windows, macOS, and Linux, with reflowing Markdown, selectable interactions, and image drafts. One foreground process owns one `AgentUiApp`, the current conversation, and its active work. There is no browser server, daemon, or detached execution mode.
+Agent CLI (`a13n-ui`, installed from the `a13n-ui` distribution) is an interactive coding CLI built on Agent Foundation Harness. Its native full-terminal interface supports Windows, macOS, and Linux, with reflowing Markdown, selectable interactions, and image drafts. One foreground process owns one `AgentUiApp`, the current conversation, and its active work. The optional `a13n-ui webui` command starts the bundled browser interface in a foreground server. There is no detached daemon or detached execution mode.
 
 ```console
 cd your-repository
-a13n-cli
+a13n-ui
 ```
 
 You can type immediately while the App prepares. Enter during startup preserves your draft rather than submitting it unexpectedly. A model request begins only when you explicitly send a prompt. The current directory is the workspace; you do not need to create or manage a Project.
 
 ## First use
 
-Missing model configuration opens setup automatically and preserves anything you typed during startup. `/setup` or `a13n-cli setup` reopens it:
+Missing model configuration opens setup automatically and preserves anything you typed during startup. `/setup` or `a13n-ui setup` reopens it:
 
 1. **Connect a model:** choose BYOS (Codex/Grok subscription) or BYOK (an API route and an environment-variable or stored-key reference). Never paste a raw secret into the composer. Codex defaults to Sol, high reasoning, and a balanced 350k working budget.
 2. **Configure the coding Agent:** choose Full Control or Sandbox, optional subscription shell review, and optional additional Agent instructions. Built-in system instructions remain active. Preview files and explicitly choose Publish. Existing edited resources are preserved.
@@ -92,11 +92,11 @@ Structured questions support single choice, multiple choice with Space, and type
 The default root remains `~/.a13n-ui/a13n-ui.yaml`. Use `--config PATH` before a subcommand to select another tree. `--data-root PATH` selects separate local state, followed by `A13N_UI_DATA_ROOT`; the default is the configuration directory's `data/` child.
 
 ```console
-a13n-cli config path
-a13n-cli config show --format json
-a13n-cli config validate
-a13n-cli --config /path/to/a13n-ui.yaml config validate
-a13n-cli doctor --format json
+a13n-ui config path
+a13n-ui config show --format json
+a13n-ui config validate
+a13n-ui --config /path/to/a13n-ui.yaml config validate
+a13n-ui doctor --format json
 ```
 
 Configuration precedence is:
@@ -182,13 +182,13 @@ Every Agent receives the release-owned system prompt separately from its optiona
 ### Subscription login and API keys
 
 ```console
-a13n-cli auth status
-a13n-cli auth login codex
-a13n-cli auth login grok
-a13n-cli auth login codex --browser
-a13n-cli auth key list
-a13n-cli auth key set key-primary
-a13n-cli auth key delete key-primary
+a13n-ui auth status
+a13n-ui auth login codex
+a13n-ui auth login grok
+a13n-ui auth login codex --browser
+a13n-ui auth key list
+a13n-ui auth key set key-primary
+a13n-ui auth key delete key-primary
 ```
 
 Device authorization is the default and needs no host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
@@ -214,15 +214,34 @@ Process loss discards active receipts and incomplete input/output. Resume contin
 ## Automation and diagnostics
 
 ```console
-a13n-cli run "Review the current diff"
-a13n-cli run "Summarize the next step" --resume session-id --format json
-a13n-cli --environment-mode sandbox run "Inspect the repository"
-a13n-cli plugin list
-a13n-cli import subagents --product codex --scope project --project-root .
-a13n-cli --help
-a13n-cli auth login --help
+a13n-ui run "Review the current diff"
+a13n-ui run "Summarize the next step" --resume session-id --format json
+a13n-ui --environment-mode sandbox run "Inspect the repository"
+a13n-ui plugin list
+a13n-ui import subagents --product codex --scope project --project-root .
+a13n-ui --help
+a13n-ui auth login --help
 ```
 
 One-shot mode prints the final text or a structured operation object, then exits. It shares workspace, model, continuation, and permission semantics with interactive mode. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
 
-Help and version do not load provider or database modules. App initialization happens behind the editable prompt; model construction, Environment acquisition, and selected MCP connections happen only when needed. `AgentUiApp` remains the reusable application boundary for a future WebUI or other adapter; the CLI does not own a parallel execution engine.
+Help and version do not load provider or database modules. App initialization happens behind the editable prompt; model construction, Environment acquisition, and selected MCP connections happen only when needed. CLI and WebUI share the reusable `AgentUiApp` application boundary; the CLI does not own a parallel execution engine.
+
+## Browser UI
+
+```bash
+a13n-ui webui                       # 127.0.0.1:8765, generated per-process API key
+a13n-ui webui --host 127.0.0.1 --port 9000
+```
+
+Open the URL printed by the server. The generated key is carried only in the URL fragment and is required for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
+
+The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, run `make agent-ui-assets` before `uv run --locked a13n-ui webui`.
+
+## Windows Local Execution
+
+Windows supports **Full Control only** for the built-in local modes. Setup and the CLI Environment selector offer Full Control and explain that commands run with the Host account's filesystem and network permissions. Job Object cleanup is not Sandbox isolation. Explicit Sandbox requests fail without downloading envd, changing saved selections, or falling back. Custom and remote Providers retain their own contracts.
+
+## Source Environment Troubleshooting
+
+After switching branches, run `make sync` (or launch with `make a13n-ui`) to synchronize the locked workspace. This branch requires Pydantic AI 2.40 or newer; an older environment can fail with `cannot import name 'prices' from 'pydantic_ai'`. Do not work around this by importing upstream private modules. Installed users should upgrade `a13n-ui` using the package manager that owns their environment.

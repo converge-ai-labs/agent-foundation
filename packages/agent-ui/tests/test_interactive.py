@@ -98,7 +98,8 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
     assert status.state == "cancelling"
 
 
-def test_setup_choices_expand_to_explicit_native_context_values() -> None:
+def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("a13n_ui.interactive.setup.local_sandbox_supported", lambda: True)
     wizard = SetupWizard()
     for value in ("", "", "", "extended", "medium", "sandbox", "no", ""):
         wizard.accept(value)
@@ -373,7 +374,7 @@ def test_resume_with_explicit_permissions_is_rejected_before_any_app_start(monke
         raise AssertionError("Conflicting resume must be rejected before starting the App")
 
     monkeypatch.setattr(terminal_module, "start", unexpected_start)
-    result = CliRunner().invoke(cli_module.cli, ["--resume", "session-1", "--environment-mode", "sandbox"])
+    result = CliRunner().invoke(cli_module.cli, ["--resume", "session-1", "--environment-mode", "full-control"])
     assert result.exit_code == 2
     assert "cannot be combined" in result.output
 

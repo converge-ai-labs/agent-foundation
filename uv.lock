@@ -272,6 +272,7 @@ dependencies = [
     { name = "alembic" },
     { name = "anyio" },
     { name = "click" },
+    { name = "fastapi" },
     { name = "fastmcp-slim", extra = ["client"] },
     { name = "filelock" },
     { name = "httpcore2" },
@@ -290,6 +291,8 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "starlette" },
+    { name = "uvicorn" },
     { name = "zstandard" },
 ]
 
@@ -310,6 +313,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "click", specifier = ">=8.2,<9" },
+    { name = "fastapi", specifier = ">=0.135,<1" },
     { name = "fastmcp-slim", extras = ["client"], specifier = ">=3.4,<4" },
     { name = "filelock", specifier = ">=3.18,<4" },
     { name = "httpcore2", specifier = ">=2.12,<3" },
@@ -328,6 +332,8 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "rich", specifier = ">=15,<16" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
+    { name = "starlette", specifier = ">=0.52,<2" },
+    { name = "uvicorn", specifier = ">=0.34,<1" },
     { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
 
@@ -4340,8 +4346,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

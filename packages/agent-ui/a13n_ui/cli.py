@@ -51,6 +51,10 @@ class CliRequest:
     allow_account_switch: bool = False
     device_code: bool = False
     credential_key: SecretStr | None = field(default=None, repr=False)
+    web_host: str = "127.0.0.1"
+    web_port: int = 8765
+    web_api_key: str | None = field(default=None, repr=False)
+    dangerously_bypass_permission: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +78,7 @@ _PATH = click.Path(path_type=Path)
 
 
 @click.group(
-    name="a13n-cli",
+    name="a13n-ui",
     invoke_without_command=True,
     no_args_is_help=False,
     context_settings=_CONTEXT_SETTINGS,
@@ -120,7 +124,7 @@ def cli(
 
     Start in the current directory. Use /help inside a session.
     Enter submits; Alt+Enter inserts a newline; Ctrl+D exits.
-    Configuration: ~/.a13n-ui/a13n-ui.yaml. No server is started."""
+    Configuration: ~/.a13n-ui/a13n-ui.yaml. Use `a13n-ui webui` for the browser UI."""
 
     ctx.obj = _CliContext(
         display=display,
@@ -143,6 +147,28 @@ def cli(
             agent_id=agent_id,
             environment_mode=environment_mode,
             environment_profile_id=environment_profile_id,
+        )
+    )
+
+
+@cli.command("webui")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Listener IPv4 or IPv6 address.")
+@click.option("--port", type=click.IntRange(1, 65535), default=8765, show_default=True)
+@click.option("--api-key", default=None, help="Explicit process-local API key (visible in shell arguments).")
+@click.option("--dangerously-bypass-permission", is_flag=True, help="Disable API authentication for this listener.")
+@click.pass_context
+def webui_command(
+    ctx: click.Context, host: str, port: int, api_key: str | None, dangerously_bypass_permission: bool
+) -> None:
+    """Run one foreground WebUI server with bundled browser assets."""
+    _execute(
+        _request(
+            ctx,
+            command="webui",
+            web_host=host,
+            web_port=port,
+            web_api_key=api_key,
+            dangerously_bypass_permission=dangerously_bypass_permission,
         )
     )
 
@@ -486,6 +512,12 @@ def _request(ctx: click.Context, **values: Any) -> CliRequest:
 def _validate_environment_selection(mode: str | None, profile_id: str | None) -> None:
     if mode is not None and profile_id is not None:
         raise click.UsageError("--environment-mode cannot be combined with --environment-profile.")
+    from a13n_ui.environment_profiles import environment_profile_id_for_mode, require_supported_local_profile
+
+    try:
+        require_supported_local_profile(environment_profile_id_for_mode(mode) if mode is not None else profile_id)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
 
 
 def _execute(request: CliRequest) -> None:
@@ -531,7 +563,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Run the Click command tree from the console-script boundary."""
 
     try:
-        exit_code = cli.main(args=None if argv is None else list(argv), prog_name="a13n-cli", standalone_mode=False)
+        exit_code = cli.main(args=None if argv is None else list(argv), prog_name="a13n-ui", standalone_mode=False)
         if isinstance(exit_code, int) and exit_code:
             raise SystemExit(exit_code)
     except click.exceptions.Exit as exc:

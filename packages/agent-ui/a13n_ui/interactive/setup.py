@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from a13n_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
+
 from .selection import Choice, Selection, resolve_choice
 
 
@@ -41,7 +43,7 @@ _QUESTIONS = (
     Question(
         "credential",
         "Credential source: env:VARIABLE or key:credential-id. Never paste a secret here.\n"
-        "Manage stored keys separately with `a13n-cli auth key set <id>`.",
+        "Manage stored keys separately with `a13n-ui auth key set <id>`.",
         "env:OPENAI_API_KEY",
     ),
     Question("model", "Codex model", "gpt-5.6-sol", ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra")),
@@ -90,7 +92,15 @@ class SetupWizard:
 
     @property
     def question(self) -> Question | None:
-        return _QUESTIONS[self.index] if self.index < len(_QUESTIONS) else None
+        question = _QUESTIONS[self.index] if self.index < len(_QUESTIONS) else None
+        if question is not None and question.key == "environment" and not local_sandbox_supported():
+            return Question(
+                "environment",
+                "Step 2/3 · Configure your coding agent\n" + WINDOWS_EXECUTION_NOTICE,
+                "full-control",
+                ("full-control",),
+            )
+        return question
 
     def selection_prompt(self) -> Selection | None:
         question = self.question

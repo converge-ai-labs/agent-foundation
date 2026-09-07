@@ -394,10 +394,55 @@ def test_cli_key_input_is_hidden_and_login_defaults_to_device(monkeypatch: pytes
     assert requests[-1].device_code is False
 
 
-def test_help_and_public_surface_are_cli_only() -> None:
+def test_webui_dispatches_to_one_web_host_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from contextlib import asynccontextmanager
+
+    import a13n_ui.webui as webui_module
+
+    factory_calls = []
+    listeners = []
+
+    @asynccontextmanager
+    async def open_app(settings, **kwargs):
+        factory_calls.append(kwargs)
+        yield object()
+
+    async def serve(factory, **kwargs):
+        listeners.append(kwargs)
+        async with factory():
+            assert len(factory_calls) == 1
+
+    monkeypatch.setattr(runtime_module, "open_agent_ui_app", open_app)
+    monkeypatch.setattr(webui_module, "run", serve)
+    result = CliRunner().invoke(
+        cli,
+        [
+            "--config",
+            str(tmp_path / "a13n-ui.yaml"),
+            "--data-root",
+            str(tmp_path / "data"),
+            "webui",
+            "--port",
+            "9001",
+            "--api-key",
+            "listener-secret",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert listeners == [
+        {"host": "127.0.0.1", "port": 9001, "api_key": "listener-secret", "dangerously_bypass_permission": False}
+    ]
+    assert factory_calls[0]["host_mode"] == "webui"
+    assert factory_calls[0]["codex_login"] is None
+    assert factory_calls[0]["grok_login"] is None
+    assert "listener-secret" not in repr(CliRequest(web_api_key="listener-secret"))
+
+
+def test_help_exposes_webui_without_restoring_obsolete_management_commands() -> None:
     result = CliRunner().invoke(cli, ["--help"])
     assert result.exit_code == 0
-    for removed in ("webui", "thread", "project"):
+    assert "webui" in cli.commands
+    for removed in ("thread", "project"):
         assert removed not in cli.commands
     assert "--resume" in result.output
     assert "--display" in result.output

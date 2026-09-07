@@ -25,6 +25,8 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import TextArea
 
+from a13n_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
+
 from .attachments import DraftImage, add_images, clipboard_images, read_image
 from .commands import CommandRegistry, Invocation
 from .rendering import Status, StreamRenderer, terminal_text
@@ -93,7 +95,12 @@ class CliShell:
         self._clipboard_task: asyncio.Task[None] | None = None
         self.view = TranscriptControl(self.renderer.transcript)
         self.composer = TextArea(
-            prompt=lambda: "setup> " if self.wizard else "answer> " if self.interaction else "> ",
+            style="class:input-area",
+            get_line_prefix=lambda line, wrap: FormattedText(
+                [("class:input-area.prompt", " > ")]
+                if line == 0 and wrap == 0
+                else [("class:input-area.continuation", "   " if wrap else " · ")]
+            ),
             multiline=True,
             wrap_lines=True,
             height=self._composer_height,
@@ -129,6 +136,10 @@ class CliShell:
                         ),
                         filter=Condition(lambda: bool(self.images) and self.app.output.get_size().rows >= 10),
                     ),
+                    ConditionalContainer(
+                        Window(FormattedTextControl(self._composer_header), height=1, style="class:input-area.border"),
+                        filter=Condition(lambda: self.app.output.get_size().rows >= 8),
+                    ),
                     self.composer,
                     ConditionalContainer(
                         Window(FormattedTextControl(self._hints), height=1, style="class:session-selector.hint"),
@@ -161,9 +172,10 @@ class CliShell:
 
     def _composer_height(self) -> Dimension:
         size = self.app.output.get_size()
-        width = max(1, size.columns - 8)
+        width = max(1, size.columns - 3)
         rows = sum(max(1, (get_cwidth(line) + width - 1) // width) for line in self.composer.text.split("\n"))
-        height = min(max(1, size.rows // 3), max(1, min(7, rows)))
+        minimum = 3 if size.rows >= 16 else 1
+        height = min(max(1, size.rows // 3), max(minimum, min(7, rows)))
         return Dimension(min=1, preferred=height, max=height)
 
     def _panel_height(self) -> Dimension:
@@ -210,10 +222,32 @@ class CliShell:
     def _toolbar(self) -> FormattedText:
         return FormattedText([("", self.status.line(self.app.output.get_size().columns))])
 
+    def _composer_header(self) -> FormattedText:
+        label = "Setup" if self.wizard else "Answer required" if self.interaction else "Message"
+        hint = "draft only · preparing" if not self.ready else "draft only · running" if self.busy else "Enter to send"
+        if self.wizard or self.selection or self.interaction:
+            hint = "Enter to confirm · Esc to go back"
+        width = max(1, self.app.output.get_size().columns)
+        title = f" {label} "
+        suffix = f" {hint} " if width >= 60 else ""
+        return FormattedText(
+            [
+                ("class:input-area.label", title),
+                ("class:input-area.border", "─" * max(0, width - get_cwidth(title + suffix))),
+                ("class:input-area.hint", suffix),
+            ]
+        )
+
     def _hints(self) -> str:
-        history = " · earlier display evicted; /history" if self.renderer.transcript.evicted else ""
-        follow = "latest" if self.view.follow else "history · Ctrl+End for latest output"
-        return f" {follow} · PgUp/PgDn scroll · Alt+Enter newline · Ctrl+O detail · /help{history}"
+        width = self.app.output.get_size().columns
+        if self.wizard or self.selection or self.interaction:
+            return " ↑↓ choose · Enter confirm · Esc back · /cancel" if width >= 60 else " Enter confirm · Esc back"
+        if width < 60:
+            return " Enter send · Alt+Enter newline · /help"
+        action = "Ctrl+C cancel" if self.busy else "Ctrl+C clear"
+        follow = "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest output"
+        history = " · /history: earlier output" if self.renderer.transcript.evicted else ""
+        return f" Enter send · Alt+Enter newline · {action} · {follow} · /help{history}"
 
     def _save_draft(self) -> None:
         if self._saved_draft is None:
@@ -444,7 +478,7 @@ class CliShell:
             self.ready = False
             self.status.state = "startup failed"
             self.emit(
-                f"Startup failed: {exc}\nUse `a13n-cli config validate` or `a13n-cli doctor` to diagnose. /quit exits."
+                f"Startup failed: {exc}\nUse `a13n-ui config validate` or `a13n-ui doctor` to diagnose. /quit exits."
             )
         finally:
             self.backend = None
@@ -453,6 +487,8 @@ class CliShell:
         self.emit(
             f"Agent CLI · {self.directory}\n/help for commands · Alt+Enter newline · Ctrl+O detail · PageUp scroll\nPreparing locally; you can type now. No model request is made until you send a prompt."
         )
+        if not local_sandbox_supported():
+            self.emit(WINDOWS_EXECUTION_NOTICE)
         lifetime = asyncio.create_task(self._lifetime())
         flusher = asyncio.create_task(self._flusher())
         try:
@@ -940,7 +976,7 @@ class CliShell:
             self.launch(login(), kind="login", failure_input=invocation.source)
         elif name == "config":
             self.emit(
-                f"Configuration: {self.request.config_path or Path.home() / '.a13n-ui/a13n-ui.yaml'}\nSession /model and /thinking override configured model settings for subsequent turns only.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-cli config show --format json` for accepted values and `a13n-cli config validate` after editing."
+                f"Configuration: {self.request.config_path or Path.home() / '.a13n-ui/a13n-ui.yaml'}\nSession /model and /thinking override configured model settings for subsequent turns only.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-ui config show --format json` for accepted values and `a13n-ui config validate` after editing."
             )
         elif name in {"approve", "deny", "result"}:
             assert argument is not None

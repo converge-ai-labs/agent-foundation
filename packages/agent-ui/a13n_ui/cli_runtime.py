@@ -56,9 +56,30 @@ async def _run(request: CliRequest) -> int:
             settings,
             configuration_path=source.path,
             configuration_error=source.candidate_error,
-            codex_login=lambda request: _codex_cli_login(request, device_code=use_device_code),
-            grok_login=lambda request: _grok_cli_login(request, device_code=use_device_code),
+            host_mode="webui" if request.command == "webui" else "local",
+            codex_login=(
+                None
+                if request.command == "webui"
+                else lambda request: _codex_cli_login(request, device_code=use_device_code)
+            ),
+            grok_login=(
+                None
+                if request.command == "webui"
+                else lambda request: _grok_cli_login(request, device_code=use_device_code)
+            ),
         )
+
+    if request.command == "webui":
+        from a13n_ui.webui import run
+
+        await run(
+            app_factory,
+            host=request.web_host,
+            port=request.web_port,
+            api_key=request.web_api_key,
+            dangerously_bypass_permission=request.dangerously_bypass_permission,
+        )
+        return 0
 
     async with app_factory() as app:
         if request.command == "run":

@@ -275,7 +275,72 @@ Retained transcript comes from selected continuations and child compact checkpoi
 
 The [interactive CLI contract](07-interactive-cli.md) owns input, commands, setup choices, rendering, startup, and local session selection. CLI code consumes this App boundary and contains no provider, persistence, or execution authority. One-shot mode uses the same exact-cwd workspace and detached model overrides as interactive mode. Help/version do not open the App.
 
-There is no HTTP transport in this distribution. The commands, detached projections, live subscriptions, source-digest mutations, and expected-continuation decisions remain reusable by a future WebUI or other embedding adapter. A future network transport must separately define its authentication and disconnect semantics; the CLI does not implicitly expose one.
+The commands, detached projections, live subscriptions, source-digest mutations, and expected-continuation decisions are shared with the explicitly selected WebUI adapter. Interactive mode never implicitly starts an HTTP listener.
+
+## WebUI
+
+The bundled WebUI uses one HTTP/SSE adapter over detached App commands and queries. Its foreground server process owns one WebUI-mode `AgentUiApp` and all process-local execution, even while no browser is connected. The server calls the App directly in memory; it does not forward work to a separate daemon or use process-to-process communication. The adapter owns only process-bound listener access, HTTP serialization and status mapping, static-asset delivery, and stream delivery. It does not expose an alternate configuration, authorization, or Thread model.
+
+### HTTP Startup and Access
+
+`a13n-ui webui` binds to the IPv4 loopback address `127.0.0.1` by default. Bare `a13n-ui` selects the interactive CLI and never start an HTTP listener. `--host <ip>` explicitly selects another IPv4 or IPv6 bind address for `webui`; choosing a non-loopback address does not implicitly weaken authentication.
+
+Unless the user supplies `--api-key <key>`, the executable generates a new unpredictable high-entropy API key for that App process. Before accepting requests, dedicated terminal startup output shows the ordinary browser URL, the generated key, and a convenience URL carrying the generated key only in a percent-encoded `#api_key=...` fragment. URL fragments never enter an HTTP request. A supplied key must be non-empty, is not echoed, and receives no terminal URL containing it. Generated and supplied keys remain process-local: they do not enter the accepted configuration tree, SQLite, immutable objects, application diagnostics, ordinary logs, browser HTML, or static assets. Restarting without an explicit key therefore rotates the key.
+
+The generated default avoids a reusable secret in command history and process arguments. A user who selects direct `--api-key <key>` input accepts that the invoking shell or operating system can expose command arguments; terminal output warns about that boundary without echoing the value.
+
+Every `/api` request, including an SSE stream connection, authenticates with `Authorization: Bearer <api-key>` before invoking an App command or query. HTML and immutable static assets can be fetched without the key, but they expose neither application data nor the key, and no HTTP endpoint returns it. A missing or incorrect key receives an authentication failure without revealing whether another key was close or valid.
+
+`--dangerously-bypass-permission` explicitly disables API-key authentication for the complete listener lifetime and emits a prominent terminal warning before serving. It is valid for loopback and non-loopback binds, so the user—not an inferred network policy—owns this dangerous override. Supplying it together with `--api-key` is a startup error.
+
+Bind address, API key, and the dangerous bypass are executable-bound Web-surface inputs rather than desired-resource configuration. All authenticated application behavior still uses the same `AgentUiApp` configuration, commands, queries, receipts, and live hubs as the CLI; the HTTP adapter cannot introduce surface-only business settings.
+
+The adapter validates the explicit Host authority and, when present, the exact same-origin Origin before App access. Request bodies are bounded to 1 MiB and strict validation errors omit input values. Static assets use a self-only Content Security Policy without `unsafe-eval`; generated standalone validators need no runtime compilation. The adapter is a same-origin boundary. It does not enable credentialed cross-origin browser access or permissive CORS. A non-loopback bind remains a single-user plain-HTTP listener rather than a remote multi-user security boundary; the terminal identifies that exposure, and any trusted-network or TLS termination requirement belongs outside Agent UI.
+
+### HTTP Adapter Contract
+
+Finite `/api` routes map strict request documents to one `AgentUiApp` command or query and return strict detached JSON projections. A common bounded error envelope preserves safe App error code and message; detailed conflict recovery refetches the owning versioned projection. HTTP status mapping does not reinterpret App lifecycle or retry semantics. No route exposes a database session, storage-object path, arbitrary filesystem operation, native Harness value, Python exception, or credential.
+
+The adapter publishes the versioned OpenAPI document used to generate the bundled browser client. Its authenticated status projection identifies the API schema, App status, listener bind address, and whether listener access uses an API key or the explicit dangerous bypass. The browser and adapter ship in one Python artifact, but a stale tab or development proxy still fails an incompatible schema explicitly rather than guessing.
+
+The adapter exposes two authenticated SSE forms:
+
+1. one App-wide summary stream carries only the summary hub's epoch, sequence, and invalidation hints;
+2. one focused root-Thread stream either opens a fresh App focused watch or resumes retained delivery for an existing watch cursor. A fresh watch emits its detached snapshot as the first frame and then only later detailed events from that subscription. A valid resumable cursor emits only events after that cursor; an unavailable cursor emits an explicit reset.
+
+Focused frames use the following conceptual JSON union; the adapter's OpenAPI document owns the serialized schema:
+
+```python
+class FocusSnapshotFrame:
+    kind: Literal["snapshot"]
+    snapshot: ThreadFocusSnapshot
+    resume_cursor: str
+
+
+class FocusEventFrame:
+    kind: Literal["event"]
+    event: LiveEvent
+    resume_cursor: str
+
+
+class FocusResetFrame:
+    kind: Literal["reset"]
+    reason: str
+```
+
+A fresh focused stream never reads a snapshot before installing its subscription. Every normal frame carries an opaque `resume_cursor`, encoding stream kind, exact root lineage when applicable, epoch, and sequence. Reconnect passes it in the bounded `after` query parameter without browser decoding. Summary `open` and `invalidation` frames carry the same cursor concept; reset frames carry a reason and no reusable cursor. An invalid encoding, wrong kind, wrong lineage, future sequence, or expired epoch receives explicit reset semantics. That cursor is bound to the focused stream kind and exact root lineage and cannot be reused for another root. A valid resume does not emit a replacement snapshot; the hub establishes retained replay and following live delivery as one cursor continuation, so no matching event can fall between them. It replays retained matching events after the cursor and then follows the same lineage. An epoch change, expired cursor, or subscriber gap returns reset semantics rather than invented replay. Because the global sequence is sparse after root-lineage filtering, a numerical jump alone is valid and never causes reset. HTTP disconnect closes only that subscription and never cancels the producing root or child execution. The browser uses authenticated `fetch` streaming because native `EventSource` cannot supply the required Authorization header.
+
+Every authenticated JSON, OpenAPI, and SSE response uses `Cache-Control: no-store`; stream responses also disable intermediary buffering where the deployment path supports it. Recognized browser navigation paths serve `index.html` with mandatory revalidation so History API routes survive direct load, refresh, and package replacement. Content-hashed JavaScript, CSS, font, icon, editor, and worker assets use long-lived immutable caching. Asset misses, unknown `/api` routes, and unknown health routes remain explicit HTTP failures and never fall back to browser HTML.
+
+The complete browser architecture and experience are owned by [WebUI Specifications](webui/README.md). The WebUI provides:
+
+- one transient navigation-only Thread picker with bounded search, Project/all-Projects scope, archive inclusion, and keyset pagination;
+- shared first-use setup with subscription discovery, full file preview, explicit publication, and Sandbox readiness recovery;
+- one selected root-Thread conversation with decisions, exact controls, live updates, progressive activity disclosure, and optional Environment or activity context;
+- on-demand read-only activity for detailed Thread, Run, child, task, state, payload, and timing inspection; and
+- guided Settings management for source-tree diagnostics, Capability and extension discovery, expected-digest resource editing, Project, Agent, Plugin, Environment, MCP, compatible account, and global-default management.
+
+Every editable response includes its current source digest. A stale mutation conflicts instead of knowingly replacing a newer manual or browser edit. The browser receives no native filesystem capability or arbitrary Host path API; Project paths enter only through validated resource mutations.
 
 ## Failure and Shutdown Semantics
 

@@ -256,6 +256,7 @@ async def test_sandbox_preflight_uses_production_denied_network_and_does_not_dow
         observed.append((executable, configuration.execution_network.value))
         raise EnvironmentError("probe failed", code="provider_unavailable")
 
+    monkeypatch.setattr(setup, "local_sandbox_supported", lambda: True)
     monkeypatch.setattr(setup, "validate_local_envd_runtime", probe)
     result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=resolve)
     assert not result.ready
@@ -265,11 +266,12 @@ async def test_sandbox_preflight_uses_production_denied_network_and_does_not_dow
 
 
 @pytest.mark.anyio
-async def test_sandbox_preflight_cancellation_propagates(tmp_path: Path) -> None:
+async def test_sandbox_preflight_cancellation_propagates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import asyncio
 
     from a13n_ui import setup
 
+    monkeypatch.setattr(setup, "local_sandbox_supported", lambda: True)
     entered = asyncio.Event()
     cancelled = asyncio.Event()
 
@@ -390,7 +392,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
 
 
 @pytest.mark.anyio
-async def test_sandbox_readiness_comes_from_envd_on_every_platform(
+async def test_supported_sandbox_readiness_requires_production_probe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -398,16 +400,18 @@ async def test_sandbox_readiness_comes_from_envd_on_every_platform(
 
     import a13n_ui.setup as setup
 
-    executable = tmp_path / "agent-envd.exe"
+    monkeypatch.setattr(setup, "local_sandbox_supported", lambda: True)
+    executable = tmp_path / "agent-envd"
     resolve = AsyncMock(return_value=executable)
     probe = AsyncMock(side_effect=OSError("required execution isolation is not implemented for this platform"))
+    monkeypatch.setattr(setup, "local_sandbox_supported", lambda: True)
     monkeypatch.setattr(setup, "validate_local_envd_runtime", probe)
     result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=resolve)
     resolve.assert_awaited_once()
     probe.assert_awaited_once()
     assert not result.ready
     assert result.code == "sandbox_probe_failed"
-    assert any("Job-based process cleanup alone is not Sandbox support" in item for item in result.instructions)
+    assert any("explicitly choose Full Control" in item for item in result.instructions)
     probe.side_effect = None
     result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=resolve)
     assert result.ready and result.code == "sandbox_ready"

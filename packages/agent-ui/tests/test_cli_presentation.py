@@ -47,6 +47,41 @@ def test_semantic_markdown_reflows_and_reuses_completed_cache() -> None:
     assert transcript.blocks[first].rows is not cache
 
 
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_theme_covers_transcript_composer_and_selection(variant: str) -> None:
+    from a13n_ui.interactive.theme import prompt_toolkit_style_rules
+    from prompt_toolkit.styles import Style
+
+    rules = prompt_toolkit_style_rules(resolve_theme(variant))
+    style = Style.from_dict(rules)
+    base = style.get_attrs_for_style_str("")
+    composer = style.get_attrs_for_style_str("class:input-area")
+    assert base.color != base.bgcolor
+    assert composer.color != composer.bgcolor
+    assert composer.bgcolor != base.bgcolor
+    assert style.get_attrs_for_style_str("class:input-area.prompt").bold
+    assert style.get_attrs_for_style_str("class:session-selector.selection").bgcolor != composer.bgcolor
+
+
+def test_composer_grows_for_multiline_and_adapts_hints(monkeypatch: pytest.MonkeyPatch) -> None:
+    from prompt_toolkit.data_structures import Size
+
+    output = DummyOutput()
+    monkeypatch.setattr(output, "get_size", lambda: Size(rows=24, columns=80))
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+        shell = CliShell(CliRequest())
+        assert shell._composer_height().preferred == 3
+        assert "preparing" in "".join(text for _, text in shell._composer_header())
+        shell.ready = True
+        shell.composer.text = "\n".join("中文 line" for _ in range(10))
+        assert shell._composer_height().preferred == 7
+        assert "Enter to send" in "".join(text for _, text in shell._composer_header())
+        monkeypatch.setattr(output, "get_size", lambda: Size(rows=6, columns=24))
+        assert shell._composer_height().preferred <= 2
+        assert len(shell._hints()) < 50
+        assert shell.composer.text.startswith("中文 line")
+
+
 def test_huge_delta_and_cache_budgets_are_visible_and_bounded() -> None:
     transcript = Transcript(max_bytes=8192, max_blocks=8, block_bytes=4096, max_rows=40)
     transcript.append("a" * 100_000, markdown=True)
