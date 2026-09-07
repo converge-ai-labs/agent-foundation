@@ -186,5 +186,7 @@ def test_extensions_are_opaque_and_native_collisions_are_upstream_owned(api):
 
 
 def test_sibling_of_protected_nested_path_is_free_to_use():
+    # Acceptance does not promise preservation of text.format on the wire:
+    # the native SDK shallow-merges extra_body and replaces the whole text object.
     settings = {"extra_body": {"text": {"verbosity": "brief"}}}
     assert validate_settings("openai.responses", settings) == settings

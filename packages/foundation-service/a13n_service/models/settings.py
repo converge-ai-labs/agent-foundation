@@ -146,6 +146,12 @@ def validate_settings_bounds(settings: JsonObject) -> JsonObject:
 
 
 def _validate_body_paths(model_api: str, field: str, body: JsonValue) -> None:
+    # Validate supplied paths only; SDK merge precedence remains caller-owned.
+    # OpenAI and Anthropic shallow-merge extra_body: text={"verbosity": "low"}
+    # or output_config={"effort": "low"} replaces the whole container, dropping
+    # Harness's format/schema even though no protected leaf is supplied. Empty
+    # objects do the same. These cases are intentionally allowed; use native
+    # verbosity/effort settings to retain Harness's structured-output format.
     for path in BUILT_IN_MODEL_APIS[model_api].protected_body_paths:
         value = body
         visited: list[str | int] = [field]
