@@ -428,7 +428,7 @@ The first checkpoint after the accepted Run input has crossed a complete Harness
 
 `requests` is the exact serialized native Pydantic `DeferredToolRequests` value; Foundation classifies its approval, client-tool, and structured-user-input calls in the relational summary without reconstructing the native value from that summary. Its call IDs and kinds exactly equal the waiting pending summary. Foundation defines no additional provider-owned pending kind or Host-request collection. Provider-native public-message continuation remains a Harness/model-integration capability and does not become a Foundation waiting reason. Asynchronous child results remain independent Thread-inbox entries and never enter deferred state, impersonate the original spawn call, or enter `DeferredToolResume`.
 
-`consumed_inbox_entries` is the bounded receipt set for [`thread_inbox`](19-agent-control-active-execution.md#thread-inbox) entries incorporated into this Run. Each receipt correlates the exact inbox identity and kind with Harness or Host state already present in the same envelope. Replacement Attempts of this Run preserve the receipts. A new Run does not inherit its parent's receipts; it records only inbox entries consumed by that new Run's own acceptance.
+`consumed_inbox_entries` is the bounded receipt set for [`thread_inbox`](19-agent-control-active-execution.md#thread-inbox) entries incorporated into this Run. Each receipt correlates the exact inbox identity and kind with Harness or Host state already present in the same envelope. A checkpoint that first includes an actively delivered inbox value includes its receipt in that same conditional write. Replacement Attempts of this Run preserve the receipts, including after history compaction replaces the original messages. A new Run does not inherit its parent's receipts; it records only inbox entries consumed by that new Run's own acceptance. Stable message provenance, synchronous incorporation confirmation, and recovery of a prior checkpoint missing a receipt follow the [active-control contract](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption).
 
 `RunStateEnvelope` contains no Asset publication ledger, receipt, reference list, or Asset Capability namespace. When a successful `publish_asset` tool result has crossed a complete Harness checkpoint, its `AssetRef` can already appear in ordinary `harness` message history. The independent Asset row and selected content object remain publication authority whether or not that tool result was checkpointed.
 
@@ -571,12 +571,12 @@ A graceful-handoff request reaches state persistence only at a complete boundary
 
 During execution, a checkpoint operation:
 
-1. exports complete Harness state and builds bounded Host state;
+1. exports complete Harness state and builds bounded Host state, deriving any newly incorporated inbox receipts from that same complete history under the active-control contract;
 2. validates current Run, attempt, fence, lease, and expected object version;
 3. conditionally replaces the same `state.json` with the next checkpoint sequence and matching metadata;
 4. treats only the returned object version as the next valid write token.
 
-When the checkpoint incorporates Thread inbox entries, the complete envelope contains their `ConsumedThreadInboxEntry` receipts. The active-control contract owns their relational consumption, recovery, and terminal-race semantics; this contract owns only the complete state representation and conditional object write.
+When the checkpoint incorporates Thread inbox entries, the complete envelope contains their `ConsumedThreadInboxEntry` receipts. Messages and their new receipts are assembled at one complete safe boundary and published together; an event-consumer delay cannot defer those receipts to another checkpoint. Multiple entries can share the write. The active-control contract owns their identity confirmation, relational consumption, recovery, and terminal-race semantics; this contract owns only the complete state representation and conditional object write.
 
 Checkpoint writes do not create a Run row, attempt row, lifecycle transition, or historical checkpoint selector. A failed or unknown put is reconciled by `stat` and exact body validation before any retry.
 
