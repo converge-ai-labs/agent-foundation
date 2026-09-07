@@ -68,7 +68,6 @@ class AgentUiSettings(BaseModel):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     envd_runtime: EnvdRuntimeSettings = Field(default_factory=EnvdRuntimeSettings)
     pricing_auto_update: bool = True
-    terminal_update_check: bool = True
     shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=300)
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: str = Field(default="pretty", pattern="^(pretty|json)$")

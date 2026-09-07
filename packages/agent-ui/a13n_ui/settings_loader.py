@@ -100,7 +100,6 @@ async def load_agent_ui_settings(
         log_level=process.log_level,
         log_format=process.log_format,
         pricing_auto_update=process.pricing_auto_update,
-        terminal_update_check=process.terminal_update_check,
     )
     return AgentUiSettingsSource(
         configuration=configuration,

@@ -158,28 +158,121 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.mark.anyio
-async def test_exact_cwd_workspace_never_retargets_saved_project(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_exact_cwd_project_never_retargets_saved_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = await _seed(tmp_path, monkeypatch)
     nested = tmp_path / "nested"
     nested.mkdir()
     async with open_agent_ui_app(
         AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
-        first = await app.ensure_cwd_workspace(nested)
-        second = await app.ensure_cwd_workspace(nested)
+        first = await app.ensure_cwd_project(nested)
+        second = await app.ensure_cwd_project(nested)
         assert first == second
-        assert first.project_id != "project-local"
+        assert first != "project-local"
         configuration = await app.current_configuration()
         assert configuration.projects["project-local"].roots[0].path == str(tmp_path)
-        assert configuration.projects[first.project_id].roots[0].path == str(nested)
+        assert configuration.projects[first].roots[0].path == str(nested)
         backend = SessionBackend(app, CliRequest(), nested, Status())
         thread_id = await backend.ensure_session()
         other = SessionBackend(app, CliRequest(), tmp_path, Status())
-        with pytest.raises(ValueError, match="another workspace"):
+        with pytest.raises(ValueError, match="another Project"):
             await other.resume(thread_id)
         assert thread_id in await backend.resume()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("generated", [False, True])
+async def test_cli_reuses_and_resumes_projects_after_adding_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, generated: bool
+) -> None:
+    import yaml
+    from a13n_ui.composition import ThreadCompositionSelection
+
+    path = await _seed(tmp_path, monkeypatch)
+    directory = tmp_path / "code" if generated else tmp_path
+    directory.mkdir(exist_ok=True)
+    extra = tmp_path / "notes"
+    extra.mkdir()
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), directory, Status())
+        thread_id = await backend.ensure_session()
+        project_id = (await app.get_thread(thread_id)).thread.configuration.project_id
+        project_file = next(
+            candidate
+            for candidate in (path.parent / "projects").glob("*.yaml")
+            if yaml.safe_load(candidate.read_text())["id"] == project_id
+        )
+        before = await app.current_configuration()
+        selection = ThreadCompositionSelection(
+            thread_id=thread_id,
+            version=1,
+            project_id=project_id,
+            agent_source_kind="agent",
+            agent_source_id="agent-codex",
+            environment_profile_id="environment-native",
+            harness_plugin_ids=(),
+            environment_run_extension_ids=(),
+            mcp_server_ids=(),
+        )
+        resolver = AgentCompositionResolver(AgentUiExtensionCatalog())
+        captured = resolver.resolve_run(before, selection)
+        document = yaml.safe_load(project_file.read_text())
+        document["roots"].append({"path": str(extra)})
+        project_file.write_text(yaml.safe_dump(document))
+        source_bytes = project_file.read_bytes()
+        await app.reload_configuration()
+
+        assert await app.ensure_cwd_project(directory) == project_id
+        assert await app.cwd_project_ids(directory) == (project_id,)
+        assert await app.cwd_project_ids(extra) == ()
+        after = await app.current_configuration()
+        assert set(after.projects) == set(before.projects)
+        assert tuple(root.path for root in after.projects[project_id].roots) == (str(directory), str(extra))
+        assert captured.project_roots == (str(directory),)
+        assert resolver.resolve_run(after, selection).project_roots == (str(directory), str(extra))
+
+        resumed = SessionBackend(app, CliRequest(), directory, Status())
+        assert thread_id in await resumed.resume()
+        assert thread_id in {choice.value for choice in await resumed.choices("resume")}
+        await resumed.resume(thread_id)
+        assert await resumed.ensure_session() == thread_id
+        fresh = SessionBackend(app, CliRequest(), directory, Status())
+        fresh_id = await fresh.ensure_session()
+        assert (await app.get_thread(fresh_id)).thread.configuration.project_id == project_id
+        assert project_file.read_bytes() == source_bytes
+
+
+@pytest.mark.anyio
+async def test_ambiguous_cwd_projects_require_explicit_resume_without_creating_another_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import yaml
+    from a13n_ui.errors import AppStateError
+
+    path = await _seed(tmp_path, monkeypatch)
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        thread_id = await backend.ensure_session()
+        duplicate = {
+            "schema_version": "1",
+            "kind": "project",
+            "id": "project-another",
+            "name": "Another",
+            "roots": [{"path": str(tmp_path)}],
+        }
+        (path.parent / "projects/another.yaml").write_text(yaml.safe_dump(duplicate))
+        await app.reload_configuration()
+        with pytest.raises(AppStateError) as exc:
+            await app.ensure_cwd_project(tmp_path)
+        assert exc.value.code == "project_ambiguous"
+        assert len((await app.current_configuration()).projects) == 2
+        resumed = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await resumed.resume(thread_id)
+        assert resumed.thread_id == thread_id
 
 
 @pytest.mark.anyio

@@ -119,6 +119,48 @@ def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
         _stop(process, master)
 
 
+@pytest.mark.parametrize("install", [False, True])
+def test_update_screen_precedes_setup_and_releases_terminal_for_installer(tmp_path: Path, install: bool) -> None:
+    script = r"""
+from pathlib import Path
+from types import SimpleNamespace
+from a13n_ui.cli import main
+from a13n_ui.interactive import updates
+from a13n_ui import terminal
+async def check(root):
+    return updates.AvailableUpdate("1.0", "2.0")
+updates.check_update = check
+updates.update_command = lambda: updates.UpdateCommand("fixture-uv", Path.cwd())
+def install(*args, **kwargs):
+    print("INSTALLER STARTED", flush=True)
+    return SimpleNamespace(returncode=0)
+terminal.subprocess.run = install
+main(["setup"])
+"""
+    process, master = _spawn(script, tmp_path)
+    try:
+        output = _read_until(master, b"Install this update?")
+        assert b"Connect a model" not in output
+        assert output.count(b"\x1b[?1049h") == 1
+        if install:
+            os.write(master, b"\x1b[A\r")
+            output += _read_until(master, b"Restart a13n-ui")
+            assert output.index(b"\x1b[?1049l") < output.index(b"INSTALLER STARTED")
+            assert b"Connect a model" not in output
+        else:
+            os.write(master, b"\r")
+            output += _read_until(master, b"Connect a model")
+            assert output.count(b"\x1b[?1049h") == 1
+            assert b"\x1b[?1049l" not in output
+            os.write(master, b"\x03")
+            output += _read_until(master, b"Setup cancelled")
+            assert b"INSTALLER STARTED" not in output
+        process.wait(timeout=5)
+        assert process.returncode == 0
+    finally:
+        _stop(process, master)
+
+
 def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path) -> None:
     script = r"""
 import asyncio, json, time
@@ -164,7 +206,7 @@ def load():
     time.sleep(1.2)
     return factory
 
-asyncio.run(run_terminal(CliRequest(), runtime_loader=load))
+asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=load))
 """
     process, master = _spawn(script, tmp_path)
     try:

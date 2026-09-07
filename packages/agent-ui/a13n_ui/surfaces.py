@@ -29,11 +29,6 @@ class RunModelOverrides(SurfaceModel):
     thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
 
 
-class WorkspaceContext(SurfaceModel):
-    directory: str
-    project_id: str
-
-
 class ContextUsageView(SurfaceModel):
     thread_id: str
     latest_request_tokens: int | None = None

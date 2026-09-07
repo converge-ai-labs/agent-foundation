@@ -37,6 +37,7 @@ class LandingScreen:
     """One terminal owner across loading, questions, account actions, and preview."""
 
     def __init__(self) -> None:
+        self.title = "Agent CLI · Startup"
         self.notice = "Checking local configuration…"
         self.question: Question | None = None
         self.selection: Selection | None = None
@@ -85,7 +86,7 @@ class LandingScreen:
             layout=Layout(
                 HSplit(
                     [
-                        Window(FormattedTextControl("Agent CLI · Setup"), height=1),
+                        Window(FormattedTextControl(lambda: self.title), height=1),
                         Window(
                             FormattedTextControl(lambda: terminal_text(self.notice)),
                             wrap_lines=True,
@@ -262,6 +263,11 @@ async def run_setup(
                     await _ensure_account(app, provider, ask_user, emit)
                     checked_provider = provider
                 selection = SetupSelection.model_validate(wizard.selection(str(directory)))
+                projects = await app.cwd_project_ids(directory)
+                if len(projects) > 1:
+                    raise ValueError("Multiple Projects use this default directory. Resolve their roots before setup.")
+                if projects:
+                    selection = selection.model_copy(update={"project": projects[0]})
                 preview = await app.preview_setup(selection)
                 wizard.preview_generation = preview.generation
                 model = (
@@ -272,7 +278,9 @@ async def run_setup(
                     else wizard.values["route"]
                 )
                 emit(
-                    f"Review setup\nWorkspace: {directory}\nConnection: {provider}\nStarter model: {model}\n"
+                    f"Review setup\nProject: {selection.project}\nDirectories (first is default):\n"
+                    + "\n".join(f"  {root}" for root in preview.project_paths)
+                    + f"\nConnection: {provider}\nStarter model: {model}\n"
                     f"Execution: {wizard.values['environment']}\nShell review: {'enabled' if selection.shell_review else 'disabled'}\n"
                     "Existing edited resources retain their settings.\nFiles to publish:\n"
                     + "\n".join(f"  {path}" for path in preview.files)

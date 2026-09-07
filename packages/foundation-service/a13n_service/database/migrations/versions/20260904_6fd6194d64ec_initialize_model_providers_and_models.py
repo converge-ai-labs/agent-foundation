@@ -94,8 +94,6 @@ def upgrade() -> None:
         sa.Column("upstream_model", sa.String(length=256), nullable=False),
         sa.Column("model_api", sa.String(length=96), nullable=False),
         sa.Column("settings", sa.JSON(), nullable=False),
-        sa.Column("profile", sa.JSON(), nullable=False),
-        sa.Column("limits", sa.JSON(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),

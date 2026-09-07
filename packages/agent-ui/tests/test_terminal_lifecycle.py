@@ -1,4 +1,4 @@
-"""Terminal lifecycle work never gains update-install authority."""
+"""Terminal diagnostics, update detection, and resume hints remain bounded."""
 
 import asyncio
 import json
@@ -14,14 +14,15 @@ import httpx2
 import pytest
 from a13n_ui.cli import CliRequest
 from a13n_ui.interactive import lifecycle
-from a13n_ui.interactive.lifecycle import check_update, resume_hint, terminal_logging, update_notice
+from a13n_ui.interactive.lifecycle import resume_hint, terminal_logging
+from a13n_ui.interactive.updates import AvailableUpdate, available_update, check_update
 
 
 def test_versions_use_pep440_and_ignore_preview() -> None:
-    assert update_notice("1.9", "1.10")
-    assert update_notice("1.9", "1.10rc1") is None
-    assert update_notice("1.10", "1.9") is None
-    assert update_notice("bad", "1.9") is None
+    assert available_update("1.9", "1.10")
+    assert available_update("1.9", "1.10rc1") is None
+    assert available_update("1.10", "1.9") is None
+    assert available_update("bad", "1.9") is None
 
 
 @pytest.mark.anyio
@@ -34,7 +35,7 @@ async def test_daily_update_cache_requires_no_network(tmp_path: Path, monkeypatc
         pytest.fail("fresh cache must not contact PyPI")
 
     monkeypatch.setattr(httpx2, "AsyncClient", no_client)
-    assert "uv tool upgrade" in (await check_update(tmp_path, current="1.0") or "")
+    assert await check_update(tmp_path, current="1.0") == AvailableUpdate("1.0", "2.0")
 
 
 @pytest.mark.anyio
