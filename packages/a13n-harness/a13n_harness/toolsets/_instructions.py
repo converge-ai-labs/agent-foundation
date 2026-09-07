@@ -16,7 +16,7 @@ from a13n_harness.context import AgentContext
 
 @cache
 def tool_instruction(name: str) -> str:
-    """Load and wrap one packaged Markdown instruction block."""
+    """Load plain Markdown and add its single named tool-instruction boundary."""
     content = files("a13n_harness.toolsets.prompts").joinpath(f"{name}.md").read_text(encoding="utf-8")
     return f'<tool-instruction name="{name}">\n{content.strip()}\n</tool-instruction>'
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from importlib.resources import files
 
 import a13n_harness.toolsets.file_media as file_media_module
 import pytest
@@ -90,7 +91,11 @@ async def test_environment_provider_runs_default_agent_for_each_media_kind(
         for part in message.parts
         if isinstance(part, SystemPromptPart)
     )
-    assert "<anti-hallucination>" in system_prompt
+    expected_system_prompt = (
+        files("a13n_harness.toolsets.prompts").joinpath(f"{kind}_understanding.md").read_text(encoding="utf-8").strip()
+    )
+    assert system_prompt
+    assert system_prompt == expected_system_prompt
     default_instruction = next(
         item
         for message in calls[0]
