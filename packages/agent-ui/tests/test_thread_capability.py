@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from a13n_ui.thread_capability import AgentUiThreadCapability
+from a13n_ui.thread_capability import ThreadCollaborationCapability
 
 pytestmark = pytest.mark.anyio
 
@@ -23,7 +23,7 @@ class _Controller:
 
     async def run_thread(self, **kwargs: object) -> dict[str, Any]:
         self.calls.append(("run", kwargs))
-        return {"status": "completed"}
+        return {"receipt_id": "receipt-1"}
 
     async def steer_thread(self, **kwargs: object) -> dict[str, Any]:
         self.calls.append(("steer", kwargs))
@@ -32,7 +32,7 @@ class _Controller:
 
 async def test_thread_capability_uses_only_detached_controller_and_preserves_source_scope() -> None:
     controller: Any = _Controller()
-    capability = AgentUiThreadCapability(
+    capability = ThreadCollaborationCapability(
         controller=controller,
         source_thread_id="thread-source",
     )
@@ -46,7 +46,7 @@ async def test_thread_capability_uses_only_detached_controller_and_preserves_sou
     assert recursive["error"]["code"] == "thread_recursive_run"
 
     run = await capability.run_thread(context, thread_id="thread-target", prompt="work")
-    assert run == {"ok": True, "operation": {"status": "completed"}}
+    assert run == {"ok": True, "receipt": {"receipt_id": "receipt-1"}}
     steer = await capability.steer_thread(context, thread_id="thread-target", message="focus")
     assert steer["ok"] is True
     assert steer["receipt_id"] == "receipt-1"
@@ -54,3 +54,17 @@ async def test_thread_capability_uses_only_detached_controller_and_preserves_sou
 
     toolset = capability.get_toolset()
     assert toolset.id == "a13n-agent-ui-thread-tools"
+
+
+async def test_thread_capability_rejects_reuse_in_a_child_scope() -> None:
+    from a13n_harness.errors import DefinitionError
+
+    controller: Any = _Controller()
+    capability = ThreadCollaborationCapability(controller=controller, source_thread_id="thread-root")
+    context: Any = SimpleNamespace(deps=SimpleNamespace(thread_id="thread-child"))
+    with pytest.raises(DefinitionError, match="scope"):
+        await capability.list_threads(context, limit=5)
+    assert controller.calls == []
+    tools = capability.get_toolset().tools
+    assert "create_thread" in tools
+    assert "project_id" not in tools["create_thread"].function_schema.json_schema.get("properties", {})

@@ -178,7 +178,7 @@ The default install directory is `~/.local/bin` for a non-root POSIX user, `/usr
 
 An installer detects only the six supported target pairs, downloads the matching immutable release archive and `SHA256SUMS`, verifies the selected archive before extraction, stages the executable within the destination filesystem, and atomically replaces the destination `agent-envd` or `agent-envd.exe`. Unsupported targets, missing checksum entries, digest mismatch, malformed archives, and failed atomic publication fail without selecting an unverified executable. The installer owns no self-update protocol, service registration, daemon launch, install database, package registry, or mutable mirror configuration. Re-running it is an explicit installation or replacement operation.
 
-Standalone installation is independent from product-managed runtime acquisition. Agent UI pins its own exact release assets and hashes and lazily installs one selected target under its data root as defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); it does not invoke these standalone installers.
+Standalone installation is independent from product-managed runtime acquisition. Agent UI pins its own exact release assets and hashes and lazily installs one selected target under its data root as defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-cli/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); it does not invoke these standalone installers.
 
 ## Compatibility and Release
 

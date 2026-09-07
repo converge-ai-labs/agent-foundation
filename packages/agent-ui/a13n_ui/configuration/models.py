@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
+from a13n_harness.spec import HarnessModelCharacteristics
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     JsonValue,
@@ -96,12 +98,21 @@ class GlobalDefaults(StrictModel):
         return value
 
 
+class TerminalDisplayConfiguration(StrictModel):
+    theme: Literal["auto", "dark", "light"] = "auto"
+    mode: Literal["concise", "detailed"] = "concise"
+    show_status: bool = True
+    max_tool_result_lines: int = Field(default=5, ge=1, le=200)
+    max_tool_argument_chars: int = Field(default=8192, ge=128, le=65536)
+
+
 class AgentUiDocument(StrictModel):
     """Root ``a13n-ui.yaml`` document."""
 
     schema_version: Literal["2"] = "2"
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
+    display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -117,14 +128,21 @@ class EnvironmentVariableSource(StrictModel):
 
 class ApiKeyAuthentication(StrictModel):
     kind: Literal["api_key"]
-    env: str = Field(min_length=1, max_length=256)
+    env: str | None = Field(default=None, min_length=1, max_length=256)
+    credential_ref: ResourceId | None = None
 
     @field_validator("env")
     @classmethod
-    def _valid_environment_name(cls, value: str) -> str:
-        if not _ENV_NAME.fullmatch(value):
+    def _valid_environment_name(cls, value: str | None) -> str | None:
+        if value is not None and not _ENV_NAME.fullmatch(value):
             raise ValueError("env must be a valid environment variable name")
         return value
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if (self.env is None) == (self.credential_ref is None):
+            raise ValueError("API key authentication requires exactly one of env or credential_ref")
+        return self
 
 
 class CodexSubscriptionAuthentication(StrictModel):
@@ -141,6 +159,17 @@ type ModelAuthentication = Annotated[
 ]
 
 
+def _native_model_characteristics(value: object) -> object:
+    # Parent document normalizers turn JSON arrays into Python values before
+    # nested validation. Preserve native JSON semantics for its frozenset field.
+    if isinstance(value, dict):
+        return HarnessModelCharacteristics.model_validate_json(json.dumps(value), strict=True)
+    return value
+
+
+type ModelCharacteristics = Annotated[HarnessModelCharacteristics, BeforeValidator(_native_model_characteristics)]
+
+
 class ModelResource(StrictModel):
     schema_version: Literal["1"]
     kind: Literal["model"]
@@ -150,6 +179,7 @@ class ModelResource(StrictModel):
     authentication: ModelAuthentication
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    model_characteristics: ModelCharacteristics | None = None
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
@@ -310,7 +340,7 @@ class AgentResource(StrictModel):
     kind: Literal["agent"]
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
-    model: ResourceId
+    model: ResourceId | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     capabilities: tuple[CapabilitySelection, ...] = Field(default=(), max_length=128)
     harness_plugins: tuple[ResourceId, ...] | None = None
@@ -321,7 +351,8 @@ class AgentResource(StrictModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "agent-")
-        _require_id_prefix(self.model, "model-")
+        if self.model is not None:
+            _require_id_prefix(self.model, "model-")
         for values in (self.harness_plugins, self.mcp_servers, self.tools):
             if values is not None and len(values) != len(set(values)):
                 raise ValueError("Agent selections must be unique and ordered")
@@ -446,7 +477,8 @@ class LoadedAgentUiConfiguration(StrictModel):
             _require_reference(item, self.mcp_servers, "defaults.mcp_servers")
 
         for agent in self.agents.values():
-            _require_reference(agent.model, self.models, f"{agent.id}.model")
+            if agent.model is not None:
+                _require_reference(agent.model, self.models, f"{agent.id}.model")
             for item in agent.harness_plugins or ():
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():

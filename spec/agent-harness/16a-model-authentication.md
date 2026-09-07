@@ -60,6 +60,10 @@ Credential representations exclude secret fields from `repr`. A source returns o
 
 The small protocol is intentionally structural. Provider lifecycle code needs no revision token or storage-specific snapshot. A Host that requires compare-and-swap, row locking, leases, or cross-replica exclusion implements that behavior behind `load()` and `save()`.
 
+## Codex Device Authorization
+
+`CodexDeviceAuthorizationFlow.start()` starts the reviewed vendor protocol at the Codex user-code endpoint. The public result exposes the verification URL, user code, interval, and maximum fifteen-minute lifetime, keeping the device authorization ID out of representations. Bounded polling treats HTTP 403/404 as pending. Success exchanges the returned authorization code and verifier at the token endpoint using `https://auth.openai.com/deviceauth/callback`, not the browser loopback redirect. This is not the RFC 8628 token grant used by Grok. Cancellation interrupts polling; the Host alone publishes credentials. `DeviceAuthorizationError.reason` distinguishes expired, denied, and unsupported outcomes where the provider protocol identifies them; no protocol silently starts another login method.
+
 ## Request Lifecycle
 
 ```mermaid

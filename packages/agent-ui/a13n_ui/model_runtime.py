@@ -30,6 +30,7 @@ from a13n_ui.configuration import (
     CodexSubscriptionAuthentication,
     GrokSubscriptionAuthentication,
 )
+from a13n_ui.model_accounts.api_keys import ApiKeyStore
 
 if TYPE_CHECKING:
     from a13n_ui.composition.models import ResolvedModelRecipe
@@ -70,7 +71,9 @@ class AgentUiModelResolver:
         recipes: Mapping[str, ResolvedModelRecipe],
         *,
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
+        api_keys: ApiKeyStore | None = None,
     ) -> None:
+        self._api_keys = api_keys
         self._recipes = MappingProxyType({key: value.model_copy(deep=True) for key, value in recipes.items()})
         self._subscription_sources = MappingProxyType(dict(subscription_sources or {}))
 
@@ -78,6 +81,7 @@ class AgentUiModelResolver:
         return AgentUiModelResolver(
             self._recipes,
             subscription_sources=self._subscription_sources,
+            api_keys=self._api_keys,
         )
 
     async def __call__(
@@ -95,7 +99,7 @@ class AgentUiModelResolver:
             )
         authentication = recipe.authentication
         if isinstance(authentication, ApiKeyAuthentication):
-            return self._api_key_model(recipe, authentication.env)
+            return await self._api_key_model(recipe, authentication)
         if isinstance(authentication, CodexSubscriptionAuthentication):
             source = self._required_subscription_source(
                 "codex_subscription",
@@ -122,13 +126,19 @@ class AgentUiModelResolver:
             code="model_authentication_unsupported",
         )
 
-    def _api_key_model(self, recipe: ResolvedModelRecipe, environment_name: str) -> Model:
-        api_key = os.environ.get(environment_name)
+    async def _api_key_model(self, recipe: ResolvedModelRecipe, authentication: ApiKeyAuthentication) -> Model:
+        api_key = (
+            os.environ.get(authentication.env)
+            if authentication.env is not None
+            else await self._api_keys.load(authentication.credential_ref)
+            if self._api_keys is not None and authentication.credential_ref is not None
+            else None
+        )
         if not api_key:
             raise ModelResolutionError(
                 "The required Agent UI Model credential source is unavailable.",
                 code="model_credential_missing",
-                details={"environment_variable": environment_name},
+                details={"source": authentication.env or authentication.credential_ref},
             )
         route_provider, separator, model_name = recipe.route.partition(":")
         provider_name = _PROVIDER_ALIASES.get(route_provider, route_provider)

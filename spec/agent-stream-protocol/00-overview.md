@@ -20,7 +20,7 @@ The package does not define another execution or lifecycle layer. It does not ru
 | HTTP, SSE, WebSocket, or in-process delivery   | Host transport                 | Serializes and carries AG-UI events without becoming their execution authority                           |
 | Display state                                  | Renderer                       | Interprets AG-UI events for one surface                                                                  |
 
-The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local storage and recovery](../agent-ui/03-local-storage-and-recovery.md) own local retention. [Foundation Service](../foundation-service/README.md) owns any hosted durable lifecycle and event history.
+The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local storage and recovery](../agent-cli/03-local-storage-and-recovery.md) own local retention. [Foundation Service](../foundation-service/README.md) owns any hosted durable lifecycle and event history.
 
 ## Dependency Direction
 
@@ -30,7 +30,7 @@ flowchart LR
     Protocol --> Harness[a13n-harness]
     Harness --> Pydantic[Pydantic AI]
     Host --> Store[Host persistence and fan-out]
-    Host --> Surface[WebUI or TUI]
+    Host --> Surface[CLI or embedding adapter]
 ```
 
 The Harness imports no AG-UI, UI, Session, HTTP, or terminal-rendering type. Agent Stream Protocol depends only on public Harness and Pydantic AI stream types plus the upstream AG-UI schema library. It imports no Agent UI session implementation, Foundation persistence model, or transport framework.

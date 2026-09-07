@@ -51,6 +51,7 @@ class DirectLocalShellProfile(BaseModel):
     profile_id: str
     executable: Path
     fixed_arguments: tuple[str, ...] = ()
+    dialect: Literal["posix", "powershell"] = "posix"
     allow_login: bool = False
 
 
@@ -72,6 +73,14 @@ class DirectLocalProviderConfiguration(BaseModel):
 
 The root, shell executables, and allowed executables are absolute after user expansion. Host-supplied runtime identities are bounded and nonblank; profile IDs are unique; ports and limits are valid and positive. A read-only root cannot enable shell profiles or allowed executables because an allowed native process could mutate files through the embedding OS account.
 
+### Native command execution
+
+Direct Local runs on POSIX hosts and native Windows without WSL or a daemon. Each command owns a POSIX process group or Windows Job Object. On Windows, assignment to the Job precedes execution so descendants cannot escape ownership during startup. Root exit and complete tree cleanup are separate observations; inherited output pipes finish only after owned descendants are cleaned up. Timeout, cancellation, startup failure, and adapter close clean up owned processes and output resources.
+
+The default `posix` shell dialect retains `-c` and optional login semantics. A `powershell` profile disallows login, passes the script as an encoded command, and selects UTF-8 for redirected text input/output; argv execution passes arguments without shell interpolation. Hosts explicitly select executables, dialects, and environment keys. The Provider does not inherit ambient environment variables. Binary process output remains bytes.
+
+POSIX supports interrupt and terminate signals. Windows supports tree termination and kill; an interrupt request returns `environment_unsupported` rather than pretending a forced termination is a graceful interrupt. This does not limit cancellation, which uses owned-tree termination. Native execution does not enforce memory, CPU, process-count, or network-denial limits and rejects requests requiring them.
+
 ### State and lifecycle
 
 Direct Local denotes access to an existing Host-controlled directory. It does not allocate, own, lock, retain, back up, or delete that directory.
@@ -81,6 +90,8 @@ Direct Local is stateless for re-entry and `dump_state()` returns `None`. The se
 `prepare()` validates that the configured root exists and is accessible, constructs fresh local file/process/output facets, and establishes Run-local process ownership. Inaccessibility is `unknown`/unavailable rather than authoritative target absence; Direct Local never creates the root automatically.
 
 `close()` terminates and releases only processes, streams, retained output, and local handles owned by that adapter. It does not change or delete the root. `stop()` and `destroy()` are unsupported for the caller-owned backing directory. Direct Local declares no keepalive requirement; retention policies must disable target stop/delete.
+
+Prepared Direct Local descriptors expose bounded `backing_identity` evidence for approval continuity across fresh operation Sessions. The evidence binds the Provider, Host filesystem namespace, resolved root file identity, and configured operation policy. An ordinary workspace content edit preserves it; replacing the root or changing the policy invalidates it. Discovery, validation, construction, and entry do not inspect the filesystem or advertise verified backing identity. If the filesystem cannot supply usable identity evidence, the field remains absent and approvals remain connection-local. This evidence is neither a content digest nor a filesystem lock, and makes no guarantee against file-ID reuse or hostile concurrent namespace changes.
 
 Direct Local makes no sandbox, account isolation, network isolation, or race-free filesystem-broker claim. Its confinement is a provider operation policy over one Host-selected root. A hostile same-account process can race native filesystem changes.
 
@@ -132,6 +143,8 @@ A fresh `LocalEnvdProviderRuntime` supplies one exact absolute envd executable a
 
 The package exposes a separate Host convenience `resolve_agent_envd_executable()` helper. It can resolve an explicit path, `A13N_AGENT_ENVD_EXECUTABLE`, then `shutil.which`. The helper validates the result and performs no download or installation. Low-level Provider construction never invokes it or loads `.env`.
 
+The package also exposes `local_envd.validate_local_envd_runtime(executable, configuration)` for explicit Host preflight. It uses the same exact-release and production isolation checks as `prepare()`, including denied-network verification when selected, without allocating a private runtime or starting an EIP daemon. It performs no executable discovery, downloads, installation, or system-policy changes. Success is a point-in-time observation; actual preparation retains its normal checks. Cancellation and timeout terminate the validation subprocess.
+
 ### State and lifecycle
 
 Local Envd owns no durable provider target beyond the Host-selected workspace. Each fresh adapter launches a new process-local daemon generation and closes it with the adapter. `dump_state()` therefore returns `None`.
@@ -151,7 +164,7 @@ A failure after process launch unconditionally terminates the owned process tree
 
 `close()` fences new operations, closes EIP, terminates the complete owned daemon process tree under bounded grace, closes pipes, and removes its private runtime. It never deletes or mutates the shared workspace merely because the adapter closes. There is no durable daemon target to stop or delete; these target actions are unsupported. Local Envd requires no target keepalive, and template stop/delete policies must be disabled for its caller-owned workspace.
 
-Because every independent Run creates a fresh daemon, Local Envd state does not preserve daemon identity across Runs. Filesystem continuity comes from the configured Host workspace.
+Because every independent Run creates a fresh daemon, Local Envd state does not preserve daemon identity across Runs. Filesystem continuity comes from the configured Host workspace. After preparation, `backing_identity` binds the same Host filesystem evidence described for Direct Local, including the workspace, trusted executable roots, and canonical execution policy. Recreating a private daemon or its runtime directory does not invalidate workspace approval continuity; replacing a backing root or changing the policy does. The fresh daemon `generation` still fences process, output, and other Session-local handles. Missing filesystem evidence leaves approval validation connection-local rather than treating a configured path as verified backing.
 
 ## Docker
 

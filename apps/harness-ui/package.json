@@ -8,17 +8,39 @@
   },
   "scripts": {
     "build": "tsc --noEmit && vite build",
-    "check": "npm run format:check && npm run typecheck",
+    "check": "npm run format:check && npm run typecheck && npm run generate:check && npm run test",
     "check:all": "npm run check && vite build",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "dev": "vite",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate": "node generate-client.mjs",
+    "generate:check": "node generate-client.mjs --check",
+    "test": "vitest run"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.6",
-    "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-router": "^1.170.32",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "openapi-fetch": "^0.17.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   }
 }

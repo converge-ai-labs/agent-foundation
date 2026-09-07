@@ -201,7 +201,8 @@ async def test_resolves_complete_credential_free_run_composition(tmp_path: Path)
     assert composition.generation_digest == source.source_digest
     assert composition.project_roots == (str((tmp_path / "workspace").resolve()),)
     assert composition.environment_profile.profile_id == IMPLICIT_NATIVE_PROFILE
-    assert composition.root.instructions == (PACKAGE_SYSTEM_PROMPT, "Root authored instructions.")
+    assert composition.root.system_prompt == (PACKAGE_SYSTEM_PROMPT,)
+    assert composition.root.instructions == ("Root authored instructions.",)
     assert composition.root.model.route == "openai:gpt-5"
     assert composition.root.model.authentication.env == "OPENAI_API_KEY"
     assert composition.root.model.settings == {"temperature": 0.0}
@@ -210,7 +211,8 @@ async def test_resolves_complete_credential_free_run_composition(tmp_path: Path)
 
     explorer = composition.root.children[0]
     assert explorer.name == "explorer"
-    assert explorer.definition.instructions == (PACKAGE_SYSTEM_PROMPT, "Report evidence with file paths.")
+    assert explorer.definition.system_prompt == (PACKAGE_SYSTEM_PROMPT,)
+    assert explorer.definition.instructions == ("Report evidence with file paths.",)
     assert explorer.definition.model == composition.root.model
     assert explorer.definition.capabilities == composition.root.capabilities
     assert explorer.definition.tools == ("glob", "grep")
@@ -475,3 +477,112 @@ async def test_missing_markdown_only_blocks_the_agent_that_selects_it(tmp_path: 
     # Reviewer has no Markdown dependency; its Run remains resolvable.
     composition = resolver.resolve_run(source, replace(_selection(), agent_source_id="agent-reviewer"))
     assert composition.root.source_id == "agent-reviewer"
+
+
+async def test_shell_review_captures_and_registers_its_subscription_model(tmp_path: Path) -> None:
+    from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability
+    from a13n_ui.model_runtime import model_recipe_id
+
+    path = _write_source(tmp_path)
+    review_model = tmp_path / "models" / "review.yaml"
+    review_model.write_text("""schema_version: "1"
+kind: model
+id: model-review
+name: Review
+route: openai-codex:gpt-5.6-luna
+authentication: {kind: codex_subscription}
+settings: {thinking: low}
+""")
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(
+        agent.read_text().replace(
+            "harness_plugins: null",
+            """  - capability: ShellReviewCapability
+    configuration:
+      model: model-review
+      risk_threshold: high
+      on_flagged: approval_required
+      on_error: approval_required
+harness_plugins: null""",
+        )
+    )
+    source = await load_agent_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    resolver.validate_generation(source)
+    composition = resolver.resolve_run(source, _selection())
+    recipe = next(item for item in composition.root.capabilities if item.capability == "ShellReviewCapability")
+    assert recipe.model is not None
+    assert recipe.model.route == "openai-codex:gpt-5.6-luna"
+    assert recipe.model.authentication.kind == "codex_subscription"
+    review_model.unlink()
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    capability = next(
+        item for item in reconstructed.executable.definition.capabilities if isinstance(item, ShellReviewCapability)
+    )
+    assert capability.model == model_recipe_id(recipe.model)
+    assert capability.on_error is ShellReviewAction.APPROVAL_REQUIRED
+    assert capability.model_settings["thinking"] == "low"
+    assert recipe.model in reconstructed.model_resolver._recipes.values()
+
+
+async def test_shell_review_rejects_missing_model_resource(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(
+        agent.read_text().replace(
+            "harness_plugins: null",
+            """  - capability: ShellReviewCapability
+    configuration: {model: model-missing}
+harness_plugins: null""",
+        )
+    )
+    source = await load_agent_ui_configuration(path)
+    with pytest.raises(CompositionError) as error:
+        AgentCompositionResolver(_catalog()).validate_generation(source)
+    assert error.value.code == "capability_model_missing"
+
+
+async def test_webui_collaboration_is_absent_from_reconstructed_children(tmp_path: Path) -> None:
+    from a13n_ui.thread_capability import ThreadCollaborationCapability
+
+    source = await load_agent_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    controller: Any = object()
+    capability = ThreadCollaborationCapability(controller=controller, source_thread_id="thread-1")
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(
+        composition,
+        subagent_operator=_UnusedOperator(),
+        root_capabilities=(capability,),
+    )
+    assert capability in reconstructed.executable.definition.capabilities
+    for child in reconstructed.executable.subagents.values():
+        assert not any(isinstance(item, ThreadCollaborationCapability) for item in child.definition.capabilities)
+
+
+@pytest.mark.parametrize("instructions", ["", "   \n", "Reply in Chinese; prioritize short patches."])
+async def test_system_prompt_is_always_frozen_separately_from_additions(tmp_path: Path, instructions: str) -> None:
+    source = await load_agent_ui_configuration(_write_source(tmp_path))
+    root = source.agents["agent-assistant"]
+    source = source.model_copy(
+        update={"agents": {**source.agents, root.id: root.model_copy(update={"instructions": instructions})}}
+    )
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    assert composition.root.system_prompt == (PACKAGE_SYSTEM_PROMPT,)
+    assert composition.root.instructions == ((instructions,) if instructions.strip() else ())
+    rebuilt = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    spec = rebuilt.executable.definition.agent
+    assert spec.system_prompt == [PACKAGE_SYSTEM_PROMPT]
+    assert spec.instructions == ([instructions] if instructions.strip() else [])
+
+
+async def test_legacy_capture_keeps_original_combined_prompt_without_new_defaults(tmp_path: Path) -> None:
+    source = await load_agent_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    legacy_root = composition.root.model_copy(
+        update={"system_prompt": None, "instructions": ("Original frozen identity", "Original additions")}
+    )
+    rebuilt = AgentReconstructor(_catalog()).reconstruct(
+        composition.model_copy(update={"root": legacy_root}), subagent_operator=_UnusedOperator()
+    )
+    assert rebuilt.executable.definition.agent.system_prompt == ["Original frozen identity", "Original additions"]
+    assert rebuilt.executable.definition.agent.instructions is None

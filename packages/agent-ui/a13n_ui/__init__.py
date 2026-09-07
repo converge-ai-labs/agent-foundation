@@ -1,4 +1,4 @@
-"""Process-local Agent UI application for CLI, TUI, and WebUI surfaces."""
+"""Interactive Agent UI CLI with a reusable process-local application boundary."""
 
 from importlib.metadata import version
 

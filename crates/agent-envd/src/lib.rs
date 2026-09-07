@@ -15,6 +15,8 @@ mod stdio;
 mod supervisor;
 mod transfer;
 mod websocket;
+#[cfg(windows)]
+mod windows_job;
 
 /// Runs one private isolation-probe payload mode used by this binary.
 #[doc(hidden)]

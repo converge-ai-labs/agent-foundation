@@ -7,6 +7,7 @@ from typing import Literal, Self, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_ui.configuration import McpTransport, ModelAuthentication
+from a13n_ui.configuration.models import ModelCharacteristics
 
 
 class CompositionModel(BaseModel):
@@ -47,11 +48,13 @@ class ResolvedModelRecipe(CompositionModel):
     authentication: ModelAuthentication
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    model_characteristics: ModelCharacteristics | None = None
 
 
 class ResolvedCapabilityRecipe(CompositionModel):
     capability: str = Field(min_length=1, max_length=200)
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    model: ResolvedModelRecipe | None = None
 
 
 class ResolvedPluginRecipe(CompositionModel):
@@ -93,7 +96,9 @@ class ResolvedAgentNode(CompositionModel):
     source_kind: Literal["agent", "markdown"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
-    instructions: tuple[str, ...] = Field(min_length=1, max_length=16)
+    # None identifies legacy captures whose instructions held the combined system prompt.
+    system_prompt: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=16)
+    instructions: tuple[str, ...] = Field(default=(), max_length=16)
     model: ResolvedModelRecipe
     capabilities: tuple[ResolvedCapabilityRecipe, ...] = Field(default=(), max_length=128)
     harness_plugins: tuple[ResolvedPluginRecipe, ...] = Field(default=(), max_length=128)

@@ -107,6 +107,10 @@ async def start_daemon(
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "HTTP_PROXY": "http://proxy.invalid:8080",
     }
+    if sys.platform == "win32":
+        # Windows process startup requires its trusted system directory even
+        # when the rest of the test environment is intentionally isolated.
+        environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     if execution_isolation is not None:
         environment["AGENT_ENVD_EXECUTION_ISOLATION"] = execution_isolation
     owned_runtime = runtime_dir is None
@@ -1027,7 +1031,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
             foreground.output.stdout.reference,
             observed=foreground.output.stdout,
         )
-        assert b"".join([chunk async for chunk in foreground_reader]) == b"foreground\n"
+        assert b"".join([chunk async for chunk in foreground_reader]) == f"foreground{os.linesep}".encode()
         for index, foreground_output in enumerate((foreground.output.stdout, foreground.output.stderr)):
             foreground_release = await session.client.output_release(
                 OutputReleaseParams(
@@ -1055,7 +1059,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
             retained_reference,
             observed=retained_foreground.output.stdout,
         )
-        assert b"".join([chunk async for chunk in retained_reader]) == b"retained-foreground\n"
+        assert b"".join([chunk async for chunk in retained_reader]) == f"retained-foreground{os.linesep}".encode()
         retained_references = (
             retained_reference,
             retained_foreground.output.stderr.reference,
@@ -1246,8 +1250,14 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                 ),
             )
         )
-        assert 0 < partial_write.accepted_bytes < len(partial_payload)
-        assert partial_write.stdin_open is False
+        # Accepted bytes measure envd's bounded stdin writer, not bytes read by
+        # the payload. Windows' buffered writer may accept this entire chunk
+        # before observing that the reader closed its pipe.
+        assert 0 < partial_write.accepted_bytes <= len(partial_payload)
+        if sys.platform != "win32":
+            assert partial_write.accepted_bytes < len(partial_payload)
+        if partial_write.accepted_bytes < len(partial_payload):
+            assert partial_write.stdin_open is False
         await session.client.process_wait(
             ProcessWaitParams(
                 context=EIPCallContext(
@@ -1282,16 +1292,25 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                 ),
             )
         )
-        signaled = await session.client.process_signal(
-            ProcessSignalParams(
-                context=EIPCallContext(
-                    operation_id="process-signal-e2e",
-                ),
-                handle=signaled_process.process.handle,
-                signal=RequestedProcessSignal.TERMINATE,
-            )
+        signal_params = ProcessSignalParams(
+            context=EIPCallContext(operation_id="process-signal-e2e"),
+            handle=signaled_process.process.handle,
+            signal=RequestedProcessSignal.TERMINATE,
         )
-        assert signaled.accepted is True
+        if session.descriptor.execution_features.signal_terminate:
+            signaled = await session.client.process_signal(signal_params)
+            assert signaled.accepted is True
+        else:
+            assert "process.signal" not in session.descriptor.available_methods
+            with pytest.raises(EIPMethodError) as unsupported_signal:
+                await session.client.process_signal(signal_params)
+            assert unsupported_signal.value.error.data.error_type is ErrorType.UNSUPPORTED
+            await session.client.process_kill(
+                ProcessKillParams(
+                    context=EIPCallContext(operation_id="process-signal-fallback-kill-e2e"),
+                    handle=signaled_process.process.handle,
+                )
+            )
         signaled_terminal = await session.client.process_wait(
             ProcessWaitParams(
                 context=EIPCallContext(
@@ -1989,13 +2008,7 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
 )
 def test_required_isolation_default_fails_closed_on_unsupported_platform() -> None:
     async def scenario() -> None:
-        process = await asyncio.create_subprocess_exec(
-            str(agent_envd_binary()),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={"AGENT_ENVD_ENVIRONMENT_ID": "env-e2e"},
-        )
+        process = await start_daemon(agent_envd_binary(), execution_isolation=None)
         stderr = await wait_for_exit(process, expected_code=1)
         assert b"required execution isolation is not implemented for this platform" in stderr
         assert process.stdout is not None

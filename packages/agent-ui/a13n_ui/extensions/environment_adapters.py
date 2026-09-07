@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
@@ -126,7 +128,19 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         value: dict[str, JsonValue] = {
             "root": {"path": str(root), "read_only": False},
             "shell_profiles": (
-                [] if shell is None else [{"profile_id": "default", "executable": str(shell), "allow_login": True}]
+                []
+                if shell is None
+                else [
+                    {
+                        "profile_id": "default",
+                        "executable": str(shell),
+                        "dialect": "powershell" if sys.platform == "win32" else "posix",
+                        "allow_login": sys.platform != "win32",
+                        "fixed_arguments": ["-NoLogo", "-NoProfile", "-NonInteractive"]
+                        if sys.platform == "win32"
+                        else [],
+                    }
+                ]
             ),
             "allowed_environment_keys": environment_keys,
         }
@@ -178,8 +192,12 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
                     {
                         "profile_id": "default",
                         "executable": str(shell),
-                        "fixed_arguments": ["-c"],
-                        "allow_login": True,
+                        "fixed_arguments": (
+                            ["-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-Command"]
+                            if sys.platform == "win32"
+                            else ["-c"]
+                        ),
+                        "allow_login": sys.platform != "win32",
                     }
                 ]
             ),
@@ -217,8 +235,13 @@ def _require_empty(
 
 
 def _host_shell() -> Path | None:
-    if os.name == "nt":
-        return None
+    if sys.platform == "win32":
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        return (
+            Path(powershell)
+            if powershell
+            else Path(os.environ.get("SYSTEMROOT", "C:/Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+        )
     return Path(os.environ.get("SHELL", "/bin/sh"))
 
 

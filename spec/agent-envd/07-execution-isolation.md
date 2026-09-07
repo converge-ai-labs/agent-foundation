@@ -154,7 +154,7 @@ In `disabled` mode envd still validates configured mounts, cwd, typed executable
 
 The payload can access every path, process, device, IPC endpoint, and network resource made visible by its outer container, VM, sandbox, or native account. The outer Host must also prevent payload access to envd memory, bootstrap credentials, service configuration, carrier state, command output, and control channels. Running untrusted payloads with the same unrestricted process-inspection, debugger, administrator/root, or control-channel authority as envd is not a valid outer boundary.
 
-Envd uses the strongest ordinary native process target available, including Job Objects on Windows where configured, but does not claim child filesystem or network containment. The descriptor reports backend `outer_host`, all containment booleans false, and cleanup guarantee `outer_host`. Complete outer teardown remains provider evidence, not an envd inference.
+Envd uses the strongest ordinary native process target available. Windows commands enter a non-breakaway, kill-on-close Job before payload release; normal root exit still triggers descendant cleanup, and completion requires native Job-empty evidence. This native lifecycle ownership does not claim child filesystem or network containment. The descriptor reports backend `outer_host`, all containment booleans false, and cleanup guarantee `outer_host`. Complete outer teardown remains provider evidence, not an envd inference.
 
 ## Network Policy
 

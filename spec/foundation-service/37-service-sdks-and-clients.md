@@ -81,7 +81,7 @@ The SDK honors `Retry-After` and the caller's deadline. It never changes an idem
 
 The `agent-foundation` executable is the remote command-line client. Every network operation calls the Rust SDK; the CLI owns no second HTTP serializer, authentication transport, SSE parser, WebSocket client, retry engine, or service process behavior.
 
-A CLI command exists only when its service operation and Rust SDK method are real. The CLI can offer interactive terminal presentation, follow a Run stream, or watch notifications, but Foundation defines no separate Remote TUI product or remote Session model.
+A CLI command exists only when its service operation and Rust SDK method are real. The CLI can offer interactive terminal presentation, follow a Run stream, or watch notifications, but Foundation defines no separate remote terminal product or remote Session model.
 
 ## Standard Protocol Clients
 

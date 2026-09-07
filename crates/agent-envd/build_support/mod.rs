@@ -1488,9 +1488,13 @@ fn render_dispatch(output: &mut String, methods: &[MethodRecord]) {
          pub async fn dispatch<H: EipHandler>(handler: &H, method: &str, params_json: &str) -> Result<DispatchSuccess, DispatchError> {\n\
          \x20   match method {\n",
     );
+    // Keep each method's decode/execute/encode locals in its own poll frame.
+    // A monolithic dispatch poll reserves stack slots for every arm in debug
+    // builds and overflows the native Windows 1 MiB main-thread stack. Boxing
+    // the per-method future also keeps the outer dispatch future small.
     for method in methods {
         output.push_str(&format!(
-            "        \"{}\" => {{ let params: {} = decode(params_json).map_err(DispatchError::InvalidParams)?; let normalized_params = serde_json::to_value(&params).map_err(DispatchError::Encode)?; let result = handler.{}(params).await.map_err(|error| DispatchError::Method {{ error, method: \"{}\", params: normalized_params.clone() }})?; result.validate().map_err(DispatchError::InvalidResult)?; let result = serde_json::to_value(result).map_err(DispatchError::Encode)?; Ok(DispatchSuccess {{ result, method: \"{}\", params: normalized_params }}) }},\n",
+            "        \"{}\" => Box::pin(async {{ let params: {} = decode(params_json).map_err(DispatchError::InvalidParams)?; let normalized_params = serde_json::to_value(&params).map_err(DispatchError::Encode)?; let result = handler.{}(params).await.map_err(|error| DispatchError::Method {{ error, method: \"{}\", params: normalized_params.clone() }})?; result.validate().map_err(DispatchError::InvalidResult)?; let result = serde_json::to_value(result).map_err(DispatchError::Encode)?; Ok(DispatchSuccess {{ result, method: \"{}\", params: normalized_params }}) }}).await,\n",
             method.jsonrpc_method,
             method.params_type,
             method.rust_name,

@@ -36,6 +36,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-tungstenite",
  "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

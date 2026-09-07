@@ -29,10 +29,20 @@ TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_ui/__init__.py"),
     PurePosixPath("a13n_ui/__main__.py"),
     PurePosixPath("a13n_ui/cli.py"),
+    PurePosixPath("a13n_ui/webui.py"),
     PurePosixPath("a13n_ui/terminal.py"),
-    PurePosixPath("a13n_ui/tui/__init__.py"),
-    PurePosixPath("a13n_ui/tui/application.py"),
-    PurePosixPath("a13n_ui/tui/styles/terminal.tcss"),
+    PurePosixPath("a13n_ui/cli_runtime.py"),
+    PurePosixPath("a13n_ui/interactive/shell.py"),
+    PurePosixPath("a13n_ui/interactive/backend.py"),
+    PurePosixPath("a13n_ui/interactive/commands.py"),
+    PurePosixPath("a13n_ui/interactive/rendering.py"),
+    PurePosixPath("a13n_ui/interactive/setup.py"),
+    PurePosixPath("a13n_ui/interactive/runtime.py"),
+    PurePosixPath("a13n_ui/interactive/transcript.py"),
+    PurePosixPath("a13n_ui/interactive/markdown.py"),
+    PurePosixPath("a13n_ui/interactive/attachments.py"),
+    PurePosixPath("a13n_ui/interactive/decisions.py"),
+    PurePosixPath("a13n_ui/interactive/theme.py"),
 )
 INTERNAL_PACKAGES = (
     "a13n-environment-provider",
@@ -159,8 +169,9 @@ def _validate_wheel_imports(path: Path) -> None:
                 "-c",
                 (
                     "from a13n_ui.cli import main; "
-                    "from a13n_ui.tui.application import AgentUiTerminalApp; "
-                    "assert callable(main) and AgentUiTerminalApp"
+                    "from a13n_ui.interactive.shell import CliShell; "
+                    "from a13n_ui.webui import create_webui; "
+                    "assert callable(main) and CliShell and callable(create_webui)"
                 ),
             ],
             cwd=directory,
@@ -170,7 +181,7 @@ def _validate_wheel_imports(path: Path) -> None:
             text=True,
         )
     if result.returncode != 0:
-        raise DistributionError(f"Agent UI wheel cannot import its entrypoint and TUI:\n{result.stderr}")
+        raise DistributionError(f"Agent UI wheel cannot import its entrypoint and CLI:\n{result.stderr}")
 
 
 def _validate_console_entrypoint(content: bytes) -> None:
@@ -226,6 +237,8 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
         _validate_assets(archive.read, names, PACKAGE_PREFIX)
         _validate_runtime_manifest(archive.read, names, RUNTIME_MANIFEST_PATH)
         _validate_terminal_package(names)
+        if not any(name.endswith(".dist-info/licenses/YAACLI-LICENSE") for name in names):
+            raise DistributionError("Agent UI wheel is missing the YAACLI BSD notice")
         entrypoint_paths = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         if len(entrypoint_paths) != 1:
             raise DistributionError(f"Expected one entry_points.txt in {path}, found {len(entrypoint_paths)}")
@@ -260,6 +273,8 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
         _validate_assets(read, names, PurePosixPath(root) / PACKAGE_PREFIX)
         _validate_runtime_manifest(read, names, PurePosixPath(root) / RUNTIME_MANIFEST_PATH)
         _validate_terminal_package(names, PurePosixPath(root))
+        if f"{root}/YAACLI-LICENSE" not in names:
+            raise DistributionError("Agent UI sdist is missing the YAACLI BSD notice")
         if any("apps/harness-ui" in name for name in names):
             raise DistributionError("Agent UI sdist must not require the Harness UI source tree")
         pyproject_path = f"{root}/pyproject.toml"

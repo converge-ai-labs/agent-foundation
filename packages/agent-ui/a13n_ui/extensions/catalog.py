@@ -14,7 +14,16 @@ from a13n_environment_provider import (
     discover_environment_provider_references,
 )
 from a13n_harness.capabilities import DocumentsCapability, WebCapability
+from a13n_harness.capabilities.context import (
+    CompactionCapability,
+    CompactionPolicy,
+    HandoffCapability,
+    HandoffConfiguration,
+    RuntimeContextCapability,
+    RuntimeContextConfiguration,
+)
 from a13n_harness.capabilities.documents import DocumentsConfiguration
+from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability, ShellRiskLevel
 from a13n_harness.capabilities.skills import FileSkillSource, SkillManager, SkillsCapability, SkillsPolicy
 from a13n_harness.capabilities.web import WebConfiguration
 from a13n_harness.capability_types import CapabilityTypeCatalog, first_party_declarative_capability_types
@@ -50,6 +59,9 @@ _BUILTIN_PROVIDER_KEYS = frozenset(
 )
 _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "dynamic_environment": DynamicEnvironmentCapability,
+    "compaction": CompactionCapability,
+    "handoff": HandoffCapability,
+    "runtime_context": RuntimeContextCapability,
     "documents": DocumentsCapability,
     "skills": SkillsCapability,
     "web": WebCapability,
@@ -423,6 +435,14 @@ def _construct_capability(
     *,
     path_layout: EnvironmentPathLayout | None,
 ) -> AbstractCapability[Any]:
+    if capability_type is CompactionCapability:
+        return CompactionCapability(
+            CompactionPolicy.model_validate(configuration, strict=True) if configuration else None
+        )
+    if capability_type is HandoffCapability:
+        return HandoffCapability(HandoffConfiguration.model_validate(configuration, strict=True))
+    if capability_type is RuntimeContextCapability:
+        return RuntimeContextCapability(RuntimeContextConfiguration.model_validate(configuration, strict=True))
     if capability_type is DynamicEnvironmentCapability:
         return DynamicEnvironmentCapability(DynamicEnvironmentConfiguration.model_validate(configuration, strict=True))
     if capability_type is DocumentsCapability:
@@ -439,9 +459,19 @@ def _construct_capability(
             ),
         )
 
-    initializer = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True))(capability_type.__init__)
+    arguments: dict[str, Any] = dict(configuration)
+    if capability_type is ShellReviewCapability:
+        # JSON source uses enum values; keep strict validation for all other parameters.
+        if "risk_threshold" in arguments:
+            arguments["risk_threshold"] = ShellRiskLevel(arguments["risk_threshold"])
+        for name in ("on_flagged", "on_error"):
+            if name in arguments:
+                arguments[name] = ShellReviewAction(arguments[name])
+    initializer: Any = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True))(
+        capability_type.__init__
+    )
     capability = capability_type.__new__(capability_type)
-    initializer(capability, **configuration)
+    initializer(capability, **arguments)
     return capability
 
 

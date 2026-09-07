@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import errno
 import itertools
 import math
 import os
 import signal as os_signal
+import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +50,7 @@ from ..retention import (
 from .retention import LocalRetentionStore, LocalRetentionWriter
 
 if TYPE_CHECKING:
+    from .._windows_job import WindowsJob
     from .configuration import DirectLocalShellProfile
     from .files import LocalFileOperator
     from .provider import (
@@ -154,6 +157,13 @@ class _OutputCollector:
 
 
 @dataclass(slots=True)
+class _WindowsTree:
+    job: WindowsJob
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    closed: bool = False
+
+
+@dataclass(slots=True)
 class _ProcessRecord:
     token: str
     handle: BoundProcessHandle
@@ -174,7 +184,7 @@ class _ProcessRecord:
 
 
 class LocalProcessManager:
-    """Own every spawned POSIX process group until terminal cleanup and release."""
+    """Own every spawned native process tree until terminal cleanup and release."""
 
     def __init__(
         self,
@@ -205,6 +215,7 @@ class LocalProcessManager:
         self._mount_id = mount_id
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
+        self._windows_trees: dict[int, _WindowsTree] = {}
         self._slots = asyncio.Semaphore(policy.max_concurrent_processes)
         self._operations = itertools.count(1)
         self._lock = asyncio.Lock()
@@ -265,8 +276,8 @@ class LocalProcessManager:
         raise EnvironmentError("Direct Local discovery is unsupported.", code="environment_unsupported")
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
-        if os.name != "posix":
-            raise EnvironmentError("Direct Local process groups require POSIX.", code="environment_unsupported")
+        if os.name not in {"posix", "nt"}:
+            raise EnvironmentError("Direct Local processes are unavailable on this OS.", code="environment_unsupported")
         self._validate_request(request)
         stdin_limit = self._effective_stdin_limit(request)
         await self._slots.acquire()
@@ -294,17 +305,14 @@ class LocalProcessManager:
                 writer=await self._reserve_output(output_policy),
             )
             try:
-                process = await asyncio.create_subprocess_exec(
-                    *argv,
-                    cwd=cwd,
-                    env=environment,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    start_new_session=True,
-                )
+                spawn = asyncio.create_task(self._spawn(argv, cwd, environment))
+                # Complete ownership transfer even under repeated cancellation.
+                process, cancellation = await _settle_task(spawn)
+                if cancellation is not None:
+                    raise cancellation
             except OSError as exc:
                 raise _environment_error_from_os(exc, action="start the configured executable") from exc
+            assert process is not None
             token = token_hex(16)
             handle = BoundProcessHandle(
                 mount_id=self._mount_id,
@@ -364,6 +372,40 @@ class LocalProcessManager:
                 self._slots.release()
             raise
 
+    async def _spawn(self, argv: tuple[str, ...], cwd: Path, environment: dict[str, str]) -> asyncio.subprocess.Process:
+        job: WindowsJob | None = None
+        process: asyncio.subprocess.Process | None = None
+        if os.name == "nt":
+            from .._windows_job import WindowsJob
+
+            job = WindowsJob.create()
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                cwd=cwd,
+                env=environment,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=job is None,
+                creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | job.creation_flags) if job is not None else 0,
+            )
+            if job is not None:
+                job.assign_and_resume(process.pid)
+                self._windows_trees[process.pid] = _WindowsTree(job)
+            return process
+        except BaseException:
+            if process is not None:
+                if process.returncode is None:
+                    process.kill()
+                if job is not None:
+                    job.close()
+                    job = None
+                await process.wait()
+            if job is not None:
+                job.close()
+            raise
+
     async def _reserve_output(self, policy: EnvironmentOutputPolicy) -> LocalRetentionWriter | None:
         if policy.overflow != "retain":
             return None
@@ -407,6 +449,14 @@ class LocalProcessManager:
         executable = profile.executable
         if not executable.is_file():
             raise EnvironmentError("Shell profile executable is unavailable.", code="environment_not_found")
+        if profile.dialect == "powershell":
+            # EncodedCommand avoids Windows argv quoting and code-page ambiguity.
+            prefix = (
+                "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = "
+                "[System.Text.UTF8Encoding]::new($false);\n"
+            )
+            encoded = base64.b64encode((prefix + command.script).encode("utf-16-le")).decode("ascii")
+            return (str(executable), *profile.fixed_arguments, "-OutputFormat", "Text", "-EncodedCommand", encoded)
         login = ("-l",) if command.login else ()
         return (str(executable), *profile.fixed_arguments, *login, "-c", command.script)
 
@@ -468,7 +518,7 @@ class LocalProcessManager:
             )
             record.stdin_open = False
             record.terminal.set()
-            await self._cleanup_group(record.process.pid)
+            await self._cleanup_tree(record.process.pid)
             await asyncio.gather(stdout_task, stderr_task)
             record.output = ProcessOutputSnapshot(
                 stdout=await record.stdout.finish(),
@@ -647,8 +697,13 @@ class LocalProcessManager:
     ) -> ProcessSignalResult:
         record = self._record(handle)
         accepted = record.process.returncode is None
+        if os.name == "nt" and signal == "interrupt":
+            raise EnvironmentError("Windows does not support portable tree interrupt.", code="environment_unsupported")
         if accepted:
-            _signal_group(record.process.pid, os_signal.SIGINT if signal == "interrupt" else os_signal.SIGTERM)
+            if os.name == "nt":
+                await self._terminate_process(record.process)
+            else:
+                _signal_group(record.process.pid, os_signal.SIGINT if signal == "interrupt" else os_signal.SIGTERM)
         return ProcessSignalResult(accepted=accepted, process=self._info(record), receipt=self._receipt())
 
     async def wait(
@@ -732,6 +787,10 @@ class LocalProcessManager:
         )
 
     async def _terminate_process(self, process: asyncio.subprocess.Process) -> None:
+        if os.name == "nt":
+            await self._cleanup_tree(process.pid)
+            await self._wait_initial_exit(process)
+            return
         if process.returncode is not None:
             await self._cleanup_group(process.pid)
             return
@@ -742,6 +801,32 @@ class LocalProcessManager:
             _signal_group(process.pid, os_signal.SIGKILL)
             await process.wait()
         await self._cleanup_group(process.pid)
+
+    async def _cleanup_tree(self, process_id: int) -> None:
+        if os.name != "nt":
+            await self._cleanup_group(process_id)
+            return
+        tree = self._windows_trees.get(process_id)
+        if tree is None:
+            return
+        async with tree.lock:
+            if tree.closed:
+                return
+            cleanup = asyncio.create_task(
+                asyncio.to_thread(
+                    tree.job.terminate_and_wait,
+                    timeout_seconds=self._policy.terminate_grace_seconds,
+                    poll_seconds=0.01,
+                )
+            )
+            try:
+                _, cancellation = await _settle_task(cleanup)
+                if cancellation is not None:
+                    raise cancellation
+            finally:
+                tree.job.close()
+                tree.closed = True
+                self._windows_trees.pop(process_id, None)
 
     async def _cleanup_group(self, process_group: int) -> None:
         try:
@@ -839,6 +924,23 @@ class LocalPortOperator:
             raise EnvironmentError("Port target is not allowed.", code="environment_denied")
 
 
+async def _settle_task[T](task: asyncio.Task[T]) -> tuple[T, asyncio.CancelledError | None]:
+    """Finish an ownership transfer before allowing repeated cancellation through."""
+    cancellation: asyncio.CancelledError | None = None
+    while True:
+        try:
+            return await asyncio.shield(task), cancellation
+        except asyncio.CancelledError as exc:
+            if task.cancelled():
+                raise
+            cancellation = cancellation or exc
+        except BaseException as exc:
+            if cancellation is not None:
+                cancellation.add_note(f"Owned operation also failed: {exc!r}")
+                raise cancellation from None
+            raise
+
+
 def _resolve_configured_executable(path: Path) -> Path:
     expanded = path.expanduser()
     if not expanded.is_absolute():
@@ -873,6 +975,8 @@ def _environment_error_from_os(exc: OSError, *, action: str) -> EnvironmentError
 
 
 def _signal_name(return_code: int | None) -> Literal["interrupt", "terminate", "kill"] | None:
+    if os.name != "posix":
+        return None
     if return_code == -os_signal.SIGINT:
         return "interrupt"
     if return_code == -os_signal.SIGTERM:

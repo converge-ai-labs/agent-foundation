@@ -115,7 +115,7 @@ async def test_launch_project_resolution_reports_equal_specificity_as_ambiguous(
     assert tuple(item.project_id for item in resolution.projects) == ("project-one", "project-two")
 
 
-async def test_workbench_filters_projects_and_exposes_bounded_catalogs(tmp_path: Path) -> None:
+async def test_thread_activity_filters_projects_and_exposes_bounded_catalogs(tmp_path: Path) -> None:
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     first_root.mkdir()
@@ -142,8 +142,8 @@ async def test_workbench_filters_projects_and_exposes_bounded_catalogs(tmp_path:
             defaults=NewThreadDefaults(project_id="project-second"),
             title="Second task",
         )
-        page = await app.workbench(project_id="project-first")
-        all_projects = await app.workbench(project_id=None)
+        page = await app.thread_activity(project_id="project-first")
+        all_projects = await app.thread_activity(project_id=None)
         selectors = await app.thread_selectors()
         paths = await app.complete_project_paths(project_id="project-first", query="main")
         patched = await app.patch_thread_configuration(

@@ -20,6 +20,7 @@ from a13n_ui.environment_paths import EnvironmentPathLayout
 from a13n_ui.errors import CompositionError
 from a13n_ui.extensions import AgentUiExtensionCatalog
 from a13n_ui.mcp_adapters import AgentUiMCP
+from a13n_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_ui.model_runtime import AgentUiModelResolver, SubscriptionSource, model_recipe_id
 
 from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
@@ -72,7 +73,9 @@ class AgentReconstructor:
         catalog: AgentUiExtensionCatalog | None = None,
         *,
         user_skills_root: Path | None = None,
+        api_keys: ApiKeyStore | None = None,
     ) -> None:
+        self._api_keys = api_keys
         self._catalog = catalog or AgentUiExtensionCatalog()
         self._user_skills_root = user_skills_root
 
@@ -130,6 +133,7 @@ class AgentReconstructor:
             model_resolver=AgentUiModelResolver(
                 model_recipes,
                 subscription_sources=subscription_sources,
+                api_keys=self._api_keys,
             ),
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
         )
@@ -150,10 +154,23 @@ class AgentReconstructor:
         if previous != node.model:
             raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
 
-        selected = self._catalog.capabilities(
-            tuple((item.capability, item.configuration) for item in node.capabilities),
-            path_layout=path_layout,
-        )
+        selections = []
+        for item in node.capabilities:
+            configuration = dict(item.configuration)
+            if item.model is not None:
+                auxiliary_id = model_recipe_id(item.model)
+                previous = model_recipes.setdefault(auxiliary_id, item.model)
+                if previous != item.model:
+                    raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
+                configuration["model"] = auxiliary_id
+                overrides = configuration.get("model_settings", {})
+                if not isinstance(overrides, dict):
+                    raise CompositionError(
+                        "Auxiliary Model settings must be an object.", code="capability_model_settings_invalid"
+                    )
+                configuration["model_settings"] = {**item.model.settings, **overrides}
+            selections.append((item.capability, configuration))
+        selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
         capabilities.extend(AgentUiMCP(item) for item in node.mcp_servers)
         if node.children:
@@ -201,7 +218,9 @@ class AgentReconstructor:
             agent=AgentSpec(
                 model=recipe_id,
                 model_settings=dict(node.model.settings),
-                system_prompt=list(node.instructions),
+                model_characteristics=node.model.model_characteristics,
+                system_prompt=list(node.instructions if node.system_prompt is None else node.system_prompt),
+                instructions=list(node.instructions) if node.system_prompt is not None else None,
             ),
             output_type=str,
             definition_id=f"agent-ui:{node.source_kind}:{node.source_id}",

@@ -8,6 +8,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
+from a13n_ui.live import LiveEvent
 from a13n_ui.storage import AgentResourceSource, MarkdownSubagentSource
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
@@ -18,6 +19,26 @@ class SurfaceModel(BaseModel):
     """Strict immutable base for values crossing an Agent UI surface boundary."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+
+class RunModelOverrides(SurfaceModel):
+    """Per-operation choices; never rewrite resources or sticky Thread heads."""
+
+    model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
+
+
+class WorkspaceContext(SurfaceModel):
+    directory: str
+    project_id: str
+
+
+class ContextUsageView(SurfaceModel):
+    thread_id: str
+    latest_request_tokens: int | None = None
+    context_window: int | None = None
+    model_id: str | None = None
+    thinking: str | bool | None = None
 
 
 class AgentSourceView(SurfaceModel):
@@ -426,6 +447,7 @@ class ThreadFocusSnapshot(SurfaceModel):
     root_operation: RootOperationView | None = None
     children: ChildExecutionPage
     tasks: TaskPage = Field(default_factory=TaskPage)
+    recent_events: tuple[LiveEvent, ...] = ()
 
 
 class LaunchProjectSelected(SurfaceModel):
@@ -495,7 +517,7 @@ class ActivitySummary(SurfaceModel):
         return value.astimezone(UTC)
 
 
-class WorkbenchThreadView(SurfaceModel):
+class ThreadActivityView(SurfaceModel):
     thread: ThreadSummary
     project_name: str = Field(min_length=1, max_length=256)
     agent_name: str = Field(min_length=1, max_length=256)
@@ -507,9 +529,9 @@ class WorkbenchThreadView(SurfaceModel):
     available_actions: tuple[Literal["open", "archive", "respond", "wait", "steer", "cancel"], ...] = ("open",)
 
 
-class WorkbenchPage(SurfaceModel):
+class ThreadActivityPage(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
-    rows: tuple[WorkbenchThreadView, ...]
+    rows: tuple[ThreadActivityView, ...]
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
 
@@ -517,7 +539,7 @@ class WorkbenchPage(SurfaceModel):
 class AgentSummary(SurfaceModel):
     agent_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
-    model_id: str = Field(min_length=1, max_length=128)
+    model_id: str | None = Field(default=None, min_length=1, max_length=128)
     source_path: str = Field(min_length=1, max_length=4096)
 
 
@@ -738,6 +760,8 @@ __all__ = [
     "SurfaceModel",
     "TaskPage",
     "TaskView",
+    "ThreadActivityPage",
+    "ThreadActivityView",
     "ThreadConfigurationMutationInput",
     "ThreadConfigurationPatch",
     "ThreadConfigurationView",
@@ -752,6 +776,4 @@ __all__ = [
     "TranscriptEntry",
     "TranscriptPage",
     "TranscriptPart",
-    "WorkbenchPage",
-    "WorkbenchThreadView",
 ]

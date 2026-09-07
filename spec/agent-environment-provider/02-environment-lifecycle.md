@@ -130,7 +130,7 @@ Ordinary `shell.exec` has a bounded inline/observed result contract. A Provider 
 
 ## Host State Authority and Concurrency
 
-The Host owns durable selection, publication, lifecycle serialization and retention. Foundation's [Environment records](../foundation-service/29-environment-management.md) and Agent UI's [local state](../agent-ui/04-projects-threads-and-environments.md#host-authoritative-environment-state) are distinct Host policies over the same contract.
+The Host owns durable selection, publication, lifecycle serialization and retention. Foundation's [Environment records](../foundation-service/29-environment-management.md) and Agent UI's [local state](../agent-cli/04-projects-threads-and-environments.md#host-authoritative-environment-state) are distinct Host policies over the same contract.
 
 A Host publishes changed state when known and attempts publication from unconditional finalization even after execution, checkpoint or local-close failure. Equal state needs no write. Publication follows the owning Host's consistency contract; a stale adapter cannot overwrite newer state solely because it finishes later. Distributed Hosts use their own conditional publication and operation reconciliation. The shared package prescribes no global table, last-write-wins policy or exactly-once guarantee.
 
