@@ -4,7 +4,7 @@
 
 Embedded applications and hosted execution workers use the same code-first Harness API. The Harness does not expose a separate hosted Agent format. A hosted service owns durable Agent definition schemas, Presets, immutable revisions, dependency locks, and reconstruction adapters; the worker reconstructs one process-local `AgentDefinition` and calls `HarnessBuilder`. Plugin middleware may instead use the narrow Harness-owned configuration document and Build Context, so the Host need not expose or implement plugin factory concepts.
 
-The Host also owns durable acceptance, worker `ExecutionAttempt` values, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates. a13n Service's concrete use of these generic surfaces is owned by [Service–Harness Runtime Integration](../a13n-service/14-harness-runtime-integration.md).
+The Host also owns durable acceptance, durable execution attempts, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates. a13n Service's concrete use of these generic surfaces is owned by [Service–Harness Runtime Integration](../a13n-service/14-harness-runtime-integration.md). In Service, durable work is a `Run` and one replaceable Worker attempt is a `RunAttempt`; these are Host resources, not Harness types.
 
 ## Boundary
 
@@ -68,7 +68,7 @@ For each logical run the Host can construct `RunBindings` with:
 
 An embedded caller can omit `RunBindings`; Harness creates fresh embedded bindings. Environment selection is independent from the remaining bindings: the caller passes one already constructed `Environment` or `EnvironmentMount` through `environment=`, or a named mapping through `environments=`. Provider keys, specifications, Provider objects, state envelopes, and lifecycle policy are not Harness Run inputs.
 
-The Host supplies `AgentInstanceRef` as workload identity and policy correlation. Thread identity is independent: for new history the Host may construct `HarnessState.new(thread_id=...)` with its validated ID, or Harness generates one when no State is supplied. Harness restores the State-owned ID into fresh `AgentContext`. A new Harness run or worker `ExecutionAttempt` changes transient run correlation but does not change that ID. A Host creates a separately identified branch only through `HarnessState.fork(thread_id=...)`, which derives an ID when the Host omits one; fresh bindings cannot retarget State.
+The Host supplies `AgentInstanceRef` as workload identity and policy correlation. Thread identity is independent: for new history the Host may construct `HarnessState.new(thread_id=...)` with its validated ID, or Harness generates one when no State is supplied. Harness restores the State-owned ID into fresh `AgentContext`. A new Harness run or durable execution attempt changes transient run correlation but does not change that ID. A Host creates a separately identified branch only through `HarnessState.fork(thread_id=...)`, which derives an ID when the Host omits one; fresh bindings cannot retarget State.
 
 Harness enters the complete initial adapter mapping before input production and exposes one stable internal bound facade for the logical Run. A trusted Run integration can apply linearizable mount, replace, unmount, or default-selection changes through a controller bound to that exact Run. The controller is never placed in metadata, `AgentContext`, a Capability namespace, model tools, or durable records; it rejects calls after the terminal fence and cannot mutate Host durable Environment association.
 
@@ -102,7 +102,7 @@ The Harness defines no mandatory model route pin or provider-session schema. If 
 The Host distinguishes:
 
 - internal Harness `ModelAttempt` values inside one live logical run;
-- a new durable worker `ExecutionAttempt` after process loss, lease loss, or selected recovery.
+- a new durable execution attempt after process loss, lease loss, or selected recovery.
 
 A new durable Host attempt always creates a new Harness Run with fresh bindings and fresh Environment adapters. It reconstructs desired mounts, resolves current managed state before construction, supplies fresh runtime collaborators, passes the adapters to Harness, and uses only an authoritative selected checkpoint. It does not blindly replay a possible external mutation. Interrupted-tool normalization preserves unknown outcome and tells the next model to inspect current state.
 

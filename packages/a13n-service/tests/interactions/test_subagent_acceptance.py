@@ -181,6 +181,10 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         threads = await database.scalar(
             select(func.count()).select_from(ThreadRecord).where(ThreadRecord.role == "child")
         )
+        relationship = await database.get(ChildRunRelationshipRecord, accepted.relationship.id)
+        assert relationship is not None
+        assert relationship.parent_run_attempt_fence == authority.fence
+        assert relationship.to_resource() == accepted.relationship
         assert child is not None and child_thread is not None
         child_resource = child.to_resource()
         assert child_resource.native_tool_contexts == ()
@@ -203,7 +207,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
     assert child_claim is not None
 
 
-async def test_child_acceptance_rejects_stale_generation_before_publishing_state(
+async def test_child_acceptance_rejects_stale_fence_before_publishing_state(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
@@ -410,7 +414,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         parent_run=running_parent,
         parent_state=parent_state,
         parent_run_attempt_id=parent_authority.run_attempt_id,
-        parent_run_attempt_generation=parent_authority.fence,
+        parent_run_attempt_fence=parent_authority.fence,
         parent_agent_instance_id="agent-parent",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"continue"}',
@@ -510,7 +514,7 @@ def _prepared_child(
         parent_run=parent,
         parent_state=parent_state,
         parent_run_attempt_id=attempt_id,
-        parent_run_attempt_generation=fence,
+        parent_run_attempt_fence=fence,
         parent_agent_instance_id="agent-parent",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"research"}',

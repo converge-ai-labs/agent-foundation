@@ -75,7 +75,7 @@ class ChildRunRelationshipRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_attempt_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    parent_run_attempt_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    parent_run_attempt_fence: Mapped[int] = mapped_column("parent_run_attempt_generation", BigInteger, nullable=False)
     subagent_name: Mapped[str] = mapped_column(String(63), nullable=False)
     child_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     child_thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -88,7 +88,7 @@ class ChildRunRelationshipRecord(Base):
             id=self.id,
             parent_run_id=self.parent_run_id,
             parent_run_attempt_id=self.parent_run_attempt_id,
-            parent_run_attempt_generation=self.parent_run_attempt_generation,
+            parent_run_attempt_fence=self.parent_run_attempt_fence,
             subagent_name=self.subagent_name,
             child_run_id=self.child_run_id,
             child_thread_id=self.child_thread_id,

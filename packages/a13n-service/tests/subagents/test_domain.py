@@ -19,7 +19,7 @@ def relationship() -> ChildRunRelationship:
         id="crr_1234567890abcdef",
         parent_run_id="run_1234567890abcdef",
         parent_run_attempt_id="rat_1234567890abcdef",
-        parent_run_attempt_generation=3,
+        parent_run_attempt_fence=3,
         subagent_name="researcher",
         child_run_id="run_abcdef1234567890",
         child_thread_id="thread-abcdef1234567890abcdef1234567890",

@@ -36,7 +36,7 @@ class ChildRunRelationship(StrictModel):
     id: ObjectId
     parent_run_id: ObjectId
     parent_run_attempt_id: ObjectId
-    parent_run_attempt_generation: int = Field(ge=1)
+    parent_run_attempt_fence: int = Field(ge=1)
     subagent_name: SubagentName
     child_run_id: ObjectId
     child_thread_id: ThreadId

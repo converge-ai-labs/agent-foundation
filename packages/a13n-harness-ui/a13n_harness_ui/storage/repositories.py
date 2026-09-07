@@ -86,7 +86,7 @@ class ConfigurationRepository:
                             relative_path=item.relative_path,
                             resource_kind=item.resource_kind,
                             resource_id=item.resource_id,
-                            display_name=item.name,
+                            name=item.name,
                             source_digest=item.source_digest,
                             normalized_digest=item.normalized_digest,
                         )
@@ -138,7 +138,7 @@ class ConfigurationRepository:
                     generation_digest=row.generation_digest,
                     resource_kind=row.resource_kind,
                     resource_id=row.resource_id,
-                    name=row.display_name,
+                    name=row.name,
                     relative_path=row.relative_path,
                     source_digest=row.source_digest,
                     normalized_digest=row.normalized_digest,

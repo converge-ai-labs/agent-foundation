@@ -351,7 +351,7 @@ async def _accept_another_child(
         parent_run=parent,
         parent_state=parent_state.envelope,
         parent_run_attempt_id=authority.run_attempt_id,
-        parent_run_attempt_generation=authority.fence,
+        parent_run_attempt_fence=authority.fence,
         parent_agent_instance_id="agent-parent",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"second"}',

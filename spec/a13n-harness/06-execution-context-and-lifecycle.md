@@ -4,7 +4,7 @@
 
 One Harness Run is one process-local logical invocation of an `ExecutableAgent`. It validates already constructed Environment inputs, enters a fresh Run-local mount aggregate, creates one outer `AgentContext`, binds one plugin chain, owns one shared `RunUsage` accumulator, and produces at most one terminal Harness result.
 
-A logical Harness Run may contain several sequential `ModelAttempt` values when `ModelRecoveryPolicy` is enabled. A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Foundation `ExecutionAttempt` values, plugin invocations, contexts, Environment adapter lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
+A logical Harness Run may contain several sequential `ModelAttempt` values when `ModelRecoveryPolicy` is enabled. A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Service `RunAttempt` values, plugin invocations, contexts, Environment adapter lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
 
 Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Root invocations retain its native deferred boundary. For any child invocation, the Harness mandatory tool boundary resolves runtime deferral as denied tool results inside the same loop and reserves terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
 
@@ -16,10 +16,10 @@ Pydantic AI owns each inner Agent loop, model/tool execution, native deferred an
 | Provider transport retry                                    | Provider client and Pydantic `RetryConfig` |
 | Narrow provider-history repair                              | `SelfHealingModel`                         |
 | Logical Run and `ModelAttempt` recovery                     | Harness                                    |
-| Durable execution, worker `ExecutionAttempt`, lease, replay | Host                                       |
+| Durable execution, durable execution attempt, lease, replay | Host                                       |
 | Continuation persistence and selection                      | Host                                       |
 
-A Host may map one logical Harness run to one durable worker `ExecutionAttempt`. It does not create a new durable `ExecutionAttempt` for every internal `ModelAttempt`.
+A Host may map one logical Harness run to one durable execution attempt. It does not create a new durable execution attempt for every internal `ModelAttempt`.
 
 ## RunBindings and AgentContext
 

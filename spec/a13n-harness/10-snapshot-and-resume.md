@@ -194,7 +194,7 @@ class HostExecutionState(BaseModel):
     pending_delivery: HostDeliveryState | None
 ```
 
-This is an ownership illustration, not a Harness API. Definition selection, desired Environment mounts, `ExecutionAttempt` generation, artifact locks, Provider selection, current state authority, runtime collaborators, client-tool pending state, asynchronous child lifecycle, and delivery fencing remain Host-owned. `HarnessState.environment_states` is a portable observation and fallback for explicit unmanaged/import flows; it is not the managed Host's current state or authority.
+This is an ownership illustration, not a Harness API. Definition selection, desired Environment mounts, execution-attempt generation, artifact locks, Provider selection, current state authority, runtime collaborators, client-tool pending state, asynchronous child lifecycle, and delivery fencing remain Host-owned. `HarnessState.environment_states` is a portable observation and fallback for explicit unmanaged/import flows; it is not the managed Host's current state or authority.
 
 The Harness does not define or require a generic provider route pin. Provider-specific continuation facts that cannot be derived from `thread_id` and public Pydantic messages, including an opaque model-session selector, belong to the selected model integration or Host envelope rather than the Harness schema. A broader product-conversation routing key does not replace the distinct prompt-cache affinity required for each independently advancing Agent message history.
 

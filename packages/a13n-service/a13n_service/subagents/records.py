@@ -14,7 +14,7 @@ def child_run_relationship_record(
         organization_id=organization_id,
         parent_run_id=value.parent_run_id,
         parent_run_attempt_id=value.parent_run_attempt_id,
-        parent_run_attempt_generation=value.parent_run_attempt_generation,
+        parent_run_attempt_fence=value.parent_run_attempt_fence,
         subagent_name=value.subagent_name,
         child_run_id=value.child_run_id,
         child_thread_id=value.child_thread_id,

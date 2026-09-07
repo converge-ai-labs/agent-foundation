@@ -458,6 +458,7 @@ async def test_acceptance_publishes_complete_generation_before_atomic_selection(
         assert await store.configurations.current_digest() == source.source_digest
         assert await service.current() == source
         resources = await store.configurations.resources(source.source_digest)
+        assert next(item.name for item in resources if item.resource_id == "project-main") == "Main"
         assert {(item.resource_kind, item.resource_id) for item in resources} >= {
             ("agent", "agent-assistant"),
             ("model", "model-primary"),

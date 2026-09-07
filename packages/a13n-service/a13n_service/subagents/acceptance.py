@@ -409,7 +409,7 @@ def _validate_parent_authority(
     if (
         relationship.parent_run_id != parent.id
         or relationship.parent_run_attempt_id != authority.run_attempt_id
-        or relationship.parent_run_attempt_generation != authority.fence
+        or relationship.parent_run_attempt_fence != authority.fence
         or parent_thread.id != parent.thread_id
         or run.session_id != parent.session_id
         or run.authority_principal != parent.authority_principal

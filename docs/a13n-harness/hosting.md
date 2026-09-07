@@ -71,7 +71,7 @@ Saved messages and Capability state never restore these values. A resume must re
 Persist a complete `HarnessState` candidate only as one part of a Host checkpoint. Keep the following Host facts alongside or outside it:
 
 - exact definition revision and dependency/artifact lock;
-- Execution and ExecutionAttempt identity;
+- durable run and execution-attempt identity;
 - current generation, lease, and opaque fence;
 - selected checkpoint reference and producing provenance;
 - desired Environment mount definitions and authoritative `EnvironmentState` values;
