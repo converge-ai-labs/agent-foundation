@@ -47,7 +47,7 @@ OOMOL personal/runtime APIs execute against a connection alias. The client reche
 
 Composio previews tools before account authorization. Hosted OAuth requires an existing auth configuration, your browser callback URL, and `AUTHORIZE` confirmation. After completing authorization in the browser, return to verify the account and its exact provider user ID. The script rechecks ownership, readiness, and the pinned tool definition before a call. Tool execution requires `CALL` or an explicit `--execute`.
 
-OpenRouter inference consumes quota. Neither connector script retries calls automatically or revokes accounts on exit.
+OpenRouter `discover` lists lightweight candidates; `describe --model vendor/model` uses the single-model description operation to show its settings schema without enumerating the complete catalog first. `call --model vendor/model` validates the native endpoint and invokes the model without discovery. Inference consumes quota. Neither connector script retries calls automatically or revokes accounts on exit.
 
 ## Diagnostics and local checks
 

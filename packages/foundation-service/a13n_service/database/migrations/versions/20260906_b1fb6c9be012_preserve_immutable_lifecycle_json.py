@@ -1,7 +1,7 @@
 """preserve immutable lifecycle JSON facts during projection.
 
 Revision ID: b1fb6c9be012
-Revises: 90c70b278335
+Revises: 0d5f1ae47708
 Create Date: 2026-09-06 08:34:39.256010+00:00
 """
 
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "b1fb6c9be012"
-down_revision: str | Sequence[str] | None = "90c70b278335"
+down_revision: str | Sequence[str] | None = "0d5f1ae47708"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
