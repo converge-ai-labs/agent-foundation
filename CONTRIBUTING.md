@@ -91,7 +91,9 @@ Use `make format` when you want to apply formatting changes alone. `make check` 
 make check-all
 ```
 
-`foundation-service` integration tests use fixture-owned Testcontainers. Application `FOUNDATION_*` variables never select test infrastructure.
+`foundation-service` integration tests use fixture-owned Testcontainers. Application `FOUNDATION_*` variables never select test infrastructure. Loopback SSE and fixture-owned S3 clients bypass ambient proxies.
+
+Testcontainers is pinned to 4.13.1 because 4.15.0 can read Ryuk port mappings before Docker publishes them; upgrades must verify mapped-port startup with Ryuk enabled. Unreturned SQL connections, unhandled thread exceptions, and unraisable exceptions fail the test gate.
 
 Foundation CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `Foundation Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-foundation.yml) for worker counts, timing output, and timeout settings. Local `make test` uses two workers. Service tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
 
