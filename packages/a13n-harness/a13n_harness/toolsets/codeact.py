@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import keyword
-import math
 import re
 import time
 from collections.abc import Mapping, Sequence
@@ -17,8 +16,8 @@ from uuid import uuid4
 
 from pydantic import Field, JsonValue, ValidationError
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext, Tool, ToolDefinition, ToolReturn
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UserError
-from pydantic_ai.messages import BinaryContent, InstructionPart, ToolCallPart, UserContent
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UsageLimitExceeded, UserError
+from pydantic_ai.messages import InstructionPart, ToolCallPart, UserContent
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset, ToolsetTool, WrapperToolset
 from pydantic_ai.usage import RunUsage
@@ -33,12 +32,11 @@ from pydantic_monty import (
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.executor import is_sandbox_panic
 from a13n_harness.codeact.programs import (
-    extract_persistent_bound_names,
     load_program_source,
     program_inputs,
-    validate_static_tool_references,
 )
 from a13n_harness.codeact.runtime import CodeActExecution, CodeActRunState
+from a13n_harness.codeact.values import bounded_json_size
 from a13n_harness.context import AgentContext
 from a13n_harness.events import (
     CodeActExecutionCompletedPayload,
@@ -216,7 +214,7 @@ class _CallRecord:
 @dataclass
 class _ExecutionBudget:
     config: CodeActConfig
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    lock: asyncio.Condition = field(default_factory=asyncio.Condition)
     admitted: int = 0
     pending: int = 0
     started: int = 0
@@ -226,14 +224,23 @@ class _ExecutionBudget:
 
     async def admit(self, ctx: RunContext[AgentContext]) -> int:
         async with self.lock:
-            if self.admitted >= self.config.max_tool_calls:
-                raise RuntimeError(f"CodeAct nested tool-call limit ({self.config.max_tool_calls}) exceeded")
-            # The active outer runner is not yet included in successful usage. Project
-            # it together with this admitted nested call before allowing host work.
-            projected = _copy_usage(ctx.usage)
-            projected.tool_calls += 2 + self.pending
-            if ctx.usage_limits is not None:
-                ctx.usage_limits.check_before_tool_call(projected)
+            while True:
+                if self.admitted >= self.config.max_tool_calls:
+                    raise RuntimeError(f"CodeAct nested tool-call limit ({self.config.max_tool_calls}) exceeded")
+                # Successful usage can already include pending callbacks that are
+                # still in after-execution hooks. If the conservative reservation
+                # cannot fit, wait for those callbacks to settle and recheck.
+                projected = _copy_usage(ctx.usage)
+                projected.tool_calls += 2 + self.pending
+                try:
+                    if ctx.usage_limits is not None:
+                        ctx.usage_limits.check_before_tool_call(projected)
+                except UsageLimitExceeded:
+                    if not self.pending:
+                        raise
+                    await self.lock.wait()
+                else:
+                    break
             self.admitted += 1
             self.pending += 1
             return self.admitted
@@ -244,6 +251,7 @@ class _ExecutionBudget:
             if self.pending <= 0:
                 raise RuntimeError("CodeAct nested-call admission was released twice")
             self.pending -= 1
+            self.lock.notify_all()
 
     async def add_bytes(self, size: int, *, label: str) -> None:
         async with self.lock:
@@ -366,7 +374,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         ] = None,
     ) -> Any:
         try:
-            _bounded_json_size(inputs or {}, self.config.max_output_bytes)
+            bounded_json_size(inputs or {}, self.config.max_output_bytes)
             program = await load_program_source(ctx, path, max_source_bytes=self.config.max_source_bytes)
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             raise ModelRetry(f"CodeAct program could not be loaded or validated ({type(exc).__name__})") from exc
@@ -398,27 +406,6 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             if name not in _RESERVED_TOOL_NAMES
         }
         catalog = _build_catalog(active_tools)
-        if source_path is not None:
-            try:
-                validate_static_tool_references(
-                    code,
-                    valid_tool_names=set(catalog.definitions),
-                    functions_see_complete_module=True,
-                )
-            except ValueError as exc:
-                raise ModelRetry("CodeAct program preflight rejected unavailable or unbound names") from exc
-
-        def preflight_inline(known_names: set[str]) -> set[str]:
-            try:
-                validate_static_tool_references(
-                    code,
-                    valid_tool_names=set(catalog.definitions),
-                    known_names=known_names,
-                )
-            except ValueError as exc:
-                raise ModelRetry("CodeAct inline preflight rejected unavailable or unbound names") from exc
-            return extract_persistent_bound_names(code)
-
         execution_id = f"codeact-{uuid4().hex}"
         outer_call_id = ctx.tool_call_id or execution_id
         kind = "program" if source_path is not None else "inline"
@@ -447,7 +434,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             current = manager.tools.get(canonical_name) if manager.tools is not None else None
             if current is not prepared:
                 raise RuntimeError(f"CodeAct tool {canonical_name!r} is no longer the prepared catalog entry")
-            argument_bytes = _bounded_json_size(kwargs, self.config.max_output_bytes)
+            argument_bytes = bounded_json_size(kwargs, self.config.max_output_bytes)
             await budget.add_bytes(argument_bytes, label="nested arguments")
             call_id = f"{execution_id}:{ordinal}"
             call = ToolCallPart(tool_name=canonical_name, args=kwargs, tool_call_id=call_id)
@@ -490,7 +477,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     record.error_type = type(result).__name__
                 else:
                     result = await _unwrap_tool_return(result, ordinal=ordinal, budget=budget)
-                    result_bytes = _bounded_json_size(result, self.config.max_output_bytes)
+                    result_bytes = bounded_json_size(result, self.config.max_output_bytes)
                     await budget.add_bytes(result_bytes, label="nested result")
                     record.result_bytes = result_bytes
                     record.outcome = "completed"
@@ -532,7 +519,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         global_sequential = manager.get_parallel_execution_mode() == "sequential"
         try:
             if inputs is not None:
-                input_size = _bounded_json_size(inputs, self.config.max_output_bytes)
+                input_size = bounded_json_size(inputs, self.config.max_output_bytes)
                 await budget.add_bytes(input_size, label="program inputs")
             async with asyncio.timeout(self.config.timeout_seconds):
                 if source_path is None:
@@ -545,7 +532,6 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         sequential_names=sequential_names,
                         global_sequential=global_sequential,
                         restart=restart,
-                        preflight=preflight_inline,
                     )
                 else:
                     execution = await self.state.execute_program(
@@ -629,7 +615,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             value = {"output": execution.printed}
         else:
             value = output
-        size = _bounded_json_size(value, self.config.max_output_bytes)
+        size = bounded_json_size(value, self.config.max_output_bytes)
         await budget.add_bytes(size, label="final output")
         return ToolReturn(return_value=value, content=budget.ordered_supplemental() or None)
 
@@ -759,59 +745,8 @@ async def _unwrap_tool_return(result: Any, *, ordinal: int, budget: _ExecutionBu
     return result.return_value
 
 
-class _JsonLimitExceeded(ValueError):
-    pass
-
-
-def _bounded_json_size(value: Any, limit: int, *, allow_binary: bool = False) -> int:
-    total = 0
-    active: set[int] = set()
-    pending: list[tuple[bool, Any]] = [(True, value)]
-    while pending:
-        entering, item = pending.pop()
-        if not entering:
-            active.remove(cast(int, item))
-            continue
-        if isinstance(item, str):
-            increment = len(json.dumps(item, ensure_ascii=False).encode("utf-8"))
-        elif item is None or isinstance(item, bool | int):
-            increment = len(json.dumps(item).encode())
-        elif isinstance(item, float):
-            if not math.isfinite(item):
-                raise ValueError("CodeAct numbers must be finite")
-            increment = len(json.dumps(item).encode())
-        elif isinstance(item, BinaryContent) and allow_binary:
-            increment = 4 * ((len(item.data) + 2) // 3) + 256
-        elif isinstance(item, Mapping):
-            identity = id(item)
-            if identity in active:
-                raise ValueError("Circular CodeAct value")
-            if not all(isinstance(key, str) for key in item):
-                raise TypeError("CodeAct maps require string keys")
-            active.add(identity)
-            increment = 2 + max(0, len(item) - 1)
-            pending.append((False, identity))
-            for key, nested in reversed(tuple(item.items())):
-                total += len(json.dumps(key, ensure_ascii=False).encode()) + 1
-                pending.append((True, nested))
-        elif isinstance(item, list | tuple):
-            identity = id(item)
-            if identity in active:
-                raise ValueError("Circular CodeAct value")
-            active.add(identity)
-            increment = 2 + max(0, len(item) - 1)
-            pending.append((False, identity))
-            pending.extend((True, nested) for nested in reversed(item))
-        else:
-            raise TypeError(f"Unsupported CodeAct value: {type(item).__name__}")
-        total += increment
-        if total > limit:
-            raise _JsonLimitExceeded
-    return total
-
-
 def _bounded_content_size(value: Any, limit: int) -> int:
-    return _bounded_json_size(value, limit, allow_binary=True)
+    return bounded_json_size(value, limit, allow_binary=True)
 
 
 def _format_validation_error(exc: ValidationError) -> str:

@@ -208,3 +208,26 @@ The Environment path grants no additional tool eligibility. The code can call on
 | Run untrusted OS code                                              | An actual isolated Environment provider, not the CodeAct interpreter alone |
 
 Both features are optional. A simple Agent application should begin with ordinary native Capabilities and tools, then add delegation or CodeAct only when the execution shape requires them.
+
+### Save data explicitly, not the interpreter
+
+With `CodeActCapability`, use meaningful keys to save JSON data from either runner:
+
+```python
+await store(key="search.results", value={"ids": [12, 34], "next_page": 3})
+```
+
+A later feed, program, or continued run can read it without rerunning the search:
+
+```python
+results = await load(key="search.results")
+results["ids"]
+```
+
+`load()` lists all keys; `forget(key="search.results")` deletes one and returns whether it existed. There is no message/description field. A missing key raises an error, while a stored null loads as `None`. Loaded objects are detached: mutate and call `store` again to publish changes.
+
+Successful writes survive subsequent sandbox failure and `run_code(restart=True)`. Cross-run continuity requires the host to save and restore `HarnessState`; this is not durable storage by itself. Ordinary variables and functions still disappear when a run ends. A new child has separate state; a host-created state fork is a detached copy, never a shared map. Restoring data does not restore old tool permissions.
+
+The model receives only a bounded key directory (up to 32 keys and 4 KiB), not all stored values. Use `load()` to discover omitted keys. `CodeActConfig.max_state_entries` defaults to 256 and `max_state_bytes` to 10 MiB for the whole compact JSON namespace, including keys. Keys must contain 1–256 characters. Values must be finite JSON; rejected writes do not replace existing data. These limits also apply when restoring state.
+
+CodeAct lets Monty resolve Python names rather than rejecting calls with an approximate static scope checker. Actual host calls must still be eligible in the current tool catalog. A later unavailable call can fail after earlier tools have run; completed effects and explicit writes are not rolled back or automatically replayed.

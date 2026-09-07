@@ -14,6 +14,8 @@ class CodeActConfig:
     programs: bool = True
     max_source_bytes: int = 256 * 1024
     max_output_bytes: int = 10 * 1024 * 1024
+    max_state_bytes: int = 10 * 1024 * 1024
+    max_state_entries: int = 256
     max_tool_calls: int = 128
     max_concurrency: int = 16
     timeout_seconds: float = 300.0
@@ -28,6 +30,8 @@ class CodeActConfig:
         for field_name in (
             "max_source_bytes",
             "max_output_bytes",
+            "max_state_bytes",
+            "max_state_entries",
             "max_tool_calls",
             "max_concurrency",
             "max_memory_bytes",

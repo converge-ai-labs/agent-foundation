@@ -112,7 +112,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
 | `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
 | `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Definition-selected `SubagentOperator`                         |
-| `CodeActCapability`            | Restricted `run_code` and optional `run_program`                                            | Explicit eligible tools and Environment files for programs     |
+| `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
 | `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical run                       | Current `AgentContext` supplied by the Harness                 |
 
 Provider-backed run Capabilities contain live trusted collaborators. They are not definition state and never enter `HarnessState`.

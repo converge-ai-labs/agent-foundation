@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any
@@ -32,7 +31,6 @@ class CodeActRunState:
     _pool_stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False, repr=False)
     _inline_stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False, repr=False)
     _inline_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
-    _inline_bound_names: set[str] = field(default_factory=set, init=False, repr=False)
 
     @property
     def limits(self) -> ResourceLimits:
@@ -65,7 +63,6 @@ class CodeActRunState:
         await self._inline_stack.aclose()
         self._inline_stack = AsyncExitStack()
         self._inline_session = None
-        self._inline_bound_names.clear()
 
     async def execute_inline(
         self,
@@ -78,7 +75,6 @@ class CodeActRunState:
         sequential_names: set[str],
         global_sequential: bool,
         restart: bool,
-        preflight: Callable[[set[str]], set[str]],
     ) -> CodeActExecution:
         if self._inline_lock.locked():
             raise RuntimeError("Another run_code call already owns the inline session")
@@ -86,7 +82,6 @@ class CodeActRunState:
             try:
                 if restart:
                     await self.reset_inline()
-                bound_names = preflight(set(self._inline_bound_names))
                 session = await self._get_inline_session()
                 result = await self._execute(
                     session,
@@ -101,7 +96,6 @@ class CodeActRunState:
             except BaseException:
                 await self.reset_inline()
                 raise
-            self._inline_bound_names.update(bound_names)
             return result
 
     async def execute_program(

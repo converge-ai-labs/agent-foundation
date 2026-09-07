@@ -14,14 +14,23 @@ from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.runtime import CodeActRunState
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.model_context import (
+    AbstractModelContextCapability,
+    ModelContextBlock,
+    ModelContextNext,
+    ModelContextPlacement,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
+)
 from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
 from a13n_harness.toolsets.codeact import CodeActToolset, render_codeact_runner_description
+from a13n_harness.toolsets.codeact_state import CODEACT_STATE_ID, CodeActStateToolset
 
-CODEACT_CAPABILITY_ID = "a13n.codeact"
+CODEACT_CAPABILITY_ID = CODEACT_STATE_ID
 
 
 @dataclass(init=False)
-class CodeActCapability(AbstractCapability[AgentContext]):
+class CodeActCapability(AbstractModelContextCapability):
     """Install one logical-run restricted Python Toolset wrapper."""
 
     id = CODEACT_CAPABILITY_ID
@@ -32,6 +41,7 @@ class CodeActCapability(AbstractCapability[AgentContext]):
         self.config = config or CodeActConfig()
         self._context: AgentContext | None = None
         self._state: CodeActRunState | None = None
+        self._stored_values: CodeActStateToolset | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost", wrapped_by=(ToolExecutionBoundaryCapability,))
@@ -46,9 +56,38 @@ class CodeActCapability(AbstractCapability[AgentContext]):
         replacement = CodeActCapability(self.config)
         replacement._context = ctx.deps
         replacement._state = CodeActRunState(replacement.config)
+        replacement._stored_values = CodeActStateToolset(ctx.deps, replacement.config)
+        replacement._stored_values.validate(await replacement._stored_values.snapshot())
         ctx.deps._record_run_capability(CODEACT_CAPABILITY_ID, replacement)
         ctx.deps._register_run_cleanup(CODEACT_CAPABILITY_ID, replacement._close)
         return replacement
+
+    def get_toolset(self) -> AbstractToolset[AgentContext] | None:
+        return self._stored_values.get_toolset() if self._stored_values is not None else None
+
+    async def wrap_model_context(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection:
+        self._require_context(ctx)
+        projection = await handler(request)
+        if self._stored_values is None:
+            raise RuntimeError("CodeAct stored values require an active run")
+        index = await self._stored_values.context_index()
+        if not index:
+            return projection
+        return ModelContextProjection(
+            blocks=(
+                *projection.blocks,
+                ModelContextBlock(
+                    source_id="codeact.stored_keys",
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=index,
+                ),
+            )
+        )
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
         if self._state is None:

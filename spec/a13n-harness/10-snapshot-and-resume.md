@@ -82,6 +82,8 @@ class AgentContextState:
     ) -> AgentContextStateSnapshot: ...
 ```
 
+[CodeAct](18-codeact.md#explicit-stored-values) uses this boundary for explicit key-to-JSON values, not interpreter snapshots. Successful store/delete operations update the current namespace independently of sandbox success; cross-run survival still requires Host persistence and restore.
+
 A read validates the requested namespace, exact entry version, and the owning Pydantic state model. A write atomically replaces one namespace with detached JSON. A snapshot atomically copies all namespaces.
 
 The coordinator does not maintain a Capability registry and does not reject an entry merely because no active Capability reads it in the current run. Unknown or transferred namespaces remain opaque and survive snapshotting. This permits trusted plugin handoff, optional Capability removal and reintroduction, and Host-controlled state migration without a second global codec system. A Capability accepts a namespace only by reading it through its own expected ID, version, and model.

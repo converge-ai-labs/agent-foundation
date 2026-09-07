@@ -19,6 +19,8 @@ A saved program is reusable source. Running it again executes current tools agai
 | Logical files and path authorization for program source                                                                    | Current Environment `FileOperator` |
 | Durable execution, scheduling, checkpointing, delivery, and replay policy                                                  | Host                               |
 
+CodeAct owns explicit stored values and their key directory. The existing `AgentContextState` coordinator owns detached namespace replacement and export; the Host owns persistence of the resulting `HarnessState`.
+
 The Capability may create and bind the Toolset, but it does not act as the Toolset's Operations object or receive callbacks for complete model-tool execution. The Toolset owns each runner call over the narrow Monty, `ToolManager`, event, and `FileOperator` ports selected by the Capability.
 
 ## Architecture
@@ -56,6 +58,8 @@ class CodeActConfig:
     programs: bool = True
     max_source_bytes: int = 256 * 1024
     max_output_bytes: int = 10 * 1024 * 1024
+    max_state_bytes: int = 10 * 1024 * 1024
+    max_state_entries: int = 256
     max_tool_calls: int = 128
     max_concurrency: int = 16
     timeout_seconds: float = 300.0
@@ -102,7 +106,7 @@ Canonical names that are Python identifiers remain unchanged. Other valid final 
 
 ## Final Tool Directory and Nested Dispatch
 
-For each execution, CodeAct derives one immutable name, schema, sequential-policy, and eligibility snapshot from the active run-step's final `ToolManager`. Execution stays on that same manager object. CodeAct does not construct a divergent manager, call an underlying Python function directly, call `BaseTool.call`, or maintain an independent route table.
+For each execution, CodeAct derives one immutable name, schema, sequential-policy, and eligibility snapshot from the active run-step's final `ToolManager`. Execution stays on that same manager object. Monty owns Python name resolution, including forward references, closures, and comprehension bindings. The Harness does not approximate Python scoping with a static call-name analyzer; only actual external calls must resolve in the current catalog. An unavailable call may therefore fail after earlier calls have completed, under the normal side-effect uncertainty rules. CodeAct does not construct a divergent manager, call an underlying Python function directly, call `BaseTool.call`, or maintain an independent route table.
 
 Each sandbox callback:
 
@@ -117,7 +121,7 @@ Each sandbox callback:
 
 This path preserves the current prepared tool, custom validators, Capability validation/execution hooks, managed authorization and credentials, owning wrappers such as the Harness execution boundary, approval handlers that resolve inline, tracing, business usage producers, and Pydantic successful-call accounting. It never fabricates a second managed invocation or usage record.
 
-`CodeActConfig.max_tool_calls` limits admitted nested attempts in one runner execution. Pydantic `UsageLimits.tool_calls_limit` remains independently authoritative for the parent run. Each successful nested call is counted by `ToolManager`; the Harness does not directly mutate successful usage. The runner must reject work before dispatch when the current public Pydantic usage contract proves that the projected outer plus nested call cannot fit. Where an upstream version cannot safely reserve a concurrent projected parent slot, CodeAct serializes admission rather than allowing calls to exceed the parent limit.
+`CodeActConfig.max_tool_calls` limits admitted nested attempts in one runner execution. Pydantic `UsageLimits.tool_calls_limit` remains independently authoritative for the parent run. Each successful nested call is counted by `ToolManager`; the Harness does not directly mutate successful usage. The runner must reject work before dispatch when the current public Pydantic usage contract proves that the projected outer plus nested call cannot fit. A callback may already have contributed successful usage while its after-execution hooks are still pending. If the conservative projection cannot fit while callbacks are pending, admission waits for them to settle and recomputes the projection before rejecting or dispatching. Waiting is cancellation- and deadline-bound; the Harness never adjusts Pydantic usage counters itself.
 
 `max_concurrency` covers conversion, validation hooks, and execution for admitted callbacks. A nested tool marked sequential is a barrier with respect to other nested calls in that execution, and a parent run-wide sequential execution policy remains authoritative.
 
@@ -141,6 +145,24 @@ Inline source is strict Python text bounded by UTF-8 bytes. Successful calls may
 Any unsuccessful inline feed discards the entire inline session before control returns. Partial interpreter mutation does not survive a failed source feed. Inline interpreter state is never exported through `HarnessState`, copied into a child, restored into a new Harness run, retained across deferred resume, or treated as a crash/takeover checkpoint.
 
 The final expression is the return value. Printed output is captured under `max_output_bytes`; it is not an unbounded logging side channel.
+
+## Explicit Stored Values
+
+CodeAct owns a version-`1` `a13n.codeact` Capability state namespace containing only a `values` map. It exposes ordinary CodeAct-eligible tools through the same final `ToolManager` as other nested calls:
+
+```python
+async def store(key: str, value: JsonValue) -> None: ...
+async def load(key: str | None = None) -> JsonValue: ...
+async def forget(key: str) -> bool: ...
+```
+
+`store` replaces one key's JSON value. `load(key=...)` returns a detached value; a missing key fails distinctly from a stored JSON null. `load()` lists all keys in sorted order, without values. `forget` deletes a key and returns whether it existed. There is no message, description, implicit variable capture, or interpreter serialization. Use meaningful keys. These tools are also available as ordinary model calls; omitting CodeAct exposes neither the runners nor its state tools. Tool name collisions follow normal Toolset composition and never overwrite an existing tool.
+
+Keys contain 1–256 characters. Values use the finite JSON boundary below. `max_state_entries` bounds the key count and `max_state_bytes` bounds the compact UTF-8 JSON namespace payload, including keys and container overhead; no individual entry can exceed this aggregate bound. Imported state must satisfy the current configuration before execution. Updates are serialized within one Context, validated before publishing, and atomically replace the namespace through `AgentContextState`. Rejected writes leave prior data intact; concurrent writes to different keys do not lose updates. Loads never expose mutable stored objects.
+
+A successful write immediately updates the current Context, independently of Monty feed completion. A later sandbox exception, cancellation, `restart=True`, or program-session cleanup does not roll it back. It remains a Host responsibility to save an exported `HarnessState` and supply it on continuation. A process crash before Host persistence can lose writes; `store` is not a durable commit or replay checkpoint. A new run with no previous state starts empty. A Host fork receives the generic detached Capability-state copy, while a newly constructed child Context starts with its own namespace; no live map is shared. Restoring values never restores tools, credentials, a catalog, or executable authority.
+
+Before model requests, CodeAct projects a key-only directory of at most 32 keys and 4 KiB. It reports the visible and total counts and points to `load()` for omitted keys. Stored values are not automatically inserted into model context or diagnostics. Values are, however, intentionally included in the Capability payload of exported `HarnessState` and may appear in normal tool results when explicitly loaded.
 
 ## `run_program`
 
@@ -181,7 +203,7 @@ Memory, recursion, and pure-compute duration limits are passed through Monty's p
 
 Approval or external execution may succeed only when the active Pydantic capability resolves it inline before the nested callback returns. CodeAct dispatches through `ToolManager.handle_call()`, so root deferred handlers receive nested requests and the mandatory child boundary resolves them first. A root handler result returns normally into restricted code. A child `ToolDenied` or an unresolved root `ApprovalRequired`/`CallDeferred` terminates the current CodeAct execution as a bounded runner failure; it does not export a Monty frame as deferred state, resume at the old program counter, or replay the whole source after feedback. The surrounding Agent loop can continue from that runner result.
 
-Syntax, entrypoint, static preflight, runner-input, missing-tool, and nested argument-validation failures discovered before any nested call starts may ask the model to correct the outer runner call under its normal retry budget. Raw nested validation does not consume the target tool's model-retry counter.
+Syntax, entrypoint, runner-input, missing-tool, and nested argument-validation failures discovered before any nested call starts may ask the model to correct the outer runner call under its normal retry budget. Raw nested validation does not consume the target tool's model-retry counter.
 
 After the first nested call starts, any nested validation error, target `ModelRetry`, policy/result failure, timeout, or later program failure is terminal for that runner invocation. It becomes a bounded `ToolFailed` result and must not trigger automatic whole-source replay. Transport retries wholly inside the owning real tool remain governed by that owner's idempotency contract. A new attempt requires a new explicit runner call.
 
@@ -191,7 +213,7 @@ A completed earlier callback is never rolled back. Failure and timeout metadata 
 
 CodeAct emits typed Harness `diagnostic` extension payloads for execution start/completion and nested call start/completion. Correlation includes a fresh execution ID, the outer tool-call ID, nested call IDs and ordinals, canonical and sandbox names, execution kind, source digest and optional logical path, terminal status, durations, byte counts, error category, and side-effect uncertainty.
 
-The default event, log, result metadata, and state projections contain no raw source, program inputs, nested arguments, nested return values, exception values, credential-bearing metadata, or content previews. Validation diagnostics omit input values. Events are process-local observations and may be missing after a hard crash; they are not a durable journal or replay authority.
+Except for explicitly stored values in the portable Capability namespace, the default event, log, result metadata, and state projections contain no raw source, program inputs, nested arguments, nested return values, exception values, credential-bearing metadata, or content previews. Validation diagnostics omit input values. Events are process-local observations and may be missing after a hard crash; they are not a durable journal or replay authority.
 
 ## Compatibility
 
@@ -216,3 +238,5 @@ CodeAct source is written for Monty's supported Python subset, not CPython. Chan
 13. Failure after a nested call starts never becomes an automatic source replay.
 14. Cancellation drains admitted callbacks before ownership release and then propagates cancellation.
 15. Default diagnostics contain identities, status, timing, and sizes but no source or nested values.
+16. Explicit stored values survive sandbox reset and failure; only Host-persisted HarnessState provides cross-run continuity.
+17. Stored data has no message field and never restores executable authority.
