@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from a13n_harness import HarnessState
+from a13n_harness.usage import intersect_usage_limits
+from pydantic_ai.usage import UsageLimits
 
 from a13n_service.agents.domain import EffectiveAgentConfig
 
@@ -15,6 +17,7 @@ class RunStateSeed(StrictModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     effective_agent_config: EffectiveAgentConfig
+    usage_limits: UsageLimits | None = None
 
 
 def initialize_start_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunStateEnvelope:
@@ -30,7 +33,7 @@ def initialize_completed_continuation_state(
     parent: RunStateEnvelope,
 ) -> RunStateEnvelope:
     _require_parent(parent, checkpoint_kind="completed")
-    return _initial_envelope(seed, _clone_harness(parent.harness), HostContinuationState())
+    return _initial_envelope(_retain_limits(seed, parent), _clone_harness(parent.harness), HostContinuationState())
 
 
 def initialize_waiting_continuation_state(
@@ -44,7 +47,7 @@ def initialize_waiting_continuation_state(
         deferred=parent.host.deferred.model_copy(deep=True),
         consumed_inbox_entries=(),
     )
-    return _initial_envelope(seed, _clone_harness(parent.harness), host)
+    return _initial_envelope(_retain_limits(seed, parent), _clone_harness(parent.harness), host)
 
 
 def initialize_fork_state(
@@ -54,7 +57,9 @@ def initialize_fork_state(
     thread_id: ThreadId,
 ) -> RunStateEnvelope:
     _require_parent(parent, checkpoint_kind="completed")
-    return _initial_envelope(seed, parent.harness.fork(thread_id=thread_id), HostContinuationState())
+    return _initial_envelope(
+        _retain_limits(seed, parent), parent.harness.fork(thread_id=thread_id), HostContinuationState()
+    )
 
 
 def initialize_retry_state(
@@ -74,7 +79,7 @@ def initialize_retry_state(
     if source_lineage_kind is RunLineageKind.fork:
         _require_parent(parent, checkpoint_kind="completed")
         harness = parent.harness.fork(thread_id=thread_id)
-        return _initial_envelope(seed, harness, HostContinuationState())
+        return _initial_envelope(_retain_limits(seed, parent), harness, HostContinuationState())
     if source_input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
         state = initialize_waiting_continuation_state(seed, parent)
     else:
@@ -107,6 +112,7 @@ def _initial_envelope(
         agent_id=seed.agent_id,
         agent_revision_id=seed.agent_revision_id,
         effective_agent_config=seed.effective_agent_config,
+        usage_limits=seed.usage_limits,
         runtime_lock_digest=seed.effective_agent_config.runtime_lock_digest,
         harness_schema_version=harness.schema_version,
         harness=harness,
@@ -118,6 +124,10 @@ def _initial_envelope(
 def _require_parent(parent: RunStateEnvelope, *, checkpoint_kind: str) -> None:
     if parent.checkpoint_kind != checkpoint_kind or parent.outcome_candidate is None:
         raise ValueError(f"Run state parent must be a sealed {checkpoint_kind} candidate")
+
+
+def _retain_limits(seed: RunStateSeed, parent: RunStateEnvelope) -> RunStateSeed:
+    return seed.model_copy(update={"usage_limits": intersect_usage_limits(seed.usage_limits, parent.usage_limits)})
 
 
 def _clone_harness(value: HarnessState) -> HarnessState:

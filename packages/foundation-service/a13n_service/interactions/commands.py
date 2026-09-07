@@ -842,6 +842,7 @@ class InteractionCommands:
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
+                usage_limits=source_state.envelope.usage_limits,
             ),
             thread_id=source.thread_id,
             source_lineage_kind=source.lineage_kind,

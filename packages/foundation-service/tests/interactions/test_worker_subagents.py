@@ -14,7 +14,7 @@ from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection, MCPConnectionRunSelection
+from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.models import RunRecord
@@ -30,6 +30,7 @@ from a13n_service.storage import short_session, transaction
 from a13n_service.subagents.models import ChildRunRelationshipRecord
 from anyio import create_task_group, fail_after, sleep
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 
 from ..connectivity.connector_helpers import FakeConnection, FakeConnectorBackend, fake_registry
@@ -60,13 +61,13 @@ def rehash(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
     )
 
 
-def frozen_graph(mode, lock):
+def frozen_graph(mode, lock, request_limit=None):
     connector = ConnectorConnectionRunSelection(
         connector_connection_id=CONNECTOR_CONNECTION_ID,
         connector_provider_id=CONNECTOR_ID,
         tools=("issues.create",),
     )
-    mcp = MCPConnectionRunSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    mcp = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
     base = effective_agent_config()
     child = rehash(
         base.model_copy(
@@ -95,6 +96,7 @@ def frozen_graph(mode, lock):
         child_agent_revision_id=CHILD_REVISION_ID,
         context={"include_task": True, "history": "none", "task_state": "shared"},
         environment={"mode": "none"},
+        usage_limits=UsageLimits(request_limit=request_limit),
     )
     return rehash(
         base.model_copy(
@@ -116,13 +118,14 @@ def frozen_graph(mode, lock):
     )
 
 
-@pytest.mark.parametrize("mode", ["inline", "async"])
+@pytest.mark.parametrize(("mode", "request_limit"), [("inline", None), ("async", None), ("async", 1)])
 async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
     interaction_sessions,
     interaction_object_store,
     tmp_path,
     monkeypatch,
     mode,
+    request_limit,
     caplog,
 ):
     lock = PluginRuntimeLock(
@@ -143,7 +146,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         return await original_failure(self, *args, **kwargs)
 
     monkeypatch.setattr(RunAttemptControl, "fail_execution", capture_failure)
-    config = frozen_graph(mode, lock)
+    config = frozen_graph(mode, lock, request_limit)
     await _grant_and_seed_child(interaction_sessions)
     await seed_selection_sources(
         interaction_sessions,
@@ -260,9 +263,10 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
                         children = (
                             await database.scalars(select(RunRecord).where(RunRecord.agent_id == CHILD_AGENT_ID))
                         ).all()
-                        assert not any(child.status == "failed" for child in children), [
-                            child.failure_json for child in children
-                        ]
+                        if request_limit is None:
+                            assert not any(child.status == "failed" for child in children), [
+                                child.failure_json for child in children
+                            ]
                         entries = (
                             await database.scalars(
                                 select(ThreadInboxRecord).where(ThreadInboxRecord.kind == "async_subagent_result")
@@ -298,7 +302,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         assert "Harness live observation projection failed" not in caplog.text
         assert parse_contexts.call_count == (2 if mode == "inline" else 3)
         assert set(observed_models) == {MODEL_ID, CHILD_MODEL_ID}
-        assert len(child_requests) == 2
+        assert len(child_requests) == (2 if request_limit is None else 1)
         connector_calls.assert_awaited_once()
         assert server.calls == [(None, "search")]
         async with short_session(interaction_sessions) as database:
@@ -306,10 +310,16 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
             assert len(relationships) == (1 if mode == "async" else 0)
             if mode == "async":
                 child = await database.get(RunRecord, relationships[0].child_run_id)
-                assert child.output_json == "child complete"
+                if request_limit is None:
+                    assert child.output_json == "child complete"
+                else:
+                    assert child.status == "failed"
+                    assert child.failure_json is not None
                 successor = await database.get(RunRecord, entries[0].target_run_id)
                 assert successor.status == "completed"
                 assert successor.id != parent.id
         if mode == "async":
             child_state = await states.read(child.organization_id, child.id)
             assert child_state.envelope.effective_agent_config.resolved_model.execution.model_id == CHILD_MODEL_ID
+
+            assert child_state.envelope.usage_limits.request_limit == (1000 if request_limit is None else 1)

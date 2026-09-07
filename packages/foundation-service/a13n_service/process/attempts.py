@@ -147,7 +147,7 @@ class WorkerAttempts:
             )
             config = state.envelope.effective_agent_config
             subagent_capability = (
-                self._subagents.capability(run=run, config=config, authority=control)
+                self._subagents.capability(run=run, authority=control)
                 if config.subagent_mode == "async" and config.resolved_subagents
                 else SubagentCapability()
             )

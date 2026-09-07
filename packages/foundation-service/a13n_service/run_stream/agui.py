@@ -56,13 +56,13 @@ class HarnessAguiRunStreamWriter:
         run_attempt_id: str,
         harness_run_id: str,
         observer: HarnessAguiObserver | None = None,
-        source_thread_id: str | None = None,
+        source_thread_id: str,
     ) -> None:
         self._stream = stream
         self._organization_id = organization_id
         self._run_id = run_id
         self._thread_id = thread_id
-        self._source_thread_id = source_thread_id or thread_id
+        self._source_thread_id = source_thread_id
         self._run_attempt_id = run_attempt_id
         self._harness_run_id = harness_run_id
         self._observer = HarnessAguiObserver() if observer is None else observer
@@ -74,7 +74,11 @@ class HarnessAguiRunStreamWriter:
         for index, observation in enumerate(self._observer.observe(event)):
             event_type = _event_type(observation)
             payload = _payload(observation)
-            item = _item_projection(self._run_id, event, event_type, payload)
+            child_scope = self._harness_run_id if self._source_thread_id != self._thread_id else None
+            for field, kind in (("messageId", "message"), ("parentMessageId", "message"), ("toolCallId", "tool_call")):
+                if isinstance(value := payload.get(field), str):
+                    payload[field] = _presentation_id(child_scope, kind, value)
+            item = _item_projection(self._run_id, event, event_type, payload, child_scope=child_scope)
             if item is not None:
                 payload.update(item.fields)
             payload = _bounded_payload(event_type, payload)
@@ -187,6 +191,8 @@ def _item_projection(
     source: HarnessEvent | HarnessRunResultEvent[Any],
     event_type: str,
     payload: dict[str, JsonValue],
+    *,
+    child_scope: str | None,
 ) -> _ItemProjection | None:
     if event_type in _MESSAGE_EVENTS:
         source_id = payload.get("messageId")
@@ -199,7 +205,7 @@ def _item_projection(
         kind = "tool_call"
         terminal_state = "completed" if event_type == "tool_call_result" else None
     elif isinstance(source, HarnessEvent) and (part := _failed_tool_result(source)) is not None:
-        source_id = part.tool_call_id
+        source_id = _presentation_id(child_scope, "tool_call", part.tool_call_id)
         kind = "tool_call"
         terminal_state = "failed"
     else:
@@ -217,6 +223,12 @@ def _item_projection(
         fields=fields,
         terminal_state=terminal_state,
     )
+
+
+def _presentation_id(child_scope: str | None, kind: str, source_id: str) -> str:
+    # Root IDs correlate with native deferred feedback; inline children have a
+    # separate model namespace and cannot borrow the root's presentation IDs.
+    return source_id if child_scope is None else deterministic_item_id(child_scope, kind, source_id)
 
 
 def _failed_tool_result(source: HarnessEvent) -> ToolReturnPart | None:

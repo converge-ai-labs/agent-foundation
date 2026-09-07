@@ -22,8 +22,8 @@ from a13n_service.run_stream import (
     LifecycleRunStreamProjector,
     RedisRunStream,
     RunReplayStore,
-    RunStreamHarnessProjector,
 )
+from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     MAX_INLINE_ASYNC_RESULT_BYTES,
@@ -549,15 +549,8 @@ async def _complete_object_backed_child(
         ),
     )
     stream = RedisRunStream(redis)
-    live_projector = RunStreamHarnessProjector(
-        stream,
-        organization_id=ORGANIZATION_ID,
-        run_id=child_run_id,
-        thread_id=child_resource.thread_id,
-        run_attempt_id=claim.attempt.id,
-        harness_run_id="completed-child",
-    )
-    live_projector.project(
+    live_projector = AttemptRunStreamProjector(stream, _authority(claim))
+    await live_projector.project(
         HarnessRunResultEvent(
             thread_id=child_resource.thread_id,
             run_id="completed-child",

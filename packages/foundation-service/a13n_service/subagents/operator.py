@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol
 
 from a13n_harness import SafeFailure
 from a13n_harness.capabilities import (
@@ -23,6 +22,7 @@ from a13n_harness.capabilities import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
+from a13n_harness.usage import intersect_usage_limits
 from anyio import current_time, sleep
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -36,6 +36,7 @@ from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeServic
 from a13n_service.temporal import Clock, utc_now
 
 from .acceptance import ChildRunAcceptanceReceipt, ChildRunAcceptanceService
+from .admission import ChildRunAdmissionPreparer
 from .execution_store import (
     AttemptAuthoritySource,
     RetainedChildExecution,
@@ -51,27 +52,6 @@ from .preparation import PreparedChildRunAcceptance, PreparedChildRunResume
 _ACTIVE_STATUSES = {RunStatus.accepted, RunStatus.running}
 _STEERABLE_STATUSES = {*_ACTIVE_STATUSES, RunStatus.waiting}
 _TERMINAL_STATUSES = {RunStatus.completed, RunStatus.failed, RunStatus.cancelled}
-
-
-class ChildRunAdmissionPreparer(Protocol):
-    """Resolve exact child config and construct state-first admission candidates."""
-
-    async def prepare_delegate(
-        self,
-        authority: AttemptContext,
-        plan: SubagentDelegationPlan,
-        request: AsyncDelegateRequest,
-        delegated_input: str,
-    ) -> PreparedChildRunAcceptance: ...
-
-    async def prepare_resume(
-        self,
-        authority: AttemptContext,
-        source: RetainedChildExecution,
-        plan: SubagentDelegationPlan,
-        request: AsyncResumeRequest,
-        delegated_input: str,
-    ) -> PreparedChildRunResume: ...
 
 
 class DurableSubagentOperator(SubagentOperator):
@@ -329,6 +309,7 @@ def _validate_delegate_candidate(
         or prepared.run.parent_agent_instance_id != plan.parent.parent_agent_instance_id
         or execution_input(prepared.run) != delegated_input
         or prepared.child_definition_id != plan.child.definition.definition_id
+        or intersect_usage_limits(prepared.state.usage_limits, plan.usage_limits) != prepared.state.usage_limits
     ):
         raise SubagentOperatorError(
             "subagent_admission_candidate_invalid",
@@ -351,7 +332,8 @@ def _validate_resume_candidate(
         or prepared.relationship.subagent_name != plan.child.declaration.name
         or prepared.run.parent_agent_instance_id != plan.parent.parent_agent_instance_id
         or execution_input(prepared.run) != delegated_input
-        or prepared.child_definition_id != plan.child.definition.definition_id
+        or prepared.child_definition_id != source.child_definition_id
+        or intersect_usage_limits(prepared.state.usage_limits, plan.usage_limits) != prepared.state.usage_limits
     ):
         raise SubagentOperatorError(
             "subagent_resume_candidate_invalid",
@@ -390,6 +372,5 @@ def _delegated_input(plan: SubagentDelegationPlan) -> str:
 
 
 __all__ = [
-    "ChildRunAdmissionPreparer",
     "DurableSubagentOperator",
 ]

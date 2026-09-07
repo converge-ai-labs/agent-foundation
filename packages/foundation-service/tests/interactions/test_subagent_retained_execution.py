@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -13,7 +14,7 @@ from a13n_service.agents.domain import EffectiveAgentConfig, canonical_digest
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.acceptance import RunAcceptanceService
-from a13n_service.interactions.domain import Run, RunLineageKind, Thread, ThreadOriginKind, ThreadRole
+from a13n_service.interactions.domain import RunLineageKind, Thread, ThreadOriginKind, ThreadRole
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.initialization import (
     RunStateSeed,
@@ -27,12 +28,12 @@ from a13n_service.interactions.scheduling import AttemptScheduler
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     ChildRunAcceptanceService,
-    ChildRunAdmissionProfile,
+    ChildRunAdmissionPreparer,
     DurableSubagentOperator,
-    ProfileChildRunAdmissionPreparer,
     SubagentOperatorError,
 )
 from a13n_service.subagents.models import ChildRunRelationshipRecord
+from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -45,7 +46,6 @@ from .conftest import (
     ORGANIZATION_ID,
     USER_ID,
     WORKSPACE_ID,
-    effective_agent_config,
 )
 from .test_acceptance import _accepted_run, _inline_hooks
 from .test_attempt_execution import _authority, _worker
@@ -200,7 +200,7 @@ async def test_later_parent_roster_revision_can_resume_retained_child_checkpoint
         interaction_object_store,
     )
     delegated = await operator.delegate(
-        delegate_plan,
+        replace(delegate_plan, usage_limits=UsageLimits(request_limit=3)),
         AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
     )
     await _complete_delegated_child(
@@ -219,23 +219,29 @@ async def test_later_parent_roster_revision_can_resume_retained_child_checkpoint
         context,
         authority_box,
         parent_config=_replace_parent_child_revision(parent_state.envelope.effective_agent_config),
-        child_revision_id=REPLACEMENT_CHILD_REVISION_ID,
-        child_definition_id=REPLACEMENT_CHILD_DEFINITION_ID,
     )
 
     resumed = await later_operator.resume(
-        _plan(
-            later_context,
-            delegated_input='{"delegated_task":"continue"}',
-            child_definition_id=REPLACEMENT_CHILD_DEFINITION_ID,
+        replace(
+            _plan(
+                later_context,
+                delegated_input='{"delegated_task":"continue"}',
+                child_definition_id=REPLACEMENT_CHILD_DEFINITION_ID,
+            ),
+            usage_limits=UsageLimits(request_limit=9, total_tokens_limit=500),
         ),
         AsyncResumeRequest(execution_id=delegated.execution_id, prompt="continue"),
     )
 
-    assert resumed.child_definition_id == REPLACEMENT_CHILD_DEFINITION_ID
+    assert resumed.child_definition_id == CHILD_DEFINITION_ID
     assert resumed.resumed_from == delegated.execution_id
     assert resumed.child_run_id is not None
-    assert (await _run(interaction_sessions, resumed.child_run_id)).agent_revision_id == REPLACEMENT_CHILD_REVISION_ID
+    assert (await _run(interaction_sessions, resumed.child_run_id)).agent_revision_id == CHILD_REVISION_ID
+    original = await states.read(ORGANIZATION_ID, delegated.child_run_id)
+    continued = await states.read(ORGANIZATION_ID, resumed.child_run_id)
+    assert continued.envelope.effective_agent_config == original.envelope.effective_agent_config
+
+    assert continued.envelope.usage_limits == UsageLimits(request_limit=3, total_tokens_limit=500)
 
 
 async def _complete_delegated_child(
@@ -279,8 +285,6 @@ async def _continue_parent(
     prior_authority: AuthorityBox,
     *,
     parent_config: EffectiveAgentConfig | None = None,
-    child_revision_id: str = CHILD_REVISION_ID,
-    child_definition_id: str = CHILD_DEFINITION_ID,
 ) -> tuple[DurableSubagentOperator, SubagentOperatorContext]:
     parent = await _run(sessions, prior_context.parent_run_id)
     completed = await _complete_run(sessions, objects, states, parent, prior_authority.current_context)
@@ -340,11 +344,8 @@ async def _continue_parent(
         sessions,
         objects,
         states,
-        next_run,
         context,
         AuthorityBox(_authority(next_claim)),
-        child_revision_id=child_revision_id,
-        child_definition_id=child_definition_id,
     )
 
 
@@ -427,7 +428,6 @@ async def _additional_parent_thread(
         sessions,
         objects,
         states,
-        run,
         context,
         AuthorityBox(_authority(claim)),
     )
@@ -437,27 +437,12 @@ def _operator_for_parent(
     sessions: async_sessionmaker[AsyncSession],
     objects: ObjectStore,
     states: RunStateStore,
-    parent: Run,
     context: SubagentOperatorContext,
     authority: AuthorityBox,
-    *,
-    child_revision_id: str = CHILD_REVISION_ID,
-    child_definition_id: str = CHILD_DEFINITION_ID,
 ) -> tuple[DurableSubagentOperator, SubagentOperatorContext]:
-    admission = ProfileChildRunAdmissionPreparer(
+    admission = ChildRunAdmissionPreparer(
         sessions,
         states,
-        {
-            "researcher": ChildRunAdmissionProfile(
-                agent_id=CHILD_AGENT_ID,
-                agent_revision_id=child_revision_id,
-                definition_id=child_definition_id,
-                effective_config=effective_agent_config(),
-                connector_connection_selections=(),
-                mcp_connection_selections=(),
-                recovery_budget=parent.recovery_budget,
-            )
-        },
         thread_id_factory=lambda: "thread-70707070707070707070707070707070",
         run_id_factory=IdSequence(("run_7171717171717171", "run_7474747474747474")),
         relationship_id_factory=IdSequence(("crr_7171717171717171", "crr_7474747474747474")),
@@ -492,7 +477,29 @@ def _operator_for_parent(
 
 def _replace_parent_child_revision(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
     edge = config.resolved_subagents[0].model_copy(update={"child_agent_revision_id": REPLACEMENT_CHILD_REVISION_ID})
-    candidate = config.model_copy(update={"resolved_subagents": (edge,), "content_digest": "0" * 64})
+    child = config.child_configs[CHILD_REVISION_ID]
+    changed = child.effective_config.model_copy(
+        update={
+            "resolved_model": child.effective_config.resolved_model.model_copy(
+                update={"settings": {"temperature": 0.9}}
+            ),
+        }
+    )
+    changed = changed.model_copy(
+        update={
+            "content_digest": canonical_digest(
+                changed.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
+            )
+        }
+    )
+    replacement = child.model_copy(update={"revision_content_digest": "4" * 64, "effective_config": changed})
+    candidate = config.model_copy(
+        update={
+            "resolved_subagents": (edge,),
+            "child_configs": {REPLACEMENT_CHILD_REVISION_ID: replacement},
+            "content_digest": "0" * 64,
+        }
+    )
     return candidate.model_copy(
         update={
             "content_digest": canonical_digest(

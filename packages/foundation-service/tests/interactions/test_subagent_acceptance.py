@@ -15,7 +15,7 @@ from a13n_service.agents.domain import (
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
-    MCPConnectionRunSelection,
+    MCPConnectionToolSelection,
 )
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.acceptance import RunAcceptanceService
@@ -66,7 +66,7 @@ CONNECTOR_SELECTION = ConnectorConnectionRunSelection(
     defer_loading=False,
     tools=("find_order",),
 )
-MCP_SELECTION = MCPConnectionRunSelection(
+MCP_SELECTION = MCPConnectionToolSelection(
     mcp_connection_id="mcpc_2222222222222222",
     defer_loading=True,
     tools=("search_docs",),
@@ -415,11 +415,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         subagent_name="researcher",
         delegated_input='{"delegated_task":"continue"}',
         child_definition_id=CHILD_DEFINITION_ID,
-        child_agent_id=CHILD_AGENT_ID,
-        child_agent_revision_id=CHILD_REVISION_ID,
-        child_effective_config=child_config,
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
         source_relationship=source_relationship,
         source_parent_run=running_parent,
         source_thread=source_thread,
@@ -427,7 +422,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         source_state=source_state.envelope,
         child_run_id="run_eeeeeeeeeeeeeeee",
         relationship_id="crr_eeeeeeeeeeeeeeee",
-        recovery_budget=running_parent.recovery_budget,
         created_at=NOW + timedelta(seconds=5),
     )
 
@@ -510,7 +504,7 @@ def _prepared_child(
     suffix: str,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...] = (),
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = (),
 ):
     return prepare_child_run(
         parent_run=parent,
@@ -541,7 +535,7 @@ async def _accept_parent(
     *,
     with_shared_environment: bool = False,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...] = (),
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = (),
 ):
     edge = ResolvedSubagentEdge(
         name="researcher",

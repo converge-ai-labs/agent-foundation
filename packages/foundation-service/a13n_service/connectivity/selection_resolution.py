@@ -16,7 +16,6 @@ from a13n_service.storage import short_session
 from .selection_domain import (
     ConnectorConnectionRunSelection,
     ConnectorConnectionToolSelection,
-    MCPConnectionRunSelection,
     MCPConnectionToolSelection,
 )
 
@@ -31,7 +30,7 @@ class ConnectivitySelectionError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class FrozenRunConnectivity:
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +88,7 @@ class ConnectivitySelectionResolver:
         actor: AuthenticatedActor,
         organization_id: str,
         workspace_id: str,
-        selection: ConnectorConnectionRunSelection | MCPConnectionRunSelection,
+        selection: ConnectorConnectionRunSelection | MCPConnectionToolSelection,
     ) -> None:
         expected = (
             FrozenRunConnectivity((selection,), ())
@@ -171,7 +170,7 @@ class ConnectivitySelectionResolver:
                         defer_loading=selection.defer_loading,
                     )
                 )
-        mcps: list[MCPConnectionRunSelection] = []
+        mcps: list[MCPConnectionToolSelection] = []
         if mcp_tools:
             query = (
                 select(MCPConnectionRecord)
@@ -191,7 +190,7 @@ class ConnectivitySelectionResolver:
                 if connection is None or connection.status != "ready":
                     raise ConnectivitySelectionError("mcp_connection_unavailable", path=path)
                 mcps.append(
-                    MCPConnectionRunSelection(
+                    MCPConnectionToolSelection(
                         mcp_connection_id=connection.id,
                         tools=selection.tools,
                         defer_loading=selection.defer_loading,

@@ -136,7 +136,7 @@ Tool discovery is authorization-dependent: two MCPConnections for the same endpo
 The conceptual accepted selection is:
 
 ```python
-class MCPConnectionRunSelection:
+class MCPConnectionToolSelection:
     mcp_connection_id: MCPConnectionId
     tools: tuple[str, ...] | None
     defer_loading: bool

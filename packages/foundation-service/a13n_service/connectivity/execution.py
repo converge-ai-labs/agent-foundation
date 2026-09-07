@@ -47,13 +47,13 @@ from .mcp.refresh import OAuthCredentialRefresh
 from .mcp.transport import RemoteTransport
 from .native import native_capability
 from .native_context import NativeToolContext, parse_native_contexts
-from .selection_domain import ConnectorConnectionRunSelection, MCPConnectionRunSelection
+from .selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
 from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity
 from .tool_validation import validate_result
 from .toolsets import local_capability, namespaced, selected_tools, source_key
 
 _CONNECTORS = TypeAdapter(tuple[ConnectorConnectionRunSelection, ...])
-_MCPS = TypeAdapter(tuple[MCPConnectionRunSelection, ...])
+_MCPS = TypeAdapter(tuple[MCPConnectionToolSelection, ...])
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,7 +310,7 @@ class ExternalToolRuntime:
 
     @asynccontextmanager
     async def _mcp(
-        self, selection: MCPConnectionRunSelection, guard: ScopeGuard, scope: AttemptToolScope
+        self, selection: MCPConnectionToolSelection, guard: ScopeGuard, scope: AttemptToolScope
     ) -> AsyncIterator[MCP[AgentContext] | None]:
         async with short_session(self._sessions) as session:
             record = await require_mcp_connection(session, selection.mcp_connection_id)

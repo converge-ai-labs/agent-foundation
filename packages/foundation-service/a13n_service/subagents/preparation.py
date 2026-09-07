@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from a13n_harness.usage import intersect_usage_limits
 from pydantic import JsonValue
+from pydantic_ai.usage import UsageLimits
 
 from a13n_service.agents.domain import (
     EffectiveAgentConfig,
@@ -14,9 +16,10 @@ from a13n_service.agents.domain import (
 )
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
-    MCPConnectionRunSelection,
+    MCPConnectionToolSelection,
 )
 from a13n_service.interactions.domain import (
+    JsonObject,
     RecoveryBudget,
     Run,
     RunInputKind,
@@ -83,7 +86,7 @@ def prepare_child_run(
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...],
     child_thread_id: str,
     child_run_id: str,
     relationship_id: str,
@@ -91,6 +94,7 @@ def prepare_child_run(
     created_at: datetime,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread,
+    usage_limits: UsageLimits | None = None,
 ) -> PreparedChildRunAcceptance:
     """Construct the exact child records without mutable lookup or I/O."""
 
@@ -148,6 +152,7 @@ def prepare_child_run(
             agent_id=child_agent_id,
             agent_revision_id=child_agent_revision_id,
             effective_agent_config=child_effective_config,
+            usage_limits=intersect_usage_limits(parent_state.usage_limits, edge.usage_limits, usage_limits),
         ),
         thread_id=child_thread_id,
     )
@@ -163,8 +168,12 @@ def prepare_child_run(
         child_agent_id=child_agent_id,
         child_agent_revision_id=child_agent_revision_id,
         child_effective_config=child_effective_config,
-        connector_connection_selections=connector_connection_selections,
-        mcp_connection_selections=mcp_connection_selections,
+        connector_connection_selections=tuple(
+            item.model_dump(mode="json", by_alias=True) for item in connector_connection_selections
+        ),
+        mcp_connection_selections=tuple(
+            item.model_dump(mode="json", by_alias=True) for item in mcp_connection_selections
+        ),
         recovery_budget=recovery_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
@@ -190,11 +199,6 @@ def prepare_child_resume(
     subagent_name: str,
     delegated_input: str,
     child_definition_id: str,
-    child_agent_id: str,
-    child_agent_revision_id: str,
-    child_effective_config: EffectiveAgentConfig,
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
     source_relationship: ChildRunRelationship,
     source_parent_run: Run,
     source_thread: Thread,
@@ -202,16 +206,14 @@ def prepare_child_resume(
     source_state: RunStateEnvelope,
     child_run_id: str,
     relationship_id: str,
-    recovery_budget: RecoveryBudget,
     created_at: datetime,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread,
+    usage_limits: UsageLimits | None = None,
 ) -> PreparedChildRunResume:
     """Construct a child continuation without adding non-contract relationship fields."""
 
     edge = require_frozen_subagent_edge(parent_run, parent_state, subagent_name)
-    if (edge.child_agent_id, edge.child_agent_revision_id) != (child_agent_id, child_agent_revision_id):
-        raise ValueError("prepared child Agent does not match the frozen subagent edge")
     _validate_child_definition_id(child_definition_id)
     _validate_resume_source(
         parent_run=parent_run,
@@ -222,6 +224,9 @@ def prepare_child_resume(
         source_run=source_run,
         source_state=source_state,
     )
+    child_agent_id = source_run.agent_id
+    child_agent_revision_id = source_run.agent_revision_id
+    child_effective_config = source_state.effective_agent_config
     accepted_input = AcceptedAgentInput(
         schema_version="1",
         content=(TextContent(text=delegated_input),),
@@ -260,6 +265,7 @@ def prepare_child_resume(
             agent_id=child_agent_id,
             agent_revision_id=child_agent_revision_id,
             effective_agent_config=child_effective_config,
+            usage_limits=intersect_usage_limits(parent_state.usage_limits, edge.usage_limits, usage_limits),
         ),
         source_state,
     )
@@ -275,9 +281,9 @@ def prepare_child_resume(
         child_agent_id=child_agent_id,
         child_agent_revision_id=child_agent_revision_id,
         child_effective_config=child_effective_config,
-        connector_connection_selections=connector_connection_selections,
-        mcp_connection_selections=mcp_connection_selections,
-        recovery_budget=recovery_budget,
+        connector_connection_selections=source_run.connector_connection_selections,
+        mcp_connection_selections=source_run.mcp_connection_selections,
+        recovery_budget=parent_run.recovery_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
         delegated_input=delegated_input,
@@ -341,8 +347,8 @@ def _child_run(
     child_agent_id: str,
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
+    connector_connection_selections: tuple[JsonObject, ...],
+    mcp_connection_selections: tuple[JsonObject, ...],
     recovery_budget: RecoveryBudget,
     request_fingerprint: str,
     input_payload: JsonValue,
@@ -368,12 +374,8 @@ def _child_run(
         effective_agent_config_digest=child_effective_config.content_digest,
         runtime_lock_digest=child_effective_config.runtime_lock_digest,
         model_execution_observation=child_effective_config.resolved_model.execution.observation(),
-        connector_connection_selections=tuple(
-            item.model_dump(mode="json", by_alias=True) for item in connector_connection_selections
-        ),
-        mcp_connection_selections=tuple(
-            item.model_dump(mode="json", by_alias=True) for item in mcp_connection_selections
-        ),
+        connector_connection_selections=connector_connection_selections,
+        mcp_connection_selections=mcp_connection_selections,
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
         recovery_budget=recovery_budget,

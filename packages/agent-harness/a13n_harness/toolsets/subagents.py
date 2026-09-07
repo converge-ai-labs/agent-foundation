@@ -38,9 +38,10 @@ from a13n_harness.tools.metadata import (
     ToolEffect,
     ToolOutputPolicy,
 )
+from a13n_harness.usage import intersect_usage_limits
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from .delegation import _build_child_input, _intersect_usage_limits
+from .delegation import _build_child_input
 
 _STATUS_OUTPUT_POLICY = ToolOutputPolicy(
     max_inline_bytes=256 * 1024,
@@ -233,7 +234,7 @@ class AsyncSubagentToolset:
         from a13n_harness.execution import derive_child_identity
 
         child_input = _build_child_input(ctx, child, prompt)
-        limits = _intersect_usage_limits(
+        limits = intersect_usage_limits(
             ctx.usage_limits,
             child.executable._fresh_definition_usage_limits(),
             child.declaration.usage_limits,

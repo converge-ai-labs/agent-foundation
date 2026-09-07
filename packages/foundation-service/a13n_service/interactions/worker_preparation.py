@@ -199,6 +199,7 @@ class WorkerAttemptPreparer:
             input_source = MaterializedHarnessInput(input_factory)
         return HarnessInvocation(
             definition=definition,
+            usage_limits=self._control.current_state.envelope.usage_limits,
             input=input_source,
             deferred_resume=resume,
             collaborators=HarnessCollaborators(

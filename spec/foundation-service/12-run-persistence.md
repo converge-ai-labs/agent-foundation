@@ -177,7 +177,7 @@ class Run:
     runtime_lock_digest: str
     model_execution_observation: ModelExecutionObservation
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...]
     native_tool_contexts: tuple[NativeToolContext, ...]
 
     priority: int
@@ -230,7 +230,7 @@ The [Environment Management contract](29-environment-management.md#run-binding-a
 
 The [Foundation Skill Management contract](31-skill-management.md#agent-selection-and-run-locking) owns effective managed Skill selection. Run acceptance either resolves the AgentRevision's frozen Skill bindings or whole-replaces them through `AgentRunOverride.skills`, then stores the final exact ordered locks in `EffectiveAgentConfig.skills`. An unpinned AgentRevision binding resolves its stable Skill identity's current Revision only at this acceptance boundary. Every replacement RunAttempt reuses the resulting locks.
 
-The [Connector Providers and Connector Connections contract](40-connectivity/03-connectors-and-connections.md#assignment-and-effective-selection) defines `ConnectorConnectionRunSelection`; [Remote MCP Connections](40-connectivity/06-remote-mcp-connections.md#tool-discovery-and-run-selection) defines `MCPConnectionRunSelection`; and [Agent-Facing External Tools](40-connectivity/04-agent-facing-tools.md#default-native-tool-contexts) owns `NativeToolContext` and default injection. Runs store empty tuples for absent connection selections or native contexts. Connection selections retain all-tools or explicit-name scopes and deferred-loading policy. Trusted entries independently freeze native contexts, including exact Account identity, execution Principal, allowed actions, and target authority. Neither stores tool schemas or credentials. Compatible Steers and continuations that inherit execution preserve both selections and contexts; replacement Attempts compose fresh capabilities under that same scope. New child Runs do not inherit parent native contexts.
+The [Connector Providers and Connector Connections contract](40-connectivity/03-connectors-and-connections.md#assignment-and-effective-selection) defines `ConnectorConnectionRunSelection`; [Remote MCP Connections](40-connectivity/06-remote-mcp-connections.md#tool-discovery-and-run-selection) defines `MCPConnectionToolSelection`; and [Agent-Facing External Tools](40-connectivity/04-agent-facing-tools.md#default-native-tool-contexts) owns `NativeToolContext` and default injection. Runs store empty tuples for absent connection selections or native contexts. Connection selections retain all-tools or explicit-name scopes and deferred-loading policy. Trusted entries independently freeze native contexts, including exact Account identity, execution Principal, allowed actions, and target authority. Neither stores tool schemas or credentials. Compatible Steers and continuations that inherit execution preserve both selections and contexts; replacement Attempts compose fresh capabilities under that same scope. New child Runs do not inherit parent native contexts.
 
 `sealed_state` is absent while the Run is active. A `waiting` or `completed` sealing transaction always records the exact digest, size, schema versions, and checkpoint sequence of the state object frozen with the Run. A Worker-originated `failed` Run can record a complete state prepared under its fence or leave `sealed_state` null. An interrupt-driven `cancelled` Run always leaves it null because interrupt performs no object I/O. After any seal, no later object value is authoritative; only a recorded `sealed_state` selects bytes as part of the Run outcome. When a sealed state is present, its fields identify the exact terminal bytes without introducing a second base or result object. `committed_by_run_attempt_id` is null only when a relational fail-closed decision seals a Run without an attempt-originated state change.
 
@@ -411,6 +411,7 @@ class RunStateEnvelope:
     agent_id: AgentId
     agent_revision_id: AgentRevisionId
     effective_agent_config: EffectiveAgentConfig
+    usage_limits: UsageLimits | None
     runtime_lock_digest: str
     harness_schema_version: str
     harness: HarnessState
@@ -421,6 +422,8 @@ class RunStateEnvelope:
 This is the complete serialized outer schema. `HarnessState` is encoded through its owning public adapter and carries the same `thread_id`. `checkpoint_seq` starts at zero and increases monotonically for each successful semantic state replacement. The initial value has `checkpoint_kind=initial`, `input_disposition=pending`, no attempt identity, fence zero, and no outcome candidate.
 
 `effective_agent_config` is the complete non-secret snapshot resolved and authorized at Run acceptance. Its Model, instructions, exact Plugin lock, Skill locks, managed ConnectorConnection and MCPConnection tool configuration, subagent graph, client tools, output contract, and correction budgets remain byte-for-byte equivalent across every checkpoint replacement for that Run. The Run's separate Connectivity selections and protected Ingress context are the final source and tool-scope authority after trusted overlays. They do not freeze discovered external schemas. A Worker reauthorizes mutable references required by their owning contracts, resolves fresh eligible credential values, and opens live bindings, but cannot rewrite either accepted configuration. Exact Skill packages remain internally readable for reconstruction of that accepted Run after Skill deletion.
+
+`usage_limits` persists the accepted native Pydantic AI per-invocation ceiling separately from reusable Agent configuration. It is immutable across checkpoints and replacement Attempts. Child admission intersects the Harness plan with the parent and frozen edge limits. A continuation or fork retains that ceiling and can only narrow it; explicit Retry copies the source ceiling. Each Attempt supplies it to the Harness with its own usage accumulator. Durable cross-Attempt charging and recovery budgets remain governed by [Run Attempt recovery](13-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement). `None` uses the Harness definition default.
 
 The Run row independently fixes logical Environment identity and access. A Worker reads current protected Provider state from that Environment and applies its frozen template policy. A confirmed rebuild advances backing generation and emits lifecycle evidence without changing the Run's Environment ID or rewriting historical observations. Portable Harness state cannot override this authority.
 

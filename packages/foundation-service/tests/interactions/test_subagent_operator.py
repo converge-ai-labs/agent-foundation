@@ -35,9 +35,8 @@ from a13n_service.interactions.state import CompletedOutcomeCandidate
 from a13n_service.storage import ObjectStore, short_session
 from a13n_service.subagents import (
     ChildRunAcceptanceService,
-    ChildRunAdmissionProfile,
+    ChildRunAdmissionPreparer,
     DurableSubagentOperator,
-    ProfileChildRunAdmissionPreparer,
 )
 from a13n_service.subagents.execution_store import ACTIVITY_OUTPUT_PREVIEW_LIMIT
 from pydantic_ai.agent.spec import AgentSpec
@@ -46,15 +45,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
 
-from .conftest import (
-    NOW,
-    effective_agent_config,
-)
+from .conftest import NOW
 from .test_attempt_execution import _authority, _worker
 from .test_subagent_acceptance import (
-    CHILD_AGENT_ID,
     CHILD_DEFINITION_ID,
-    CHILD_REVISION_ID,
     _accept_parent,
     _complete_run,
     _grant_and_seed_child,
@@ -256,20 +250,9 @@ async def _operator(
         host_refs={"session_id": running_parent.session_id},
     )
     run_ids = IdSequence(("run_ffffffffffffffff", "run_5656565656565656"))
-    admission = ProfileChildRunAdmissionPreparer(
+    admission = ChildRunAdmissionPreparer(
         sessions,
         states,
-        {
-            "researcher": ChildRunAdmissionProfile(
-                agent_id=CHILD_AGENT_ID,
-                agent_revision_id=CHILD_REVISION_ID,
-                definition_id=CHILD_DEFINITION_ID,
-                effective_config=effective_agent_config(),
-                connector_connection_selections=(),
-                mcp_connection_selections=(),
-                recovery_budget=running_parent.recovery_budget,
-            )
-        },
         thread_id_factory=IdSequence(
             (
                 "thread-ffffffffffffffffffffffffffffffff",

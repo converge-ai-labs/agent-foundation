@@ -34,6 +34,3 @@ class MCPConnectionToolSelection(BaseModel):
 
 class ConnectorConnectionRunSelection(ConnectorConnectionToolSelection):
     connector_provider_id: ObjectId
-
-
-MCPConnectionRunSelection = MCPConnectionToolSelection

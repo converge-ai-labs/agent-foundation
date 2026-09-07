@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
-    MCPConnectionRunSelection,
+    MCPConnectionToolSelection,
 )
 from a13n_service.connectivity.selection_resolution import (
     PreparedConnectivity,
@@ -75,4 +75,4 @@ class FrozenAgentInvocation:
     selector_kind: AgentSelectorKind
     effective_config: EffectiveAgentConfig
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...]

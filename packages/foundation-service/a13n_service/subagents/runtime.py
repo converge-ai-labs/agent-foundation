@@ -3,7 +3,6 @@
 from a13n_harness.capabilities import SubagentCapability, SubagentOperatorContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
@@ -11,7 +10,7 @@ from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.run_control import RunAttemptControl
 
 from .acceptance import ChildRunAcceptanceService
-from .admission import ChildRunAdmissionProfile, ProfileChildRunAdmissionPreparer
+from .admission import ChildRunAdmissionPreparer
 from .operator import DurableSubagentOperator
 
 
@@ -27,26 +26,12 @@ class ServiceSubagents:
         outcomes: RunOutcomeService,
     ) -> None:
         self._sessions = sessions
-        self._states = states
+        self._admission = ChildRunAdmissionPreparer(sessions, states)
         self._acceptance = ChildRunAcceptanceService(sessions, states, payloads)
         self._inbox = inbox
         self._outcomes = outcomes
 
-    def capability(self, *, run: Run, config: EffectiveAgentConfig, authority: RunAttemptControl) -> SubagentCapability:
-        profiles = {}
-        for edge in config.resolved_subagents:
-            child = config.child_configs[edge.child_agent_revision_id]
-            profiles[edge.name] = ChildRunAdmissionProfile(
-                agent_id=edge.child_agent_id,
-                agent_revision_id=edge.child_agent_revision_id,
-                definition_id=f"agent-config-{child.revision_content_digest[:24]}",
-                effective_config=child.effective_config,
-                connector_connection_selections=child.connector_connection_selections,
-                mcp_connection_selections=child.mcp_connection_selections,
-                recovery_budget=run.recovery_budget,
-            )
-        admission = ProfileChildRunAdmissionPreparer(self._sessions, self._states, profiles)
-
+    def capability(self, *, run: Run, authority: RunAttemptControl) -> SubagentCapability:
         def parent_context() -> SubagentOperatorContext:
             identity = authority.harness_identity
             return SubagentOperatorContext(
@@ -59,7 +44,7 @@ class ServiceSubagents:
         operator = DurableSubagentOperator(
             self._sessions,
             authority,
-            admission,
+            self._admission,
             self._acceptance,
             self._inbox,
             self._outcomes,
