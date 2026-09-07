@@ -11,6 +11,7 @@ import rfc8785
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.interactions.acceptance import RunAcceptanceService
@@ -32,6 +33,7 @@ from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloa
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry
+from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import func, select
@@ -782,9 +784,18 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
         run_id=source.run_id,
     )
 
+    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(interaction_object_store))
+    waiting_resource = await queries.get_run(actor=_actor(), run_id=source.run_id)
+    public_digest = waiting_resource.model_dump(mode="json")["sealed_state_digest_sha256"]
+    assert public_digest == digest
+    collection = await queries.list_runs(
+        actor=_actor(), workspace_id=WORKSPACE_ID, thread_id=None, limit=50, cursor=None
+    )
+    assert collection.items[0].sealed_state_digest_sha256 == public_digest
+
     omitted = WaitingRunFeedbackRequest(
         expected_thread_version=2,
-        sealed_state_digest_sha256=digest,
+        sealed_state_digest_sha256=public_digest,
     )
     first = await commands.feedback(
         actor=_actor(),

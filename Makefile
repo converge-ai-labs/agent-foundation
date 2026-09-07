@@ -96,6 +96,33 @@ dev: setup ## Upgrade the schema and run Foundation Service
 	@bash scripts/dev.sh
 
 .PHONY: dev-down
+.PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-check live-test-auth-control
+LIVE_TEST_RUN = uv run --locked $(if $(wildcard .env),--env-file .env,)
+
+live-test-auth-control: sync ## Run ordinary local Control settings with the private test authenticator
+	@$(LIVE_TEST_RUN) python -m dev.live_tests.manage authenticated-control
+
+live-test-init: sync ## Seed an isolated local live-test identity (requires migrated database)
+	@$(LIVE_TEST_RUN) python -m dev.live_tests.manage init
+
+live-test-control: sync ## Run the local live-test Control with explicit test authentication
+	@$(LIVE_TEST_RUN) python -m dev.live_tests.manage control
+
+live-test-worker: sync ## Run the separate local live-test Worker
+	@$(LIVE_TEST_RUN) python -m dev.live_tests.manage worker
+
+live-test-setup: sync ## Create live-test Model, Environment, Plugin, and Agents through Control HTTP
+	@$(LIVE_TEST_RUN) python -m dev.live_tests.manage setup
+
+live-test: sync ## Run opt-in local HTTP journeys (LIVE_TEST_ARGS="-k basic" selects cases)
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+live-test-check: sync ## Validate live-test support without contacting services
+	@uv run --locked ruff check --no-fix dev/live_tests
+	@uv run --locked ruff format --check dev/live_tests
+	@uv run --locked mdformat --check dev/live_tests/README.md
+	@uv run --locked python -m pytest dev/live_tests -q
+
 dev-down: ## Stop local infrastructure and remove its data volumes
 	@docker compose -f dev/compose.yaml down --volumes --remove-orphans
 

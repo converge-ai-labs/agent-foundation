@@ -94,6 +94,7 @@ class RunResource(_Resource):
     waiting_at: datetime | None
     completed_at: datetime | None
     sealed_at: datetime | None
+    sealed_state_digest_sha256: str | None
 
 
 class RunAttemptResource(_Resource):
@@ -698,6 +699,7 @@ def _run(record: RunRecord) -> RunResource:
         waiting_at=resource.waiting_at,
         completed_at=resource.completed_at,
         sealed_at=resource.sealed_at,
+        sealed_state_digest_sha256=None if resource.sealed_state is None else resource.sealed_state.digest_sha256,
     )
 
 

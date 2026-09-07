@@ -249,6 +249,8 @@ Public resources expose stable product fields and safe references, not ORM objec
 
 An Item read never substitutes for lifecycle event replay, and an event read never expands private Item or object-backed content without separate authorization.
 
+Run detail and collection responses include `sealed_state_digest_sha256`: the exact SHA-256 digest of the retained sealed Run state, or `null` when no sealed state exists. Clients use this value with the expected Thread version for waiting feedback and waiting resolution. The field follows the same Run-read authorization as the enclosing resource and exposes neither state contents nor storage credentials.
+
 ## Run Lineage Read
 
 Foundation exposes the exact ancestor path of one caller-selected Run:

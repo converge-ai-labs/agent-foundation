@@ -40,6 +40,7 @@ async def test_native_interaction_resource_reads_use_durable_identity(queries: N
     assert [item.id for item in workspace_runs.items] == [RUN_ID]
     assert [item.id for item in thread_runs.items] == [RUN_ID]
     assert run.id == RUN_ID
+    assert run.model_dump(mode="json")["sealed_state_digest_sha256"] is None
     assert "request_fingerprint" not in run.model_dump()
     assert "encrypted_config_payload" not in run.model_dump()
     assert lineage.head_run_id == RUN_ID
