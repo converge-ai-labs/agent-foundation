@@ -216,7 +216,9 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 .PHONY: test
 test: sync ## Run Python workspace tests
 	@for directory in $(PYTHON_TEST_DIRS); do \
-		uv run --locked python -m pytest -n 2 --dist loadgroup "$$directory" || exit $$?; \
+		workers=2; \
+		if [ "$$directory" = "packages/foundation-service/tests" ]; then workers=7; fi; \
+		uv run --locked python -m pytest -n "$$workers" --dist loadgroup "$$directory" || exit $$?; \
 	done
 
 .PHONY: eip-generate
