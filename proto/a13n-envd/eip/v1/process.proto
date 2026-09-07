@@ -1,0 +1,259 @@
+syntax = "proto3";
+
+package a13n.agent_envd.eip.v1;
+
+import "google/protobuf/timestamp.proto";
+import "a13n-envd/eip/v1/common.proto";
+import "a13n-envd/eip/v1/options.proto";
+import "a13n-envd/eip/v1/output.proto";
+import "a13n-envd/eip/v1/resource.proto";
+
+message ExecutableName {
+  string kind = 1 [(eip_field).const_string = "name"];
+  string name = 2;
+}
+
+message ExecutablePath {
+  string kind = 1 [(eip_field).const_string = "path"];
+  EIPPath path = 2;
+}
+
+message ExecutableSpec {
+  option (eip_message).discriminated_union = true;
+  oneof executable {
+    ExecutableName name = 1;
+    ExecutablePath path = 2;
+  }
+}
+
+message ArgvCommand {
+  reserved 2;
+  reserved "executable";
+
+  string kind = 1 [(eip_field).const_string = "argv"];
+  repeated string arguments = 3;
+  ExecutableSpec executable_spec = 4;
+}
+
+message ShellCommand {
+  string kind = 1 [(eip_field).const_string = "shell"];
+  string profile_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string script = 3;
+  optional bool login = 4 [(eip_field).default_bool = false];
+}
+
+message CommandSpec {
+  option (eip_message).discriminated_union = true;
+  oneof command {
+    ArgvCommand argv = 1;
+    ShellCommand shell = 2;
+  }
+}
+
+message CommandEnvironment {
+  map<string, string> set = 1;
+  repeated string unset = 2;
+}
+
+message CommandLimits {
+  optional uint64 wall_time_ms = 1;
+  optional uint64 stdin_bytes = 2;
+  optional uint64 process_count = 3;
+  optional uint64 memory_bytes = 4;
+  optional uint64 cpu_time_ms = 5;
+}
+
+enum CommandNetwork {
+  COMMAND_NETWORK_UNSPECIFIED = 0;
+  COMMAND_NETWORK_CONFIGURED = 1 [(eip_enum_value).json_name = "configured"];
+  COMMAND_NETWORK_DENY = 2 [(eip_enum_value).json_name = "deny"];
+}
+
+message CommandRequest {
+  CommandSpec command = 1;
+  EIPPath cwd = 2;
+  optional CommandEnvironment environment = 3 [(eip_field).default_message = true];
+  optional CommandNetwork network = 4 [(eip_field).default_string = "configured"];
+  optional CommandLimits limits = 5 [(eip_field).default_message = true];
+  optional EncodedBytes initial_stdin = 6;
+  optional bool keep_stdin_open = 7 [(eip_field).default_bool = false];
+  reserved 8;
+  reserved "output_policy";
+}
+
+enum ProcessPhase {
+  PROCESS_PHASE_UNSPECIFIED = 0;
+  PROCESS_PHASE_STARTING = 1 [(eip_enum_value).json_name = "starting"];
+  PROCESS_PHASE_RUNNING = 2 [(eip_enum_value).json_name = "running"];
+  PROCESS_PHASE_EXITED = 3 [(eip_enum_value).json_name = "exited"];
+  PROCESS_PHASE_SIGNALED = 4 [(eip_enum_value).json_name = "signaled"];
+  PROCESS_PHASE_TIMED_OUT = 5 [(eip_enum_value).json_name = "timed_out"];
+  PROCESS_PHASE_CANCELLED = 6 [(eip_enum_value).json_name = "cancelled"];
+  PROCESS_PHASE_FAILED = 7 [(eip_enum_value).json_name = "failed"];
+}
+
+enum CleanupOutcome {
+  CLEANUP_OUTCOME_UNSPECIFIED = 0;
+  CLEANUP_OUTCOME_PENDING = 1 [(eip_enum_value).json_name = "pending"];
+  CLEANUP_OUTCOME_COMPLETE = 2 [(eip_enum_value).json_name = "complete"];
+  CLEANUP_OUTCOME_RESIDUAL_CONFINED = 3 [(eip_enum_value).json_name = "residual_confined"];
+  CLEANUP_OUTCOME_FAILED = 4 [(eip_enum_value).json_name = "failed"];
+}
+
+enum TerminationReason {
+  TERMINATION_REASON_UNSPECIFIED = 0;
+  TERMINATION_REASON_EXIT = 1 [(eip_enum_value).json_name = "exit"];
+  TERMINATION_REASON_SIGNAL = 2 [(eip_enum_value).json_name = "signal"];
+  TERMINATION_REASON_TIMEOUT = 3 [(eip_enum_value).json_name = "timeout"];
+  TERMINATION_REASON_CANCELLED = 4 [(eip_enum_value).json_name = "cancelled"];
+  TERMINATION_REASON_OUTPUT_LIMIT = 5 [(eip_enum_value).json_name = "output_limit"];
+  TERMINATION_REASON_BACKEND_LOST = 6 [(eip_enum_value).json_name = "backend_lost"];
+}
+
+enum ProcessSignal {
+  PROCESS_SIGNAL_UNSPECIFIED = 0;
+  PROCESS_SIGNAL_INTERRUPT = 1 [(eip_enum_value).json_name = "interrupt"];
+  PROCESS_SIGNAL_TERMINATE = 2 [(eip_enum_value).json_name = "terminate"];
+  PROCESS_SIGNAL_KILL = 3 [(eip_enum_value).json_name = "kill"];
+}
+
+enum RequestedProcessSignal {
+  REQUESTED_PROCESS_SIGNAL_UNSPECIFIED = 0;
+  REQUESTED_PROCESS_SIGNAL_INTERRUPT = 1 [(eip_enum_value).json_name = "interrupt"];
+  REQUESTED_PROCESS_SIGNAL_TERMINATE = 2 [(eip_enum_value).json_name = "terminate"];
+}
+
+message ProcessStatus {
+  ProcessPhase phase = 1;
+  optional TerminationReason termination_reason = 2;
+  optional sint32 exit_code = 3;
+  optional ProcessSignal signal = 4;
+  optional google.protobuf.Timestamp started_at = 5;
+  optional google.protobuf.Timestamp ended_at = 6;
+  CleanupOutcome cleanup = 7;
+}
+
+message ProcessOutput {
+  OutputInfo stdout = 1;
+  OutputInfo stderr = 2;
+}
+
+message ProcessInfo {
+  reserved 7;
+  reserved "lease";
+
+  ProcessHandle handle = 1;
+  string environment_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint64 generation = 3 [(eip_field).minimum = 1];
+  ProcessStatus status = 4;
+  bool stdin_open = 5;
+  ProcessOutput output = 6;
+}
+
+message ShellProfileDescriptor {
+  string profile_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string display_name = 2;
+  bool supports_login_mode = 3;
+  uint64 max_script_bytes = 4;
+}
+
+message ShellExecParams {
+  EIPCallContext context = 1;
+  CommandRequest request = 2;
+}
+
+message ShellExecResult {
+  ProcessStatus status = 1;
+  ProcessOutput output = 2;
+  OperationReceipt receipt = 3;
+}
+
+message ProcessStartParams {
+  EIPCallContext context = 1;
+  CommandRequest request = 2;
+}
+
+message ProcessStartResult {
+  ProcessInfo process = 1;
+  OperationReceipt receipt = 2;
+}
+
+message ProcessInspectParams {
+  EIPCallContext context = 1;
+  ProcessHandle handle = 2;
+}
+
+message ProcessInspectResult {
+  ProcessInfo process = 1;
+}
+
+message ProcessWriteStdinParams {
+  EIPCallContext context = 1;
+  ProcessHandle handle = 2;
+  EncodedBytes data = 3;
+  optional bool close_after_write = 4 [(eip_field).default_bool = false];
+}
+
+message ProcessWriteStdinResult {
+  uint64 accepted_bytes = 1;
+  bool stdin_open = 2;
+  OperationReceipt receipt = 3;
+}
+
+message ProcessCloseStdinParams {
+  EIPCallContext context = 1;
+  ProcessHandle handle = 2;
+}
+
+message ProcessCloseStdinResult {
+  bool stdin_open = 1 [(eip_field).const_bool = false];
+  OperationReceipt receipt = 2;
+}
+
+message ProcessSignalParams {
+  EIPCallContext context = 1;
+  ProcessHandle handle = 2;
+  RequestedProcessSignal signal = 3;
+}
+
+message ProcessSignalResult {
+  bool accepted = 1;
+  ProcessInfo process = 2;
+  OperationReceipt receipt = 3;
+}
+
+enum ProcessWaitCondition {
+  PROCESS_WAIT_CONDITION_UNSPECIFIED = 0;
+  PROCESS_WAIT_CONDITION_INITIAL_TERMINAL = 1 [(eip_enum_value).json_name = "initial_terminal"];
+  PROCESS_WAIT_CONDITION_TREE_CLEANED = 2 [(eip_enum_value).json_name = "tree_cleaned"];
+}
+
+message ProcessWaitParams {
+  EIPCallContext context = 1;
+  ProcessHandle handle = 2;
+  ProcessWaitCondition condition = 3;
+}
+
+message ProcessWaitResult {
+  ProcessInfo process = 1;
+}
+
+message ProcessKillParams {
+  EIPCallContext context = 1;
+  ProcessHandle handle = 2;
+}
+
+message ProcessKillResult {
+  ProcessInfo process = 1;
+  OperationReceipt receipt = 2;
+}
+
+message ProcessReleaseParams {
+  EIPCallContext context = 1;
+  ProcessHandle handle = 2;
+}
+
+message ProcessReleaseResult {
+  bool released = 1;
+  OperationReceipt receipt = 2;
+}

@@ -1,6 +1,6 @@
-# Foundation SDK for Go
+# a13n for Go
 
-Go SDK module for Agent Foundation Service.
+Go SDK module for a13n Service.
 
 ## Status
 
@@ -13,10 +13,10 @@ go get github.com/converge-ai-labs/agent-foundation/sdk/go@latest
 ```
 
 ```go
-import foundationsdk "github.com/converge-ai-labs/agent-foundation/sdk/go"
+import "github.com/converge-ai-labs/agent-foundation/sdk/go"
 ```
 
-Go module releases use canonical module tags in the form `sdk/go/v<version>`, created by the `release/sdk/go/<version>` release workflow. `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`.
+Go module releases use canonical module tags in the form `sdk/go/v<version>`, created by the `release/a13n/go/<version>` release workflow. `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`.
 
 ## Development
 

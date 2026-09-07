@@ -6,13 +6,13 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
-    "a13n-environment-provider",
+    "a13n-environment",
     "a13n-harness",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.38,<3",
 ]
 
-[project.entry-points."a13n_environment_provider.providers"]
+[project.entry-points."a13n_environment.providers"]
 "example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProvider"
 
 [project.entry-points."a13n_harness.environment_run_extensions"]
@@ -46,8 +46,8 @@ build-backend = "hatchling.build"
 packages = ["src/a13n_plugin_examples"]
 
 [tool.uv.sources]
-a13n-environment-provider = { path = "../../packages/agent-environment-provider", editable = true }
-a13n-harness = { path = "../../packages/agent-harness", editable = true }
+a13n-environment = { path = "../../packages/a13n-environment", editable = true }
+a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 
 [tool.uv.workspace]
 members = []

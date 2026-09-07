@@ -1,22 +1,23 @@
 .DEFAULT_GOAL := help
 
-FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
-SANDBOX_IMAGE ?= agent-foundation-sandbox:local
+A13N_SERVICE_IMAGE ?= a13n-service:local
+SANDBOX_IMAGE ?= a13n-sandbox:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
-PYTHON_TEST_DIRS := $(sort $(wildcard packages/*/tests) scripts/tests)
+PYTHON_TEST_DIRS ?=
+PYTHON_TEST_WORKERS ?=
 LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
 	lint \
 	typecheck \
 	examples-check \
-	agent-ui-webui-check \
+	a13n-harness-ui-webui-check \
 	rust-check \
 	sdk-python-check \
 	sdk-go-check \
 	sdk-rust-check \
 	sdk-typescript-check \
-	foundation-cli-check
+	a13n-service-cli-check
 
 .PHONY: install
 install: ## Install locked dependencies and Git hooks
@@ -28,8 +29,8 @@ install: ## Install locked dependencies and Git hooks
 	@uv sync --locked --all-packages
 	@echo "Synchronizing the standalone Python SDK"
 	@uv sync --project sdk/python --locked
-	@echo "Installing Agent UI WebUI dependencies"
-	@npm --prefix apps/agent-ui ci
+	@echo "Installing Harness UI WebUI dependencies"
+	@npm --prefix apps/a13n-harness-ui ci
 	@echo "Installing TypeScript SDK dependencies"
 	@npm --prefix sdk/typescript ci
 	@echo "Installing pre-commit hooks"
@@ -91,8 +92,8 @@ setup: sync ## Start local PostgreSQL and Redis
 	@docker compose -f dev/compose.yaml up -d --wait
 
 .PHONY: dev
-dev: setup ## Upgrade the schema and run Foundation Service
-	@uv run --locked foundation-service db upgrade
+dev: setup ## Upgrade the schema and run a13n Service
+	@uv run --locked a13n-service db upgrade
 	@bash scripts/dev.sh
 
 .PHONY: dev-down
@@ -160,7 +161,7 @@ langfuse-down: ## Stop local Langfuse while preserving its data
 	@$(LANGFUSE_COMPOSE) down --remove-orphans
 
 .PHONY: langfuse-test
-langfuse-test: langfuse-up ## Verify Foundation OTLP write and Trace Query against local Langfuse v4
+langfuse-test: langfuse-up ## Verify Service OTLP write and Trace Query against local Langfuse v4
 	@set -e; \
 	web_container="$$( $(LANGFUSE_COMPOSE) ps -q langfuse-web )"; \
 	public_key="$$( docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$$web_container" | sed -n 's/^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=//p' )"; \
@@ -169,23 +170,23 @@ langfuse-test: langfuse-up ## Verify Foundation OTLP write and Trace Query again
 	A13N_TEST_LANGFUSE_BASE_URL="http://$$web_address" \
 	A13N_TEST_LANGFUSE_PUBLIC_KEY="$$public_key" \
 	A13N_TEST_LANGFUSE_SECRET_KEY="$$secret_key" \
-	uv run --locked python -m pytest packages/foundation-service/tests/trace_query/test_langfuse_integration.py
+	uv run --locked python -m pytest packages/a13n-service/tests/trace_query/test_langfuse_integration.py
 
 .PHONY: langfuse-reset
 langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
-.PHONY: a13n-ui
-a13n-ui: sync ## Run the interactive Agent CLI
-	@uv run --locked a13n-ui
+.PHONY: a13n-harness-ui
+a13n-harness-ui: sync ## Run the interactive Harness UI without release update checks
+	@uv run --locked a13n-harness-ui --no-update-check
 
-.PHONY: agent-ui-db-migrate
-agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a disposable database
-	@test -n "$(msg)" || { echo 'msg is required: make agent-ui-db-migrate msg="description"'; exit 2; }
-	@uv run --locked python -m a13n_ui.storage.migrations.generate "$(msg)"
+.PHONY: a13n-harness-ui-db-migrate
+a13n-harness-ui-db-migrate: sync ## Generate a Harness UI SQLite migration against a disposable database
+	@test -n "$(msg)" || { echo 'msg is required: make a13n-harness-ui-db-migrate msg="description"'; exit 2; }
+	@uv run --locked python -m a13n_harness_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
-format: sync agent-ui-webui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
+format: sync a13n-harness-ui-webui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
 	@run_formatters() { \
 		formatter_status=0; \
 		for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
@@ -198,19 +199,19 @@ format: sync agent-ui-webui-sync sdk-python-sync sdk-typescript-sync ## Format r
 	@files="$$(find sdk/go -type f -name '*.go')"; gofmt -w $$files
 	@cargo fmt --all
 	@(cd sdk/rust && cargo fmt)
-	@(cd sdk/rust/agent-foundation-cli && cargo fmt)
-	@npm --prefix apps/agent-ui run format
+	@(cd sdk/rust/a13n-service-cli && cargo fmt)
+	@npm --prefix apps/a13n-harness-ui run format
 	@npm --prefix sdk/typescript run format
 
 .PHONY: deps-check
 deps-check: sync ## Check Python package dependency declarations
-	@(cd packages/agent-envd-client && uv run --locked deptry a13n_envd_client)
-	@(cd packages/agent-environment-provider && uv run --locked deptry a13n_environment_provider)
-	@(cd packages/agent-harness && uv run --locked deptry a13n_harness)
-	@(cd packages/agent-stream-protocol && uv run --locked deptry a13n_stream_protocol)
-	@(cd packages/agent-ui && uv run --locked deptry a13n_ui)
-	@(cd packages/logging && uv run --locked deptry a13n_logging)
-	@(cd packages/foundation-service && uv run --locked deptry a13n_service)
+	@(cd packages/a13n-envd-client && uv run --locked deptry a13n_envd_client)
+	@(cd packages/a13n-environment && uv run --locked deptry a13n_environment)
+	@(cd packages/a13n-harness && uv run --locked deptry a13n_harness)
+	@(cd packages/a13n-stream-protocol && uv run --locked deptry a13n_stream_protocol)
+	@(cd packages/a13n-harness-ui && uv run --locked deptry a13n_harness_ui)
+	@(cd packages/a13n-logging && uv run --locked deptry a13n_logging)
+	@(cd packages/a13n-service && uv run --locked deptry a13n_service)
 
 .PHONY: lint
 lint: sync deps-check ## Run non-mutating repository lint checks
@@ -242,9 +243,7 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 
 .PHONY: test
 test: sync ## Run Python workspace tests
-	@for directory in $(PYTHON_TEST_DIRS); do \
-		uv run --locked python -m pytest -n 2 --dist loadgroup "$$directory" || exit $$?; \
-	done
+	@uv run --locked python -m scripts.run_python_tests $(if $(PYTHON_TEST_WORKERS),--workers $(PYTHON_TEST_WORKERS)) $(PYTHON_TEST_DIRS)
 
 .PHONY: eip-generate
 eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspection artifacts
@@ -256,77 +255,77 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 
 .PHONY: eip-integration-test
 eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
-	@cargo build --locked --package agent-envd
-	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" A13N_AGENT_ENVD_EXECUTABLE="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-environment-provider/tests/test_local_envd.py packages/agent-environment-provider/tests/test_remote_envd.py packages/agent-environment-provider/tests/test_remote_envd_e2e.py
-	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --project examples/environment-provider --locked python -m pytest examples/environment-provider/tests/test_remote.py
-	@uv run --locked pyright packages/agent-envd-client/a13n_envd_client packages/agent-environment-provider/a13n_environment_provider
+	@cargo build --locked --package a13n-envd
+	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-environment/tests/test_local_envd.py packages/a13n-environment/tests/test_remote_envd.py packages/a13n-environment/tests/test_remote_envd_e2e.py
+	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest examples/environment-provider/tests/test_remote.py
+	@uv run --locked pyright packages/a13n-envd-client/a13n_envd_client packages/a13n-environment/a13n_environment
 
 .PHONY: eip-test
 eip-test: eip-integration-test ## Run complete EIP integration and daemon tests
-	@cargo test --locked --package agent-envd
+	@cargo test --locked --package a13n-envd
 
 .PHONY: local-envd-test
-local-envd-test: sync ## Build agent-envd and run Local Envd provider tests
-	@cargo build --locked --package agent-envd
+local-envd-test: sync ## Build a13n-envd and run Local Envd provider tests
+	@cargo build --locked --package a13n-envd
 	@set -a; \
 	if [ -f "$(CURDIR)/.env" ]; then . "$(CURDIR)/.env"; fi; \
 	set +a; \
-	A13N_AGENT_ENVD_EXECUTABLE="$${A13N_AGENT_ENVD_EXECUTABLE:-$(CURDIR)/target/debug/agent-envd}"; \
-	export A13N_AGENT_ENVD_EXECUTABLE; \
-	uv run --locked python -m pytest packages/agent-environment-provider/tests/test_local_envd.py
+	A13N_ENVD_EXECUTABLE="$${A13N_ENVD_EXECUTABLE:-$(CURDIR)/target/debug/a13n-envd}"; \
+	export A13N_ENVD_EXECUTABLE; \
+	uv run --locked python -m pytest packages/a13n-environment/tests/test_local_envd.py
 
 .PHONY: e2b-provider-test
 e2b-provider-test: sync ## Run native E2B unit and opt-in live integration tests
-	@uv run --locked pytest -q packages/agent-environment-provider/tests/test_e2b*.py packages/agent-harness/tests/test_e2b_environment_live.py
+	@uv run --locked pytest -q packages/a13n-environment/tests/test_e2b*.py packages/a13n-harness/tests/test_e2b_environment_live.py
 
 .PHONY: docker-provider-test
 docker-provider-test: sync ## Run Docker Provider tests
-	@uv run --locked python -m pytest packages/agent-environment-provider/tests/test_docker.py
+	@uv run --locked python -m pytest packages/a13n-environment/tests/test_docker.py
 
 .PHONY: eip-check
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate
 
 .PHONY: python-build
-python-build: sync agent-ui-assets ## Build all Python workspace distributions
+python-build: sync a13n-harness-ui-assets ## Build all Python workspace distributions
 	@rm -rf dist
 	@uv build --all-packages
 
-.PHONY: harness-python-build
-harness-python-build: ## Build the prepared Harness release-group distributions
+.PHONY: a13n-harness-python-build
+a13n-harness-python-build: ## Build the prepared Harness release-group distributions
 	@rm -rf dist
-	@for package in a13n-environment-provider a13n-harness a13n-stream-protocol; do \
+	@for package in a13n-environment a13n-harness a13n-stream-protocol; do \
 		uv build --package "$$package" --out-dir dist || exit $$?; \
 	done
 
-.PHONY: harness-dist-check
-harness-dist-check: ## Verify isolated same-version Harness wheels
-	@uv run --no-project python scripts/check-agent-distributions.py dist
+.PHONY: a13n-harness-dist-check
+a13n-harness-dist-check: ## Verify isolated same-version Harness wheels
+	@uv run --no-project python scripts/check-a13n-distributions.py dist
 
-.PHONY: harness-release-build
-harness-release-build: harness-python-build ## Build and verify the prepared Harness release group
-	@uv run --no-project python scripts/check-agent-distributions.py dist --require-exact-internal-version
+.PHONY: a13n-harness-release-build
+a13n-harness-release-build: a13n-harness-python-build ## Build and verify the prepared Harness release group
+	@uv run --no-project python scripts/check-a13n-distributions.py dist --require-exact-internal-version
 
-.PHONY: agent-ui-build
-agent-ui-build: sync agent-ui-assets ## Build Agent UI for repository development
+.PHONY: a13n-harness-ui-build
+a13n-harness-ui-build: sync a13n-harness-ui-assets ## Build Harness UI for repository development
 	@rm -rf dist
-	@uv build --package a13n-ui --out-dir dist
-	@uv run --locked python scripts/check-agent-ui-distribution.py dist --rebuild-wheel
+	@uv build --package a13n-harness-ui --out-dir dist
+	@uv run --locked python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel
 
-.PHONY: agent-ui-release-build
-agent-ui-release-build: ## Build and verify Agent UI from prepared assets and release metadata
+.PHONY: a13n-harness-ui-release-build
+a13n-harness-ui-release-build: ## Build and verify Harness UI from prepared assets and release metadata
 	@rm -rf dist
-	@uv build --package a13n-ui --out-dir dist
-	@uv run --no-project python scripts/check-agent-ui-distribution.py dist --rebuild-wheel --require-exact-internal-version
+	@uv build --package a13n-harness-ui --out-dir dist
+	@uv run --no-project python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel --require-exact-internal-version
 
-.PHONY: foundation-python-build
-foundation-python-build: sync ## Build only Foundation release-group Python distributions
+.PHONY: a13n-service-python-build
+a13n-service-python-build: sync ## Build only Service release-group Python distributions
 	@rm -rf dist
 	@for package in a13n-logging a13n-service; do \
 		uv build --package "$$package" --out-dir dist || exit $$?; \
 	done
 
-.PHONY: agent-envd-client-build
-agent-envd-client-build: sync ## Build the agent-envd client Python distributions
+.PHONY: a13n-envd-client-build
+a13n-envd-client-build: sync ## Build the a13n-envd client Python distributions
 	@rm -rf dist
 	@uv build --package a13n-envd-client --out-dir dist
 
@@ -347,8 +346,8 @@ rust-build: ## Build the Rust workspace
 	@cargo build --workspace --all-features --locked
 
 .PHONY: rust-package
-rust-package: ## Verify the agent-envd crates.io package
-	@cargo package --locked --allow-dirty --package agent-envd
+rust-package: ## Verify the a13n-envd crates.io package
+	@cargo package --locked --allow-dirty --package a13n-envd
 
 .PHONY: rust-check
 rust-check: rust-format-check rust-lint ## Run Rust workspace formatting and lint checks
@@ -441,59 +440,58 @@ sdk-rust-check: sdk-rust-isolation-check sdk-rust-format-check sdk-rust-lint ## 
 .PHONY: sdk-rust-check-all
 sdk-rust-check-all: sdk-rust-check sdk-rust-test sdk-rust-build sdk-rust-package ## Run the complete Rust SDK gate
 
-.PHONY: foundation-cli-isolation-check
-foundation-cli-isolation-check: ## Verify the Foundation CLI remains an independent Cargo project
-	@cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; from pathlib import Path; cli = Path("sdk/rust/agent-foundation-cli/Cargo.toml").resolve(); manifests = {Path(item["manifest_path"]).resolve() for item in json.load(sys.stdin)["packages"]}; assert cli not in manifests, "Foundation CLI must remain outside the root Cargo workspace"'
-	@cargo metadata --locked --no-deps --manifest-path sdk/rust/agent-foundation-cli/Cargo.toml --format-version 1 | python3 -c 'import json, sys; from pathlib import Path; cli = Path("sdk/rust/agent-foundation-cli/Cargo.toml").resolve(); data = json.load(sys.stdin); packages = data["packages"]; manifests = {Path(item["manifest_path"]).resolve() for item in packages}; member_ids = set(data["workspace_members"]); package_ids = {item["id"] for item in packages}; assert Path(data["workspace_root"]).resolve() == cli.parent, "Foundation CLI must own its Cargo workspace"; assert manifests == {cli} and member_ids == package_ids, "Foundation CLI workspace must contain only the CLI package"'
-	@cargo package --locked --allow-dirty --manifest-path sdk/rust/Cargo.toml --list | python3 -c 'import sys; paths = sys.stdin.read().splitlines(); assert not any(path == "agent-foundation-cli" or path.startswith("agent-foundation-cli/") for path in paths), "Rust SDK source package must exclude the Foundation CLI"'
+.PHONY: a13n-service-cli-isolation-check
+a13n-service-cli-isolation-check: ## Verify the a13n Service CLI remains an independent Cargo project
+	@cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; from pathlib import Path; cli = Path("sdk/rust/a13n-service-cli/Cargo.toml").resolve(); manifests = {Path(item["manifest_path"]).resolve() for item in json.load(sys.stdin)["packages"]}; assert cli not in manifests, "a13n Service CLI must remain outside the root Cargo workspace"'
+	@cargo metadata --locked --no-deps --manifest-path sdk/rust/a13n-service-cli/Cargo.toml --format-version 1 | python3 -c 'import json, sys; from pathlib import Path; cli = Path("sdk/rust/a13n-service-cli/Cargo.toml").resolve(); data = json.load(sys.stdin); packages = data["packages"]; manifests = {Path(item["manifest_path"]).resolve() for item in packages}; member_ids = set(data["workspace_members"]); package_ids = {item["id"] for item in packages}; assert Path(data["workspace_root"]).resolve() == cli.parent, "a13n Service CLI must own its Cargo workspace"; assert manifests == {cli} and member_ids == package_ids, "a13n Service CLI workspace must contain only the CLI package"'
+	@cargo package --locked --allow-dirty --manifest-path sdk/rust/Cargo.toml --list | python3 -c 'import sys; paths = sys.stdin.read().splitlines(); assert not any(path == "a13n-service-cli" or path.startswith("a13n-service-cli/") for path in paths), "Rust SDK source package must exclude the a13n Service CLI"'
 
-.PHONY: foundation-cli-format-check
-foundation-cli-format-check: ## Check Foundation CLI formatting
-	@(cd sdk/rust/agent-foundation-cli && cargo fmt -- --check)
+.PHONY: a13n-service-cli-format-check
+a13n-service-cli-format-check: ## Check a13n Service CLI formatting
+	@(cd sdk/rust/a13n-service-cli && cargo fmt -- --check)
 
-.PHONY: foundation-cli-lint
-foundation-cli-lint: ## Run Foundation CLI Clippy with warnings denied
-	@(cd sdk/rust/agent-foundation-cli && cargo clippy --all-targets --all-features --locked -- -D warnings)
+.PHONY: a13n-service-cli-lint
+a13n-service-cli-lint: ## Run a13n Service CLI Clippy with warnings denied
+	@(cd sdk/rust/a13n-service-cli && cargo clippy --all-targets --all-features --locked -- -D warnings)
 
-.PHONY: foundation-cli-test
-foundation-cli-test: ## Run Foundation CLI tests
-	@(cd sdk/rust/agent-foundation-cli && cargo test --all-features --locked)
+.PHONY: a13n-service-cli-test
+a13n-service-cli-test: ## Run a13n Service CLI tests
+	@(cd sdk/rust/a13n-service-cli && cargo test --all-features --locked)
 
-.PHONY: foundation-cli-build
-foundation-cli-build: ## Build the Foundation CLI
-	@(cd sdk/rust/agent-foundation-cli && cargo build --all-features --locked)
+.PHONY: a13n-service-cli-build
+a13n-service-cli-build: ## Build the a13n Service CLI
+	@(cd sdk/rust/a13n-service-cli && cargo build --all-features --locked)
 
-.PHONY: foundation-cli-check
-foundation-cli-check: foundation-cli-isolation-check foundation-cli-format-check foundation-cli-lint ## Run Foundation CLI formatting and lint checks
+.PHONY: a13n-service-cli-check
+a13n-service-cli-check: a13n-service-cli-isolation-check a13n-service-cli-format-check a13n-service-cli-lint ## Run a13n Service CLI formatting and lint checks
 
-.PHONY: foundation-cli-check-all
-foundation-cli-check-all: foundation-cli-check foundation-cli-test foundation-cli-build ## Run the complete Foundation CLI gate
+.PHONY: a13n-service-cli-check-all
+a13n-service-cli-check-all: a13n-service-cli-check a13n-service-cli-test a13n-service-cli-build ## Run the complete a13n Service CLI gate
 
-apps/agent-ui/node_modules/.package-lock.json: apps/agent-ui/package.json apps/agent-ui/package-lock.json
-	@npm --prefix apps/agent-ui ci
+apps/a13n-harness-ui/node_modules/.package-lock.json: apps/a13n-harness-ui/package.json apps/a13n-harness-ui/package-lock.json
+	@npm --prefix apps/a13n-harness-ui ci
 
-.PHONY: agent-ui-webui-sync
-agent-ui-webui-sync: apps/agent-ui/node_modules/.package-lock.json ## Install locked Agent UI WebUI dependencies
+.PHONY: a13n-harness-ui-webui-sync
+a13n-harness-ui-webui-sync: apps/a13n-harness-ui/node_modules/.package-lock.json ## Install locked Harness UI WebUI dependencies
 
-.PHONY: agent-ui-webui-format
-agent-ui-webui-format: agent-ui-webui-sync ## Format Agent UI WebUI sources
-	@npm --prefix apps/agent-ui run format
+.PHONY: a13n-harness-ui-webui-format
+a13n-harness-ui-webui-format: a13n-harness-ui-webui-sync ## Format Harness UI WebUI sources
+	@npm --prefix apps/a13n-harness-ui run format
 
-.PHONY: agent-ui-webui-build
-agent-ui-webui-build: agent-ui-webui-sync ## Build Agent UI WebUI production assets
-	@npm --prefix apps/agent-ui run build
+.PHONY: a13n-harness-ui-webui-build
+a13n-harness-ui-webui-build: a13n-harness-ui-webui-sync ## Build Harness UI WebUI production assets
+	@npm --prefix apps/a13n-harness-ui run build
 
-.PHONY: agent-ui-webui-check
-agent-ui-webui-check: agent-ui-webui-sync ## Run Agent UI WebUI formatting and type checks
-	@npm --prefix apps/agent-ui run check
+.PHONY: a13n-harness-ui-webui-check
+a13n-harness-ui-webui-check: a13n-harness-ui-webui-sync ## Run Harness UI WebUI formatting and type checks
+	@npm --prefix apps/a13n-harness-ui run check
 
-.PHONY: agent-ui-webui-check-all
-agent-ui-webui-check-all: agent-ui-webui-sync ## Run the complete Agent UI WebUI gate
-	@npm --prefix apps/agent-ui run check:all
+.PHONY: a13n-harness-ui-webui-check-all
+a13n-harness-ui-webui-check-all: a13n-harness-ui-webui-check a13n-harness-ui-webui-build ## Run the complete Harness UI WebUI gate
 
-.PHONY: agent-ui-assets
-agent-ui-assets: sync agent-ui-webui-build ## Prepare generated Agent UI WebUI files for Python packaging
-	@uv run --locked python scripts/prepare-agent-ui-assets.py
+.PHONY: a13n-harness-ui-assets
+a13n-harness-ui-assets: sync a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
+	@uv run --locked python scripts/prepare-a13n-harness-ui-assets.py
 
 sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json
 	@npm --prefix sdk/typescript ci
@@ -523,65 +521,65 @@ sdk-check: sdk-python-check sdk-go-check sdk-rust-check sdk-typescript-check ## 
 sdk-check-all: sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
 
 .PHONY: build
-build: python-build rust-build sdk-build foundation-cli-build ## Build all workspace, application, SDK, and CLI artifacts
+build: python-build rust-build sdk-build a13n-service-cli-build ## Build all workspace, application, SDK, and CLI artifacts
 
 .PHONY: db-migrate
 db-migrate: sync ## Generate a migration (usage: make db-migrate msg="description")
 	@bash dev/db-migrate.sh "$(msg)"
 
 .PHONY: db-upgrade
-db-upgrade: sync ## Upgrade the local foundation-service database to all heads
-	@uv run --locked foundation-service db upgrade
+db-upgrade: sync ## Upgrade the local a13n-service database to all heads
+	@uv run --locked a13n-service db upgrade
 
 .PHONY: db-downgrade
 db-downgrade: sync ## Downgrade the local database by one reviewed revision
-	@uv run --locked foundation-service db downgrade
+	@uv run --locked a13n-service db downgrade
 
 .PHONY: db-current
-db-current: sync ## Show the current foundation-service database revision
-	@uv run --locked foundation-service db current
+db-current: sync ## Show the current a13n-service database revision
+	@uv run --locked a13n-service db current
 
 .PHONY: db-check
-db-check: sync ## Fail unless the foundation-service database is at all heads
-	@uv run --locked foundation-service db current --check-heads
+db-check: sync ## Fail unless the a13n-service database is at all heads
+	@uv run --locked a13n-service db current --check-heads
 
 .PHONY: db-history
-db-history: sync ## Show foundation-service migration history
-	@uv run --locked foundation-service db history
+db-history: sync ## Show a13n-service migration history
+	@uv run --locked a13n-service db history
 
 .PHONY: release-check
-release-check: ## Validate a component version (component=harness|agent-ui|foundation|agent-envd|foundation-cli|sdk-<language> version=X.Y.Z or X.Y.Z-rc.N)
+release-check: ## Validate a component version (component=a13n-harness|a13n-harness-ui|a13n-service|a13n-envd|a13n-service-cli|a13n-<language> version=X.Y.Z or X.Y.Z-rc.N)
 	@test -n "$(component)" || { echo "component is required"; exit 2; }
 	@test -n "$(version)" || { echo "version is required"; exit 2; }
 	@uv run --locked python scripts/check-release-version.py "$(component)" "$(version)"
 
-.PHONY: image-foundation-service
-image-foundation-service: ## Build the local foundation-service container image
-	@docker build -f deploy/containers/foundation-service/Dockerfile -t "$(FOUNDATION_SERVICE_IMAGE)" .
+.PHONY: image-a13n-service
+image-a13n-service: ## Build the local a13n-service container image
+	@docker build -f deploy/containers/a13n-service/Dockerfile -t "$(A13N_SERVICE_IMAGE)" .
 
 .PHONY: image-sandbox
-image-sandbox: ## Build the local sandbox image with agent-envd
+image-sandbox: ## Build the local sandbox image with a13n-envd
 	@docker build -f deploy/containers/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
 
 .PHONY: images
-images: image-foundation-service image-sandbox ## Build all local container images
+images: image-a13n-service image-sandbox ## Build all local container images
 
-.PHONY: image-check-foundation-service
-image-check-foundation-service: ## Smoke-check the existing foundation-service container image
-	@test "$$(docker image inspect --format '{{.Config.User}}' "$(FOUNDATION_SERVICE_IMAGE)")" = "app"
-	@docker run --rm --entrypoint sh "$(FOUNDATION_SERVICE_IMAGE)" -c '! command -v node'
+.PHONY: image-check-a13n-service
+image-check-a13n-service: ## Smoke-check the existing a13n-service container image
+	@test "$$(docker image inspect --format '{{.Config.User}}' "$(A13N_SERVICE_IMAGE)")" = "app"
+	@docker run --rm --entrypoint sh "$(A13N_SERVICE_IMAGE)" -c '! command -v node'
 
 .PHONY: image-check-sandbox
 image-check-sandbox: ## Smoke-check the existing sandbox container image
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(SANDBOX_IMAGE)")" = "sandbox"
-	@docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$(SANDBOX_IMAGE)" | grep -qx 'AGENT_ENVD_EXECUTION_ISOLATION=disabled'
+	@docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$(SANDBOX_IMAGE)" | grep -qx 'A13N_ENVD_EXECUTION_ISOLATION=disabled'
 	@docker run --rm \
-		--env AGENT_ENVD_ENVIRONMENT_ID=image-check \
-		--entrypoint agent-envd "$(SANDBOX_IMAGE)"
+		--env A13N_ENVD_ENVIRONMENT_ID=image-check \
+		--entrypoint a13n-envd "$(SANDBOX_IMAGE)"
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-foundation-service image-check-sandbox
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks
@@ -598,12 +596,12 @@ check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
-check-all: eip-check examples-check-all agent-ui-webui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
+check-all: eip-check examples-check-all a13n-harness-ui-webui-check-all python-check-all rust-check-all sdk-check-all a13n-service-cli-check-all ## Run the complete repository gate
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
-	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/agent-foundation-cli/target packages/agent-ui/a13n_ui/static
-	@npm --prefix apps/agent-ui run clean
+	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/a13n-service-cli/target packages/a13n-harness-ui/a13n_harness_ui/static
+	@npm --prefix apps/a13n-harness-ui run clean
 	@npm --prefix sdk/typescript run clean
 
 .PHONY: help

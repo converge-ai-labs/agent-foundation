@@ -1,5 +1,0 @@
-<task-manager-guidelines>
-Use tasks only when a visible checklist improves execution, coordination, or continuity.
-Set a task to `in_progress` when work begins and to `completed` immediately after it finishes.
-Use dependencies only for real execution blockers, ownership boundaries, or parallel coordination.
-</task-manager-guidelines>

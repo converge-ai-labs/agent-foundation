@@ -5,11 +5,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/ci-sdks.yml"
-      - ".github/workflows/release-sdk-go.yml"
-      - ".github/workflows/release-sdk-python.yml"
-      - ".github/workflows/release-sdk-rust.yml"
-      - ".github/workflows/release-sdk-typescript.yml"
-      - ".github/workflows/release-foundation-cli.yml"
+      - ".github/workflows/release-a13n-go.yml"
+      - ".github/workflows/release-a13n-python.yml"
+      - ".github/workflows/release-a13n-rust.yml"
+      - ".github/workflows/release-a13n-typescript.yml"
+      - ".github/workflows/release-a13n-service-cli.yml"
       - ".pre-commit-config.yaml"
       - "Cargo.toml"
       - "pyproject.toml"
@@ -18,11 +18,11 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/ci-sdks.yml"
-      - ".github/workflows/release-sdk-go.yml"
-      - ".github/workflows/release-sdk-python.yml"
-      - ".github/workflows/release-sdk-rust.yml"
-      - ".github/workflows/release-sdk-typescript.yml"
-      - ".github/workflows/release-foundation-cli.yml"
+      - ".github/workflows/release-a13n-go.yml"
+      - ".github/workflows/release-a13n-python.yml"
+      - ".github/workflows/release-a13n-rust.yml"
+      - ".github/workflows/release-a13n-typescript.yml"
+      - ".github/workflows/release-a13n-service-cli.yml"
       - ".pre-commit-config.yaml"
       - "Cargo.toml"
       - "pyproject.toml"
@@ -50,7 +50,7 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       rust: ${{ steps.filter.outputs.rust }}
       typescript: ${{ steps.filter.outputs.typescript }}
-      foundation_cli: ${{ steps.filter.outputs.foundation_cli }}
+      a13n_service_cli: ${{ steps.filter.outputs.a13n_service_cli }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -65,31 +65,31 @@ jobs:
           filters: |
             go:
               - '.github/workflows/ci-sdks.yml'
-              - '.github/workflows/release-sdk-go.yml'
+              - '.github/workflows/release-a13n-go.yml'
               - 'sdk/go/**'
             python:
               - '.github/workflows/ci-sdks.yml'
-              - '.github/workflows/release-sdk-python.yml'
+              - '.github/workflows/release-a13n-python.yml'
               - 'pyproject.toml'
               - 'sdk/python/**'
             rust:
               - '.github/workflows/ci-sdks.yml'
-              - '.github/workflows/release-sdk-rust.yml'
+              - '.github/workflows/release-a13n-rust.yml'
               - 'Cargo.toml'
               - 'sdk/rust/**'
-              - '!sdk/rust/agent-foundation-cli/**'
+              - '!sdk/rust/a13n-service-cli/**'
             typescript:
               - '.github/workflows/ci-sdks.yml'
-              - '.github/workflows/release-sdk-typescript.yml'
+              - '.github/workflows/release-a13n-typescript.yml'
               - 'sdk/typescript/**'
-            foundation_cli:
+            a13n_service_cli:
               - '.github/workflows/ci-sdks.yml'
-              - '.github/workflows/release-foundation-cli.yml'
+              - '.github/workflows/release-a13n-service-cli.yml'
               - '.pre-commit-config.yaml'
               - 'sdk/rust/Cargo.toml'
               - 'sdk/rust/Cargo.lock'
               - 'sdk/rust/src/**'
-              - 'sdk/rust/agent-foundation-cli/**'
+              - 'sdk/rust/a13n-service-cli/**'
 
   python:
     name: Python SDK
@@ -156,15 +156,15 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: sdk/rust -> target
-          shared-key: foundation-sdk
+          shared-key: a13n
 
       - name: Run complete Rust SDK checks
         run: make sdk-rust-check-all
 
-  foundation-cli:
-    name: Foundation CLI (${{ matrix.os }})
+  a13n-service-cli:
+    name: a13n Service CLI (${{ matrix.os }})
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.foundation_cli == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.a13n_service_cli == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
@@ -184,20 +184,20 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk/rust/agent-foundation-cli -> target
-          shared-key: foundation-cli-${{ matrix.os }}
+          workspaces: sdk/rust/a13n-service-cli -> target
+          shared-key: a13n-service-cli-${{ matrix.os }}
 
-      - name: Run complete Foundation CLI checks
+      - name: Run complete a13n Service CLI checks
         if: runner.os == 'Linux'
-        run: make foundation-cli-check-all
+        run: make a13n-service-cli-check-all
 
       - name: Run native Windows tests
         if: runner.os == 'Windows'
-        run: cargo test --all-features --locked --manifest-path sdk/rust/agent-foundation-cli/Cargo.toml
+        run: cargo test --all-features --locked --manifest-path sdk/rust/a13n-service-cli/Cargo.toml
 
       - name: Build native Windows binary
         if: runner.os == 'Windows'
-        run: cargo build --all-features --locked --manifest-path sdk/rust/agent-foundation-cli/Cargo.toml
+        run: cargo build --all-features --locked --manifest-path sdk/rust/a13n-service-cli/Cargo.toml
 
   typescript:
     name: TypeScript SDK

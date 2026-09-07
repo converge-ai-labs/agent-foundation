@@ -1,0 +1,432 @@
+"""Semantic stream presentation with bounded per-message display state."""
+
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
+
+from .panels import capability_panel, tool_arguments, tool_preview, tool_result
+from .transcript import Transcript
+
+if TYPE_CHECKING:
+    from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
+
+    from .local_shell import LocalShellEvent
+
+
+def terminal_text(value: str) -> str:
+    """Render untrusted content as text, never as terminal control sequences."""
+    return "".join(char for char in value if char in "\n\t" or (ord(char) >= 32 and not 127 <= ord(char) <= 159))
+
+
+@dataclass(slots=True)
+class Status:
+    theme: Literal["auto", "dark", "light"] = "auto"
+    theme_explicit: bool = False
+    state: str = "starting"
+    model: str = "not configured"
+    thinking: str = "default"
+    environment: str = "not selected"
+    context_window: int | None = None
+    context_tokens: int | None = None
+    mode: str = "concise"
+    mode_explicit: bool = False
+    show_status: bool = True
+    max_tool_result_lines: int = 5
+    max_tool_argument_chars: int = 8192
+    started: float | None = None
+    elapsed: float = 0
+    session_id: str | None = None
+    usage: BoundedRequestUsage | None = None
+    requests: int = 0
+    _usage_ids: set[str] = field(default_factory=set)
+
+    def reset_usage(self) -> None:
+        self.usage = None
+        self.requests = 0
+        self._usage_ids.clear()
+
+    def record_usage(self, record: ModelUsageRecord) -> None:
+        from a13n_harness.usage import BoundedRequestUsage
+
+        if record.record_id in self._usage_ids:
+            return
+        self._usage_ids.add(record.record_id)
+        current = record.request_usage
+        previous = self.usage
+        self.requests += 1
+        counters = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+        values = current.model_dump(include=set(counters))
+        if previous is not None:
+            old = previous.model_dump(include=set(counters))
+            values = {key: values[key] + old[key] for key in counters}
+        cost = current.cost
+        if previous is not None:
+            cost = None if cost is None or previous.cost is None else previous.cost + cost
+        self.usage = BoundedRequestUsage(**values, cost=cost)
+
+    def usage_details(self) -> str:
+        if self.usage is None:
+            return "Root Run usage: unavailable (no observed model response)."
+        usage = self.usage
+        cost = "unknown" if usage.cost is None else f"USD {usage.cost:.6f} (model estimate, not subscription billing)"
+        return (
+            f"Observed root Run: {self.requests} requests · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
+            f"Cache read {usage.cache_read_tokens:,} · cache write {usage.cache_write_tokens:,} (provider-reported counters)\n"
+            f"Cost: {cost}. Child and non-model usage excluded."
+        )
+
+    def line(self, width: int | None = None) -> str:
+        elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
+        context = (
+            "--"
+            if self.context_tokens is None or not self.context_window
+            else f"{100 * self.context_tokens / self.context_window:.0f}%"
+        )
+        fields = [self.state.capitalize(), self.model.split(":")[-1]]
+        if self.usage is not None:
+            usage = self.usage
+            fields.extend(
+                [
+                    "cost --" if usage.cost is None else f"${usage.cost:.4f}",
+                    f"in {usage.input_tokens:,} / out {usage.output_tokens:,}",
+                ]
+            )
+        fields.extend([f"ctx {context}", self.thinking, f"{elapsed:.0f}s"])
+        if self.usage is not None:
+            fields.append(f"cache r {self.usage.cache_read_tokens:,} / w {self.usage.cache_write_tokens:,}")
+        while width is not None and len(" · ".join(fields)) + 2 > width and len(fields) > 2:
+            fields.pop()
+        return terminal_text(" " + " · ".join(fields) + " ")
+
+
+@dataclass(slots=True)
+class _ToolPreview:
+    name: str
+    started: float
+    arguments: str = ""
+    parts: list[str] | None = None
+    size: int = 0
+    truncated: bool = False
+    block_id: int | None = None
+    summary: str = ""
+
+
+class StreamRenderer:
+    """Keep only a bounded pending batch and bounded per-tool argument tails.
+
+    The App owns durable history. This adapter retains bounded semantic blocks
+    and a bounded drain buffer for observation/testing, not execution authority.
+    """
+
+    def __init__(self, status: Status, *, limit: int | None = None) -> None:
+        from a13n_stream_protocol import CustomEventAssembler
+
+        from .tasks import TaskPanel
+
+        self.status = status
+        self.transcript = Transcript()
+        self.tasks = TaskPanel()
+        self._local_inputs: dict[str, int] = {}
+        self._messages: dict[tuple[str, str, str], int] = {}
+        self._limit = limit
+        self._pending: list[str] = []
+        self._size = 0
+        self._tools: dict[tuple[str, str], _ToolPreview] = {}
+        self.assistant_seen = False
+        self.gap = False
+        self.boundary = False
+        self._line_open = False
+        self._local_output: dict[str, int] = {}
+        self._custom_events = CustomEventAssembler()
+
+    def local_input(self, source_id: str, text: str) -> None:
+        self.finish()
+        self._local_inputs[source_id] = self.transcript.append("> " + terminal_text(text), kind="user")
+        while len(self._local_inputs) > 128:
+            self._local_inputs.pop(next(iter(self._local_inputs)))
+
+    @property
+    def limit(self) -> int:
+        return self._limit or self.status.max_tool_argument_chars
+
+    def append(
+        self,
+        text: str,
+        *,
+        display: bool = True,
+        markdown: bool = False,
+        collapsed_lines: int | None = None,
+        collapsed_chars: int | None = None,
+        kind: str = "text",
+    ) -> None:
+        safe = terminal_text(text)
+        if display and safe:
+            self.transcript.append(
+                safe, markdown=markdown, collapsed_lines=collapsed_lines, collapsed_chars=collapsed_chars, kind=kind
+            )
+        self._pending.append(safe)
+        self._size += len(safe)
+        if self._size > 256 * 1024:
+            self._pending = ["".join(self._pending)[-256 * 1024 :]]
+            self._size = len(self._pending[0])
+        if safe:
+            self._line_open = not safe.endswith("\n")
+
+    @property
+    def should_flush(self) -> bool:
+        return self.boundary or self._size >= self.limit
+
+    def drain(self) -> str:
+        result = "".join(self._pending)
+        self._pending.clear()
+        self._size = 0
+        self.boundary = False
+        return result
+
+    def finish(self) -> None:
+        if self._line_open:
+            self.append("\n", display=False)
+        self.boundary = True
+
+    def local_shell(self, event: LocalShellEvent) -> None:
+        """Render host-operation events without fabricating an agent Run or message."""
+        if event.kind == "started":
+            self.finish()
+            self._local_output.clear()
+            self.append(f"[Local shell · running]\n$ {event.command}\n", kind="shell")
+        elif event.kind == "output":
+            stream = event.stream or "stdout"
+            text = terminal_text(event.text)
+            block = self._local_output.get(stream)
+            if block is None or not self.transcript.extend(block, text):
+                self._local_output[stream] = self.transcript.append(
+                    f"{stream}\n{text}",
+                    kind="shell",
+                    streaming=True,
+                )
+            self.append(text, display=False)
+        else:
+            for block in self._local_output.values():
+                self.transcript.complete(block)
+            self._local_output.clear()
+            self.finish()
+            code = f" · exit {event.exit_code}" if event.exit_code is not None else ""
+            self.append(f"[Local shell · {event.phase}{code} · {event.elapsed:.1f}s]\n", kind="shell")
+            if event.truncated:
+                self.append("[Output display limit reached; remaining output was drained and discarded.]\n")
+            self.boundary = True
+
+    def ingest(
+        self,
+        event_type: str,
+        payload: Mapping[str, object] | None,
+        *,
+        child: bool = False,
+        run_id: str = "root",
+        execution_id: str | None = None,
+    ) -> None:
+        from a13n_stream_protocol import ContentMetadata
+
+        if payload is None:
+            self.gap = True
+            return
+        if event_type == "CUSTOM":
+            payload = self._custom_events.accept(payload)
+            self.gap |= self._custom_events.gap
+            if payload is None:
+                return
+        metadata = ContentMetadata.from_native(payload.get("metadata"))
+        if not metadata.display:
+            return
+        detailed = self.status.mode == "detailed"
+        delta = payload.get("delta") or payload.get("content") or ""
+        text = delta if isinstance(delta, str) else json.dumps(delta, ensure_ascii=False)
+        thinking = event_type.startswith(("REASONING_MESSAGE", "THINKING_TEXT_MESSAGE"))
+        message = event_type.startswith("TEXT_MESSAGE")
+        user = message and payload.get("role") == "user"
+        if user and not child and metadata.source_id in self._local_inputs:
+            # Correlate explicit authored input identity, never equal text. Keep
+            # the identity across repeated model boundaries of this operation.
+            return
+        assistant = message and not user
+        identity = terminal_text(execution_id or run_id)
+        if thinking or message:
+            if not user and not child and self.status.state != "cancelling":
+                self.status.state = "thinking" if thinking else "responding"
+            if child and not detailed:
+                return
+            key = (
+                run_id,
+                str(payload.get("message_id", "default")),
+                "thinking" if thinking else "user" if user else "assistant",
+            )
+            if event_type.endswith("START"):
+                self.finish()
+                self._messages.pop(key, None)
+            elif event_type.endswith("END"):
+                block_id = self._messages.pop(key, None)
+                if block_id is not None:
+                    self.transcript.complete(block_id)
+                self.finish()
+            elif text:
+                block_id = self._messages.get(key)
+                if block_id is None or not self.transcript.extend(block_id, terminal_text(text)):
+                    label = (f"**Subagent · {identity}**\n\n" if child else "") + ("> " if user else "")
+                    self._messages[key] = self.transcript.append(
+                        label + terminal_text(text),
+                        markdown=not user,
+                        streaming=True,
+                        kind="thinking" if thinking else "user" if user else "text",
+                    )
+                    if len(self._messages) > 128:
+                        self._messages.pop(next(iter(self._messages)))
+                self.append(text, display=False)
+                if assistant and not child:
+                    self.assistant_seen = True
+            return
+        if event_type.startswith("TOOL_CALL"):
+            call_id = terminal_text(str(payload.get("tool_call_id", "unknown")))
+            key = (run_id, call_id)
+            preview = self._tools.get(key)
+            label = f"{identity} / {call_id}" if child else call_id
+            if event_type.endswith("START"):
+                preview = _ToolPreview(str(payload.get("tool_call_name", "tool"))[:60], time.monotonic())
+                self._tools[key] = preview
+                if not child and self.status.state != "cancelling":
+                    self.status.state = preview.name
+                if not child or detailed:
+                    self.finish()
+                    header = f"{preview.name} · running" + (f" · {identity}" if child else "")
+                    preview.block_id = self.transcript.append(header + "\n", collapsed_lines=1)
+                    self.append(header + "\n", display=False)
+            elif event_type.endswith(("ARGS", "CHUNK")):
+                if preview is None:
+                    preview = self._tools[key] = _ToolPreview("tool", time.monotonic())
+                # Arguments are retained separately from the collapsed preview.
+                # Coalesce chunks at END instead of copying growing JSON per token.
+                if preview.parts is None:
+                    preview.parts = []
+                available = max(
+                    0, (self._limit or self.transcript.max_bytes) - sum(item.size for item in self._tools.values())
+                )
+                if available and text:
+                    preview.parts.append(text[:available])
+                preview.size += min(len(text), available)
+                preview.truncated |= len(text) > available
+            elif event_type.endswith("RESULT"):
+                name = preview.name if preview else "tool"
+                if not child or detailed:
+                    elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
+                    result = tool_result(name, text)
+                    state, _, output = result.partition("\n")
+                    header = f"{name} · {state}{elapsed}" + (f" · {identity}" if child else "")
+                    summary = preview.summary if preview else ""
+                    brief = " · ".join(
+                        item
+                        for item in (header, " ".join(summary.split())[:100], output.split("\n", 1)[0][:100])
+                        if item
+                    )
+                    if name.startswith("shell") and summary:
+                        brief = header + "\n" + summary
+                    arguments = preview.arguments if preview else ""
+                    body = header + "\n" + (f"Arguments · {label}\n{arguments}\n" if arguments else "") + result + "\n"
+                    block_id = preview.block_id if preview is not None else None
+                    if block_id is None or not self.transcript.replace(block_id, terminal_text(body)):
+                        block_id = self.transcript.append(terminal_text(body), collapsed_lines=1)
+                    self.transcript.preview(block_id, terminal_text(brief), 4 if name.startswith("shell") else 1)
+                    self.append(header + "\n", display=False)
+                self._tools.pop(key, None)
+                if not child and self.status.state != "cancelling":
+                    self.status.state = "working"
+                self.boundary = True
+            elif event_type.endswith("END"):
+                # END completes argument generation, not tool execution.
+                if preview:
+                    preview.arguments = "".join(preview.parts or ())
+                    preview.parts = None
+                    preview.summary = tool_preview(preview.arguments)
+                    if preview.name in {"edit", "multi_edit", "summarize", "compact"}:
+                        preview.arguments = ""
+                    elif preview.arguments:
+                        preview.arguments = tool_arguments(preview.name, preview.arguments)
+                        if preview.truncated:
+                            preview.arguments += "\n[Arguments exceed display budget; /history reads retained content]"
+                    preview.size = len(preview.arguments)
+                    if preview.block_id is not None and preview.arguments:
+                        header = f"{preview.name} · running" + (f" · {identity}" if child else "")
+                        self.transcript.replace(preview.block_id, terminal_text(header + "\n" + preview.arguments))
+                        shell = preview.name.startswith("shell")
+                        brief = header + ("\n" if shell else " · ") + preview.summary
+                        self.transcript.preview(preview.block_id, terminal_text(brief), 4 if shell else 1)
+                self.boundary = True
+            # START-only and malformed streams obey the same bound as ARGS.
+            while len(self._tools) > 128:
+                self._tools.pop(next(iter(self._tools)))
+            return
+        if event_type == "RUN_ERROR":
+            self.finish()
+            self.append(f"Error: {payload.get('message', payload.get('code', 'run failed'))}\n")
+        elif event_type == "CUSTOM":
+            value = payload.get("value")
+            if isinstance(value, dict):
+                event = value.get("event")
+                if not isinstance(event, dict):
+                    return
+                name = payload.get("name")
+                if name == "a13n.input.media":
+                    media = event.get("content")
+                    if isinstance(media, dict) and (not child or detailed):
+                        label = str(media.get("media_type") or media.get("kind") or "media")
+                        if isinstance(media.get("size_bytes"), int):
+                            label += f" · {media['size_bytes']:,} bytes"
+                        reference = media.get("url") or media.get("file_id")
+                        if isinstance(reference, str):
+                            label += f" · {reference}"
+                        self.finish()
+                        self.append(f"> [{label}]\n", kind="user")
+                    return
+                panel = capability_panel(name, event)
+                if panel is not None:
+                    if not child or detailed:
+                        self.finish()
+                        self.append(f"[{panel.title}]\n", kind=panel.kind)
+                        self.append(panel.body + "\n", kind=panel.kind, markdown=panel.kind in {"summary", "compact"})
+                    return
+                if event.get("event_kind") == "capability":
+                    if not child or detailed:
+                        self.finish()
+                        self.append(f"[Event · {name}]\n")
+                        self.append(
+                            json.dumps(event, ensure_ascii=False, indent=2) + "\n",
+                            collapsed_lines=self.status.max_tool_result_lines,
+                        )
+                    return
+                mutation = event.get("payload")
+                if isinstance(mutation, dict):
+                    kind = str(mutation.get("type", ""))
+                    if kind.startswith(("compaction_", "handoff_")):
+                        self.finish()
+                        title = "Compact" if kind.startswith("compaction_") else "Summary"
+                        self.append(
+                            f"[{title} · {identity}] {kind}\n"
+                            + json.dumps(mutation, ensure_ascii=False, indent=2)
+                            + "\n",
+                            collapsed_lines=1,
+                        )
+                    elif kind == "task_changed" and not child:
+                        self.tasks.ingest(mutation)
+                if name == "a13n.pydantic_ai.enqueued_messages" and event.get("event_kind") == "enqueued_messages":
+                    # ModelInputEvent owns applied input. Acceptance is a local
+                    # notification; queue/delivery facts must not echo it again.
+                    return
+                elif name == "a13n.pydantic_ai.function_tool_result":
+                    self.finish()
+                    self.append(
+                        "[Tool · native result/retry]\n"
+                        + json.dumps(event.get("part"), ensure_ascii=False, indent=2)
+                        + "\n"
+                    )

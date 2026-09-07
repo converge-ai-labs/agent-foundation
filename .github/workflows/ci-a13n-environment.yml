@@ -1,0 +1,90 @@
+name: a13n Environment CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-a13n-environment.yml"
+      - ".github/workflows/release-a13n-harness.yml"
+      - "deploy/containers/sandbox/Dockerfile"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-harness/pyproject.toml"
+      - "pyproject.toml"
+      - "scripts/check-a13n-distributions.py"
+      - "scripts/release_version.py"
+      - "scripts/tests/test_check_a13n_distributions.py"
+      - "scripts/tests/test_prepare_release_version.py"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-a13n-environment.yml"
+      - ".github/workflows/release-a13n-harness.yml"
+      - "deploy/containers/sandbox/Dockerfile"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-harness/pyproject.toml"
+      - "pyproject.toml"
+      - "scripts/check-a13n-distributions.py"
+      - "scripts/release_version.py"
+      - "scripts/tests/test_check_a13n_distributions.py"
+      - "scripts/tests/test_prepare_release_version.py"
+      - "uv.lock"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provider:
+    name: a13n Environment (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: Linux
+            runner: ubuntu-24.04
+          - name: Windows
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Synchronize Python workspace
+        run: uv sync --locked --all-packages
+
+      - name: Type-check a13n Environment
+        if: matrix.name == 'Linux'
+        run: uv run --locked pyright packages/a13n-environment/a13n_environment
+
+      - name: Test a13n Environment
+        run: uv run --locked python -m pytest packages/a13n-environment/tests
+
+      - name: Build sandbox image
+        if: matrix.name == 'Linux'
+        run: make image-sandbox
+
+      - name: Build a13n Environment distribution
+        if: matrix.name == 'Linux'
+        run: uv build --package a13n-environment --out-dir dist/provider

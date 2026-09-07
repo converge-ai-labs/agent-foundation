@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_environment_provider import (
+from a13n_environment import (
     DirectLocalEnvironment,
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,

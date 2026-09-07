@@ -13,7 +13,7 @@ from time import monotonic
 from typing import cast
 
 import httpx2
-from a13n_service.models.descriptions import describe_model
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_operations import NativeProviderOperations
@@ -58,8 +58,7 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
     walkthrough = args.command == "walkthrough"
     if walkthrough:
         pause("Next: fetch the OpenRouter model catalog through the Model module.")
-    catalog = None
-    if args.command != "call":
+    if args.command in {"walkthrough", "discover"}:
         print("\n[2] Discover models: GET /api/v1/models", flush=True)
         async with asyncio.timeout(60):
             catalog = await operations.discover(provider_id="local", organization_id="local", workspace_id="local")
@@ -67,9 +66,8 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
             f"Discovered {len(catalog.items)} models; catalog access does not prove inference authorization.",
             flush=True,
         )
-        if args.command in {"walkthrough", "discover"}:
-            for item in catalog.items:
-                print(f"  {item.upstream_model}\t{item.display_name or ''}")
+        for item in catalog.items:
+            print(f"  {item.upstream_model}\t{item.display_name or ''}")
         if args.command == "discover":
             return
 
@@ -80,15 +78,15 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
     if not model_id.strip():
         raise ValueError("Model ID must not be empty")
     if args.command != "call":
-        description = (
-            next((item for item in catalog.items if item.upstream_model == model_id), None) if catalog else None
-        )
-        if description is None:
-            print(
-                "Model ID absent from the catalog; using a local description. Manual invocation is still allowed.",
-                flush=True,
+        async with asyncio.timeout(60):
+            description = await operations.describe(
+                provider_id="local",
+                organization_id="local",
+                workspace_id="local",
+                provider_type=provider.type,
+                upstream_model=model_id,
+                model_api=model_api,
             )
-            description = describe_model(registry, "openrouter", model_id, model_api=model_api)
         print("\n[3] Model module description (capability information is advisory)", flush=True)
         show(description.model_dump(mode="json", exclude={"settings_schema"}))
         properties = cast(dict[str, object], description.settings_schema.get("properties", {}))
@@ -97,7 +95,7 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
             return
 
     settings = validate_settings(model_api, json.loads(args.settings))
-    model = NativeModelFactory(client, registry).build(snapshot, provider)
+    model = await NativeModelFactory(client, registry, EndpointPolicy()).build(snapshot, provider)
     print("\n[4] Settings validated and native Model constructed", flush=True)
     show({"upstream_model": model_id, "model_api": model_api, "settings": settings, "prompt": args.prompt})
     print(f"Native Model type: {type(model).__name__}", flush=True)

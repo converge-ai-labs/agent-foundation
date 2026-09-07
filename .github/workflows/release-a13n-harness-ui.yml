@@ -1,0 +1,143 @@
+name: Release a13n Harness UI
+
+on:
+  push:
+    tags:
+      - "release/a13n-harness-ui-v*"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-a13n-harness-ui
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  build-python:
+    name: Build Harness UI distribution
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/a13n-harness-ui/package-lock.json
+
+      - name: Prepare bundled browser assets
+        run: make a13n-harness-ui-assets
+
+      - name: Prepare release version and library pins
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#release/a13n-harness-ui-v}"
+          python scripts/prepare-release-version.py a13n-harness-ui "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build and verify Harness UI distribution
+        run: make a13n-harness-ui-release-build
+
+      - name: Verify Harness UI artifacts use the release version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python scripts/check-release-version.py a13n-harness-ui "$VERSION"
+          python_version="${VERSION/-rc./rc}"
+          test -f "dist/a13n_harness_ui-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_harness_ui-${python_version}.tar.gz"
+          test "$(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 2
+
+      - name: Verify selected Harness release from PyPI
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python_version="${VERSION/-rc./rc}"
+          environment="${RUNNER_TEMP}/a13n-harness-ui-release-smoke"
+          uv venv --python 3.13 "$environment"
+          uv pip install \
+            --python "$environment/bin/python" \
+            --no-cache \
+            --index-url https://pypi.org/simple \
+            "dist/a13n_harness_ui-${python_version}-py3-none-any.whl"
+          "$environment/bin/a13n-harness-ui" --help
+          "$environment/bin/a13n-harness-ui" webui --help
+
+      - name: Upload Harness UI distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: a13n-harness-ui-python-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-python:
+    name: Publish Harness UI distribution
+    needs: build-python
+    runs-on: ubuntu-latest
+    environment: a13n-harness-ui-pypi
+    steps:
+      - name: Download Harness UI distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: a13n-harness-ui-python-dist
+          path: dist
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Publish package to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --check-url https://pypi.org/simple/ dist/*
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-python, publish-python]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag and history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download Harness UI distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: a13n-harness-ui-python-dist
+          path: dist
+
+      - name: Create release with channel-scoped notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-python.outputs.version }}
+        run: >-
+          python3 scripts/create-github-release.py a13n-harness-ui "$VERSION"
+          "a13n Harness UI $VERSION" dist/*

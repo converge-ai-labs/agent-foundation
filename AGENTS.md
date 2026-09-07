@@ -4,14 +4,14 @@ Agent Foundation is a Python-first open-source cloud foundation for building age
 
 ## Sources of Truth
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution workflow, setup, and validation. Read it before changing the repository.
+- [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution workflow, setup, and validation. Read the sections relevant to the requested change and handoff.
 - [DEVELOPMENT.md](DEVELOPMENT.md) owns code quality principles and component engineering standards. Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) to features, bug fixes, refactoring, and reviews; read the component rules and owning specifications relevant to the change.
 - [spec/repository-model.md](spec/repository-model.md) owns repository structure and workflow boundaries. Read it before changing either.
 - [spec/README.md](spec/README.md) leads to the accepted product and architecture contracts. Keep proposals, discussion, and progress in GitHub Issues; changes are reviewed through pull requests.
 - `docs/` contains Markdown user documentation published with MkDocs Material; `mkdocs.yml` owns site configuration and navigation.
 - [MAINTAINERS.md](MAINTAINERS.md) owns semantic reviewer routing.
 
-Read relevant owners as needed and reuse context already read. This guide and skills summarize operational rules; they do not replace the owning contracts. Do not turn personal preferences or tool-specific defaults into repository requirements without an explicit project decision.
+Read the relevant contribution and engineering sections before changing that surface. Reuse sections already read unless they changed. This guide and skills summarize operational rules; they do not replace the owning contracts. Do not turn personal preferences or tool-specific defaults into repository requirements without an explicit project decision.
 
 Write repository content in English, as required by [CONTRIBUTING.md](CONTRIBUTING.md#repository-language).
 
@@ -27,9 +27,9 @@ Keep diffs focused and update affected contracts, implementation, tests, docs, a
 
 ## Package and Release Boundaries
 
-Python 3.13 and `packages/*` use `uv`; Rust crates live under `crates/`. Workspace directories omit the project prefix, distributions use `a13n-`, and Python imports use `a13n_` (for example, `agent-stream-protocol`, `a13n-stream-protocol`, and `a13n_stream_protocol`). SDKs under `sdk/{python,go,rust,typescript}` and the companion `sdk/rust/agent-foundation-cli` stay outside the root workspaces. The CLI uses the Rust SDK for every network operation and owns no service-process behavior or parallel HTTP client.
+Python 3.13 and `packages/*` use `uv`; Rust crates live under `crates/`. Component source directories and distributions use canonical `a13n-` names, while Python imports replace hyphens with underscores (for example, `packages/a13n-stream-protocol`, `a13n-stream-protocol`, and `a13n_stream_protocol`). SDKs under `sdk/{python,go,rust,typescript}` and the companion `sdk/rust/a13n-service-cli` stay outside the root workspaces. The CLI uses the Rust SDK for every network operation and owns no service-process behavior or parallel HTTP client.
 
-For packaging and release changes, read [repository boundaries](spec/repository-model.md#repository-surfaces), [release rules](CONTRIBUTING.md#releases), and the owning workflow. The Harness group includes Environment Provider, Harness, and Stream Protocol at one exact release version; Agent UI releases independently against one reviewed Harness version. Source workspace dependencies remain unversioned. `apps/agent-ui` is private build input included in the UI wheel and sdist, with no independent release or committed build output; rebuilding the wheel from its sdist requires no Node.js. RC releases never advance Docker or npm `latest`.
+For packaging and release changes, read [repository boundaries](spec/repository-model.md#repository-surfaces), [release rules](CONTRIBUTING.md#releases), and the owning workflow. The Harness group includes Environment, Harness, and Stream Protocol at one exact release version; Harness UI releases independently against one reviewed Harness version. Source workspace dependencies remain unversioned. `apps/a13n-harness-ui` is private build input included in the UI wheel and sdist, with no independent release or committed build output; rebuilding the wheel from its sdist requires no Node.js. RC releases never advance Docker or npm `latest`.
 
 ## High-Risk Engineering Rules
 
@@ -42,9 +42,4 @@ Retain these constraints and read [DEVELOPMENT.md](DEVELOPMENT.md) for the full 
 
 ## Validation
 
-Use the [Make targets](CONTRIBUTING.md#local-validation) as the stable interface. Start with the fastest relevant check, add meaningful tests for behavior changes, and complete required gates. Instruction-only edits need formatting, link, and skill validation rather than application tests that merely assert wording.
-
-- `make check` applies formatting before running fast checks; review any resulting edits.
-- Run `make docs-build` for changes to `docs/`, navigation, or site configuration.
-- Run `make check-all` before finalizing a broad change, plus owning image or migration checks when applicable.
-- Once relevant checks pass, repeat or broaden them only for new changes, failures, or unresolved risk. Report unavailable checks accurately; do not claim a gate passed when it did not run.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md#local-validation) for validation scope, required gates, and Make targets. Reuse successful checks whose relevant inputs remain unchanged. Report commands, outcomes, and unavailable checks accurately; do not claim a gate passed when it did not run.

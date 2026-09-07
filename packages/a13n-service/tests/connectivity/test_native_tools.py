@@ -1,0 +1,95 @@
+"""Native MCP exposes content arguments while retaining the admitted target."""
+
+import json
+
+import httpx2
+import pytest
+from a13n_service.connectivity.providers.registry import require_native_provider
+from a13n_service.connectivity.toolsets import selected_tools
+from a13n_service.endpoint_policy import EndpointPolicy
+from pydantic import ValidationError
+
+pytestmark = pytest.mark.anyio
+
+
+async def test_slack_native_reply_hides_target_and_preserves_typed_unknown_outcome():
+    requests = []
+
+    def send(request):
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx2.Response(200, json={"ok": True, "channel": "C-bound", "ts": "2.0"})
+        raise httpx2.ReadTimeout("response lost after dispatch")
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(send)) as http:
+        actions = require_native_provider("slack").inbound_actions(
+            {"channel_id": "C-bound", "root_thread_ts": "1.0", "conversation_kind": "channel"},
+            {"reply_mode": "thread"},
+            {},
+            {"bot_token": "secret"},
+            http,
+            EndpointPolicy(),
+        )
+        reply = actions["slack.reply"]
+        schema = reply.definition.inputSchema
+        assert set(schema["properties"]) == {"text"}
+        assert "C-bound" not in json.dumps(schema) and "secret" not in json.dumps(schema)
+        selected_tools([item.definition for item in actions.values()], ("slack.reply",))
+        with pytest.raises(ValidationError):
+            await reply.call({"text": "hello", "channel_id": "C-other"})
+        assert not requests
+        assert await reply.call({"text": "hello"}) == {"kind": "succeeded"}
+        unknown = await reply.call({"text": "second"})
+        assert unknown["kind"] == "outcome_unknown"
+        assert len(requests) == 2
+        assert all(item["channel"] == "C-bound" and item["thread_ts"] == "1.0" for item in requests)
+
+
+async def test_native_auto_reply_only_adds_placement_choice():
+    async with httpx2.AsyncClient() as http:
+        actions = require_native_provider("slack").inbound_actions(
+            {"channel_id": "C-bound", "root_thread_ts": "1.0", "conversation_kind": "channel"},
+            {"reply_mode": "auto"},
+            {},
+            {"bot_token": "secret"},
+            http,
+            EndpointPolicy(),
+        )
+        assert set(actions["slack.reply"].definition.inputSchema["properties"]) == {"text", "placement"}
+
+
+async def test_lark_inbound_replies_use_distinct_effect_ids_and_reuse_token():
+    from .test_lark import _config
+    from .test_lark_client import _AllowEndpoint, _token_response
+
+    writes = []
+    tokens = []
+
+    def respond(request):
+        if request.url.path.endswith("tenant_access_token/internal"):
+            tokens.append(request)
+            return _token_response()
+        writes.append(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {"message_id": f"om_reply_{len(writes)}", "root_id": "om_root", "thread_id": "omt_thread"},
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        actions = require_native_provider("lark").inbound_actions(
+            {"chat_id": "oc_chat", "message_id": "om_message", "discussion_id": "omt_thread", "chat_type": "group"},
+            {"reply_mode": "thread"},
+            _config(),
+            {"app_secret": "private"},
+            http,
+            _AllowEndpoint(),
+        )
+        for text in ("first", "second"):
+            assert await actions["lark.reply"].call({"content": {"kind": "text", "text": text}}) == {
+                "kind": "succeeded"
+            }
+    assert len(tokens) == 1
+    assert len(writes) == 2 and writes[0]["uuid"] != writes[1]["uuid"]

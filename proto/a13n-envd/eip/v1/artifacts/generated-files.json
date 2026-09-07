@@ -1,0 +1,19 @@
+{
+  "descriptor_sha256": "a7fa72ea918a55a9bfc3f4efafd951cb56c8946fbd4b1d49f52ead2ff78f6f5e",
+  "files": [
+    "crates/a13n-envd/protocol/eip/v1/descriptor.pb",
+    "packages/a13n-envd-client/a13n_envd_client/eip/v1/__init__.py",
+    "packages/a13n-envd-client/a13n_envd_client/eip/v1/client.py",
+    "packages/a13n-envd-client/a13n_envd_client/eip/v1/codec.py",
+    "packages/a13n-envd-client/a13n_envd_client/eip/v1/data_frame.py",
+    "packages/a13n-envd-client/a13n_envd_client/eip/v1/methods.py",
+    "packages/a13n-envd-client/a13n_envd_client/eip/v1/models.py",
+    "packages/a13n-envd-client/a13n_envd_client/eip/v1/protocol.py",
+    "proto/a13n-envd/eip/v1/artifacts/data-frame-profile.json",
+    "proto/a13n-envd/eip/v1/artifacts/generated-files.json",
+    "proto/a13n-envd/eip/v1/artifacts/methods.json",
+    "proto/a13n-envd/eip/v1/artifacts/openrpc.json",
+    "proto/a13n-envd/eip/v1/artifacts/schema.json"
+  ],
+  "generated": true
+}

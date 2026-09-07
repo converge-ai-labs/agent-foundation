@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package a13n.agent_envd.eip.v1;
+
+import "a13n-envd/eip/v1/common.proto";
+import "a13n-envd/eip/v1/options.proto";
+import "a13n-envd/eip/v1/process.proto";
+import "a13n-envd/eip/v1/resource.proto";
+
+message EIPClientInfo {
+  string name = 1;
+  string version = 2;
+}
+
+message InitializeParams {
+  reserved 4, 5, 6;
+  reserved "required_capabilities", "optional_capabilities", "resource_authority";
+
+  repeated string supported_protocol_versions = 1 [(eip_field).min_length = 1];
+  EIPClientInfo client = 2;
+  string expected_environment_id = 3 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  repeated string required_methods = 7;
+}
+
+message EIPServerInfo {
+  string name = 1 [(eip_field).const_string = "a13n-envd"];
+  string version = 2;
+}
+
+message EIPLimits {
+  reserved 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24;
+  reserved "max_retained_bytes", "max_retained_objects", "max_retention_ttl_ms", "receipt_ttl_ms", "max_operation_records", "operation_record_ttl_ms", "session_idle_ttl_ms", "max_process_records", "terminal_process_record_ttl_ms", "max_file_transfer_records", "file_transfer_record_ttl_ms", "max_staged_file_bytes", "max_staged_file_objects", "file_transfer_idle_ttl_ms", "max_file_transfer_duration_ms";
+
+  uint64 max_request_bytes = 1 [(eip_field).minimum = 1];
+  uint64 max_response_bytes = 2 [(eip_field).minimum = 1];
+  uint64 max_concurrent_operations = 3 [(eip_field).minimum = 1];
+  uint64 max_processes = 4 [(eip_field).minimum = 1];
+  uint64 max_operation_duration_ms = 5 [(eip_field).minimum = 1];
+  uint64 max_output_preview_bytes = 6 [(eip_field).minimum = 1];
+  uint64 max_output_bytes_per_stream = 7 [(eip_field).minimum = 1];
+  uint64 max_transfer_frame_bytes = 17 [(eip_field).minimum = 25];
+  uint64 max_concurrent_file_transfers = 18 [(eip_field).minimum = 1];
+  uint64 max_file_transfer_bytes = 25 [(eip_field).minimum = 1];
+}
+
+enum IsolationMode {
+  ISOLATION_MODE_UNSPECIFIED = 0;
+  ISOLATION_MODE_REQUIRED = 1 [(eip_enum_value).json_name = "required"];
+  ISOLATION_MODE_DISABLED = 2 [(eip_enum_value).json_name = "disabled"];
+}
+
+enum IsolationBackend {
+  ISOLATION_BACKEND_UNSPECIFIED = 0;
+  ISOLATION_BACKEND_LINUX_BUBBLEWRAP = 1 [(eip_enum_value).json_name = "linux_bubblewrap"];
+  ISOLATION_BACKEND_MACOS_SEATBELT = 2 [(eip_enum_value).json_name = "macos_seatbelt"];
+  ISOLATION_BACKEND_OUTER_HOST = 3 [(eip_enum_value).json_name = "outer_host"];
+  ISOLATION_BACKEND_WINDOWS_APPCONTAINER = 4 [(eip_enum_value).json_name = "windows_appcontainer"];
+}
+
+enum IsolationNetworkPolicy {
+  ISOLATION_NETWORK_POLICY_UNSPECIFIED = 0;
+  ISOLATION_NETWORK_POLICY_HOST = 1 [(eip_enum_value).json_name = "host"];
+  ISOLATION_NETWORK_POLICY_DENY = 2 [(eip_enum_value).json_name = "deny"];
+}
+
+enum IsolationCleanupGuarantee {
+  ISOLATION_CLEANUP_GUARANTEE_UNSPECIFIED = 0;
+  ISOLATION_CLEANUP_GUARANTEE_NAMESPACE_COMPLETE = 1 [(eip_enum_value).json_name = "namespace_complete"];
+  ISOLATION_CLEANUP_GUARANTEE_RESIDUAL_CONFINED_POSSIBLE = 2 [(eip_enum_value).json_name = "residual_confined_possible"];
+  ISOLATION_CLEANUP_GUARANTEE_OUTER_HOST = 3 [(eip_enum_value).json_name = "outer_host"];
+  ISOLATION_CLEANUP_GUARANTEE_JOB_COMPLETE = 4 [(eip_enum_value).json_name = "job_complete"];
+}
+
+message IsolationPosture {
+  IsolationMode mode = 1;
+  IsolationBackend backend = 2;
+  bool filesystem_containment = 3;
+  bool process_containment = 4;
+  bool network_containment = 5;
+  IsolationNetworkPolicy network_policy = 6;
+  IsolationCleanupGuarantee cleanup_guarantee = 7;
+}
+
+message ExecutionFeatures {
+  bool process_count_limit = 1;
+  bool memory_bytes_limit = 2;
+  bool cpu_time_limit = 3;
+  bool per_command_network_deny = 4;
+  bool signal_interrupt = 5;
+  bool signal_terminate = 6;
+}
+
+message EnvironmentDescriptor {
+  reserved 3, 8;
+  reserved "capabilities", "resource_authority";
+
+  string environment_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint64 generation = 2 [(eip_field).minimum = 1];
+  repeated MountDescriptor mounts = 4;
+  repeated ShellProfileDescriptor shell_profiles = 5;
+  EIPLimits limits = 6;
+  IsolationPosture isolation = 7;
+  optional string root_mount_id = 9 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  repeated string available_methods = 10;
+  ExecutionFeatures execution_features = 11;
+}
+
+message InitializeResult {
+  string protocol_version = 1 [(eip_field).string_format = EIP_STRING_FORMAT_PROTOCOL_VERSION];
+  EIPServerInfo server = 2;
+  EnvironmentDescriptor descriptor = 3;
+}
+
+message EnvironmentReadinessParams {
+  EIPCallContext context = 1;
+}
+
+message EnvironmentReadinessResult {
+  bool ready = 1;
+  string environment_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint64 generation = 3 [(eip_field).minimum = 1];
+}
+
+message EnvironmentDescribeParams {
+  EIPCallContext context = 1;
+}
+
+message EnvironmentDescribeResult {
+  EnvironmentDescriptor descriptor = 1;
+}
+
+message SessionCloseParams {
+  EIPCallContext context = 1;
+}
+
+message SessionCloseResult {
+  reserved 1, 2, 3, 4, 5;
+  reserved "operations_cancellation_requested", "processes_termination_requested", "output_objects_released", "leased_processes_preserved", "leased_output_objects_preserved";
+
+  bool closed = 6 [(eip_field).const_bool = true];
+}
