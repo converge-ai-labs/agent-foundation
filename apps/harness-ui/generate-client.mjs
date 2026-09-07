@@ -13,6 +13,10 @@ try {
     "uv",
     [
       "run",
+      "--locked",
+      "--package",
+      "a13n-ui",
+      "--no-default-groups",
       "python",
       "../../scripts/export-agent-ui-openapi.py",
       "--output",
