@@ -38,6 +38,8 @@ npm publish --access public --tag rc
 
 Run this from a clean checkout of the reviewed release commit and discard the injected local version changes afterward. The publishing account must be able to create the public `@converge.ai/a13n` package in the `converge.ai` organization and either complete 2FA or use a temporary granular access token that can bypass 2FA. Revoke the bootstrap token immediately after trusted publishing is configured.
 
+After bootstrap, inspect `npm dist-tag ls @converge.ai/a13n`. If npm initializes `latest` to the bootstrap RC, remove only that tag with `npm dist-tag rm @converge.ai/a13n latest`; retain the published version and the `rc` tag. Never remove a `latest` tag that points to a stable release. If the bootstrap token cannot manage dist-tags, complete this step after interactive account login before considering bootstrap complete.
+
 The GitHub Environment `sdk-typescript-npm` must allow deployment tags matching `release/a13n/typescript/*`. A rule for the former `release/sdk/typescript/*` channel does not allow the renamed release tags.
 
 Configure the newly created package to trust the exact GitHub workflow and Environment. `npm trust` requires npm 11.15 or newer and interactive account authentication with 2FA; a bypass-2FA granular token cannot configure trust:
