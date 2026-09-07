@@ -127,11 +127,24 @@ class ConnectorRevocationService:
             attempts = await session.scalars(
                 select(ConnectorSetupAttemptRecord).where(
                     ConnectorSetupAttemptRecord.connector_connection_id == connection_id,
-                    ConnectorSetupAttemptRecord.status.in_(("pending", "attached", "reserved")),
+                    (
+                        ConnectorSetupAttemptRecord.status.in_(("pending", "starting", "attached", "reserved"))
+                        | (ConnectorSetupAttemptRecord.last_error_code == "setup_outcome_unknown")
+                    ),
                 )
             )
-            pending_attempts = tuple(attempts)
-            for attempt in pending_attempts:
+            setup_attempts = tuple(attempts)
+            remote_setup_exists = any(
+                attempt.setup_ref is not None
+                or attempt.status == "starting"
+                or attempt.last_error_code == "setup_outcome_unknown"
+                for attempt in setup_attempts
+            )
+            for attempt in setup_attempts:
+                if attempt.status in {"failed", "expired"}:
+                    continue
+                if attempt.status == "starting":
+                    attempt.last_error_code = "setup_outcome_unknown"
                 attempt.status = "expired"
                 attempt.claim_generation += 1
                 attempt.claim_owner = None
@@ -141,8 +154,7 @@ class ConnectorRevocationService:
                 connection_id=connection_id,
                 local_status="deleted" if delete else "disabled",
                 remote_status="unknown"
-                if connection.external_ref is not None
-                or any(attempt.setup_ref is not None for attempt in pending_attempts)
+                if connection.external_ref is not None or remote_setup_exists
                 else "not_required",
             )
             command = record_command(

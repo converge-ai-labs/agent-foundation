@@ -65,6 +65,7 @@ class ConnectorConnectionService:
         correlation_secret: bytes | None,
         public_origin: str | None,
         setup_ttl_seconds: int,
+        setup_lease_seconds: int = 60,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
@@ -78,6 +79,7 @@ class ConnectorConnectionService:
             correlation_secret=correlation_secret,
             public_origin=public_origin,
             setup_ttl_seconds=setup_ttl_seconds,
+            setup_lease_seconds=setup_lease_seconds,
             clock=clock,
         )
         self._revocation = ConnectorRevocationService(sessions, adapters, protector, clock=clock)

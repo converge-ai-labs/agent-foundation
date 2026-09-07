@@ -20,6 +20,7 @@ from a13n_service.connectivity.tool_validation import validate_result
 
 from ...contracts import (
     AdapterConnectionStatus,
+    BeforeDispatch,
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
@@ -33,7 +34,7 @@ from ...contracts import (
     StrictModel,
 )
 from ...http import ConnectorHttpClient
-from ...validation import optional_string, path_segment, required_object, required_string
+from ...validation import optional_string, path_segment, provider_response_errors, required_object, required_string
 from ..configuration import ApiKeyCredentials, ConnectorKeys
 from ..discovery import validate_discovered_setup
 from .configuration import HOSTED_ENDPOINT, OpenConnectorConfiguration
@@ -84,19 +85,20 @@ class OpenConnectorProvider:
         pass
 
     async def request(self, method: Literal["GET", "POST"], path: str, *, body: JsonObject | None = None) -> JsonValue:
-        raw = await self._http.request(
-            method,
-            endpoint=self._configuration.endpoint,
-            path=f"/v1/saas/{path}",
-            api_key=self._credentials.project_api_key,
-            authentication="bearer",
-            json_body=body,
-            write=method == "POST",
-        )
-        envelope = required_object(raw)
-        if envelope.get("success") is not True or "data" not in envelope:
-            raise ConnectorProviderError("invalid_provider_response", outcome_unknown=method == "POST")
-        return envelope["data"]
+        with provider_response_errors(outcome_unknown=method == "POST"):
+            raw = await self._http.request(
+                method,
+                endpoint=self._configuration.endpoint,
+                path=f"/v1/saas/{path}",
+                api_key=self._credentials.project_api_key,
+                authentication="bearer",
+                json_body=body,
+                write=method == "POST",
+            )
+            envelope = required_object(raw)
+            if envelope.get("success") is not True or "data" not in envelope:
+                raise ConnectorProviderError("invalid_provider_response", outcome_unknown=method == "POST")
+            return envelope["data"]
 
     def _require_service(self, service: str) -> None:
         if service not in self._configuration.enabled_services:
@@ -109,18 +111,21 @@ class OpenConnectorProvider:
         return ("catalog_read",)
 
     async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]:
-        return tuple(
-            DiscoveredConnector(
-                key=p.service,
-                name=p.name,
-                setup_schema=ProjectSetup.model_json_schema()
-                if "oauth2" in {m.lower() for m in p.authentication_methods}
-                else {"not": {}},
-                authentication_methods=("oauth2",) if "oauth2" in {m.lower() for m in p.authentication_methods} else (),
+        with provider_response_errors():
+            return tuple(
+                DiscoveredConnector(
+                    key=p.service,
+                    name=p.name,
+                    setup_schema=ProjectSetup.model_json_schema()
+                    if "oauth2" in {m.lower() for m in p.authentication_methods}
+                    else {"not": {}},
+                    authentication_methods=("oauth2",)
+                    if "oauth2" in {m.lower() for m in p.authentication_methods}
+                    else (),
+                )
+                for p in await self._catalog.providers()
+                if p.service in self._configuration.enabled_services
             )
-            for p in await self._catalog.providers()
-            if p.service in self._configuration.enabled_services
-        )
 
     def tool_catalog(self, connector_key: str) -> ProjectToolCatalog:
         self._require_service(connector_key)
@@ -158,21 +163,22 @@ class OpenConnectorProvider:
             raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
 
     async def inspect_setup(self, *, setup_ref: str, context: SetupContext) -> ConnectionInspection | None:
-        value = required_object(await self.request("GET", f"connection-requests/{path_segment(setup_ref)}"))
-        if required_string(value, "id") != setup_ref:
-            raise ConnectorProviderError("connection_substitution")
-        self._verify_owner(value, context.connector_key, context.external_user_correlation)
-        status = required_string(value, "status")
-        if status == "initiated":
-            return None
-        if status != "connected":
-            raise ConnectorProviderError("setup_rejected")
-        binding = ConnectionBinding(
-            external_ref=required_string(value, "connectedAccountId"),
-            connector_key=context.connector_key,
-            external_user_correlation=context.external_user_correlation,
-        )
-        return await self.connect(binding).inspect()
+        with provider_response_errors():
+            value = required_object(await self.request("GET", f"connection-requests/{path_segment(setup_ref)}"))
+            if required_string(value, "id") != setup_ref:
+                raise ConnectorProviderError("connection_substitution")
+            self._verify_owner(value, context.connector_key, context.external_user_correlation)
+            status = required_string(value, "status")
+            if status == "initiated":
+                return None
+            if status != "connected":
+                raise ConnectorProviderError("setup_rejected")
+            binding = ConnectionBinding(
+                external_ref=required_string(value, "connectedAccountId"),
+                connector_key=context.connector_key,
+                external_user_correlation=context.external_user_correlation,
+            )
+            return await self.connect(binding).inspect()
 
     async def complete_setup(
         self, *, session_uri: str, context: SetupContext, expected_external_ref: str
@@ -195,23 +201,24 @@ class ProjectToolCatalog:
         self._service = service
 
     async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage:
-        if cursor is not None:
-            raise ConnectorProviderError("invalid_cursor")
-        actions = await self._catalog.actions(self._service)
-        version = sha256(canonical_json({a.id: a.definition_digest for a in actions}).encode()).hexdigest()
-        return ConnectorToolPage(
-            items=tuple(
-                ConnectorTool(
-                    key=a.id,
-                    provider_version=version,
-                    description=a.description,
-                    input_schema=a.input_schema,
-                    output_schema=a.output_schema,
-                )
-                for a in actions
-            ),
-            provider_version=version,
-        )
+        with provider_response_errors():
+            if cursor is not None:
+                raise ConnectorProviderError("invalid_cursor")
+            actions = await self._catalog.actions(self._service)
+            version = sha256(canonical_json({a.id: a.definition_digest for a in actions}).encode()).hexdigest()
+            return ConnectorToolPage(
+                items=tuple(
+                    ConnectorTool(
+                        key=a.id,
+                        provider_version=version,
+                        description=a.description,
+                        input_schema=a.input_schema,
+                        output_schema=a.output_schema,
+                    )
+                    for a in actions
+                ),
+                provider_version=version,
+            )
 
 
 class ProjectConnection:
@@ -223,28 +230,35 @@ class ProjectConnection:
         pass
 
     async def inspect(self) -> ConnectionInspection:
-        b = self._binding
-        value = required_object(
-            await self._provider.request("GET", f"connected-accounts/{path_segment(b.external_ref)}/profile")
-        )
-        if value.get("connectedAccountId") != b.external_ref:
-            raise ConnectorProviderError("connection_substitution")
-        self._provider._verify_owner(value, b.connector_key, b.external_user_correlation)
-        profile = required_object(value.get("profile"))
-        # Only a successful live profile proves this exact account is usable; a lookup error fails closed.
-        return ConnectionInspection(
-            **b.model_dump(),
-            status=AdapterConnectionStatus.ready,
-            safe_metadata={"display_name": optional_string(profile.get("displayName"), max_length=128)},
-            provider_version=self._provider.compatibility_profile,
-        )
+        with provider_response_errors():
+            b = self._binding
+            value = required_object(
+                await self._provider.request("GET", f"connected-accounts/{path_segment(b.external_ref)}/profile")
+            )
+            if value.get("connectedAccountId") != b.external_ref:
+                raise ConnectorProviderError("connection_substitution")
+            self._provider._verify_owner(value, b.connector_key, b.external_user_correlation)
+            profile = required_object(value.get("profile"))
+            # Only a successful live profile proves this exact account is usable; a lookup error fails closed.
+            return ConnectionInspection(
+                **b.model_dump(),
+                status=AdapterConnectionStatus.ready,
+                safe_metadata={"display_name": optional_string(profile.get("displayName"), max_length=128)},
+                provider_version=self._provider.compatibility_profile,
+            )
 
     async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage:
         await self.inspect()
         return await self._provider.tool_catalog(self._binding.connector_key).discover_tools(cursor=cursor)
 
     async def execute_tool(
-        self, *, tool_key: str, provider_version: str, arguments: JsonObject, request_id: str
+        self,
+        *,
+        tool_key: str,
+        provider_version: str,
+        arguments: JsonObject,
+        request_id: str,
+        before_dispatch: BeforeDispatch,
     ) -> ConnectorToolOutcome:
         page = await self.discover_tools(cursor=None)
         tool = next((tool for tool in page.items if tool.key == tool_key), None)
@@ -252,6 +266,7 @@ class ProjectConnection:
             raise ConnectorProviderError("incompatible_tool_version")
         await to_thread.run_sync(Draft202012Validator(tool.input_schema).validate, arguments)
         b = self._binding
+        await before_dispatch()
         try:
             value = required_object(
                 await self._provider.request(

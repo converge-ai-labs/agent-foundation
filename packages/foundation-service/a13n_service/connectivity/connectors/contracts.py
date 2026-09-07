@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Literal, Protocol
 
@@ -103,6 +104,9 @@ class ConnectionBinding(StrictModel):
     connector_key: str = Field(min_length=1, max_length=128)
 
 
+BeforeDispatch = Callable[[], Awaitable[None]]
+
+
 class ConnectorConnectionRuntime(Protocol):
     """One verified external account; construction and close have no remote effects."""
 
@@ -111,7 +115,13 @@ class ConnectorConnectionRuntime(Protocol):
     async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage: ...
 
     async def execute_tool(
-        self, *, tool_key: str, provider_version: str, arguments: JsonObject, request_id: str
+        self,
+        *,
+        tool_key: str,
+        provider_version: str,
+        arguments: JsonObject,
+        request_id: str,
+        before_dispatch: BeforeDispatch,
     ) -> ConnectorToolOutcome: ...
 
     async def revoke(self, *, operation_id: str) -> None: ...

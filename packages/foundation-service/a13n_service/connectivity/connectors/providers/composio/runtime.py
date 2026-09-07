@@ -12,6 +12,7 @@ from a13n_service.connectivity.domain import JsonObject
 from ...contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
+    BeforeDispatch,
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
@@ -348,9 +349,11 @@ class ComposioConnection:
         provider_version: str,
         arguments: JsonObject,
         request_id: str,
+        before_dispatch: BeforeDispatch,
     ) -> ConnectorToolOutcome:
         if _TOOLKIT_VERSION.fullmatch(provider_version) is None:
             raise ConnectorProviderError("incompatible_toolkit_version")
+        await before_dispatch()
         try:
             value = await self._http.request(
                 "POST",

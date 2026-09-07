@@ -9,6 +9,7 @@ from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from anyio import move_on_after
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -26,6 +27,7 @@ from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.iam.resource_scope import ResourceScope
+from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -80,6 +82,7 @@ class ConnectorSetupCoordinator:
         correlation_secret: bytes | None,
         public_origin: str | None,
         setup_ttl_seconds: int,
+        setup_lease_seconds: int = 60,
         clock: Clock = utc_now,
     ) -> None:
         if correlation_secret is not None and len(correlation_secret) < 32:
@@ -90,6 +93,7 @@ class ConnectorSetupCoordinator:
         self._correlation_secret = correlation_secret
         self._public_origin = public_origin.rstrip("/") if public_origin is not None else None
         self._setup_ttl_seconds = setup_ttl_seconds
+        self._setup_lease_seconds = setup_lease_seconds
         self._clock = clock
 
     def new_attempt(
@@ -143,7 +147,12 @@ class ConnectorSetupCoordinator:
                 )
             if attempt.status in {"completed", "failed", "expired"}:
                 return await self._receipt(session, attempt, connection_id=connection_id, redirect_url=None)
-        started = await self.start_attempt(attempt_id)
+        try:
+            started = await self.start_attempt(attempt_id)
+        except ConnectorError as error:
+            if error.code != "setup_in_progress":
+                raise
+            started = None
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
@@ -154,7 +163,7 @@ class ConnectorSetupCoordinator:
                 session,
                 attempt,
                 connection_id=connection_id,
-                redirect_url=started.redirect_url,
+                redirect_url=started.redirect_url if started is not None else None,
             )
 
     async def _receipt(
@@ -252,31 +261,87 @@ class ConnectorSetupCoordinator:
         claim_owner: str | None = None,
         claim_generation: int | None = None,
     ) -> SetupStarted:
-        snapshot = await self.attempt_snapshot(attempt_id)
-        require_active_provider(snapshot.connector)
-        runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
+        owner, generation, interrupted = await self._claim_start(attempt_id, claim_owner, claim_generation)
         try:
+            snapshot = await self.attempt_snapshot(attempt_id)
+            runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
             async with aclosing(runtime):
-                started = await runtime.start_setup(
-                    setup=snapshot.attempt.setup_json,
-                    context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
-                    resume_ref=snapshot.attempt.setup_ref,
-                )
-        except ConnectorProviderError as error:
-            await self.record_attempt_failure(
-                attempt_id,
-                error,
-                claim_owner=claim_owner,
-                claim_generation=claim_generation,
-                replay_safe=runtime.setup_replay_safe,
-            )
-            raise external_error(error) from error
+                if interrupted and not runtime.setup_replay_safe:
+                    await self.fail_attempt(
+                        attempt_id, code="setup_outcome_unknown", claim_owner=owner, claim_generation=generation
+                    )
+                    raise ConnectorError(
+                        "setup_outcome_unknown",
+                        "The initial authorization request may have been sent and cannot be repeated.",
+                        category=ErrorCategory.conflict,
+                    )
+                try:
+                    started = await runtime.start_setup(
+                        setup=snapshot.attempt.setup_json,
+                        context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
+                        resume_ref=snapshot.attempt.setup_ref,
+                    )
+                except ConnectorProviderError as error:
+                    await self.record_attempt_failure(
+                        attempt_id,
+                        error,
+                        claim_owner=owner,
+                        claim_generation=generation,
+                        replay_safe=runtime.setup_replay_safe,
+                    )
+                    raise external_error(error) from error
+            try:
+                await self._attach_start(attempt_id, started, owner=owner, generation=generation)
+            except ConnectorError as error:
+                if error.code == "connection_substitution":
+                    await self.fail_attempt(attempt_id, code=error.code, claim_owner=owner, claim_generation=generation)
+                raise
+            return started
+        finally:
+            # Cancellation leaves `starting` durable; releasing ownership never makes a lost POST safe.
+            if claim_owner is None:
+                with move_on_after(5, shield=True):
+                    await self.release_attempt(attempt_id, owner=owner, generation=generation)
+
+    async def _claim_start(self, attempt_id: str, owner: str | None, generation: int | None) -> tuple[str, int, bool]:
+        now = self._clock()
+        async with transaction(self._sessions) as session:
+            connection, attempt = await _lock_setup(session, attempt_id)
+            if attempt is None:
+                raise ConnectorError("setup_unavailable", "Setup is unavailable.", category=ErrorCategory.not_found)
+            await _require_eligible(session, attempt, connection, now=now)
+            if owner is None and generation is None:
+                if attempt.status == "pending" and assume_utc(attempt.available_at) > now:
+                    raise ConnectorError(
+                        "setup_in_progress", "Setup is waiting to retry.", category=ErrorCategory.conflict
+                    )
+                if attempt.claim_expires_at is not None and assume_utc(attempt.claim_expires_at) > now:
+                    raise ConnectorError(
+                        "setup_in_progress", "Setup is being processed.", category=ErrorCategory.conflict
+                    )
+                owner = new_object_id("csa")
+                attempt.claim_generation += 1
+                generation = attempt.claim_generation
+                attempt.claim_owner = owner
+                attempt.claim_expires_at = now + timedelta(seconds=self._setup_lease_seconds)
+            elif not _claim_matches(attempt, owner, generation, now=now):
+                raise ConnectorError("setup_lost_race", "Setup ownership changed.", category=ErrorCategory.conflict)
+            if attempt.status == "reserved":
+                raise ConnectorError("setup_in_progress", "Setup is completing.", category=ErrorCategory.conflict)
+            assert owner is not None and generation is not None
+            interrupted = attempt.status == "starting"
+            if attempt.status in {"pending", "starting"}:
+                attempt.status = "starting"
+            attempt.updated_at = now
+            return owner, generation, interrupted
+
+    async def _attach_start(self, attempt_id: str, started: SetupStarted, *, owner: str, generation: int) -> None:
         async with transaction(self._sessions) as session:
             connection, attempt = await _lock_setup(session, attempt_id)
             if (
                 attempt is None
-                or attempt.status not in {"pending", "attached"}
-                or not _claim_matches(attempt, claim_owner, claim_generation, now=self._clock())
+                or attempt.status not in {"starting", "attached"}
+                or not _claim_matches(attempt, owner, generation, now=self._clock())
             ):
                 raise ConnectorError(
                     "setup_lost_race", "ConnectorProvider setup changed concurrently.", category=ErrorCategory.conflict
@@ -287,8 +352,6 @@ class ConnectorSetupCoordinator:
                 and started.external_ref is not None
                 and connection.external_ref != started.external_ref
             ):
-                attempt.status = "failed"
-                attempt.last_error_code = "connection_substitution"
                 raise ConnectorError(
                     "connection_substitution",
                     "ConnectorProvider returned another external account.",
@@ -305,9 +368,16 @@ class ConnectorSetupCoordinator:
             )
             attempt.supports_verified_callback = started.supports_verified_callback
             attempt.status = "attached"
+            attempt.last_error_code = None
             attempt.available_at = now
             attempt.updated_at = now
-        return started
+
+    async def release_attempt(self, attempt_id: str, *, owner: str, generation: int) -> None:
+        async with transaction(self._sessions) as session:
+            attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id, with_for_update=True)
+            if attempt is not None and attempt.claim_owner == owner and attempt.claim_generation == generation:
+                attempt.claim_owner = None
+                attempt.claim_expires_at = None
 
     async def finish_attempt(
         self,
@@ -397,7 +467,7 @@ class ConnectorSetupCoordinator:
             connection, attempt = await _lock_setup(session, attempt_id)
             if (
                 attempt is None
-                or attempt.status != "pending"
+                or attempt.status not in {"starting", "attached"}
                 or not _claim_matches(attempt, claim_owner, claim_generation, now=self._clock())
             ):
                 return
@@ -407,12 +477,21 @@ class ConnectorSetupCoordinator:
             attempt.available_at = now + timedelta(seconds=error.retry_after_seconds or 5)
             attempt.updated_at = now
             if (not error.retryable and not error.outcome_unknown) or (error.outcome_unknown and not replay_safe):
-                _fail_setup(connection, attempt, code=error.code, now=now)
+                code = "setup_outcome_unknown" if error.outcome_unknown and not replay_safe else error.code
+                _fail_setup(connection, attempt, code=code, now=now)
+            elif attempt.status == "starting":
+                attempt.status = "pending"
 
-    async def fail_attempt(self, attempt_id: str, *, code: str) -> None:
+    async def fail_attempt(
+        self, attempt_id: str, *, code: str, claim_owner: str | None = None, claim_generation: int | None = None
+    ) -> None:
         async with transaction(self._sessions) as session:
             connection, attempt = await _lock_setup(session, attempt_id)
-            if attempt is None or attempt.status not in {"pending", "attached", "reserved"}:
+            if attempt is None or attempt.status not in {"pending", "starting", "attached", "reserved"}:
+                return
+            if claim_owner is not None and not _claim_matches(
+                attempt, claim_owner, claim_generation, now=self._clock()
+            ):
                 return
             _fail_setup(connection, attempt, code=code, now=self._clock())
 
@@ -520,7 +599,7 @@ async def _require_eligible(
         connection.status != "pending"
         or connection.deleted_at is not None
         or connection.setup_generation != attempt.generation
-        or attempt.status not in {"pending", "attached", "reserved"}
+        or attempt.status not in {"pending", "starting", "attached", "reserved"}
         or assume_utc(attempt.expires_at) <= now
         or workspace is None
         or workspace.deleted_at is not None

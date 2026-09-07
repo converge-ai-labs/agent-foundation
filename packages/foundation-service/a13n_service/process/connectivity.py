@@ -196,6 +196,7 @@ def _build_connector_control(
         correlation_secret=(correlation_secret.get_secret_value().encode() if correlation_secret is not None else None),
         public_origin=public_origin,
         setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
+        setup_lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
     )
     instance_id = settings.service_instance_id or new_object_id("svc")
     reconciler = ConnectorReconciler(

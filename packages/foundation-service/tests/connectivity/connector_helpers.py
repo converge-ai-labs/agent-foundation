@@ -5,6 +5,7 @@ from typing import Literal
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
+    BeforeDispatch,
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
@@ -159,7 +160,13 @@ class FakeConnection:
         return await self.backend.discover_tools(cursor=cursor)
 
     async def execute_tool(
-        self, *, tool_key: str, provider_version: str, arguments: JsonObject, request_id: str
+        self,
+        *,
+        tool_key: str,
+        provider_version: str,
+        arguments: JsonObject,
+        request_id: str,
+        before_dispatch: BeforeDispatch,
     ) -> ConnectorToolOutcome:
         raise NotImplementedError
 
@@ -177,3 +184,7 @@ def fake_registry(backend: FakeConnectorBackend) -> ConnectorProviderRegistry:
             ),
         )
     )
+
+
+async def allow_dispatch() -> None:
+    """Adapter-only tests supply explicit trusted dispatch authority."""

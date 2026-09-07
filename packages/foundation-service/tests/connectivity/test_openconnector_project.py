@@ -14,6 +14,7 @@ from a13n_service.connectivity.connectors.providers.openconnector.project import
 )
 from a13n_service.connectivity.connectors.tool_discovery import discover_tools
 
+from .connector_helpers import allow_dispatch
 from .test_openconnector_runtime import AllowEndpoint
 
 pytestmark = pytest.mark.anyio
@@ -125,13 +126,21 @@ async def test_managed_setup_catalog_and_explicit_account_execution(project_serv
         )
         requests.clear()
         result = await bound.execute_tool(
-            tool_key="github.get_user", provider_version=version, arguments={}, request_id="call-1"
+            tool_key="github.get_user",
+            provider_version=version,
+            arguments={},
+            request_id="call-1",
+            before_dispatch=allow_dispatch,
         )
         assert result.result == {"login": "team"}
         assert not any("connection-requests" in request.url.path or "/apps" in request.url.path for request in requests)
         state["lost"] = True
         result = await bound.execute_tool(
-            tool_key="github.get_user", provider_version=version, arguments={}, request_id="call-2"
+            tool_key="github.get_user",
+            provider_version=version,
+            arguments={},
+            request_id="call-2",
+            before_dispatch=allow_dispatch,
         )
         assert result.kind == "outcome_unknown"
         assert sum(r.method == "POST" for r in requests) == 2
@@ -151,7 +160,11 @@ async def test_managed_runtime_rejects_account_substitution(project_server, chan
         state[change] = "other"
         with pytest.raises(ConnectorProviderError, match="connection_substitution"):
             await bound.execute_tool(
-                tool_key="github.get_user", provider_version=version, arguments={}, request_id="call"
+                tool_key="github.get_user",
+                provider_version=version,
+                arguments={},
+                request_id="call",
+                before_dispatch=allow_dispatch,
             )
         assert not any(r.method == "POST" for r in requests)
 

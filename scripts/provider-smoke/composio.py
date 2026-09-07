@@ -140,14 +140,18 @@ async def use_connection(
             if input("Type CALL to execute this exact request, or press Enter to stop: ").strip() != "CALL":
                 print("Stopped before tool execution.")
                 return 0
-        # Recheck ownership and readiness after the user has reviewed the request.
-        await inspect_connection(connection, require_ready=True)
+
+        async def before_dispatch() -> None:
+            # Recheck ownership and readiness after the user has reviewed the request.
+            await inspect_connection(connection, require_ready=True)
+
         started = monotonic()
         outcome = await connection.execute_tool(
             tool_key=selected.key,
             provider_version=selected.provider_version,
             arguments=arguments,
             request_id=request_id,
+            before_dispatch=before_dispatch,
         )
         show({"elapsed_seconds": round(monotonic() - started, 2), **outcome.model_dump(mode="json")})
         if outcome.kind == "outcome_unknown":

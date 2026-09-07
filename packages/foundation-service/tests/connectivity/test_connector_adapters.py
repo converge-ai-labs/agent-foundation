@@ -13,6 +13,8 @@ from a13n_service.connectivity.connectors.providers.composio.configuration impor
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from pydantic import ValidationError
 
+from .connector_helpers import allow_dispatch
+
 
 class _AllowEndpoint:
     async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
@@ -137,6 +139,7 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
             provider_version=catalog.items[0].provider_version,
             arguments={},
             request_id="op_2",
+            before_dispatch=allow_dispatch,
         )
 
     assert inspection.status == "ready"

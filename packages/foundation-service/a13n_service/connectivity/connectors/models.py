@@ -190,7 +190,7 @@ class ConnectorSetupAttemptRecord(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "status IN ('pending', 'attached', 'reserved', 'completed', 'failed', 'expired')",
+            "status IN ('pending', 'starting', 'attached', 'reserved', 'completed', 'failed', 'expired')",
             name="status_valid",
         ),
         CheckConstraint("generation >= 1", name="generation_positive"),

@@ -205,7 +205,7 @@ def upgrade() -> None:
             "initiating_principal_type = 'user'", name=op.f("ck_connector_setup_attempts_initiating_user_required")
         ),
         sa.CheckConstraint(
-            "status IN ('pending', 'attached', 'reserved', 'completed', 'failed', 'expired')",
+            "status IN ('pending', 'starting', 'attached', 'reserved', 'completed', 'failed', 'expired')",
             name=op.f("ck_connector_setup_attempts_status_valid"),
         ),
         sa.CheckConstraint(

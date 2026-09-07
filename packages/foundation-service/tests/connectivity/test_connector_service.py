@@ -478,6 +478,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     guards = []
 
     async def execute(self, **kwargs):
+        await kwargs["before_dispatch"]()
         calls.append((self.binding, kwargs))
         return ConnectorToolOutcome(kind="outcome_unknown", request_id=kwargs["request_id"])
 
@@ -496,7 +497,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     )
     result = await Agent(TestModel(), capabilities=[capability]).run("create issue")
     assert "outcome_unknown" in result.output
-    assert len(calls) == 1 and len(guards) == 2
+    assert len(calls) == 1 and len(guards) == 3
     assert calls[0][0].external_ref == "external-1"
     assert calls[0][0].external_user_correlation == attempt.external_user_correlation
     assert calls[0][1]["provider_version"] == "fake-1"
