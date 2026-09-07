@@ -272,7 +272,7 @@ class RunControlCapability(
 
 `HarnessContextBinding` is an opaque process-local identity token containing no `RunContext`, `AgentContext`, mutable Harness object, or durable authority. `HarnessHookBoundary` is a conceptual driver-owned callback adapter, not a serialized type or independently scheduled component. It is valid only inside the `async with` for the current awaited hook, wraps the current context privately, maps `enqueue()` and `export_state()` to the matching callback-local Harness APIs, and fails closed after exit.
 
-`RunAttemptControl` is the conceptual sole process-local control facade; its illustrated name and method signatures do not define a wire type or require one exact Python class. Pydantic calls `for_run()` once for each internal `ModelAttempt`, not once for the outer logical Harness Run. Each returned active Capability is fresh for that ModelAttempt, retains only the opaque binding plus executor-owned collaborators, and carries no durable authority by itself. Rebinding after Harness semantic recovery is idempotent and does not reset Thread-inbox receipts, checkpoint sequence, first-request state, or the Foundation RunAttempt fence.
+`RunAttemptControl` is the conceptual sole process-local control facade; its illustrated name and method signatures do not define a wire type or require one exact Python class. Pydantic calls `for_run()` once for each internal `ModelAttempt`, not once for the outer logical Harness Run. Each returned active Capability is fresh for that ModelAttempt, retains only the opaque binding plus executor-owned collaborators, and carries no durable authority by itself. Rebinding after Harness semantic recovery is idempotent and does not reset recorded Thread-inbox incorporations, durable receipts, checkpoint sequence, first-request state, or the Foundation RunAttempt fence.
 
 ## Run Invocation
 
@@ -422,6 +422,7 @@ sequenceDiagram
     participant RunControl as RunAttemptControl
     participant Driver as HarnessDriver
     participant Capability as Foundation Capability
+    participant Compact as Compaction Capability
     participant Boundary as HarnessHookBoundary
     participant PAI as Pydantic AI
     participant Objects as Object storage
@@ -444,14 +445,14 @@ sequenceDiagram
     RunControl->>Postgres: short fenced reread
     RunControl->>Boundary: enqueue when eligible
     Boundary->>PAI: RunContext enqueue
-    RunControl->>Boundary: export complete current history
-    Boundary->>PAI: AgentContext export_state
-    RunControl->>RunControl: match Host inbox provenance in exported history
+    RunControl->>RunControl: record incorporated inbox identities from complete history
     Note over RunControl,PAI: Newly queued values absent from history stay pending
-    RunControl->>Objects: conditionally publish messages and receipts together
-    RunControl->>Postgres: commit matching receipts
+    Note over RunControl,Compact: Incorporation records remain outside message history
     Capability->>Driver: close and invalidate boundary
     Capability-->>PAI: unchanged request context
+    PAI->>Compact: await before_model_request
+    Compact->>Compact: optionally replace history while incorporation records remain
+    Compact-->>PAI: current request context
     PAI->>PAI: model request and optional tool batch
     PAI->>Capability: await after_node_run(CallToolsNode)
     Capability->>Driver: create new callback boundary
@@ -459,8 +460,8 @@ sequenceDiagram
     Capability->>RunControl: await tool-boundary work with boundary
     RunControl->>Boundary: export complete state
     Boundary->>PAI: AgentContext export_state
-    RunControl->>RunControl: confirm inbox incorporation from exported history
-    RunControl->>Objects: conditionally publish messages and receipts together
+    RunControl->>RunControl: merge recorded incorporations and prior receipts
+    RunControl->>Objects: conditionally publish current history and receipts together
     RunControl->>Postgres: commit matching receipt
     Capability->>Driver: close and invalidate boundary
     Harness-->>Driver: ordered events and terminal candidate
@@ -476,7 +477,7 @@ sequenceDiagram
 | Hook                                   | Pydantic boundary                                                               | Foundation work                                                                                                                                                                                  | Not permitted                                                                                                                     |
 | -------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `for_run()`                            | Once before hooks for each internal `ModelAttempt`                              | Ask the driver to validate context identity and return an opaque binding; return a fresh Capability bound to that identity and the same control facade                                           | Retaining raw `RunContext` or `AgentContext`, durable reads that outlive preparation, or replacing accepted Agent content         |
-| `before_model_request()`               | Awaited before each provider model request                                      | Revalidate current ownership; reconcile ordinary eligible Thread inbox delivery; publish a dirty complete prior boundary when required; honor a pending planned handoff before new provider I/O  | Holding a database session across the provider call, editing the accepted model, or creating a tool-dispatch ledger               |
+| `before_model_request()`               | Awaited before each provider model request                                      | Revalidate ownership; reconcile inbox delivery; record incorporation before history replacement; publish a complete checkpoint when required; honor planned handoff before new provider I/O      | Holding a database session across the provider call, editing the accepted model, or creating a tool-dispatch ledger               |
 | `after_model_request()`                | Awaited after a complete model response and before downstream response handling | Inspect the effective response only for the waiting-successor first-request gate; when the first response has no tool calls, reconcile and enqueue the eligible FIFO before ordinary termination | Treating the response alone as a complete tool boundary, persisting a generic tool-dispatch record, or claiming provider rollback |
 | `after_node_run()` for `CallToolsNode` | Awaited after the complete tool-handling node succeeds                          | Reconcile eligible delivery, export complete state, publish the post-tool checkpoint, and honor planned handoff before another node begins                                                       | Running before or between individual tool calls, inferring exactly-once effects, or requiring tools to be managed                 |
 
@@ -484,9 +485,11 @@ For an ordinary Run, the first `before_model_request()` reconciliation includes 
 
 Foundation uses awaited `after_node_run()` for a successfully completed `CallToolsNode` as the canonical post-tool checkpoint hook. At that boundary, all results for the tool batch are present in complete public message history, so Foundation exports the complete Harness state and publishes `state.json`. If the model invokes no tools and the logical Harness Run terminates, Foundation checkpoints the complete terminal state from `HarnessRunResultEvent`; `after_model_request()` remains limited to the waiting-successor first-request delivery gate and never publishes terminal state.
 
-At each complete checkpoint boundary, Foundation confirms incorporated inbox values from stable Host provenance in the exact complete message history it exports, following [active-control delivery](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption). Native pending-message drain precedes the mandatory `before_model_request()` checkpoint work, so values already drained into that request receive receipts in that checkpoint before provider I/O begins. Values enqueued by the hook but not yet present in the complete history remain pending. Post-tool and terminal exports apply the same history-and-receipt rule; neither enqueue acceptance nor asynchronous event-consumer progress selects the receipts.
+Native pending-message drain precedes the mandatory Foundation `before_model_request()` hook, which runs before Compaction and other admitted history-replacement Capabilities. The Foundation hook synchronously matches stable Host provenance and complete inbox content in that message boundary and records incorporation through `RunAttemptControl`, following [active-control delivery](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption). These bounded records remain outside message history and survive internal `ModelAttempt` rebinding. Values enqueued by the hook but not yet present in complete history remain pending without incorporation records.
 
-Observing `EnqueuedMessagesEvent`, whether through the driver or a Capability `on_event` listener, does not establish a complete execution boundary. Receipt assembly does not depend on either listener having run, and a hook never waits for the driver to consume an event whose delivery may depend on that hook returning. Synchronous confirmation uses the existing awaited hooks and public state export; it adds no Harness consumption callback, receipt API, or parallel Agent loop.
+After recording succeeds, Compaction can replace the original messages without first waiting for a Foundation object write or consumption transaction. The same recording path runs when Compaction is disabled; Compaction owns neither Foundation inbox identities nor relational consumption. At the next ordinary complete checkpoint, the facade snapshots the recorded incorporations with the current continuation under its critical section, merges them with prior Host receipts, and publishes the complete envelope. The history may already be compacted and need not retain the original messages or their metadata. Recording alone introduces no additional checkpoint trigger; post-tool, model-boundary, recovery, handoff, and terminal publication follow the [Run-state contract](12-run-persistence.md#checkpoint-triggers-and-refresh).
+
+Observing `EnqueuedMessagesEvent`, whether through the driver or a Capability `on_event` listener, does not establish a complete execution boundary. Incorporation recording and receipt assembly do not depend on either listener having run, and a hook never waits for the driver to consume an event whose delivery may depend on that hook returning. A delayed event creates neither another receipt nor an additional checkpoint solely for its arrival. Synchronous recording uses the existing awaited hooks, while checkpoint publication uses public state export; this adds no Harness consumption callback, receipt API, or parallel Agent loop.
 
 Foundation does not use a generic `before_tool_execute()` or `after_tool_execute()` hook for persistence. Tool-specific Capabilities may use those public hooks for their own policy or durable-task protocol, but that behavior is not the Foundation Run checkpoint contract.
 
@@ -495,8 +498,8 @@ For each Foundation callback, the internal operation order is:
 1. let `HarnessDriver` validate that the hook's raw context matches the active Capability's opaque binding, Harness Run, RunAttempt, executor, driver, and reserved Capability ID, then create one callback-scoped `HarnessHookBoundary`;
 2. call `RunAttemptControl` with that boundary; the facade enters its private process-local critical section and rejects a terminally fenced gate without receiving the raw context;
 3. perform bounded durable rereads and current lease/fence checks using short sessions;
-4. reconcile eligible Thread inbox work in its authoritative FIFO and enqueue only accepted adapted values;
-5. when the boundary requires persistence, export one complete Harness state, synchronously confirm inbox incorporation from that same history and assemble its bounded Host receipts, conditionally publish messages and receipts together in `state.json`, then commit any relational receipt transition in a separate short transaction before allowing dependent execution past the boundary;
+4. reconcile eligible Thread inbox work in its authoritative FIFO, synchronously record already incorporated values from the complete message boundary before history replacement, and enqueue only accepted adapted values without treating enqueue acceptance as incorporation;
+5. when the boundary requires persistence, export one complete Harness state, snapshot the incorporation records belonging to that continuation, and merge them with prior Host receipts. Conditionally publish the current history and receipts together in `state.json`, then commit any relational receipt transition in a separate short transaction. A hook that only records incorporation can return without this persistence step and allow downstream compaction;
 6. if planned handoff is pending and the safe-boundary conditions hold, request local Harness cancellation before releasing the critical section so no later Foundation control operation or new model request is admitted; and
 7. return the original Pydantic request, response, or node result unchanged unless cancellation or a classified Foundation failure terminates the local run, then invalidate the boundary in `finally` before the hook returns.
 
@@ -509,7 +512,7 @@ For a successor created from waiting Feedback or waiting Continue, Foundation wi
 - if the first response contains no tool calls, `after_model_request()` reconciles and enqueues the eligible FIFO before response handling can terminate;
 - if the first response contains tool calls, `after_model_request()` records that the gate remains closed and `after_node_run(CallToolsNode)` acts only after the complete tool batch;
 - an ordinary next request or ordinary terminal path receives the eligible enqueue, while a deferred or HITL terminal result receives none and lets Foundation seal waiting and roll pending entries forward; and
-- The driver-owned `HarnessHookBoundary.enqueue(..., priority="asap")` maps to Pydantic `RunContext.enqueue(...)` for native delivery and preserves the stable Host provenance of the adapted inbox value. The next complete boundary containing the value confirms incorporation without waiting for `EnqueuedMessagesEvent`, publishes the message and receipt together, and completes the fenced Foundation receipt transaction.
+- The driver-owned `HarnessHookBoundary.enqueue(..., priority="asap")` maps to Pydantic `RunContext.enqueue(...)` for native delivery and preserves the stable Host provenance of the adapted inbox value. Foundation records incorporation before history replacement without waiting for `EnqueuedMessagesEvent`; the next complete checkpoint merges the record with the current continuation and prior receipts before the fenced consumption transaction.
 
 The first-request gate is based on the first model request and its complete tool batch, not on the internal `ModelAttempt` count.
 
@@ -525,7 +528,8 @@ All Foundation Capability hooks and typed collaborators are awaited. They create
 | `after_node_run(CallToolsNode)` fails            | Tool effects may already have occurred; no generic replay or duplicate-suppression claim is made, and tool-specific reconciliation remains authoritative        |
 | Enqueue or state export fails                    | No inbox row is marked consumed and no handoff is committed from the unconfirmed candidate                                                                      |
 | Conditional state publication is lost or unknown | Foundation reconciles the exact object version and body before retrying; the hook does not guess success                                                        |
-| Inbox checkpoint or consumption is unconfirmed   | No dependent model or tool work starts past the boundary; the current owner reconciles under its lease or follows ordinary Attempt failure and recovery rules   |
+| Incorporation recording fails                    | Original input and provenance cannot be removed by history replacement; the hook follows the ordinary classified failure path                                   |
+| Inbox checkpoint or consumption is unconfirmed   | The row remains pending; retain unconfirmed incorporation records and follow ordinary checkpoint, Attempt failure, or handoff reconciliation rules              |
 | Lease or fence is lost                           | `RunAttemptControl` terminally fences its private gate, asks the driver to cancel Harness, cancels the executor scope, and suppresses every authoritative write |
 | External task cancellation                       | Cancellation propagates after bounded cleanup and cannot be converted into success by a Capability or plugin                                                    |
 | Hook exception contains unsafe detail            | Foundation records a stable bounded error code and excludes raw credentials, payloads, provider bodies, and callback representations                            |
@@ -536,12 +540,12 @@ Hook retries are not an implicit Pydantic model retry. A repeated safe-boundary 
 
 ### Meaning of the Run-Control Barrier
 
-`RunAttemptControl` is the sole process-local control facade attached to one active RunAttempt. It owns the current driver and executor-cancellation bindings, the Foundation service ports needed for bounded durable operations, and one private `RunControlGate`. The phrases “run-control barrier” and “run-control gate” refer only to that facade's private async critical section and local state, not to another callable component. Gate state includes whether admission is open, handoff is pending, authority is terminally fenced, the waiting-successor first-request gate has opened, and which inbox entries have been offered but not durably consumed.
+`RunAttemptControl` is the sole process-local control facade attached to one active RunAttempt. It owns the current driver and executor-cancellation bindings, the Foundation service ports needed for bounded durable operations, and one private `RunControlGate`. The phrases “run-control barrier” and “run-control gate” refer only to that facade's private async critical section and local state, not to another callable component. Gate state includes whether admission is open, handoff is pending, authority is terminally fenced, the waiting-successor first-request gate has opened, and which inbox entries have been offered or synchronously recorded as incorporated but not yet represented by durable Host receipts. These incorporation records are independent of the compactable Harness message history.
 
 The facade uses that private gate to serialize:
 
 - durable Thread-inbox reconciliation and calls to `HarnessRunStream.steer()`;
-- complete state export, Host receipt assembly, and checkpoint publication;
+- synchronous incorporation recording, complete state export, Host receipt assembly, and checkpoint publication;
 - interrupt and planned-handoff cancellation requests;
 - terminal outcome selection and local stream finalization; and
 - driver and opaque callback-boundary identity validation, terminal fencing, and cleanup.
@@ -578,7 +582,7 @@ Inside an awaited Capability hook, `RunAttemptControl` asks the current `Harness
 6. The driver leaves the stream context; the executor root closes Runtime resources and asks the facade to attempt the short fenced `yielded` transaction while `LeaseMonitor` continues. It commits `yield_reason="service_drain"` or `"runner_rotation"` only when the same Attempt still owns the Run and no ordinary outcome, interrupt, or failure has won.
 7. Only a successful `yielded` commit stops renewal and makes the still-running Run eligible for a planned-handoff successor. A failed yield CAS does not free the Run; the executor reconciles the winning durable state.
 
-If checkpoint publication cannot be confirmed, Foundation does not cancel the local run solely for handoff and does not commit `yielded`; it retains the lease and retries at a later safe boundary until the drain deadline. This handoff deferral never bypasses a required inbox-incorporation checkpoint or consumption transaction: dependent execution remains blocked by the active-control contract until confirmation or classified failure. If the deadline arrives first, the executor fences local work, stops renewal, and exits. Another Worker may take over only after the recorded lease expires.
+If checkpoint publication cannot be confirmed, Foundation does not cancel the local run solely for handoff and does not commit `yielded`; it retains the lease and retries at a later safe boundary until the drain deadline. Recorded inbox incorporations remain available across this deferral and any compaction; no local record or unconfirmed write marks an inbox entry consumed. If the deadline arrives first, the executor fences local work, stops renewal, and exits. Another Worker may take over only after the recorded lease expires.
 
 ## Compatibility
 
@@ -587,7 +591,7 @@ Foundation pins a compatible Harness release and exact Runtime lock in the accep
 - a public Harness run argument or `RunBindings` field used here;
 - the Pydantic Capability hook signature or ordering behavior relied on by the mandatory control Capability;
 - the complete-message semantics of `AgentContext.export_state()` or `HarnessRunStream.export_state()`;
-- preservation of stable Host inbox provenance through native enqueue, complete state export, and recovery;
+- preservation of stable Host inbox provenance until synchronous incorporation recording, and preservation of recorded evidence through history replacement, checkpoint publication, and recovery;
 - the stream cancellation or terminal-result contract used for planned handoff; or
 - the Foundation-private `AttemptContext`, `RunAttemptControl`, `HarnessDriver`, or `HarnessHookBoundary` correlation and their stable failure classifications.
 
@@ -614,4 +618,4 @@ Adding a new Foundation callback requires an owning lifecycle boundary, exact in
 17. `RunAttemptControl` is the sole process-local control facade. Monitor, watcher, executor, and Capability paths call it directly with awaited methods rather than using a controller task or process-local command queue, and it calls no Harness API directly.
 18. `RunControlGate` is private lock and local state inside `RunAttemptControl`, not a callable component or authority; it performs no I/O and calls neither Harness nor the driver.
 19. Harness/Pydantic owns each raw `RunContext` and `AgentContext`; the mandatory Capability only borrows it, a driver-owned `HarnessHookBoundary` wraps it for one awaited hook, and no Foundation object retains it after boundary exit.
-20. Inbox incorporation is confirmed synchronously against the history exported at the same safe boundary; no checkpoint omits a newly incorporated entry's receipt because an event listener or the driver has not advanced.
+20. Inbox incorporation is recorded synchronously before history replacement; the next complete checkpoint merges those records with its possibly compacted continuation and prior receipts, independently of event-listener or driver progress.
