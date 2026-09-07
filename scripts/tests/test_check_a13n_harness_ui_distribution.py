@@ -23,7 +23,7 @@ def _write_wheel(
     protocol_version: str | None = "1.2.3",
     include_runtime_manifest: bool = True,
     include_terminal_shell: bool = True,
-    omitted_builtin: str | None = None,
+    omitted_package_file: str | None = None,
     include_entrypoint: bool = True,
     cli_content: bytes = b"def main(): pass\n",
     extra_packaged_files: dict[str, bytes] | None = None,
@@ -52,10 +52,13 @@ def _write_wheel(
         for module in TERMINAL_PACKAGE_PATHS:
             if module.as_posix() == "a13n_harness_ui/interactive/shell.py" and not include_terminal_shell:
                 continue
-            if module.name == omitted_builtin:
+            if module.name == omitted_package_file:
                 continue
             content = b"\n"
-            if module.as_posix().startswith("a13n_harness_ui/subagents/"):
+            if module.as_posix().startswith("a13n_harness_ui/subagents/") or module.as_posix() in {
+                "a13n_harness_ui/prompts.py",
+                "a13n_harness_ui/assets/system_prompt.md",
+            }:
                 content = (SCRIPTS_DIRECTORY.parent / "packages/a13n-harness-ui" / module).read_bytes()
             elif module.as_posix() == "a13n_harness_ui/interactive/shell.py":
                 content = b"class CliShell: pass\n"
@@ -167,11 +170,11 @@ def test_rejects_missing_terminal_shell(tmp_path: Path) -> None:
         validate_wheel(wheel)
 
 
-@pytest.mark.parametrize("name", ["code-reviewer.md", "executor.md", "explorer.md"])
-def test_rejects_missing_builtin_subagent(tmp_path: Path, name: str) -> None:
+@pytest.mark.parametrize("name", ["code-reviewer.md", "executor.md", "explorer.md", "system_prompt.md"])
+def test_rejects_missing_packaged_prompt(tmp_path: Path, name: str) -> None:
     wheel = tmp_path / "a13n-harness-ui.whl"
-    _write_wheel(wheel, omitted_builtin=name)
-    with pytest.raises(DistributionError, match="missing a13n_harness_ui/subagents/"):
+    _write_wheel(wheel, omitted_package_file=name)
+    with pytest.raises(DistributionError, match="missing a13n_harness_ui/"):
         validate_wheel(wheel)
 
 

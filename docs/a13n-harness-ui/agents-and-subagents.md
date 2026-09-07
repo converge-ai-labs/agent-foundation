@@ -275,7 +275,7 @@ Capabilities own their own JSON configuration schemas. See [tool and extension r
 
 ## Instructions and guidance
 
-Every Agent receives the package's base system prompt. Agent `instructions` and Markdown bodies add instructions through the native instructions channel; they do not replace the base.
+Every Agent receives the package's base system prompt, authored in [`a13n_harness_ui/assets/system_prompt.md`](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-harness-ui/a13n_harness_ui/assets/system_prompt.md). It is a release-owned Markdown asset, not a file copied into user configuration. Each Run captures its text; later package edits do not rewrite saved compositions. Agent `instructions` and Markdown bodies add instructions through the native instructions channel; they do not replace the base.
 
 Harness UI also reads `AGENTS.md` beside the root YAML and in the working directory. These are user-role contextual guidance, retained in native history but hidden in ordinary terminal and `/history` presentation. There is no ancestor scan and no `RULES.md` or `AGENTS.override.md` fallback. Global guidance is captured with accepted configuration; working-directory guidance uses the Environment's bounded reader. Neither source changes execution permissions.
 
