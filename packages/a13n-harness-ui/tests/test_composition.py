@@ -327,7 +327,7 @@ async def test_builtin_tool_switches_are_captured_and_reconstructed(
         agent.read_text().replace(
             "capabilities:\n",
             "capabilities:\n  - capability: user_interaction\n"
-            "  - capability: codeact\n    configuration: {inline: false}\n",
+            "  - capability: codeact\n    configuration: {inline: false, max_state_bytes: 2048, max_state_entries: 4}\n",
         )
     )
     source = await load_harness_ui_configuration(path)
@@ -343,7 +343,7 @@ async def test_builtin_tool_switches_are_captured_and_reconstructed(
     assert ("a13n.codeact" in rebuilt.definition_capability_ids) is enable_codeact
     if enable_codeact:
         recipe = next(item for item in composition.root.capabilities if item.capability == "codeact")
-        assert recipe.configuration == {"inline": False}
+        assert recipe.configuration == {"inline": False, "max_state_bytes": 2048, "max_state_entries": 4}
 
 
 async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_only(tmp_path: Path) -> None:

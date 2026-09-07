@@ -64,7 +64,7 @@ Put global options before the subcommand. Use `--help` at each level for exact a
 
 | Command                                                  | Options / behavior                                                                                                                                                           |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `a13n-harness-ui`                                                | Interactive launch; `--config`, `--data-root`, `--resume`, `--agent`, `--environment-mode`, `--environment-profile`, `--display`, `--no-update-check`, `--help`, `--version` |
+| `a13n-harness-ui`                                        | Interactive launch; `--config`, `--data-root`, `--resume`, `--agent`, `--environment-mode`, `--environment-profile`, `--display`, `--no-update-check`, `--help`, `--version` |
 | `run PROMPT`                                             | One-shot; `--resume`, `--agent`, `--environment-mode`, `--environment-profile`, `--title`, `--format text\|json`                                                             |
 | `setup`                                                  | Guided configuration outside chat; no in-chat `/setup`                                                                                                                       |
 | `config path\|show\|validate\|subagents`                 | Read-only inspection; `--format text\|json`                                                                                                                                  |

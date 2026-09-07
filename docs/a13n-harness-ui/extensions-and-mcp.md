@@ -9,7 +9,7 @@ Harness UI separates reusable configuration from executable integrations. A YAML
 | Environment profile       | Provider and Project adapter configuration                              | `extensions/*.yaml`, then Environment selection                        |
 | Environment Run Extension | Per-Run Environment integration                                         | `extensions/*.yaml`, then `defaults.environment_run_extensions`        |
 | MCP server                | External tools from a command or remote server                          | `mcp/*.yaml`, then Agent/default `mcp_servers`                         |
-| Content Plugin            | Editable Skill and Markdown subagent content, not a Python extension    | `a13n-harness-ui plugin` commands                                              |
+| Content Plugin            | Editable Skill and Markdown subagent content, not a Python extension    | `a13n-harness-ui plugin` commands                                      |
 
 ## MCP servers
 
@@ -132,7 +132,7 @@ Normally configure `model_characteristics` on the Model so reminder and compacti
 
 Task tools are available by default through native working state; notes remain opt-in. `working_state` accepts native configuration such as `notes_enabled: true`. F2 displays committed task facts, not a separate CLI checklist store.
 
-Root `tools.enable_user_input` gates `ask_user_question`; `tools.enable_codeact` gates CodeAct. Both switches also gate explicitly authored capability selections. CodeAct's `run_code` and `run_program` execute restricted Python; host effects use eligible tools and their existing policy, not unrestricted Python filesystem or network access. See the [root reference](configuration.md#built-in-tools-and-subagents) for defaults and the [decision guide](everyday-use.md#approvals-and-questions) for question timeouts.
+Root `tools.enable_user_input` gates `ask_user_question`; `tools.enable_codeact` gates CodeAct. Both switches also gate explicitly authored capability selections. CodeAct also exposes `store`, `load`, and `forget` for explicit JSON values saved with the Harness continuation; only stored key names are projected into context. Agent capability configuration accepts `max_state_bytes` and `max_state_entries` to bound this state. Its `run_code` and `run_program` execute restricted Python; host effects use eligible tools and their existing policy, not unrestricted Python filesystem or network access. See the [root reference](configuration.md#built-in-tools-and-subagents) for defaults and the [decision guide](everyday-use.md#approvals-and-questions) for question timeouts.
 
 ## Skills
 

@@ -10,7 +10,11 @@ from pathlib import Path
 
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.cli import CliRequest
-from a13n_harness_ui.settings_loader import ensure_default_directories, load_harness_ui_settings, resolve_harness_ui_data_root
+from a13n_harness_ui.settings_loader import (
+    ensure_default_directories,
+    load_harness_ui_settings,
+    resolve_harness_ui_data_root,
+)
 
 from .backend import SessionBackend
 from .lifecycle import terminal_logging

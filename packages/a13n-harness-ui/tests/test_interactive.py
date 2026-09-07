@@ -835,7 +835,7 @@ async def test_configured_codeact_executes_and_disabled_questions_are_not_expose
 
     async def stream(messages, info):
         names = {tool.name for tool in info.function_tools}
-        assert {"run_code", "run_program"} <= names
+        assert {"run_code", "run_program", "store", "load", "forget"} <= names
         assert "ask_user_question" not in names
         results = [
             part
@@ -876,7 +876,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     async def stream(messages, info):
         names = {tool.name for tool in info.function_tools}
         assert {"task_create", "task_update", "task_list", "ask_user_question"} <= names
-        assert not {"run_code", "run_program", "note"} & names
+        assert not {"run_code", "run_program", "store", "load", "forget", "note"} & names
         returned = [
             part.tool_name
             for message in messages
@@ -941,3 +941,44 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
         assert response is not None and not isinstance(response, str)
         assert await backend.execute(renderer, response=response) == ""
         assert "Choice applied" in "".join(block.source for block in renderer.transcript.blocks.values())
+
+
+@pytest.mark.anyio
+async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import a13n_harness_ui.model_runtime as runtime
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall
+
+    path = await _seed(tmp_path, monkeypatch)
+    path.write_text(path.read_text() + "\ntools:\n  enable_codeact: true\n")
+    requests = 0
+
+    async def stream(messages, info):
+        nonlocal requests
+        step = requests
+        requests += 1
+        if step in (0, 2):
+            code = 'await store(key="sum", value=2)\nawait load(key="sum")' if step == 0 else 'await load(key="sum")'
+            yield {0: DeltaToolCall(name="run_code", tool_call_id=f"code-{step}", json_args=json.dumps({"code": code}))}
+        else:
+            returned = [
+                part
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == "run_code"
+            ]
+            assert returned[-1].tool_call_id == f"code-{step - 1}"
+            assert returned[-1].content == 2
+            yield "Stored value is available."
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        first = SessionBackend(app, CliRequest(), tmp_path, Status())
+        assert await first.execute(StreamRenderer(first.status), prompt="Store the value") == ""
+        resumed = SessionBackend(app, CliRequest(thread_id=first.thread_id), tmp_path, Status())
+        await resumed.initialize()
+        assert await resumed.execute(StreamRenderer(resumed.status), prompt="Load the saved value") == ""
+    assert requests == 4
