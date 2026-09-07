@@ -297,6 +297,8 @@ sequenceDiagram
 
 The ZIP upload operation ends when its receipt commits; the later Skill request is the publication operation. An unconsumed receipt expires after 24 hours, and only a package object with no published reference can then be reclaimed. GitHub acquisition joins the same flow after source resolution and normalization.
 
+The [control upload and orphan collector](07-control-background-tasks.md#objects-and-upload-evidence) periodically removes eligible expired receipts and unowned package objects. It checks other live candidates and retained Revision or Run references to the same package and excludes concurrent publication before object deletion.
+
 Source acquisition, validation, and object storage occur without a database session. Foundation publishes or verifies the immutable package object before the final short transaction. A failed or unknown commit creates no authoritative Revision and is reconciled by the same idempotency key.
 
 ## Agent Selection and Run Locking

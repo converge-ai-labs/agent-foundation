@@ -46,7 +46,7 @@ class HookSubscriptionRecord(Base):
                 "hook_subscription_revisions.workspace_id",
             ),
             name="fk_hook_subscriptions_current_revision",
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             deferrable=True,
             initially="DEFERRED",
             use_alter=True,
@@ -118,7 +118,9 @@ class HookSubscriptionRevisionRecord(Base):
         ForeignKeyConstraint(
             ("hook_subscription_id", "organization_id", "workspace_id"),
             ("hook_subscriptions.id", "hook_subscriptions.organization_id", "hook_subscriptions.workspace_id"),
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
+            deferrable=True,
+            initially="DEFERRED",
         ),
         ForeignKeyConstraint(
             ("organization_id", "session_id"),

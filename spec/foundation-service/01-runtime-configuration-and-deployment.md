@@ -137,6 +137,12 @@ The `connectivity` role owns provider event webhooks, long connections, polling,
 
 Every background component has exactly one role owner. `all` installs the union once; it does not start a second application, duplicate a router, or construct another copy of shared process resources. Rolling overlap is safe only when the owning domain makes the component leased, fenced, or idempotent.
 
+[Control Background Tasks](07-control-background-tasks.md) owns the control task catalogue and common periodic execution, recovery, and collection obligations. Its enabled tasks are required control role components under this document's startup, supervision, readiness, and drain contract; their domains retain transition and retention authority.
+
+Recovery scans use `control_recovery_poll_interval_seconds` (default 1), `control_recovery_batch_limit` (64), and `control_recovery_item_timeout_seconds` (30). Collection uses `control_collection_poll_interval_seconds` (300), `control_collection_batch_limit` (64), and `control_collection_timeout_seconds` (30). The recovery/collection intervals, counts, and timeouts are positive and finite, with bounded maxima validated by Settings. Collection and recovery iteration deadlines are `(item_timeout + 1) * batch_limit`; relational cleanup commits bounded batches, and object cleanup enforces the per-item deadline separately. Hook history and Asset tombstone minimum retention default to 30 days through their separate settings. Object publication uses `object_publication_timeout_seconds` (120); orphan collection additionally uses `object_orphan_minimum_age_hours` (24).
+
+Existing publishers and Connector/Plugin reconcilers keep their domain cadence, claim limits, and retry policies under the shared periodic execution boundary. A Plugin Runtime command iteration is bounded by its configured command lease duration; a timed-out operation remains recoverable through the durable command phase. OAuth state reconciliation is bounded to one record and 30 seconds per iteration and never repeats an uncertain exchange.
+
 One service process runs one ASGI worker. A deployment scales by adding service processes or container replicas rather than forking several independent role runtimes behind one process boundary. Runner-profile child processes are an internal Worker execution boundary, not additional service replicas or independently addressable Worker resources.
 
 ## Worker Build Identity

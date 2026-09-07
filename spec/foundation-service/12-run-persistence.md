@@ -532,6 +532,8 @@ organizations/{organization_id}/runs/{run_id}/payloads/{payload_kind}/{digest_sh
 
 Retention never removes a state or Run payload object while a retained Run or successor depends on it. A parent state remains frozen and reachable while any successor or lineage policy requires it. Reference-aware deletion of those state and payload objects never relies on object age alone. URL and Environment-path source bytes remain outside Foundation persistence. Asset bytes follow the independent [Asset deletion and retention contract](32-asset-management.md#deletion-and-retention); a Run reference does not pin or restore a deleted Asset.
 
+[Control Background Tasks](07-control-background-tasks.md#retention-and-collection) owns periodic discovery and collection of eligible retained or unselected objects, including exclusion against concurrent publication. That execution obligation introduces no Run expiry or permission to remove a retained lineage dependency.
+
 ## Run Acceptance, Checkpoint, and Outcome Commit
 
 Run acceptance creates or advances the Thread row together with the Run row and its initial state as one externally indivisible acceptance operation:

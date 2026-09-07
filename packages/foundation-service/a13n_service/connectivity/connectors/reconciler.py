@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 from contextlib import aclosing
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from anyio import sleep
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     ConnectorProviderError,
 )
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .contracts import ConnectionBinding
 from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason
@@ -46,9 +46,25 @@ class ConnectorReconciler:
         self._clock = clock
 
     async def run(self) -> None:
-        while True:
-            await sleep(self._poll_interval_seconds)
-            await self.reconcile_once()
+        await PeriodicTask(
+            "connector_setup_reconciliation",
+            self.scan,
+            interval_seconds=self._poll_interval_seconds,
+            timeout_seconds=self._lease_seconds,
+        ).run()
+
+    async def scan(self) -> Sweep:
+        if await self._expire_attempt():
+            return Sweep(examined=1, completed=1)
+        claim = await self._claim_attempt()
+        if claim is None:
+            return Sweep()
+        await self._reconcile_attempt(*claim)
+        async with short_session(self._sessions) as session:
+            record = await session.get(ConnectorSetupAttemptRecord, claim[0])
+            complete = record is not None and record.status not in ("pending", "attached", "reserved")
+            age = max(0, (self._clock() - assume_utc(record.created_at)).total_seconds()) if record else None
+        return Sweep(examined=1, completed=int(complete), deferred=int(not complete), oldest_age_seconds=age)
 
     async def reconcile_once(self) -> bool:
         if await self._expire_attempt():
@@ -186,7 +202,7 @@ class ConnectorReconciler:
     ) -> None:
         async with transaction(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id, with_for_update=True)
-            if attempt is None or not _owns_attempt(attempt, self._instance_id, claim_generation):
+            if attempt is None or not _owns_attempt(attempt, self._instance_id, claim_generation, self._clock()):
                 return
             attempt.available_at = self._clock() + timedelta(seconds=5)
             if increment:
@@ -196,7 +212,7 @@ class ConnectorReconciler:
     async def _release_attempt(self, attempt_id: str, claim_generation: int) -> None:
         async with transaction(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id, with_for_update=True)
-            if attempt is None or not _owns_attempt(attempt, self._instance_id, claim_generation):
+            if attempt is None or not _owns_attempt(attempt, self._instance_id, claim_generation, self._clock()):
                 return
             attempt.claim_owner = None
             attempt.claim_expires_at = None
@@ -206,5 +222,12 @@ def _owns_attempt(
     attempt: ConnectorSetupAttemptRecord | None,
     owner: str,
     generation: int,
+    now: datetime,
 ) -> bool:
-    return attempt is not None and attempt.claim_owner == owner and attempt.claim_generation == generation
+    return (
+        attempt is not None
+        and attempt.claim_owner == owner
+        and attempt.claim_generation == generation
+        and attempt.claim_expires_at is not None
+        and assume_utc(attempt.claim_expires_at) > now
+    )

@@ -230,6 +230,8 @@ The deletion transaction marks `deleted_at`, records bounded security audit, and
 
 Cleanup deletes the derived object asynchronously and idempotently under deployment retention, legal-hold, and backup policy. Cleanup failure never makes the tombstoned Asset readable again. Minimal relational tombstone and audit evidence can outlive the bytes; public APIs expose no restore.
 
+[Control Background Tasks](07-control-background-tasks.md#task-catalogue) owns periodic delivery of the committed content-cleanup intent and separate collection of eligible tombstones or unowned upload objects. An orphan candidate is deleted only after ownership and concurrent-publication checks; content cleanup does not by itself release every tombstone or audit dependency.
+
 Asset deletion does not traverse Run JSON, Items, Hosted projections, or A2A bindings. A retained reference can therefore become unavailable. An already-authorized content stream or external delivery cannot be recalled after deletion.
 
 ## Authorization and Audit

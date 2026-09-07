@@ -17,8 +17,10 @@ from a13n_service.interactions.input import (
     PathBinarySource,
 )
 from a13n_service.interactions.models import RunRecord, ThreadRecord
+from a13n_service.interactions.objects import run_state_key
 from a13n_service.interactions.records import run_record
 from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.object_retention.persistence import require_object_publications
 
 from .environment_selection import select_run_environment
 
@@ -31,6 +33,10 @@ async def add_run_with_environment(
     workspace_id: str,
     choice: EnvironmentSelection | Omitted | None = Omitted.UNSET,
 ) -> RunRecord:
+    keys = [run_state_key(run.organization_id, run.id)]
+    if run.input_object is not None:
+        keys.append(run.input_object.object_key)
+    await require_object_publications(database, keys)
     await database.flush()
     run = await select_run_environment(database, run=run, workspace_id=workspace_id, choice=choice)
     input_value = run.input if run.input_kind is RunInputKind.agent_input else None

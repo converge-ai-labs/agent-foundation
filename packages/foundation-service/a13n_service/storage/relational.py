@@ -1,11 +1,13 @@
 """Async relational storage construction and short session scopes."""
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Protocol, cast
 
-from anyio import fail_after, move_on_after
+from anyio import CancelScope, current_effective_deadline, current_time, fail_after, move_on_after
+from anyio.lowlevel import checkpoint
 from sqlalchemy import URL, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -68,34 +70,78 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
 
 
 @asynccontextmanager
-async def short_session(
-    factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
-) -> AsyncGenerator[AsyncSession]:
+async def _session_scope(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    cleanup_timeout_seconds: float,
+    operation_timeout_seconds: float,
+) -> AsyncGenerator[tuple[AsyncSession, CancelScope]]:
+    # Repeated level cancellation can interrupt the driver's own invalidation
+    # and strand a connection before session.close() can recover it.
+    await checkpoint()
+    timeout = min(operation_timeout_seconds, max(0, current_effective_deadline() - current_time()))
     session = factory()
+    primary_error: BaseException | None = None
     try:
-        yield session
+        with CancelScope(shield=True) as scope:
+            # SQLAlchemy owns asyncio drivers. Deliver a deadline cancellation
+            # once so their invalidation awaits can finish without another cancel.
+            async with asyncio.timeout(timeout):
+                yield session, scope
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
-        with move_on_after(cleanup_timeout_seconds, shield=True):
-            await session.close()
+        try:
+            with move_on_after(cleanup_timeout_seconds, shield=True):
+                await session.close()
+        except Exception as cleanup_error:
+            if primary_error is None:
+                raise
+            primary_error.add_note(f"session cleanup failed with {type(cleanup_error).__name__}")
+    await checkpoint()
+
+
+@asynccontextmanager
+async def short_session(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    cleanup_timeout_seconds: float = 5,
+    operation_timeout_seconds: float = 30,
+) -> AsyncGenerator[AsyncSession]:
+    async with _session_scope(
+        factory, cleanup_timeout_seconds=cleanup_timeout_seconds, operation_timeout_seconds=operation_timeout_seconds
+    ) as (session, _scope):
+        yield session
 
 
 @asynccontextmanager
 async def transaction(
-    factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    cleanup_timeout_seconds: float = 5,
+    operation_timeout_seconds: float = 30,
 ) -> AsyncGenerator[AsyncSession]:
-    async with short_session(factory, cleanup_timeout_seconds=cleanup_timeout_seconds) as session:
+    async with _session_scope(
+        factory, cleanup_timeout_seconds=cleanup_timeout_seconds, operation_timeout_seconds=operation_timeout_seconds
+    ) as (session, scope):
         database_transaction = await session.begin()
         try:
             yield session
+            # Observe drain before starting commit. Once commit starts, its
+            # bounded outcome must settle without repeated cancellation.
+            scope.shield = False
+            await checkpoint()
+            scope.shield = True
+            await database_transaction.commit()
         except BaseException as error:
+            scope.shield = True
             try:
                 with move_on_after(cleanup_timeout_seconds, shield=True):
                     await database_transaction.rollback()
             except Exception as rollback_error:
                 error.add_note(f"rollback cleanup failed with {type(rollback_error).__name__}")
             raise
-        else:
-            await database_transaction.commit()
 
 
 async def check_database(engine: AsyncEngine, *, timeout_seconds: float = 3) -> None:

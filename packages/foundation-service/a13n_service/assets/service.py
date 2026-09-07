@@ -23,7 +23,6 @@ from a13n_service.durable_operations.idempotency import (
     load_evidence,
     new_evidence,
 )
-from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -33,10 +32,12 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
+from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
 from .cursors import AssetCursorError, decode_asset_cursor, encode_asset_cursor
+from .deletion import tombstone_asset
 from .domain import (
     Asset,
     AssetCollection,
@@ -54,7 +55,7 @@ from .errors import (
     asset_not_found,
 )
 from .models import AssetRecord
-from .objects import ASSET_OBJECT_DESTINATION, AssetObjectStore
+from .objects import AssetObjectStore, asset_content_key
 from .staging import AssetStaging, StagedAssetContent
 
 _UPLOAD_OPERATION = "asset.upload"
@@ -236,6 +237,17 @@ class AssetService:
         )
         if len({publication.asset.id for publication in publications}) != len(publications):
             raise asset_content_invalid()
+        await require_object_publications(
+            database,
+            (
+                asset_content_key(
+                    organization_id=publication.asset.organization_id,
+                    workspace_id=publication.asset.workspace_id,
+                    asset_id=publication.asset.id,
+                )
+                for publication in publications
+            ),
+        )
         now = self._clock()
         for publication in publications:
             asset = publication.asset
@@ -400,37 +412,7 @@ class AssetService:
                 )
                 if record is None:
                     raise asset_not_found()
-                record.deleted_at = now
-                session.add(
-                    _asset_audit_record(
-                        actor=actor,
-                        organization_id=workspace.organization_id,
-                        workspace_id=workspace_id,
-                        asset_id=asset_id,
-                        action="asset.delete",
-                        source_kind=record.source_kind,
-                        now=now,
-                    )
-                )
-                session.add(
-                    OutboxRecord(
-                        id=new_object_id("obx"),
-                        source_kind="asset",
-                        source_id=asset_id,
-                        destination_kind="asset_content_cleanup",
-                        destination_ref=ASSET_OBJECT_DESTINATION,
-                        status="pending",
-                        available_at=now,
-                        claim_generation=0,
-                        lease_expires_at=None,
-                        attempt_count=0,
-                        created_at=now,
-                        updated_at=now,
-                        published_at=None,
-                        dead_lettered_at=None,
-                        last_error_code=None,
-                    )
-                )
+                tombstone_asset(session, record, actor=actor, now=now)
         except AuthorizationError as error:
             await self._record_denied(
                 actor=actor,
@@ -584,6 +566,14 @@ class AssetService:
                     if replay is not None:
                         result = AssetUploadResult(replay, 201)
                     else:
+                        await require_object_publications(
+                            session,
+                            (
+                                asset_content_key(
+                                    organization_id=organization_id, workspace_id=workspace_id, asset_id=asset_id
+                                ),
+                            ),
+                        )
                         record = AssetRecord(
                             id=asset_id,
                             organization_id=organization_id,
@@ -669,14 +659,12 @@ class AssetService:
         workspace_id: str,
     ) -> None:
         try:
-            async with transaction(self._sessions) as session:
-                owned = await session.scalar(select(AssetRecord.id).where(AssetRecord.id == asset_id))
-            if owned is None:
-                await self._objects.delete_candidate(
-                    asset_id=asset_id,
-                    organization_id=organization_id,
-                    workspace_id=workspace_id,
-                )
+            await self._objects.delete_candidate(
+                sessions=self._sessions,
+                asset_id=asset_id,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+            )
         except Exception:
             # Unknown database state must never cause deletion of possibly
             # authoritative bytes. A later orphan reconciler can prove absence.

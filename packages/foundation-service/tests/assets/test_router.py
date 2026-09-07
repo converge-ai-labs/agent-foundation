@@ -380,6 +380,7 @@ async def test_content_integrity_failure_returns_safe_typed_error(api: Api) -> N
     await api.app.state.runtime.shared.storage.objects.put(
         key,
         b"corrupt",
+        if_match=(await api.app.state.runtime.shared.storage.objects.stat(key)).version,
         content_type="application/octet-stream",
         metadata=metadata,
     )

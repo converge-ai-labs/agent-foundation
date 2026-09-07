@@ -258,6 +258,8 @@ Direct deletion locks the active row, rechecks authorization and `expected_versi
 
 Owner deletion first makes the owner ineligible for Secret creation and replacement. It then tombstones owned Secrets in bounded, restartable batches. Durable batch progress makes interruption and replay safe. Owner deletion is complete only after an authoritative query finds no active owned Secret, and reconciliation repeats cleanup after interruption. Secret resolution denies as soon as any owner is disabled, revoked, deleting, or otherwise ineligible even if physical cleanup has not completed.
 
+Interrupted owner cleanup is periodically resumed by the owner-deletion task in [Control Background Tasks](07-control-background-tasks.md#task-catalogue). Tombstoning ciphertext does not end the independent retention of Secret metadata or security audit.
+
 ## Failure, Cancellation, and Retry Semantics
 
 | Failure or interruption                                              | Observable outcome                                                                             | Mutation effect and retry rule                                                                  |

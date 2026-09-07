@@ -32,10 +32,12 @@ from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
 from .agent import build_agent_management
 from .asset import build_asset_bundle
+from .collection import build_collection_tasks
 from .environment import build_environment_service
 from .hook import build_hook_bundle
 from .model import build_model_bundle
 from .plugin import build_plugin_bundle
+from .recovery import build_recovery_tasks
 from .skill import build_skill_bundle
 from .trace import build_trace_query_service
 
@@ -216,6 +218,8 @@ async def build_control_runtime(
         gateway=gateway,
     )
     background_tasks = [assets.cleanup_task, hooks.delivery_task, hooks.retention_task]
+    background_tasks.extend(build_recovery_tasks(settings, shared, gateway_commands, gateway_replay))
+    background_tasks.extend(build_collection_tasks(settings, shared))
     if a2a_publisher is not None:
         background_tasks.append(BackgroundTask("A2A push publisher", a2a_publisher.run))
     if plugins.background_task is not None:

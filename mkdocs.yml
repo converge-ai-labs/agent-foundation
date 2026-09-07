@@ -38,6 +38,7 @@ nav:
       - agent-envd: agent-envd/index.md
   - Foundation Service:
       - External Tools: foundation-service/external-tools.md
+      - Background Tasks: foundation-service/background-tasks.md
   - Streaming:
       - Agent Stream Protocol: agent-stream-protocol/index.md
   - Foundation Service:

@@ -8,10 +8,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
+import anyio
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ApplicationError
+from a13n_service.background import Sweep
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import validate_prepared_run
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, ThreadInboxEntry
@@ -22,12 +25,13 @@ from a13n_service.interactions.inbox import ThreadControlSignalPublisher
 from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
+    RunObjectError,
     RunStateStore,
     StaleStateWriter,
     StoredRunState,
 )
 from a13n_service.run_stream import RetainedItem, RunReplayStore
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .result_payload import (
@@ -40,6 +44,7 @@ from .result_payload import (
 from .successor_inbox import (
     bind_locked_unbound_async_entries,
     consume_async_result_for_successor,
+    reconcile_pending_async_results,
 )
 from .successor_preparation import (
     PreparedAsyncResultSuccessor,
@@ -81,6 +86,7 @@ class AsyncSubagentSuccessorReconciler:
         self._signals = signals
         self._run_id_factory = run_id_factory or _successor_run_id
         self._clock = clock
+        self._after_thread_id = ""
 
     async def reconcile_thread(
         self,
@@ -130,6 +136,9 @@ class AsyncSubagentSuccessorReconciler:
     async def reconcile_once(self, *, limit: int = 64) -> int:
         """Reconcile a bounded set of Threads with unbound result authority."""
 
+        return (await self.scan(limit=limit)).completed
+
+    async def scan(self, *, limit: int = 64, item_timeout_seconds: float = 30) -> Sweep:
         if limit < 1 or limit > 1024:
             raise ValueError("async result successor reconciliation limit is invalid")
         async with short_session(self._sessions) as database:
@@ -139,34 +148,58 @@ class AsyncSubagentSuccessorReconciler:
                         select(
                             ThreadInboxRecord.organization_id,
                             ThreadInboxRecord.thread_id,
-                            func.min(ThreadInboxRecord.delivery_sequence).label("first_sequence"),
+                            func.min(ThreadInboxRecord.created_at).label("oldest_created_at"),
                         )
                         .where(
                             ThreadInboxRecord.kind == "async_subagent_result",
                             ThreadInboxRecord.status == "pending",
-                            ThreadInboxRecord.target_run_id.is_(None),
-                            ThreadInboxRecord.source_waiting_run_id.is_(None),
+                            ThreadInboxRecord.thread_id > self._after_thread_id,
                         )
                         .group_by(ThreadInboxRecord.organization_id, ThreadInboxRecord.thread_id)
-                        .order_by("first_sequence", ThreadInboxRecord.thread_id)
+                        .order_by(ThreadInboxRecord.thread_id)
                         .limit(limit)
                     )
                 )
                 .tuples()
                 .all()
             )
+        if not candidates:
+            self._after_thread_id = ""
+            return Sweep()
         reconciled = 0
         for organization_id, thread_id, _ in candidates:
+            self._after_thread_id = thread_id
             try:
-                await self.reconcile_thread(organization_id=organization_id, thread_id=thread_id)
+                with anyio.fail_after(item_timeout_seconds):
+                    async with transaction(self._sessions) as database:
+                        finalized = await reconcile_pending_async_results(
+                            database,
+                            organization_id=organization_id,
+                            thread_id=thread_id,
+                            now=self._clock(),
+                        )
+                    receipt = await self.reconcile_thread(organization_id=organization_id, thread_id=thread_id)
             except AsyncSubagentResultItemUnavailable:
                 logger.info(
                     "async_subagent_successor_item_deferred",
                     extra={"event": "async_subagent_successor_item_deferred", "thread_id": thread_id},
                 )
                 continue
-            reconciled += 1
-        return reconciled
+            except (AsyncSubagentSuccessorError, RunObjectError, ObjectStoreError, ApplicationError, TimeoutError):
+                logger.warning(
+                    "async_subagent_successor_recovery_deferred",
+                    extra={"event": "async_subagent_successor_recovery_deferred", "thread_id": thread_id},
+                )
+                continue
+            reconciled += int(finalized > 0 or receipt.outcome not in {"idle", "queue_precedence"})
+        return Sweep(
+            examined=len(candidates),
+            completed=reconciled,
+            deferred=len(candidates) - reconciled,
+            oldest_age_seconds=max(
+                (assume_utc(self._clock()) - assume_utc(created)).total_seconds() for _, _, created in candidates
+            ),
+        )
 
     async def _select_or_route(
         self,

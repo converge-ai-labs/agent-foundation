@@ -10,6 +10,8 @@ import rfc8785
 from sqlalchemy import JSON, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.temporal import assume_utc
+
 from .control_domain import ThreadInboxKind, ThreadInboxStatus
 from .control_models import ThreadInboxCounterRecord, ThreadInboxRecord
 from .models import RunRecord
@@ -83,7 +85,7 @@ async def bind_waiting_entries(
         thread_id=thread_id,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await suppress_failed_inbox_origins(database, organization_id=organization_id, rows=rows, now=now)
+    await finalize_ineligible_async_results(database, organization_id=organization_id, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -136,7 +138,7 @@ async def bind_unbound_async_entries(
             )
         ).all()
     )
-    await suppress_failed_inbox_origins(database, organization_id=organization_id, rows=rows, now=now)
+    await finalize_ineligible_async_results(database, organization_id=organization_id, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -158,7 +160,7 @@ async def abandon_waiting_entries(
         thread_id=thread_id,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await suppress_failed_inbox_origins(database, organization_id=organization_id, rows=rows, now=now)
+    await finalize_ineligible_async_results(database, organization_id=organization_id, rows=rows, now=now)
     await _finalize_rows(database, rows, fallback=ThreadInboxStatus.superseded, now=now)
 
 
@@ -226,7 +228,7 @@ async def reconcile_checkpoint(
     eligible = tuple(
         row for row in rows if row.target_run_id == run.id and row.status == ThreadInboxStatus.pending.value
     )
-    await suppress_failed_inbox_origins(database, organization_id=run.organization_id, rows=eligible, now=now)
+    await finalize_ineligible_async_results(database, organization_id=run.organization_id, rows=eligible, now=now)
     pending_receipt_ids = tuple(
         receipt.inbox_entry_id
         for receipt in receipts
@@ -270,7 +272,7 @@ async def apply_run_outcome(
         target_run_id=run.id,
         origin_run_id=run.id if outcome in {"failed", "cancelled"} else None,
     )
-    await suppress_failed_inbox_origins(
+    await finalize_ineligible_async_results(
         database,
         organization_id=run.organization_id,
         rows=rows,
@@ -385,7 +387,7 @@ async def _lock_runs(
         raise ThreadInboxConflict("Thread inbox origin Run was not found")
 
 
-async def suppress_failed_inbox_origins(
+async def finalize_ineligible_async_results(
     database: AsyncSession,
     *,
     organization_id: str,
@@ -414,19 +416,23 @@ async def suppress_failed_inbox_origins(
         )
     if terminal_origin_run_id is not None:
         failed.add(terminal_origin_run_id)
-    suppressed = tuple(
-        row for row in rows if row.status == ThreadInboxStatus.pending.value and row.origin_run_id in failed
+    finalized = tuple(
+        row
+        for row in rows
+        if row.kind == ThreadInboxKind.async_subagent_result.value
+        and row.status == ThreadInboxStatus.pending.value
+        and (
+            row.origin_run_id in failed
+            or (row.expires_at is not None and assume_utc(row.expires_at) <= assume_utc(now))
+        )
     )
-    if not suppressed:
+    if not finalized:
         return
-    counter = locked_counter or await lock_inbox_counter(
-        database,
-        rows[0].organization_id,
-        rows[0].thread_id,
-    )
-    for row in suppressed:
-        _set_terminal(row, ThreadInboxStatus.suppressed, now)
-    release_pending_inbox_capacity(counter, suppressed)
+    counter = locked_counter or await lock_inbox_counter(database, rows[0].organization_id, rows[0].thread_id)
+    for row in finalized:
+        status = ThreadInboxStatus.suppressed if row.origin_run_id in failed else ThreadInboxStatus.expired
+        _set_terminal(row, status, now)
+    release_pending_inbox_capacity(counter, finalized)
 
 
 async def _finalize_rows(
@@ -492,9 +498,9 @@ __all__ = [
     "apply_run_outcome",
     "bind_unbound_async_entries",
     "bind_waiting_entries",
+    "finalize_ineligible_async_results",
     "lock_inbox_counter",
     "lock_inbox_related_runs",
     "reconcile_checkpoint",
     "release_pending_inbox_capacity",
-    "suppress_failed_inbox_origins",
 ]

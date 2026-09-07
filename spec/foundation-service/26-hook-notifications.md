@@ -243,6 +243,8 @@ Each Revision contains the callback URL but no URL user information or plaintext
 
 Inline head identity and Revision v1 also remain retained while the owning Run is eligible as a Feedback, waiting-Continue, or Retry source, while unexpired command evidence needs them, or while required audit retention applies. These dependencies survive expiry and manual deletion; successful delivery alone does not release them. Retention must not make a previously configured eligible source appear to have never had an inline subscription. Physical cleanup releases records only after all applicable inheritance, replay, delivery/redrive, audit, and relational-reference dependencies end. Accepted Hook configuration stays in these revisions; neither Run input nor Run state duplicates callback configuration.
 
+Control periodically discovers and physically collects eligible heads and Revisions under [Control Background Tasks](07-control-background-tasks.md#hooksubscription-collection). This execution obligation begins only after the retention conditions above permit deletion; automatic expiry at Run seal remains synchronous and does not await a collection scan.
+
 ### `outbox_records`
 
 The shared Outbox table is the durable work queue claimed by Webhook publishers. Its complete state machine and generic retry rules are owned by [Durable Operations and Outbox](06-durable-operations-and-outbox.md#outbox-contract). A Hook delivery uses this exact specialization of the shared row, not another table:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import replace
 
 from anyio import create_task_group, move_on_after
 from pydantic_ai import prices
@@ -20,6 +21,7 @@ from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.runtime import AcceptedModelSelector
+from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.background import BackgroundTask, run_critical_component
 from a13n_service.process.components import Components
@@ -62,6 +64,14 @@ async def open_process_runtime(
     )
     try:
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
+            storage = replace(
+                storage,
+                objects=PublicationObjectStore(
+                    storage.objects,
+                    storage.sessions,
+                    timeout_seconds=settings.object_publication_timeout_seconds,
+                ),
+            )
             if owns_worker(settings.role) and settings.pricing_auto_update:
                 stack.enter_context(prices.update_in_background())
             shared = SharedRuntime(

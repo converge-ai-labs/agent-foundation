@@ -1,11 +1,11 @@
 """Expire short-lived OAuth state without retrying exchanges or remote cleanup."""
 
-from anyio import sleep
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .models import MCPConnectionRecord, MCPOAuthSessionRecord
 
@@ -17,11 +17,17 @@ class MCPReconciler:
         self._sessions = sessions
         self._poll_interval_seconds = poll_interval_seconds
         self._clock = clock
+        self._last_lag: float | None = None
 
     async def run(self) -> None:
-        while True:
-            await sleep(self._poll_interval_seconds)
-            await self.reconcile_one()
+        await PeriodicTask(
+            "mcp_oauth_reconciliation", self.scan, interval_seconds=self._poll_interval_seconds, timeout_seconds=30
+        ).run()
+
+    async def scan(self) -> Sweep:
+        self._last_lag = None
+        progressed = await self.reconcile_one()
+        return Sweep(examined=int(progressed), completed=int(progressed), oldest_age_seconds=self._last_lag)
 
     async def reconcile_one(self) -> bool:
         now = self._clock()
@@ -60,6 +66,7 @@ class MCPReconciler:
             )
             if state is None:
                 return False
+            self._last_lag = max(0, (now - assume_utc(state.expires_at)).total_seconds())
             state.status = "expired"
             state.clear_credential()
             state.claim_owner = None

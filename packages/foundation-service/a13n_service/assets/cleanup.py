@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import timedelta
 
-import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.durable_operations.outbox import OutboxClaim, claim_outbox, complete_outbox, fail_outbox
+from a13n_service.durable_operations.publication import dispatch_outbox_batch
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
+from .errors import AssetError
 from .models import AssetRecord
 from .objects import ASSET_OBJECT_DESTINATION, AssetObjectStore
-
-logger = logging.getLogger("a13n_service.assets.cleanup")
 
 
 class AssetCleanupReconciler:
@@ -38,36 +37,43 @@ class AssetCleanupReconciler:
         self._clock = clock or utc_now
 
     async def run(self) -> None:
-        while True:
-            try:
-                await self.reconcile_once()
-            except anyio.get_cancelled_exc_class():
-                raise
-            except Exception:
-                logger.exception("asset_cleanup_reconcile_failed", extra={"event": "asset_cleanup_reconcile_failed"})
-            await anyio.sleep(self._poll_interval_seconds)
+        await PeriodicTask(
+            "asset_content_cleanup",
+            self.scan,
+            interval_seconds=self._poll_interval_seconds,
+            timeout_seconds=(self._lease_seconds + 1) * 25,
+        ).run()
 
     async def reconcile_once(self, *, limit: int = 25) -> int:
+        return (await self.scan(limit=limit)).examined
+
+    async def scan(self, *, limit: int = 25) -> Sweep:
         claims = await self._claim(limit=limit)
-        for claim in claims:
-            try:
-                owner = await self._load_owner(claim.source_id)
-                if owner is None:
-                    await self._finish(claim, error_code="asset_cleanup_source_missing")
-                    continue
-                organization_id, workspace_id = owner
-                await self._objects.delete_content(
-                    organization_id=organization_id,
-                    workspace_id=workspace_id,
-                    asset_id=claim.source_id,
-                )
-            except anyio.get_cancelled_exc_class():
-                raise
-            except Exception:
-                await self._finish(claim, error_code="asset_content_cleanup_failed")
-            else:
-                await self._finish(claim, error_code=None)
-        return len(claims)
+        return await dispatch_outbox_batch(
+            self._sessions,
+            claims,
+            self._publish_claim,
+            timeout_seconds=self._lease_seconds,
+            concurrency=1,
+            clock=self._clock,
+        )
+
+    async def _publish_claim(self, claim: OutboxClaim) -> None:
+        owner = await self._load_owner(claim.source_id)
+        if owner is None:
+            await self._finish(claim, error_code="asset_cleanup_source_missing")
+            return
+        organization_id, workspace_id = owner
+        try:
+            await self._objects.delete_content(
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                asset_id=claim.source_id,
+            )
+        except AssetError:
+            await self._finish(claim, error_code="asset_content_cleanup_failed")
+        else:
+            await self._finish(claim, error_code=None)
 
     async def _claim(self, *, limit: int) -> tuple[OutboxClaim, ...]:
         now = self._clock()

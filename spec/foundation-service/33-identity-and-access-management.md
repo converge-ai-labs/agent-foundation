@@ -130,6 +130,8 @@ The OSS capability never deletes an Organization. The schema does not encode the
 
 Active Workspaces are unique by `(organization_id, normalized_name)`. Logical deletion immediately denies new access and work, revokes bounded credentials, removes live descendant RoleBindings, revokes Service Account and Personal API Keys in the boundary, and starts separately managed physical cleanup. IDs are never reused. Deleted names may be reused by a new Workspace with a new ID.
 
+[Control Background Tasks](07-control-background-tasks.md#task-catalogue) owns periodic recovery of that cleanup under each descendant's deletion and retention rules. Physical cleanup progress does not restore eligibility or shorten independent security-audit retention.
+
 ### `users`
 
 | Column              | Durable meaning and constraint                                         |

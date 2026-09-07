@@ -269,6 +269,8 @@ Completion-time preparation is bounded and never makes successful source complet
 
 A completed Run that did not use the combined handoff, and every eligible `failed` or `cancelled` outcome, can coexist with queued submissions. A bounded periodic recovery scan treats the relational combination of Thread selection, current terminal Run, and first queued row as the complete drain authority. It performs the same detached state-first preparation and atomic consumption or failure boundary described above. No queue-drain outbox, queue lease, preparing state, or resumable RunAttempt is required. An implementation can use a best-effort process-local wakeup for latency, but losing it does not affect correctness.
 
+The scan is a required control-role responsibility under [Control Background Tasks](07-control-background-tasks.md#task-catalogue). It continues independently of request traffic and completion-time wakeups.
+
 The consumer applies these rules to the first queued entry:
 
 | Current outcome      | Selected head | Drain behavior                                                      |

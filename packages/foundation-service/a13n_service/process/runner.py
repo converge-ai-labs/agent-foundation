@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import replace
 
 from anyio import create_task_group, move_on_after
 from pydantic_ai import prices
@@ -14,6 +15,7 @@ from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.domain import RunAttemptYieldReason
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
 from a13n_service.plugins.runner_bootstrap import BootstrappedPluginRuntime
 from a13n_service.process.background import run_critical_component
@@ -35,6 +37,14 @@ async def open_runner_worker(settings: Settings, runner: BootstrappedPluginRunti
     ):
         raise ValueError("Runner execution requires shared PostgreSQL, Redis, and S3 object storage")
     async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
+        storage = replace(
+            storage,
+            objects=PublicationObjectStore(
+                storage.objects,
+                storage.sessions,
+                timeout_seconds=settings.object_publication_timeout_seconds,
+            ),
+        )
         observability = build_observability_runtime(
             enabled=settings.observability_tracing,
             trace_content=settings.observability_trace_content,

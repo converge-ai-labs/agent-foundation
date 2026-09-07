@@ -20,6 +20,7 @@ from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAc
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
+from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
 
@@ -535,6 +536,7 @@ class PluginService:
                 version = existing
                 created = False
             else:
+                await require_object_publications(session, (artifact_ref,))
                 version = PluginVersionRecord(
                     id=new_object_id(PLUGIN_VERSION_ID_PREFIX),
                     plugin_id=plugin.id,
@@ -664,6 +666,7 @@ class PluginService:
                 ):
                     raise plugin_version_conflict()
             else:
+                await require_object_publications(session, (artifact_ref,))
                 version = PluginVersionRecord(
                     id=registration.plugin_version_id,
                     plugin_id=registration.plugin_id,

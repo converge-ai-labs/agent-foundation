@@ -89,6 +89,7 @@ from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRec
 from a13n_service.interactions.objects import RunObjectError, RunPayloadStore, RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
+from a13n_service.interactions.queue_validity import permanent_queue_failure
 from a13n_service.interactions.state import RunPayloadEnvelope
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -924,32 +925,82 @@ class InteractionCommands:
                 return replay
             raise _map_acceptance_error(error) from error
 
+    async def recover_queued(
+        self, *, workspace_id: str, thread: Thread, queued: QueuedSubmission
+    ) -> QueuedSubmissionConsumptionReceipt:
+        """Recover one observed queue head without manufacturing HTTP replay evidence."""
+
+        async def invalidity(database: AsyncSession):
+            return await permanent_queue_failure(
+                database, organization_id=thread.organization_id, workspace_id=workspace_id, queued=queued
+            )
+
+        async with short_session(self._sessions) as database:
+            failure = await invalidity(database)
+        if failure is not None:
+
+            async def revalidate(database: AsyncSession) -> bool:
+                return await invalidity(database) == failure
+
+            try:
+                return await self._acceptance.fail_queued_permanently(
+                    organization_id=thread.organization_id,
+                    thread_id=thread.id,
+                    queued_submission_id=queued.queued_submission_id,
+                    submission_digest_sha256=queued.submission_digest_sha256,
+                    failure=failure,
+                    expected_thread_version=thread.version,
+                    expected_queue_version=thread.queue_version,
+                    expected_current_run_id=thread.current_run_id,
+                    expected_head_run_id=thread.head_run_id,
+                    revalidate=revalidate,
+                )
+            except RunAcceptanceError as error:
+                raise _map_acceptance_error(error) from error
+        return await self.consume_queued(
+            actor=AuthenticatedActor(
+                principal=queued.authority_principal,
+                auth_method="stored_queued_submission",
+                credential_id=queued.queued_submission_id,
+                boundary_workspace_id=workspace_id,
+                request_id=queued.queued_submission_id,
+            ),
+            thread_id=thread.id,
+            idempotency_key=None,
+            request=ConsumeQueuedSubmissionRequest(
+                expected_thread_version=thread.version,
+                expected_queue_version=thread.queue_version,
+            ),
+        )
+
     async def consume_queued(
         self,
         *,
         actor: AuthenticatedActor,
         thread_id: str,
-        idempotency_key: str,
+        idempotency_key: str | None,
         request: ConsumeQueuedSubmissionRequest,
     ) -> QueuedSubmissionConsumptionReceipt:
         """Consume the current queue head under its retained authority."""
 
-        _require_idempotency_key(idempotency_key)
-        stored_key = _scoped_idempotency_key(
-            actor=actor,
-            operation="queue.consume",
-            scope_id=thread_id,
-            supplied=idempotency_key,
-        )
         request_fingerprint = _request_fingerprint(request)
-        replay = await self._queued_consumption_replay(
-            actor=actor,
-            thread_id=thread_id,
-            stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
-        )
-        if replay is not None:
-            return replay
+        stored_key = None
+        if idempotency_key is not None:
+            _require_idempotency_key(idempotency_key)
+            stored_key = _scoped_idempotency_key(
+                actor=actor,
+                operation="queue.consume",
+                scope_id=thread_id,
+                supplied=idempotency_key,
+            )
+            replay = await self._queued_consumption_replay(
+                actor=actor,
+                thread_id=thread_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
 
         current, head, thread, queued = await self._load_queued_consumption_source(
             actor=actor,
@@ -1065,6 +1116,9 @@ class InteractionCommands:
                 )
 
         async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
+            # Automatic drain recovers from the queue row, not a synthetic HTTP command.
+            if stored_key is None:
+                return
             database.add(
                 new_evidence(
                     organization_id=run.organization_id,
@@ -1093,6 +1147,8 @@ class InteractionCommands:
                 transaction_hook=record_receipt,
             )
         except RunAcceptanceError as error:
+            if stored_key is None:
+                raise _map_acceptance_error(error) from error
             replay = await self._queued_consumption_replay(
                 actor=actor,
                 thread_id=thread_id,

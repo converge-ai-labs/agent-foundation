@@ -12,11 +12,12 @@ from a13n_service.interactions.control_domain import ThreadInboxKind, ThreadInbo
 from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
 from a13n_service.interactions.inbox_persistence import (
     ThreadInboxConflict,
+    finalize_ineligible_async_results,
     lock_inbox_counter,
     lock_inbox_related_runs,
     release_pending_inbox_capacity,
-    suppress_failed_inbox_origins,
 )
+from a13n_service.interactions.models import ThreadRecord
 
 
 async def lock_unbound_async_entries(
@@ -53,7 +54,7 @@ async def lock_unbound_async_entries(
             )
         ).all()
     )
-    await suppress_failed_inbox_origins(
+    await finalize_ineligible_async_results(
         database,
         organization_id=organization_id,
         rows=rows,
@@ -61,6 +62,38 @@ async def lock_unbound_async_entries(
         locked_counter=counter,
     )
     return counter, tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
+
+
+async def reconcile_pending_async_results(
+    database: AsyncSession, *, organization_id: str, thread_id: str, now: datetime
+) -> int:
+    """Finalize expired or suppressed results regardless of their current binding."""
+    thread = await database.scalar(
+        select(ThreadRecord)
+        .where(ThreadRecord.organization_id == organization_id, ThreadRecord.id == thread_id)
+        .with_for_update()
+    )
+    if thread is None:
+        return 0
+    await lock_inbox_related_runs(database, organization_id=organization_id, thread_id=thread_id, required_run_ids=())
+    counter = await lock_inbox_counter(database, organization_id, thread_id)
+    rows = tuple(
+        await database.scalars(
+            select(ThreadInboxRecord)
+            .where(
+                ThreadInboxRecord.organization_id == organization_id,
+                ThreadInboxRecord.thread_id == thread_id,
+                ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
+                ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
+            )
+            .order_by(ThreadInboxRecord.delivery_sequence, ThreadInboxRecord.id)
+            .with_for_update()
+        )
+    )
+    await finalize_ineligible_async_results(
+        database, organization_id=organization_id, rows=rows, now=now, locked_counter=counter
+    )
+    return sum(row.status != ThreadInboxStatus.pending.value for row in rows)
 
 
 def bind_locked_unbound_async_entries(
