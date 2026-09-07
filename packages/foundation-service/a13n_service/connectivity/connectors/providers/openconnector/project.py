@@ -1,4 +1,4 @@
-"""OOMOL project-key managed accounts, paired with a read-only runtime catalog.
+"""OOMOL project-key managed accounts, paired with a read-only catalog.
 
 The project SDK publishes link, request polling, profile, and explicit-account
 execution APIs. Personal aliases never select a managed account.
@@ -35,10 +35,9 @@ from ...contracts import (
 )
 from ...http import ConnectorHttpClient
 from ...validation import optional_string, path_segment, provider_response_errors, required_object, required_string
-from ..configuration import ApiKeyCredentials, ConnectorKeys
+from ..configuration import ConnectorKeys
 from ..discovery import validate_discovered_setup
-from .configuration import HOSTED_ENDPOINT, OpenConnectorConfiguration
-from .runtime import OpenConnectorRuntime
+from .catalog import HOSTED_ENDPOINT, OpenConnectorCatalog
 
 
 class ProjectConfiguration(StrictModel):
@@ -77,9 +76,7 @@ class OpenConnectorProvider:
         self._http = http
         self._configuration = configuration
         self._credentials = credentials
-        self._catalog = OpenConnectorRuntime(
-            http, OpenConnectorConfiguration(), ApiKeyCredentials(api_key=credentials.catalog_api_key)
-        )
+        self._catalog = OpenConnectorCatalog(http, credentials.catalog_api_key)
 
     async def aclose(self) -> None:
         pass
@@ -196,7 +193,7 @@ class OpenConnectorProvider:
 
 
 class ProjectToolCatalog:
-    def __init__(self, catalog: OpenConnectorRuntime, service: str) -> None:
+    def __init__(self, catalog: OpenConnectorCatalog, service: str) -> None:
         self._catalog = catalog
         self._service = service
 

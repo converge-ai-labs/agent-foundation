@@ -32,8 +32,8 @@ from .test_connector_service import connector_backend as connector_backend
 from .test_connector_service import connector_registry as connector_registry
 from .test_connector_service import connector_services as connector_services
 from .test_connector_service import create_connection, create_connector
+from .test_openconnector_catalog import AllowEndpoint
 from .test_openconnector_project import project_server as project_server
-from .test_openconnector_runtime import AllowEndpoint
 
 pytestmark = pytest.mark.anyio
 

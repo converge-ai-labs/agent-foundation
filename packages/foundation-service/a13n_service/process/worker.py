@@ -16,6 +16,7 @@ from a13n_service.connectivity.connectors.providers import built_in_connector_pr
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.http import cookie_free_jar
+from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
@@ -98,11 +99,16 @@ async def build_worker_runtime(
         shared.secret_protector,
         shared.storage.files_root,
         timeout_seconds=settings.environment_operation_timeout_seconds,
+        capacity=CapacityLimits(
+            max_targets=settings.environment_max_targets_per_workspace,
+            max_active=settings.environment_max_active_per_workspace,
+        ),
     )
     environment_maintenance = EnvironmentMaintenanceLoop(
         environments,
         interval_seconds=settings.environment_maintenance_interval_seconds,
         concurrency=settings.environment_maintenance_concurrency,
+        batch_size=settings.environment_maintenance_batch_size,
     )
 
     run_stream = RedisRunStream(

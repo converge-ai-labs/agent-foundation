@@ -36,7 +36,7 @@ For managed OpenConnector, choose `type: "openconnector"` and configure `enabled
 
 Preview tool definitions before linking an account with `GET /api/v1/connector-providers/{provider_id}/connectors/{connector_key}/tools`. Preview does not grant execution access. A verified Connection keeps its own account binding, so clearing completed setup history does not break tool calls or re-enabling a disabled connection.
 
-OOMOL's published Project API has no remote revoke operation. Foundation revoke/delete still disables the connection immediately and reports remote cleanup as failed; finish remote account removal in OOMOL. An initial setup interrupted by a lost response, cancellation, or process failure is not automatically retried because the Project API does not promise idempotent link creation. Concurrent retries return the same pending setup without a redirect until the active sender finishes; retry the same command afterward to resume its authorization URL. Personal and self-hosted runtime tokens have a separate API and cannot replace the Project key in this managed flow.
+OOMOL's published Project API has no remote revoke operation. Foundation revoke/delete still disables the connection immediately and reports remote cleanup as failed; finish remote account removal in OOMOL. An initial setup interrupted by a lost response, cancellation, or process failure is not automatically retried because the Project API does not promise idempotent link creation. Concurrent retries return the same pending setup without a redirect until the active sender finishes; retry the same command afterward to resume its authorization URL.
 
 ## Application Accounts and event reception
 

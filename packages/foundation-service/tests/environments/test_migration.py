@@ -1,8 +1,12 @@
 from pathlib import Path
 
+from a13n_service.database.default_comparison import compare_server_default
+from a13n_service.database.metadata import service_metadata
 from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect
 
 ENVIRONMENT_TABLES = {
@@ -20,6 +24,21 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         tables = set(inspect(engine).get_table_names())
         if present:
             assert ENVIRONMENT_TABLES <= tables
+            assert "expires_at" in {column["name"] for column in inspect(engine).get_columns("environments")}
+            assert "ix_environments_capacity" in {
+                index["name"] for index in inspect(engine).get_indexes("environments")
+            }
+            with engine.connect() as connection:
+                context = MigrationContext.configure(
+                    connection,
+                    opts={
+                        "compare_server_default": compare_server_default,
+                        "include_object": lambda _object, name, kind, _reflected, _comparison: (
+                            name in ENVIRONMENT_TABLES if kind == "table" else True
+                        ),
+                    },
+                )
+                assert compare_metadata(context, service_metadata()) == []
             revision_columns = {
                 column["name"] for column in inspect(engine).get_columns("environment_template_revisions")
             }

@@ -36,6 +36,8 @@ A Host can store its own definition revision around this envelope. That outer re
 
 A configured Host Provider separates backend access from the desired environment recipe. The same implementation supplies typed `provider_configuration_model` and optional `credential_model` definitions for backend settings and write-only credentials. Hosts derive schemas and validate those values through these models, persist them under their own resource authority, and supply fresh validated runtime collaborators. The recipe continues to use `configuration_versions` and `validate_configuration()` below. Embedded Hosts can supply equivalent typed collaborators directly without creating service resources. No Foundation resource or credential-storage model enters this package.
 
+`backend_identity(configuration)` returns the canonical non-secret backend namespace from validated backend configuration. The default uses that configuration's JSON value; Providers with connection tuning override it to exclude timeouts, concurrency and transport policy. HTTP Envd uses its normalized endpoint; WebSocket Envd uses its single Host-injected SDK namespace. The Host combines Provider type, backend identity and native target identity for uniqueness. Credentials and Provider resource IDs never create another target namespace.
+
 ## Provider Contract
 
 ```python

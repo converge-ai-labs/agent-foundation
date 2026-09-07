@@ -15,7 +15,7 @@ from sqlalchemy.orm import aliased
 
 from a13n_service.environments.identity import local_backend_eligible
 from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentRecord
-from a13n_service.environments.usage import schedule_environment_maintenance
+from a13n_service.environments.usage import refresh_run_retention
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -214,9 +214,9 @@ class AttemptScheduler:
 
             budget_failure = _claim_budget_failure(run, classification, now)
             if budget_failure is not None:
-                await schedule_environment_maintenance(database, run=run, now=now)
-                await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, budget_failure, now)
+                await refresh_run_retention(database, run=run, now=now)
+                await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 if classification == "lease_expired":
                     assert predecessor is not None
                     await self._lifecycle.append_run_with_attempt_lifecycle(

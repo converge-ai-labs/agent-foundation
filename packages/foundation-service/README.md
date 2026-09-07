@@ -62,7 +62,7 @@ Connection setup selects `connector_provider_id` and `connector_key`. Each opera
 
 The registered account adapter follows the [Composio v3.1 reference](https://docs.composio.dev/reference). The service does not expose an unfenced public tool-execute endpoint.
 
-[OOMOL OpenConnector](https://github.com/oomol-lab/open-connector) has a separate personal/self-hosted runtime client using Bearer authentication and `/v1/providers`, `/v1/actions`, and `/v1/apps`. The hosted origin is `https://connector.oomol.com`. It previews native Action schemas and executes against a visible connection's verified alias, with a fresh definition check and no automatic retry. It is not registered as a Foundation Connector Provider because personal/runtime access does not attest Foundation owner correlations. Account authorization remains in the OOMOL or self-hosted console; project-key `/v1/saas` operations are a separate contract. Manual checks live in `scripts/provider-smoke/`.
+[OOMOL OpenConnector](https://github.com/oomol-lab/open-connector) is a registered Connector Provider at `https://connector.oomol.com`. Foundation initiates hosted authorization with a Project key, verifies the resulting account against the Workspace correlation, and executes tools using that exact account ID. A separate catalog key reads Provider and Action definitions. See the [external tools guide](../../docs/foundation-service/external-tools.md) for configuration and connection setup.
 
 For Connector and MCP OAuth callback flows, set `FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN` to the exact externally reachable control-plane origin. Noninteractive connection management and OpenConnector polling do not require it. HTTP origins and private endpoint destinations are denied unless explicitly allowed by `FOUNDATION_CONNECTIVITY_HTTP_ORIGINS`, `FOUNDATION_CONNECTIVITY_PRIVATE_ENDPOINT_DOMAINS`, or `FOUNDATION_CONNECTIVITY_PRIVATE_ENDPOINT_CIDRS`. Provider source-origin allowlists use `FOUNDATION_CONNECTIVITY_PROVIDER_ORIGINS`; provider signatures or tokens remain mandatory.
 
@@ -80,7 +80,22 @@ Control-plane and all-in-one roles expose immutable Workspace Assets below `/api
 
 `FOUNDATION_ASSET_MAX_SIZE_BYTES` is the positive finite bound applied while streaming uploads and defaults to 100 MiB. Private staging uses `FOUNDATION_FILESYSTEM_ROOT`; object bytes use the selected object backend. Cleanup behavior can be operationally tuned with `FOUNDATION_ASSET_CLEANUP_POLL_INTERVAL_SECONDS`, `FOUNDATION_ASSET_CLEANUP_LEASE_SECONDS`, and `FOUNDATION_ASSET_CLEANUP_MAX_ATTEMPTS`. These settings do not change Asset identity, retention authority, or authorization semantics.
 
-Worker roles run the independently bounded Environment target Keeper. Its poll, lease, retention-window, refresh-margin, Provider-call timeout, retry-backoff, and concurrency settings use the `FOUNDATION_ENVIRONMENT_KEEPALIVE_*` prefix; retired-row cleanup uses `FOUNDATION_ENVIRONMENT_TARGET_TOMBSTONE_RETENTION_SECONDS`. A retention window must exceed both the lease and refresh margin. These settings change scheduling and audit-retention bounds only; Provider identity and the active-Run requirement remain durable Foundation facts.
+## Environment Capacity and Maintenance
+
+Workers use one Environment lifecycle and maintenance loop. Configure all workers consistently:
+
+| Variable                                              | Default | Meaning                                                                                          |
+| ----------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
+| `FOUNDATION_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | `1000`  | Prepared managed targets; stopped and unresolved targets count, deleted targets release capacity |
+| `FOUNDATION_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE`     | `100`   | Distinct Environments with running Runs that acquired use; shared Runs count once                |
+| `FOUNDATION_ENVIRONMENT_MAINTENANCE_BATCH_SIZE`       | `64`    | Due records read per batch; all batches drain before the next poll                               |
+| `FOUNDATION_ENVIRONMENT_MAINTENANCE_CONCURRENCY`      | `4`     | Concurrent maintenance operations per worker                                                     |
+| `FOUNDATION_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | `5`     | Poll interval after each pass                                                                    |
+| `FOUNDATION_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | `60`    | Provider operation timeout                                                                       |
+
+Logical allocation does not start a target or consume capacity. First use atomically reserves capacity before Provider I/O; exhausted admission returns `environment_capacity_exceeded`. Limits never evict existing targets. Maintenance persists observed expiry, schedules retention and renewal deadlines, and backs off failures for 30 seconds. Provider latency and due volume can delay maintenance beyond one poll interval. Estimate a due burst as `due_targets * average_operation_seconds / concurrency`, plus database and polling time. A bounded queue keeps available workers processing later batches while another target is slow.
+
+The initial Environment schema includes observed expiry and a Workspace/ownership/status index for admission counts. Initialize a fresh development database for this schema; superseded development schemas and target-identity encodings have no upgrade path.
 
 ## Hosted Subagents
 

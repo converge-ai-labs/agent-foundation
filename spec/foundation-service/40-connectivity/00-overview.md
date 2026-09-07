@@ -30,7 +30,7 @@ Reception is embedded [Account configuration](01a-application-accounts.md). It s
 
 `AgentThreadBinding` correlates an Account and stable external reference to a nullable Foundation Thread. It fixes no Agent. Event facts own bounded normalized data and deduplication; Batch facts own ordered membership, configuration, scheduling, and exact Run/Steer receipts. [Event reception](01-ingress-and-routing.md) owns this contract.
 
-`ConnectorProvider` is one configured external integration service account or endpoint such as Composio. Its `type` selects an implementation, while its `id` identifies the independent configuration and credential. Several Providers can have the same type. OOMOL OpenConnector personal/self-hosted runtime access is a separate integration without a Foundation owner binding, as defined by its [runtime profile](08-built-in-connector-adapters.md#oomol-openconnector-runtime-v1).
+`ConnectorProvider` is one configured external integration service account or endpoint such as Composio. Its `type` selects an implementation, while its `id` identifies the independent configuration and credential. Several Providers can have the same type.
 
 `Connector` is one integration discovered through that configured Provider, such as GitHub or Slack. It is a safe Provider-scoped catalog value, not a separate Workspace resource. Its setup requirements and available tools retain Provider-specific semantics. [Connector discovery](03-connectors-and-connections.md#connector-discovery) owns this boundary.
 

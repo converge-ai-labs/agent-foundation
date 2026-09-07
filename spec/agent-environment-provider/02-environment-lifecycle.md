@@ -33,6 +33,8 @@ class Environment(ABC):
     def provider_key(self) -> str: ...
 
     async def prepare(self) -> None: ...
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None: ...
+    async def recover(self) -> None: ...
 
     async def enter(
         self,
@@ -85,13 +87,17 @@ Actual file, shell, port or explicitly requested readiness operations can trigge
 
 Readiness checks use the existing operation connection. Healthy operations do not repeat target discovery, image validation or bootstrap. A pre-dispatch unavailable connection enters the same preparation path as first use; concurrent recovery shares that path. Unknown outcomes after dispatch are never replayed by recovery.
 
+`check_ready()` checks an already prepared, entered adapter without recovering it. A Host wrapper uses this check so an inner Provider cannot rebuild behind the Host's fence. The wrapper reacquires current authority and state, then calls `recover()` on the existing entered adapter only when state and credential generation still match. Recovery shares the adapter's preparation/close lock and preserves native observations when the target is unchanged. Otherwise the Host closes the old adapter and constructs a fresh one. A changed target is published before operations are exposed; the outer scope returns `environment_rebuilt` or `environment_connection_refreshed` before the caller retries an undispatched operation.
+
 `reconcile()` observes an abandoned preparation without creating, starting, replacing or deleting a target. It recovers target state from stable ownership correlation even when an interrupted create returned no target ID. It reports `running`, `stopped` or authoritative `absent`; ambiguous observations retain the pending operation. Hosts can reconcile after the originating Run ends without manufacturing Run execution authority.
 
-`target_identity(configuration, state)` returns only the canonical native target selector. It excludes bootstrap, credential and connection metadata. The Host namespaces it by Provider type and immutable backend configuration. A state checksum is not a target identity. An externally registered adapter can have a logical Environment ID distinct from its validated native daemon identity; wire receipts validate the native identity while Harness artifacts retain the logical identity.
+`target_identity(configuration, state)` returns only the canonical native target selector. It excludes bootstrap, credential and connection metadata. The Host namespaces it by Provider type and `backend_identity()` from validated immutable backend configuration. A state checksum is not a target identity. An externally registered adapter can have a logical Environment ID distinct from its validated native daemon identity; wire receipts validate the native identity while Harness artifacts retain the logical identity.
 
 ### Stop, keepalive and destruction
 
 `stop()` validates and stops the exact represented target while preserving the state needed to resume it. A Provider declares whether stop preserves process memory or only persistent filesystem state. Stop does not erase the state selector. It never deletes caller-owned directories, bind sources or unrelated volumes. Repeated stop reconciles actual state instead of creating or starting a target.
+
+`keepalive_horizon` supplies the desired renewal interval, defaulting to 300 seconds; a Provider narrows it to fit the target configuration (E2B uses at most `timeout_seconds`). It is an interval request, not observed expiry evidence.
 
 `keepalive()` extends a running target's supported lifetime and reports actual expiry evidence, or returns `None` for a declared backend without expiration. The Host supplies one stable operation identity per intended renewal and owns timing/retry policy. Renewal cannot start a stopped target. Provider limits, inability to satisfy the requested horizon and uncertain outcomes are explicit. A generic operation ID does not imply upstream idempotency or external fencing unless the implementation provides evidence.
 

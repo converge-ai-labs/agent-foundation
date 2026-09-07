@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
 from ..errors import EnvironmentProviderErrorCategory as Category
@@ -220,6 +220,10 @@ class E2BEnvironment(Environment):
         if target is not None and target.state.value != "paused":
             with sdk_errors(mutation=True):
                 await AsyncSandbox.pause(target.sandbox_id, keep_memory=True, **self._options())
+
+    @property
+    def keepalive_horizon(self) -> timedelta:
+        return min(super().keepalive_horizon, timedelta(seconds=self._configuration.timeout_seconds))
 
     async def keepalive(self, *, deadline: datetime, operation_id: str) -> datetime:
         from e2b import AsyncSandbox

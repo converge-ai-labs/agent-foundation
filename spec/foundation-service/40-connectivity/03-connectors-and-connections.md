@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Connector Providers provide general outbound SaaS capabilities. Foundation can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connector Connections. Composio, OpenConnector, and other registered adapters remain optional Connectivity components rather than Foundation core dependencies. OOMOL OpenConnector personal/self-hosted runtime access has a [separate authority boundary](08-built-in-connector-adapters.md#oomol-openconnector-runtime-v1) and does not establish a ConnectorConnection.
+Connector Providers provide general outbound SaaS capabilities. Foundation can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connector Connections. Composio, OpenConnector, and other registered adapters remain optional Connectivity components rather than Foundation core dependencies.
 
 The external integration service owns third-party account authorization, OAuth callback processing, access and refresh tokens, token rotation, and provider API invocation. Foundation owns its configured Connector Provider, safe discovered Connector values, Connector Connection projection, assignment and authorization, exact Run selection, and Agent-facing a13n MCP boundary.
 

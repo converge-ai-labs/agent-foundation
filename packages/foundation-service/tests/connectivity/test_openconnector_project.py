@@ -15,7 +15,7 @@ from a13n_service.connectivity.connectors.providers.openconnector.project import
 from a13n_service.connectivity.connectors.tool_discovery import discover_tools
 
 from .connector_helpers import allow_dispatch
-from .test_openconnector_runtime import AllowEndpoint
+from .test_openconnector_catalog import AllowEndpoint
 
 pytestmark = pytest.mark.anyio
 

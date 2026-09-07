@@ -176,6 +176,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
         CheckConstraint("status IN ('unprepared','running','stopped','deleted','unavailable')", name="status_valid"),
         CheckConstraint("retention_condition IN ('active','idle')", name="retention_condition_valid"),
         Index("ix_environments_maintenance", "next_maintenance_at", "id"),
+        Index("ix_environments_capacity", "workspace_id", "ownership", "status"),
     )
     provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     template_revision_id: Mapped[str | None] = mapped_column(String(72))
@@ -193,6 +194,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
     operation_action: Mapped[str | None] = mapped_column(String(16))
     operation_owner: Mapped[str | None] = mapped_column(String(72))
     operation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_maintenance_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON)
 

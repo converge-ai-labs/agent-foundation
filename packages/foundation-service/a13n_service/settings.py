@@ -20,6 +20,7 @@ from a13n_service.connectivity.bounds import (
 )
 from a13n_service.database import MigrationConfig
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.environments.policy import DEFAULT_BATCH_SIZE, DEFAULT_MAX_ACTIVE, DEFAULT_MAX_TARGETS
 from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (
@@ -117,6 +118,9 @@ class Settings(BaseSettings):
     environment_provider_extensions: tuple[str, ...] = ()
     environment_maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     environment_operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)
+    environment_max_targets_per_workspace: int = Field(default=DEFAULT_MAX_TARGETS, ge=1)
+    environment_max_active_per_workspace: int = Field(default=DEFAULT_MAX_ACTIVE, ge=1)
+    environment_maintenance_batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, le=10_000)
     environment_maintenance_concurrency: int = Field(default=4, ge=1, le=128)
     pricing_auto_update: bool = True
     observability_tracing: bool = True

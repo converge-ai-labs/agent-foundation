@@ -297,10 +297,10 @@ async def test_concurrent_lazy_use_prepares_once(interaction_sessions, interacti
     entered, release = asyncio.Event(), asyncio.Event()
     execute = lifecycle.execute
 
-    async def blocked(operation):
+    async def blocked(operation, *, recovering=None):
         entered.set()
         await release.wait()
-        return await execute(operation)
+        return await execute(operation, recovering=recovering)
 
     execute_spy = AsyncMock(side_effect=blocked)
     monkeypatch.setattr(lifecycle, "execute", execute_spy)

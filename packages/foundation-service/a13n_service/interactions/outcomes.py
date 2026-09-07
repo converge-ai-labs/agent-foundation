@@ -10,7 +10,7 @@ from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.environments.usage import schedule_environment_maintenance
+from a13n_service.environments.usage import refresh_run_retention
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -127,13 +127,9 @@ class RunOutcomeService:
             envelope = state.envelope
             candidate = envelope.outcome_candidate
             if isinstance(candidate, WaitingOutcomeCandidate):
-                await schedule_environment_maintenance(database, run=run, now=now)
-                await apply_run_outcome(database, run=run, outcome="waiting", state=state, now=now)
                 apply_waiting_outcome(run, candidate, now)
                 status = RunStatus.waiting
             elif isinstance(candidate, CompletedOutcomeCandidate):
-                await schedule_environment_maintenance(database, run=run, now=now)
-                await apply_run_outcome(database, run=run, outcome="completed", state=state, now=now)
                 apply_completed_outcome(run, candidate, now)
                 status = RunStatus.completed
             else:  # pragma: no cover - guarded by validate_outcome_candidate
@@ -148,6 +144,8 @@ class RunOutcomeService:
             thread.head_run_id = run.id
             thread.version += 1
             thread.updated_at = now
+            await refresh_run_retention(database, run=run, now=now)
+            await apply_run_outcome(database, run=run, outcome=status.value, state=state, now=now)
             await self._lifecycle.append_run_with_attempt_lifecycle(
                 database,
                 run,
@@ -221,8 +219,6 @@ class RunOutcomeService:
                     raise RunOutcomeError("selected RunAttempt cannot be cancelled")
                 terminalize_attempt(attempt, RunAttemptStatus.cancelled, now, failure=failure)
                 charge_attempt_usage(run, attempt)
-            await schedule_environment_maintenance(database, run=run, now=now)
-            await apply_run_outcome(database, run=run, outcome="cancelled", now=now)
             run.status = RunStatus.cancelled.value
             run.current_run_attempt_id = None
             run.failure_json = failure.model_dump(mode="json", by_alias=True)
@@ -231,6 +227,8 @@ class RunOutcomeService:
             run.version += 1
             thread.version += 1
             thread.updated_at = now
+            await refresh_run_retention(database, run=run, now=now)
+            await apply_run_outcome(database, run=run, outcome="cancelled", now=now)
             if attempt is None:
                 await self._lifecycle.append_run_lifecycle(
                     database,
