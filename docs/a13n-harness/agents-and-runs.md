@@ -78,6 +78,19 @@ The optional positional mapping supports dynamic fields and serialization aliase
 
 This happens before `HarnessBuilder.build()` and returns an independent deep copy. It is not the temporary run-scoped context manager exposed by Pydantic AI's built Agent.
 
+### Cold-start retention
+
+Harness `AgentSpec.cold_start_filter` defaults to a one-hour idle interval. Once the latest model response is at least that old, the filter shortens oversized strings in already-consumed tool results. Pending results, user inputs, and thinking are preserved. This deliberately trades an old cache prefix for a smaller cold request; it does not detect or adapt to provider cache retention.
+
+```python
+from a13n_harness.filters import ColdStartFilterConfiguration
+
+spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_600))
+disabled = spec.with_updates(cold_start_filter=None)
+```
+
+Plain Pydantic AI specs receive the same default. An explicitly composed `ColdStartFilterCapability` keeps its policy; `None` disables automatic installation rather than removing an authored Capability.
+
 ### Usage limits and retries
 
 Harness `AgentSpec.usage_limits` is Pydantic AI's native `UsageLimits`. The default permits 1,000 model requests for one logical run and leaves token, tool-call, and cost limits unset:

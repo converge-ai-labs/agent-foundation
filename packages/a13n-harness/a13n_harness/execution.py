@@ -18,8 +18,16 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunEvents
+from pydantic_ai.agent.abstract import AbstractAgent
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import MCP, AbstractCapability, Instrumentation, ResolveModelId
+from pydantic_ai.capabilities import (
+    MCP,
+    AbstractCapability,
+    CombinedCapability,
+    Instrumentation,
+    ResolveModelId,
+    WrapperCapability,
+)
 from pydantic_ai.exceptions import AgentRunError, RunCancelled, UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     AgentStreamEvent,
@@ -138,6 +146,7 @@ from a13n_harness.events import (
     _ChildEventForwarder,
     _RunEventEmitter,
 )
+from a13n_harness.filters.cold_start import ColdStartFilterCapability, ColdStartFilterConfiguration
 from a13n_harness.filters.integrity import (
     MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
     MessageIntegrityFilterCapability,
@@ -516,6 +525,28 @@ def _model_cost_capabilities(
     return tuple(capability for capability in leaves if isinstance(capability, AbstractModelCostCapability))
 
 
+@dataclass
+class _DefaultColdStartCapability(AbstractCapability[AgentContext]):
+    """Select the default only after native declarative capabilities are resolved."""
+
+    configuration: ColdStartFilterConfiguration
+
+    def for_agent(self, agent: AbstractAgent[AgentContext, Any]) -> AbstractCapability[AgentContext]:
+        leaves: list[AbstractCapability[AgentContext]] = []
+        agent.root_capability.apply(leaves.append)
+        for capability in leaves:
+            while isinstance(capability, WrapperCapability):
+                capability = capability.wrapped
+            if isinstance(capability, ColdStartFilterCapability):
+                return CombinedCapability([])
+        return ColdStartFilterCapability(self.configuration)
+
+
+def _cold_start_capabilities(agent: AgentSpec) -> tuple[AbstractCapability[AgentContext], ...]:
+    configuration = agent.cold_start_filter if isinstance(agent, HarnessAgentSpec) else ColdStartFilterConfiguration()
+    return (_DefaultColdStartCapability(configuration),) if configuration is not None else ()
+
+
 def _normalize_system_prompt(agent: AgentSpec) -> tuple[str, ...]:
     if not isinstance(agent, HarnessAgentSpec) or agent.system_prompt is None:
         return ()
@@ -852,6 +883,7 @@ class HarnessBuilder:
                 SteeringCapability(),
                 ModelContextCoordinatorCapability(),
                 ResolveModelId(resolve_model),
+                *_cold_start_capabilities(construction_spec),
                 *authored_capabilities,
                 *default_model_costs,
                 ModelRequestHeadersCapability(self._model_request_patch_configuration),
@@ -1324,7 +1356,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 _steering=SteeringBridge(
                     context_state,
                     run_id=self.run_id,
-                    retain_inputs=COMPACTION_CAPABILITY_ID in self._executable._definition_reserved_capability_ids,
+                    retain_inputs=bool(
+                        {COMPACTION_CAPABILITY_ID, HANDOFF_CAPABILITY_ID}
+                        & self._executable._definition_reserved_capability_ids
+                    ),
                     events=self._emitter,
                 ),
                 _skill_selection_names=self._skill_selection_names,

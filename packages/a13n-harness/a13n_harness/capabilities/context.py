@@ -73,13 +73,60 @@ _HANDOFF_REMINDER_CLOSE = "</context-reminder>"
 _HANDOFF_METADATA_KEY = "a13n.context"
 _RESTORED_BOUNDARY_METADATA_KEY = "a13n.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
-_COMPACTION_PROMPT = (
-    "Create a concise plain-text continuation summary of the conversation history. Preserve the user's intent, "
-    "completed work, decisions, unresolved work, relevant prior interactions, and the immediate next step. Current "
-    "structured notes and tasks are reprojected separately after history replacement, so do not mechanically "
-    "duplicate them. Omit bookkeeping tool calls while preserving their outcomes when needed for continuity. "
-    "Do not call tools and do not continue the task. Return only the summary."
-)
+# Mirrors ya-agent-sdk's cache-friendly compact instruction and request.
+_COMPACTION_PROMPT = """Generate a compact continuation summary for the conversation history.
+Return only the summary text. Do not call tools.
+Do not carry a merely inspected or rejected candidate's workflow, mandatory requirements, referenced-resource instructions, or proposed next steps into any continuation section; if historically relevant, record only that it was inspected and not activated.
+Use this exact Markdown structure:
+
+## Condensed conversation summary
+
+### Analysis
+
+[Brief analysis of the conversation and what matters for continuation.]
+
+### Context
+
+1. Primary Request and Intent:
+   [User's explicit requests and intent]
+
+2. Key Technical Concepts:
+   - [Concepts, technologies, APIs, and architecture points]
+
+3. Files and Code Sections:
+   - [Files examined, edited, or created, with important details]
+
+4. Problem Solving:
+   [Problems solved and ongoing troubleshooting]
+
+5. Pending Tasks:
+   - [Explicit pending tasks]
+
+6. Current Work:
+   [Precise current work immediately before compaction. If the current user request references numbered items, "above", "that", or similar phrases, resolve those references using the previous assistant response and spell out what they refer to.]
+
+7. Optional Next Step:
+   [Direct next step aligned with the current work]
+
+8. Past Interactions:
+   - [Key interactions already completed, including actions and outcomes]
+
+9. Activated Skills:
+   [List only Skills that were activated and remain relevant to unfinished work, and remind the next agent to re-read them. Do not include Skills that were merely inspected or rejected as candidates.]
+
+10. Files to Inspect on Resume:
+   [List only file paths that may need to be inspected when resuming. Do not include file contents.]
+
+11. Relevant Note Keys (omit this section when no supplied note key is relevant):
+   - [Exact note key and why it matters for continuation]
+
+
+Compact the conversation history into the requested continuation summary format.
+Focus on details needed to continue the user's work accurately after older messages are removed.
+Return only the summary text.
+
+Do not call any tools or investigate unresolved questions yourself. Record any uncertainties in the summary for the resumed agent to investigate.
+"""
 _PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS = 32_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_HEAD = 24_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_TAIL = 6_000
@@ -637,12 +684,12 @@ class HandoffCapability(AbstractModelContextCapability):
         state = self._toolset.state
         if state.summary is None or _requires_exact_boundary(ctx, request_context.messages):
             return request_context
-        retained_requests = ctx.deps._steering.retained_requests
+        await ctx.deps._steering.resolve_delivered(request_context.messages)
         try:
             messages = _build_restored_history(
                 _remove_owned_overlays(request_context.messages),
                 state,
-                original_request=retained_requests[0] if retained_requests else None,
+                retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
             )
         except BaseException as exc:
             try:
@@ -741,10 +788,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         if not threshold_reached:
             return request_context
 
-        compaction_context = _replace_messages(
-            request_context,
-            _remove_owned_overlays(request_context.messages),
-        )
         operation_id = f"compaction-{token_urlsafe(9)}"
         await emit_harness_event(
             ctx.deps.events,
@@ -761,9 +804,9 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 capability_id=COMPACTION_CAPABILITY_ID,
                 operation_id=operation_id,
             ):
-                summary = await _compact_with_same_agent(ctx, compaction_context)
+                summary = await _compact_with_same_agent(ctx, request_context)
                 messages = _build_compacted_history(
-                    compaction_context.messages,
+                    request_context.messages,
                     summary,
                     retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
                 )
@@ -810,7 +853,10 @@ async def _compact_with_same_agent(
     compact_agent._output_validators = []
     settings = dict(ctx.model_settings or {})
     settings.update(request_context.model_settings or {})
-    settings["tool_choice"] = "none"
+    # Changing tool_choice invalidates Claude's message cache. Preserve it, the
+    # standing system/instruction prefix, and full history; append the no-tools
+    # compaction directive instead. Execution is still blocked locally below.
+    # https://platform.claude.com/docs/en/build-with-claude/prompt-caching#what-invalidates-the-cache
     request_limit = ctx.usage.requests + 1
     if ctx.usage_limits is None:
         usage_limits = UsageLimits(request_limit=request_limit)
@@ -971,7 +1017,7 @@ def _build_restored_history(
     messages: list[ModelMessage],
     state: _HandoffState,
     *,
-    original_request: ModelRequest | None = None,
+    retained_requests: tuple[ModelRequest, ...],
 ) -> list[ModelMessage]:
     assert state.summary is not None
     template = next((message for message in reversed(messages) if isinstance(message, ModelRequest)), None)
@@ -981,7 +1027,7 @@ def _build_restored_history(
             code="handoff_boundary_missing",
         )
     system_parts = _first_system_parts(messages)
-    parts: list[Any] = [*system_parts]
+    parts: list[Any] = [*system_parts, UserPromptPart(state.summary)]
     parts.append(
         UserPromptPart(
             "<context-restored>Context was restored from a validated continuation summary. Treat the summary as "
@@ -989,12 +1035,6 @@ def _build_restored_history(
             "projected separately on ordinary requests.</context-restored>"
         )
     )
-    original = (
-        _first_user_content([original_request]) if original_request is not None else _first_user_content(messages)
-    )
-    if original is not None:
-        parts.append(_original_request_part(original))
-    parts.append(UserPromptPart(state.summary))
     if state.files:
         parts.append(UserPromptPart(_file_inspection_reminder(state.files)))
     parts.append(
@@ -1013,7 +1053,7 @@ def _build_restored_history(
         metadata=metadata,
         state="complete",
     )
-    return _mark_current_restored_boundary([restored])
+    return _mark_current_restored_boundary([restored, *deepcopy(retained_requests)])
 
 
 def _first_system_parts(messages: list[ModelMessage]) -> list[SystemPromptPart]:
@@ -1023,22 +1063,6 @@ def _first_system_parts(messages: list[ModelMessage]) -> list[SystemPromptPart]:
             if parts:
                 return parts
     return []
-
-
-def _first_user_content(messages: list[ModelMessage]) -> Any | None:
-    for message in messages:
-        if not isinstance(message, ModelRequest) or any(isinstance(part, BaseToolReturnPart) for part in message.parts):
-            continue
-        for part in message.parts:
-            if isinstance(part, UserPromptPart):
-                return deepcopy(part.content)
-    return None
-
-
-def _original_request_part(content: Any) -> UserPromptPart:
-    if isinstance(content, str):
-        return UserPromptPart(f"<original-request>\n{content}\n</original-request>")
-    return UserPromptPart(content=["<original-request>", *deepcopy(content), "</original-request>"])
 
 
 def _render_summary(content: str) -> str:

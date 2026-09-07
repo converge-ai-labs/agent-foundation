@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from a13n_harness import (
     AgentDefinition,
@@ -10,6 +12,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import UserInteractionCapability
+from a13n_harness.filters import ColdStartFilterConfiguration
 from pydantic import ValidationError
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import UsageLimits
@@ -30,6 +33,25 @@ def _preset() -> AgentSpec:
             },
         }
     )
+
+
+@pytest.mark.parametrize("idle_seconds", [None, 3600, 7200])
+def test_cold_start_configuration_round_trip_and_updates(tmp_path: Path, idle_seconds: int | None) -> None:
+    default = AgentSpec()
+    assert default.cold_start_filter == ColdStartFilterConfiguration()
+    assert default.cold_start_filter is not AgentSpec().cold_start_filter
+    spec = default.with_updates(cold_start_filter={"idle_seconds": idle_seconds} if idle_seconds is not None else None)
+    path = tmp_path / "agent.json"
+    spec.to_file(path)
+    restored = AgentSpec.from_file(path)
+    assert restored.cold_start_filter == spec.cold_start_filter
+    assert default.cold_start_filter.idle_seconds == 3600
+    assert spec.with_updates(name="copy").cold_start_filter == spec.cold_start_filter
+    schema = AgentSpec.model_json_schema_with_capabilities()
+    assert schema["properties"]["cold_start_filter"]["default"]["idle_seconds"] == 3600
+    assert "ColdStartFilterConfiguration" in schema["$defs"]
+    with pytest.raises(ValidationError):
+        spec.with_updates(cold_start_filter={"idle_seconds": 0})
 
 
 def test_agent_spec_defaults_to_a_detached_long_task_usage_budget() -> None:

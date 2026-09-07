@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from copy import deepcopy
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +39,7 @@ from a13n_harness.capabilities import (
     WorkspaceOutlineConfiguration,
 )
 from a13n_harness.capabilities.context import (
+    _COMPACTION_PROMPT,
     _previous_assistant_reference,
     _requires_exact_history,
 )
@@ -70,12 +74,18 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
+    TextContent,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import RequestUsage, UsageLimits
 
 from .environment_helpers import DirectLocalEnvironmentProviderBinding
@@ -231,20 +241,21 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert result.output_or_raise() == "done"
     assert len(calls) == 2
     restored = calls[1][0]
-    assert len(restored) == 1
+    assert len(restored) == 1  # Native Pydantic preparation merges adjacent request messages.
     assert isinstance(restored[0], ModelRequest)
     assert restored[0].instructions is not None
     assert "Keep the native instruction field." in restored[0].instructions
     contents = [
         item.content
-        for part in restored[0].parts
+        for message in restored
+        for part in message.parts
         if isinstance(part, UserPromptPart)
         for item in user_prompt_content(part)
     ]
     joined = "\n".join(contents)
     assert "# Context Summary" in joined
     assert "Implementation is ready" in joined
-    assert "<original-request>" in joined
+    assert "<original-request>" not in joined
     assert "Build the feature" in joined
     assert 'path="src/&lt;unsafe&gt;&amp;&quot;file.py"' in joined
     assert 'contents-loaded="false"' in joined
@@ -353,19 +364,97 @@ async def test_handoff_preserves_structured_multimodal_original_request() -> Non
     assert "_wBpbWFnZQ==" in result.state.model_dump_json()
 
 
-async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> None:
+async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[list[ModelMessage]] = []
+    image = BinaryContent(data=b"steering-image", media_type="image/png")
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        calls.append(messages)
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+            yield "Acknowledged"
+        elif len(calls) == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize",
+                    json_args=json.dumps({"content": "Continue implementation."}),
+                    tool_call_id="handoff-steering",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(system_prompt="Keep the real system prompt."),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(HandoffCapability(),),
+    )
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart("Previous run input")]),
+            ModelResponse(parts=[TextPart("Previous answer")]),
+        )
+    )
+    async with executable.stream(
+        "Initial current task", bindings=RunBindings.embedded(), previous_state=previous
+    ) as run:
+        consumer = asyncio.create_task(_consume_run(run))
+        await started.wait()
+        await run.steer(("Do not deploy; follow this image", image))
+        pending_state = await run.export_state()
+        assert len(pending_state.agent_context_state.entries["a13n.steering"].data["retained_requests"]) == 1
+        release.set()
+        result = await asyncio.wait_for(consumer, timeout=2)
+
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 3
+    restored_text = _user_text(calls[-1])
+    assert "Previous run input" not in restored_text
+    assert restored_text.count("Initial current task") == 1
+    assert restored_text.count("Do not deploy; follow this image") == 1
+    assert restored_text.index("Continue implementation.") < restored_text.index("Initial current task")
+    assert restored_text.index("Initial current task") < restored_text.index("Do not deploy;")
+    assert "Keep the real system prompt." in str(calls[-1])
+    assert "Placeholder system prompt" not in str(calls[-1])
+    restored_images = [
+        item
+        for message in calls[-1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+        for item in part.content
+        if isinstance(item, BinaryContent)
+    ]
+    assert restored_images == [image]
+    assert result.state is not None
+    assert "Do not deploy; follow this image" in _user_text(list(result.state.message_history))
+
+
+@pytest.mark.parametrize("tool_choice", [None, "auto", "none"])
+async def test_compaction_uses_same_agent_plain_text_run_without_handoff(tool_choice: str | None) -> None:
     calls: list[tuple[list[ModelMessage], AgentInfo]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         calls.append((messages, info))
         if len(calls) == 1:
-            assert info.model_settings is not None
-            assert info.model_settings.get("tool_choice") == "none"
+            assert (info.model_settings or {}).get("tool_choice") == tool_choice
+            assert messages[: len(previous.message_history)] == list(previous.message_history)
+            assert "Do not call any tools" in _user_text(messages)
             assert "Original long task" in _user_text(messages)
             assert "Continue" in _user_text(messages)
-            assert "structured notes and tasks are reprojected separately" in _user_text(messages)
-            assert "Omit bookkeeping tool calls" in _user_text(messages)
-            assert _user_text(messages).count(historical_overlay) == 1
+            assert "## Condensed conversation summary" in _user_text(messages)
+            assert "9. Activated Skills:" in _user_text(messages)
+            assert "11. Relevant Note Keys" in _user_text(messages)
+            assert "Do not call any tools or investigate unresolved questions yourself." in _user_text(messages)
+            assert "Record any uncertainties in the summary for the resumed agent to investigate." in _user_text(
+                messages
+            )
+            assert _user_text(messages).count(historical_overlay) == 2
             yield "Compacted continuation"
         else:
             yield "done"
@@ -399,6 +488,7 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
             ModelResponse(
                 parts=[
                     TextPart(content="  "),
+                    ThinkingPart(content="Retain thinking without provider-specific stripping.", signature="signature"),
                     TextPart(content="Previous assistant answer"),
                     TextPart(content="with numbered options"),
                 ],
@@ -407,7 +497,7 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
         )
     )
     executable = HarnessBuilder().build(
-        AgentSpec(),
+        AgentSpec(model_settings={"tool_choice": tool_choice} if tool_choice is not None else None),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -444,6 +534,73 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
     assert result.new_messages() == result.all_messages()[-2:]
 
 
+async def test_compaction_preserves_native_provider_cache_prefixes() -> None:
+    calls = []
+
+    class RecordingModel(FunctionModel):
+        @asynccontextmanager
+        async def request_stream(self, messages, model_settings, model_request_parameters, run_context=None):
+            calls.append((deepcopy(messages), deepcopy(model_settings), deepcopy(model_request_parameters)))
+            async with super().request_stream(
+                messages, model_settings, model_request_parameters, run_context
+            ) as response:
+                yield response
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
+            yield "Summary: continue the requested work."
+        elif len(calls) == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="note_write",
+                    json_args=json.dumps({"key": "decision", "value": "Keep the decision"}),
+                    tool_call_id="cache-note",
+                )
+            }
+        else:
+            yield "Ordinary answer."
+
+    model = RecordingModel(stream_function=stream)
+
+    def build(threshold: int):
+        return HarnessBuilder().build(
+            HarnessAgentSpec(system_prompt="Stable system prompt.", instructions="Stable instructions."),
+            output_type=str,
+            model=model,
+            capabilities=(
+                RuntimeContextCapability(),
+                WorkingStateCapability(),
+                CompactionCapability(CompactionPolicy(trigger_tokens=threshold)),
+            ),
+        )
+
+    first = await build(1000000).run("First input.", bindings=RunBindings.embedded())
+    assert first.output_or_raise() == "Ordinary answer."
+    second = await build(1).run("Continue.", previous_state=first.state, bindings=RunBindings.embedded())
+    assert second.output_or_raise() == "Ordinary answer."
+    assert len(calls) == 4
+    assert _COMPACTION_PROMPT in _user_text(calls[2][0])
+
+    chat = OpenAIChatModel("gpt-4.1", provider=OpenAIProvider(api_key="test-only"))
+    responses = OpenAIResponsesModel("gpt-4.1", provider=OpenAIProvider(api_key="test-only"))
+    claude = AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(api_key="test-only"))
+    projections = []
+    for messages, settings, parameters in calls[:3]:
+        chat_messages = await chat._map_messages(messages, parameters, model_settings=settings)
+        responses_instructions, responses_messages = await responses._map_messages(messages, settings, parameters)
+        claude_system, claude_messages = await claude._map_message(messages, parameters, settings)
+        claude_tools = claude._prepare_tools_and_tool_choice(settings, parameters)
+        projections.append((chat_messages, responses_messages, claude_messages))
+        if len(projections) == 1:
+            stable = (responses_instructions, claude_system, claude_tools, parameters.function_tools, settings)
+        else:
+            assert (responses_instructions, claude_system, claude_tools, parameters.function_tools, settings) == stable
+    for previous, current in pairwise(projections):
+        for prefix, extended in zip(previous, current, strict=True):
+            assert extended[: len(prefix)] == prefix
+
+
 def test_previous_assistant_reference_is_bounded_with_head_and_tail() -> None:
     visible = "h" * 24_000 + "removed" * 1_000 + "t" * 6_000
     reference = _previous_assistant_reference(
@@ -475,7 +632,7 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
             started.set()
             await release.wait()
             yield "first response"
-        elif info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        elif _COMPACTION_PROMPT in _user_text(messages):
             yield "Retained compact summary"
         else:
             yield "done"
@@ -577,7 +734,7 @@ async def test_compaction_preserves_new_message_boundary_across_same_run_steerin
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal compact_calls, ordinary_calls
         calls.append((messages, info))
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        if _COMPACTION_PROMPT in _user_text(messages):
             compact_calls += 1
             yield f"compact-summary-{compact_calls}"
             return
@@ -639,8 +796,8 @@ async def test_compaction_clears_output_validators_only_on_the_agent_copy() -> N
     validated: list[str] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
             yield "Summary that is not the business output"
         else:
             yield "done"
@@ -683,8 +840,8 @@ async def test_compaction_blocks_function_tool_dispatch() -> None:
         return "changed"
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        del messages
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
             yield {
                 0: DeltaToolCall(
                     name="danger",
@@ -765,9 +922,9 @@ async def test_compaction_fails_open_on_blank_summary() -> None:
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
-        del messages
+        del info
         calls += 1
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        if _COMPACTION_PROMPT in _user_text(messages):
             yield "   "
         else:
             yield "done"
@@ -925,9 +1082,9 @@ async def test_compaction_failure_is_fail_open() -> None:
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
-        del messages
+        del info
         calls += 1
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        if _COMPACTION_PROMPT in _user_text(messages):
             raise RuntimeError("compact model failed")
         yield "done"
 
@@ -981,7 +1138,7 @@ async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) ->
     assert len(content.split("\n[File context", 1)[0].strip()) <= 127
 
 
-async def test_workspace_and_file_context_are_input_only_while_runtime_and_handoff_follow_tools(
+async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and_handoff_follow_tools(
     tmp_path: Path,
 ) -> None:
     workspace = tmp_path / "project"
@@ -1019,11 +1176,19 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
             FileContextCapability(FileContextConfiguration(paths=("extra.md",))),
             RuntimeContextCapability(RuntimeContextConfiguration(context_window_tokens=200_000)),
             HandoffCapability(HandoffConfiguration(summary_reminder_tokens=0)),
+            WorkingStateCapability(),
         ),
     )
     result = await executable.run(
         "Inspect",
         bindings=RunBindings.embedded(environment=_local_binding(tmp_path, default_working_directory="/project")),
+        previous_state=HarnessState.new(
+            agent_context_state=AgentContextStateSnapshot(
+                entries={
+                    "a13n.working-state": CapabilityState(version="1", data={"notes": {"decision": "Keep prefix"}})
+                }
+            )
+        ),
     )
 
     assert result.output_or_raise() == "done"
@@ -1033,6 +1198,7 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     assert '"path":"/workspace/project/src/module.py"' in input_text
     assert "Default repository guidance" in input_text
     assert "Explicit file guidance" in input_text
+    assert '<note key="decision">Keep prefix</note>' in input_text
     assert '<context-reminder source="a13n.handoff">' not in input_text
 
     assert seen[1][0] == seen[0][0]
@@ -1040,6 +1206,8 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     assert "Workspace file outline (content not loaded)" not in tool_results_text
     assert "Default repository guidance" not in tool_results_text
     assert "Explicit file guidance" not in tool_results_text
+    assert '<notes source="a13n-harness">' not in tool_results_text
+    assert '"latest_request_tokens":' in tool_results_text
     assert '"context_window_tokens":200000' in tool_results_text
     assert '"elapsed_seconds":' in tool_results_text
     assert '<context-reminder source="a13n.handoff">' in tool_results_text
@@ -1100,7 +1268,7 @@ def _user_text(messages: list[ModelMessage]) -> str:
         for part in message.parts:
             if not isinstance(part, UserPromptPart):
                 continue
-            text.extend(item.content for item in user_prompt_content(part))
+            text.extend(item.content for item in user_prompt_content(part) if isinstance(item, TextContent))
     return "\n".join(text)
 
 

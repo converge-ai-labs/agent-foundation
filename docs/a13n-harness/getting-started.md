@@ -94,7 +94,7 @@ The concrete model is trusted build input, so `AgentSpec.model` remains unset. U
 
 The builder accepts both Pydantic AI's native `AgentSpec` and the Harness extension exported as `a13n_harness.AgentSpec`.
 
-Use the Harness import in application code unless you intentionally need a Pydantic-only definition. It preserves the native fields and adds Harness-owned configuration such as `system_prompt`, `toolset_instructions`, definition usage limits, resolved model characteristics, and `with_updates()`.
+Use the Harness import in application code unless you intentionally need a Pydantic-only definition. It preserves the native fields and adds Harness-owned configuration such as `system_prompt`, `toolset_instructions`, `cold_start_filter`, definition usage limits, resolved model characteristics, and `with_updates()`.
 
 ## Use a real model
 

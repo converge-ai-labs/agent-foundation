@@ -224,9 +224,9 @@ The Notes tools have explicit mutation semantics:
 - `note_delete(key)` is idempotent and reports `deleted` or `already_absent`;
 - `note_get(key=None)` reads one complete value or lists sorted keys with a count.
 
-Notes and active Tasks are projected in separate bounded request epilogues, with Notes first and Tasks last. Complete note values appear as `<note>` entries when they fit. A `<note-ref>` means the value is available through `note_get`, while `<notes-omitted>` reports entries outside the projection. Note values are never partially truncated, and empty Notes produce no Notes block. `WorkingStateConfiguration` defaults to at most 256 projected notes and 128 projected tasks within a shared 64 KiB context budget.
+Notes are projected only on user-input boundaries; active Tasks are projected on both user-input and tool-result boundaries. Their bounded request epilogues put Notes first and Tasks last. Existing historical projections remain unchanged, so tool-result rounds do not refresh old Notes. Complete note values appear as `<note>` entries when they fit. A `<note-ref>` means the value is available through `note_get`, while `<notes-omitted>` reports entries outside the projection. Note values are never partially truncated, and empty Notes produce no Notes block. `WorkingStateConfiguration` defaults to at most 256 projected notes and 128 projected tasks within a shared 64 KiB context budget.
 
-Notes preserve structured session facts, Tasks preserve execution state, and `summarize` preserves narrative continuity and the next step. Before a handoff, reconcile stale notes and task statuses; do not copy every note or task into the summary. Automatic compaction likewise replaces history only, after which current Notes and Tasks are projected again.
+Notes preserve structured session facts, Tasks preserve execution state, and `summarize` preserves narrative continuity and the next step. Before a handoff, reconcile stale notes and task statuses; do not copy every note or task into the summary. Automatic compaction likewise replaces history only, after which current Notes and Tasks are projected again. Its nested summary request sees the full unchanged history, including prior overlays and thinking, with no trimming or suffix-selection mode. It preserves `tool_choice` and tells the model not to call any tools. Both compaction and `summarize` replay the current logical run's initial input and delivered user steering in order, preserving multimodal content; pending steering and internal notices are not replayed.
 
 Working state is not a distributed workflow engine. Cross-worker ownership, durable leases, schedules, and delivery belong to the Host or task provider.
 
@@ -340,11 +340,11 @@ See [Environment tools](environments.md) for signatures, output provenance, obse
 
 ## Filters
 
-`MessageIntegrityFilterCapability` is mandatory and builder-owned. Two optional filters are public:
+`MessageIntegrityFilterCapability` is mandatory and builder-owned. `ContentFilterCapability` is optional. Cold-start filtering is enabled by default through `AgentSpec.cold_start_filter`, with a one-hour idle interval:
 
 ```python
+from a13n_harness import AgentSpec
 from a13n_harness.filters import (
-    ColdStartFilterCapability,
     ColdStartFilterConfiguration,
     ContentFilterCapability,
     ContentFilterConfiguration,
@@ -357,13 +357,12 @@ capabilities = (
             max_media_items=16,
         )
     ),
-    ColdStartFilterCapability(
-        ColdStartFilterConfiguration(idle_seconds=3_600)
-    ),
 )
+spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_600))
+without_cold_compression = spec.with_updates(cold_start_filter=None)
 ```
 
-Use content filtering only for provider/model multimodal compatibility. Use cold-start filtering only when reducing old, already-consumed tool-result strings materially improves a cold-cache request. Neither is transport retry, semantic recovery, or long-term memory.
+Use content filtering only for provider/model multimodal compatibility. Cold-start filtering shortens old, already-consumed tool-result strings after the configured interval since the latest model response. It leaves user input, thinking, native media, and pending tool results unchanged. One hour is an intentional retention policy, not a promise about a provider's cache expiry. An explicitly composed `ColdStartFilterCapability` keeps its own policy and suppresses the automatic instance. Neither filter is transport retry, semantic recovery, or long-term memory.
 
 ## MCP
 

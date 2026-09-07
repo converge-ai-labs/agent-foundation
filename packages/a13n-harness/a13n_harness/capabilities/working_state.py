@@ -35,6 +35,7 @@ from a13n_harness.model_context import (
     ModelContextPlacement,
     ModelContextProjection,
     ModelContextProjectionRequest,
+    ModelContextRequestKind,
 )
 
 WORKING_STATE_CAPABILITY_ID = "a13n.working-state"
@@ -638,7 +639,11 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             (task for task in all_tasks.values() if task.status != "completed"),
             key=lambda item: _task_sequence(item.id),
         )
-        notes = self._toolset.notes_snapshot() if self.configuration.notes_enabled else {}
+        notes = (
+            self._toolset.notes_snapshot()
+            if self.configuration.notes_enabled and request.kind is ModelContextRequestKind.INPUT
+            else {}
+        )
         blocks = _render_working_state_blocks(tasks, all_tasks, notes, self.configuration)
         return ModelContextProjection(blocks=(*projection.blocks, *blocks))
 

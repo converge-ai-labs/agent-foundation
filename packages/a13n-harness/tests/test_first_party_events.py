@@ -29,6 +29,7 @@ from a13n_harness.capabilities import (
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
+from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.capabilities.lifecycle import _safe_error_code
 from a13n_harness.events import (
     ContextOperationCompletedPayload,
@@ -260,14 +261,22 @@ async def test_invalid_handoff_input_does_not_start_a_context_operation() -> Non
     assert _payloads(events, "context") == []
 
 
+def _is_compact_request(messages: list[ModelMessage]) -> bool:
+    return any(
+        isinstance(part, UserPromptPart) and part.content == _COMPACTION_PROMPT
+        for message in messages
+        for part in message.parts
+    )
+
+
 async def test_compaction_events_share_operation_identity_and_provider_usage_snapshot() -> None:
     calls = 0
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
-        del messages
+        del info
         calls += 1
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        if _is_compact_request(messages):
             yield "Compacted continuation"
         else:
             yield "done"
@@ -314,7 +323,7 @@ async def test_compaction_summary_is_native_content_not_lifecycle_metadata(fails
     summary = "Keep this complete summary.\n" * 3000
 
     async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        if info.model_settings and info.model_settings.get("tool_choice") == "none":
+        if _is_compact_request(messages):
             if fails:
                 raise RuntimeError("compactor unavailable")
             yield summary
@@ -372,9 +381,9 @@ async def test_compaction_uses_native_context_window_and_run_context_usage() -> 
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
-        del messages
+        del info
         calls += 1
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        if _is_compact_request(messages):
             yield "Compacted continuation"
         else:
             yield "done"
@@ -480,9 +489,9 @@ async def test_automatic_compaction_uses_the_first_token_satisfying_the_float_ra
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
-        del messages
+        del info
         calls += 1
-        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+        if _is_compact_request(messages):
             yield "Compacted continuation"
         else:
             yield "done"
