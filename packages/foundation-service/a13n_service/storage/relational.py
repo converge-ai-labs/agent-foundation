@@ -140,11 +140,15 @@ def _configure_sqlite(engine: AsyncEngine, busy_timeout_seconds: float, path: Pa
     busy_timeout_ms = int(busy_timeout_seconds * 1000)
 
     @event.listens_for(engine.sync_engine, "handle_error")
-    def preserve_cancelled_connection(context: ExceptionContext) -> None:
-        # Cancelling an await does not stop aiosqlite's worker or break its
-        # connection. Let the shielded session cleanup drain and roll it back
-        # instead of starting an interruptible connection termination.
+    def discard_cancelled_connection(context: ExceptionContext) -> None:
+        # Cancellation can leave an unfetched cursor holding a WAL snapshot
+        # even after rollback. Drain and close this connection under shielding
+        # so neither the cursor nor interrupted termination reaches the pool.
         if isinstance(context.original_exception, CancelledError):
+            if context.connection is not None:
+                with CancelScope(shield=True):
+                    context.connection.invalidate()
+            # Other pooled connections are healthy; do not invalidate them.
             context.is_disconnect = False
 
     @event.listens_for(engine.sync_engine, "connect")

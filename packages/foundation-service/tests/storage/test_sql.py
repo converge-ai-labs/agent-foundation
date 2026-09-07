@@ -208,7 +208,7 @@ async def test_cancellation_during_commit_returns_connection_before_propagating(
     assert "Exception" not in caplog.text
 
 
-async def test_cancelled_sqlite_query_drains_worker_before_reusing_connection(tmp_path: Path) -> None:
+async def test_cancelled_sqlite_query_drains_worker_before_closing_connection(tmp_path: Path) -> None:
     engine = create_sql_engine(SQLiteConfig(path=tmp_path / "cancel-query.sqlite3"))
     sessions = create_session_factory(engine)
     started, release = Event(), Event()
@@ -248,4 +248,50 @@ async def test_cancelled_sqlite_query_drains_worker_before_reusing_connection(tm
             assert (await session.execute(text("SELECT 1"))).scalar_one() == 1
     finally:
         release.set()
+        await engine.dispose()
+
+
+async def test_cancelled_sqlite_read_does_not_retain_snapshot(tmp_path: Path, monkeypatch) -> None:
+    import aiosqlite
+
+    config = SQLiteConfig(path=tmp_path / "cancel-read.sqlite3")
+    engine = create_sql_engine(config)
+    writer = create_sql_engine(config)
+    sessions = create_session_factory(engine)
+    errors = []
+    original = aiosqlite.Cursor.execute
+    cancellation = anyio.CancelScope()
+
+    async def cancel_after_read(cursor, sql, parameters=None):
+        result = await original(cursor, sql, parameters)
+        if sql.startswith("SELECT storage_contract_records"):
+            cancellation.cancel()
+            await anyio.lowlevel.checkpoint()
+        return result
+
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(metadata.create_all)
+            await connection.execute(insert(records).values(id=1, name="original"))
+        with monkeypatch.context() as patch:
+            patch.setattr(aiosqlite.Cursor, "execute", cancel_after_read)
+            with cancellation:
+                try:
+                    async with short_session(sessions) as session:
+                        await session.execute(select(records))
+                except asyncio.CancelledError as error:
+                    # A caller may retain the traceback until well after cleanup.
+                    errors.append(error)
+                    raise
+        assert cancellation.cancelled_caught
+        async with writer.begin() as connection:
+            await connection.execute(records.update().values(name="other-writer"))
+        async with transaction(sessions) as session:
+            await session.execute(records.update().values(name="reused-pool"))
+        async with short_session(sessions) as session:
+            assert (await session.execute(select(records.c.name))).scalar_one() == "reused-pool"
+        assert engine.pool.checkedout() == 0
+    finally:
+        errors.clear()
+        await writer.dispose()
         await engine.dispose()
