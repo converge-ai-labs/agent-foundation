@@ -48,6 +48,8 @@ from a13n_harness.events import (
     emit_harness_event,
 )
 
+from ._instructions import tool_instruction
+
 _RUN_CODE = "run_code"
 _RUN_PROGRAM = "run_program"
 _RESERVED_TOOL_NAMES = frozenset({_RUN_CODE, _RUN_PROGRAM})
@@ -55,61 +57,8 @@ _INVALID_IDENT_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 _CODEACT_CONTRACT_VERSION = 1
 _MAX_DIAGNOSTIC_BYTES = 4096
 
-_CODEACT_INSTRUCTIONS = """Use restricted Python to compose tool calls and process their results before returning
-only the information needed for the next reasoning step.
-
-Host calls:
-- Only the functions in the current directory below are available. Call them directly
-  by their listed Python names with keyword arguments; do not import them.
-- Await every host function, including tools whose underlying implementation is synchronous.
-  Await dependent calls in order; use `await asyncio.gather(...)` for independent calls
-  after `import asyncio`. Finish all needed calls before ending the code.
-- Send a runner as the only tool call in a model response. Parallelize inside the code,
-  not by sending sibling runner/tool calls.
-- Arguments and results are finite JSON values, not arbitrary Python objects.
-  Inspect and select useful fields rather than printing or returning entire large results.
-
-State and failure:
-- Temporary Python bindings are distinct from explicit values saved with store/load.
-- When listed, await store(key=..., value=...) to replace a saved value; await load(key=...)
-  to read a detached copy, or await load() to list keys. A missing key is an error, not null.
-  Mutating a loaded value does not save it; use store again. Use forget(key=...) to delete.
-- Successful explicit writes survive sandbox reset, failure, and cancellation.
-  Cross-run recovery requires the host to persist and restore HarnessState.
-- Tool effects are not transactional or rolled back. After a failure, inspect what completed
-  and recover deliberately; do not blindly replay code that may repeat external effects.
-
-The Monty sandbox supports a Python subset, not general CPython. It has no ambient
-filesystem, network, process, environment, credential, or clock access and cannot install
-packages. Use listed host tools for those operations. Function/type declarations below
-are documentation, not definitions to execute or runtime classes to instantiate.
-The JSON schemas preserve exact constraints; an Any annotation does not grant extra authority."""
-
-_RUN_CODE_DESCRIPTION = (
-    """Compose tool calls with inline Python in the restricted CodeAct sandbox.
-
-Pass Python source in the code argument, without Markdown fences. The final expression
-is returned; print output is captured. Successful feeds retain temporary bindings only
-within this agent run. restart=true clears those bindings before evaluation; an unsuccessful
-feed clears them before returning. Neither operation deletes explicitly stored values.
-
-"""
-    + _CODEACT_INSTRUCTIONS
-)
-
-_RUN_PROGRAM_DESCRIPTION = (
-    """Run a reusable CodeAct Python program from the current Environment workspace.
-
-The file must be strict UTF-8, end in .codeact.py, and define exactly
-`async def main(inputs)`. Put execution inside main; module scope is limited to imports,
-function declarations, and side-effect-free constants. Source is read through the current
-Environment FileOperator on every call. Each invocation uses a fresh interpreter, receives
-the inputs mapping (empty when omitted), and returns main's result. It cannot see inline
-Python bindings, but can use the same explicit store/load values when those tools are listed.
-
-"""
-    + _CODEACT_INSTRUCTIONS
-)
+_RUN_CODE_DESCRIPTION = "\n\n".join((tool_instruction("run_code"), tool_instruction("codeact")))
+_RUN_PROGRAM_DESCRIPTION = "\n\n".join((tool_instruction("run_program"), tool_instruction("codeact")))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
