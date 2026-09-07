@@ -14,7 +14,7 @@ Open an issue before implementing a change with unresolved product, architecture
 
 Do not add proposals, RFC drafts, discussion logs, or progress tracking to `spec/`. Once an issue reaches an accepted conclusion, update the specification directly in the same pull request as the implementation or as a focused specification pull request.
 
-Before changing service code, persistence, migrations, streaming endpoints, workers, logging, or container behavior, read [DEVELOPMENT.md](DEVELOPMENT.md) and the directly owning specification.
+Before changing a surface, read the relevant sections of this guide, [DEVELOPMENT.md](DEVELOPMENT.md), and the directly owning specification. Service, persistence, migration, streaming, worker, logging, and container changes require their applicable engineering rules. Reuse sections already read unless they changed.
 
 ## Local Setup
 
@@ -85,11 +85,13 @@ Use the Makefile as the stable development interface:
 | `make check`                | Apply formatting, then run fast checks with four parallel workers |
 | `make check-all`            | Run the complete component gates, including tests and builds      |
 
-Use `make format` when you want to apply formatting changes alone. `make check` applies the same formatters before running the fast validation gate. Installed pre-commit hooks also format supported changed files automatically; if a hook rewrites a file during commit, review and stage that result before committing again. Run the full local gate before opening or updating a broad pull request:
+This section owns validation policy; agent guides and skills refer here rather than adding separate gates. Select checks from changes since the last successful validation and their dependency impact. Without prior results, cover the complete intended change. For merge or rebase updates, include incoming changes and interactions between both branches, not just textual conflicts.
 
-```bash
-make check-all
-```
+Start with the fastest relevant Make targets and add meaningful tests for behavior changes. Use `make check` for repository-wide fast validation. Run `make check-all` before handoff when the affected scope is broad, such as changes spanning multiple component boundaries or shared build tooling, or cannot be bounded confidently. Complete applicable [migration checks](#database-changes), [image checks](DEVELOPMENT.md#container-image), and `make docs-build` for changes to `docs/`, navigation, or site configuration. Instruction-only changes need formatting, link checks, and structural validation of changed skills; they do not require unrelated application suites.
+
+Reuse successful results whose relevant source, dependency, configuration, and environment inputs remain unchanged. A commit or PR update alone does not invalidate them. After a fix, rerun affected checks; expand only for new changes, failures, or unresolved risk. Do not repeat covered checks merely to run both `make check` and `make check-all`. Report exact commands and outcomes, including failures and unavailable checks; a partial gate is not a passing full gate. Required CI checks remain unchanged.
+
+Use `make format` for formatting alone; `make check` applies the same formatters before its fast checks, while `make check-all` does not apply them. Installed pre-commit hooks format supported changed files automatically. Review formatter edits and, if a commit hook rewrites a file, stage the intended result before committing again. Never bypass hooks.
 
 `foundation-service` integration tests use fixture-owned Testcontainers. Application `FOUNDATION_*` variables never select test infrastructure. Loopback SSE and fixture-owned S3 clients bypass ambient proxies.
 
