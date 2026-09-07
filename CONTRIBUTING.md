@@ -97,7 +97,13 @@ Use `make format` for formatting alone; `make check` applies the same formatters
 
 Testcontainers is pinned to 4.13.1 because 4.15.0 can read Ryuk port mappings before Docker publishes them; upgrades must verify mapped-port startup with Ryuk enabled. Unreturned SQL connections, unhandled thread exceptions, and unraisable exceptions fail the test gate.
 
-Foundation CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `Foundation Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-foundation.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for Foundation Service, matching CI, and two workers for other Python suites. Service tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
+Foundation CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `Foundation Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-foundation.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for Foundation Service, matching CI, and two workers for other Python suites. Tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
+
+Select directories, files, or pytest node IDs with `PYTHON_TEST_DIRS`. Paths in the same package run in one pytest process; packages run separately in first-selected order, stopping on failure. Without a selection, all workspace suites run. Use `PYTHON_TEST_WORKERS` to override concurrency, including `0` for a small serial reproduction:
+
+```bash
+make test PYTHON_TEST_DIRS='packages/foundation-service/tests/storage/test_sql.py packages/foundation-service/tests/storage/test_s3_object_store.py' PYTHON_TEST_WORKERS=2
+```
 
 ## Releases
 

@@ -74,6 +74,7 @@ include = [
     "scripts/prepare_agent_ui_assets.py",
     "scripts/release_notes.py",
     "scripts/release_version.py",
+    "scripts/run_python_tests.py",
 ]
 exclude = ["**/tests", "**/node_modules", "**/__pycache__", "**/.*", ".venv"]
 pythonVersion = "3.13"
