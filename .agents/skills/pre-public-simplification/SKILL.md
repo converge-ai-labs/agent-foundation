@@ -7,8 +7,6 @@ description: Redesign a scoped part of Agent Foundation for simplicity before go
 
 Choose the simplest clear design that meets real capability, reliability, and performance requirements and remains easy for people and agents to understand, maintain, and extend.
 
-Apply the repository's [Code Quality and Design](../../../DEVELOPMENT.md#code-quality-and-design) principles. Use a representative task within scope to demonstrate improvements in understanding and maintenance cost in the before-and-after explanation and final report.
-
 ## Activation and Scope
 
 This optional mode requires explicit user invocation or opt-in for a defined scope, and current task context establishing intensive pre-public development with breaking changes acceptable for that surface. Reuse authorization from the ongoing task. The skill's presence or a development version alone does not establish eligibility; clarify missing eligibility before dependent breaking changes while continuing independent authorized work.
@@ -32,6 +30,14 @@ The user has confirmed that this phase has no existing database data to preserve
 Migration files and history, including initial schema revisions, may be edited directly, rewritten, consolidated, deleted, or replaced within the agreed implementation scope. Build the intended schema cleanly from an empty database. Do not preserve obsolete columns, backfills, compensating revisions, or upgrade paths solely for superseded development schemas. This explicitly permits rewriting existing revisions and bypasses expand-and-contract requirements for this phase.
 
 Generate new or replacement revisions through the owning disposable-database workflow and review them. Direct edits to existing revisions need no extra revision recording the edit. Validate the migration graph, expected heads, clean-database upgrade, and parity with ORM metadata. The exception ends when this mode expires or requirements to preserve data or deployed schemas emerge.
+
+## Choose a Clear, Coherent Design
+
+- Reduce the concepts, states, branches, dependencies, and coordinated edits a maintainer must understand. Judge improvement through realistic use and maintenance tasks, not line counts or layer counts.
+- Give shared rules clear owners and use domain terms consistently across interfaces, implementation, and documentation. Preserve real lifecycle, protocol, and security differences when consolidating duplication.
+- Prefer direct flows and cohesive functions and modules. Keep interfaces predictable and state, side effects, resource lifetimes, and failure handling traceable. Abstractions and options need current justification and should make a realistic change easier.
+- Explain necessary concepts and prerequisites so readers can follow common workflows before unrelated mechanisms or exceptional cases. Necessary complexity should have understandable boundaries.
+- Include runtime, storage, network, recovery, operational, and maintenance costs. Support performance trade-offs with measurements or an explicit capacity model; distinguish assumptions from evidence and account for known bottlenecks.
 
 ## Explain Before and After
 

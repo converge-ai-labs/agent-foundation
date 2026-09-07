@@ -1,28 +1,18 @@
 # Development Standards
 
-This file owns repository-wide code quality principles and engineering conventions for the components they concern. The code quality principles apply to libraries, services, SDKs, CLIs, frontends, and tooling across languages. Service-specific rules below apply to their named service, runtime, or infrastructure boundaries. Product semantics and subsystem ownership belong in `spec/`; contributor workflow belongs in [CONTRIBUTING.md](CONTRIBUTING.md); package command catalogs and exhaustive configuration references belong in the nearest package README. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
+This guide defines code quality principles for all repository code and engineering conventions for the components they concern. Service rules apply within their stated boundaries. Product semantics and subsystem ownership belong in `spec/`, contribution workflow in [CONTRIBUTING.md](CONTRIBUTING.md), and component setup and commands in package READMEs. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
 
 ## Code Quality and Design
 
-Elegant, well-designed code uses concepts that fit the problem, interfaces that make behavior predictable, and structure that makes execution and change easy to follow. Apply these principles to features, bug fixes, refactoring, and reviews within the affected scope. Necessary domain knowledge and complexity should have clear explanations and boundaries; simplicity must preserve required capabilities, correctness, reliability, and performance.
+Good code expresses the problem clearly and makes behavior and change easy to follow. Apply these principles to features, bug fixes, refactoring, and reviews while meeting required capabilities, reliability, and performance:
 
-- Start from representative user tasks, required outcomes, failure guarantees, and actual scale. Read the owning contracts and trace behavior before choosing an implementation; examine whether existing mechanisms still serve those requirements.
-- Reduce the concepts, rules, states, branches, dependencies, and coordinated edits a maintainer must understand. Line counts, file sizes, and layer counts alone do not establish quality.
-- Give each core concept a clear responsibility and understandable relationships. Use domain terms consistently across interfaces, implementation, tests, and documentation.
-- Give shared rules and facts one clear owner. Consolidate semantic duplication while preserving real differences in lifecycle, protocols, and security boundaries; similar code alone does not justify a shared abstraction.
-- Prefer direct flows and cohesive functions and modules. Extra abstractions, frameworks, options, and execution paths need concrete current justification. An abstraction should make a realistic change local and understandable.
-- Make common tasks straightforward through coherent interfaces and useful defaults. Similar operations should follow consistent parameter, result, and error conventions. Keep timeout, cancellation, retry, and partial-success behavior understandable, with diagnostics that help developers determine what happened and how to respond.
-- Make state ownership, side effects, resource lifetimes, and failure handling traceable from the entry point.
-- Complete a change across its affected contracts, implementation, consumers, tests, and documentation. Fix faulty rules at their owner and check affected callers for the same cause instead of accumulating local workarounds. Remove related artifacts made obsolete by the change once they serve no remaining requirement; keep unrelated cleanup outside the task.
-- Account for runtime, storage, network, recovery, operational, and maintenance costs. Validate changed behavior at meaningful boundaries. Support performance trade-offs with measurements or an explicit capacity model, distinguishing assumptions from evidence and accounting for known bottlenecks.
+- Use consistent domain terms and clear responsibilities. Give shared rules one owner, preserving real lifecycle, protocol, and security differences rather than abstracting merely similar code.
+- Prefer direct flows and cohesive modules. Make interfaces predictable and state ownership, side effects, resource lifetimes, and failure handling easy to trace.
+- Justify abstractions, options, and extra paths with current needs. Reduce what maintainers must understand and change together; line counts and layer counts alone do not establish quality.
+- Explain necessary concepts and prerequisites. Keep common workflows understandable without first learning unrelated mechanisms or exceptional cases; use realistic tasks to assess ease of use and change.
+- Fix faulty rules at their owner, check affected callers, and update related contracts, tests, and documentation. Remove artifacts that no longer serve a requirement, keeping unrelated cleanup outside the task.
 
-Evaluate the affected surface through representative use and maintenance tasks:
-
-- Required concepts and prerequisites are explicit. Developers can understand a common workflow without first learning unrelated mechanisms or exceptional cases.
-- Following that workflow into the implementation reveals consistent concepts, clear responsibilities, and a traceable execution path.
-- A realistic behavior change has a discoverable change location, clear contracts and impact, and a practical way to validate it.
-
-Use concrete tasks to assess understanding and maintenance cost. Match the depth of explanation and validation to the change; routine fixes do not require a separate design exercise.
+Consider runtime, recovery, operational, and maintenance costs. Support performance trade-offs with measurements or an explicit capacity model. Match explanation and validation to the change; routine fixes do not need a separate design exercise.
 
 ## Service Shape
 
