@@ -136,7 +136,6 @@ from a13n_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
-    WorkspaceContext,
 )
 from a13n_ui.terminal_projection import TerminalProjectionService
 from a13n_ui.thread_capability import ThreadCollaborationCapability, ThreadToolController
@@ -182,6 +181,10 @@ class AppStatus(BaseModel):
 class ThreadWatch:
     snapshot: ThreadFocusSnapshot
     events: LiveSubscription
+
+
+def _cwd_project_ids(source: LoadedAgentUiConfiguration, directory: str) -> tuple[str, ...]:
+    return tuple(sorted(project.id for project in source.projects.values() if project.roots[0].path == directory))
 
 
 class AgentUiApp:
@@ -494,30 +497,37 @@ class AgentUiApp:
                 )
             return tuple(result)
 
-    async def ensure_cwd_workspace(self, directory: Path) -> WorkspaceContext:
-        """Bind an exact cwd without retargeting existing saved sessions.
+    async def cwd_project_ids(self, directory: Path) -> tuple[str, ...]:
+        """Read Projects whose default root is this exact invocation directory."""
+        normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
+        source = await self.current_configuration()
+        return () if source is None else _cwd_project_ids(source, str(normalized))
+
+    async def ensure_cwd_project(self, directory: Path) -> str:
+        """Select or create an ordinary Project without retargeting saved Threads.
 
         Resources remain internal configuration facts. This command is invoked
         on first submission, never merely to paint an editable landing prompt.
         """
         normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
         if not normalized.is_dir():
-            raise AppStateError("Workspace must be a directory.", code="workspace_invalid")
+            raise AppStateError("Project root must be a directory.", code="project_root_invalid")
         root = str(normalized)
         project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
         for attempt in range(2):
             source = await self.current_configuration()
             if source is None:
                 raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
-            exact = sorted(
-                item.id for item in source.projects.values() if len(item.roots) == 1 and item.roots[0].path == root
-            )
-            if exact:
-                return WorkspaceContext(directory=root, project_id=exact[0])
-            if project_id in source.projects:
+            exact = _cwd_project_ids(source, root)
+            if len(exact) > 1:
                 raise AppStateError(
-                    "Workspace identity conflicts with a configured resource.", code="workspace_conflict"
+                    "Multiple Projects use this default directory. Resume a specific session or edit the Project roots.",
+                    code="project_ambiguous",
                 )
+            if exact:
+                return exact[0]
+            if project_id in source.projects:
+                raise AppStateError("Project identity conflicts with a configured resource.", code="project_conflict")
             try:
                 await self.mutate_configuration(
                     relative_path=f"projects/{project_id}.yaml",
@@ -538,8 +548,8 @@ class AgentUiApp:
                     raise
                 await self.reload_configuration()
                 continue
-            return WorkspaceContext(directory=root, project_id=project_id)
-        raise AppStateError("Workspace changed during preparation; retry.", code="workspace_conflict")
+            return project_id
+        raise AppStateError("Project changed during preparation; retry.", code="project_conflict")
 
     async def context_usage(self, thread_id: str) -> ContextUsageView:
         """Last reported root request footprint, not accumulated Run usage."""

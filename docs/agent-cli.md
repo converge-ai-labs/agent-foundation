@@ -223,9 +223,11 @@ For API access, run the hidden key prompt first, then choose `api` in setup and 
 
 Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
 
-### Files, workspaces, and recovery
+### Files, Projects, and recovery
 
-Model, Agent, extension, MCP, and internal Project resources live in sibling YAML directories. The first prompt creates an exact-directory internal Project if necessary; it does not rewrite an old Project to follow your current directory. Existing history is preserved. To resume a conversation from another directory, launch the CLI in its original workspace. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
+Model, Agent, extension, MCP, and Project resources live in sibling YAML directories. A Project contains an ordered list of directories; the first is its default working directory. Launching the CLI in that first directory uses the same Project and all its roots. For example, a Project with roots `[code, notes]` is entered from `code`; adding `notes` later does not create a new Project or hide existing CLI sessions.
+
+The first prompt creates a single-root Project only when no Project's first directory matches. It never adopts a parent Project, treats a secondary root as another entry point, or rewrites an existing Project. Multiple matching Projects require resuming a specific session or editing their roots. To resume a conversation, launch the CLI in its Project's first directory. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
 
 Setup publishes resources first and root defaults last. Multi-file publication is not a transaction: failures report completed paths. Review those paths and preview again. An interrupted replacement may retain an original in `.a13n-ui-setup-recovery-*`; inspect and restore or move it before retrying. Do not delete a competing save to force publication.
 
@@ -278,7 +280,18 @@ After switching branches, run `make sync` (or launch with `make a13n-ui`) to syn
 
 Interactive diagnostics go to `<data-root>/logs/terminal.log` (5 MiB, three rotated backups), not the conversation or normal-screen scrollback. Skipped plugins produce one actionable notice for each unchanged path/reason; use the log for details. No legacy plugin files are removed automatically.
 
-Installed release builds check public PyPI metadata in the background at most daily with a short timeout. Offline failure is silent. Set `process.terminal_update_check: false` to disable it. Source/development builds at `0.0.0`, setup-only, help/version, and noninteractive commands do not check. Updates are never installed automatically. For a uv-tool installation:
+Startup order is **update confirmation → setup if needed → conversation**. The update prompt and setup redraw the same TUI rather than appending notices to your terminal. Installed release builds check public PyPI metadata with a three-second timeout and a daily cache; offline failure silently continues startup. Both ordinary launch and `a13n-ui setup` follow this order.
+
+Update detection is enabled by default. To disable it in `a13n-ui.yaml`:
+
+```yaml
+process:
+  terminal_update_check: false
+```
+
+Use `a13n-ui --no-update-check` to skip detection for one invocation. `make a13n-ui` always disables it for repository development. Development versions, help/version, and noninteractive commands also skip detection.
+
+**Nothing is installed without confirmation.** For a recognized uv-tool installation, the prompt shows the command and tool directory, with **Update now** and **Not now** (the default). Choosing Not now, Escape, or Ctrl+C at this prompt continues startup. If a newer version remains available, the next enabled launch asks again. Choosing Update now closes the App and TUI before running the installer, then asks you to restart; an installer failure is reported without retry or continuing setup. Other installation methods receive manual instructions rather than a guessed update command. You can also update a uv-tool installation yourself:
 
 ```console
 uv tool upgrade a13n-ui

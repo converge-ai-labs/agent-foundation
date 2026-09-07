@@ -38,7 +38,6 @@ class Status:
     started: float | None = None
     elapsed: float = 0
     session_id: str | None = None
-    update_notice: str | None = None
 
     def line(self, width: int | None = None) -> str:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed

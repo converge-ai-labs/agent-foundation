@@ -159,10 +159,10 @@ class SessionBackend:
         if self.thread_id is None:
             if not await self.refresh():
                 raise ValueError("No model is configured. Use `a13n-ui setup` before sending a prompt.")
-            workspace = await self.app.ensure_cwd_workspace(self.directory)
+            project_id = await self.app.ensure_cwd_project(self.directory)
             thread = await self.app.create_thread(
                 defaults=NewThreadDefaults(
-                    project_id=workspace.project_id,
+                    project_id=project_id,
                     agent_id=self.request.agent_id,
                     environment_profile_id=self.environment,
                 ),
@@ -185,11 +185,7 @@ class SessionBackend:
         configuration = await self.app.current_configuration()
         if configuration is None:
             raise ValueError("Use `a13n-ui setup` first.")
-        matches = {
-            project.id
-            for project in configuration.projects.values()
-            if len(project.roots) == 1 and project.roots[0].path == str(self.directory)
-        }
+        matches = await self.app.cwd_project_ids(self.directory)
         if selected is None:
             sessions = []
             for project_id in sorted(matches):
@@ -207,7 +203,7 @@ class SessionBackend:
         if detail.thread.parent_thread_id is not None or detail.thread.archived:
             raise ValueError("Only non-archived root sessions can be resumed.")
         if detail.thread.configuration.project_id not in matches:
-            raise ValueError("This session belongs to another workspace. Launch a13n-ui from its original directory.")
+            raise ValueError("This session belongs to another Project. Launch a13n-ui from its default directory.")
         if await self.app.active_root_operation(selected) is not None:
             raise ValueError("This session is already running.")
         self.thread_id = selected
@@ -385,12 +381,9 @@ class SessionBackend:
             if configuration is None:
                 return ()
             sessions = []
-            for project in configuration.projects.values():
-                if len(project.roots) == 1 and project.roots[0].path == str(self.directory):
-                    page = await self.app.list_threads(project_id=project.id, limit=20)
-                    sessions.extend(
-                        item for item in page.threads if item.parent_thread_id is None and not item.archived
-                    )
+            for project_id in await self.app.cwd_project_ids(self.directory):
+                page = await self.app.list_threads(project_id=project_id, limit=20)
+                sessions.extend(item for item in page.threads if item.parent_thread_id is None and not item.archived)
             sessions.sort(key=lambda item: item.updated_at, reverse=True)
             return tuple(
                 Choice(item.thread_id, item.title or "Untitled", f"{item.updated_at:%Y-%m-%d %H:%M} · {item.thread_id}")

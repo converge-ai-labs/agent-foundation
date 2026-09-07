@@ -72,6 +72,53 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_pa
 
 
 @pytest.mark.anyio
+async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_duplicate(
+    tmp_path: Path,
+) -> None:
+    _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
+    directory, notes = tmp_path / "code", tmp_path / "notes"
+    directory.mkdir()
+    notes.mkdir()
+    path = tmp_path / "config" / "a13n-ui.yaml"
+    path.parent.mkdir()
+    path.write_text('schema_version: "2"\n')
+    project = path.parent / "projects" / "custom.yaml"
+    project.parent.mkdir()
+    project.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "kind": "project",
+                "id": "project-custom",
+                "name": "Code and notes",
+                "roots": [{"path": str(directory)}, {"path": str(notes)}],
+            }
+        )
+    )
+    original = project.read_bytes()
+    output = []
+    answers = deque(["codex", "full-control", "save"])
+
+    async def ask(question, selection):
+        return answers.popleft()
+
+    async with open_agent_ui_app(
+        AgentUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
+        configuration_path=path,
+    ) as app:
+        assert await run_setup(app, directory, ask_user=ask, emit=output.append)
+        configuration = await app.current_configuration()
+        assert set(configuration.projects) == {"project-custom"}
+        assert configuration.document.defaults.project == "project-custom"
+        assert await app.ensure_cwd_project(directory) == "project-custom"
+    assert project.read_bytes() == original
+    assert not (project.parent / "project-local.yaml").exists()
+    preview = next(text for text in output if text.startswith("Review setup"))
+    assert "Project: project-custom" in preview
+    assert preview.index(str(directory)) < preview.index(str(notes))
+
+
+@pytest.mark.anyio
 async def test_setup_available_grok_is_default_even_with_broken_codex(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

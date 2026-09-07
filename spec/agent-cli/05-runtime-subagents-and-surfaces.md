@@ -275,7 +275,7 @@ Retained transcript comes from selected continuations and child compact checkpoi
 
 ## CLI
 
-The [interactive CLI contract](07-interactive-cli.md) owns input, commands, setup choices, rendering, startup, and local session selection. CLI code consumes this App boundary and contains no provider, persistence, or execution authority. One-shot mode uses the same exact-cwd workspace and detached model overrides as interactive mode. Help/version do not open the App.
+The [interactive CLI contract](07-interactive-cli.md) owns input, commands, setup choices, rendering, startup, and local session selection. CLI code consumes this App boundary and contains no provider, persistence, or execution authority. One-shot mode uses the same exact-first-root Project selection and detached model overrides as interactive mode. Help/version do not open the App.
 
 The commands, detached projections, live subscriptions, source-digest mutations, and expected-continuation decisions are shared with the explicitly selected WebUI adapter. Interactive mode never implicitly starts an HTTP listener.
 
