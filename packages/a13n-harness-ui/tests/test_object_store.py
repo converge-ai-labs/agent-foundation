@@ -63,6 +63,38 @@ async def test_object_round_trip_is_canonical_and_reuses_exact_content(tmp_path:
         assert paths[0].stat().st_mode & 0o777 == 0o600
 
 
+async def test_object_publish_uses_level_one_and_reuses_existing_level_three_frames(tmp_path: Path) -> None:
+    store, layout = _object_store(tmp_path)
+    payload = {
+        "records": [
+            {"id": index, "value": f"{index * index:016x}", "summary": f"Checkpoint for worker {index % 17}"}
+            for index in range(1024)
+        ]
+    }
+    envelope = await store.publish(
+        object_kind=ObjectKind.continuation,
+        object_schema_version="1",
+        payload=payload,
+    )
+    path = next(layout.objects.rglob("*.json.zst"))
+    encoded = path.read_bytes()
+    raw = zstandard.ZstdDecompressor().decompress(encoded)
+    assert encoded == zstandard.ZstdCompressor(level=1, write_checksum=True).compress(raw)
+    assert await store.read(envelope.ref) == envelope
+
+    # Previously published level-3 objects retain their identity and exact bytes.
+    previous_encoding = zstandard.ZstdCompressor(level=3, write_checksum=True).compress(raw)
+    path.write_bytes(previous_encoding)
+    assert await store.read(envelope.ref) == envelope
+    republished = await store.publish(
+        object_kind=ObjectKind.continuation,
+        object_schema_version="1",
+        payload=payload,
+    )
+    assert republished == envelope
+    assert path.read_bytes() == previous_encoding
+
+
 async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Path) -> None:
     store, _ = _object_store(tmp_path, max_object_bytes=1024)
 

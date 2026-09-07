@@ -235,7 +235,7 @@ class ImmutableObjectStore:
                 code="object_too_large",
                 details={"object_kind": object_kind.value},
             )
-        compressed = zstandard.ZstdCompressor(write_checksum=True).compress(uncompressed)
+        compressed = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(uncompressed)
         stage = self._layout.staging / f"{uuid4().hex}.json.zst.tmp"
         try:
             self._write_stage(stage, compressed)
