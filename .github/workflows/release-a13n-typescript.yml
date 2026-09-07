@@ -63,7 +63,7 @@ jobs:
     name: Publish a13n for TypeScript to npm
     needs: build
     runs-on: ubuntu-latest
-    environment: a13n-typescript-npm
+    environment: sdk-typescript-npm
     permissions:
       contents: read
       id-token: write

@@ -38,13 +38,15 @@ npm publish --access public --tag rc
 
 Run this from a clean checkout of the reviewed release commit and discard the injected local version changes afterward. The publishing account must be able to create the unscoped `a13n` package and either complete 2FA or use a temporary granular access token that can bypass 2FA. Revoke the bootstrap token immediately after trusted publishing is configured.
 
+The GitHub Environment `sdk-typescript-npm` must allow deployment tags matching `release/a13n/typescript/*`. A rule for the former `release/sdk/typescript/*` channel does not allow the renamed release tags.
+
 Configure the newly created package to trust the exact GitHub workflow and Environment. `npm trust` requires npm 11.15 or newer and interactive account authentication with 2FA; a bypass-2FA granular token cannot configure trust:
 
 ```bash
 npx -y npm@11.19.0 trust github a13n \
   --repo converge-ai-labs/agent-foundation \
   --file release-a13n-typescript.yml \
-  --environment a13n-typescript-npm \
+  --environment sdk-typescript-npm \
   --allow-publish \
   --yes
 
