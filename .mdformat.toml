@@ -1,0 +1,3 @@
+# This model-facing prompt uses XML-style tags that Markdown formatting escapes.
+# Share the exclusion between pre-commit and direct mdformat checks in Make.
+exclude = ["packages/a13n-harness-ui/a13n_harness_ui/assets/system_prompt.md"]
