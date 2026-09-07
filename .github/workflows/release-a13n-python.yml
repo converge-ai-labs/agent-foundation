@@ -61,7 +61,7 @@ jobs:
     name: Publish a13n for Python to PyPI
     needs: build
     runs-on: ubuntu-latest
-    environment: a13n-python-pypi
+    environment: sdk-python-pypi
     steps:
       - name: Download distributions
         uses: actions/download-artifact@v4

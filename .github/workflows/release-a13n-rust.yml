@@ -59,7 +59,7 @@ jobs:
     name: Publish a13n for Rust to crates.io
     needs: build
     runs-on: ubuntu-latest
-    environment: a13n-rust-crates-io
+    environment: sdk-rust-crates-io
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v6
