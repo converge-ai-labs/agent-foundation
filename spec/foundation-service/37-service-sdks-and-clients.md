@@ -38,6 +38,8 @@ The SDK source version and the server `/api/v1` version remain independent. An S
 
 SDK method names follow each language's conventions while preserving the same resource and command meaning. No language renames a Run to Run, maps a RunAttempt to a request retry, or treats stream close as cancellation.
 
+Request types and serializers preserve omitted fields separately from explicit `null` whenever the owning operation distinguishes them. For [successor inline Hooks](26-hook-notifications.md#successor-inline-subscriptions), Feedback, waiting Continue, and terminal Retry expose omission for inheritance, `null` for no subscription, and a complete object for replacement. SDK defaults emit omission, and explicit opt-out emits JSON `null`; neither default filling nor null filtering may collapse those states. The server resolves inheritance, so clients do not read and copy a mutable subscription before submitting the command. HookSubscription resource types expose `inline_run_id` and `expired_at` separately from enablement and deletion.
+
 ## Transport Lifetime
 
 Each client instance owns its connection pools and long-lived transports and has an explicit close operation. Closing an iterator, stream, WebSocket, SDK client, page traversal, or process stops only local delivery and network resources. It never submits a Run interrupt command implicitly.
@@ -76,6 +78,8 @@ Automatic retry is limited to:
 - mutations carrying the same retained `Idempotency-Key` and canonical request when the owning command permits it.
 
 The SDK honors `Retry-After` and the caller's deadline. It never changes an idempotency key after lost acknowledgement and never labels an unknown mutation outcome successful or failed without authoritative reconciliation.
+
+Mutation replay preserves the original Hook field presence and value along with the key. It returns the original acceptance receipt, including the same Run and subscription IDs; it does not invoke the terminal Run Retry operation or recreate an expired subscription. An explicitly requested terminal Retry instead accepts a new Run with the server-owned Hook selection semantics.
 
 ## Foundation CLI
 

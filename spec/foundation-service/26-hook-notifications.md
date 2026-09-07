@@ -104,6 +104,8 @@ class HookSubscription:
     current_revision_id: str
     workspace_id: str
     enabled: bool
+    inline_run_id: RunId | None
+    expired_at: datetime | None
     deleted_at: datetime | None
 
 
@@ -138,30 +140,64 @@ class InlineHookSubscriptionInput:
 Durable Hook subscriptions have two creation paths that produce the same head and immutable Revision record:
 
 1. the Workspace management API accepts `CreateHookSubscriptionRequest` for a long-lived Workspace-, Session-, Thread-, or known-Run-scoped subscription; and
-2. every input-bearing command that can accept a new Run can carry one optional `hook_subscription: InlineHookSubscriptionInput` for that exact new Run; an existing-Thread Run submission that queues retains this input without creating the resource until consumption accepts the Run.
+2. every input-bearing command and terminal Retry can select one optional inline `hook_subscription` for that exact new Run; an existing-Thread Run submission that queues retains its explicit input without creating the resource until consumption accepts the Run. Feedback, waiting Continue, and terminal Retry use the [successor selection rules](#successor-inline-subscriptions).
 
-The inline form does not accept caller-supplied scope IDs. Foundation assigns the accepted Run's `workspace_id`, `session_id`, `thread_id`, and `run_id` as conjunctive filters, creates one active `HookSubscription`, and returns its ID in the Run acceptance receipt. Callers that need multiple destinations or a subscription spanning later Runs use the management API instead.
+The inline form does not accept caller-supplied scope IDs. Foundation assigns the accepted Run's `workspace_id`, `session_id`, `thread_id`, and `run_id` as conjunctive filters, creates one active `HookSubscription`, and returns its ID in the Run acceptance receipt. Its immutable `inline_run_id` identifies that owning Run in storage and public reads; its sole Revision v1 fixes those exact scope filters and the accepted notification configuration. A management-created subscription has `inline_run_id=null`, including one filtered to a known Run. Callers that need multiple destinations or one subscription spanning later Runs use the management API instead.
 
-Both forms accept exact `hook_names`, `endpoint_url`, `signing_secret_id`, and `signature_profile`. The signing value itself is never inline: the caller must be authorized to use the referenced managed Secret. The Foundation retry policy and delivery limits are service policy rather than caller-supplied destination parameters.
+Both forms accept exact `hook_names`, `endpoint_url`, `signing_secret_id`, and `signature_profile`. The signing value itself is never inline. Explicit configuration requires the caller's current authority to create the subscription and bind the referenced managed Secret; inherited configuration follows the authority rules below. The Foundation retry policy and delivery limits are service policy rather than caller-supplied destination parameters.
 
-Foundation validates the inline Hook names, destination, Secret authority, and request bounds before immediate acceptance or queue admission. Queue admission stores the exact inline input as part of the queued Run intent but creates no HookSubscription or Outbox row. Queue editing revalidates the replacement input. At immediate or delayed Run acceptance, Foundation repeats current authorization and validation; in the final short acceptance transaction it inserts the HookSubscription head and Revision v1 before appending `run.accepted` and its matching Outbox row. Failure rolls back the subscription and Run together; no Webhook HTTP request runs in that transaction. The complete inline input participates in the submitting command's idempotency, so same-key replay returns the original immediate or queued outcome, while reuse with different Hook configuration conflicts.
+Foundation validates the selected inline Hook names, destination, Secret authority, and request bounds before immediate acceptance or queue admission. Queue admission stores the exact explicit inline input as part of the queued Run intent but creates no HookSubscription or Outbox row. Queue editing revalidates the replacement input. At immediate or delayed Run acceptance, Foundation repeats current authorization and validation; in the final short acceptance transaction it inserts the HookSubscription head and Revision v1 before appending `run.accepted` and its matching Outbox row. Failure rolls back the subscription and Run together; no Webhook HTTP request runs in that transaction. Hook selection participates in the submitting command's idempotency under the successor rules below.
 
-To receive `run.accepted`, a managed subscription must already match when Run acceptance commits, or the command must supply the inline form. A known-Run subscription created through the management API after acceptance receives only later matching events because subscription changes are not retroactive.
+To receive `run.accepted`, a managed subscription must already match when Run acceptance commits, or the command must select an explicit or inherited inline configuration. A known-Run subscription created through the management API after acceptance receives only later matching events because subscription changes are not retroactive.
 
-Creating a subscription atomically creates its head and Revision v1. A configuration change appends an immutable `hook_subscription_revisions` row and advances the head only when canonical content changes. Enablement and deletion are mutable head lifecycle axes guarded by strong `ETag`/`If-Match`; they do not advance `version`. Workspace limits keep the active matching destination set bounded for every source. For a lifecycle event, the exact Revision observed by the source transaction determines which Outbox rows are created. A later change does not alter an already committed Outbox row or retroactively deliver older sources. Authorized redrive reuses the original delivery identity and exact subscription Revision.
+Creating a subscription atomically creates its head and Revision v1. Only a management-created subscription supports configuration updates: a change appends an immutable `hook_subscription_revisions` row and advances the head only when canonical content changes.
+
+An inline subscription has exactly one Revision, v1, and its configuration is immutable after Run acceptance. Configuration-update requests targeting an inline subscription are rejected without changing the head or appending a Revision; no role bypasses this constraint. Changing Hook names, scope, callback URL, signing-Secret reference, or signature profile for later work requires explicit configuration on a new Run command.
+
+Enablement, automatic expiry, and deletion are independent head lifecycle axes; they do not advance `version`, and each representation change updates the strong ETag. Caller mutations require `If-Match`; automatic expiry belongs to the fenced Run-sealing transaction. Workspace limits count only active matching subscriptions. For a lifecycle event, the exact Revision observed by the source transaction determines which Outbox rows are created. A later change does not alter an already committed Outbox row or retroactively deliver older sources. Authorized redrive reuses the original delivery identity and exact subscription Revision.
 
 Subscription List and Get authorize `hook_subscription.read`; creation
-authorizes `hook_subscription.create`; configuration or pause changes authorize
+authorizes `hook_subscription.create`; managed configuration or enablement changes authorize
 `hook_subscription.update`; deletion authorizes `hook_subscription.delete`; and
 redrive authorizes `hook_subscription.redrive`. Exact Run-inline creation is the
 only Runner-level create grant and still requires current authority for the
-signing Secret. Long-lived creation and every later mutation require Builder or
-Admin. The IAM
+signing Secret. Long-lived creation and every later caller mutation require Builder or
+Admin; automatic expiry requires no separate caller delete grant. The IAM
 [stable action registry](33-identity-and-access-management.md#stable-action-registry)
 owns these grants; subscription scope, Secret, destination, Revision, and source
 eligibility remain additional checks owned here.
 
 Only committed lifecycle events are eligible for durable Webhook subscription delivery. Live-only Run Stream entries, Items, token deltas, diagnostics, Environment-binding observations, and telemetry never create Outbox rows.
+
+### Inline Subscription Lifetime
+
+An inline subscription expires when its owning Run seals as `waiting`, `completed`, `failed`, or `cancelled`, including failure or cancellation before any Attempt starts. Waiting seals the old Run; it does not keep the subscription active until feedback. Attempt replacement, recovery backoff, and planned handoff within the same unsealed Run keep the existing subscription and never create another one.
+
+The sealing transaction appends all final Run and RunAttempt lifecycle events and their matching Outbox intents before setting the inline head's `expired_at` to the Run's `sealed_at`. It sets expiry even if that head is already paused or deleted. The state transition, final event matching, and expiry commit atomically or all roll back. A combined queued-successor acceptance releases the source subscription's active capacity before admitting the successor's subscription in that same transaction.
+
+A subscription matches new events and consumes active capacity only when `enabled=true`, `deleted_at=null`, and `expired_at=null`. Automatic expiry preserves `enabled` and `deleted_at`, is irreversible, and never applies to management-created subscriptions. Caller updates cannot clear expiry, rebind an inline subscription to another scope, or make an expired subscription match again. Authorized management reads can still inspect expired, non-deleted heads; callers can pause or delete them to suppress default successor inheritance.
+
+Expiry stops new matching rather than cancelling committed delivery. Existing Outbox intents continue publication, retry, and authorized redrive against their exact Revisions even after the head expires, pauses, or is deleted. Current signing-Secret availability and delivery policy still apply. No publisher waits for feedback, and Run sealing never waits for a destination acknowledgement.
+
+### Successor Inline Subscriptions
+
+Feedback, explicit waiting Continue, and terminal Retry accept the optional top-level `hook_subscription` with these distinct wire meanings:
+
+| Request field                                 | Selection for the new Run                                                                                                                                                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Omitted                                       | Inherit the direct source Run's accepted inline configuration when its subscription is not manually paused or deleted; if that Run has no inline subscription, create none. |
+| `null`                                        | Create no inline subscription for this Run.                                                                                                                                 |
+| Complete `InlineHookSubscriptionInput` object | Create a subscription from the supplied complete configuration, replacing the inherited default rather than merging fields.                                                 |
+
+The direct source is the targeted waiting Run for Feedback and waiting Continue, and the failed or cancelled Run named by `retry_of_run_id` for Retry. Retry never selects Hook configuration through its copied `parent_run_id`. Inheritance uses only that source's inline subscription, not managed subscriptions that happen to match it. Start, ordinary Continue, Continue From, Fork, and queued submission consumption do not inherit inline configuration; omission and `null` both select none for those operations. Other Host-owned acceptance paths do not inherit it implicitly.
+
+The accepted configuration is the source inline subscription's sole immutable Revision v1: its Hook-name set and Webhook configuration, with scope rebound to the new Run. There is no later inline Revision to select; an explicit replacement belongs to the new Run's new subscription. A manually paused (`enabled=false`) or deleted (`deleted_at` non-null) source selects none by default; automatic `expired_at` does not suppress inheritance. These head flags are rechecked under lock in the final acceptance transaction. A supplied configuration is an explicit new creation subject to current authorization, not a revival of the source head.
+
+Every selected configuration creates a fresh head and Revision v1 with new IDs and the new Run's exact scope, atomically with acceptance. The source is never re-enabled or moved. That new v1 becomes the accepted configuration for its own later successors. A Run accepted with no inline subscription supplies no inherited default: selection never searches earlier ancestors. Thus `R1 -> waiting -> Feedback R2 -> failed -> Retry R3` creates distinct `S1`, `S2`, and `S3` by default; if R2 explicitly selects `null`, R3 also selects none by default.
+
+Hook selection is notification configuration, not `AgentInput`, accepted feedback, or an invocation option. Retry may replace it without changing the source's frozen execution intent, decisions, Agent configuration, or authority Principal. The command actor requires the owning Feedback, Continue, or Retry authority. For both inherited and supplied inline configurations, acceptance reauthorizes subscription creation and signing-Secret binding for the new Run's stored authority Principal, and revalidates Hook names, destination eligibility, Secret availability, and limits. Explicit configuration additionally requires the command actor's create and Secret-binding authority. Inheritance does not grant that actor permission to read the source callback URL or Secret metadata. Invalid or unauthorized selected configuration rejects the whole new-Run acceptance; Foundation never silently drops the selected notification.
+
+Canonical command evidence preserves omission, explicit `null`, and the complete supplied object wherever their meanings differ. An inherited selection is identified by the operation's direct source, and successful acceptance fixes its result as the new subscription's v1 or no subscription. Replay of the same key and semantic request returns the original Run and subscription ID before reevaluating source eligibility or manual subscription flags. A changed selection under the same key conflicts even when it would currently resolve to the same configuration. A transport retry therefore creates no extra subscription; a new terminal Retry command accepts a new Run and applies selection again.
 
 ## Storage Model
 
@@ -171,7 +207,7 @@ Both tables participate in the service's explicitly assembled [schema and migrat
 
 ### `hook_subscriptions` and `hook_subscription_revisions`
 
-The head stores stable identity, `version`, `current_revision_id`, `enabled`, deletion time, actors, and timestamps. The immutable Revision stores the exact Hook-name set, scope filters, and Webhook configuration so an Outbox row can keep using the destination selected when its source event committed.
+The head stores stable identity, `version`, `current_revision_id`, `inline_run_id`, `enabled`, expiry and deletion times, actors, and timestamps. The immutable Revision stores the exact Hook-name set, scope filters, and Webhook configuration so an Outbox row can keep using the destination selected when its source event committed.
 
 ```python
 class HookSubscriptionRecord:
@@ -180,6 +216,8 @@ class HookSubscriptionRecord:
     current_revision_id: HookSubscriptionRevisionId
     workspace_id: WorkspaceId
     enabled: bool
+    inline_run_id: RunId | None
+    expired_at: datetime | None
     deleted_at: datetime | None
 
 
@@ -197,11 +235,13 @@ class HookSubscriptionRevisionRecord:
     created_at: datetime
 ```
 
-`HookSubscriptionRevision.id` is the immutable destination reference stored by Outbox. `(hook_subscription_id, version)` is unique and versions are positive and contiguous. A deleted head never matches a new event.
+`HookSubscriptionRevision.id` is the immutable destination reference stored by Outbox. `(hook_subscription_id, version)` is unique and versions are positive and contiguous. Non-null `(organization_id, inline_run_id)` is unique, preserving at most one inline subscription per Run even after expiry or deletion. `inline_run_id` references a Run in the same Organization and Workspace. An inline head keeps `version=1` and its original `current_revision_id` for its entire retained lifetime; persistence rejects additional Revisions and changes to its fixed configuration or scope. Enablement, expiry, and deletion can change only the owning head lifecycle fields and their mutation evidence. `expired_at` is null for managed subscriptions and unsealed inline owners, and equals the owning Run's seal time for sealed inline owners.
 
 `hook_names` is stored as one bounded, duplicate-free JSON array. A GIN index on that field plus partial B-tree indexes over the current active Workspace and non-null Session, Thread, and Run filters support source-transaction matching. All filters are conjunctive and organization-consistent.
 
 Each Revision contains the callback URL but no URL user information or plaintext signing value. `signing_secret_id` is resolved through the managed Secret authorization boundary at delivery time. Ordinary reads return the head and may embed its current Revision. Historical Revisions remain immutable and retained while an Outbox row can still reference them.
+
+Inline head identity and Revision v1 also remain retained while the owning Run is eligible as a Feedback, waiting-Continue, or Retry source, while unexpired command evidence needs them, or while required audit retention applies. These dependencies survive expiry and manual deletion; successful delivery alone does not release them. Retention must not make a previously configured eligible source appear to have never had an inline subscription. Physical cleanup releases records only after all applicable inheritance, replay, delivery/redrive, audit, and relational-reference dependencies end. Accepted Hook configuration stays in these revisions; neither Run input nor Run state duplicates callback configuration.
 
 ### `outbox_records`
 
@@ -530,6 +570,8 @@ The following table is the public Foundation hook routing registry. Subscription
 
 Hook names, hook payload schemas, subscription matching, signature input, delivery identity, resource identity, resource-sequence semantics, resource version, and channel eligibility are compatibility contracts. Adding a hook name or an optional payload field is additive. Renaming a hook, changing its source authority, moving a live-only hook to durable delivery, weakening redaction, or changing duplicate, ordering, or gap-recovery semantics requires an incompatible API or explicit migration contract.
 
+Inline ownership, automatic expiry, and successor selection are observable contracts. Changing omitted `hook_subscription` from no subscription to inherited configuration, collapsing omission with `null`, or changing the inherited Revision requires an incompatible API version under [Platform API Conventions](../api-conventions.md#compatibility). SDK request serialization preserves the declared server compatibility line; a client cannot infer these defaults from the presence of a nullable field alone.
+
 AG-UI payload compatibility follows the selected Agent Stream Protocol release. Foundation preserves unknown additive AG-UI and `CUSTOM` variants on the live stream without automatically making them eligible for durable subscriptions.
 
 ## Invariants
@@ -550,3 +592,7 @@ AG-UI payload compatibility follows the selected Agent Stream Protocol release. 
 14. Hook delivery adds no Hook-specific Redis stream or object-storage object; durable Webhook source and progress remain in PostgreSQL.
 15. Inline creation produces the same versioned HookSubscription record as management-API creation, commits before matching `run.accepted` in the same transaction, and never performs Webhook delivery on the acceptance path.
 16. Expected planned handoff emits `run_attempt.yielded` only; it does not fabricate an AG-UI terminal Run hook, close the Run Stream, or repeat a Run lifecycle transition.
+17. An inline subscription has immutable ownership and configuration, exactly one Revision v1, and scope exact to one Run; sealing expires the head atomically after final event matching, while committed deliveries retain that Revision.
+18. Feedback, waiting Continue, and terminal Retry inherit only the direct source's accepted inline Revision v1 by default; explicit null opts out and a complete object replaces it. Manual pause or deletion suppresses default inheritance, while automatic expiry does not.
+19. Each new Run receives at most one fresh inline subscription; same-Run recovery and successful idempotent replay create none. Replay preserves the original receipt independently of subsequent subscription mutation or expiry.
+20. Inline expiry releases active capacity without releasing the separate inheritance, idempotency, Outbox, or audit retention dependencies.

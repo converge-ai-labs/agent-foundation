@@ -25,6 +25,8 @@ The shared [interaction model](../interaction-model.md) owns `Session`, `Thread`
 
 ## Boundaries
 
+Every Run-sealing path, including waiting, completion, failure before execution, and cancellation, includes [inline Hook expiry](26-hook-notifications.md#inline-subscription-lifetime) in the same relational commit after final lifecycle-event matching. Hook configuration and its inheritance retention remain owned by the subscription head and Revisions, not by Run input or state. Attempt recovery and handoff that leave the Run unsealed preserve its subscription.
+
 | Concern                                                                     | Owner                                                                                   | Contract                                                                                                             |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Session, Thread, Run, and Item meaning                                      | [Platform Interaction Model](../interaction-model.md)                                   | Defines public identity and relationships                                                                            |
