@@ -1619,10 +1619,10 @@
             "default": false
           }
         },
-        "additionalProperties": false,
+        "additionalProperties": true,
         "type": "object",
         "title": "ContentMetadata",
-        "description": "Application-only presentation hints, never model instructions or authorization."
+        "description": "Client presentation conventions plus opaque caller-owned metadata.\n\nMetadata is not model instruction or authorization. Clients may resolve\nreferences such as image_object_id through their own application services."
       },
       "ContinuationSelectionView": {
         "properties": {
@@ -4053,6 +4053,17 @@
             "type": "boolean",
             "title": "Shell Review",
             "default": true
+          },
+          "include_default_subagents": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Default Subagents"
           },
           "codex_model": {
             "type": "string",

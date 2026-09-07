@@ -8,19 +8,9 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from a13n_harness.model_auth import CodexCredentials, GrokCredentials
-from anyio import fail_after
-
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.cli import CliRequest
-from a13n_harness_ui.model_accounts.codex import CodexLoginRequest
-from a13n_harness_ui.model_accounts.grok import GrokLoginRequest
-from a13n_harness_ui.model_accounts.login import authorize_codex, authorize_grok
-from a13n_harness_ui.settings_loader import (
-    ensure_default_directories,
-    load_harness_ui_settings,
-    resolve_harness_ui_data_root,
-)
+from a13n_harness_ui.settings_loader import ensure_default_directories, load_harness_ui_settings, resolve_harness_ui_data_root
 
 from .backend import SessionBackend
 from .lifecycle import terminal_logging
@@ -45,25 +35,9 @@ async def _session(
     logging.getLogger().setLevel(source.settings.log_level)
     await asyncio.to_thread(ensure_default_directories, source)
 
-    def present(**values: object) -> None:
-        for key in ("verification_url", "user_code", "message"):
-            if values.get(key):
-                emit(str(values[key]))
-        emit("Waiting for authorization. Ctrl+C cancels.")
-
-    async def codex_login(request: CodexLoginRequest) -> CodexCredentials:
-        with fail_after(900):
-            return await authorize_codex(request, "device", present)
-
-    async def grok_login(request: GrokLoginRequest) -> GrokCredentials:
-        with fail_after(900):
-            return await authorize_grok(request, "device", present)
-
     async with open_harness_ui_app(
         source.settings,
         configuration_path=source.path,
         configuration_error=source.candidate_error,
-        codex_login=codex_login,
-        grok_login=grok_login,
     ) as app:
         yield SessionBackend(app, request, directory, status)

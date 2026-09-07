@@ -23,6 +23,7 @@ def _write_wheel(
     protocol_version: str | None = "1.2.3",
     include_runtime_manifest: bool = True,
     include_terminal_shell: bool = True,
+    omitted_builtin: str | None = None,
     include_entrypoint: bool = True,
     cli_content: bytes = b"def main(): pass\n",
     extra_packaged_files: dict[str, bytes] | None = None,
@@ -51,8 +52,12 @@ def _write_wheel(
         for module in TERMINAL_PACKAGE_PATHS:
             if module.as_posix() == "a13n_harness_ui/interactive/shell.py" and not include_terminal_shell:
                 continue
+            if module.name == omitted_builtin:
+                continue
             content = b"\n"
-            if module.as_posix() == "a13n_harness_ui/interactive/shell.py":
+            if module.as_posix().startswith("a13n_harness_ui/subagents/"):
+                content = (SCRIPTS_DIRECTORY.parent / "packages/a13n-harness-ui" / module).read_bytes()
+            elif module.as_posix() == "a13n_harness_ui/interactive/shell.py":
                 content = b"class CliShell: pass\n"
             elif module.as_posix() == "a13n_harness_ui/webui.py":
                 content = b"def create_webui(): pass\n"
@@ -159,6 +164,14 @@ def test_rejects_missing_terminal_shell(tmp_path: Path) -> None:
     )
 
     with pytest.raises(DistributionError, match=r"missing a13n_harness_ui/interactive/shell\.py"):
+        validate_wheel(wheel)
+
+
+@pytest.mark.parametrize("name", ["code-reviewer.md", "executor.md", "explorer.md"])
+def test_rejects_missing_builtin_subagent(tmp_path: Path, name: str) -> None:
+    wheel = tmp_path / "a13n-harness-ui.whl"
+    _write_wheel(wheel, omitted_builtin=name)
+    with pytest.raises(DistributionError, match="missing a13n_harness_ui/subagents/"):
         validate_wheel(wheel)
 
 

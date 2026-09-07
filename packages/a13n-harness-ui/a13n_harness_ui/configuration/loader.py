@@ -339,6 +339,23 @@ def _parse_complete_tree(
         sources=sources,
     )
 
+    # Package resources share the canonical Markdown path, but never a mutable user source.
+    from a13n_harness_ui.subagents import builtin_subagent_sources
+
+    for name, content in builtin_subagent_sources():
+        relative_path = f"built-in-subagents/{name}.md"
+        resource = parse_canonical_markdown(Path(relative_path), content)
+        _insert_unique(subagents, resource.id, resource, Path(relative_path))
+        sources.append(
+            SourceDocument(
+                relative_path=relative_path,
+                source_digest=hashlib.sha256(content).hexdigest(),
+                resource_kind="subagent",
+                resource_id=resource.id,
+                content=content.decode("utf-8"),
+            )
+        )
+
     try:
         return LoadedHarnessUiConfiguration(
             document=document,
@@ -477,6 +494,12 @@ def parse_canonical_markdown(path: Path, content: bytes) -> CanonicalSubagent:
     )
     if "body" in raw:
         raise _error("configuration_markdown_invalid", "Markdown body is not a frontmatter field.", path)
+    if "model" in raw:
+        raise _error(
+            "configuration_markdown_invalid",
+            "Markdown children inherit the parent model. Remove model; reference an Agent for independent settings.",
+            path,
+        )
     name = raw.get("name")
     if "id" not in raw and isinstance(name, str):
         raw["id"] = f"subagent-{name}"

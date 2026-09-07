@@ -303,9 +303,9 @@ class TerminalProjectionService:
         projected = []
         for request in requests.calls:
             metadata = _json_mapping(requests.metadata.get(request.tool_call_id))
-            if metadata is not None and metadata.get("kind") == "ask_user_question":
+            if request.tool_name == "ask_user_question":
                 try:
-                    questions = AskUserQuestionRequest.model_validate(request.args)
+                    questions = AskUserQuestionRequest.model_validate(request.args_as_dict())
                 except ValidationError as exc:
                     raise ThreadError(
                         "A structured user question is invalid.",
@@ -706,8 +706,7 @@ def _pending_summary(value: DeferredToolRequests | None) -> PendingDecisionSumma
         return None
     kinds: set[Literal["question", "approval", "external"]] = set()
     for request in value.calls:
-        metadata = _json_mapping(value.metadata.get(request.tool_call_id))
-        kinds.add("question" if metadata is not None and metadata.get("kind") == "ask_user_question" else "external")
+        kinds.add("question" if request.tool_name == "ask_user_question" else "external")
     if value.approvals:
         kinds.add("approval")
     count = len(value.calls) + len(value.approvals)

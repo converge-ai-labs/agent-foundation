@@ -148,6 +148,10 @@ async def test_update_precedes_setup_and_handoff_closes_app_and_terminal(
         async def close(self):
             events.append("landing-release")
 
+        async def run_chat(self, shell, backend):
+            events.append("landing-chat")
+            await shell.run(backend)
+
         def emit(self, text):
             self.notice = text
 
@@ -208,7 +212,8 @@ async def test_update_precedes_setup_and_handoff_closes_app_and_terminal(
     else:
         assert events.index("update") < events.index("initialize") < events.index("setup")
     assert result is None
-    assert events.index("setup") < events.index("landing-release") < events.index("chat")
+    assert "landing-release" not in events
+    assert events.index("setup") < events.index("landing-chat") < events.index("chat")
 
 
 @pytest.mark.parametrize("exit_code", [0, 7])

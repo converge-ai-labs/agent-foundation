@@ -42,7 +42,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_pa
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=-1 if expired else 1))
     original = account.read_bytes()
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
-    answers = deque(["codex", "full-control", "save"])
+    answers = deque(["codex", "full-control", "all", "save"])
     asked, output = [], []
 
     async def ask(question, selection):
@@ -59,7 +59,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_pa
         codex_refresh=unexpected,
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
-    assert asked == ["provider", "environment", "action"]
+    assert asked == ["provider", "environment", "subagents", "action"]
     assert not answers
     assert "Using existing Codex login" in "\n".join(output)
     assert account.read_bytes() == original
@@ -97,7 +97,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
     )
     original = project.read_bytes()
     output = []
-    answers = deque(["codex", "full-control", "save"])
+    answers = deque(["codex", "full-control", "all", "save"])
 
     async def ask(question, selection):
         return answers.popleft()
@@ -144,7 +144,7 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
         )
     )
     original = grok.read_bytes()
-    answers = deque(["grok", "full-control", "save"])
+    answers = deque(["grok", "full-control", "all", "save"])
     output = []
 
     async def ask(question, selection):
@@ -186,15 +186,15 @@ async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cance
 
 
 @pytest.mark.anyio
-async def test_missing_account_offers_explicit_login_but_does_not_start_it(tmp_path: Path) -> None:
+async def test_missing_account_requires_external_login_and_allows_retry(tmp_path: Path) -> None:
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
-    answers = deque(["codex", "full-control", "later", "save"])
+    answers = deque(["codex", "full-control", "all", "later", "save"])
     asked = []
 
     async def ask(question, selection):
         asked.append(question.text)
         if question.text == "Connect Codex":
-            assert "login" in [choice.value for choice in selection.choices]
+            assert [choice.value for choice in selection.choices] == ["retry", "later"]
         return answers.popleft()
 
     async def unexpected(request):
@@ -215,12 +215,15 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
         [
             "codex",
             "full-control",
+            "all",
+            SetupBack(),
             SetupBack(),
             SetupBack(),
             "api",
             "openai:gpt-test",
             "env:TEST_KEY",
             "full-control",
+            "all",
             "save",
         ]
     )
@@ -243,6 +246,7 @@ def test_custom_settings_are_optional_and_connection_change_clears_stale_values(
     wizard = SetupWizard()
     wizard.accept("codex")
     wizard.accept("full-control")
+    wizard.accept("all")
     assert wizard.question is None
     wizard.customize()
     for value in ("gpt-6-astra", "extended", "low", "no", "be concise"):
@@ -289,6 +293,56 @@ async def test_landing_reuses_one_application_and_replaces_question_content() ->
             with pytest.raises(SetupBack):
                 await asyncio.wait_for(second, 2)
         assert not application.is_running
+
+
+@pytest.mark.anyio
+async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready() -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.onboarding import LandingScreen
+    from a13n_harness_ui.interactive.shell import CliShell
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    preparing, release = asyncio.Event(), asyncio.Event()
+
+    async def skill_catalog():
+        preparing.set()
+        await release.wait()
+        return None
+
+    async def empty():
+        return None
+
+    backend = SimpleNamespace(thread_id=None, interaction=empty, skill_catalog=skill_catalog, cancel=empty)
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        async with LandingScreen() as screen:
+            application = screen.application
+            shell = CliShell(CliRequest())
+            chat = asyncio.create_task(screen.run_chat(shell, backend))
+            await asyncio.wait_for(preparing.wait(), 2)
+            assert shell.app is application and application.is_running
+            assert not shell.ready
+            assert application.renderer.mouse_support()
+            shell.mouse = False
+            assert not application.renderer.mouse_support()
+            pipe.send_text("draft\r")
+            await asyncio.sleep(0.1)
+            assert shell.composer.text == "draft"
+            release.set()
+            async with asyncio.timeout(2):
+                while not shell.ready:
+                    await asyncio.sleep(0.01)
+            shell.composer.text = ""
+            pipe.send_text("/quit\r")
+            await asyncio.wait_for(chat, 2)
+        assert not application.is_running
+    assert loop.get_exception_handler() is previous_handler
 
 
 @pytest.mark.anyio

@@ -289,7 +289,7 @@ def _stage_candidate(
     staging = Path(tempfile.mkdtemp(prefix=".a13n-harness-ui-candidate-", dir=configuration_path.parent))
     try:
         for source in baseline.sources:
-            if source.relative_path.startswith("content-plugins/"):
+            if source.relative_path.startswith(("content-plugins/", "built-in-subagents/")):
                 continue
             if source.relative_path == relative_path:
                 if replacement is None:

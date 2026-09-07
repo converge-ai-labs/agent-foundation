@@ -29,6 +29,7 @@ from a13n_harness_ui.configuration import (
     ModelResource,
     canonical_digest,
 )
+from a13n_harness_ui.configuration.models import MarkdownSubagentSelection
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE_ID,
     built_in_environment_profile,
@@ -147,6 +148,7 @@ class AgentCompositionResolver:
                 root_mcp=selection.mcp_server_ids,
                 budget=budget,
                 depth=1,
+                included_subagents=source.document.subagents.include if parent_node is None else (),
                 model_overrides=model_overrides,
             )
         else:
@@ -237,6 +239,7 @@ class AgentCompositionResolver:
         root_mcp: tuple[str, ...] | None,
         budget: list[int],
         depth: int,
+        included_subagents: tuple[str, ...] = (),
         model_overrides: RunModelOverrides | None = None,
     ) -> ResolvedAgentNode:
         _consume_budget(budget, depth)
@@ -274,7 +277,15 @@ class AgentCompositionResolver:
             tools=agent.tools,
             children=(),
         )
-        for edge in agent.subagents:
+        edges = list(agent.subagents)
+        if included_subagents:
+            explicit_markdown = {edge.markdown for edge in edges if isinstance(edge, MarkdownSubagentSelection)}
+            edges.extend(
+                MarkdownSubagentSelection(markdown=f"subagent-builtin-{name}")
+                for name in included_subagents
+                if f"subagent-builtin-{name}" not in explicit_markdown
+            )
+        for edge in edges:
             if isinstance(edge, AgentSubagentSelection):
                 child_resource = source.agents[edge.agent]
                 child = self._agent_node(
@@ -342,9 +353,11 @@ class AgentCompositionResolver:
         depth: int,
     ) -> ResolvedAgentNode:
         _consume_budget(budget, depth)
+        # Only retained pre-inheritance generations can carry a Markdown model.
+        # New file parsing rejects that field; old admitted children keep their recipe.
         if child.model is not None and child.model not in source.models:
             raise CompositionError(
-                "The selected Markdown subagent model is unavailable.",
+                "The retained Markdown subagent model is unavailable.",
                 code="composition_subagent_model_unavailable",
                 details={"subagent_id": child.id, "model_id": child.model},
             )
@@ -395,7 +408,15 @@ class AgentCompositionResolver:
     ) -> tuple[ResolvedCapabilityRecipe, ...]:
         self._capabilities(agent)
         recipes: list[ResolvedCapabilityRecipe] = []
+        tools = source.document.tools
+        disabled = {
+            name
+            for name, enabled in (("user_interaction", tools.enable_user_input), ("codeact", tools.enable_codeact))
+            if not enabled
+        }
         for item in agent.capabilities:
+            if item.capability in disabled:
+                continue
             configuration = dict(item.configuration)
             characteristics = None if active_model is None else active_model.model_characteristics
             if (
@@ -422,8 +443,14 @@ class AgentCompositionResolver:
                     model=model,
                 )
             )
-        if not any(item.capability == "file_context" for item in recipes):
-            recipes.append(ResolvedCapabilityRecipe(capability="file_context", configuration={}))
+        for default in ("file_context", "working_state", "user_interaction", "codeact"):
+            if default not in disabled and not any(item.capability == default for item in recipes):
+                recipes.append(
+                    ResolvedCapabilityRecipe(
+                        capability=default,
+                        configuration={"notes_enabled": False} if default == "working_state" else {},
+                    )
+                )
         return tuple(recipes)
 
     def _capabilities(self, agent: AgentResource) -> tuple[SelectedCapability, ...]:

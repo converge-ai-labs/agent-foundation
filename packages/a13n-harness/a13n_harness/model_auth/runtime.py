@@ -477,6 +477,63 @@ class CodexSubscriptionModel(WrapperModel):
         raise UserError("Server-side token counting is unavailable for Codex subscription models.")
 
 
+def _codex_credential_manager(
+    credential_source: CodexCredentialSource,
+    refresh: Refresh[CodexCredentials],
+    refresh_window: timedelta,
+) -> _CredentialManager[CodexCredentials]:
+    return _CredentialManager(
+        credential_source,
+        provider="openai-codex",
+        credential_type=CodexCredentials,
+        refresh=refresh,
+        identity=lambda value: (value.account_id,),
+        expires_at=lambda value: value.expires_at,
+        validate=lambda value: bool(
+            value.account_id
+            and value.access_token
+            and value.refresh_token
+            and (value.id_token is None or value.id_token)
+        ),
+        refresh_window=refresh_window,
+    )
+
+
+def build_codex_account_auth(
+    *,
+    credential_source: CodexCredentialSource,
+    http_client: httpx2.AsyncClient,
+    expected_account_id: str | None = None,
+    refresh: Refresh[CodexCredentials] | None = None,
+) -> httpx2.Auth:
+    """Reuse request-fresh subscription authentication for the ChatGPT account API.
+
+    The caller owns the client, disables redirects, and supplies stable request
+    identities for mutations. A 401 can replay once after refresh; this is not a
+    retry of a timeout or an ambiguous server response.
+    """
+
+    async def selected_refresh(credentials: CodexCredentials) -> CodexCredentials:
+        if refresh is not None:
+            return await refresh(credentials)
+        return await refresh_codex_credentials(credentials, http_client=http_client)
+
+    def headers(credentials: CodexCredentials) -> Mapping[str, str]:
+        if expected_account_id is not None and credentials.account_id != expected_account_id:
+            raise UserError("The Codex account changed. Refresh usage and confirm again; no reset was sent.")
+        return {
+            "Authorization": f"Bearer {credentials.access_token}",
+            "ChatGPT-Account-Id": credentials.account_id,
+        }
+
+    return _ModelOAuthAuth(
+        _codex_credential_manager(credential_source, selected_refresh, _DEFAULT_REFRESH_WINDOW),
+        base_url="https://chatgpt.com/backend-api",
+        headers=headers,
+        protected_headers=("Authorization", "ChatGPT-Account-Id"),
+    )
+
+
 def build_codex_model(
     model_name: str,
     *,
@@ -500,21 +557,7 @@ def build_codex_model(
             return await refresh(credentials)
         return await refresh_codex_credentials(credentials, http_client=client_ref[0])
 
-    manager = _CredentialManager(
-        credential_source,
-        provider="openai-codex",
-        credential_type=CodexCredentials,
-        refresh=selected_refresh,
-        identity=lambda value: (value.account_id,),
-        expires_at=lambda value: value.expires_at,
-        validate=lambda value: bool(
-            value.account_id
-            and value.access_token
-            and value.refresh_token
-            and (value.id_token is None or value.id_token)
-        ),
-        refresh_window=refresh_window,
-    )
+    manager = _codex_credential_manager(credential_source, selected_refresh, refresh_window)
     request_headers = _CodexRequestHeaders(model_name)
     auth = _ModelOAuthAuth(
         manager,

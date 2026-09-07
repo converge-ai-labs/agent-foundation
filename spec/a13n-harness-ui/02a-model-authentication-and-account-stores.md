@@ -136,7 +136,7 @@ a13n-harness-ui auth key list [--format json]
 a13n-harness-ui auth key set <reference>
 a13n-harness-ui auth key delete <reference> [--yes]
 a13n-harness-ui auth status [codex|grok]
-a13n-harness-ui auth login <codex|grok> [--allow-account-switch] [--device-code|--browser]
+a13n-harness-ui login <codex|grok> [--allow-account-switch] [--device-code|--browser]
 a13n-harness-ui auth logout <codex|grok>
 ```
 
@@ -146,7 +146,17 @@ Every command supports detached text and JSON result rendering. Authorization pr
 
 ## Setup Discovery
 
-[First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers every usable compatible provider as an independently selectable starter. Selecting both creates two Model/Agent resources and one explicit default, not a combined credential or runtime fallback. Discovery never starts login or refresh. The standalone terminal wizard labels reusable accounts and skips its login question for the selected available or refreshable account. Missing credentials offer explicit login or configuration without authentication; invalid or unsupported stores require repair rather than replacement. A missing or invalid provider does not prevent selecting the other provider or an existing configured Agent.
+[First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers every usable compatible provider as an independently selectable starter. Selecting both creates two Model/Agent resources and one explicit default, not a combined credential or runtime fallback. Discovery never starts login or refresh. The standalone terminal wizard labels reusable accounts and skips its login question for the selected available or refreshable account. Missing credentials show the external `a13n-harness-ui login <provider>` command and offer rediscovery or configuration without authentication; the TUI does not run login. Invalid or unsupported stores require repair rather than replacement. A missing or invalid provider does not prevent selecting the other provider or an existing configured Agent.
+
+## Codex Subscription Usage and Reset Credits
+
+The App reads Codex subscription usage from the supported ChatGPT account API, separately from model-token accounting and token expiry. Read-only status reports provider usage windows, usage percentages, scheduled reset timestamps, and available reset credits. Unsupported or unavailable credit APIs do not hide successfully read usage windows. Unknown fields or unavailable prices are not invented. The CLI's `/status` reads this information while idle and offers a read-only refresh.
+
+Resetting usage is a separate explicit mutation that consumes an eligible `codex_rate_limits` reset credit. It never runs merely because the CLI reads limits, completes login, or reaches a limit. The selector shows the account and chosen credit, explains consumption, and defaults to not redeeming. Confirmation binds the account ID, credit ID, and a new redemption UUID. The App checks the request-fresh account before sending the mutation; an account switch requires a new read and confirmation.
+
+The request uses the provider's `redeem_request_id` and `credit_id` body fields. An uncertain outcome is not reported as a confirmed failure or a restored quota; an explicit retry of the pending confirmation reuses the same identifiers. The terminal retains the pending request independently of its menu, including after cancellation, and `/status` reopens that same-ID confirmation before allowing another redemption. This recovery state is process-local; its identity is displayed so an unknown outcome is not lost silently. `reset`, `nothing_to_reset`, `no_credit`, and `already_redeemed` remain distinct outcomes. A confirmed redemption followed by failed status refresh remains a confirmed redemption. The UI never creates a replacement redemption automatically.
+
+Account requests reuse the Harness's request-fresh OAuth loading, refresh, save-before-use, and single 401 replay. Redirects are disabled, requests have finite time and response-size bounds, and provider error bodies and credentials are not exposed as status diagnostics. This integration does not introduce a second credential store or refresh implementation.
 
 ## Run Capture and Information Boundary
 

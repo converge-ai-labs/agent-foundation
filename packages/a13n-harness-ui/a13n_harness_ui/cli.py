@@ -263,6 +263,15 @@ def config_show_command(ctx: click.Context, output_format: str) -> None:
     _execute(_request(ctx, command="config", action="show", output_format=OutputFormat(output_format)))
 
 
+@config_group.command("subagents")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def config_subagents_command(ctx: click.Context, output_format: str) -> None:
+    """List package-owned subagents and their current inclusion."""
+
+    _execute(_request(ctx, command="config", action="subagents", output_format=OutputFormat(output_format)))
+
+
 @cli.group("import")
 def import_group() -> None:
     """Run an explicit external resource conversion."""
@@ -445,7 +454,7 @@ def auth_key_delete(ctx: click.Context, reference: str) -> None:
     _execute(_request(ctx, command="auth", action="key-delete", ref=reference))
 
 
-@auth_group.command("login")
+@cli.command("login")
 @click.argument("provider", type=_PROVIDER_CHOICE)
 @click.option("--allow-account-switch", is_flag=True)
 @click.option(

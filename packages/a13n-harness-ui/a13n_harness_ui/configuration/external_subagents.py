@@ -446,10 +446,9 @@ def _build_candidate(
         diagnostics.append(_field_error("instruction", "instruction must be a non-empty string when present."))
         instruction = None
 
-    model = _representable_model(fields.get("model"), loaded, diagnostics)
+    _report_external_model(fields.get("model"), diagnostics)
     tools = _normalize_tools(fields.get("tools"), diagnostics)
     if inherit_runtime:
-        model = None
         tools = None
         diagnostics.append(
             ExternalImportDiagnostic(
@@ -496,7 +495,6 @@ def _build_candidate(
                 name=name,
                 description=description.strip(),
                 instruction=instruction.strip() if isinstance(instruction, str) else None,
-                model=model,
                 tools=tools,
                 body=body,
             )
@@ -553,21 +551,18 @@ def _build_candidate(
     )
 
 
-def _representable_model(
+def _report_external_model(
     raw: object,
-    loaded: LoadedHarnessUiConfiguration,
     diagnostics: list[ExternalImportDiagnostic],
-) -> str | None:
+) -> None:
     if raw is None or raw == "inherit":
-        return None
-    if isinstance(raw, str) and raw in loaded.models:
-        return raw
+        return
     diagnostics.append(
         ExternalImportDiagnostic(
             severity="warning",
             code="unsupported_model",
             field="model",
-            message="The external Model is not an exact Harness UI Model resource ID; parent inheritance is previewed.",
+            message="Markdown children inherit the parent model. Use an Agent resource reference for independent model settings.",
         )
     )
     return None
@@ -600,8 +595,6 @@ def _render_canonical_markdown(value: CanonicalSubagent) -> str:
     ]
     if value.instruction is not None:
         lines.append(f"instruction: {_yaml_string(value.instruction)}")
-    if value.model is not None:
-        lines.append(f"model: {_yaml_string(value.model)}")
     if value.tools is not None:
         if value.tools:
             lines.append("tools:")

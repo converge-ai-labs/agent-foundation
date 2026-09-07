@@ -43,6 +43,10 @@ TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/interactive/attachments.py"),
     PurePosixPath("a13n_harness_ui/interactive/decisions.py"),
     PurePosixPath("a13n_harness_ui/interactive/theme.py"),
+    PurePosixPath("a13n_harness_ui/subagents/__init__.py"),
+    PurePosixPath("a13n_harness_ui/subagents/code-reviewer.md"),
+    PurePosixPath("a13n_harness_ui/subagents/executor.md"),
+    PurePosixPath("a13n_harness_ui/subagents/explorer.md"),
 )
 INTERNAL_PACKAGES = (
     "a13n-environment",
@@ -171,7 +175,10 @@ def _validate_wheel_imports(path: Path) -> None:
                     "from a13n_harness_ui.cli import main; "
                     "from a13n_harness_ui.interactive.shell import CliShell; "
                     "from a13n_harness_ui.webui import create_webui; "
-                    "assert callable(main) and CliShell and callable(create_webui)"
+                    "from a13n_harness_ui.subagents import builtin_subagent_sources; "
+                    "assert callable(main) and CliShell and callable(create_webui); "
+                    "assert len(builtin_subagent_sources()) == 3; "
+                    "assert all(content for _, content in builtin_subagent_sources())"
                 ),
             ],
             cwd=directory,

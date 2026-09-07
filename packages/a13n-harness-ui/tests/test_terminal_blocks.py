@@ -41,7 +41,7 @@ def test_thinking_is_separate_and_expanded_in_concise_mode() -> None:
     renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "one", "delta": "answer"})
     blocks = list(renderer.transcript.blocks.values())
     assert len(blocks) == 2
-    assert blocks[0].source == "**Thinking**\n\nexposed reasoning"
+    assert blocks[0].source == "exposed reasoning"
     assert blocks[0].collapsed_lines is None
     assert blocks[1].source == "answer"
 
@@ -58,7 +58,7 @@ def test_edit_diff_and_summary_keep_content_beyond_old_preview_limit() -> None:
     source = _source(renderer)
     assert "proposed replacement snippets" not in source
     assert "Edit · applied" not in source
-    assert "LAST ORIGINAL LINE" in source
+    assert "LAST ORIGINAL LINE" not in source
     assert "failed · no edit confirmed" in source
     summary = "A full summary.\n" * 1000 + "SUMMARY END"
     renderer.ingest(
@@ -105,7 +105,9 @@ def test_regular_tool_folds_without_discarding_full_result() -> None:
     _tool(renderer, "read", {"file_path": "a.py"}, "\n".join(f"line {i}" for i in range(100)))
     transcript = renderer.transcript
     transcript.render(80)
-    assert "Folded" in _text(transcript)
+    assert "Folded" not in _text(transcript)
+    assert len(transcript.blocks) == 1
+    assert "read · result" in _text(transcript)
     assert "line 99" not in _text(transcript)
     assert "line 99" in _source(renderer)
     transcript.detailed = True
@@ -172,7 +174,7 @@ def test_steering_delivery_notice_does_not_duplicate_the_input_event_body() -> N
             },
         },
     )
-    assert "delivered · root · enqueue-123" in _source(renderer)
+    assert _source(renderer) == ""
     assert "change direction" not in _source(renderer)
 
 

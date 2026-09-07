@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 
-from pydantic_ai import ToolApproved, ToolDenied, ToolReturn
+from pydantic_ai import ToolApproved, ToolDenied, ToolFailed, ToolReturn
 from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
@@ -75,6 +75,9 @@ def preflight_deferred_resume(
         pending_calls = {request.tool_call_id: request for request in detached.requests.calls}
         for call_id, call_result in tuple(detached.results.calls.items()):
             request = pending_calls[call_id]
+            if isinstance(call_result, ToolFailed):
+                require_finite_json(call_result.message)
+                continue
             if request.tool_name == "ask_user_question":
                 from a13n_harness.toolsets.interaction import validate_user_question_result
 

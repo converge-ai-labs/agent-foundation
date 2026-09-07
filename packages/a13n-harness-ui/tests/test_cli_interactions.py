@@ -61,11 +61,90 @@ def test_literal_command_tails_preserve_json_and_steering() -> None:
 
     registry = CommandRegistry()
     value = r'{"path": "C:\\work\\image.png", "answer": "two words"}'
-    assert registry.parse(f"/result request {value}").arguments == ("request", value)
+    with pytest.raises(ValueError, match="Unknown command"):
+        registry.parse(f"/result request {value}")
     message = "Use 'this' path C:\\work\nand keep the spaces  here"
     assert registry.parse(f"/steer {message}", busy=True).arguments == (message,)
     with pytest.raises(ValueError, match="Usage"):
         registry.parse("/steer  ")
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan"), True, "30"])
+def test_question_timeout_configuration_rejects_invalid_values(timeout: object) -> None:
+    from a13n_harness_ui.configuration.models import ToolsConfiguration
+
+    with pytest.raises(ValueError):
+        ToolsConfiguration.model_validate({"user_input_timeout_seconds": timeout})
+
+
+def test_question_timeout_is_per_question_and_never_approves_other_requests() -> None:
+    interaction = DecisionInteraction(_batch(), timeout_seconds=30)
+    interaction.question_started -= 31
+    assert interaction.expired
+    assert interaction.accept("One") is None
+    assert not interaction.expired
+    interaction.question_started -= 31
+    assert interaction.expire_question() is None
+    assert interaction.responses == [
+        ExternalToolResult(
+            request_id="question",
+            denied=True,
+            denial_message=interaction.responses[0].denial_message,
+        )
+    ]
+    assert not interaction.answers
+    assert isinstance(interaction.request, ApprovalRequestView)
+    assert not interaction.expired
+    assert interaction.selection().cursor == -1
+    response = interaction.accept("deny")
+    assert isinstance(response, ThreadDeferredResponse)
+    assert response.expected_continuation_id == _batch().continuation_id
+    assert isinstance(response.responses[1], ApprovalDecision) and not response.responses[1].approved
+
+
+@pytest.mark.anyio
+async def test_terminal_question_timeout_rejects_call_then_keeps_shell_approval_pending() -> None:
+    from types import SimpleNamespace
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = SimpleNamespace()
+        shell.ready = True
+        shell.composer.text = "preserved draft"
+        shell._save_draft()
+        shell.interaction = DecisionInteraction(_batch(), timeout_seconds=0.01)
+        shell.selection = shell.interaction.selection()
+        flusher = asyncio.create_task(shell._flusher())
+        try:
+            async with asyncio.timeout(2):
+                while shell.interaction.index == 0:
+                    await asyncio.sleep(0.01)
+            assert shell.interaction.responses[0].denied
+            assert isinstance(shell.interaction.request, ApprovalRequestView)
+            assert shell.job is None
+            assert shell._saved_draft.text == "preserved draft"
+            assert "Timed out" in "".join(block.source for block in shell.renderer.transcript.blocks.values())
+            await asyncio.sleep(0.1)
+            assert shell.interaction.index == 1
+        finally:
+            shell.closing = True
+            await flusher
+            shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+async def test_closing_during_question_wait_does_not_submit_a_timeout() -> None:
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.ready = True
+        shell.interaction = DecisionInteraction(_batch(), timeout_seconds=0.01)
+        flusher = asyncio.create_task(shell._flusher())
+        await asyncio.sleep(0)
+        shell.closing = True
+        await flusher
+        assert not shell.interaction.responses
+        assert shell.interaction.index == 0
+        shell.renderer.transcript.close()
 
 
 def test_question_transcript_retains_option_descriptions() -> None:
@@ -158,6 +237,11 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
     responses = []
 
     class Backend:
+        thread_id = None
+
+        async def skill_catalog(self):
+            return None
+
         async def initialize(self):
             ready.set()
             return True
@@ -218,35 +302,30 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
 
 
 @pytest.mark.anyio
-async def test_cancel_discards_partial_command_mode_approval_drafts(tmp_path: Path) -> None:
-    from types import SimpleNamespace
+async def test_cancel_discards_partial_native_decision_drafts() -> None:
+    from a13n_harness_ui.interactive.commands import CommandRegistry
 
-    from a13n_harness_ui.interactive.backend import SessionBackend
-    from a13n_harness_ui.interactive.rendering import Status
-
-    detail = SimpleNamespace(
+    batch = DecisionBatchView(
         continuation_id="a" * 64,
-        deferred_requests=(
-            SimpleNamespace(request_id="one", kind="approval"),
-            SimpleNamespace(request_id="two", kind="approval"),
+        requests=(
+            ApprovalRequestView(request_id="one", tool_name="shell_exec"),
+            ApprovalRequestView(request_id="two", tool_name="shell_exec"),
         ),
     )
-
-    class App:
-        async def get_thread(self, thread_id):
-            return detail
-
-    backend = SessionBackend(App(), CliRequest(), tmp_path, Status())
-    backend.thread_id = "thread-one"
-    assert await backend.decide("approve", "one") is None
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
-        shell.backend = backend
+        shell.interaction = DecisionInteraction(batch)
+        assert shell.interaction.accept("approve") is None
         await shell.cancel()
-    assert await backend.decide("deny", "two") is None
-    response = await backend.decide("deny", "one")
-    assert response is not None
-    assert all(isinstance(item, ApprovalDecision) and not item.approved for item in response.responses)
+        assert shell.interaction is None
+        fresh = DecisionInteraction(batch)
+        assert fresh.accept("deny") is None
+        response = fresh.accept("deny")
+        assert isinstance(response, ThreadDeferredResponse)
+        assert all(isinstance(item, ApprovalDecision) and not item.approved for item in response.responses)
+    for name in ("approve", "deny", "result", "login"):
+        with pytest.raises(ValueError, match="Unknown command"):
+            CommandRegistry().parse(f"/{name} one")
 
 
 @pytest.mark.anyio
@@ -333,18 +412,20 @@ async def test_steering_captures_receipt_and_does_not_retarget(tmp_path: Path) -
     backend = SessionBackend(app, CliRequest(), tmp_path, Status())
     backend.receipt_id = "first"
 
-    async def steer(*, receipt_id, message):
+    async def steer(*, receipt_id, message, skill_references):
         backend.receipt_id = "replacement"
         return RootControlResult(receipt_id=receipt_id, accepted=False)
 
     app.steer_root_operation = AsyncMock(side_effect=steer)
     with pytest.raises(ValueError, match="not accepted"):
         await backend.steer("keep changes small")
-    app.steer_root_operation.assert_awaited_once_with(receipt_id="first", message="keep changes small")
+    app.steer_root_operation.assert_awaited_once_with(
+        receipt_id="first", message="keep changes small", skill_references=()
+    )
     app.steer_root_operation = AsyncMock(
         return_value=RootControlResult(receipt_id="replacement", accepted=True, enqueue_id="input-one")
     )
-    assert "input-one" in await backend.steer("new guidance")
+    assert await backend.steer("new guidance") == "Guidance sent. It will appear as input when applied."
     backend.receipt_id = None
     with pytest.raises(ValueError, match="No running receipt"):
         await backend.steer("not sent")

@@ -210,7 +210,7 @@ async def test_invalid_local_subagent_does_not_block_plugin_or_configuration(tmp
 
     assert len(await store.list()) == 1
     loaded = await load_harness_ui_configuration(_configuration(tmp_path / "config"), content_plugin_root=store.root)
-    assert loaded.subagents == {}
+    assert "subagent-explorer" not in loaded.subagents
     assert loaded.content_plugin_diagnostics
     assert loaded.content_plugins[0].skills_path is not None
 

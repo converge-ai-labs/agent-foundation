@@ -30,13 +30,13 @@ async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: b
     class Backend:
         receipt_id = "receipt-original"
 
-        async def steer(self, message, *, receipt_id):
+        async def steer(self, message, *, receipt_id, skill_references=()):
             received.append((receipt_id, message))
             entered.set()
             await release.wait()
             if reject:
                 raise ValueError("Target already completed; guidance was not sent")
-            return "Guidance accepted"
+            return "Guidance sent"
 
         async def execute(self, *args, **kwargs):
             pytest.fail("An active-run Enter must never become a new turn")
@@ -68,10 +68,7 @@ async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: b
                 assert shell.composer.text == "change direction"
             else:
                 assert shell.composer.text == ("next draft" if new_draft else "")
-                assert any(
-                    "[Steer · accepted · receipt-original]\n> change direction" in item.source
-                    for item in shell.renderer.transcript.blocks.values()
-                )
+                assert any("Guidance sent" in item.source for item in shell.renderer.transcript.blocks.values())
             assert shell.job_kind == "run" and not shell.job.done()
         finally:
             release.set()
@@ -139,4 +136,4 @@ def test_native_delivery_feedback_is_distinct_from_acceptance() -> None:
             "value": {"event": {"event_kind": "enqueued_messages", "enqueue_id": "one"}},
         },
     )
-    assert "delivered at a model boundary" in renderer.drain()
+    assert renderer.drain() == ""

@@ -158,6 +158,11 @@ async def test_failed_admission_preserves_images_and_next_draft_is_not_overwritt
     started, fail = asyncio.Event(), asyncio.Event()
 
     class Backend:
+        thread_id = None
+
+        async def skill_catalog(self):
+            return None
+
         async def execute(self, *args, **kwargs):
             started.set()
             await fail.wait()
@@ -192,6 +197,11 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images() -> No
     initialized = asyncio.Event()
 
     class Backend:
+        thread_id = None
+
+        async def skill_catalog(self):
+            return None
+
         async def initialize(self):
             initialized.set()
             return True
@@ -272,6 +282,11 @@ async def test_failed_send_recovery_fences_next_drafts_pending_clipboard(monkeyp
     late = image_bytes("next-draft.png", _png())
 
     class Backend:
+        thread_id = None
+
+        async def skill_catalog(self):
+            return None
+
         async def execute(self, *args, **kwargs):
             started.set()
             await fail.wait()
@@ -377,6 +392,11 @@ async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(
     initialized, entered = asyncio.Event(), asyncio.Event()
 
     class Backend:
+        thread_id = None
+
+        async def skill_catalog(self):
+            return None
+
         async def initialize(self):
             initialized.set()
             return True

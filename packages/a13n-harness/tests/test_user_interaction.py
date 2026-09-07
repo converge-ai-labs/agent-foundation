@@ -14,6 +14,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import UserInteractionCapability
 from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
+from pydantic_ai import ToolFailed
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -64,7 +65,8 @@ def _build() -> object:
     )
 
 
-async def test_structured_question_suspends_and_resumes_through_native_deferred_values() -> None:
+@pytest.mark.parametrize("failed", [False, True])
+async def test_structured_question_suspends_and_resumes_through_native_deferred_values(failed: bool) -> None:
     executable = _build()
     first = await executable.run("clarify", bindings=RunBindings.embedded())
 
@@ -80,16 +82,16 @@ async def test_structured_question_suspends_and_resumes_through_native_deferred_
             first.deferred,
             first.deferred.build_results(
                 calls={
-                    call_id: {
-                        "answers": {"Which scope should be used?": "Focused"},
-                    }
+                    call_id: ToolFailed("Question timed out; no user answer was provided")
+                    if failed
+                    else {"answers": {"Which scope should be used?": "Focused"}}
                 }
             ),
         ),
     )
 
     assert second.status == "completed"
-    assert "Focused" in second.output_or_raise()
+    assert ("no user answer was provided" if failed else "Focused") in second.output_or_raise()
 
 
 async def test_structured_question_is_not_exposed_to_child_runs() -> None:

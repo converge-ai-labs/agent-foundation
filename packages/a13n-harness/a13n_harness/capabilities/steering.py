@@ -16,6 +16,7 @@ from pydantic_ai.messages import ModelRequest, UserPromptPart
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.events import HarnessEventEmitter, SteeringInputEnqueuedPayload, emit_harness_event
 from a13n_harness.input import RunInputValue, SemanticRunInput, normalize_input
+from a13n_harness.model_context import ModelInputEvent, user_prompt_content
 from a13n_harness.state import AgentContextState
 
 if TYPE_CHECKING:
@@ -272,6 +273,7 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
     """Bind the public Harness stream to one active Pydantic RunContext."""
 
     id = STEERING_CAPABILITY_ID
+    _input_observed: bool = False
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
@@ -297,6 +299,10 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
     ) -> Any:
         owned = await ctx.deps._steering.bind(ctx)
         try:
+            if owned and not self._input_observed:
+                self._input_observed = True
+                if ctx.prompt is not None:
+                    await ctx.emit(ModelInputEvent(content=user_prompt_content(UserPromptPart(ctx.prompt))))
             return await handler()
         finally:
             ctx.deps._steering.unbind(ctx, owned=owned)

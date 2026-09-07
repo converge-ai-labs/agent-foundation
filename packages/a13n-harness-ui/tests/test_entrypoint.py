@@ -25,6 +25,25 @@ def test_module_entrypoint_exposes_cli_help() -> None:
     assert "--config" in result.stdout
 
 
+def test_startup_view_imports_without_loading_execution_dependencies() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; "
+            "import a13n_harness_ui.interactive.startup; "
+            "import a13n_harness_ui.interactive.onboarding; "
+            "import a13n_harness_ui.interactive.updates; "
+            "assert not {'a13n_harness', 'pydantic_ai', 'a13n_harness_ui.app', 'a13n_harness_ui.storage'} & sys.modules.keys()",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_terminal_frontend_requires_interactive_input_and_output(
     tmp_path: Path,
 ) -> None:

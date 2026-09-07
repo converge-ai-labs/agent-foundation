@@ -183,6 +183,8 @@ Messages are appended only at complete semantic boundaries. Tool calls and resul
 
 `HarnessState.message_history` uses the public Pydantic message codec. Imported metadata never restores Identity, approval, provider ownership, or Capability state.
 
+Input presentation follows native semantic-input and steering-delivery events, not reconstructed history. Each detached `ModelInputEvent` preserves input content metadata for the client display protocol. Synthetic compaction and handoff history is model context, not a new user input event. Restoring or displaying a session does not wrap native strings, reorder history, or maintain a parallel display-identity registry. Explicit history inspection remains separate from the live conversation event stream.
+
 ## Runtime Context, Workspace Outline, File Context, and Handoff
 
 Runtime context, workspace outline, and file context are optional definition-selected model-context Capability contributions. Authored guidance remains in stable instructions, while values that can change between logical runs enter as bounded request context. Each Capability owns its immutable configuration and projection switch; the Host enables, omits, and composes Capabilities rather than configuring a Harness-global context switch.

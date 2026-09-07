@@ -63,8 +63,8 @@ class RequestContextSample(_StreamModel):
     tokens: int
 
 
-def root_context_samples(event: LiveEvent) -> tuple[RequestContextSample, ...]:
-    """Project request-local root usage, excluding children and provider totals."""
+def root_model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
+    """Read attributed root model records, excluding children and provider totals."""
     if event.run_kind != "root" or event.event_type != "CUSTOM" or event.payload is None:
         return ()
     value = event.payload.get("value")
@@ -87,12 +87,21 @@ def root_context_samples(event: LiveEvent) -> tuple[RequestContextSample, ...]:
             or model.delegation_id is not None
         ):
             continue
-        tokens = model.request_usage.input_tokens + model.request_usage.output_tokens
-        if tokens > 0:
-            samples.append(
-                RequestContextSample(run_id=model.run_id, response_ordinal=model.response_ordinal, tokens=tokens)
-            )
+        samples.append(model)
     return tuple(samples)
+
+
+def root_context_samples(event: LiveEvent) -> tuple[RequestContextSample, ...]:
+    """Project request-local root usage, not cumulative Run usage."""
+    return tuple(
+        RequestContextSample(
+            run_id=model.run_id,
+            response_ordinal=model.response_ordinal,
+            tokens=model.request_usage.input_tokens + model.request_usage.output_tokens,
+        )
+        for model in root_model_usage(event)
+        if model.request_usage.input_tokens + model.request_usage.output_tokens > 0
+    )
 
 
 class _LiveSubscriber:

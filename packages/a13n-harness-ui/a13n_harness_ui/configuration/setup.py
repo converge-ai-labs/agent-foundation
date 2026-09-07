@@ -19,6 +19,7 @@ from anyio import to_thread
 from pydantic import ConfigDict, Field
 
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
+from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _scan_directory, load_harness_ui_configuration
 from .models import ApiKeyAuthentication, LoadedHarnessUiConfiguration, ResourceId, StrictModel
@@ -49,6 +50,7 @@ class SetupSelection(StrictModel):
     project_path: str = Field(min_length=1, max_length=4096)
     environment_profile: Literal["environment-native", "environment-sandbox"]
     shell_review: bool = True
+    include_default_subagents: bool | None = None
     codex_model: Literal["gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"] = "gpt-5.6-sol"
 
     codex_thinking: Literal["low", "medium", "high", "xhigh"] = "high"
@@ -321,6 +323,8 @@ async def preview_setup(
         "project": selection.project,
         "environment_profile": selection.environment_profile,
     }
+    if selection.include_default_subagents is not None:
+        root["subagents"] = {"include": list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []}
     files[path.name] = yaml.safe_dump(root, sort_keys=False)
     candidate = dict(baseline)
     candidate.update({name: text.encode() for name, text in files.items()})

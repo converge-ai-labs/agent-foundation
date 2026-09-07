@@ -196,6 +196,31 @@ async def _run_management(
             }
             _print_projection(projection, request.output_format)
             return 0 if projection["valid"] else 1
+        if request.action == "subagents":
+            from a13n_harness_ui.configuration.loader import parse_canonical_markdown
+            from a13n_harness_ui.subagents import builtin_subagent_sources
+
+            configuration = await _require_configuration(app)
+            included = configuration.document.subagents.include
+            catalog = [
+                parse_canonical_markdown(Path(f"{name}.md"), content) for name, content in builtin_subagent_sources()
+            ]
+            _print_projection(
+                {
+                    "configuration_key": "subagents.include",
+                    "subagents": [
+                        {
+                            "name": child.name,
+                            "id": child.id,
+                            "description": child.description,
+                            "included": child.name in included,
+                        }
+                        for child in catalog
+                    ],
+                },
+                request.output_format,
+            )
+            return 0
         if request.action == "show":
             configuration = await _require_configuration(app)
             _print_projection(configuration.model_dump(mode="json"), request.output_format)

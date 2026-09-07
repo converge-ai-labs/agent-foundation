@@ -61,7 +61,7 @@ def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
 def test_click_reports_invalid_and_conflicting_options_as_usage_errors() -> None:
     runner = CliRunner()
 
-    invalid_provider = runner.invoke(cli, ["auth", "login", "unsupported"])
+    invalid_provider = runner.invoke(cli, ["login", "unsupported"])
     conflicting_environment = runner.invoke(
         cli,
         ["run", "inspect", "--environment-mode", "sandbox", "--environment-profile", "custom"],
@@ -104,7 +104,7 @@ def test_auth_login_interruption_exits_130(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(runtime_module, "_run", run)
 
-    result = CliRunner().invoke(cli, ["auth", "login", "grok"])
+    result = CliRunner().invoke(cli, ["login", "grok"])
 
     assert result.exit_code == 130
     assert result.output == ""
@@ -388,9 +388,9 @@ def test_cli_key_input_is_hidden_and_login_defaults_to_device(monkeypatch: pytes
     assert "secret-command-key" not in response.output
     assert "secret-command-key" not in repr(requests[0])
     assert requests[0].credential_key.get_secret_value() == "secret-command-key"
-    assert runner.invoke(cli_module.cli, ["auth", "login", "codex"]).exit_code == 0
+    assert runner.invoke(cli_module.cli, ["login", "codex"]).exit_code == 0
     assert requests[-1].device_code is True
-    assert runner.invoke(cli_module.cli, ["auth", "login", "grok", "--browser"]).exit_code == 0
+    assert runner.invoke(cli_module.cli, ["login", "grok", "--browser"]).exit_code == 0
     assert requests[-1].device_code is False
 
 

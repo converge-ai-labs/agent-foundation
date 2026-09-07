@@ -123,4 +123,4 @@ async def test_delete_validates_complete_candidate_before_removing_source(tmp_pa
     assert result.action == "deleted"
     assert result.source_digest is None
     assert not target.exists()
-    assert not result.configuration.subagents
+    assert "subagent-explorer" not in result.configuration.subagents

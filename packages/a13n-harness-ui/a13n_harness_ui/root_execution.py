@@ -26,7 +26,7 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_stream_protocol import HarnessAguiObserver
 from anyio import CancelScope, to_thread
-from pydantic_ai import ToolDenied
+from pydantic_ai import ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, ToolApproved
 
@@ -380,7 +380,7 @@ def _deferred_resume(
                     code="thread_deferred_response_kind_mismatch",
                 )
             if item.denied:
-                calls[item.request_id] = ToolDenied(item.denial_message or "The external tool call was denied.")
+                calls[item.request_id] = ToolFailed(item.denial_message or "The external tool call was denied.")
                 continue
             pending = next(request for request in requests.calls if request.tool_call_id == item.request_id)
             metadata = requests.metadata.get(item.request_id)

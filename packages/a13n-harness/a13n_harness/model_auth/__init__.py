@@ -21,7 +21,7 @@ from .oauth import (
     refresh_codex_credentials,
     refresh_grok_credentials,
 )
-from .runtime import CodexSubscriptionModel, build_codex_model, build_grok_model
+from .runtime import CodexSubscriptionModel, build_codex_account_auth, build_codex_model, build_grok_model
 
 __all__ = [
     "CodexCredentialSource",
@@ -40,6 +40,7 @@ __all__ = [
     "GrokOAuthFlow",
     "ModelAuthenticationError",
     "OAuthFlow",
+    "build_codex_account_auth",
     "build_codex_model",
     "build_grok_model",
     "refresh_codex_credentials",

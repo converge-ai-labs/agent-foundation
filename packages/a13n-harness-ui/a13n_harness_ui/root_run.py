@@ -6,7 +6,7 @@ import json
 from collections import Counter, OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -16,6 +16,7 @@ from a13n_harness.input import RunInputValue
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.live import HarnessUiSummaryHub
@@ -42,6 +43,7 @@ _MAX_WAIT_SECONDS = 60.0
 _MAX_VALUE_BYTES = 64 * 1024
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 _JSON_MAPPING_ADAPTER = TypeAdapter(dict[str, JsonValue])
+_RUN_USAGE_ADAPTER = TypeAdapter(RunUsage)
 _TERMINAL = frozenset(
     {
         RootOperationStatus.completed,
@@ -479,7 +481,7 @@ def _terminal_status(outcome: RootRunOutcome, projected: RootRunOutcomeView) -> 
 
 def _outcome(value: RootRunOutcome) -> RootRunOutcomeView:
     output, output_omitted = _bounded_json(value.result.output)
-    usage = _json_mapping(asdict(value.result.usage))
+    usage = _json_mapping(_RUN_USAGE_ADAPTER.dump_python(value.result.usage, mode="json"))
     continuation_failure = (
         None
         if value.continuation.error is None

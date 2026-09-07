@@ -23,12 +23,12 @@ a13n-harness-ui --resume session-id
 a13n-harness-ui run "Review the current diff" --format json
 a13n-harness-ui config path
 a13n-harness-ui config validate
-a13n-harness-ui auth login --help
+a13n-harness-ui login --help
 ```
 
 Enter sends a prompt while idle or text guidance to the current Run while active; it never queues another Run or reorders input. Alt+Enter inserts a newline, Ctrl+C clears or cancels, and Ctrl+D on an empty draft exits. Bracketed multiline paste remains unsent until Enter. Rejected/busy commands preserve the draft. Cancellation waits for App-owned cleanup; nothing is approved implicitly or detached on exit.
 
-See the [user guide](../../docs/a13n-harness-ui.md) for setup, all slash commands, explicit configuration examples and precedence, credentials, permissions, and recovery. The [interactive CLI contract](../../spec/a13n-harness-ui/07-interactive-cli.md) owns accepted terminal behavior.
+See the [user guide](../../docs/a13n-harness-ui/index.md) for setup, all slash commands, explicit configuration examples and precedence, credentials, permissions, and recovery. The [interactive CLI contract](../../spec/a13n-harness-ui/07-interactive-cli.md) owns accepted terminal behavior.
 
 ## Configuration
 
@@ -130,4 +130,4 @@ After switching branches, run `make sync` (or launch with `make a13n-harness-ui`
 
 Install with `uv tool install a13n-harness-ui`; explicitly upgrade a uv-tool installation with `uv tool upgrade a13n-harness-ui`. Startup checks for updates before setup and presents a TUI confirmation; the check uses a daily cache and a short timeout. Set `process.terminal_update_check: false` or pass `--no-update-check` to disable detection. `make a13n-harness-ui` always disables it. Installation requires an explicit Update now answer each time, runs only after the App and TUI close, and ends with a restart instruction. Unrecognized installation methods receive manual guidance, never a guessed installer command.
 
-Provider-exposed thinking and edit/multi-edit diffs are independently expanded. Summary and compaction blocks show their complete public payloads, including generated compaction summaries delivered through the native Capability event channel. Ctrl+O folds/expands retained ordinary tool details. Mouse scroll mode is enabled by default; Esc switches to native selection after closing any active interaction. Automatic themes preserve terminal colors. Diagnostics are rotated files under the data root, and clean exit prints a saved-session resume command. See the [Harness UI guide](../../docs/a13n-harness-ui.md) for keyboard controls and retention boundaries.
+Provider-exposed thinking and edit/multi-edit diffs are independently expanded. Summary and compaction blocks show their complete public payloads, including generated compaction summaries delivered through the native Capability event channel. Ctrl+O folds/expands retained ordinary tool details. Mouse scroll mode is enabled by default; Esc switches to native selection after closing any active interaction. Automatic themes preserve terminal colors. Diagnostics are rotated files under the data root, and clean exit prints a saved-session resume command. See the [Harness UI guide](../../docs/a13n-harness-ui/index.md) for keyboard controls and retention boundaries.

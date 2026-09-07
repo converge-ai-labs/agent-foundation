@@ -14,6 +14,7 @@ from a13n_environment import (
     discover_environment_provider_references,
 )
 from a13n_harness.capabilities import DocumentsCapability, WebCapability
+from a13n_harness.capabilities.codeact import CodeActCapability, CodeActConfig
 from a13n_harness.capabilities.context import (
     CompactionCapability,
     CompactionPolicy,
@@ -25,9 +26,11 @@ from a13n_harness.capabilities.context import (
     RuntimeContextConfiguration,
 )
 from a13n_harness.capabilities.documents import DocumentsConfiguration
+from a13n_harness.capabilities.interaction import UserInteractionCapability
 from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability, ShellRiskLevel
 from a13n_harness.capabilities.skills import FileSkillSource, SkillManager, SkillsCapability, SkillsPolicy
 from a13n_harness.capabilities.web import WebConfiguration
+from a13n_harness.capabilities.working_state import WorkingStateCapability, WorkingStateConfiguration
 from a13n_harness.capability_types import CapabilityTypeCatalog, first_party_declarative_capability_types
 from a13n_harness.environment import (
     DynamicEnvironmentCapability,
@@ -61,6 +64,7 @@ _BUILTIN_PROVIDER_KEYS = frozenset(
 )
 _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "dynamic_environment": DynamicEnvironmentCapability,
+    "codeact": CodeActCapability,
     "compaction": CompactionCapability,
     "file_context": FileContextCapability,
     "handoff": HandoffCapability,
@@ -68,6 +72,8 @@ _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "documents": DocumentsCapability,
     "skills": SkillsCapability,
     "web": WebCapability,
+    "working_state": WorkingStateCapability,
+    "user_interaction": UserInteractionCapability,
     **{
         name: item
         for item in first_party_declarative_capability_types()
@@ -438,6 +444,11 @@ def _construct_capability(
     *,
     path_layout: EnvironmentPathLayout | None,
 ) -> AbstractCapability[Any]:
+    if capability_type is CodeActCapability:
+        arguments: dict[str, Any] = dict(configuration)
+        return CodeActCapability(CodeActConfig(**arguments))
+    if capability_type is WorkingStateCapability:
+        return WorkingStateCapability(WorkingStateConfiguration.model_validate(configuration, strict=True))
     if capability_type is CompactionCapability:
         return CompactionCapability(
             CompactionPolicy.model_validate(configuration, strict=True) if configuration else None
@@ -467,7 +478,7 @@ def _construct_capability(
             ),
         )
 
-    arguments: dict[str, Any] = dict(configuration)
+    arguments = dict(configuration)
     if capability_type is ShellReviewCapability:
         # JSON source uses enum values; keep strict validation for all other parameters.
         if "risk_threshold" in arguments:

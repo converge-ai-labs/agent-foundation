@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     RetryPromptPart,
     TextContent,
+    UserContent,
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
@@ -38,26 +39,15 @@ _MAX_AGGREGATE_BYTES = 2 * 1024 * 1024
 
 @dataclass(kw_only=True)
 class ModelInputEvent(CapabilityEvent, namespace="a13n.context", name="model_input"):
-    """Current user-role input after context projection, without media payloads."""
+    """Fresh native input content; transport adapters own presentation projection."""
 
-    content: list[TextContent]
+    content: list[UserContent]
 
 
-def user_prompt_content(part: UserPromptPart) -> list[TextContent]:
-    """Describe native input for presentation without copying media bytes or URLs.
-
-    Text metadata remains application-only and survives native history round trips.
-    Media is represented by its native type name, never its payload.
-    """
+def user_prompt_content(part: UserPromptPart) -> list[UserContent]:
+    """Observe native content, making plain text metadata-capable without editing history."""
     items = [part.content] if isinstance(part.content, str) else part.content
-    return [
-        TextContent(item)
-        if isinstance(item, str)
-        else item
-        if isinstance(item, TextContent)
-        else TextContent(f"[{type(item).__name__}]", metadata={"media": True})
-        for item in items
-    ]
+    return [TextContent(item) if isinstance(item, str) else item for item in items]
 
 
 class ModelContextRequestKind(StrEnum):
@@ -197,21 +187,17 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         assert isinstance(original_request, ModelRequest)
         committed = _commit_projection(request_context.messages, request, projection)
         _persist_projection(ctx.messages, original_request, committed, request, projection)
-        # One boundary may drain several queued requests. Observe the complete
-        # current request batch, not just the final request that owns the overlay.
-        start = len(committed) - 1
-        while start > 0 and isinstance(committed[start - 1], ModelRequest):
-            start -= 1
-        content = [
-            item
-            for message in committed[start:]
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, UserPromptPart)
-            for item in user_prompt_content(part)
-        ]
-        if content:
-            await ctx.emit(ModelInputEvent(content=content))
+        # Observe only freshly produced overlay content. Native user input and
+        # delivered steering have their own event boundaries, never history replay.
+        if projection.blocks:
+            await ctx.emit(
+                ModelInputEvent(
+                    content=[
+                        TextContent(block.content, metadata={"display": False, "source_id": block.source_id})
+                        for block in projection.blocks
+                    ]
+                )
+            )
         return await handler(_replace_messages(request_context, committed))
 
 

@@ -10,7 +10,15 @@ strict: true
 
 nav:
   - Home: index.md
-  - Harness UI: a13n-harness-ui.md
+  - Harness UI:
+      - Start here: a13n-harness-ui/index.md
+      - Use the terminal: a13n-harness-ui/everyday-use.md
+      - Configuration reference: a13n-harness-ui/configuration.md
+      - Models and authentication: a13n-harness-ui/models-and-authentication.md
+      - Agents and subagents: a13n-harness-ui/agents-and-subagents.md
+      - Environments and Projects: a13n-harness-ui/environments-and-projects.md
+      - Extensions and MCP: a13n-harness-ui/extensions-and-mcp.md
+      - Automation and troubleshooting: a13n-harness-ui/automation-and-troubleshooting.md
   - Agent Harness:
       - Overview: a13n-harness/index.md
       - Get started:

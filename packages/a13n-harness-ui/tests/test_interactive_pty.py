@@ -86,13 +86,16 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         os.write(master, b"\r")
         output += _read_until(master, b"Execution permissions")
         os.write(master, b"\r")
+        output += _read_until(master, b"(code-reviewer, executor, explorer)?")
+        os.write(master, b"\r")
         output += _read_until(master, b"Save this configuration?")
         assert b"\x1b[?1049l" not in output
         assert output.count(b"\x1b[?1049h") == 1
         os.write(master, b"\r")
         if not command:
             output += _read_until(master, b"Enter sends a message")
-            assert output.count(b"\x1b[?1049h") == 2
+            assert output.count(b"\x1b[?1049h") == 1
+            assert b"\x1b[?1049l" not in output
             os.write(master, b"/quit\r")
             output += _read_until(master, b"\x1b[?1049l")
         else:
@@ -170,6 +173,11 @@ from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.startup import run_terminal
 
 class Backend:
+    thread_id = None
+
+    async def skill_catalog(self):
+        return None
+
     def __init__(self, status):
         self.status = status
         self.stop = asyncio.Event()
@@ -177,22 +185,22 @@ class Backend:
     async def initialize(self):
         self.status.model = "fixture-model"
         return True
-    async def execute(self, renderer, *, prompt=None, flush=None, admitted=None):
-        Path("submitted.json").write_text(json.dumps(prompt))
+    async def execute(self, renderer, *, prompt=None, flush=None, admitted=None, skill_references=()):
+        Path("submitted.json").write_text(json.dumps(prompt[0].content))
         if admitted is not None:
             admitted()
         self.receipt_id = "receipt-fixture"
         renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "fixture-stream\n"})
         await asyncio.sleep(.7)
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "edit"})
+        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "view"})
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit", "delta": '{"file_path":"fixture.py"}'})
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
         await self.stop.wait()
         Path("cancelled").touch()
         return "fixture-cancelled"
-    async def steer(self, text, *, receipt_id):
+    async def steer(self, text, *, receipt_id, skill_references=()):
         Path("steering.json").write_text(json.dumps([text, receipt_id]))
-        return "Guidance accepted"
+        return "Guidance sent"
     async def interaction(self):
         return None
     async def cancel(self):
@@ -211,6 +219,8 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=load))
     process, master = _spawn(script, tmp_path)
     try:
         output = _read_until(master, b"Enter sends a message")
+        assert output.count(b"\x1b[?1049h") == 1
+        assert b"\x1b[?1049l" not in output
         os.write(master, b"draft")
         assert not (tmp_path / "submitted.json").exists()
         os.write(master, b"\x1b[200~line1\nline2\x1b[201~")
@@ -221,9 +231,9 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=load))
         assert json.loads((tmp_path / "submitted.json").read_text()) == "draftline1\nline2"
         os.write(master, b"/mode detailed\r")
         output += _read_until(master, b"fixture.py")
-        # The argument payload only appears in detailed mode; terminal diffing may split its heading.
+        # Detailed mode retains formatted arguments; terminal diffing may split headings.
         os.write(master, b"change direction\r")
-        output += _read_until(master, b"Guidance accepted")
+        output += _read_until(master, b"Guidance sent")
         assert json.loads((tmp_path / "steering.json").read_text()) == ["change direction", "receipt-fixture"]
         os.write(master, b"\x03")
         output += _read_until(master, b"Enter to send")
@@ -232,7 +242,7 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=load))
         output += _read_until(master, b"\x1b[?1049l")
         process.wait(timeout=5)
         assert process.returncode == 0
-        assert b"\x1b[?1049h" in output
-        assert b"\x1b[?1049l" in output
+        assert output.count(b"\x1b[?1049h") == 1
+        assert output.count(b"\x1b[?1049l") == 1
     finally:
         _stop(process, master)

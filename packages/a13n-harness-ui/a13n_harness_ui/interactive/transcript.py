@@ -50,6 +50,7 @@ class Block:
     collapsed_lines: int | None = None
     collapsed_chars: int | None = None
     preview_rows: list[StyleAndTextTuples] = field(default_factory=list)
+    preview: str | None = None
     streaming: bool = False
     chunks: list[tuple[str, RowStore]] = field(default_factory=list)
 
@@ -93,10 +94,8 @@ class TranscriptRows(Sequence[StyleAndTextTuples]):
         start = transcript.ends[number - 1] if number else 0
         block = transcript.blocks[transcript.ids[number]]
         offset = index - start
-        if block.collapsed_chars is not None and not transcript.detailed:
+        if (block.preview is not None or block.collapsed_chars is not None) and not transcript.detailed:
             return block.preview_rows[offset]
-        if block.collapsed_lines is not None and not transcript.detailed and offset == block.collapsed_lines:
-            return [("class:selection.hint", "[Folded · Ctrl+O or /mode detailed to expand]")]
         if block.chunks:
             for _, rows in block.chunks:
                 if offset < len(rows):
@@ -203,6 +202,30 @@ class Transcript:
         self._trim()
         self.dirty = True
         return block_id
+
+    def preview(self, block_id: int, text: str, lines: int = 1) -> None:
+        block = self.blocks.get(block_id)
+        if block is not None:
+            block.preview = text[:1024]
+            block.collapsed_lines = lines
+            block.revision += 1
+            self.dirty = True
+
+    def replace(self, block_id: int, source: str) -> bool:
+        block = self.blocks.get(block_id)
+        if block is None:
+            return False
+        block.close()
+        self.source_bytes -= block.size
+        block._source = bounded_text(source, self.block_bytes)
+        block.pending.clear()
+        block.size = len(block._source.encode("utf-8"))
+        self.source_bytes += block.size
+        block.revision += 1
+        block.cache_key = None
+        self._trim()
+        self.dirty = True
+        return True
 
     def extend(self, block_id: int, delta: str) -> bool:
         block = self.blocks.get(block_id)
@@ -316,21 +339,21 @@ class Transcript:
                         directory=self._cache_directory.name,
                         page_size=min(64, max(1, self.max_rows // 2)),
                     )
-                if block.collapsed_chars is not None:
+                if block.preview is not None:
+                    block.preview_rows = list(
+                        islice(rows(block.preview, False, block.kind), block.collapsed_lines or 1)
+                    )
+                elif block.collapsed_chars is not None:
                     limit = block.collapsed_lines or 5
                     block.preview_rows = list(
                         islice(rows(source[: block.collapsed_chars], block.markdown, block.kind), limit)
                     )
-                    if len(source) > block.collapsed_chars or len(block.rows) > limit:
-                        block.preview_rows.append(
-                            [("class:selection.hint", "[Folded · Ctrl+O or /mode detailed to expand]")]
-                        )
                 block.cache_key = key
             length = sum(len(item[1]) for item in block.chunks) if block.chunks else len(block.rows)
-            if block.collapsed_chars is not None and not self.detailed:
+            if (block.preview is not None or block.collapsed_chars is not None) and not self.detailed:
                 length = len(block.preview_rows)
             elif block.collapsed_lines is not None and not self.detailed:
-                length = min(length, block.collapsed_lines + 1)
+                length = min(length, block.collapsed_lines)
             count += max(1, length)
             self.ids.append(block.id)
             self.ends.append(count)

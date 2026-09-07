@@ -23,6 +23,7 @@ from pydantic import (
 
 from a13n_harness_ui.content_plugins import InstalledContentPlugin
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
+from a13n_harness_ui.subagents import BuiltinSubagentName
 
 _RESOURCE_ID = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
 _NAME = r"^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$"
@@ -107,6 +108,27 @@ class TerminalDisplayConfiguration(StrictModel):
     max_tool_argument_chars: int = Field(default=8192, ge=128, le=65536)
 
 
+class ToolsConfiguration(StrictModel):
+    """Application-owned built-in tool switches and terminal question waiting policy."""
+
+    enable_user_input: bool = True
+    user_input_timeout_seconds: float = Field(default=120.0, gt=0, allow_inf_nan=False)
+    enable_codeact: bool = False
+
+
+class SubagentsConfiguration(StrictModel):
+    """Named release-owned children automatically included in the root roster."""
+
+    include: tuple[BuiltinSubagentName, ...] = ()
+
+    @field_validator("include")
+    @classmethod
+    def _unique_names(cls, value: tuple[BuiltinSubagentName, ...]) -> tuple[BuiltinSubagentName, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("included built-in subagent names must be unique and ordered")
+        return value
+
+
 class HarnessUiDocument(StrictModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -114,6 +136,8 @@ class HarnessUiDocument(StrictModel):
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
+    tools: ToolsConfiguration = Field(default_factory=ToolsConfiguration)
+    subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -405,7 +429,9 @@ class CanonicalSubagent(StrictModel):
     name: RosterName
     description: str = Field(min_length=1, max_length=4096)
     instruction: str | None = Field(default=None, min_length=1, max_length=16 * 1024)
-    model: ResourceId | None = None
+    # Retained generations used to serialize this field. New Markdown rejects it;
+    # keep decoding the historical value so admitted child Runs retain their model.
+    model: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
     tools: tuple[ToolName, ...] | None = None
     body: str = Field(default="", max_length=1024 * 1024)
 
@@ -414,11 +440,6 @@ class CanonicalSubagent(StrictModel):
     def _valid_id(cls, value: str) -> str:
         _require_id_prefix(value, "subagent-")
         return value
-
-    @field_validator("model", mode="before")
-    @classmethod
-    def _normalize_inherited_model(cls, value: object) -> object:
-        return None if value in {None, "inherit"} else value
 
     @field_validator("tools", mode="before")
     @classmethod
@@ -493,14 +514,6 @@ class LoadedHarnessUiConfiguration(StrictModel):
                     roster_names.append(child.id)
             if len(roster_names) != len(set(roster_names)):
                 raise ValueError(f"{agent.id} has duplicate immediate roster names")
-        plugin_subagent_ids = {
-            item.resource_id
-            for item in self.sources
-            if item.relative_path.startswith("content-plugins/") and item.resource_kind == "subagent"
-        }
-        for child in self.subagents.values():
-            if child.id not in plugin_subagent_ids:
-                _require_reference(child.model, self.models, f"{child.id}.model")
         _reject_agent_cycles(self.agents)
         return self
 

@@ -11,6 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
+import httpx2
 from a13n_environment import EnvironmentProvider
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
@@ -88,6 +89,7 @@ from a13n_harness_ui.model_accounts import (
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
+from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
 from a13n_harness_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
 from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import detach_input
@@ -216,6 +218,7 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
+        codex_refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -241,6 +244,7 @@ class HarnessUiApp:
         self._grok_account = grok_account
         self._grok_account_error = grok_account_error
         self._codex_login = codex_login
+        self._codex_refresh = codex_refresh
         self._grok_login = grok_login
         self._candidate_error = candidate_error
         self._configuration_seen = configuration_path is not None and configuration_path.exists()
@@ -1277,6 +1281,27 @@ class HarnessUiApp:
         self._candidate_error = replacement
         return current != previous
 
+    async def codex_usage(self) -> CodexUsage:
+        """Read subscription windows and reset eligibility without redeeming anything."""
+        async with self._operation():
+            account = self._account(Provider.CODEX)
+            assert isinstance(account, CodexAccountStore)
+            async with httpx2.AsyncClient() as client:
+                return await CodexUsageClient(account, client, refresh=self._codex_refresh).read()
+
+    async def redeem_codex_reset(self, request: ResetRequest) -> ResetResult:
+        """Consume the explicitly selected credit on the confirmed account only."""
+        async with self._operation():
+            account = self._account(Provider.CODEX)
+            assert isinstance(account, CodexAccountStore)
+            async with httpx2.AsyncClient() as client:
+                return await CodexUsageClient(
+                    account,
+                    client,
+                    expected_account_id=request.account_id,
+                    refresh=self._codex_refresh,
+                ).redeem(request)
+
     def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore:
         if provider is Provider.CODEX:
             if self._codex_account is None:
@@ -1557,6 +1582,7 @@ async def open_harness_ui_app(
                 grok_account=grok_account,
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,
+                codex_refresh=codex_refresh,
                 grok_login=grok_login,
                 candidate_error=candidate_error,
             )

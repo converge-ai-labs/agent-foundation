@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 
 from a13n_harness_ui.surfaces import (
@@ -17,6 +18,12 @@ from a13n_harness_ui.surfaces import (
 
 from .selection import Choice, Selection, resolve_choice
 
+QUESTION_TIMEOUT_MESSAGE = (
+    "The user did not respond before this clarification timed out. "
+    "Do not wait for or repeat the same question. Continue with reasonable assumptions where possible. "
+    "No answer or approval was provided."
+)
+
 
 @dataclass(slots=True)
 class DecisionInteraction:
@@ -25,6 +32,24 @@ class DecisionInteraction:
     question_index: int = 0
     responses: list[ApprovalDecision | ExternalToolResult] = field(default_factory=list)
     answers: dict[str, str | tuple[str, ...]] = field(default_factory=dict)
+    timeout_seconds: float = 120.0
+    question_started: float = field(default_factory=time.monotonic)
+
+    @property
+    def expired(self) -> bool:
+        return (
+            isinstance(self.request, StructuredQuestionRequestView)
+            and time.monotonic() - self.question_started >= self.timeout_seconds
+        )
+
+    def expire_question(self) -> ThreadDeferredResponse | None:
+        """Reject this entire question call; never invent partial answers or approve another request."""
+        if not isinstance(self.request, StructuredQuestionRequestView):
+            raise ValueError("Only structured questions have an automatic waiting timeout")
+        self.responses.append(
+            ExternalToolResult(request_id=self.request.request_id, denied=True, denial_message=QUESTION_TIMEOUT_MESSAGE)
+        )
+        return self._advance()
 
     @property
     def request(self) -> DecisionRequestView:
@@ -48,6 +73,17 @@ class DecisionInteraction:
             )
         return None
 
+    def title(self) -> str:
+        request = self.request
+        if isinstance(request, StructuredQuestionRequestView):
+            question = request.questions[self.question_index]
+            return f"{question.header}: {question.question}"
+        return (
+            f"{request.tool_name} · choose approval"
+            if isinstance(request, ApprovalRequestView)
+            else f"{request.tool_name} · result required"
+        )
+
     def prompt(self) -> str:
         request = self.request
         heading = f"Decision {self.index + 1}/{len(self.batch.requests)} · {request.tool_name} · {request.request_id}"
@@ -61,7 +97,7 @@ class DecisionInteraction:
                 if request.metadata_omitted
                 else ""
             )
-            return f"{heading}\n{question.header} ({self.question_index + 1}/{len(request.questions)})\n{question.question}\n{options}{review}\nChoose a number or type your own answer. /cancel keeps the request pending."
+            return f"{heading}\n{question.header} ({self.question_index + 1}/{len(request.questions)})\n{question.question}\n{options}{review}\nChoose a number or type your own answer. Timeout: {self.timeout_seconds:g}s per question; no reply rejects this call. /cancel keeps the request pending."
         arguments = json.dumps(request.arguments, ensure_ascii=False, indent=2)
         metadata = json.dumps(request.metadata, ensure_ascii=False, indent=2) if request.metadata else ""
         content = f"{arguments}\n{metadata}".strip()
@@ -82,6 +118,7 @@ class DecisionInteraction:
             self.answers[question.question] = answer
             self.question_index += 1
             if self.question_index < len(request.questions):
+                self.question_started = time.monotonic()
                 return None
             self.responses.append(
                 ExternalToolResult(
@@ -118,9 +155,13 @@ class DecisionInteraction:
                     result=None if denied else json.loads(value),
                 )
             )
+        return self._advance()
+
+    def _advance(self) -> ThreadDeferredResponse | None:
         self.index += 1
         self.question_index = 0
         self.answers.clear()
+        self.question_started = time.monotonic()
         if self.index == len(self.batch.requests):
             return ThreadDeferredResponse(
                 expected_continuation_id=self.batch.continuation_id, responses=tuple(self.responses)

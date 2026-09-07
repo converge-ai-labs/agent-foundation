@@ -5,6 +5,8 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass
 
+from a13n_harness_ui.surfaces import SkillCatalogView, SkillReference
+
 
 @dataclass(frozen=True, slots=True)
 class Command:
@@ -84,24 +86,7 @@ COMMANDS = (
     Command("new", "Start a fresh session; keep all saved history."),
     Command("resume", "List recent sessions in this workspace or resume one.", "[session-id]", maximum=1),
     Command("history", "Print retained history for the current session.", "[cursor]", maximum=1),
-    Command(
-        "login",
-        "Authenticate a subscription account (device flow).",
-        "[codex|grok]",
-        maximum=1,
-        choices=("codex", "grok"),
-    ),
     Command("config", "Show configuration paths and effective precedence."),
-    Command("approve", "Approve a pending tool request once.", "request-id", minimum=1, maximum=1),
-    Command("deny", "Deny a pending tool request.", "request-id", minimum=1, maximum=1),
-    Command(
-        "result",
-        "Supply a JSON result for a pending external tool.",
-        "request-id JSON",
-        minimum=2,
-        maximum=2,
-        raw_tail=True,
-    ),
     Command(
         "review", "Inspect a pending request against the selected continuation.", "request-id", minimum=1, maximum=1
     ),
@@ -120,12 +105,30 @@ class Invocation:
 class CommandRegistry:
     def __init__(self, commands: tuple[Command, ...] = COMMANDS) -> None:
         self.commands = commands
+        self.skills: dict[str, tuple[str, SkillReference]] = {}
         self._index: dict[str, Command] = {}
         for command in commands:
             for name in (command.name, *command.aliases):
                 if name in self._index:
                     raise ValueError(f"Duplicate slash command: {name}")
                 self._index[name] = command
+
+    def set_skills(self, catalog: SkillCatalogView | None) -> None:
+        self.skills.clear()
+        if catalog is None:
+            return
+        for item in catalog.items:
+            if item.name in self._index or any(char.isspace() for char in item.name):
+                continue
+            self.skills[item.name] = (
+                item.description,
+                SkillReference(catalog_id=catalog.catalog_id, item_id=item.item_id, name=item.name),
+            )
+
+    def skill_references(self, text: str) -> tuple[SkillReference, ...]:
+        head = text.split(maxsplit=1)[0] if text else ""
+        item = self.skills.get(head[1:]) if head.startswith("/") else None
+        return (item[1],) if item is not None else ()
 
     def parse(self, text: str, *, busy: bool = False) -> Invocation:
         source = text.removeprefix("/")
@@ -163,9 +166,9 @@ class CommandRegistry:
         if name is None:
             lines += [
                 "",
-                "Enter: send   Alt+Enter: newline   Tab: complete   Ctrl+C: clear/cancel   Ctrl+D: exit",
+                "Enter: send   Alt+Enter: newline   Tab: complete   Ctrl+C: cancel / twice to exit   Ctrl+D: exit",
                 "Enter adds text guidance during a run. Bracketed multiline paste stays a draft until Enter.",
-                "Quote paths containing spaces. /result takes raw JSON. Configure outside chat with a13n-harness-ui setup.",
+                "Quote paths containing spaces. Decisions use the selection panel. Sign in with a13n-harness-ui login; configure with a13n-harness-ui setup.",
                 "Ctrl+V / Alt+V: paste image   PgUp/PgDn: scroll   Ctrl+End: latest   /mouse off: native copy",
             ]
         return "\n".join(lines)
@@ -179,7 +182,7 @@ class CommandRegistry:
                 (f"/{item.name}", item.summary)
                 for item in self.commands
                 if any(name.startswith(head) for name in (item.name, *item.aliases))
-            )
+            ) + tuple((f"/{name}", f"Skill · {item[0]}") for name, item in self.skills.items() if name.startswith(head))
         command = self._index.get(head)
         if command is None:
             return ()

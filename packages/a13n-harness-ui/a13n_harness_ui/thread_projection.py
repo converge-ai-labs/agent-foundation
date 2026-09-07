@@ -10,7 +10,7 @@ from typing import Literal
 
 from a13n_harness import HarnessState
 from a13n_harness.model_context import user_prompt_content
-from a13n_stream_protocol import ContentMetadata
+from a13n_stream_protocol.messages import project_input_content
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
@@ -411,11 +411,12 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
         return tuple(
             TranscriptPart(
                 kind="media" if metadata.media else "user",
-                text=_bounded_text(item.content),
+                text=_bounded_text(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)),
                 metadata=metadata,
             )
             for item in user_prompt_content(part)
-            for metadata in (ContentMetadata.from_native(item.metadata),)
+            if (projected := project_input_content(item)) is not None
+            for content, metadata in (projected,)
         )
     if isinstance(part, ToolReturnPart):
         value, omitted = _bounded_json(part.content)

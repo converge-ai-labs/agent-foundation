@@ -66,6 +66,19 @@ def tool_arguments(name: str, arguments: str) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2)
 
 
+def tool_preview(arguments: str) -> str:
+    try:
+        value = json.loads(arguments)
+    except ValueError:
+        return arguments[:240]
+    if isinstance(value, dict):
+        for key in ("command", "file_path", "path", "query", "pattern", "subject"):
+            if isinstance(value.get(key), str):
+                return value[key][:500]
+        return ", ".join(value)[:160]
+    return str(value)[:160]
+
+
 def tool_result(name: str, text: str) -> str:
     try:
         value = json.loads(text)
@@ -78,4 +91,4 @@ def tool_result(name: str, text: str) -> str:
         elif value.get("ok") is True and name in {"edit", "multi_edit"}:
             state = "completed"
         text = json.dumps(value, ensure_ascii=False, indent=2)
-    return f"[{name} · {state}]\n{text}"
+    return f"{state}\n{text}"

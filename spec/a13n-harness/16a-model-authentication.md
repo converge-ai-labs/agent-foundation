@@ -128,6 +128,12 @@ Thread affinity and turn state have separate lifetimes: Thread-derived headers r
 
 No OAuth token, authorization code, PKCE verifier, raw identity claim, complete source record, or Codex turn-state value enters Model messages, `HarnessState`, event payloads, logs, or telemetry.
 
+## Codex Account Request Authentication
+
+`build_codex_account_auth` exposes the same request-fresh credential lifecycle to Host-owned ChatGPT account API clients without constructing a Model. The caller owns the dedicated async client and disables redirects. Authentication attaches bearer and account headers only to the exact ChatGPT HTTPS origin, persists refresh before use, and permits at most one 401 reload-or-refresh replay. It does not retry timeouts or ambiguous provider outcomes.
+
+A caller may bind an expected account ID to a confirmed account operation. A different request-fresh account fails before that operation is sent. Mutating account operations retain caller-owned stable idempotency identities across the possible authentication replay. The Harness owns authentication, not quota eligibility, reset-credit selection, confirmation UI, or provider reset outcomes.
+
 ## OAuth Flows
 
 The module exposes provider-specific authorization and refresh primitives. `CodexOAuthFlow` is an authorization-code plus PKCE context: construction performs no I/O, `authorization_url()` creates the provider URL, and `exchange_code()` exchanges a callback code for `CodexCredentials`. A convenience one-shot localhost callback receiver is process-local; opening a browser and deciding whether and where to save the returned credentials remain caller-owned.

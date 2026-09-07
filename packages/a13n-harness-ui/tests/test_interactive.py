@@ -59,7 +59,9 @@ def test_renderer_modes_switch_without_replay_and_preserve_control_safety() -> N
     renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit-1"})
     renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "edit-1", "content": "edited"})
     result = renderer.drain()
-    assert "public reasoning" in result and "a.py" in result and "edited" in result
+    assert "public reasoning" in result
+    tool = next(block for block in renderer.transcript.blocks.values() if "edit · result" in block.source)
+    assert "edited" in tool.source and "file_path" not in tool.source
     assert "hidden summary" not in result
     assert "\x1b" not in terminal_text("unsafe\x1b]52;c;YQ==\x07")
     renderer.ingest("TEXT_MESSAGE_CONTENT", None)
@@ -86,8 +88,8 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
     for run_id in ("child-b", "child-a"):
         renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": "done"}, child=True, run_id=run_id)
     result = renderer.drain()
-    assert "[Result] edit · child-a / one" in result
-    assert "[Result] edit · child-b / one" in result
+    assert "edit · result" in result and "child-a" in result
+    assert "child-b" in result
     for index in range(256):
         renderer.ingest("TOOL_CALL_START", {"tool_call_id": str(index), "tool_call_name": "edit"})
     assert len(renderer._tools) == 128
@@ -104,6 +106,7 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     wizard = SetupWizard()
     wizard.accept("codex")
     wizard.accept("sandbox")
+    wizard.accept("all")
     wizard.customize()
     for value in ("", "extended", "medium", "no", ""):
         wizard.accept(value)
@@ -117,7 +120,7 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     assert selection["codex_thinking"] == "medium"
 
 
-@pytest.mark.parametrize("arguments", [["--help"], ["--version"], ["auth", "login", "--help"], ["run", "--help"]])
+@pytest.mark.parametrize("arguments", [["--help"], ["--version"], ["login", "--help"], ["run", "--help"]])
 def test_cli_help_never_imports_runtime(arguments: list[str], tmp_path: Path) -> None:
     script = f"""
 import sys
@@ -693,7 +696,6 @@ async def test_onboarding_import_enrolls_inheriting_subagent_and_is_retryable(
         assert "inherit" in preview
         assert "enabled" in await backend.import_and_enroll(("reviewer",))
         configuration = await app.current_configuration()
-        assert configuration.subagents["subagent-reviewer"].model is None
         assert configuration.subagents["subagent-reviewer"].tools is None
         assert any(edge.markdown == "subagent-reviewer" for edge in configuration.agents["agent-codex"].subagents)
         await backend.import_choices("claude-code", "project")
@@ -738,8 +740,8 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
             await asyncio.wait_for(entered.wait(), 5)
             receipt = backend.receipt_id
             assert receipt is not None
-            assert "accepted" in await backend.steer("guidance-first", receipt_id=receipt)
-            assert "accepted" in await backend.steer("guidance-second", receipt_id=receipt)
+            assert "sent" in await backend.steer("guidance-first", receipt_id=receipt)
+            assert "sent" in await backend.steer("guidance-second", receipt_id=receipt)
             release.set()
             assert await asyncio.wait_for(task, 10) == ""
             assert len(observed) == 2
@@ -768,7 +770,7 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
     from a13n_harness.model_context import ModelInputEvent
     from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
     from pydantic_ai.capabilities import AbstractCapability
-    from pydantic_ai.messages import EnqueuedMessagesEvent
+    from pydantic_ai.messages import EnqueuedMessagesEvent, TextContent
 
     queued = [f"ENQUEUE_BODY_{index}" for index in range(count)]
 
@@ -801,9 +803,10 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
                     if isinstance(source.event, ModelInputEvent):
                         batches.append(
                             [
-                                item.content
+                                item.content if isinstance(item, TextContent) else item
                                 for item in source.event.content
-                                if ContentMetadata.from_native(item.metadata).display
+                                if not isinstance(item, TextContent)
+                                or ContentMetadata.from_native(item.metadata).display
                             ]
                         )
                     elif isinstance(source.event, EnqueuedMessagesEvent):
@@ -811,11 +814,130 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
                 for event in observer.observe(source):
                     renderer.ingest(event.type.value, event.model_dump(mode="json"))
         rendered = "\n".join(block.source for block in renderer.transcript.blocks.values())
-        assert batches == [["INITIAL_BODY"], queued]
+        assert [text for batch in batches for text in batch] == ["INITIAL_BODY"]
         assert len(set(deliveries)) == count
         for text in ["INITIAL_BODY", *queued]:
             assert rendered.count(text) == 1
         for enqueue_id in deliveries:
-            assert enqueue_id in rendered
+            assert enqueue_id not in rendered
     finally:
         renderer.transcript.close()
+
+
+@pytest.mark.anyio
+async def test_configured_codeact_executes_and_disabled_questions_are_not_exposed(tmp_path: Path, monkeypatch) -> None:
+    import a13n_harness_ui.model_runtime as runtime
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall
+
+    path = await _seed(tmp_path, monkeypatch)
+    path.write_text(path.read_text() + "\ntools:\n  enable_user_input: false\n  enable_codeact: true\n")
+
+    async def stream(messages, info):
+        names = {tool.name for tool in info.function_tools}
+        assert {"run_code", "run_program"} <= names
+        assert "ask_user_question" not in names
+        results = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.tool_name == "run_code"
+        ]
+        if not results:
+            yield {0: DeltaToolCall(name="run_code", tool_call_id="code-one", json_args='{"code":"1 + 1"}')}
+        else:
+            assert "2" in str(results[0].content)
+            yield "CodeAct completed."
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        renderer = StreamRenderer(backend.status)
+        assert await backend.execute(renderer, prompt="Calculate with CodeAct") == ""
+        assert "CodeAct completed" in "".join(block.source for block in renderer.transcript.blocks.values())
+        renderer.transcript.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("timeout", [False, True])
+async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
+    tmp_path: Path, monkeypatch, timeout: bool
+) -> None:
+    import a13n_harness_ui.model_runtime as runtime
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall
+
+    path = await _seed(tmp_path, monkeypatch)
+    path.write_text(path.read_text() + "\ntools:\n  user_input_timeout_seconds: 30\n")
+
+    async def stream(messages, info):
+        names = {tool.name for tool in info.function_tools}
+        assert {"task_create", "task_update", "task_list", "ask_user_question"} <= names
+        assert not {"run_code", "run_program", "note"} & names
+        returned = [
+            part.tool_name
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if "task_create" not in returned:
+            yield {
+                0: DeltaToolCall(
+                    name="task_create",
+                    tool_call_id="create-task",
+                    json_args=json.dumps(
+                        {"subject": "Choose an option", "description": "Exercise default native tools"}
+                    ),
+                )
+            }
+        elif "ask_user_question" not in returned:
+            yield {
+                0: DeltaToolCall(
+                    name="ask_user_question",
+                    tool_call_id="question-one",
+                    json_args=json.dumps(
+                        {
+                            "questions": [
+                                {
+                                    "header": "Option",
+                                    "question": "Which option?",
+                                    "options": [
+                                        {"label": "One", "description": "First"},
+                                        {"label": "Two", "description": "Second"},
+                                    ],
+                                }
+                            ]
+                        }
+                    ),
+                )
+            }
+        else:
+            if timeout:
+                assert "No answer or approval was provided" in str(messages)
+            yield "Choice applied."
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        renderer = StreamRenderer(backend.status)
+        assert "Pending decisions" in await backend.execute(renderer, prompt="Create a task and ask")
+        assert len(renderer.tasks.tasks) == 1
+        assert len((await app.thread_tasks(thread_id=backend.thread_id)).tasks) == 1
+        interaction = await backend.interaction()
+        assert interaction is not None and interaction.title() == "Option: Which option?"
+        assert interaction.timeout_seconds == 30
+        if timeout:
+            interaction.question_started -= interaction.timeout_seconds
+            assert interaction.expired
+            response = interaction.expire_question()
+        else:
+            response = interaction.accept("One")
+        assert response is not None and not isinstance(response, str)
+        assert await backend.execute(renderer, response=response) == ""
+        assert "Choice applied" in "".join(block.source for block in renderer.transcript.blocks.values())

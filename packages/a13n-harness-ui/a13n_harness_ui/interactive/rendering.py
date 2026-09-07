@@ -5,14 +5,16 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
 
-from a13n_stream_protocol import ContentMetadata, CustomEventAssembler
-
-from .local_shell import LocalShellEvent
-from .panels import capability_panel, tool_arguments, tool_result
+from .panels import capability_panel, tool_arguments, tool_preview, tool_result
 from .transcript import Transcript
+
+if TYPE_CHECKING:
+    from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
+
+    from .local_shell import LocalShellEvent
 
 
 def terminal_text(value: str) -> str:
@@ -38,6 +40,44 @@ class Status:
     started: float | None = None
     elapsed: float = 0
     session_id: str | None = None
+    usage: BoundedRequestUsage | None = None
+    requests: int = 0
+    _usage_ids: set[str] = field(default_factory=set)
+
+    def reset_usage(self) -> None:
+        self.usage = None
+        self.requests = 0
+        self._usage_ids.clear()
+
+    def record_usage(self, record: ModelUsageRecord) -> None:
+        from a13n_harness.usage import BoundedRequestUsage
+
+        if record.record_id in self._usage_ids:
+            return
+        self._usage_ids.add(record.record_id)
+        current = record.request_usage
+        previous = self.usage
+        self.requests += 1
+        counters = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+        values = current.model_dump(include=set(counters))
+        if previous is not None:
+            old = previous.model_dump(include=set(counters))
+            values = {key: values[key] + old[key] for key in counters}
+        cost = current.cost
+        if previous is not None:
+            cost = None if cost is None or previous.cost is None else previous.cost + cost
+        self.usage = BoundedRequestUsage(**values, cost=cost)
+
+    def usage_details(self) -> str:
+        if self.usage is None:
+            return "Root Run usage: unavailable (no observed model response)."
+        usage = self.usage
+        cost = "unknown" if usage.cost is None else f"USD {usage.cost:.6f} (model estimate, not subscription billing)"
+        return (
+            f"Observed root Run: {self.requests} requests · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
+            f"Cache read {usage.cache_read_tokens:,} · cache write {usage.cache_write_tokens:,} (provider-reported counters)\n"
+            f"Cost: {cost}. Child and non-model usage excluded."
+        )
 
     def line(self, width: int | None = None) -> str:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
@@ -46,15 +86,20 @@ class Status:
             if self.context_tokens is None or not self.context_window
             else f"{100 * self.context_tokens / self.context_window:.0f}%"
         )
-        fields = [
-            self.state.capitalize(),
-            self.model.split(":")[-1],
-            self.thinking,
-            f"ctx {context}",
-            f"{elapsed:.0f}s",
-        ]
+        fields = [self.state.capitalize(), self.model.split(":")[-1]]
+        if self.usage is not None:
+            usage = self.usage
+            fields.extend(
+                [
+                    "cost --" if usage.cost is None else f"${usage.cost:.4f}",
+                    f"in {usage.input_tokens:,} / out {usage.output_tokens:,}",
+                ]
+            )
+        fields.extend([f"ctx {context}", self.thinking, f"{elapsed:.0f}s"])
+        if self.usage is not None:
+            fields.append(f"cache r {self.usage.cache_read_tokens:,} / w {self.usage.cache_write_tokens:,}")
         while width is not None and len(" · ".join(fields)) + 2 > width and len(fields) > 2:
-            fields.pop(2 if len(fields) == 5 else 1)
+            fields.pop()
         return terminal_text(" " + " · ".join(fields) + " ")
 
 
@@ -66,6 +111,8 @@ class _ToolPreview:
     parts: list[str] | None = None
     size: int = 0
     truncated: bool = False
+    block_id: int | None = None
+    summary: str = ""
 
 
 class StreamRenderer:
@@ -76,20 +123,31 @@ class StreamRenderer:
     """
 
     def __init__(self, status: Status, *, limit: int | None = None) -> None:
+        from a13n_stream_protocol import CustomEventAssembler
+
+        from .tasks import TaskPanel
+
         self.status = status
         self.transcript = Transcript()
+        self.tasks = TaskPanel()
+        self._local_inputs: dict[str, int] = {}
         self._messages: dict[tuple[str, str, str], int] = {}
         self._limit = limit
         self._pending: list[str] = []
         self._size = 0
         self._tools: dict[tuple[str, str], _ToolPreview] = {}
-        self._steering: dict[tuple[str, str], str] = {}
         self.assistant_seen = False
         self.gap = False
         self.boundary = False
         self._line_open = False
         self._local_output: dict[str, int] = {}
         self._custom_events = CustomEventAssembler()
+
+    def local_input(self, source_id: str, text: str) -> None:
+        self.finish()
+        self._local_inputs[source_id] = self.transcript.append("> " + terminal_text(text), kind="user")
+        while len(self._local_inputs) > 128:
+            self._local_inputs.pop(next(iter(self._local_inputs)))
 
     @property
     def limit(self) -> int:
@@ -171,6 +229,8 @@ class StreamRenderer:
         run_id: str = "root",
         execution_id: str | None = None,
     ) -> None:
+        from a13n_stream_protocol import ContentMetadata
+
         if payload is None:
             self.gap = True
             return
@@ -188,6 +248,10 @@ class StreamRenderer:
         thinking = event_type.startswith(("REASONING_MESSAGE", "THINKING_TEXT_MESSAGE"))
         message = event_type.startswith("TEXT_MESSAGE")
         user = message and payload.get("role") == "user"
+        if user and not child and metadata.source_id in self._local_inputs:
+            # Correlate explicit authored input identity, never equal text. Keep
+            # the identity across repeated model boundaries of this operation.
+            return
         assistant = message and not user
         identity = terminal_text(execution_id or run_id)
         if thinking or message:
@@ -211,9 +275,7 @@ class StreamRenderer:
             elif text:
                 block_id = self._messages.get(key)
                 if block_id is None or not self.transcript.extend(block_id, terminal_text(text)):
-                    label = (f"**Subagent · {identity}**\n\n" if child else "") + (
-                        "**Thinking**\n\n" if thinking else "> " if user else ""
-                    )
+                    label = (f"**Subagent · {identity}**\n\n" if child else "") + ("> " if user else "")
                     self._messages[key] = self.transcript.append(
                         label + terminal_text(text),
                         markdown=not user,
@@ -238,7 +300,9 @@ class StreamRenderer:
                     self.status.state = preview.name
                 if not child or detailed:
                     self.finish()
-                    self.append(f"[Tool] {preview.name} · {label}\n")
+                    header = f"{preview.name} · running" + (f" · {identity}" if child else "")
+                    preview.block_id = self.transcript.append(header + "\n", collapsed_lines=1)
+                    self.append(header + "\n", display=False)
             elif event_type.endswith(("ARGS", "CHUNK")):
                 if preview is None:
                     preview = self._tools[key] = _ToolPreview("tool", time.monotonic())
@@ -257,11 +321,24 @@ class StreamRenderer:
                 name = preview.name if preview else "tool"
                 if not child or detailed:
                     elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
-                    self.append(f"[Result] {name} · {label}{elapsed}\n")
-                    self.append(
-                        tool_result(name, text) + "\n",
-                        collapsed_lines=self.status.max_tool_result_lines,
+                    result = tool_result(name, text)
+                    state, _, output = result.partition("\n")
+                    header = f"{name} · {state}{elapsed}" + (f" · {identity}" if child else "")
+                    summary = preview.summary if preview else ""
+                    brief = " · ".join(
+                        item
+                        for item in (header, " ".join(summary.split())[:100], output.split("\n", 1)[0][:100])
+                        if item
                     )
+                    if name.startswith("shell") and summary:
+                        brief = header + "\n" + summary
+                    arguments = preview.arguments if preview else ""
+                    body = header + "\n" + (f"Arguments · {label}\n{arguments}\n" if arguments else "") + result + "\n"
+                    block_id = preview.block_id if preview is not None else None
+                    if block_id is None or not self.transcript.replace(block_id, terminal_text(body)):
+                        block_id = self.transcript.append(terminal_text(body), collapsed_lines=1)
+                    self.transcript.preview(block_id, terminal_text(brief), 4 if name.startswith("shell") else 1)
+                    self.append(header + "\n", display=False)
                 self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
                     self.status.state = "working"
@@ -271,20 +348,20 @@ class StreamRenderer:
                 if preview:
                     preview.arguments = "".join(preview.parts or ())
                     preview.parts = None
-                    preview.size = 0
-                    if (not child or detailed) and preview.arguments:
-                        self.append(
-                            tool_arguments(preview.name, preview.arguments)
-                            + (
-                                "\n[Arguments exceed display budget; /history reads retained content]"
-                                if preview.truncated
-                                else ""
-                            )
-                            + "\n",
-                            collapsed_chars=self.status.max_tool_argument_chars,
-                            collapsed_lines=self.status.max_tool_result_lines,
-                        )
-                    preview.arguments = ""
+                    preview.summary = tool_preview(preview.arguments)
+                    if preview.name in {"edit", "multi_edit", "summarize", "compact"}:
+                        preview.arguments = ""
+                    elif preview.arguments:
+                        preview.arguments = tool_arguments(preview.name, preview.arguments)
+                        if preview.truncated:
+                            preview.arguments += "\n[Arguments exceed display budget; /history reads retained content]"
+                    preview.size = len(preview.arguments)
+                    if preview.block_id is not None and preview.arguments:
+                        header = f"{preview.name} · running" + (f" · {identity}" if child else "")
+                        self.transcript.replace(preview.block_id, terminal_text(header + "\n" + preview.arguments))
+                        shell = preview.name.startswith("shell")
+                        brief = header + ("\n" if shell else " · ") + preview.summary
+                        self.transcript.preview(preview.block_id, terminal_text(brief), 4 if shell else 1)
                 self.boundary = True
             # START-only and malformed streams obey the same bound as ARGS.
             while len(self._tools) > 128:
@@ -300,6 +377,18 @@ class StreamRenderer:
                 if not isinstance(event, dict):
                     return
                 name = payload.get("name")
+                if name == "a13n.input.media":
+                    media = event.get("content")
+                    if isinstance(media, dict) and (not child or detailed):
+                        label = str(media.get("media_type") or media.get("kind") or "media")
+                        if isinstance(media.get("size_bytes"), int):
+                            label += f" · {media['size_bytes']:,} bytes"
+                        reference = media.get("url") or media.get("file_id")
+                        if isinstance(reference, str):
+                            label += f" · {reference}"
+                        self.finish()
+                        self.append(f"> [{label}]\n", kind="user")
+                    return
                 panel = capability_panel(name, event)
                 if panel is not None:
                     if not child or detailed:
@@ -325,27 +414,15 @@ class StreamRenderer:
                         self.append(
                             f"[{title} · {identity}] {kind}\n"
                             + json.dumps(mutation, ensure_ascii=False, indent=2)
-                            + "\n"
+                            + "\n",
+                            collapsed_lines=1,
                         )
-                    elif kind == "steering_input_enqueued":
-                        source = str(mutation.get("source", "unknown"))
-                        self._steering[(run_id, str(mutation.get("enqueue_id", "unknown")))] = source
-                        while len(self._steering) > 256:
-                            self._steering.pop(next(iter(self._steering)))
-                        title = "Steer" if source == "external" else "Input"
-                        self.append(
-                            f"[{title} · queued · {identity}]\n"
-                            + json.dumps(mutation, ensure_ascii=False, indent=2)
-                            + "\n"
-                        )
+                    elif kind == "task_changed" and not child:
+                        self.tasks.ingest(mutation)
                 if name == "a13n.pydantic_ai.enqueued_messages" and event.get("event_kind") == "enqueued_messages":
-                    self.finish()
-                    enqueue_id = str(event.get("enqueue_id", "unknown"))
-                    source = self._steering.pop((run_id, enqueue_id), None)
-                    title = "Steer" if source == "external" else "Input"
-                    self.append(
-                        f"[{title} · delivered · {identity} · {enqueue_id}]\nAdditional input delivered at a model boundary.\n"
-                    )
+                    # ModelInputEvent owns applied input. Acceptance is a local
+                    # notification; queue/delivery facts must not echo it again.
+                    return
                 elif name == "a13n.pydantic_ai.function_tool_result":
                     self.finish()
                     self.append(

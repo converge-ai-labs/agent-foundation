@@ -223,7 +223,10 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     request = seen[0][-1]
     assert isinstance(request, ModelRequest)
     text = [
-        item.content for part in request.parts if isinstance(part, UserPromptPart) for item in user_prompt_content(part)
+        (item.content if isinstance(item, TextContent) else item)
+        for part in request.parts
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
     ]
     assert text[0].startswith("Current Environment mounts")
     assert text[1] == "hello"
@@ -233,7 +236,7 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     persisted_request = result.state.message_history[0]
     assert isinstance(persisted_request, ModelRequest)
     persisted_text = [
-        item.content
+        item.content if isinstance(item, TextContent) else item
         for part in persisted_request.parts
         if isinstance(part, UserPromptPart)
         for item in user_prompt_content(part)
@@ -311,13 +314,13 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
 
     injected_context = [
         [
-            item.content
+            item.content if isinstance(item, TextContent) else item
             for message in messages
             if isinstance(message, ModelRequest)
             for part in message.parts
             if isinstance(part, UserPromptPart)
             for item in user_prompt_content(part)
-            if item.content.startswith("capability context ")
+            if isinstance(item, TextContent) and item.content.startswith("capability context ")
         ]
         for messages in (*seen, canonical_messages)
     ]
@@ -353,7 +356,10 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
     request = seen[0][-1]
     assert isinstance(request, ModelRequest)
     text = [
-        item.content for part in request.parts if isinstance(part, UserPromptPart) for item in user_prompt_content(part)
+        (item.content if isinstance(item, TextContent) else item)
+        for part in request.parts
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
     ]
     assert text == ["host preamble", "hello", "host epilogue"]
     assert calls == ["host:before", "host:after"]
@@ -630,3 +636,41 @@ def test_overlay_cleanup_uses_ownership_metadata_not_matching_text() -> None:
     assert isinstance(injected, TextContent)
     assert injected.metadata == {"display": False, "source_id": "test.same-text"}
     assert restored[-1].parts[0].content == "same text"
+
+
+async def test_input_events_do_not_replay_restored_history_or_change_provider_prefix() -> None:
+    from a13n_harness import HarnessEvent, HarnessState
+    from a13n_harness.model_context import ModelInputEvent
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    history = [
+        ModelRequest(parts=[UserPromptPart("synthetic restored instructions")]),
+        ModelResponse(parts=[TextPart("previous summary")]),
+        ModelRequest(parts=[UserPromptPart("old user input")]),
+        ModelResponse(parts=[TextPart("old answer")]),
+    ]
+    previous = HarnessState.new(message_history=tuple(history))
+    before = previous.model_dump_json()
+    seen = []
+
+    async def respond(messages, info):
+        seen.extend(deepcopy(messages))
+        yield "done"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
+    observed = []
+    prompt = [TextContent("current input", metadata={"source_id": "input-current"})]
+    async with executable.stream(prompt, previous_state=previous, bindings=RunBindings.embedded()) as stream:
+        async for event in stream:
+            if isinstance(event, HarnessEvent) and isinstance(event.event, ModelInputEvent):
+                observed.extend(
+                    item for item in event.event.content if (item.metadata or {}).get("display") is not False
+                )
+    assert [(item.content, item.metadata) for item in observed] == [("current input", {"source_id": "input-current"})]
+    assert previous.model_dump_json() == before
+    assert ModelMessagesTypeAdapter.dump_json(seen[: len(history)]) == ModelMessagesTypeAdapter.dump_json(history)
+    model = OpenAIResponsesModel("gpt-4o", provider=OpenAIProvider(api_key="fixture-only"))
+    original_wire = await model._map_messages(history, {}, ModelRequestParameters())
+    observed_prefix = await model._map_messages(seen[: len(history)], {}, ModelRequestParameters())
+    assert observed_prefix == original_wire

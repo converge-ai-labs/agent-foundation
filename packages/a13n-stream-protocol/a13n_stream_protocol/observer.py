@@ -16,7 +16,7 @@ from a13n_harness import (
     HarnessStreamEvent,
 )
 from a13n_harness.events import ToolExtraEventPayload
-from a13n_harness.model_context import ModelInputEvent
+from a13n_harness.model_context import ModelInputEvent, user_prompt_content
 from ag_ui.core import Event
 from ag_ui.core.events import (
     BaseEvent,
@@ -40,7 +40,9 @@ from ag_ui.core.events import (
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     CapabilityEvent,
+    EnqueuedMessagesEvent,
     FunctionToolResultEvent,
+    ModelRequest,
     OutputToolResultEvent,
     PartDeltaEvent,
     PartEndEvent,
@@ -53,11 +55,13 @@ from pydantic_ai.messages import (
     ToolCallPartDelta,
     ToolReturnPart,
     UnknownCapabilityEvent,
+    UserContent,
+    UserPromptPart,
 )
 from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_stream_protocol.fragments import fragment_custom_event
-from a13n_stream_protocol.messages import ContentMetadata
+from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 
 _AGUI_EVENT_ADAPTER = TypeAdapter(Event)
 _ANY_ADAPTER = TypeAdapter(Any)
@@ -155,9 +159,6 @@ class HarnessAguiObserver:
 
         staged_state = deepcopy(self._state)
         converted = self._convert(item, staged_state)
-        if not converted:
-            raise AguiObservationError("A public Harness item produced no AG-UI observation")
-
         processed: list[Event] = []
         for event in converted:
             candidate = event if self._processor is None else self._processor(item, event.model_copy(deep=True))
@@ -203,7 +204,26 @@ class HarnessAguiObserver:
             _observe_request_lifecycle(source, state)
             return [_custom_harness_event(item, source)]
         if isinstance(source, ModelInputEvent):
-            events = _convert_model_input(item, source)
+            return _convert_input(item, source.content)
+        elif isinstance(source, EnqueuedMessagesEvent):
+            # Native delivery is authoritative. Never send its raw messages
+            # through the generic serializer: they may contain binary payloads.
+            content = [
+                content
+                for message in source.messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+                for content in user_prompt_content(part)
+            ]
+            return [
+                CustomEvent(
+                    timestamp=_timestamp_ms(item),
+                    name="a13n.pydantic_ai.enqueued_messages",
+                    value=_source_value(item, {"event_kind": source.event_kind, "enqueue_id": source.enqueue_id}),
+                ),
+                *_convert_input(item, content),
+            ]
         elif isinstance(source, CapabilityEvent):
             # Preserve the native kind and payload, including user-defined capabilities.
             custom = CustomEvent(
@@ -311,18 +331,33 @@ class HarnessAguiObserver:
         return replacement.model_copy(deep=True)
 
 
-def _convert_model_input(item: HarnessEvent, source: ModelInputEvent) -> list[Event]:
-    return [
-        event
-        for index, content in enumerate(source.content)
-        for event in _text_message_events(
-            item,
-            message_id=f"{item.run_id}:input:{item.sequence}:{index}",
-            content=content.content,
-            role="user",
-            metadata=ContentMetadata.from_native(content.metadata),
-        )
-    ]
+def _convert_input(item: HarnessEvent, content: Sequence[UserContent]) -> list[Event]:
+    events: list[Event] = []
+    for index, native in enumerate(content):
+        projected = project_input_content(native)
+        if projected is None:
+            continue
+        value, metadata = projected
+        message_id = f"{item.run_id}:input:{item.sequence}:{index}"
+        if isinstance(value, str):
+            events.extend(
+                _text_message_events(item, message_id=message_id, content=value, role="user", metadata=metadata)
+            )
+        else:
+            events.append(
+                CustomEvent.model_validate(
+                    {
+                        "type": "CUSTOM",
+                        "timestamp": _timestamp_ms(item),
+                        "name": "a13n.input.media",
+                        "message_id": message_id,
+                        "role": "user",
+                        "metadata": metadata.model_dump(mode="json"),
+                        "value": _source_value(item, {"content": value}),
+                    }
+                )
+            )
+    return events
 
 
 def _text_message_events(

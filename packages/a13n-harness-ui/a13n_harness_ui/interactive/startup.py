@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from a13n_harness_ui.cli import CliRequest
 
     from .backend import SessionBackend
+    from .shell import CliShell
     from .updates import UpdateCommand
 
 
@@ -33,7 +34,6 @@ async def run_terminal(
 ) -> UpdateCommand | None:
     from .lifecycle import resume_hint
     from .onboarding import LandingScreen, run_setup
-    from .shell import CliShell
     from .updates import prompt_update
 
     directory = (directory or Path.cwd()).resolve()
@@ -77,9 +77,10 @@ async def run_terminal(
                             "The selected Agent still has no Model. Run a13n-harness-ui setup or check --agent."
                         )
                         return
-                await landing.close()
+                from .shell import CliShell
+
                 shell = CliShell(request, directory=directory, status=status)
-                await shell.run(backend)
+                await landing.run_chat(shell, backend)
     except asyncio.CancelledError:
         if not landing.cancel_requested:
             raise

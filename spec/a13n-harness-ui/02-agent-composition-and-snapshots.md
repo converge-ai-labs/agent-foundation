@@ -161,9 +161,17 @@ Selections use stable IDs. Users do not configure a separate fine-grained subage
 
 A child Thread persists the same discriminated Agent or Markdown source reference rather than inventing a synthetic Agent ID. Agent-to-Agent references are resolved from the accepted configuration generation. Cycles, duplicate immediate roster names, missing resources, excessive depth, and excessive expanded node count reject the generation or Run capture before native construction.
 
+## Built-in Subagents
+
+Harness UI ships canonical Markdown definitions for `code-reviewer` (risk-proportionate independent review), `executor` (bounded autonomous execution), and `explorer` (repository exploration). Their stable source IDs are `subagent-builtin-<name>`; the frontmatter name is the delegate roster name. Package sources participate in the accepted generation under `built-in-subagents/`, not a writable configuration path. The IDs are reserved: a local or plugin definition cannot replace them. Local `subagent-explorer` remains a separate resource.
+
+Root `subagents.include` appends selected built-ins after authored Agent edges, in configured order. An already authored edge to the identical built-in ID is not added twice. Distinct sources with the same immediate roster name fail composition rather than silently overriding each other. Inclusion does not recursively append defaults to child Agent nodes; Markdown children remain leaves. Explicit Agent edges can select built-ins by their Markdown IDs when desired.
+
+Built-ins inherit the parent's complete model recipe, Capabilities, and visible tools under the ordinary Markdown normalization path. They introduce no alternative runner or permissions. Instructions constrain intended roles, not tool authority. Resolved bodies, routing instructions, and inherited values are frozen into each composition; later package upgrades or inclusion edits affect later captures only. Previously captured native graphs reconstruct without rereading current package definitions.
+
 ## Canonical Markdown Subagents
 
-Markdown reference availability is validated when resolving the selected Agent, not across every configured Agent. Missing plugin models and resolved roster-name conflicts fail the affected composition explicitly. Invalid optional plugin files remain diagnosed under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration).
+Markdown reference availability is validated when resolving the selected Agent, not across every configured Agent. Resolved roster-name conflicts fail the affected composition explicitly. Invalid optional plugin files remain diagnosed under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration).
 
 Immediate local `subagents/*.md` files and installed Content Plugin `subagents/*.md` files provide a concise human-authored child format compatible with the common Claude Code shape and the minimal YAACLI adapter pattern. Local files override plugin content with the same ID under the [Content Plugin precedence contract](01b-content-plugin-repositories.md#configuration-integration):
 
@@ -172,7 +180,6 @@ Immediate local `subagents/*.md` files and installed Content Plugin `subagents/*
 name: explorer
 description: Inspect an unfamiliar codebase.
 instruction: Use this child for focused repository exploration.
-model: inherit
 tools: [glob, grep, ls, view]
 ---
 
@@ -187,12 +194,11 @@ The file stem is presentation; the canonical resource ID is `subagent-<name>` un
 | `name`        | Required child roster name                                |
 | `description` | Required parent-facing description                        |
 | `instruction` | Optional additional parent-facing routing guidance        |
-| `model`       | Optional Model resource ID or `inherit`                   |
 | `tools`       | Optional exact visible tool names over the child template |
 
-The Markdown body is the child instruction block. `tools` accepts either a comma-separated scalar, matching the common Claude Code form, or a YAML sequence; Harness UI trims entries and normalizes them to ordered unique names. Harness UI does not encode approval modes, sandbox policy, writable roots, spawn grants, execution modes, durability tiers, or nested permission matrices in this concise format.
+The Markdown body is the child instruction block. Markdown has no `model` field, including no `model: inherit` spelling. Use an Agent resource reference for an independent model or settings; remove legacy Markdown model fields when upgrading source files. Captured Run model recipes remain unchanged. Retained normalized configuration generations may still contain their historical `model` field; decoding and child admission preserve that historical recipe. This is a storage read-compatibility rule, not an accepted field in new Markdown sources. `tools` accepts either a comma-separated scalar, matching the common Claude Code form, or a YAML sequence; Harness UI trims entries and normalizes them to ordered unique names. Harness UI does not encode approval modes, sandbox policy, writable roots, spawn grants, execution modes, durability tiers, or nested permission matrices in this concise format.
 
-At initial child admission, a Markdown source is normalized against the admitting parent Run capture. On linked resume, the current parent Run capture under the same stable roster name supplies the inheritance source again. The Markdown definition inherits the parent's resolved Model when `model` is omitted or `inherit` and inherits the parent's Capability selections. Its body replaces Agent instructions, optional `tools` replaces the inherited visible-tool allowlist, and its nested subagent roster is empty. The child Thread's exact sticky Harness Plugin and MCP lists apply after this normalization; their initial values come from the first admitting parent.
+At initial child admission, a Markdown source is normalized against the admitting parent Run capture. On linked resume, the current parent Run capture under the same stable roster name supplies the inheritance source again. The Markdown definition always inherits the parent's resolved Model and inherits the parent's Capability selections. Its body replaces Agent instructions, optional `tools` replaces the inherited visible-tool allowlist, and its nested subagent roster is empty. The child Thread's exact sticky Harness Plugin and MCP lists apply after this normalization; their initial values come from the first admitting parent.
 
 The release-owned normalizer supplies the same output, recovery, package-prompt, and mandatory-infrastructure contracts used for an ordinary child node. These resolved values are captured in each child Run composition; the persisted child Thread retains the Markdown source ID and can resolve later accepted edits on its next linked Run. Parent changes affect only fields that the Markdown format explicitly inherits, not the child Thread's sticky Project, Environment profile, Plugin, Run Extension, or MCP selections.
 
@@ -200,7 +206,7 @@ A Markdown child is therefore normalized into the same complete resolved child A
 
 ## External Subagent Import
 
-Harness UI provides one explicit quick-import operation for Claude Code, Cursor, and Codex subagent definitions. Import is a convenience boundary, not a live synchronization layer. An explicit `inherit_runtime` preview option omits external model and tool selections and reports that the imported child inherits the parent's effective model and visible tools. The default import preserves representable selections. Both modes preserve instructions and diagnose unsupported external settings. Importing a definition does not enroll it in an Agent roster. CLI onboarding previews and confirms import plus explicit roster enrollment; the definition writes and Agent source mutation remain separate compare-and-set publications. Partial success is reported without implying rollback.
+Harness UI provides one explicit quick-import operation for Claude Code, Cursor, and Codex subagent definitions. Import is a convenience boundary, not a live synchronization layer. An explicit `inherit_runtime` preview option omits external model and tool selections and reports that the imported child inherits the parent's effective model and visible tools. The default import preserves representable tool selections. All Markdown imports inherit the parent model; non-inherit external model fields are omitted with a diagnostic directing users to an Agent resource reference. Both modes preserve instructions and diagnose unsupported external settings. Importing a definition does not enroll it in an Agent roster. CLI onboarding previews and confirms import plus explicit roster enrollment; the definition writes and Agent source mutation remain separate compare-and-set publications. Partial success is reported without implying rollback.
 
 ```mermaid
 flowchart LR
@@ -217,7 +223,7 @@ The operation:
 
 1. scans only the explicitly selected product and user or Project scope;
 2. parses the source product's supported Agent definition fields;
-3. maps name, description, instructions, Model, and exact tool names when representable;
+3. maps name, description, instructions, and exact tool names when representable;
 4. reports unsupported permissions, hooks, Skills, MCP, provider, and product-specific behavior without applying it implicitly;
 5. renders canonical Harness UI Markdown deterministically;
 6. requires expected source and target facts before apply;
@@ -228,6 +234,8 @@ Semantically identical imports are unchanged or deduplicated. A different existi
 ## Resolution
 
 Every resolved Agent node captures the accepted configuration directory's global `AGENTS.md` guidance separately from authored native Agent instructions. Reconstruction injects that captured guidance through user-role model-context blocks on eligible input requests; it never places it in the model/native `instructions` field. Current empty guidance explicitly supersedes earlier global blocks. Legacy captures without this field retain their original reconstruction behavior rather than reading current files.
+
+Harness UI includes the Harness Working State Capability in every newly captured Agent definition unless that capability is explicitly configured. The root document's [tool switches](01-configuration-and-resource-catalog.md#configuration-tree) include User Interaction by default and CodeAct only when enabled; disabled switches exclude those capabilities even when authored explicitly. Enabled capabilities preserve explicit Agent configuration rather than adding duplicates. The default Working State configuration enables native task tools without enabling private note tools, and retains native continuation semantics; explicit configuration, including disabled tools or provider-backed state, remains authoritative. User Interaction exposes `ask_user_question` only to independent roots under the Harness's existing parent-instance rule. Tool visibility filters still apply. These defaults are captured before native construction, not injected into an active Run; previously captured compositions remain unchanged.
 
 Harness UI also includes the Harness File Context Capability by default, reading only `AGENTS.md` in the bound Environment's current working directory. It does not search ancestors, `AGENTS.override.md`, or `RULES.md`. An explicitly configured File Context Capability retains its configured paths and bounds without adding a duplicate Capability. Global guidance precedes working-directory file guidance. Both sources use the Harness [model-context metadata contract](../a13n-harness/09-context-and-memory.md#model-context-projection-contract), remaining model-visible but hidden in ordinary live and retained presentation.
 

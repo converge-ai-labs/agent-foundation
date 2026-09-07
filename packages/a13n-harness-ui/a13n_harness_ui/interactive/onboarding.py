@@ -24,6 +24,9 @@ if TYPE_CHECKING:
     from a13n_harness_ui.app import HarnessUiApp
     from a13n_harness_ui.setup import SetupStatus
 
+    from .backend import SessionBackend
+    from .shell import CliShell
+
 
 class SetupCancelled(Exception):
     """Leave setup without requesting further publication."""
@@ -145,12 +148,27 @@ class LandingScreen:
 
     async def __aenter__(self) -> LandingScreen:
         self._owner = asyncio.current_task()
-        self._task = asyncio.create_task(self.application.run_async(pre_run=self._ready.set))
+        self._task = asyncio.create_task(
+            self.application.run_async(pre_run=self._ready.set, set_exception_handler=False)
+        )
         self._task.add_done_callback(lambda task: self._ready.set())
         await self._ready.wait()
         if self._task.done():
             self._task.result()
         return self
+
+    async def run_chat(self, shell: CliShell, backend: SessionBackend) -> None:
+        """Replace the startup view without leaving the alternate screen."""
+        assert self._task is not None
+        self.application.layout = shell.app.layout
+        self.application.key_bindings = shell.app.key_bindings
+        self.application.style = shell.app.style
+        self.application.mouse_support = shell.app.mouse_support
+        self.application.renderer.mouse_support = shell.app.mouse_support
+        self.application.min_redraw_interval = shell.app.min_redraw_interval
+        shell.app = self.application
+        self.application.invalidate()
+        await shell.run(backend, terminal_task=self._task)
 
     async def close(self) -> None:
         if self._task is not None:
@@ -198,33 +216,21 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
             emit(f"Using existing {provider.title()} login. No new sign-in is needed.")
             return
         emit(account.diagnostic or f"{provider.title()} account requires: {account.action}.")
-        can_login = account.action in {"login", "reauthenticate"}
+        emit(f"Sign in outside this TUI: a13n-harness-ui login {provider}")
         action = await _choose(
             ask_user,
             f"Connect {provider.title()}",
             (
-                *(
-                    (Choice("login", "Sign in", "Device authorization; writes the shared product account store"),)
-                    if can_login
-                    else ()
-                ),
                 Choice("retry", "Check again", "After signing in externally or fixing the account store"),
                 Choice(
                     "later",
                     "Configure without signing in",
-                    "Authenticate with a13n-harness-ui auth login before using this model",
+                    "Authenticate with a13n-harness-ui login before using this model",
                 ),
             ),
         )
         if action == "later":
             return
-        if action == "login":
-            emit("Starting device authorization. Ctrl+C cancels; completed credential writes are retained.")
-            try:
-                await app.login_model_account(provider)
-            except Exception as exc:
-                emit(f"Sign-in failed: {exc}")
-            # Always inspect again; success is not inferred from a dialog closing.
 
 
 async def run_setup(
@@ -282,6 +288,7 @@ async def run_setup(
                     + "\n".join(f"  {root}" for root in preview.project_paths)
                     + f"\nConnection: {provider}\nStarter model: {model}\n"
                     f"Execution: {wizard.values['environment']}\nShell review: {'enabled' if selection.shell_review else 'disabled'}\n"
+                    f"Default subagents: {wizard.values['subagents']}\n"
                     "Existing edited resources retain their settings.\nFiles to publish:\n"
                     + "\n".join(f"  {path}" for path in preview.files)
                     + ("\nPreserved: " + ", ".join(preview.preserved_paths) if preview.preserved_paths else "")

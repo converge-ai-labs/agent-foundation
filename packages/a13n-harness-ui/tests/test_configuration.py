@@ -117,7 +117,6 @@ harness_plugins: []
 name: explorer
 description: Inspect an unfamiliar codebase.
 instruction: Use for focused repository exploration.
-model: inherit
 tools: search, files
 ---
 
@@ -141,9 +140,8 @@ Inspect the relevant code and report evidence.
     assistant = loaded.agents["agent-assistant"]
     assert loaded.selected_plugins(assistant) == ("plugin-memory",)
     assert loaded.selected_mcp_servers(assistant) == ()
-    assert len(loaded.subagents) == 1
+    assert len(loaded.subagents) == 4
     explorer = loaded.markdown("subagent-explorer")
-    assert explorer.model is None
     assert explorer.tools == ("search", "files")
     assert explorer.body == "Inspect the relevant code and report evidence."
     assert {source.relative_path for source in loaded.sources} == {
@@ -154,6 +152,9 @@ Inspect the relevant code and report evidence.
         "mcp/github.yaml",
         "models/primary.yaml",
         "subagents/explorer.md",
+        "built-in-subagents/code-reviewer.md",
+        "built-in-subagents/executor.md",
+        "built-in-subagents/explorer.md",
     }
     assert loaded.source_digest != loaded.root_digest
 
@@ -254,7 +255,7 @@ subagents: [{markdown: subagent-missing}]
 
     loaded = await load_harness_ui_configuration(config)
     assert loaded.agents["agent-assistant"].subagents
-    assert not loaded.subagents
+    assert "subagent-missing" not in loaded.subagents
 
 
 async def test_accepts_release_owned_sandbox_as_global_default(tmp_path: Path) -> None:

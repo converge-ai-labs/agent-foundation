@@ -20,14 +20,14 @@ from a13n_harness_ui.environment_profiles import (
     require_supported_local_profile,
 )
 from a13n_harness_ui.errors import HarnessUiError
-from a13n_harness_ui.live import LiveEvent, root_context_samples
+from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
 from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
 from a13n_harness_ui.surfaces import (
-    ApprovalDecision,
-    ExternalToolResult,
     NewThreadDefaults,
     RootOperationStatus,
     RunModelOverrides,
+    SkillCatalogView,
+    SkillReference,
     ThreadDeferredResponse,
 )
 
@@ -59,8 +59,6 @@ class SessionBackend:
         )
         self.receipt_id: str | None = None
         self.cancel_requested = False
-        self._decisions: dict[str, ApprovalDecision | ExternalToolResult] = {}
-        self._decision_continuation: str | None = None
         self.import_preview: ExternalSubagentImportPreview | None = None
 
     async def initialize(self) -> bool:
@@ -109,6 +107,20 @@ class SessionBackend:
             None if model.model_characteristics is None else model.model_characteristics.context_window
         )
         return True
+
+    async def skill_catalog(self) -> SkillCatalogView | None:
+        if self.thread_id is not None:
+            return await self.app.skill_catalog(thread_id=self.thread_id)
+        projects = await self.app.cwd_project_ids(self.directory)
+        if len(projects) != 1:
+            return None
+        return await self.app.skill_catalog(
+            defaults=NewThreadDefaults(
+                project_id=next(iter(projects)),
+                agent_id=self.request.agent_id,
+                environment_profile_id=self.environment,
+            )
+        )
 
     async def models(self, selected: str | None = None) -> str:
         configuration = await self.app.current_configuration()
@@ -176,8 +188,7 @@ class SessionBackend:
         self.thread_id = None
         self.status.session_id = None
         self.status.context_tokens = None
-        self._decisions.clear()
-        self._decision_continuation = None
+        self.status.reset_usage()
         await self.refresh()
         return "New session. Existing history is saved; no files were deleted."
 
@@ -209,9 +220,8 @@ class SessionBackend:
         if await self.app.active_root_operation(selected) is not None:
             raise ValueError("This session is already running.")
         self.thread_id = selected
+        self.status.reset_usage()
         self.overrides = RunModelOverrides()
-        self._decisions.clear()
-        self._decision_continuation = None
         usage = await self.app.context_usage(selected)
         self.status.context_tokens = usage.latest_request_tokens
         await self.refresh()
@@ -241,10 +251,13 @@ class SessionBackend:
         if self.thread_id is None:
             return None
         batch = await self.app.thread_decisions(thread_id=self.thread_id)
-        if batch is not None:
-            self._decisions.clear()
-            self._decision_continuation = None
-        return DecisionInteraction(batch) if batch is not None else None
+        if batch is None:
+            return None
+        interaction = DecisionInteraction(batch)
+        configuration = await self.app.current_configuration()
+        if configuration is not None:
+            interaction.timeout_seconds = configuration.document.tools.user_input_timeout_seconds
+        return interaction
 
     async def pending(self) -> str:
         if self.thread_id is None:
@@ -267,38 +280,13 @@ class SessionBackend:
         review = await self.app.deferred_review(
             thread_id=self.thread_id, expected_continuation_id=detail.continuation_id, request_id=request_id
         )
-        return review.model_dump_json(indent=2)
-
-    async def decide(self, command: str, request_id: str, value: str | None = None) -> ThreadDeferredResponse | None:
-        if self.thread_id is None:
-            raise ValueError("No active session.")
-        detail = await self.app.get_thread(self.thread_id)
-        item = next((item for item in detail.deferred_requests if item.request_id == request_id), None)
-        if item is None or detail.continuation_id is None:
-            raise ValueError("This request is no longer pending. Use /status to refresh.")
-        if self._decision_continuation != detail.continuation_id:
-            self._decisions.clear()
-            self._decision_continuation = detail.continuation_id
-        if item.kind == "approval":
-            if command == "result":
-                raise ValueError("Use /approve or /deny for an approval request.")
-            self._decisions[request_id] = ApprovalDecision(request_id=request_id, approved=command == "approve")
-        else:
-            if command == "approve":
-                raise ValueError("This tool needs a result, not approval. Use /result or /deny.")
-            self._decisions[request_id] = ExternalToolResult(
-                request_id=request_id,
-                result=json.loads(value) if value else None,
-                denied=command == "deny",
-                denial_message="Denied in terminal" if command == "deny" else None,
-            )
-        if len(self._decisions) != len(detail.deferred_requests):
-            return None
-        response = ThreadDeferredResponse(
-            expected_continuation_id=detail.continuation_id, responses=tuple(self._decisions.values())
-        )
-        self._decisions.clear()
-        return response
+        lines = [f"{review.title} · {review.lifecycle}"]
+        lines.extend(item for item in (review.summary, review.content, review.unavailable_reason) if item)
+        if review.value is not None:
+            lines.append(json.dumps(review.value, ensure_ascii=False, indent=2))
+        if review.truncated or review.omitted:
+            lines.append("Review preview is incomplete; omitted content is not approval evidence.")
+        return "\n".join(lines)
 
     async def import_choices(self, product: str, scope: str) -> tuple[tuple[Choice, ...], str]:
         self.import_preview = await self.app.preview_subagent_import(
@@ -401,11 +389,19 @@ class SessionBackend:
         response: ThreadDeferredResponse | None = None,
         flush: Callable[[], Awaitable[None]] | None = None,
         admitted: Callable[[], None] | None = None,
+        skill_references: tuple[SkillReference, ...] = (),
     ) -> Coroutine[object, object, str]:
         # Reset at scheduling, not first coroutine execution: Enter and Ctrl+C
         # may arrive in the same terminal input batch before this task starts.
         self.cancel_requested = False
-        return self._execute(renderer, prompt=prompt, response=response, flush=flush, admitted=admitted)
+        return self._execute(
+            renderer,
+            prompt=prompt,
+            response=response,
+            flush=flush,
+            admitted=admitted,
+            skill_references=skill_references,
+        )
 
     async def _execute(
         self,
@@ -415,12 +411,14 @@ class SessionBackend:
         response: ThreadDeferredResponse | None,
         flush: Callable[[], Awaitable[None]] | None,
         admitted: Callable[[], None] | None,
+        skill_references: tuple[SkillReference, ...],
     ) -> str:
         if self.cancel_requested:
             return "Cancelled before admission. No operation was submitted."
         await self.refresh()
         thread_id = await self.ensure_session()
         last_ordinal = -1
+        self.status.reset_usage()
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
             def ingest(event: LiveEvent) -> None:
@@ -432,6 +430,8 @@ class SessionBackend:
                     run_id=event.run_id,
                     execution_id=event.execution_id,
                 )
+                for record in root_model_usage(event):
+                    self.status.record_usage(record)
                 for sample in root_context_samples(event):
                     if sample.response_ordinal > last_ordinal:
                         self.status.context_tokens = sample.tokens
@@ -452,7 +452,10 @@ class SessionBackend:
                     return "Cancelled before admission. No operation was submitted."
                 receipt = (
                     await self.app.submit_thread(
-                        thread_id=thread_id, prompt=prompt or "", model_overrides=self.overrides
+                        thread_id=thread_id,
+                        prompt=prompt or "",
+                        model_overrides=self.overrides,
+                        skill_references=skill_references,
                     )
                     if response is None
                     else await self.app.respond_thread(
@@ -505,19 +508,21 @@ class SessionBackend:
             return await self.pending()
         return f"Run {operation.status.value}."
 
-    async def steer(self, message: str, *, receipt_id: str | None = None) -> str:
+    async def steer(
+        self, message: str, *, receipt_id: str | None = None, skill_references: tuple[SkillReference, ...] = ()
+    ) -> str:
         # The Enter handler supplies its captured target; never substitute a newer receipt.
         receipt_id = self.receipt_id if receipt_id is None else receipt_id
         if receipt_id is None:
             raise ValueError("No running receipt accepts steering. Your guidance was not sent.")
-        result = await self.app.steer_root_operation(receipt_id=receipt_id, message=message)
+        result = await self.app.steer_root_operation(
+            receipt_id=receipt_id, message=message, skill_references=skill_references
+        )
         if not result.accepted:
             raise ValueError("This receipt is preparing or no longer running. Your guidance was not accepted.")
-        return f"Guidance accepted for the current Run ({result.enqueue_id}); consumption occurs at a model boundary."
+        return "Guidance sent. It will appear as input when applied."
 
     async def cancel(self) -> None:
-        self._decisions.clear()
-        self._decision_continuation = None
         self.cancel_requested = True
         if self.receipt_id is not None:
             await self.app.cancel_root_operation(self.receipt_id)

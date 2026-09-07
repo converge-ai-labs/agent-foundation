@@ -46,6 +46,12 @@ _QUESTIONS = (
         "full-control",
         ("full-control", "sandbox"),
     ),
+    Question(
+        "subagents",
+        "Include the default subagents (code-reviewer, executor, explorer)?",
+        "all",
+        ("all", "none"),
+    ),
     Question("model", "Codex model", "gpt-5.6-sol", ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra")),
     Question(
         "context",
@@ -74,7 +80,7 @@ class SetupWizard:
 
     @property
     def question(self) -> Question | None:
-        if self.index >= len(_QUESTIONS) or (self.index >= 4 and not self.advanced):
+        if self.index >= len(_QUESTIONS) or (self.index >= 5 and not self.advanced):
             return None
         question = _QUESTIONS[self.index]
         default = self.values.get(question.key, question.default)
@@ -96,12 +102,16 @@ class SetupWizard:
             "api": "API key",
             "full-control": "Full Control",
             "sandbox": "Sandbox",
+            "all": "Include all defaults",
+            "none": "Do not include defaults",
         }
         descriptions = {
             **self.provider_descriptions,
             "api": "Use a stored key or environment variable",
             "full-control": "Run directly as your host account; not a sandbox",
             "sandbox": "Isolated execution; prerequisites checked before saving",
+            "all": "Package-owned roles; choose individual names later in subagents.include",
+            "none": "Keep only explicitly configured children",
             **{preset.name: f"{preset.tokens:,} tokens — {preset.explanation}" for preset in CONTEXT_PRESETS},
         }
         return Selection(
@@ -111,7 +121,7 @@ class SetupWizard:
 
     def customize(self) -> None:
         self.advanced = True
-        self.index = 4
+        self.index = 5
         self.preview_generation = None
         self._skip_irrelevant()
 
@@ -174,6 +184,7 @@ class SetupWizard:
             else "environment-sandbox",
             "shell_review": provider != "api" and self.values.get("review", "yes") == "yes",
             "connect_default": True,
+            "include_default_subagents": self.values.get("subagents", "all") == "all",
             "instructions": self.values.get("instructions", ""),
         }
         if provider == "codex":
