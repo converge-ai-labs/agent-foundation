@@ -239,6 +239,8 @@ Process loss discards active receipts and incomplete input/output. Resume contin
 
 **Sandbox** uses the local Environment provider and required filesystem/process isolation with denied networking. Readiness is checked when execution needs it, not during landing. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Harness UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows production Sandbox isolation is not supported. See the [a13n-envd operations guide](a13n-envd/index.md#isolation-behavior).
 
+Source builds with an unselected native release cannot automatically acquire the Sandbox daemon. Full Control remains available. Applications embedding Harness UI can build the daemon with `make rust-build` and set `HarnessUiSettings.envd_runtime.executable` to the absolute path of `target/debug/a13n-envd` (`a13n-envd.exe` on Windows). The override still undergoes the required isolation checks. Published Harness UI releases must select verified native release assets before publication.
+
 ## Automation and diagnostics
 
 ```console

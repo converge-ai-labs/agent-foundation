@@ -47,11 +47,17 @@ class EnvdReleaseManifest(BaseModel):
 
     schema_version: str = Field(pattern=r"^1$")
     release: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[1-9][0-9]*)?$")
-    base_url: str = Field(min_length=1, max_length=2048, pattern=r"^https://github\.com/")
-    targets: dict[str, EnvdReleaseAsset] = Field(min_length=1, max_length=16)
+    base_url: str | None = Field(min_length=1, max_length=2048, pattern=r"^https://github\.com/")
+    targets: dict[str, EnvdReleaseAsset] = Field(max_length=16)
 
     @model_validator(mode="after")
     def _coherent_assets(self) -> EnvdReleaseManifest:
+        if self.release == "0.0.0":
+            if self.base_url is not None or self.targets:
+                raise ValueError("An unselected a13n-envd release must not contain download metadata")
+            return self
+        if self.base_url is None or not self.targets:
+            raise ValueError("A selected a13n-envd release requires a download URL and target assets")
         for target, asset in self.targets.items():
             suffix = ".zip" if target.endswith("windows-msvc") else ".tar.gz"
             if not asset.archive.endswith(suffix):
@@ -86,6 +92,12 @@ class ManagedEnvdRuntime:
 
         if self._selected is not None:
             return self._selected
+        if self._manifest.base_url is None:
+            raise RuntimeResolutionError(
+                "This source build has no selected a13n-envd release. "
+                "Set HarnessUiSettings.envd_runtime.executable to an absolute path to a locally built a13n-envd.",
+                code="local_eip_release_unselected",
+            )
         target = current_envd_target()
         asset = self._manifest.targets.get(target)
         if asset is None:

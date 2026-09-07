@@ -21,9 +21,27 @@ from a13n_harness_ui.settings import EnvdRuntimeSettings
 pytestmark = [pytest.mark.anyio, pytest.mark.xdist_group("infrastructure")]
 
 
-def test_packaged_manifest_covers_every_supported_target() -> None:
-    manifest = load_envd_release_manifest()
+async def test_unselected_release_fails_before_download(tmp_path: Path) -> None:
+    resolver = ManagedEnvdRuntime(
+        cache_root=tmp_path / "cache",
+        staging_root=tmp_path / "staging",
+        settings=EnvdRuntimeSettings(),
+        manifest=EnvdReleaseManifest(schema_version="1", release="0.0.0", base_url=None, targets={}),
+    )
 
+    with pytest.raises(RuntimeResolutionError) as captured:
+        await resolver.resolve()
+    assert captured.value.code == "local_eip_release_unselected"
+    assert not (tmp_path / "cache").exists()
+    assert not (tmp_path / "staging").exists()
+
+
+def test_packaged_manifest_is_unselected_or_covers_every_supported_target() -> None:
+    manifest = load_envd_release_manifest()
+    if manifest.release == "0.0.0":
+        assert manifest.base_url is None
+        assert not manifest.targets
+        return
     assert set(manifest.targets) == {
         "aarch64-apple-darwin",
         "aarch64-pc-windows-msvc",
@@ -33,6 +51,19 @@ def test_packaged_manifest_covers_every_supported_target() -> None:
         "x86_64-unknown-linux-gnu",
     }
     assert current_envd_target() in manifest.targets
+
+
+@pytest.mark.parametrize(
+    "release,base_url,targets",
+    [
+        ("1.2.3", None, {}),
+        ("1.2.3", "https://github.com/example/releases/1.2.3", {}),
+        ("0.0.0", "https://github.com/example/releases/0.0.0", {}),
+    ],
+)
+def test_manifest_rejects_incomplete_release_selection(release, base_url, targets) -> None:
+    with pytest.raises(ValueError):
+        EnvdReleaseManifest(schema_version="1", release=release, base_url=base_url, targets=targets)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the fixture executable is a POSIX script")

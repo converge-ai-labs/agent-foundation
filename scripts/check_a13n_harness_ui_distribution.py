@@ -202,6 +202,8 @@ def _validate_runtime_manifest(read: Callable[[str], bytes], names: set[str], pa
         manifest = json.loads(read(manifest_path))
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise DistributionError(f"Invalid a13n-envd release manifest: {error}") from error
+    if manifest == {"schema_version": "1", "release": "0.0.0", "base_url": None, "targets": {}}:
+        return
     if (
         not isinstance(manifest, dict)
         or manifest.get("schema_version") != "1"

@@ -44,7 +44,7 @@ class HostedAguiDeliveryEvent(_StrictModel):
 class HostedAguiReplaySnapshot(_StrictModel):
     schema_version: Literal["1"] = "1"
     binding_id: _ResourceId
-    service_run_id: _ResourceId
+    foundation_run_id: _ResourceId
     external_thread_id: _ExternalId
     external_run_id: _ExternalId
     agent_revision_id: _ResourceId
@@ -137,7 +137,7 @@ def _metadata(snapshot: HostedAguiReplaySnapshot, *, digest: str) -> dict[str, s
     return {
         "schema-version": "1",
         "binding-id": snapshot.binding_id,
-        "run-id": snapshot.service_run_id,
+        "run-id": snapshot.foundation_run_id,
         "digest-sha256": digest,
     }
 
