@@ -8,10 +8,12 @@ import shlex
 import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx2
 import pytest
 from a13n_ui.cli import CliRequest
+from a13n_ui.interactive import lifecycle
 from a13n_ui.interactive.lifecycle import check_update, resume_hint, terminal_logging, update_notice
 
 
@@ -54,13 +56,32 @@ async def test_terminal_logs_are_files_and_plugin_diagnostics_are_once(
     assert captured.err == ""
 
 
-def _assert_resume_command(hint: str, arguments: list[str]) -> None:
-    command = hint.splitlines()[1]
-    if os.name == "nt":
+def _assert_resume_command(hint: str, arguments: list[str], *, platform: str = os.name) -> None:
+    command = hint.splitlines()[1].removeprefix("  ")
+    if platform == "nt":
         # shlex is a POSIX parser: it consumes unquoted Windows path backslashes.
         assert command == subprocess.list2cmdline(arguments)
     else:
         assert shlex.split(command) == arguments
+
+
+def test_resume_hint_windows_quoting_on_every_platform(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Replace only this module's OS view; changing os.name globally breaks pathlib.
+    monkeypatch.setattr(lifecycle, "os", SimpleNamespace(name="nt", environ={}))
+    request = CliRequest(config_path=tmp_path / "a b.yaml", data_root=tmp_path / "plain")
+    _assert_resume_command(
+        resume_hint(request, "thread_123", tmp_path),
+        [
+            "a13n-ui",
+            "--config",
+            str(request.config_path),
+            "--data-root",
+            str(request.data_root),
+            "--resume",
+            "thread_123",
+        ],
+        platform="nt",
+    )
 
 
 def test_resume_hint_keeps_explicit_roots(tmp_path: Path) -> None:
