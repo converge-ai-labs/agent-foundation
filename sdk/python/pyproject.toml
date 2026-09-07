@@ -1,7 +1,7 @@
 [project]
-name = "a13n-sdk"
+name = "a13n"
 version = "0.0.0"
-description = "Python SDK for Agent Foundation Service"
+description = "Python SDK for a13n Service"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -13,7 +13,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["a13n_sdk"]
+packages = ["a13n"]
 
 [dependency-groups]
 dev = [
@@ -32,7 +32,7 @@ select = ["B", "E", "F", "I", "RUF", "UP"]
 ignore = ["E501"]
 
 [tool.pyright]
-include = ["a13n_sdk"]
+include = ["a13n"]
 exclude = ["**/tests", "**/__pycache__", ".venv"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"

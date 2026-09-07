@@ -17,7 +17,7 @@ Use no Environment when the Agent needs only ordinary tools or remote APIs. Othe
 | Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
 | Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
 
-[Try the remote examples locally](../agent-environment-provider/remote-envd.md) without a model, Docker or cloud account.
+[Try the remote examples locally](../a13n-environment/remote-envd.md) without a model, Docker or cloud account.
 
 ## How the layers fit
 
@@ -29,14 +29,14 @@ flowchart LR
     Harness --> Tools[Selected model-facing tools]
     Environment --> Direct[Native Local or E2B operations]
     Environment --> EIP[EIP operations]
-    EIP --> Envd[agent-envd or remote backend]
+    EIP --> Envd[a13n-envd or remote backend]
 ```
 
 - **Host** selects a trusted Provider, desired configuration, current state, runtime collaborators, retention policy, and authorization.
 - **Environment Provider** validates configuration and constructs fresh single-use adapters without external I/O.
 - **Environment** enters or creates one exact target, exposes typed operations, caches the latest state, closes process-local resources, and supports explicit Host destruction.
 - **Agent Harness** owns Run-local mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
-- **EIP** is the typed operation protocol used by `agent-envd` and remote backends.
+- **EIP** is the typed operation protocol used by `a13n-envd` and remote backends.
 
 `EnvironmentState` and `HarnessState` are different records. The former is a Provider-owned soft reference to a target; the latter is Agent continuation state. Neither restores current credentials or authorization.
 
@@ -69,7 +69,7 @@ Direct Local exposes an existing directory selected by the Host:
 ```python
 from pathlib import Path
 
-from a13n_environment_provider import (
+from a13n_environment import (
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
@@ -102,17 +102,17 @@ Direct Local restrictions apply through the current Environment mount. They do n
 
 ## Use Local Envd
 
-Local Envd launches one compatible `agent-envd` generation for a Host-selected workspace. The Host supplies the executable and private-runtime allocator when constructing the adapter:
+Local Envd launches one compatible `a13n-envd` generation for a Host-selected workspace. The Host supplies the executable and private-runtime allocator when constructing the adapter:
 
 ```python
 from pathlib import Path
 
-from a13n_environment_provider import (
+from a13n_environment import (
     LocalEnvdProviderRuntime,
     LocalEnvdWorkspaceConfiguration,
     TemporaryLocalEnvdRuntimeAllocator,
     build_environment_provider_catalog,
-    resolve_agent_envd_executable,
+    resolve_a13n_envd_executable,
 )
 
 catalog = build_environment_provider_catalog(
@@ -133,7 +133,7 @@ environment = provider.create_environment(
     environment_id="workspace",
     state=None,
     runtime=LocalEnvdProviderRuntime(
-        executable=resolve_agent_envd_executable(),
+        executable=resolve_a13n_envd_executable(),
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
     ),
 )
@@ -144,9 +144,9 @@ result = await executable.run(
 )
 ```
 
-Executable resolution checks an explicit argument, `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` on `PATH`. The client and Provider packages do not install or download the native binary.
+Executable resolution checks an explicit argument, `A13N_ENVD_EXECUTABLE`, then `a13n-envd` on `PATH`. The client and Provider packages do not install or download the native binary.
 
-Local Envd validates exact daemon/client compatibility and the required isolation probe. It does not fall back to Direct Local or silently disable isolation. Read the [`agent-envd` guide](../agent-envd/index.md) for installation and platform prerequisites.
+Local Envd validates exact daemon/client compatibility and the required isolation probe. It does not fall back to Direct Local or silently disable isolation. Read the [`a13n-envd` guide](../a13n-envd/index.md) for installation and platform prerequisites.
 
 ## Re-enter and retain a target
 
@@ -212,15 +212,15 @@ Harness validates the complete mount set before entry. If one adapter fails, it 
 
 `EnvironmentMount` narrows Provider capability with `READ_ONLY`, `READ_WRITE`, or `FULL` access. `DynamicEnvironmentConfiguration` controls which stable Environment Toolsets the model can see. Keep shell, background-process, retained-output, and port operations absent unless the Agent definition requires them.
 
-The [Harness Environment guide](../agent-harness/environments.md) covers complete Capability configuration, deterministic routing, state export, portable process references, and advanced Host runtimes.
+The [Harness Environment guide](../a13n-harness/environments.md) covers complete Capability configuration, deterministic routing, state export, portable process references, and advanced Host runtimes.
 
 ## Next steps
 
-- [Run the built-in Provider examples](../agent-environment-provider/examples.md)
-- [Use Environments from Agent Harness](../agent-harness/environments.md)
-- [Manage Provider state and implement plugins](../agent-environment-provider/index.md)
-- [Operate and configure `agent-envd`](../agent-envd/index.md)
-- [Read the EIP and agent-envd specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-envd)
+- [Run the built-in Provider examples](../a13n-environment/examples.md)
+- [Use Environments from Agent Harness](../a13n-harness/environments.md)
+- [Manage Provider state and implement plugins](../a13n-environment/index.md)
+- [Operate and configure `a13n-envd`](../a13n-envd/index.md)
+- [Read the EIP and a13n-envd specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)
 
 ## Hosted preparation and recovery
 
@@ -228,6 +228,6 @@ Hosted templates support `on_run` preparation and lazy `on_use` preparation. A l
 
 Host-local Providers record `host_id` when configured. Docker also records `docker_host`, so an existing Provider keeps using the same daemon even if a worker's environment variables change. Run workers and maintenance must run on that host with access to the same protected bootstrap storage. Register an existing target once and reuse its Environment ID; another Provider record does not create a separate owner for that target.
 
-Foundation limits prepared managed targets to 1,000 per Workspace and simultaneously active Environments to 100 by default. Set `FOUNDATION_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE` and `FOUNDATION_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE` consistently on every worker. Stopped targets still count toward the target limit; confirmed deletion or reconciliation confirming target absence releases capacity. This also releases reservations for interrupted creation when no target exists. Shared Runs use one active slot together, and a lazy Run acquires a slot only when it first uses the Environment. The last active Run ending or entering a waiting state starts the idle retention clock in the same transaction. Exceeding a limit returns an explicit error before provisioning; release capacity before retrying.
+a13n Service limits prepared managed targets to 1,000 per Workspace and simultaneously active Environments to 100 by default. Set `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE` and `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE` consistently on every worker. Stopped targets still count toward the target limit; confirmed deletion or reconciliation confirming target absence releases capacity. This also releases reservations for interrupted creation when no target exists. Shared Runs use one active slot together, and a lazy Run acquires a slot only when it first uses the Environment. The last active Run ending or entering a waiting state starts the idle retention clock in the same transaction. Exceeding a limit returns an explicit error before provisioning; release capacity before retrying.
 
 Hosted recovery publishes the current target and generation before returning an Environment rebuild or connection-refresh notification to the Agent. Reconnection to the same E2B target retains the current scope's process observations. Target replacement invalidates old references and target-dependent approvals through the changed backing identity. An uncertain dispatched command is never automatically replayed.

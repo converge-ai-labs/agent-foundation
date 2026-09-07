@@ -7,10 +7,10 @@ if [[ -f ".env" ]]; then
 fi
 
 exec "${uv_run[@]}" bash -c '
-  backend_command=(foundation-service serve)
+  backend_command=(a13n-service serve)
   if [[ -z "${LOGFIRE_TOKEN:-}" ]] &&
     [[ "${A13N_HARNESS_TRACE_LEVEL:-off}" != "off" || "${A13N_HARNESS_METRICS:-off}" != "off" ]]; then
-    backend_command=(opentelemetry-instrument foundation-service serve)
+    backend_command=(opentelemetry-instrument a13n-service serve)
   fi
   exec "${backend_command[@]}"
 '

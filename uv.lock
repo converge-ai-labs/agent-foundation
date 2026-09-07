@@ -11,19 +11,19 @@ resolution-markers = [
 [manifest]
 members = [
     "a13n-envd-client",
-    "a13n-environment-provider",
+    "a13n-environment",
     "a13n-harness",
     "a13n-logging",
     "a13n-service",
     "a13n-stream-protocol",
-    "a13n-ui",
+    "a13n-harness-ui",
     "a13n-workspace",
 ]
 
 [[package]]
 name = "a13n-envd-client"
 version = "0.0.0"
-source = { editable = "packages/agent-envd-client" }
+source = { editable = "packages/a13n-envd-client" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
@@ -46,9 +46,9 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "a13n-environment-provider"
+name = "a13n-environment"
 version = "0.0.0"
-source = { editable = "packages/agent-environment-provider" }
+source = { editable = "packages/a13n-environment" }
 dependencies = [
     { name = "a13n-envd-client" },
     { name = "anyio" },
@@ -67,7 +67,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-envd-client", editable = "packages/agent-envd-client" },
+    { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "docker", specifier = ">=7.2,<8" },
     { name = "e2b", specifier = ">=2.46.4,<3" },
@@ -85,9 +85,9 @@ test = [
 [[package]]
 name = "a13n-harness"
 version = "0.0.0"
-source = { editable = "packages/agent-harness" }
+source = { editable = "packages/a13n-harness" }
 dependencies = [
-    { name = "a13n-environment-provider" },
+    { name = "a13n-environment" },
     { name = "a13n-logging" },
     { name = "anyio" },
     { name = "genai-prices" },
@@ -111,8 +111,8 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
-    { name = "a13n-logging", editable = "packages/logging" },
+    { name = "a13n-environment", editable = "packages/a13n-environment" },
+    { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "genai-prices", specifier = ">=0.1.6,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
@@ -136,7 +136,7 @@ test = [
 [[package]]
 name = "a13n-logging"
 version = "0.0.0"
-source = { editable = "packages/logging" }
+source = { editable = "packages/a13n-logging" }
 dependencies = [
     { name = "rich" },
 ]
@@ -147,9 +147,9 @@ requires-dist = [{ name = "rich", specifier = ">=15,<16" }]
 [[package]]
 name = "a13n-service"
 version = "0.0.0"
-source = { editable = "packages/foundation-service" }
+source = { editable = "packages/a13n-service" }
 dependencies = [
-    { name = "a13n-environment-provider" },
+    { name = "a13n-environment" },
     { name = "a13n-harness" },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
@@ -192,10 +192,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
-    { name = "a13n-harness", editable = "packages/agent-harness" },
-    { name = "a13n-logging", editable = "packages/logging" },
-    { name = "a13n-stream-protocol", editable = "packages/agent-stream-protocol" },
+    { name = "a13n-environment", editable = "packages/a13n-environment" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
+    { name = "a13n-logging", editable = "packages/a13n-logging" },
+    { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "a2a-sdk", extras = ["fastapi"], specifier = ">=1.1.2,<1.2" },
     { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
     { name = "aiobotocore", extras = ["httpx2"], specifier = ">=3.9,<4" },
@@ -236,7 +236,7 @@ requires-dist = [
 [[package]]
 name = "a13n-stream-protocol"
 version = "0.0.0"
-source = { editable = "packages/agent-stream-protocol" }
+source = { editable = "packages/a13n-stream-protocol" }
 dependencies = [
     { name = "a13n-harness" },
     { name = "ag-ui-protocol" },
@@ -251,7 +251,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-harness", editable = "packages/agent-harness" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
     { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.38,<3" },
@@ -261,11 +261,11 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "a13n-ui"
+name = "a13n-harness-ui"
 version = "0.0.0"
-source = { editable = "packages/agent-ui" }
+source = { editable = "packages/a13n-harness-ui" }
 dependencies = [
-    { name = "a13n-environment-provider" },
+    { name = "a13n-environment" },
     { name = "a13n-harness" },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
@@ -307,10 +307,10 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
-    { name = "a13n-harness", editable = "packages/agent-harness" },
-    { name = "a13n-logging", editable = "packages/logging" },
-    { name = "a13n-stream-protocol", editable = "packages/agent-stream-protocol" },
+    { name = "a13n-environment", editable = "packages/a13n-environment" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
+    { name = "a13n-logging", editable = "packages/a13n-logging" },
+    { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
     { name = "aiosqlite", specifier = ">=0.21,<1" },
     { name = "alembic", specifier = ">=1.17.1,<2" },

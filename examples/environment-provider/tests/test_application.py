@@ -4,14 +4,14 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from a13n_environment_provider import (
+from a13n_environment import (
     DirectLocalEnvironment,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
 
-from a13n_environment_provider_example import application as application_module
-from a13n_environment_provider_example import run_direct_local
+from a13n_environment_example import application as application_module
+from a13n_environment_example import run_direct_local
 
 
 class _CloseFailingEnvironment(DirectLocalEnvironment):

@@ -4,17 +4,17 @@ FROM rust:1.96-bookworm AS builder
 
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
-COPY crates/agent-envd crates/agent-envd
+COPY crates/a13n-envd crates/a13n-envd
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --package agent-envd
+    cargo build --release --locked --package a13n-envd
 
 FROM debian:bookworm-slim AS runtime
 
 ARG BUILD_VERSION=dev
 ARG BUILD_REVISION=unknown
-LABEL org.opencontainers.image.title="agent-foundation-sandbox" \
-      org.opencontainers.image.description="Agent Foundation sandbox with agent-envd" \
+LABEL org.opencontainers.image.title="a13n-sandbox" \
+      org.opencontainers.image.description="Agent Foundation sandbox with a13n-envd" \
       org.opencontainers.image.source="https://github.com/converge-ai-labs/agent-foundation" \
       org.opencontainers.image.revision="${BUILD_REVISION}" \
       org.opencontainers.image.version="${BUILD_VERSION}" \
@@ -28,12 +28,12 @@ RUN apt-get update \
     && mkdir -p /workspace \
     && chown sandbox:sandbox /workspace
 
-COPY --from=builder /src/target/release/agent-envd /usr/local/bin/agent-envd
-COPY LICENSE /usr/share/licenses/agent-envd/LICENSE
+COPY --from=builder /src/target/release/a13n-envd /usr/local/bin/a13n-envd
+COPY LICENSE /usr/share/licenses/a13n-envd/LICENSE
 
 USER sandbox
 WORKDIR /workspace
-ENV AGENT_ENVD_EXECUTION_ISOLATION=disabled \
-    AGENT_ENVD_RUNTIME_DIR=/home/sandbox/.local/state/agent-envd
+ENV A13N_ENVD_EXECUTION_ISOLATION=disabled \
+    A13N_ENVD_RUNTIME_DIR=/home/sandbox/.local/state/a13n-envd
 ENTRYPOINT ["tini", "--"]
-CMD ["agent-envd"]
+CMD ["a13n-envd"]

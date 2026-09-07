@@ -1,6 +1,6 @@
 # Provider smoke checks
 
-Manual checks of Model and Connector modules against external providers, without starting Foundation Service, PostgreSQL, or Redis. These are development diagnostics, not service entry points or automated CI tests. Scripts, helpers, and their purpose stay together in this directory.
+Manual checks of Model and Connector modules against external providers, without starting a13n Service, PostgreSQL, or Redis. These are development diagnostics, not service entry points or automated CI tests. Scripts, helpers, and their purpose stay together in this directory.
 
 | Entry point     | Purpose                                                                     | Credential environment variable |
 | --------------- | --------------------------------------------------------------------------- | ------------------------------- |
@@ -16,7 +16,7 @@ bash scripts/provider-smoke/composio.sh
 
 Each script accepts `--help` for individual commands. Missing keys are requested through hidden input; `.env` files are not loaded. The Bash entry points also work from another directory when invoked by absolute path. Keys are never written to files by these scripts.
 
-OpenConnector authorization is initiated through Foundation's ConnectorConnection management flow. Follow the [external tools guide](../../docs/foundation-service/external-tools.md); its managed adapter is covered by Foundation Service connectivity tests.
+OpenConnector authorization is initiated through a13n Service's ConnectorConnection management flow. Follow the [external tools guide](../../docs/a13n-service/external-tools.md); its managed adapter is covered by a13n Service connectivity tests.
 
 ## Composio and OpenRouter
 

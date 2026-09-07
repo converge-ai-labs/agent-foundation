@@ -52,8 +52,8 @@ target/
 # Frontend tooling
 node_modules/
 *.tsbuildinfo
-/apps/agent-ui/dist/
-/packages/agent-ui/a13n_ui/static/
+/apps/a13n-harness-ui/dist/
+/packages/a13n-harness-ui/a13n_harness_ui/static/
 
 # Editors and operating systems
 .DS_Store

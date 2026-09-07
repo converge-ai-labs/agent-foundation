@@ -1,0 +1,61 @@
+{
+  "schema_version": "1",
+  "release": "0.0.3",
+  "base_url": "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v0.0.3",
+  "targets": {
+    "aarch64-apple-darwin": {
+      "archive": "a13n-envd-0.0.3-aarch64-apple-darwin.tar.gz",
+      "archive_format": "tar.gz",
+      "sha256": "b9bb0d348916c0b27a3c430e799b9870f2a2e7dbdbb4c3350f0482efcd4dde03",
+      "size": 4118124,
+      "executable": "a13n-envd",
+      "executable_sha256": "b150aae9791f45955ad36bbaee8c6a9c67f467d809c7671d117eed84b745852f",
+      "executable_size": 10827056
+    },
+    "aarch64-pc-windows-msvc": {
+      "archive": "a13n-envd-0.0.3-aarch64-pc-windows-msvc.zip",
+      "archive_format": "zip",
+      "sha256": "1e52e501d4f480214fafeeb8a1b43e54892afd78665b91ec766d96677313cb18",
+      "size": 3799049,
+      "executable": "a13n-envd.exe",
+      "executable_sha256": "309dfb00b7f423596c2a79f5cb3adc9d19861f39f32c90fdfac387ab20103f72",
+      "executable_size": 9163776
+    },
+    "aarch64-unknown-linux-gnu": {
+      "archive": "a13n-envd-0.0.3-aarch64-unknown-linux-gnu.tar.gz",
+      "archive_format": "tar.gz",
+      "sha256": "23ef2556d3c929f1291a05bd6ad13221f1fa5923a928e5a6a93468e079b72584",
+      "size": 4463752,
+      "executable": "a13n-envd",
+      "executable_sha256": "7e36997ce67594b90bc105baa0878a8d8274d852bc3c6cfbcbf1f36b404337a9",
+      "executable_size": 12409840
+    },
+    "x86_64-apple-darwin": {
+      "archive": "a13n-envd-0.0.3-x86_64-apple-darwin.tar.gz",
+      "archive_format": "tar.gz",
+      "sha256": "9a8dffb4471906a815e60757dcf4906c0017aa59c497e688ea02ce743f445d8f",
+      "size": 4302078,
+      "executable": "a13n-envd",
+      "executable_sha256": "e8b1de863ecce87dd665de15186b399c651208725c9c4ac21015a6b0e03661f3",
+      "executable_size": 11304636
+    },
+    "x86_64-pc-windows-msvc": {
+      "archive": "a13n-envd-0.0.3-x86_64-pc-windows-msvc.zip",
+      "archive_format": "zip",
+      "sha256": "f496f79de420bb30bb1191ae9025a1be4e0b7158efbe060134e97cffc1e9cad0",
+      "size": 4067355,
+      "executable": "a13n-envd.exe",
+      "executable_sha256": "dd3b3e8f48fa590eff831b4a58ea9f1b94ea36bad971e1ef469c5d7492b2a6fb",
+      "executable_size": 10940416
+    },
+    "x86_64-unknown-linux-gnu": {
+      "archive": "a13n-envd-0.0.3-x86_64-unknown-linux-gnu.tar.gz",
+      "archive_format": "tar.gz",
+      "sha256": "1188a4f2a7b3829b451216c10cd63502c8f8d7b556837599f10d925125e6f717",
+      "size": 4511380,
+      "executable": "a13n-envd",
+      "executable_sha256": "2f53e11d5a89ae94c8ab3c67797fe82b561c795676256593c93719f0d4b2164a",
+      "executable_size": 13005912
+    }
+  }
+}

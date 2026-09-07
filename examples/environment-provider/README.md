@@ -1,6 +1,6 @@
 # Environment Provider Example
 
-This standalone project demonstrates how a Host selects and drives the built-in `a13n-environment-provider` backends without involving Agent Harness or a model.
+This standalone project demonstrates how a Host selects and drives the built-in `a13n-environment` backends without involving Agent Harness or a model.
 
 It covers the common Provider lifecycle:
 
@@ -30,18 +30,18 @@ Build the daemon once, then try both transports without credentials, Docker, or 
 
 ```bash
 # Repository root
-cargo build --locked --package agent-envd
+cargo build --locked --package a13n-envd
 cd examples/environment-provider
 uv sync --locked
 uv run environment-provider-example remote-envd-demo \
-  --transport http --executable ../../target/debug/agent-envd
+  --transport http --executable ../../target/debug/a13n-envd
 uv run environment-provider-example remote-envd-demo \
-  --transport websocket --executable ../../target/debug/agent-envd
+  --transport websocket --executable ../../target/debug/a13n-envd
 ```
 
 Both write a file, close the adapter and read it through a fresh adapter with the same daemon generation. The output confirms that Provider close preserves the remote daemon/workspace. Demo operator code then removes its own temporary resources. The demo enables text files only, not command execution.
 
-**Start reading [`remote.py`](src/a13n_environment_provider_example/remote.py).** `run_http()` shows the minimal connection setup. `run_websocket()` shows a Host-owned authenticated listener calling `connections.attach()`; the SDK does not open a listener. `use_remote()` demonstrates the common Provider/Environment lifecycle without infrastructure details. [`remote_demo.py`](src/a13n_environment_provider_example/remote_demo.py) is separate local operator scaffolding, not something the remote Provider needs in production.
+**Start reading [`remote.py`](src/a13n_environment_example/remote.py).** `run_http()` shows the minimal connection setup. `run_websocket()` shows a Host-owned authenticated listener calling `connections.attach()`; the SDK does not open a listener. `use_remote()` demonstrates the common Provider/Environment lifecycle without infrastructure details. [`remote_demo.py`](src/a13n_environment_example/remote_demo.py) is separate local operator scaffolding, not something the remote Provider needs in production.
 
 To use an existing HTTP daemon instead:
 
@@ -62,7 +62,7 @@ uv run environment-provider-example websocket-envd \
 
 The external daemon must permit `file.read_text` and `file.write_text`; these examples write `/provider-example.txt`. Token contents never appear in URLs or command-line arguments. The standalone listener binds loopback and waits up to 60 seconds; your production Host supplies its own TLS, authentication, routing and lifespan. Other frameworks adapt the public `WebSocketConnection` message protocol.
 
-See the [remote guide](../../docs/agent-environment-provider/remote-envd.md) for identities, deployment boundaries and recovery. In particular, one daemon has one active Session, and an abandoned HTTP Session is not automatically taken over.
+See the [remote guide](../../docs/a13n-environment/remote-envd.md) for identities, deployment boundaries and recovery. In particular, one daemon has one active Session, and an abandoned HTTP Session is not automatically taken over.
 
 ## Run Direct Local
 
@@ -86,16 +86,16 @@ Direct Local shares the embedding Host account. Its operation policy is not an o
 
 ## Run Local Envd
 
-Local Envd starts one private `agent-envd` generation for the fresh adapter and exposes the Host-owned workspace through EIP:
+Local Envd starts one private `a13n-envd` generation for the fresh adapter and exposes the Host-owned workspace through EIP:
 
 ```bash
 uv run environment-provider-example local-envd \
-  --executable /absolute/path/to/agent-envd
+  --executable /absolute/path/to/a13n-envd
 ```
 
-If `--executable` is omitted, resolution checks `A13N_AGENT_ENVD_EXECUTABLE` and then `PATH`. Use `--workspace` to select another directory. The example requests denied execution networking, closes the private daemon and runtime data, and preserves the workspace.
+If `--executable` is omitted, resolution checks `A13N_ENVD_EXECUTABLE` and then `PATH`. Use `--workspace` to select another directory. The example requests denied execution networking, closes the private daemon and runtime data, and preserves the workspace.
 
-The executable and `a13n-envd-client` must have compatible release versions, and the current platform must pass the native-isolation probe. See the [`agent-envd` guide](../../docs/agent-envd/index.md) for build and platform prerequisites.
+The executable and `a13n-envd-client` must have compatible release versions, and the current platform must pass the native-isolation probe. See the [`a13n-envd` guide](../../docs/a13n-envd/index.md) for build and platform prerequisites.
 
 ## Run Docker
 
@@ -109,7 +109,7 @@ cd examples/environment-provider
 uv run environment-provider-example docker
 ```
 
-The example defaults to `agent-foundation-sandbox:local`, the image built by that Make target. Use `--image IMAGE` to select another compatible sandbox image; ordinary Docker authentication and pull behavior apply.
+The example defaults to `a13n-sandbox:local`, the image built by that Make target. Use `--image IMAGE` to select another compatible sandbox image; ordinary Docker authentication and pull behavior apply.
 
 The example intentionally exercises the complete stateful lifecycle:
 
@@ -142,7 +142,7 @@ make examples-check-all
 
 Only Direct Local runs in the offline smoke gate. The EIP integration gate builds envd and runs the HTTP/WebSocket demos as tests. Docker and E2B require their own external runtimes.
 
-Read [`application.py`](src/a13n_environment_provider_example/application.py) for the complete Host-side code. For third-party Provider packaging and entry-point discovery, see the separate [Provider plugin example](../plugins/README.md#environment-provider).
+Read [`application.py`](src/a13n_environment_example/application.py) for the complete Host-side code. For third-party Provider packaging and entry-point discovery, see the separate [Provider plugin example](../plugins/README.md#environment-provider).
 
 ## Boundaries
 
@@ -159,7 +159,7 @@ Read [`application.py`](src/a13n_environment_provider_example/application.py) fo
 With `E2B_API_KEY` set in the Host environment, run:
 
 ```bash
-uv run python -m a13n_environment_provider_example.e2b
+uv run python -m a13n_environment_example.e2b
 ```
 
 This creates a default E2B sandbox, writes and reads a file, closes the adapter and explicitly destroys the sandbox in `finally`. It requires no envd installation or custom E2B template. The library does not load `.env` files.

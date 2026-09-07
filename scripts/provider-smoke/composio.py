@@ -1,4 +1,4 @@
-"""Browse Composio toolkits and tools, authorize an account, and test a call without Foundation Service."""
+"""Browse Composio toolkits and tools, authorize an account, and test a call without a13n Service."""
 
 from __future__ import annotations
 
@@ -293,7 +293,7 @@ ownership, readiness, and the current tool definition before dispatch.
 Use --endpoint URL to select a compatible Composio endpoint.
 Private endpoints also need --allow-private-domain HOST (including localhost if used).
 Calls are never automatically retried. --execute authorizes the selected tool call.
-The scripts do not load .env files or use Foundation Service authentication/storage.
+The scripts do not load .env files or use a13n Service authentication/storage.
 """,
     )
     parser.set_defaults(provider="composio")

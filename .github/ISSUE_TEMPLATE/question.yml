@@ -8,10 +8,10 @@ body:
     attributes:
       label: Component
       options:
-        - agent-harness
-        - foundation-service
+        - a13n-harness
+        - a13n-service
         - logging and observability
-        - agent-envd and sandbox
+        - a13n-envd and sandbox
         - CI, release, or repository tooling
         - documentation or specification
         - other

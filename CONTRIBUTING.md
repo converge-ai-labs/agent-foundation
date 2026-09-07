@@ -48,7 +48,7 @@ Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) when imp
 - database sessions never span streams, agent runs, external calls, waits, or background-task boundaries;
 - streaming FastAPI routes complete database-backed authentication and initial reads before constructing the response;
 - logging, process lifespan, role selection, image construction, and graceful shutdown use shared service infrastructure;
-- `foundation-service` uses one artifact for all-in-one, control, worker, and connector deployment roles.
+- `a13n-service` uses one artifact for all-in-one, control, worker, and connector deployment roles.
 
 Keep transport handling, application orchestration, domain behavior, and infrastructure adapters separated. Update the accepted design in `spec/` when a change alters ownership, lifecycle, compatibility, security, or deployment semantics; do not use the development guide to introduce product architecture implicitly.
 
@@ -56,34 +56,34 @@ Keep transport handling, application orchestration, domain behavior, and infrast
 
 Use the Makefile as the stable development interface:
 
-| Command                     | Purpose                                                           |
-| --------------------------- | ----------------------------------------------------------------- |
-| `make help`                 | List available commands                                           |
-| `make install`              | Synchronize locked workspace, application, and SDK dependencies   |
-| `make setup`                | Start local PostgreSQL and Redis                                  |
-| `make dev`                  | Upgrade the schema and run Foundation Service                     |
-| `make dev-down`             | Stop local infrastructure and remove its data volumes             |
-| `make langfuse-up`          | Start the isolated local Langfuse trace backend                   |
-| `make langfuse-down`        | Stop local Langfuse while preserving its data                     |
-| `make langfuse-reset`       | Stop local Langfuse and remove its data volumes                   |
-| `make format`               | Apply repository formatting hooks                                 |
-| `make lint`                 | Run non-mutating repository lint checks                           |
-| `make deps-check`           | Check each Python package's dependency declarations with deptry   |
-| `make typecheck`            | Type-check Python package sources with Pyright                    |
-| `make docs-serve`           | Start the local MkDocs development server                         |
-| `make docs-build`           | Build the documentation site in strict mode                       |
-| `make test`                 | Run Python workspace tests                                        |
-| `make examples-check`       | Lint and type-check the independent examples                      |
-| `make examples-check-all`   | Build and run the complete independent examples gate              |
-| `make eip-check`            | Verify generated EIP artifacts and shared Python/Rust wire models |
-| `make rust-check`           | Format-check and lint the root Rust workspace                     |
-| `make sdk-check`            | Lint and type-check the standalone SDKs                           |
-| `make foundation-cli-check` | Format-check and lint the standalone Foundation CLI               |
-| `make build`                | Build all workspace packages, applications, and standalone SDKs   |
-| `make images`               | Build the foundation-service and sandbox images                   |
-| `make image-check`          | Build and smoke-check both container images                       |
-| `make check`                | Apply formatting, then run fast checks with four parallel workers |
-| `make check-all`            | Run the complete component gates, including tests and builds      |
+| Command                       | Purpose                                                           |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `make help`                   | List available commands                                           |
+| `make install`                | Synchronize locked workspace, application, and SDK dependencies   |
+| `make setup`                  | Start local PostgreSQL and Redis                                  |
+| `make dev`                    | Upgrade the schema and run a13n Service                           |
+| `make dev-down`               | Stop local infrastructure and remove its data volumes             |
+| `make langfuse-up`            | Start the isolated local Langfuse trace backend                   |
+| `make langfuse-down`          | Stop local Langfuse while preserving its data                     |
+| `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                   |
+| `make format`                 | Apply repository formatting hooks                                 |
+| `make lint`                   | Run non-mutating repository lint checks                           |
+| `make deps-check`             | Check each Python package's dependency declarations with deptry   |
+| `make typecheck`              | Type-check Python package sources with Pyright                    |
+| `make docs-serve`             | Start the local MkDocs development server                         |
+| `make docs-build`             | Build the documentation site in strict mode                       |
+| `make test`                   | Run Python workspace tests                                        |
+| `make examples-check`         | Lint and type-check the independent examples                      |
+| `make examples-check-all`     | Build and run the complete independent examples gate              |
+| `make eip-check`              | Verify generated EIP artifacts and shared Python/Rust wire models |
+| `make rust-check`             | Format-check and lint the root Rust workspace                     |
+| `make sdk-check`              | Lint and type-check the standalone SDKs                           |
+| `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI             |
+| `make build`                  | Build all workspace packages, applications, and standalone SDKs   |
+| `make images`                 | Build the a13n-service and sandbox images                         |
+| `make image-check`            | Build and smoke-check both container images                       |
+| `make check`                  | Apply formatting, then run fast checks with four parallel workers |
+| `make check-all`              | Run the complete component gates, including tests and builds      |
 
 Use `make format` when you want to apply formatting changes alone. `make check` applies the same formatters before running the fast validation gate. Installed pre-commit hooks also format supported changed files automatically; if a hook rewrites a file during commit, review and stage that result before committing again. Run the full local gate before opening or updating a broad pull request:
 
@@ -91,11 +91,11 @@ Use `make format` when you want to apply formatting changes alone. `make check` 
 make check-all
 ```
 
-`foundation-service` integration tests use fixture-owned Testcontainers. Application `FOUNDATION_*` variables never select test infrastructure. Loopback SSE and fixture-owned S3 clients bypass ambient proxies.
+`a13n-service` integration tests use fixture-owned Testcontainers. Application `A13N_SERVICE_*` variables never select test infrastructure. Loopback SSE and fixture-owned S3 clients bypass ambient proxies.
 
 Testcontainers is pinned to 4.13.1 because 4.15.0 can read Ryuk port mappings before Docker publishes them; upgrades must verify mapped-port startup with Ryuk enabled. Unreturned SQL connections, unhandled thread exceptions, and unraisable exceptions fail the test gate.
 
-Foundation CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `Foundation Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-foundation.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for Foundation Service, matching CI, and two workers for other Python suites. Service tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
+a13n Service CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `a13n Service Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-a13n-service.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for a13n Service, matching CI, and two workers for other Python suites. Service tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
 
 ## Releases
 
@@ -103,24 +103,24 @@ Create a stable release with canonical version `X.Y.Z` or a release candidate wi
 
 When bootstrapping an empty registry namespace, publish dependency owners before their consumers:
 
-1. publish the agent-envd release so `agent-envd` and `a13n-envd-client` exist;
-2. publish the Foundation release so `a13n-logging` exists; this can run independently or in parallel with the agent-envd release;
+1. publish the a13n-envd release so `a13n-envd` and `a13n-envd-client` exist;
+2. publish the a13n Service release so `a13n-logging` exists; this can run independently or in parallel with the a13n-envd release;
 3. publish the Harness release group after `a13n-envd-client` is available;
-4. publish Agent UI only after both its selected Harness release and `a13n-logging` are available from PyPI.
+4. publish Harness UI only after both its selected Harness release and `a13n-logging` are available from PyPI.
 
 The language SDKs can publish independently of that chain. A new TypeScript SDK npm name is the exception to ordinary tag-only release preparation: publish one reviewed RC locally under the npm `rc` tag, configure Trusted Publishing for the resulting package, and then publish the stable version through the release workflow. The SDK README owns the exact bootstrap and trust commands.
 
-Harness releases use `release/harness-v<version>`. The workflow assigns exactly the same version to `a13n-environment-provider`, `a13n-harness`, and `a13n-stream-protocol`, pins the published Harness dependency to that exact Provider version and the published Protocol dependency to that exact Harness version, builds all three wheels and source distributions, publishes them through the `harness-pypi` environment, and attaches all six artifacts to one GitHub Release.
+Harness releases use `release/a13n-harness-v<version>`. The workflow assigns exactly the same version to `a13n-environment`, `a13n-harness`, and `a13n-stream-protocol`, pins the published Harness dependency to that exact Provider version and the published Protocol dependency to that exact Harness version, builds all three wheels and source distributions, publishes them through the `a13n-harness-pypi` environment, and attaches all six artifacts to one GitHub Release.
 
-Agent UI releases use `release/agent-ui-v<version>`. The UI version advances independently. Before tagging, maintainers set `[tool.a13n.agent-ui-release].harness-version` in `packages/agent-ui/pyproject.toml` to a published Harness release; the `0.0.0` placeholder blocks a real release. The workflow pins Provider, Harness, and Protocol to that exact version in the publishable sdist and wheel. It builds the private Agent UI WebUI into both artifacts alongside the Python CLI and reusable App, verifies a wheel rebuild from the sdist without Node.js, and installs the wheel in a clean environment from PyPI to prove the selected libraries are available before publishing through `agent-ui-pypi`. It attaches the two artifacts to one GitHub Release. The private frontend has no independent npm publication.
+Harness UI releases use `release/a13n-harness-ui-v<version>`. The UI version advances independently. Before tagging, maintainers set `[tool.a13n.harness-ui-release].harness-version` in `packages/a13n-harness-ui/pyproject.toml` to a published Harness release; the `0.0.0` placeholder blocks a real release. The workflow pins Provider, Harness, and Protocol to that exact version in the publishable sdist and wheel. It builds the private Harness UI WebUI into both artifacts alongside the Python CLI and reusable App, verifies a wheel rebuild from the sdist without Node.js, and installs the wheel in a clean environment from PyPI to prove the selected libraries are available before publishing through `a13n-harness-ui-pypi`. It attaches the two artifacts to one GitHub Release. The private frontend has no independent npm publication.
 
-Foundation releases use `release/foundation-v<version>`. The workflow versions the repository root, `a13n-logging`, and `a13n-service`; it publishes the latter two Python distributions through the `foundation-pypi` environment and publishes the native `linux/amd64` foundation-service image. It excludes and does not republish Harness, Agent UI, or `a13n-envd-client`, and selects compatible published Harness libraries through its own dependency management.
+a13n Service releases use `release/a13n-service-v<version>`. The workflow versions the repository root, `a13n-logging`, and `a13n-service`; it publishes the latter two Python distributions through the `a13n-service-pypi` environment and publishes the native `linux/amd64` a13n-service image. It excludes and does not republish Harness, Harness UI, or `a13n-envd-client`, and selects compatible published Harness libraries through its own dependency management.
 
-agent-envd releases use `release/agent-envd-v<version>`. The workflow versions the Cargo workspace, `a13n-envd-client`, and their lock files with one canonical release identity. It builds the Python wheel and source distribution concurrently with Linux GNU and macOS tar archives plus Windows x64 and ARM64 ZIP archives. After every distribution and the crate package validate, independent jobs publish `agent-envd` to crates.io with `CARGO_REGISTRY_TOKEN` from the `agent-envd-crates-io` environment and publish `a13n-envd-client` to PyPI with `PYPI_TOKEN` from the `agent-envd-client-pypi` environment. The sandbox image publishes only after both registry jobs succeed. A retried publish skips an existing artifact only when the registry check confirms the built artifact matches; a mismatch fails closed. The GitHub Release waits for all publish paths, generates checksums, and attaches the Python distributions and binary archives. Linux binaries target the current GitHub-hosted Ubuntu/glibc baseline; use the sandbox image when a fixed userspace is required.
+a13n-envd releases use `release/a13n-envd-v<version>`. The workflow versions the Cargo workspace, `a13n-envd-client`, and their lock files with one canonical release identity. It builds the Python wheel and source distribution concurrently with Linux GNU and macOS tar archives plus Windows x64 and ARM64 ZIP archives. After every distribution and the crate package validate, independent jobs publish `a13n-envd` to crates.io with `CARGO_REGISTRY_TOKEN` from the `a13n-envd-crates-io` environment and publish `a13n-envd-client` to PyPI with `PYPI_TOKEN` from the `a13n-envd-client-pypi` environment. The sandbox image publishes only after both registry jobs succeed. A retried publish skips an existing artifact only when the registry check confirms the built artifact matches; a mismatch fails closed. The GitHub Release waits for all publish paths, generates checksums, and attaches the Python distributions and binary archives. Linux binaries target the current GitHub-hosted Ubuntu/glibc baseline; use the sandbox image when a fixed userspace is required.
 
-SDK languages version and release independently from the standalone `sdk/` directory. Push `release/sdk/<language>/<version>`; the workflow versions that language's package metadata before building. Python publishes through `sdk-python-pypi`, Rust through `sdk-rust-crates-io`, and TypeScript through npm Trusted Publishing bound to `release-sdk-typescript.yml` and `sdk-typescript-npm`. A TypeScript RC publishes under the npm `rc` dist-tag rather than `latest`. Go has no embedded package version; its workflow validates the release version and creates the canonical `sdk/go/v<version>` module tag through `sdk-go-github`.
+SDK languages version and release independently from the standalone `sdk/` directory. Push `release/a13n/<language>/<version>`; the workflow versions that language's package metadata before building. Python publishes through `a13n-python-pypi`, Rust through `a13n-rust-crates-io`, and TypeScript through npm Trusted Publishing bound to `release-a13n-typescript.yml` and `a13n-typescript-npm`. A TypeScript RC publishes under the npm `rc` dist-tag rather than `latest`. Go has no embedded package version; its workflow validates the release version and creates the canonical `sdk/go/v<version>` module tag through `a13n-go-github`.
 
-Foundation CLI releases use `release/foundation-cli-v<version>`. The workflow injects the version into the independent `sdk/rust/agent-foundation-cli` manifest and lock file, then builds Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64 archives. Each archive contains the `agent-foundation` executable and `LICENSE`; the GitHub Release also includes `SHA256SUMS`. This channel publishes no crate, uses no registry credentials or GitHub Environment, and defines no mutable `latest` selector for stable or RC releases.
+a13n Service CLI releases use `release/a13n-service-cli-v<version>`. The workflow injects the version into the independent `sdk/rust/a13n-service-cli` manifest and lock file, then builds Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64 archives. Each archive contains the `a13n-service-cli` executable and `LICENSE`; the GitHub Release also includes `SHA256SUMS`. This channel publishes no crate, uses no registry credentials or GitHub Environment, and defines no mutable `latest` selector for stable or RC releases.
 
 An RC publishes the same registry and downloadable artifact set as its corresponding stable channel and creates a GitHub prerelease. A stable release creates a normal GitHub Release. A release may add reviewed, human-written notes at `.github/release-notes/<component>/<version>.md`; see [the release-notes guide](.github/release-notes/README.md). The file is optional. Its content is prepended to generated notes for later releases and replaces the default initial sentence for the first release in a channel. The first RC for a target compares with the preceding release, later RCs compare with the preceding RC, and the final stable release compares with the preceding stable release so its notes cover the complete stable change set. Pull requests are categorized by the labels configured in `.github/release.yml`; use `breaking-change`, `enhancement`, `bug`, or `documentation`, and use `chore` or `skip-changelog` to omit a pull request. Direct commits remain visible through the generated Full Changelog comparison link but are not listed as categorized pull requests.
 
@@ -130,13 +130,13 @@ A push to `main` that changes a development image input builds and smoke-checks 
 
 Database changes follow the migration contract in [DEVELOPMENT.md](DEVELOPMENT.md#migrations).
 
-Do not create Alembic revision files manually or autogenerate against an existing developer or shared database. Generate every `foundation-service` revision through the stable repository target:
+Do not create Alembic revision files manually or autogenerate against an existing developer or shared database. Generate every `a13n-service` revision through the stable repository target:
 
 ```bash
 make db-migrate msg="describe the schema change"
 ```
 
-The target starts the local PostgreSQL service when needed, rebuilds schema history in a disposable database, autogenerates and formats the revision, and removes the temporary database. Review the generated migration rather than treating a clean model diff as proof of safety. The complete model-import and verification flow is documented in [packages/foundation-service/README.md](packages/foundation-service/README.md#add-an-orm-model).
+The target starts the local PostgreSQL service when needed, rebuilds schema history in a disposable database, autogenerates and formats the revision, and removes the temporary database. Review the generated migration rather than treating a clean model diff as proof of safety. The complete model-import and verification flow is documented in [packages/a13n-service/README.md](packages/a13n-service/README.md#add-an-orm-model).
 
 A schema-change pull request must explain lock duration, scans or rewrites, rolling old/new compatibility, index strategy, bounded backfill, interruption and rerun behavior, and rollback or forward repair. Prefer additive expand-and-contract changes. The shared image auto-migrates `all` and `control` replicas under advisory locking; deployments with a dedicated migration job disable replica auto migration. Worker-only processes never migrate.
 

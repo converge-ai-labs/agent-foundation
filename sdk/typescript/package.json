@@ -1,7 +1,7 @@
 {
-  "name": "a13n-sdk",
+  "name": "a13n",
   "version": "0.0.1",
-  "description": "TypeScript SDK for Agent Foundation Service",
+  "description": "TypeScript SDK for a13n Service",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
