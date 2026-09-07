@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions to Agent Foundation are welcome. The project uses GitHub Issues for discussion and progress tracking, and pull requests for every reviewed change to specifications, documentation, code, tests, and automation. Repository-wide service engineering requirements are defined in [DEVELOPMENT.md](DEVELOPMENT.md).
+Contributions to Agent Foundation are welcome. The project uses GitHub Issues for discussion and progress tracking, and pull requests for every reviewed change to specifications, documentation, code, tests, and automation. Repository-wide code quality principles and component engineering requirements are defined in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Repository Language
 
@@ -41,7 +41,7 @@ The repository selects Python 3.13 through `.python-version`. Python packages ar
 
 ## Engineering Standards
 
-[DEVELOPMENT.md](DEVELOPMENT.md) is the normative implementation guide for deployable services. In particular:
+Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) when implementing or reviewing features, bug fixes, and refactoring across repository languages and components. Read additional engineering rules for the boundaries affected by the change. For deployable services, these include:
 
 - service I/O is async-first;
 - database access uses one canonical engine/session factory and short transaction scopes;
@@ -163,7 +163,7 @@ See [spec/repository-model.md](spec/repository-model.md) for the normative repos
 A pull request should:
 
 1. Link the relevant issue when one exists.
-2. Explain the motivation and material changes.
+2. Explain the motivation and material changes. For significant design changes, explain the current need for added mechanisms and the effect on understanding and maintenance cost, using the [code quality principles](DEVELOPMENT.md#code-quality-and-design). Routine changes need only a proportionate explanation.
 3. Update affected specifications, docs, tests, and automation.
 4. Report the exact validation commands and outcomes.
 5. Request reviewers according to `MAINTAINERS.md`.

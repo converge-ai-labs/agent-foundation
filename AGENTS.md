@@ -5,7 +5,7 @@ Agent Foundation is a Python-first open-source cloud foundation for building age
 ## Sources of Truth
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution workflow, setup, and validation. Read it before changing the repository.
-- [DEVELOPMENT.md](DEVELOPMENT.md) owns service engineering standards. Read it before implementation, along with the directly owning specification.
+- [DEVELOPMENT.md](DEVELOPMENT.md) owns code quality principles and component engineering standards. Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) to features, bug fixes, refactoring, and reviews; read the component rules and owning specifications relevant to the change.
 - [spec/repository-model.md](spec/repository-model.md) owns repository structure and workflow boundaries. Read it before changing either.
 - [spec/README.md](spec/README.md) leads to the accepted product and architecture contracts. Keep proposals, discussion, and progress in GitHub Issues; changes are reviewed through pull requests.
 - `docs/` contains Markdown user documentation published with MkDocs Material; `mkdocs.yml` owns site configuration and navigation.

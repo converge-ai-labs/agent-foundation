@@ -1,6 +1,28 @@
 # Development Standards
 
-This file explains the engineering choices shared by deployable Python services. Product semantics and subsystem ownership belong in `spec/`; contributor workflow belongs in [CONTRIBUTING.md](CONTRIBUTING.md); package command catalogs and exhaustive configuration references belong in the nearest package README. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
+This file owns repository-wide code quality principles and engineering conventions for the components they concern. The code quality principles apply to libraries, services, SDKs, CLIs, frontends, and tooling across languages. Service-specific rules below apply to their named service, runtime, or infrastructure boundaries. Product semantics and subsystem ownership belong in `spec/`; contributor workflow belongs in [CONTRIBUTING.md](CONTRIBUTING.md); package command catalogs and exhaustive configuration references belong in the nearest package README. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
+
+## Code Quality and Design
+
+Elegant, well-designed code uses concepts that fit the problem, interfaces that make behavior predictable, and structure that makes execution and change easy to follow. Apply these principles to features, bug fixes, refactoring, and reviews within the affected scope. Necessary domain knowledge and complexity should have clear explanations and boundaries; simplicity must preserve required capabilities, correctness, reliability, and performance.
+
+- Start from representative user tasks, required outcomes, failure guarantees, and actual scale. Read the owning contracts and trace behavior before choosing an implementation; examine whether existing mechanisms still serve those requirements.
+- Reduce the concepts, rules, states, branches, dependencies, and coordinated edits a maintainer must understand. Line counts, file sizes, and layer counts alone do not establish quality.
+- Give each core concept a clear responsibility and understandable relationships. Use domain terms consistently across interfaces, implementation, tests, and documentation.
+- Give shared rules and facts one clear owner. Consolidate semantic duplication while preserving real differences in lifecycle, protocols, and security boundaries; similar code alone does not justify a shared abstraction.
+- Prefer direct flows and cohesive functions and modules. Extra abstractions, frameworks, options, and execution paths need concrete current justification. An abstraction should make a realistic change local and understandable.
+- Make common tasks straightforward through coherent interfaces and useful defaults. Similar operations should follow consistent parameter, result, and error conventions. Keep timeout, cancellation, retry, and partial-success behavior understandable, with diagnostics that help developers determine what happened and how to respond.
+- Make state ownership, side effects, resource lifetimes, and failure handling traceable from the entry point.
+- Complete a change across its affected contracts, implementation, consumers, tests, and documentation. Fix faulty rules at their owner and check affected callers for the same cause instead of accumulating local workarounds. Remove related artifacts made obsolete by the change once they serve no remaining requirement; keep unrelated cleanup outside the task.
+- Account for runtime, storage, network, recovery, operational, and maintenance costs. Validate changed behavior at meaningful boundaries. Support performance trade-offs with measurements or an explicit capacity model, distinguishing assumptions from evidence and accounting for known bottlenecks.
+
+Evaluate the affected surface through representative use and maintenance tasks:
+
+- Required concepts and prerequisites are explicit. Developers can understand a common workflow without first learning unrelated mechanisms or exceptional cases.
+- Following that workflow into the implementation reveals consistent concepts, clear responsibilities, and a traceable execution path.
+- A realistic behavior change has a discoverable change location, clear contracts and impact, and a practical way to validate it.
+
+Use concrete tasks to assess understanding and maintenance cost. Match the depth of explanation and validation to the change; routine fixes do not require a separate design exercise.
 
 ## Service Shape
 

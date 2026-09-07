@@ -13,7 +13,7 @@ This document defines the normative content and workflow boundaries of the Agent
 | GitHub Issues     | Primary venue for proposals, open questions, design discussion, coordination, and progress tracking   | Normative design or implementation state                                                                          |
 | Pull requests     | Reviewed mechanism for changing specifications, documentation, code, tests, and repository automation | Long-running discussion that belongs in an issue                                                                  |
 | `CONTRIBUTING.md` | Contributor setup, local development, validation, and pull-request workflow                           | Product or architecture design                                                                                    |
-| `DEVELOPMENT.md`  | Repository-wide engineering standards for deployable services, persistence, migrations, and images    | Product semantics, package-specific commands, and rollout history                                                 |
+| `DEVELOPMENT.md`  | Repository-wide code quality principles and engineering conventions with explicit component scope     | Product semantics, package-specific commands, and rollout history                                                 |
 | `AGENTS.md`       | Concise operational guidance for coding agents working in the repository                              | Detailed design owned by `spec/` or engineering standards owned by `DEVELOPMENT.md`                               |
 | `apps/`           | Private application sources compiled into an owning image or language distribution                    | Independently published libraries or language package workspaces                                                  |
 | `deploy/`         | Container build definitions and reviewed deployment assets organized by deployment mechanism          | Application source, generated images, credentials, and environment-specific secrets                               |
@@ -90,7 +90,7 @@ Keep those materials in GitHub Issues. When discussion changes the accepted desi
 
 ## Development Standards
 
-`DEVELOPMENT.md` defines how deployable services are implemented consistently across the repository. It owns cross-service coding and operational engineering conventions such as async I/O, database session and transaction lifetimes, migration generation and locking, streaming endpoint resource safety, logging, process roles, and container construction.
+`DEVELOPMENT.md` owns [code quality and design principles](../DEVELOPMENT.md#code-quality-and-design) for libraries, services, SDKs, CLIs, frontends, and tooling across repository languages. It also owns engineering conventions within their stated component scope, including service async I/O, database session and transaction lifetimes, migration generation and locking, streaming endpoint resource safety, logging, process roles, and container construction.
 
 The development guide does not establish product semantics or subsystem ownership; those remain in `spec/`. It also does not replace package-local setup and command documentation or the contributor workflow in `CONTRIBUTING.md`. `AGENTS.md` may summarize high-risk rules and link to the guide, but must not become a second complete copy.
 
