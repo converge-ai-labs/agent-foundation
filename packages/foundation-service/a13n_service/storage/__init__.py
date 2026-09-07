@@ -4,6 +4,7 @@ from .config import StorageSettings
 from .object_store import (
     ByteRange,
     InvalidObjectRequest,
+    ObjectAccessDenied,
     ObjectConflict,
     ObjectInfo,
     ObjectNotFound,
@@ -20,6 +21,7 @@ from .runtime import StorageResources, StorageStartupError, open_storage
 __all__ = [
     "ByteRange",
     "InvalidObjectRequest",
+    "ObjectAccessDenied",
     "ObjectConflict",
     "ObjectInfo",
     "ObjectNotFound",

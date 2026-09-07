@@ -15,6 +15,7 @@ from a13n_service.interactions.domain import (
 )
 from a13n_service.interactions.state import (
     CompletedOutcomeCandidate,
+    ConsumedThreadInboxEntry,
     DeferredContinuationState,
     HostContinuationState,
     WaitingOutcomeCandidate,
@@ -105,7 +106,7 @@ def test_outcome_candidate_cannot_be_replaced_before_relational_sealing() -> Non
     completed = type(initial).model_validate(payload)
     successor = progress_state(completed)
 
-    with pytest.raises(ValueError, match="outcome candidate state cannot be replaced"):
+    with pytest.raises(ValueError, match="outcome candidate state permits only additive inbox receipt repair"):
         validate_state_successor(completed, successor, run_attempt_id=ATTEMPT_ID, fence=1)
 
 
@@ -149,3 +150,31 @@ def test_waiting_summary_must_match_native_deferred_request_kinds() -> None:
 
     with pytest.raises(ValidationError, match="preserve native request kind"):
         type(initial).model_validate(payload)
+
+
+@pytest.mark.parametrize("changed", [None, "outcome", "history"])
+def test_terminal_receipt_repair_cannot_change_execution_or_result(changed):
+    completed = progress_state(initial_state()).model_copy(
+        update={"checkpoint_kind": "completed", "outcome_candidate": CompletedOutcomeCandidate(output="original")}
+    )
+    host = HostContinuationState(
+        consumed_inbox_entries=(ConsumedThreadInboxEntry(inbox_entry_id="inb_7777777777777777", kind="steer"),)
+    )
+    successor = completed.model_copy(
+        update={
+            "checkpoint_seq": completed.checkpoint_seq + 1,
+            "host": host,
+            "last_checkpoint_fence": 2,
+        }
+    )
+    if changed == "outcome":
+        successor = successor.model_copy(update={"outcome_candidate": CompletedOutcomeCandidate(output="changed")})
+    elif changed == "history":
+        successor = successor.model_copy(
+            update={"harness": completed.harness.model_copy(update={"agent_context_state": {"changed": True}})}
+        )
+    if changed is None:
+        validate_state_successor(completed, successor, run_attempt_id=ATTEMPT_ID, fence=2)
+    else:
+        with pytest.raises(ValueError, match="only additive inbox receipt repair"):
+            validate_state_successor(completed, successor, run_attempt_id=ATTEMPT_ID, fence=2)

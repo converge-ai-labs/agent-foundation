@@ -1,6 +1,6 @@
 """Trusted inbox provenance carried by native, model-invisible input metadata."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 
@@ -70,6 +70,33 @@ def incorporated_receipts(
 
     expected = {entry.receipt.inbox_entry_id: entry for entry in entries}
     found: set[str] = set()
+    for provenance, content in _retained_provenance(messages, run_id=run_id):
+        entry_id = provenance.get("inbox_entry_id")
+        if not isinstance(entry_id, str) or (entry := expected.get(entry_id)) is None:
+            continue
+        if provenance.get("kind") != entry.receipt.kind:
+            raise RunError("Thread inbox provenance kind conflicts.", code="foundation_inbox_receipt_invalid")
+        # Native serialization narrows BinaryContent to media-specific types.
+        if _CONTENT.dump_python(tuple(content), mode="json") == _CONTENT.dump_python(
+            entry.tagged_input(run_id), mode="json"
+        ):
+            found.add(entry_id)
+    return tuple(entry.receipt for entry_id, entry in expected.items() if entry_id in found)
+
+
+def retained_inbox_ids(messages: Sequence[ModelMessage], *, run_id: str) -> frozenset[str]:
+    """Locate provenance for recovery inspection; identity alone never proves consumption."""
+
+    return frozenset(
+        entry_id
+        for provenance, _ in _retained_provenance(messages, run_id=run_id)
+        if isinstance(entry_id := provenance.get("inbox_entry_id"), str)
+    )
+
+
+def _retained_provenance(
+    messages: Sequence[ModelMessage], *, run_id: str
+) -> Iterator[tuple[dict, Sequence[UserContent]]]:
     for message in messages:
         if not isinstance(message, ModelRequest) or message.state != "complete":
             continue
@@ -82,17 +109,7 @@ def incorporated_receipts(
             provenance = first.metadata.get(_PROVENANCE_KEY)
             if not isinstance(provenance, dict) or provenance.get("run_id") != run_id:
                 continue
-            entry_id = provenance.get("inbox_entry_id")
-            if not isinstance(entry_id, str) or (entry := expected.get(entry_id)) is None:
-                continue
-            if provenance.get("kind") != entry.receipt.kind:
-                raise RunError("Thread inbox provenance kind conflicts.", code="foundation_inbox_receipt_invalid")
-            # Native serialization narrows BinaryContent to media-specific types.
-            if _CONTENT.dump_python(tuple(part.content), mode="json") == _CONTENT.dump_python(
-                entry.tagged_input(run_id), mode="json"
-            ):
-                found.add(entry_id)
-    return tuple(entry.receipt for entry_id, entry in expected.items() if entry_id in found)
+            yield provenance, part.content
 
 
 def merge_receipts(

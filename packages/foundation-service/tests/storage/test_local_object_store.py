@@ -4,12 +4,32 @@ import anyio
 import pytest
 from a13n_service.storage.object_store import (
     LocalObjectStore,
+    ObjectAccessDenied,
     ObjectConflict,
     ObjectNotFound,
     ObjectStoreUnavailable,
 )
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("operation", ["open", "stat"])
+async def test_permission_failure_is_not_a_transient_outage(tmp_path: Path, monkeypatch, operation: str) -> None:
+    from a13n_service.storage.object_store import local
+
+    store = await LocalObjectStore.create(tmp_path / "objects")
+    await store.put("private", b"data")
+
+    def denied(*args, **kwargs):
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(local.os, "open", denied)
+    with pytest.raises(ObjectAccessDenied):
+        if operation == "stat":
+            await store.stat("private")
+        else:
+            async with store.open("private"):
+                raise AssertionError("Denied object must not be opened")
 
 
 async def test_failed_stream_is_not_visible_and_leaves_no_temporary_file(tmp_path: Path) -> None:

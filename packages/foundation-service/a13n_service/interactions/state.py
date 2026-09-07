@@ -214,7 +214,22 @@ def validate_state_successor(
     """Validate one same-Run semantic checkpoint replacement."""
 
     if previous.outcome_candidate is not None:
-        raise ValueError("Run outcome candidate state cannot be replaced")
+        # A recovery receipt repair can publish under the replacement fence,
+        # but cannot change the candidate or any execution/deferred state.
+        unchanged = successor.model_copy(
+            update={
+                "checkpoint_seq": previous.checkpoint_seq,
+                "last_checkpoint_run_attempt_id": previous.last_checkpoint_run_attempt_id,
+                "last_checkpoint_fence": previous.last_checkpoint_fence,
+                "host": successor.host.model_copy(
+                    update={"consumed_inbox_entries": previous.host.consumed_inbox_entries}
+                ),
+            }
+        )
+        if unchanged != previous or not (
+            set(previous.host.consumed_inbox_entries) < set(successor.host.consumed_inbox_entries)
+        ):
+            raise ValueError("Run outcome candidate state permits only additive inbox receipt repair")
     immutable_pairs = (
         ("run_id", previous.run_id, successor.run_id),
         ("thread_id", previous.thread_id, successor.thread_id),

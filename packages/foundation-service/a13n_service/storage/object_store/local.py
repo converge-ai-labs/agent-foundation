@@ -23,6 +23,7 @@ from ..filesystem import prepare_root
 from .api import (
     ByteRange,
     InvalidObjectRequest,
+    ObjectAccessDenied,
     ObjectConflict,
     ObjectInfo,
     ObjectNotFound,
@@ -111,6 +112,8 @@ class LocalObjectStore:
             file = await anyio.open_file(path, "rb", opener=_open_no_follow, limiter=self._limiter)
         except FileNotFoundError as error:
             raise ObjectNotFound(key) from error
+        except PermissionError as error:
+            raise ObjectAccessDenied("local object access denied") from error
         except OSError as error:
             raise ObjectStoreUnavailable("local object could not be opened") from error
         try:
@@ -279,6 +282,8 @@ def _read_header(path: Path, expected_key: str | None = None) -> ObjectInfo:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     except FileNotFoundError:
         raise
+    except PermissionError as error:
+        raise ObjectAccessDenied("local object access denied") from error
     except OSError as error:
         raise ObjectStoreUnavailable("local object could not be opened") from error
     with os.fdopen(descriptor, "rb") as file:

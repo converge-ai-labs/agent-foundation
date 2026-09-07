@@ -26,7 +26,7 @@ from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
-from a13n_service.skills.runtime import SkillRuntimePreparer
+from a13n_service.skills.runtime import PreparedSkillRuntime, SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
 
@@ -68,12 +68,13 @@ class WorkerAttemptPreparer:
         self._model_factory = model_factory
         self._skills = skills
         self._async_results = async_results
-        config = control.current_state.envelope.effective_agent_config
-        self._mapper = AgentInputMapper(
-            sources, {"native": native_input_adapter}, max_binary_bytes=config.protocol.limits.max_input_bytes
-        )
+        self._children: dict[str, AgentRevision] = {}
+        self._skill_runtime: PreparedSkillRuntime | None = None
 
-    async def prepare(self, context: AttemptContext) -> HarnessInvocation[Any]:
+    async def validate(self, context: AttemptContext) -> None:
+        """Claim the final recovery state and validate dependencies before admission."""
+
+        await self._control.claim_state(self._run)
         run = self._run
         config = self._control.current_state.envelope.effective_agent_config
         children: dict[str, AgentRevision] = {}
@@ -114,11 +115,30 @@ class WorkerAttemptPreparer:
                 child = row.to_resource()
                 children[child.id] = child
                 pending.extend(child.resolved_subagents)
+        AgentReconstructor(self._catalog).validate(
+            agent_id=run.agent_id,
+            agent_revision_id=run.agent_revision_id,
+            effective_config=config,
+            child_revisions=children,
+        )
         skill_runtime = await self._skills.prepare(
             organization_id=run.organization_id,
             workspace_id=self._workspace_id,
             locks=config.skills,
         )
+
+        self._children = children
+        self._skill_runtime = skill_runtime
+
+    async def prepare(self, context: AttemptContext) -> HarnessInvocation[Any]:
+        """Construct live invocation inputs only after successful recovery admission."""
+
+        run = self._run
+        config = self._control.current_state.envelope.effective_agent_config
+        children = self._children
+        skill_runtime = self._skill_runtime
+        if skill_runtime is None:
+            raise RuntimeError("Attempt dependencies have not been validated")
 
         def capabilities(context: AgentDefinitionReconstructionContext):
             if context.is_root and skill_runtime.manager is not None:
@@ -234,7 +254,12 @@ class WorkerAttemptPreparer:
         return value
 
     async def _map(self, accepted: AcceptedAgentInput, instance_id: str) -> RunInputValue | None:
-        return await self._mapper.map(
+        mapper = AgentInputMapper(
+            self._sources,
+            {"native": native_input_adapter},
+            max_binary_bytes=self._control.current_state.envelope.effective_agent_config.protocol.limits.max_input_bytes,
+        )
+        return await mapper.map(
             accepted,
             input_instance_id=instance_id,
             adapter=self._control.current_state.envelope.effective_agent_config.input_adapter,

@@ -194,10 +194,14 @@ class _Preparer:
     heartbeat_seen: Event
     trace: list[str]
 
-    async def prepare(self, context: AttemptContext) -> HarnessInvocation[str]:
-        assert context is self.context
+    async def validate(self, context: AttemptContext) -> None:
+        assert context.run_attempt_id == self.context.run_attempt_id
         await self.wakeups.receiving.wait()
         await self.heartbeat_seen.wait()
+        self.trace.append("attempt:validate-dependencies")
+
+    async def prepare(self, context: AttemptContext) -> HarnessInvocation[str]:
+        assert context.run_attempt_id == self.context.run_attempt_id
         self.trace.append("attempt:prepare")
         return self.invocation
 
@@ -401,6 +405,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     )
     environment_preparer = AsyncMock(return_value=None)
     monkeypatch.setattr("a13n_service.interactions.attempt_executor.prepare_run_environment", environment_preparer)
+    monkeypatch.setattr("a13n_service.interactions.attempt_executor.validate_run_environment", AsyncMock())
     lifecycle = Mock(spec=EnvironmentLifecycle)
     executor = RunAttemptExecutor(
         environments=lifecycle,
@@ -409,14 +414,19 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         driver=driver,
         preparer=_Preparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
         wakeups=wakeups,
-        adapter=_Adapter(),
+        adapter=_Adapter,
         committer=_Committer(trace),
         cleanup=_Cleanup(wakeups, trace),
         capacity_slot=capacity,
     )
 
     receipt = await executor.run()
-    environment_preparer.assert_awaited_once_with(lifecycle, context)
+    if reject_preparation:
+        environment_preparer.assert_not_awaited()
+    else:
+        assert environment_preparer.await_count == 1
+        assert environment_preparer.await_args.args[0] is lifecycle
+        assert environment_preparer.await_args.args[1].run_attempt_id == context.run_attempt_id
     await control.reconcile()
     await control.renew_lease()
 
@@ -431,7 +441,11 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         assert projector.events
     assert execution.heartbeat_seen.is_set()
     assert wakeups.acknowledged.is_set()
-    assert trace.index("inbox:confirm") < trace.index("attempt:prepare")
+    if reject_preparation:
+        assert "inbox:confirm" not in trace
+        assert "attempt:prepare" not in trace
+    else:
+        assert trace.index("attempt:preparation-commit") < trace.index("inbox:confirm") < trace.index("attempt:prepare")
     assert trace[-2:] == ["attempt:cleanup", "capacity:release"]
     assert capacity.releases == 1
 
@@ -484,14 +498,8 @@ async def test_control_watcher_acknowledges_only_after_each_durable_reconciliati
         await wakeups.acknowledged.wait()
         tasks.cancel_scope.cancel()
 
-    assert trace[:6] == [
-        "attempt:validate",
-        "inbox:confirm",
-        "wakeup:receive",
-        "attempt:validate",
-        "inbox:confirm",
-        "wakeup:ack",
-    ]
+    assert trace[:4] == ["attempt:validate", "wakeup:receive", "attempt:validate", "wakeup:ack"]
+    assert "inbox:confirm" not in trace
 
 
 async def test_active_reconciliation_uses_driver_steer_without_consuming_receipt(
@@ -523,11 +531,11 @@ async def test_active_reconciliation_uses_driver_steer_without_consuming_receipt
     assert control.current_state.envelope.host.consumed_inbox_entries == ()
 
 
-@pytest.mark.parametrize("cleanup_fails", [False, True])
+@pytest.mark.parametrize("failure", [None, "cleanup", "yield"])
 async def test_handoff_closes_runtime_while_renewing_before_yield(
     interaction_object_store,
     monkeypatch,
-    cleanup_fails,
+    failure,
 ):
     trace = []
     envelope = initial_state()
@@ -554,13 +562,16 @@ async def test_handoff_closes_runtime_while_renewing_before_yield(
         async def close(self, context, control, driver):
             trace.append("cleanup:start")
             await sleep(0.01)
-            if cleanup_fails:
+            if failure == "cleanup":
                 raise RuntimeError("cleanup unavailable")
             trace.append("cleanup:end")
 
     monkeypatch.setattr(
         "a13n_service.interactions.attempt_executor.prepare_run_environment", AsyncMock(return_value=None)
     )
+    monkeypatch.setattr("a13n_service.interactions.attempt_executor.validate_run_environment", AsyncMock())
+    if failure == "yield":
+        monkeypatch.setattr(execution, "yield_attempt", AsyncMock(side_effect=RuntimeError("PG unavailable")))
     await control.request_handoff(RunAttemptYieldReason.service_drain)
     executor = RunAttemptExecutor(
         environments=Mock(spec=EnvironmentLifecycle),
@@ -569,15 +580,17 @@ async def test_handoff_closes_runtime_while_renewing_before_yield(
         driver=driver,
         preparer=_Preparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
         wakeups=wakeups,
-        adapter=_Adapter(),
+        adapter=_Adapter,
         committer=_Committer(trace),
         cleanup=Cleanup(),
         capacity_slot=capacity,
     )
-    if cleanup_fails:
+    if failure is not None:
         with pytest.raises((ExceptionGroup, RuntimeError)):
             await executor.run()
         assert "attempt:yield" not in trace
+        if failure == "yield":
+            assert trace.count("cleanup:start") == trace.count("cleanup:end") == 1
     else:
         await executor.run()
         start, end = trace.index("cleanup:start"), trace.index("cleanup:end")

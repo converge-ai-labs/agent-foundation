@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 from .api import (
     ByteRange,
     InvalidObjectRequest,
+    ObjectAccessDenied,
     ObjectConflict,
     ObjectInfo,
     ObjectNotFound,
@@ -376,6 +377,8 @@ def _translate_error(error: BotoCoreError | ClientError, key: str, *, conditiona
         response = error.response
         status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
         code = response.get("Error", {}).get("Code")
+        if status in {401, 403} or code in {"AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"}:
+            return ObjectAccessDenied(f"S3 access denied for {key}")
         if status in {409, 412} or code in {"ConditionalRequestConflict", "PreconditionFailed"}:
             return ObjectConflict(key)
         if status == 404 or code in {"NoSuchKey", "NotFound", "404"}:

@@ -104,6 +104,14 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 )
             )
     if recover_candidate:
+        monkeypatch.setattr(
+            "a13n_service.interactions.worker_preparation.WorkerAttemptPreparer.prepare",
+            AsyncMock(side_effect=AssertionError("Outcome adoption must not reconstruct a Harness invocation")),
+        )
+        monkeypatch.setattr(
+            "a13n_service.interactions.attempt_executor.prepare_run_environment",
+            AsyncMock(side_effect=AssertionError("Outcome adoption must not prepare Environment use")),
+        )
         claim = await AttemptScheduler(
             interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()
         ).claim(

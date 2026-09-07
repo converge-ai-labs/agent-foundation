@@ -1,7 +1,13 @@
 from typing import Any, cast
 
 import pytest
-from a13n_service.storage.object_store import ByteRange, ObjectConflict, ObjectStoreUnavailable, S3ObjectStore
+from a13n_service.storage.object_store import (
+    ByteRange,
+    ObjectAccessDenied,
+    ObjectConflict,
+    ObjectStoreUnavailable,
+    S3ObjectStore,
+)
 from botocore.exceptions import ClientError
 
 pytestmark = pytest.mark.anyio
@@ -46,6 +52,17 @@ async def test_conditional_delete_maps_precondition_failure() -> None:
 
     with pytest.raises(ObjectConflict):
         await store.delete("key", if_match='"stale"')
+
+
+@pytest.mark.parametrize("status,code", [(403, "AccessDenied"), (401, "Unauthorized"), (400, "InvalidAccessKeyId")])
+async def test_access_failure_is_not_a_transient_outage(status: int, code: str) -> None:
+    error = ClientError(
+        {"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": status}},
+        "DeleteObject",
+    )
+    store = S3ObjectStore(cast(Any, _DeleteClient(error)), "bucket")
+    with pytest.raises(ObjectAccessDenied):
+        await store.delete("key")
 
 
 async def test_unconditional_delete_is_idempotent_when_endpoint_returns_not_found() -> None:

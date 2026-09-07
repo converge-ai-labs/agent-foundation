@@ -3,6 +3,9 @@ discussion/
 local-reference/
 tmp/
 
+# Local runtime storage and caches
+/var/
+
 # Python bytecode and native extensions
 __pycache__/
 *.py[cod]

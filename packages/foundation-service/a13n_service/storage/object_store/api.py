@@ -97,6 +97,10 @@ class ObjectConflict(ObjectStoreError):
     """A conditional mutation did not match current state."""
 
 
+class ObjectAccessDenied(ObjectStoreError):
+    """The backend rejected access; retrying the same request cannot grant it."""
+
+
 class InvalidObjectRequest(ObjectStoreError, ValueError):
     """The request cannot be represented by the object contract."""
 

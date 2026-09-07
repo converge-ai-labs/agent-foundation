@@ -119,11 +119,11 @@ class RunOutcomeService:
             if thread.version != expected_thread_version:
                 raise RunOutcomeError("Thread outcome precondition changed")
             validate_outcome_candidate_scope(state, run, thread)
-            recovering_candidate = state.envelope.last_checkpoint_fence < authority.fence
-            if attempt.status != RunAttemptStatus.running.value and not (
-                attempt.status == RunAttemptStatus.leased.value and recovering_candidate
-            ):
-                raise AttemptMutationError("a successful outcome requires Harness entry")
+            # Recovery can repair Host receipts while preserving an existing
+            # candidate. That checkpoint carries the current fence even though
+            # this Attempt has not (and need not) entered Harness.
+            if attempt.status not in {RunAttemptStatus.running.value, RunAttemptStatus.leased.value}:
+                raise AttemptMutationError("a successful outcome requires an active Attempt")
             envelope = state.envelope
             candidate = envelope.outcome_candidate
             if isinstance(candidate, WaitingOutcomeCandidate):

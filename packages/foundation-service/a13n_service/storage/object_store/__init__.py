@@ -3,6 +3,7 @@
 from .api import (
     ByteRange,
     InvalidObjectRequest,
+    ObjectAccessDenied,
     ObjectConflict,
     ObjectInfo,
     ObjectNotFound,
@@ -21,6 +22,7 @@ __all__ = [
     "ByteRange",
     "InvalidObjectRequest",
     "LocalObjectStore",
+    "ObjectAccessDenied",
     "ObjectConflict",
     "ObjectInfo",
     "ObjectNotFound",

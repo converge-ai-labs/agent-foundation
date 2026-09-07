@@ -494,3 +494,22 @@ def test_reconstruction_rejects_unknown_and_recursive_output_resources() -> None
     with pytest.raises(AgentDefinitionReconstructionError) as recursion:
         _reconstruct(_effective(recursive))
     assert recursion.value.reason == "output_schema_recursive"
+
+
+@pytest.mark.parametrize("distribution", ["test-plugin", "wrong-plugin"])
+def test_recovery_validation_checks_factory_identity_without_constructing_plugins(distribution):
+    catalog, factory = _catalog(distribution_name=distribution)
+    effective = _effective(_config(), plugins=(_plugin_selection(),))
+    reconstructor = AgentReconstructor(catalog)
+    arguments = dict(
+        agent_id=ROOT_AGENT_ID,
+        agent_revision_id=ROOT_REVISION_ID,
+        effective_config=effective,
+        child_revisions={},
+    )
+    if distribution == "test-plugin":
+        reconstructor.validate(**arguments)
+    else:
+        with pytest.raises(AgentDefinitionReconstructionError, match="plugin_factory_provenance_mismatch"):
+            reconstructor.validate(**arguments)
+    assert factory.created == []

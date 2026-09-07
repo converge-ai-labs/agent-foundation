@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from a13n_environment_provider import (
@@ -144,7 +145,20 @@ class RunEnvironment(Environment):
         raise RuntimeError("Run objects do not own target deletion authority")
 
 
-async def prepare_run_environment(lifecycle: EnvironmentLifecycle, attempt: AttemptContext) -> RunEnvironment | None:
+@dataclass(frozen=True, slots=True)
+class _RunEnvironmentSelection:
+    environment_id: str
+    provider_key: str
+    descriptor: EnvironmentDescriptor
+    access: str
+    prepare_on_run: bool
+
+
+async def validate_run_environment(
+    lifecycle: EnvironmentLifecycle, attempt: AttemptContext
+) -> _RunEnvironmentSelection | None:
+    """Validate the fixed logical selection without acquiring use or calling a Provider."""
+
     async with short_session(lifecycle.sessions) as session:
         run = await session.get(RunRecord, attempt.run_id)
         if run is None or run.organization_id != attempt.organization_id:
@@ -165,7 +179,22 @@ async def prepare_run_environment(lifecycle: EnvironmentLifecycle, attempt: Atte
         descriptor = implementation.describe_configuration(validated)
         if run.environment_access is None:
             raise ValueError("Run Environment access is missing")
-        environment = RunEnvironment(lifecycle, attempt, row.id, provider.type, descriptor, run.environment_access)
-    if not isinstance(configuration, TemplateConfiguration) or configuration.preparation == "on_run":
+        return _RunEnvironmentSelection(
+            row.id,
+            provider.type,
+            descriptor,
+            run.environment_access,
+            not isinstance(configuration, TemplateConfiguration) or configuration.preparation == "on_run",
+        )
+
+
+async def prepare_run_environment(lifecycle: EnvironmentLifecycle, attempt: AttemptContext) -> RunEnvironment | None:
+    selection = await validate_run_environment(lifecycle, attempt)
+    if selection is None:
+        return None
+    environment = RunEnvironment(
+        lifecycle, attempt, selection.environment_id, selection.provider_key, selection.descriptor, selection.access
+    )
+    if selection.prepare_on_run:
         await environment.prepare()
     return environment
