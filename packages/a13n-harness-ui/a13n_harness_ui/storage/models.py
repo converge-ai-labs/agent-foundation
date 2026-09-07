@@ -61,7 +61,7 @@ class ResourceIndexRecord(Base):
     relative_path: Mapped[str] = mapped_column(Text, primary_key=True)
     resource_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
-    name: Mapped[str] = mapped_column("display_name", String(256), nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
     source_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
 

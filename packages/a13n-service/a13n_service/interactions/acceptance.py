@@ -323,7 +323,7 @@ class RunAcceptanceService:
                     expected_head_run_id=expected_head_run_id,
                 )
                 if thread.queue_version != expected_queue_version:
-                    raise RunAcceptanceError("queue_version_conflict", "Thread queue generation changed")
+                    raise RunAcceptanceError("queue_version_conflict", "Thread queue version changed")
                 current = await _load_run(database, run.organization_id, thread.current_run_id)
                 await _require_queue_drain_state(database, thread, current)
                 await validate_advancement(
@@ -455,7 +455,7 @@ class RunAcceptanceService:
                 expected_head_run_id=expected_head_run_id,
             )
             if thread.queue_version != expected_queue_version:
-                raise RunAcceptanceError("queue_version_conflict", "Thread queue generation changed")
+                raise RunAcceptanceError("queue_version_conflict", "Thread queue version changed")
             current = await _load_run(database, organization_id, thread.current_run_id)
             await _require_queue_drain_state(database, thread, current)
             if revalidate is not None and not await revalidate(database):

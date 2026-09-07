@@ -87,7 +87,7 @@ def upgrade() -> None:
         sa.Column("relative_path", sa.Text(), nullable=False),
         sa.Column("resource_kind", sa.String(length=64), nullable=False),
         sa.Column("resource_id", sa.String(length=128), nullable=False),
-        sa.Column("display_name", sa.String(length=256), nullable=False),
+        sa.Column("name", sa.String(length=256), nullable=False),
         sa.Column("source_digest", sa.String(length=64), nullable=False),
         sa.Column("normalized_digest", sa.String(length=64), nullable=False),
         sa.ForeignKeyConstraint(

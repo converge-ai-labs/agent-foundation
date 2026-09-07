@@ -61,7 +61,7 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             "ix_run_attempts_live_lease",
             "uq_run_attempts_fence",
             "uq_run_attempts_number",
-            "uq_run_attempts_generation_identity",
+            "uq_run_attempts_fence_identity",
         } <= attempt_indexes
         attempt_checks = {constraint["name"] for constraint in inspector.get_check_constraints("run_attempts")}
         assert {

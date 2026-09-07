@@ -31,7 +31,7 @@ class ChildRunRelationshipRecord(Base):
                 "organization_id",
                 "parent_run_id",
                 "parent_run_attempt_id",
-                "parent_run_attempt_generation",
+                "parent_run_attempt_fence",
             ),
             (
                 "run_attempts.organization_id",
@@ -54,7 +54,7 @@ class ChildRunRelationshipRecord(Base):
             name="fk_child_run_relationships_child_run",
             ondelete="RESTRICT",
         ),
-        CheckConstraint("parent_run_attempt_generation >= 1", name="parent_attempt_generation_positive"),
+        CheckConstraint("parent_run_attempt_fence >= 1", name="parent_attempt_fence_positive"),
         CheckConstraint("length(subagent_name) BETWEEN 1 AND 63", name="subagent_name_bounded"),
         CheckConstraint(
             "cancellation_policy IN ('independent', 'request_child_cancel')",
@@ -75,7 +75,7 @@ class ChildRunRelationshipRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_attempt_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    parent_run_attempt_fence: Mapped[int] = mapped_column("parent_run_attempt_generation", BigInteger, nullable=False)
+    parent_run_attempt_fence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     subagent_name: Mapped[str] = mapped_column(String(63), nullable=False)
     child_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     child_thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
