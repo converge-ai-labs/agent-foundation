@@ -129,7 +129,7 @@ When designing extension behavior:
 6. Treat only a terminal root `HarnessRunResult(status="suspended")` and its exact `deferred` value as suspension authority. Deferred stream events are observations, and child jobs have no deferred-response lifecycle.
 7. Test the same extension as both a root and a child. Cover static surface omission, dynamic `CallDeferred`, dynamic `ApprovalRequired`, managed-policy approval, mixed ordinary/deferred batches, and the model's denial recovery path.
 
-Usage limits remain the bound on a model that repeatedly retries denied interactions. An inline child receives the strictest per-field intersection of the parent effective limit, its own `AgentSpec.usage_limits`, and the authored subagent edge. An async Host receives that same ceiling and may only narrow it. Harness does not add a second hidden retry counter or mutate the extension definition.
+Usage limits remain the bound on a model that repeatedly retries denied interactions. An inline child receives the strictest per-field intersection of the parent effective limit, its own `AgentSpec.usage_limits`, and the authored subagent edge. An async Host receives that same ceiling and may only narrow it. Hosts can use `a13n_harness.usage.intersect_usage_limits` to combine native ceilings without mutating the inputs. Foundation persists the accepted ceiling for replacement Worker Attempts and child continuations. Harness does not add a second hidden retry counter or mutate the extension definition.
 
 ## CodeAct
 

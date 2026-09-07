@@ -5,10 +5,9 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.environments.domain import EnvironmentSelection
+from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.environments.errors import invalid_environment
 from a13n_service.environments.models import EnvironmentRecord
-from a13n_service.environments.selection import Omitted
 from a13n_service.environments.usage import lock_run_environments
 from a13n_service.interactions.domain import Run, RunInputKind
 from a13n_service.interactions.input import (
@@ -22,7 +21,7 @@ from a13n_service.interactions.records import run_record
 from a13n_service.interactions.state import RunStateEnvelope
 from a13n_service.object_retention.persistence import require_object_publications
 
-from .environment_selection import select_run_environment
+from .environment_selection import EnvironmentIntent, select_run_environment
 
 
 async def add_run_with_environment(
@@ -31,14 +30,14 @@ async def add_run_with_environment(
     run: Run,
     state: RunStateEnvelope,
     workspace_id: str,
-    choice: EnvironmentSelection | Omitted | None = Omitted.UNSET,
+    intent: EnvironmentIntent,
 ) -> RunRecord:
     keys = [run_state_key(run.organization_id, run.id)]
     if run.input_object is not None:
         keys.append(run.input_object.object_key)
     await require_object_publications(database, keys)
     await database.flush()
-    run = await select_run_environment(database, run=run, workspace_id=workspace_id, choice=choice)
+    run = await select_run_environment(database, run=run, workspace_id=workspace_id, intent=intent)
     input_value = run.input if run.input_kind is RunInputKind.agent_input else None
     if run.input_kind is RunInputKind.waiting_continue and isinstance(run.input, dict):
         input_value = run.input.get("input")
@@ -54,7 +53,11 @@ async def add_run_with_environment(
                 run.environment_id is None or run.environment_access == "read_only"
             ):
                 raise invalid_environment("Environment-path delivery requires a writable Environment")
-    if state.effective_agent_config.skills and (run.environment_id is None or run.environment_access == "read_only"):
+    config = state.effective_agent_config
+    requires_writable = bool(config.skills) or any(
+        child.effective_config.skills for _, child in inline_child_executions(config).values()
+    )
+    if requires_writable and (run.environment_id is None or run.environment_access == "read_only"):
         raise invalid_environment("Managed Skills require a writable Environment")
     if (run.environment_id is None) != (run.environment_access is None):
         raise invalid_environment("Environment selection and access must be supplied together")

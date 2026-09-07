@@ -21,6 +21,7 @@ from a13n_service.interactions.state import (
     validate_state_successor,
 )
 from pydantic import ValidationError
+from pydantic_ai.usage import UsageLimits
 
 from .conftest import ATTEMPT_ID, initial_state, progress_state
 
@@ -149,3 +150,11 @@ def test_waiting_summary_must_match_native_deferred_request_kinds() -> None:
 
     with pytest.raises(ValidationError, match="preserve native request kind"):
         type(initial).model_validate(payload)
+
+
+@pytest.mark.parametrize("limits", [None, UsageLimits(request_limit=4), UsageLimits(request_limit=1)])
+def test_checkpoint_cannot_change_accepted_usage_limits(limits: UsageLimits | None) -> None:
+    initial = initial_state().model_copy(update={"usage_limits": UsageLimits(request_limit=3)})
+    successor = progress_state(initial).model_copy(update={"usage_limits": limits})
+    with pytest.raises(ValueError, match="usage_limits"):
+        validate_state_successor(initial, successor, run_attempt_id=ATTEMPT_ID, fence=1)

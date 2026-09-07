@@ -41,7 +41,7 @@ async def native_runtime(connectivity_sessions, credential_protector, monkeypatc
     scope = AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), (context,))
     current = [scope]
 
-    async def read_scope(_attempt):
+    async def read_scope(_attempt, *, accepted=None):
         return current[0]
 
     policy = EndpointPolicy()
@@ -209,7 +209,7 @@ async def test_lark_attempt_reuses_token_and_rotation_replaces_scope(
         ConnectorProviderRegistry(()), RemoteTransport(policy), policy, transport=httpx2.MockTransport(send)
     )
 
-    async def read_scope(_attempt):
+    async def read_scope(_attempt, *, accepted=None):
         return scope
 
     monkeypatch.setattr(runtime, "_scope", read_scope)

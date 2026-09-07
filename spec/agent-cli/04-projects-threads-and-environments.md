@@ -41,7 +41,9 @@ Changing Project roots affects later Runs of every Thread selecting the Project.
 
 ### Current-directory Resolution
 
-This query remains available to embedding adapters. The full-terminal CLI uses the separate [exact-cwd workspace bootstrap](07-interactive-cli.md#workspace-and-resume) command: it reuses or creates a single-root exact directory resource and never silently adopts a containing ancestor. The query itself remains read-only.
+The full-terminal CLI uses [exact-first-root Project selection](07-interactive-cli.md#project-selection-and-resume): it reuses the Project whose first root equals the invocation directory, preserving all roots, or creates a single-root Project when none matches. It never silently adopts a containing ancestor. New conversations reject ambiguous exact matches; an explicit saved Thread can disambiguate its existing Project. Creation, resume listing, and explicit resume use the same App-owned matching rule. There is no CLI-specific Project type or separate Workspace resource.
+
+The containing-directory query below remains available to embedding adapters and is read-only. Its ancestor matching is an explicit adapter policy, not the CLI launch default.
 
 The App can resolve a normalized current working directory to a Project for a local surface. Only each Project's first root participates in this launch lookup; later roots are additional Run mounts rather than independent Project entry points. A current directory equal to or beneath a first root matches that Project. The most specific containing first root wins, while an equally specific path shared by several Projects is ambiguous.
 

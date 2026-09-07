@@ -127,7 +127,7 @@ class AgentRevisions:
             raise agent_archived()
         if current.version != request.expected_version:
             raise agent_version_conflict(current.version)
-        prepared_graph = await self._invocation_resolver.preparation.prepare_retained_revision_graph(
+        prepared_graph = await self._invocation_resolver.preparation.prepare(
             actor=actor,
             agent_id=agent_id,
             agent_revision_id=revision_id,
@@ -162,7 +162,7 @@ class AgentRevisions:
                 )
                 if replay_ref is not None:
                     return replay_ref.restore(AgentRevisionCreateResult)
-                await self._invocation_resolver.freezing.freeze_retained_revision_graph(
+                await self._invocation_resolver.freezing.freeze_in_transaction(
                     session,
                     prepared=prepared_graph,
                 )

@@ -28,6 +28,7 @@ class CliRequest:
     """Typed command request passed from Click into the async application boundary."""
 
     display: str | None = None
+    no_update_check: bool = False
     command: str | None = None
     action: str | None = None
     config_path: Path | None = None
@@ -60,6 +61,7 @@ class CliRequest:
 @dataclass(frozen=True, slots=True)
 class _CliContext:
     display: str | None
+    no_update_check: bool
     config_path: Path | None
     data_root: Path | None
     thread_id: str | None
@@ -108,11 +110,13 @@ _PATH = click.Path(path_type=Path)
     default=None,
     help="Presentation only; overrides display.mode (default concise). /mode switches live.",
 )
+@click.option("--no-update-check", is_flag=True, help="Skip startup update detection for this invocation.")
 @click.version_option(package_name="a13n-ui")
 @click.pass_context
 def cli(
     ctx: click.Context,
     display: str | None,
+    no_update_check: bool,
     config_path: Path | None,
     data_root: Path | None,
     thread_id: str | None,
@@ -128,6 +132,7 @@ def cli(
 
     ctx.obj = _CliContext(
         display=display,
+        no_update_check=no_update_check,
         config_path=config_path,
         data_root=data_root,
         thread_id=thread_id,
@@ -141,6 +146,7 @@ def cli(
     _execute(
         CliRequest(
             display=display,
+            no_update_check=no_update_check,
             config_path=config_path,
             data_root=data_root,
             thread_id=thread_id,
@@ -500,6 +506,7 @@ def _request(ctx: click.Context, **values: Any) -> CliRequest:
         "config_path": root.config_path,
         "data_root": root.data_root,
         "display": root.display,
+        "no_update_check": root.no_update_check,
         "thread_id": root.thread_id,
         "agent_id": root.agent_id,
         "environment_mode": root.environment_mode,

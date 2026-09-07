@@ -138,6 +138,12 @@ class RunAttemptControl:
         self._cancel_executor: Callable[[], None] | None = None
 
     @property
+    def harness_identity(self) -> HarnessRunIdentity:
+        if self._gate.identity is None:
+            raise RunError("Harness Run has not entered execution.", code="foundation_control_identity_mismatch")
+        return self._gate.identity
+
+    @property
     def terminal_observation_allowed(self) -> bool:
         """Suppress the synthetic cancellation used only to quiesce a planned handoff."""
 

@@ -561,3 +561,23 @@ async def test_external_registration_separates_logical_and_native_identity(tmp_p
         == DockerProviderStateData.model_validate(state.state).container_id
     )
     await external.close()
+
+
+@pytest.mark.parametrize("dispatched", [False, True])
+async def test_stop_response_loss_preserves_outcome_certainty_and_target(tmp_path, monkeypatch, dispatched):
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    env = _environment(tmp_path, engine)
+    await env.prepare()
+    state = env.dump_state()
+    await env.close()
+    control = _environment(tmp_path, engine, state)
+    engine.stop_error = DockerEngineError("response lost", dispatched=dispatched)
+    with pytest.raises(EnvironmentProviderError) as error:
+        await control.stop()
+    assert error.value.certainty.value == ("unknown" if dispatched else "known")
+    assert control.dump_state() == state
+    assert engine.remove_calls == 0
+    await control.stop()
+    assert engine.stop_calls == 2
+    await control.close()

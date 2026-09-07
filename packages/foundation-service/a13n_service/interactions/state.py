@@ -8,6 +8,7 @@ from a13n_harness import HarnessState
 from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME
 from pydantic import Field, JsonValue, TypeAdapter, field_validator, model_serializer, model_validator
 from pydantic_ai.tools import DeferredToolRequests
+from pydantic_ai.usage import UsageLimits
 
 from a13n_service.agents.domain import EffectiveAgentConfig
 
@@ -111,6 +112,7 @@ class RunStateEnvelope(StrictModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     effective_agent_config: EffectiveAgentConfig
+    usage_limits: UsageLimits | None = None
     runtime_lock_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     harness_schema_version: SchemaVersion
     harness: HarnessState
@@ -223,6 +225,7 @@ def validate_state_successor(
         ("runtime_lock_digest", previous.runtime_lock_digest, successor.runtime_lock_digest),
         ("harness_schema_version", previous.harness_schema_version, successor.harness_schema_version),
         ("effective_agent_config", previous.effective_agent_config, successor.effective_agent_config),
+        ("usage_limits", previous.usage_limits, successor.usage_limits),
     )
     changed = [name for name, old, new in immutable_pairs if old != new]
     if changed:

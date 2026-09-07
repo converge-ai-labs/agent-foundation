@@ -12,7 +12,7 @@ from a13n_ui.storage.models import AcceptedConfigurationRecord
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import DateTime, bindparam, create_engine, inspect, select, text
 
 pytestmark = pytest.mark.anyio
 
@@ -63,7 +63,7 @@ def test_populated_session_store_upgrade_fails_before_schema_change(tmp_path: Pa
                     "INSERT INTO accepted_configuration "
                     "(source_digest, yaml_digest, document_json, accepted_at) "
                     "VALUES (:source, :yaml, :document, :accepted_at)"
-                ),
+                ).bindparams(bindparam("accepted_at", type_=DateTime())),
                 {
                     "source": "1" * 64,
                     "yaml": "2" * 64,
@@ -101,6 +101,9 @@ def test_thread_metadata_migration_backfills_existing_rows(tmp_path: Path) -> No
                     "initial_state_schema_version, initial_state_digest, continuation_schema_version, "
                     "continuation_digest) VALUES "
                     "(:thread_id, NULL, :title, 0, :created_at, :updated_at, '1', :digest, NULL, NULL)"
+                ).bindparams(
+                    bindparam("created_at", type_=DateTime()),
+                    bindparam("updated_at", type_=DateTime()),
                 ),
                 {
                     "thread_id": "thread-existing",

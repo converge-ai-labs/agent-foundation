@@ -1,23 +1,18 @@
-"""Terminal-only logging, advisory update checks, and post-cleanup resume hints."""
+"""Terminal-only logging and post-cleanup resume hints."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import shlex
 import subprocess
-import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from importlib.metadata import PackageNotFoundError, version
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import httpx2
 from a13n_logging import JsonFormatter
-from packaging.version import InvalidVersion, Version
 
 from a13n_ui.cli import CliRequest
 
@@ -65,62 +60,6 @@ def terminal_logging(root: Path, level: str, emit: Callable[[str], None]) -> Ite
             child.handlers = handlers
             child.propagate = propagate
         handler.close()
-
-
-def installed_version() -> str | None:
-    try:
-        current = version("a13n-ui")
-        parsed = Version(current)
-        return None if parsed.base_version == "0.0.0" or parsed.is_devrelease else current
-    except (PackageNotFoundError, InvalidVersion):
-        return None
-
-
-def update_notice(current: str, latest: str) -> str | None:
-    try:
-        candidate = Version(latest)
-        if candidate.is_prerelease or candidate.is_devrelease or candidate <= Version(current):
-            return None
-    except InvalidVersion:
-        return None
-    return f"Update available: a13n-ui {current} → {candidate}. If installed with uv tool: uv tool upgrade a13n-ui"
-
-
-async def check_update(root: Path, *, current: str | None = None) -> str | None:
-    """Check public package metadata, with a daily cache and no install authority."""
-    current = current or installed_version()
-    if current is None:
-        return None
-    cache = root / "cache" / "terminal-update.json"
-    try:
-        with cache.open("rb") as stream:
-            cached = json.loads(stream.read(8192))
-        if isinstance(cached, dict) and 0 <= time.time() - float(cached["checked_at"]) < 86400:
-            return update_notice(current, str(cached["latest"]))
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-    try:
-        async with asyncio.timeout(3), httpx2.AsyncClient(timeout=2, trust_env=False) as client:
-            async with client.stream("GET", "https://pypi.org/pypi/a13n-ui/json") as response:
-                response.raise_for_status()
-                body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    body.extend(chunk)
-                    if len(body) > 2 * 1024 * 1024:
-                        return None
-            payload = json.loads(body)
-            latest = str(payload["info"]["version"])
-            Version(latest)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        temporary = cache.with_suffix(f".{os.getpid()}.tmp")
-        try:
-            temporary.write_text(json.dumps({"checked_at": time.time(), "latest": latest}))
-            temporary.replace(cache)
-        finally:
-            temporary.unlink(missing_ok=True)
-        return update_notice(current, latest)
-    except (TimeoutError, httpx2.HTTPError, OSError, ValueError, KeyError, TypeError):
-        return None
 
 
 def resume_hint(request: CliRequest, thread_id: str, directory: Path) -> str:

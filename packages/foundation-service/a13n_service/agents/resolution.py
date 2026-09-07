@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, PreparedRevisionConnectivity
+from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, PreparedConnectivity
 from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
@@ -60,7 +60,7 @@ class PreparedRevisionResolution:
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
-    connectivity: PreparedRevisionConnectivity | None
+    connectivity: PreparedConnectivity
 
 
 class AgentResolver:
@@ -82,7 +82,7 @@ class AgentResolver:
             sessions,
             runtime_mode=plugin_runtime_mode,
         )
-        self._connectivity_resolver = connectivity_resolver
+        self._connectivity_resolver = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self.plugin_runtime_mode = plugin_runtime_mode
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
 
@@ -208,10 +208,6 @@ class AgentResolver:
     def _validate_local_config(self, config: AgentConfig) -> None:
         if config.input_adapter.adapter_key != "native" or config.input_adapter.config:
             raise agent_revision_create_failed("input_adapter_unsupported", path="input_adapter")
-        if config.connector_tools and self._connectivity_resolver is None:
-            raise agent_revision_create_failed("connector_tool_resolution_unavailable", path="connector_tools")
-        if config.mcp_tools and self._connectivity_resolver is None:
-            raise agent_revision_create_failed("mcp_tool_resolution_unavailable", path="mcp_tools")
         for index, skill in enumerate(config.skills):
             if skill.skill_key in {item.skill_key for item in config.skills[:index]}:
                 raise agent_revision_create_failed("skill_duplicate", path=f"skills.{index}")

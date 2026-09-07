@@ -23,14 +23,18 @@ from pydantic import (
 )
 from pydantic_ai.usage import UsageLimits
 
+from a13n_service.connectivity.selection_domain import (
+    ConnectorConnectionRunSelection,
+    ConnectorConnectionToolSelection,
+    MCPConnectionToolSelection,
+)
 from a13n_service.iam.domain import PrincipalRef
-from a13n_service.ids import new_object_id
+from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
-ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
 PluginKey = Annotated[
@@ -109,32 +113,6 @@ PluginSelection = Annotated[OnDemandPluginSelection | RunnerPluginSelection, Fie
 class SkillSelection(StrictModel):
     skill_key: SkillKey
     version: int | None = Field(default=None, ge=1)
-
-
-ToolKey = Annotated[str, StringConstraints(min_length=1, max_length=128)]
-
-
-def _unique_tool_keys(value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-    if value is not None and len(value) != len(set(value)):
-        raise ValueError("tool names must be unique")
-    return value
-
-
-ToolSelection = Annotated[tuple[ToolKey, ...] | None, Field(max_length=2048), AfterValidator(_unique_tool_keys)]
-
-
-class ConnectorConnectionToolSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    connector_connection_id: ObjectId
-    tools: ToolSelection = None
-    defer_loading: bool = False
-
-
-class MCPConnectionToolSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    mcp_connection_id: ObjectId
-    tools: ToolSelection = None
-    defer_loading: bool = False
 
 
 class ChildEnvironmentPolicy(StrictModel):
@@ -257,6 +235,7 @@ class ProtocolConfig(StrictModel):
 
 
 class AgentConfig(StrictModel):
+    subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] = ""
     input_adapter: InputAdapterConfig
@@ -381,7 +360,17 @@ class ResolvedRevisionContent(_ResolvedContent[ResolvedAgentModel]):
     resolved_skills: tuple[ResolvedSkillBinding, ...] = ()
 
 
+class ChildAgentExecution(StrictModel):
+    agent_id: ObjectId
+    revision_content_digest: Sha256Digest
+    effective_config: EffectiveAgentConfig
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = ()
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = ()
+
+
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
+    subagent_mode: Literal["inline", "async"] = "inline"
+    child_configs: dict[ObjectId, ChildAgentExecution] = Field(default_factory=dict, max_length=128)
     schema_version: Literal["1"] = "1"
     instructions: str
     skills: tuple[SkillRevisionLock, ...] = ()
@@ -393,6 +382,9 @@ class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     asset_publication: AssetPublicationConfig | None = None
     protocol: ProtocolConfig
     content_digest: Sha256Digest
+
+
+ChildAgentExecution.model_rebuild()
 
 
 class Agent(StrictModel):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
@@ -9,7 +11,17 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.endpoint_policy import EndpointPolicy
 
+from .contracts import ConnectorProviderError
+
 _JSON_OBJECT = TypeAdapter(JsonObject)
+
+
+@contextmanager
+def provider_response_errors(*, outcome_unknown: bool = False) -> Iterator[None]:
+    try:
+        yield
+    except ValueError as error:
+        raise ConnectorProviderError("invalid_provider_response", outcome_unknown=outcome_unknown) from error
 
 
 def model_json(value: BaseModel) -> JsonObject:

@@ -8,7 +8,7 @@ from mcp.types import Tool
 from pydantic import Field, StringConstraints, model_validator
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.native_actions import NativeAction, native_actions
+from a13n_service.connectivity.native_actions import NativeAction
 from a13n_service.connectivity.providers.github.actions import (
     GitHubAddCommentArguments,
     GitHubListPrFilesArguments,
@@ -17,8 +17,9 @@ from a13n_service.connectivity.providers.github.actions import (
 )
 from a13n_service.endpoint_policy import EndpointPolicy
 
-from ..domain import StrictModel
-from .contracts import Provider
+from ...accounts.domain import StrictModel
+from ..tool_contracts import AccountTools
+from .inbound_tools import inbound_actions
 
 RepositoryName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]{1,100}$")]
 
@@ -95,7 +96,7 @@ def actions(
             "number": target.number,
             "target_kind": target.target_kind,
         }
-        actions = native_actions("github", context, {}, configuration, credentials, http, endpoints)
+        actions = inbound_actions(context, {}, configuration, credentials, http, endpoints)
         selected = actions.get(name)
         if selected is None:
             raise ValueError("account_action_unavailable")
@@ -112,4 +113,4 @@ def actions(
     }
 
 
-PROVIDER = Provider(GitHubScope, frozenset(_ARGUMENTS), actions)
+ACCOUNT_TOOLS = AccountTools(GitHubScope, frozenset(_ARGUMENTS), actions)

@@ -10,7 +10,7 @@ Configure these fields through the same Settings inputs as the rest of the servi
 
 | Settings field                             | Default | Meaning                                                     |
 | ------------------------------------------ | ------- | ----------------------------------------------------------- |
-| `control_recovery_poll_interval_seconds`   | 1       | Delay after each queue or async-result recovery scan        |
+| `control_recovery_poll_interval_seconds`   | 1       | Delay after each queue recovery scan                        |
 | `control_recovery_batch_limit`             | 64      | Candidate count per recovery scan                           |
 | `control_recovery_item_timeout_seconds`    | 30      | Maximum time for each recovered item                        |
 | `control_collection_poll_interval_seconds` | 300     | Delay after collection scans                                |
@@ -20,6 +20,8 @@ Configure these fields through the same Settings inputs as the rest of the servi
 | `asset_tombstone_minimum_retention_days`   | 30      | Minimum age before eligible Asset metadata is collected     |
 | `object_orphan_minimum_age_hours`          | 24      | Minimum age before orphan discovery can reclaim bytes       |
 | `object_publication_timeout_seconds`       | 120     | Maximum time and lease for immutable object publication     |
+
+Subagent maintenance uses `subagent_reconcile_poll_interval_seconds` (1 second), the recovery batch/item limits for result publication and successor scans, and `subagent_reconcile_drain_seconds` (30 seconds) to finish an active batch during shutdown.
 
 Webhook, A2A, Asset cleanup, lifecycle retention, Connector setup, and Plugin Runtime commands retain their own configured cadence and delivery bounds. Increasing a scan interval delays attempts; it never extends credential validity or restores deleted resources. A growing backlog can take many iterations to drain.
 

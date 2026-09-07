@@ -87,3 +87,7 @@ The canonical input acceptor is required process composition for reception readi
 | Temporary infrastructure failure                                       | Retry the same frozen Batch, preserving sequence and membership |
 | Claim or Thread transition race                                        | Reread/retry with current fence; no partial acceptance          |
 | Acceptance reply lost                                                  | Replay exact persisted Run or Steer receipt                     |
+
+### Maintenance Throughput
+
+Retention removes eligible terminal batches and expired unbatched admissions in bounded transactions. While a pass removes records, the reconciler yields and continues draining; it sleeps for the configured polling interval only when idle or after a failed pass. Pending acknowledged input is never removed by retention. Admission retries remain durable: the configured backoff steps cap delay growth, not the number of delivery attempts. Workspace and Account pending limits continue to be enforced under the Workspace admission lock.

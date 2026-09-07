@@ -86,11 +86,14 @@ class HookRetention:
                         deferred += 1
                         continue
                     # The deferred cycle permits atomic collection of both rows.
-                    await database.execute(delete(Head).where(Head.id == head.id))
+                    removed_head = await database.scalar(delete(Head).where(Head.id == head.id).returning(Head.id))
+                    if removed_head is None:
+                        continue
                     completed += 1
-                await database.delete(revision)
-                await database.flush()
-                completed += 1
+                removed_revision = await database.scalar(
+                    delete(Revision).where(Revision.id == revision.id).returning(Revision.id)
+                )
+                completed += int(removed_revision is not None)
             self._after_id = candidates[-1][0].id if candidates else ""
         return Sweep(
             examined=len(candidates),

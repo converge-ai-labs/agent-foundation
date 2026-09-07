@@ -68,6 +68,11 @@ from a13n_service.interactions.domain import (
     new_session_id,
     new_thread_id,
 )
+from a13n_service.interactions.environment_selection import (
+    EnvironmentDefault,
+    RetainedRunEnvironment,
+    requested_environment,
+)
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.initialization import (
@@ -192,7 +197,6 @@ class InteractionCommands:
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
-            run_id=run_id,
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
@@ -300,7 +304,7 @@ class InteractionCommands:
                 run=run,
                 state=state,
                 hook_subscription=request.hook_subscription,
-                environment=environment,
+                environment=requested_environment(environment, default=EnvironmentDefault.agent),
                 final_validator=validate_final,
                 transaction_hook=RunCommandCommit(
                     actor, stored_key, request_fingerprint, self._clock(), transaction_hook
@@ -356,7 +360,6 @@ class InteractionCommands:
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
-            run_id=run_id,
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
@@ -447,8 +450,12 @@ class InteractionCommands:
                 expected_head_run_id=thread.head_run_id,
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
-                inherit_parent_environment=inherit_parent_environment,
-                environment=environment,
+                environment=requested_environment(
+                    environment,
+                    default=RetainedRunEnvironment(source.id, source.thread_id)
+                    if inherit_parent_environment
+                    else EnvironmentDefault.thread,
+                ),
                 final_validator=validate_final,
                 transaction_hook=RunCommandCommit(
                     actor, stored_key, request_fingerprint, self._clock(), transaction_hook
@@ -506,7 +513,6 @@ class InteractionCommands:
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
-            run_id=run_id,
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
@@ -592,7 +598,7 @@ class InteractionCommands:
                 expected_head_run_id=None,
                 next_head_run_id=None,
                 hook_subscription=request.hook_subscription,
-                environment=environment,
+                environment=requested_environment(environment, default=EnvironmentDefault.thread),
                 final_validator=validate_final,
                 transaction_hook=RunCommandCommit(
                     actor, stored_key, request_fingerprint, self._clock(), transaction_hook
@@ -656,7 +662,6 @@ class InteractionCommands:
             ),
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
-            run_id=new_run_id_value,
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
@@ -761,7 +766,9 @@ class InteractionCommands:
                 run=forked_run,
                 state=state,
                 hook_subscription=request.hook_subscription,
-                environment=environment,
+                environment=requested_environment(
+                    environment, default=RetainedRunEnvironment(source.id, source.thread_id)
+                ),
                 final_validator=validate_final,
                 transaction_hook=RunCommandCommit(
                     actor, stored_key, request_fingerprint, self._clock(), transaction_hook
@@ -836,6 +843,7 @@ class InteractionCommands:
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
+                usage_limits=source_state.envelope.usage_limits,
             ),
             thread_id=source.thread_id,
             source_lineage_kind=source.lineage_kind,
@@ -902,6 +910,7 @@ class InteractionCommands:
 
         try:
             return await self._acceptance.advance_thread(
+                environment=RetainedRunEnvironment(source.id, source.thread_id),
                 run=retry_run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
@@ -1021,7 +1030,6 @@ class InteractionCommands:
             agent_revision_id=queued.submission.agent_revision_id,
             expected_current_revision_id=queued.submission.expected_current_revision_id,
             config_override=queued.submission.config_override,
-            run_id=run_id,
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
@@ -1285,6 +1293,7 @@ class InteractionCommands:
 
         try:
             return await self._acceptance.advance_thread(
+                environment=RetainedRunEnvironment(source.id, source.thread_id),
                 run=feedback_run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
@@ -1443,6 +1452,7 @@ class InteractionCommands:
 
         try:
             return await self._acceptance.advance_thread(
+                environment=RetainedRunEnvironment(source.id, source.thread_id),
                 run=successor,
                 state=state,
                 expected_thread_version=request.expected_thread_version,

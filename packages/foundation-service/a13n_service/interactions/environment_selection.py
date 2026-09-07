@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import StrEnum
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.agents.domain import ChildEnvironmentPolicy
@@ -12,11 +15,39 @@ from a13n_service.environments.models import EnvironmentTemplateRevisionRecord
 from a13n_service.environments.selection import Omitted, allocate_selection, intersect_access, resolve_selection
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_agent_principal_actions
 
-from .domain import Run, RunInputKind
+from .domain import Run
 from .models import RunRecord, ThreadRecord
 
 
-async def resolve_environment_intent(
+@dataclass(frozen=True, slots=True)
+class ExplicitEnvironment:
+    selection: EnvironmentSelection | None
+
+
+class EnvironmentDefault(StrEnum):
+    agent = "agent"
+    thread = "thread"
+
+
+@dataclass(frozen=True, slots=True)
+class RetainedRunEnvironment:
+    run_id: str
+    thread_id: str
+    requested: EnvironmentSelection | Omitted | None = Omitted.UNSET
+
+
+type EnvironmentIntent = ExplicitEnvironment | EnvironmentDefault | RetainedRunEnvironment
+
+
+def requested_environment(
+    choice: EnvironmentSelection | Omitted | None,
+    *,
+    default: EnvironmentDefault | RetainedRunEnvironment,
+) -> EnvironmentIntent:
+    return default if choice is Omitted.UNSET else ExplicitEnvironment(choice)
+
+
+async def resolve_requested_environment(
     session: AsyncSession,
     *,
     agent_id: str,
@@ -41,46 +72,36 @@ async def resolve_environment_intent(
 
 
 async def select_run_environment(
-    session: AsyncSession, *, run: Run, workspace_id: str, choice: EnvironmentSelection | Omitted | None = Omitted.UNSET
+    session: AsyncSession, *, run: Run, workspace_id: str, intent: EnvironmentIntent
 ) -> Run:
-    thread = await session.get(ThreadRecord, run.thread_id)
-    source_id = run.retry_of_run_id
-    if run.input_kind in {
-        RunInputKind.waiting_feedback,
-        RunInputKind.waiting_continue,
-        RunInputKind.async_subagent_result,
-    }:
-        source_id = source_id or run.parent_run_id
-    if source_id is not None:
-        source = await session.get(RunRecord, source_id)
-        if source is None or source.organization_id != run.organization_id or source.thread_id != run.thread_id:
-            raise invalid_environment("Environment source Run is unavailable")
-        inherited = (
-            ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
+    if isinstance(intent, ExplicitEnvironment):
+        choice = intent.selection
+    elif intent is EnvironmentDefault.agent:
+        choice = await resolve_requested_environment(session, agent_id=run.agent_id, choice=Omitted.UNSET)
+    elif intent is EnvironmentDefault.thread:
+        thread = await session.get(ThreadRecord, run.thread_id)
+        if thread is None or thread.organization_id != run.organization_id or thread.session_id != run.session_id:
+            raise invalid_environment("Environment source Thread is unavailable")
+        choice = (
+            ExistingEnvironmentSelection(environment_id=thread.default_environment_id)
+            if thread.default_environment_id
+            else None
         )
-        if choice is not Omitted.UNSET and choice != inherited:
+    elif isinstance(intent, RetainedRunEnvironment):
+        source = await session.get(RunRecord, intent.run_id)
+        if (
+            source is None
+            or source.organization_id != run.organization_id
+            or source.session_id != run.session_id
+            or source.thread_id != intent.thread_id
+        ):
+            raise invalid_environment("Environment source Run is unavailable")
+        choice = ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
+        if intent.requested is not Omitted.UNSET and intent.requested != choice:
             raise invalid_environment("Continuation must retain its source Run Environment")
-        choice = inherited
         run = run.model_copy(update={"environment_access": source.environment_access})
-    if choice is Omitted.UNSET:
-        if thread is not None and thread.origin_run_id is not None and thread.current_run_id == run.id:
-            source = await session.get(RunRecord, thread.origin_run_id)
-            if source is None or source.organization_id != run.organization_id:
-                raise invalid_environment("Fork source Run is unavailable")
-            choice = (
-                ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
-            )
-            run = run.model_copy(update={"environment_access": source.environment_access})
-        elif run.environment_id is not None:
-            choice = ExistingEnvironmentSelection(environment_id=run.environment_id)
-        elif thread is not None and thread.current_run_id != run.id:
-            choice = (
-                ExistingEnvironmentSelection(environment_id=thread.default_environment_id)
-                if thread.default_environment_id
-                else None
-            )
-        else:
-            choice = await resolve_environment_intent(session, agent_id=run.agent_id, choice=choice)
+    else:
+        raise TypeError("Run acceptance requires an explicit Environment intent")
     if choice is None:
         return run.model_copy(update={"environment_id": None, "environment_access": None})
     await authorize_persisted_agent_principal_actions(

@@ -4,7 +4,7 @@ import httpx2
 from pydantic import Field
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.native_actions import NativeAction, _credential, action
+from a13n_service.connectivity.native_actions import NativeAction, action, credential
 from a13n_service.connectivity.providers.lark.actions import LarkReplyContent
 from a13n_service.connectivity.providers.lark.adapter import LarkAccountConfig
 from a13n_service.connectivity.providers.lark.client import LarkNativeClient
@@ -12,8 +12,8 @@ from a13n_service.connectivity.providers.lark.token import LarkTenantTokenProvid
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 
-from ..domain import StrictModel
-from .contracts import Provider, ProviderId
+from ...accounts.domain import StrictModel
+from ..tool_contracts import AccountTools, ProviderId
 
 _SEND_MESSAGE = "lark.send_message"
 
@@ -41,7 +41,7 @@ def actions(
         endpoints,
         open_api_origin=config.open_api_origin,
         app_id=config.app_id,
-        app_secret=_credential(credentials, "app_secret"),
+        app_secret=credential(credentials, "app_secret"),
     )
     lark = LarkNativeClient(http, endpoints, tokens, open_api_origin=config.open_api_origin)
 
@@ -55,8 +55,8 @@ def actions(
             request_id=new_object_id("message"),
         )
 
-    selected = action(_SEND_MESSAGE, LarkSendArguments, send_lark)
+    selected = action(_SEND_MESSAGE, LarkSendArguments, send_lark, hide_receipt=True)
     return {selected.definition.name: selected}
 
 
-PROVIDER = Provider(LarkScope, frozenset({_SEND_MESSAGE}), actions)
+ACCOUNT_TOOLS = AccountTools(LarkScope, frozenset({_SEND_MESSAGE}), actions)

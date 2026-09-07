@@ -3,7 +3,8 @@
 FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
-PYTHON_TEST_DIRS := $(sort $(wildcard packages/*/tests) scripts/tests)
+PYTHON_TEST_DIRS ?=
+PYTHON_TEST_WORKERS ?=
 LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
@@ -149,8 +150,8 @@ langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
 .PHONY: a13n-ui
-a13n-ui: sync ## Run the interactive Agent CLI
-	@uv run --locked a13n-ui
+a13n-ui: sync ## Run the interactive Agent CLI without release update checks
+	@uv run --locked a13n-ui --no-update-check
 
 .PHONY: agent-ui-db-migrate
 agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a disposable database
@@ -215,9 +216,7 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 
 .PHONY: test
 test: sync ## Run Python workspace tests
-	@for directory in $(PYTHON_TEST_DIRS); do \
-		uv run --locked python -m pytest -n 2 --dist loadgroup "$$directory" || exit $$?; \
-	done
+	@uv run --locked python -m scripts.run_python_tests $(if $(PYTHON_TEST_WORKERS),--workers $(PYTHON_TEST_WORKERS)) $(PYTHON_TEST_DIRS)
 
 .PHONY: eip-generate
 eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspection artifacts
@@ -461,8 +460,7 @@ agent-ui-webui-check: agent-ui-webui-sync ## Run Agent UI WebUI formatting and t
 	@npm --prefix apps/agent-ui run check
 
 .PHONY: agent-ui-webui-check-all
-agent-ui-webui-check-all: agent-ui-webui-sync ## Run the complete Agent UI WebUI gate
-	@npm --prefix apps/agent-ui run check:all
+agent-ui-webui-check-all: agent-ui-webui-check agent-ui-webui-build ## Run the complete Agent UI WebUI gate
 
 .PHONY: agent-ui-assets
 agent-ui-assets: sync agent-ui-webui-build ## Prepare generated Agent UI WebUI files for Python packaging

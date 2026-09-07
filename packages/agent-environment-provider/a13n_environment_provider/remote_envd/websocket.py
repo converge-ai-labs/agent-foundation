@@ -37,6 +37,12 @@ class WebSocketEnvdEnvironmentProvider(RemoteEnvdProvider):
     def key(self) -> str:
         return WEBSOCKET_PROVIDER_KEY
 
+    def backend_identity(self, configuration: BaseModel) -> str:
+        if not isinstance(configuration, WebSocketEnvdBackendConfiguration):
+            raise TypeError("WebSocket Envd requires WebSocketEnvdBackendConfiguration")
+        # One explicitly injected connection SDK owns the daemon identity namespace.
+        return self.key
+
     async def create_runtime(
         self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext
     ) -> WebSocketEnvdProviderRuntime:

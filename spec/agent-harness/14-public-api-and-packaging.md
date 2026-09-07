@@ -46,7 +46,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.state`                | Advanced context and Capability state values                                                 |
 | `a13n_harness.tools`                | Managed tool invocation and event helpers                                                    |
 | `a13n_harness.toolsets`             | First-party reusable Toolsets, including the standard async subagent dispatcher              |
-| `a13n_harness.usage`                | Usage attribution records and ledger                                                         |
+| `a13n_harness.usage`                | Usage attribution, ledger, and `intersect_usage_limits`                                      |
 
 The Model authentication feature exports its provider-specific credential values and structural `load()`/`save()` source protocols, OAuth flow and refresh callables, bounded authentication errors, and `build_codex_model()` / `build_grok_model()` constructors. Its complete lifecycle and Host boundary belong to [Model Authentication](16a-model-authentication.md).
 

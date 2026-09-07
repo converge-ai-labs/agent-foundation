@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from a13n_ui.cli import CliRequest
 
     from .backend import SessionBackend
+    from .updates import UpdateCommand
 
 
 def _load_runtime() -> Callable[..., AbstractAsyncContextManager[SessionBackend]]:
@@ -29,10 +30,11 @@ async def run_terminal(
     *,
     directory: Path | None = None,
     runtime_loader: Callable[[], Callable[..., AbstractAsyncContextManager[SessionBackend]]] = _load_runtime,
-) -> None:
+) -> UpdateCommand | None:
     from .lifecycle import resume_hint
     from .onboarding import LandingScreen, run_setup
     from .shell import CliShell
+    from .updates import prompt_update
 
     directory = (directory or Path.cwd()).resolve()
     status = Status(mode=request.display or "concise", mode_explicit=request.display is not None)
@@ -49,9 +51,19 @@ async def run_terminal(
     try:
         async with landing:
             factory = await asyncio.to_thread(runtime_loader)
+            from a13n_ui.settings_loader import resolve_agent_ui_data_root
+
             async with factory(request, directory, status, emit) as backend:
+                if not request.no_update_check:
+                    configuration = await backend.app.current_configuration()
+                    if configuration is None or configuration.document.process.terminal_update_check:
+                        root = resolve_agent_ui_data_root(request.config_path, data_root=request.data_root)
+                        update = await prompt_update(root, landing)
+                        if update is not None:
+                            return update
                 configured = await backend.initialize()
                 if request.command == "setup" or not configured:
+                    landing.title = "Agent CLI · Setup"
                     completed = await run_setup(
                         backend.app, directory, ask_user=landing.ask, emit=emit, environment=backend.environment
                     )
@@ -71,10 +83,8 @@ async def run_terminal(
     except asyncio.CancelledError:
         if not landing.cancel_requested:
             raise
-        print_formatted_text("Setup cancelled. Completed credential or configuration writes are retained.")
+        print_formatted_text("Startup cancelled. Completed credential or configuration writes are retained.")
         return
     # The App and terminal have both finished cleanup before these primary-screen hints.
-    if status.update_notice:
-        print_formatted_text(terminal_text(status.update_notice))
     if status.session_id:
         print_formatted_text(terminal_text(resume_hint(request, status.session_id, directory)))

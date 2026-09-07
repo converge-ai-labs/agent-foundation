@@ -11,11 +11,11 @@ from a13n_service.connectivity.accounts.domain import (
     UpdateAccountRequest,
 )
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.accounts.providers import account_actions
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.native import native_capability
 from a13n_service.connectivity.native_context import InboundRunContext, bind_account_tools
+from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.http_errors import application_error_status
@@ -124,7 +124,9 @@ async def test_proactive_send_requires_exact_target_and_keeps_unknown_outcome():
         return httpx2.Response(200, json={"ok": True, "channel": "C1", "ts": "1.0"})
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(send)) as http:
-        tools = account_actions("slack", {}, {"bot_token": "private"}, {"channel_ids": ["C1"]}, http, EndpointPolicy())
+        tools = require_native_provider("slack").account_tools.actions(
+            {}, {"bot_token": "private"}, {"channel_ids": ["C1"]}, http, EndpointPolicy()
+        )
         tool = tools["slack.send_message"]
         with pytest.raises(ValueError, match="target_not_authorized"):
             await tool.call({"channel_id": "C2", "text": "denied"})
@@ -261,8 +263,7 @@ async def test_github_proactive_scope_binds_repository_token_and_target(github_p
         "bot_account_id": 4,
     }
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        tools = account_actions(
-            "github",
+        tools = require_native_provider("github").account_tools.actions(
             config,
             {"app_private_key_pem": github_private_key_pem},
             {"repositories": [{"repository_id": 42, "owner": "acme", "repository": "repo"}]},
@@ -297,8 +298,8 @@ async def test_lark_proactive_send_requires_scope_without_inbound_context():
         return httpx2.Response(200, json={"code": 0, "data": {"message_id": "message-1"}})
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        tools = account_actions(
-            "lark", _config(), {"app_secret": "private"}, {"chat_ids": ["C1"]}, http, _AllowEndpoint()
+        tools = require_native_provider("lark").account_tools.actions(
+            _config(), {"app_secret": "private"}, {"chat_ids": ["C1"]}, http, _AllowEndpoint()
         )
         args = {"chat_id": "C2", "content": {"kind": "text", "text": "hello"}}
         with pytest.raises(ValueError, match="target_not_authorized"):

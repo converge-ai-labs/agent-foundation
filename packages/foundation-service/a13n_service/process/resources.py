@@ -11,6 +11,7 @@ from anyio import to_thread
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
 from a13n_service.models.model_factory import NativeModelFactory
+from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.settings import settings_schema
 from a13n_service.plugins.objects import PluginObjectStore
@@ -25,6 +26,7 @@ class ExecutionResources:
     model_provider_registry: ProviderRegistry
     model_endpoint_policy: EndpointPolicy
     model_http_client: httpx2.AsyncClient
+    live_model_providers: LiveProviderResolver
     native_model_factory: NativeModelFactory
     skill_package_store: SkillPackageStore
     plugin_objects: PluginObjectStore
@@ -56,6 +58,9 @@ async def build_execution_resources(
         model_endpoint_policy=model_endpoint_policy,
         model_http_client=model_http_client,
         native_model_factory=native_model_factory,
+        live_model_providers=LiveProviderResolver(
+            shared.storage.sessions, model_provider_registry, model_endpoint_policy, shared.secret_protector
+        ),
         skill_package_store=SkillPackageStore(shared.storage.objects),
         plugin_objects=PluginObjectStore(shared.storage.objects),
     )

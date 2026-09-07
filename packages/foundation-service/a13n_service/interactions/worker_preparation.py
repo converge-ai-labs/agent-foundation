@@ -2,27 +2,31 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import replace
 from typing import Any
 
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     DeferredToolResume,
+    EnvironmentAccess,
+    EnvironmentMount,
     RunInputValue,
     RunPreparationContext,
 )
-from a13n_harness.capabilities import SkillsCapability
+from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from pydantic import TypeAdapter
 from pydantic_ai import ToolDenied
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import AgentRevision
-from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
-from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_agent_principal_actions
+from a13n_service.connectivity.execution import ExternalToolRuntime
+from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
@@ -30,11 +34,19 @@ from a13n_service.skills.runtime import SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
 
+from .agent_resources import prepare_agent_resources
+from .attempt_resources import attempt_resource_stack
 from .attempts import AttemptContext
 from .control_domain import ThreadInboxEntry, ThreadInboxKind, WaitingRunContinueInput, WaitingRunFeedback
 from .control_models import ThreadInboxRecord
 from .domain import Run, RunInputKind, RunPayloadObjectRef
-from .harness_runtime import HarnessCollaborators, HarnessInvocation, ImmediateHarnessInput, MaterializedHarnessInput
+from .harness_runtime import (
+    HarnessCollaborators,
+    HarnessInvocation,
+    ImmediateHarnessInput,
+    MaterializedHarnessInput,
+    SingleHarnessEnvironment,
+)
 from .input import AcceptedAgentInput, AgentInputMapper, native_input_adapter
 from .objects import RunPayloadStore
 from .run_control import RunAttemptControl
@@ -56,7 +68,13 @@ class WorkerAttemptPreparer:
         model_factory: NativeModelFactory,
         skills: SkillRuntimePreparer,
         async_results: AsyncSubagentResultMaterializer,
+        environments: EnvironmentLifecycle,
+        external_tools: ExternalToolRuntime,
+        subagent_capability: SubagentCapability,
     ) -> None:
+        self._subagent_capability = subagent_capability
+        self._environments = environments
+        self._external_tools = external_tools
         self._sessions = sessions
         self._run = run
         self._workspace_id = workspace_id
@@ -73,63 +91,45 @@ class WorkerAttemptPreparer:
             sources, {"native": native_input_adapter}, max_binary_bytes=config.protocol.limits.max_input_bytes
         )
 
-    async def prepare(self, context: AttemptContext) -> HarnessInvocation[Any]:
+    @asynccontextmanager
+    async def prepare(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[Any]]:
+        async with attempt_resource_stack(cleanup_timeout_seconds=context.cleanup_timeout.total_seconds()) as stack:
+            stack.callback(self._sources.close)
+            invocation = await self._prepare(context, stack)
+            environment = await prepare_run_environment(self._environments, context)
+            if environment is not None:
+                stack.push_async_callback(environment.close)
+                invocation = replace(
+                    invocation,
+                    environment=SingleHarnessEnvironment(
+                        EnvironmentMount(environment, access=EnvironmentAccess(environment.access))
+                    ),
+                )
+            yield invocation
+
+    async def _prepare(self, context: AttemptContext, stack: AsyncExitStack) -> HarnessInvocation[Any]:
         run = self._run
         config = self._control.current_state.envelope.effective_agent_config
-        children: dict[str, AgentRevision] = {}
-        pending = list(config.resolved_subagents)
-        async with short_session(self._sessions) as session:
-            await authorize_persisted_agent_principal_actions(
-                session,
-                principal=run.authority_principal,
-                organization_id=run.organization_id,
-                workspace_id=self._workspace_id,
-                agent_id=run.agent_id,
-                actions=frozenset({WorkspaceAction.agent_invoke}),
-            )
-            while pending:
-                edge = pending.pop()
-                if edge.child_agent_revision_id in children:
-                    continue
-                if len(children) >= 128:
-                    raise ValueError("Accepted Agent graph exceeds the reconstruction bound")
-                row = await session.scalar(
-                    select(AgentRevisionRecord).where(
-                        AgentRevisionRecord.id == edge.child_agent_revision_id,
-                        AgentRevisionRecord.organization_id == run.organization_id,
-                        AgentRevisionRecord.workspace_id == self._workspace_id,
-                        AgentRevisionRecord.agent_id == edge.child_agent_id,
-                    )
-                )
-                if row is None:
-                    raise ValueError("Accepted child Agent revision is unavailable")
-                await authorize_persisted_agent_principal_actions(
-                    session,
-                    principal=run.authority_principal,
-                    organization_id=run.organization_id,
-                    workspace_id=self._workspace_id,
-                    agent_id=edge.child_agent_id,
-                    actions=frozenset({WorkspaceAction.agent_invoke}),
-                )
-                child = row.to_resource()
-                children[child.id] = child
-                pending.extend(child.resolved_subagents)
-        skill_runtime = await self._skills.prepare(
-            organization_id=run.organization_id,
+        resources = await prepare_agent_resources(
+            sessions=self._sessions,
+            run=run,
             workspace_id=self._workspace_id,
-            locks=config.skills,
+            config=config,
+            current_context=lambda: self._control.current_context,
+            skills=self._skills,
+            external_tools=self._external_tools,
+            stack=stack,
         )
 
         def capabilities(context: AgentDefinitionReconstructionContext):
-            if context.is_root and skill_runtime.manager is not None:
-                return (WorkerInputCapability(self._sources), SkillsCapability(skill_runtime.manager))
-            return (WorkerInputCapability(self._sources),) if context.is_root else ()
+            selected = resources.for_definition(context)
+            return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
         definition = AgentReconstructor(self._catalog, capability_provider=capabilities).reconstruct(
             agent_id=run.agent_id,
             agent_revision_id=run.agent_revision_id,
             effective_config=config,
-            child_revisions=children,
+            subagent_capability=self._subagent_capability,
         )
         payload = (
             run.input
@@ -199,19 +199,17 @@ class WorkerAttemptPreparer:
             input_source = MaterializedHarnessInput(input_factory)
         return HarnessInvocation(
             definition=definition,
+            usage_limits=self._control.current_state.envelope.usage_limits,
             input=input_source,
             deferred_resume=resume,
             collaborators=HarnessCollaborators(
                 instance=instance,
                 model_resolver=SnapshotRunModelResolver(
-                    snapshot=config.resolved_model.execution,
+                    snapshots=resources.models,
                     organization_id=run.organization_id,
                     workspace_id=self._workspace_id,
                     provider_resolver=self._model_resolver,
                     model_factory=self._model_factory,
-                ),
-                capabilities=(
-                    () if skill_runtime.selection_capability is None else (skill_runtime.selection_capability,)
                 ),
             ),
         )

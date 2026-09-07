@@ -80,7 +80,7 @@ async def test_http_registration_runtime_and_external_only_metadata(
             fence=1,
             owner="owner-test",
             action="prepare",
-            target_identity=None,
+            previous_status="unprepared",
         )
     adapter = await lifecycle.construct(operation)
     try:
@@ -109,4 +109,37 @@ async def test_remote_registration_requires_exact_state_without_network(environm
             workspace_id=WORKSPACE_ID,
             idempotency_key="invalid-external",
             request=RegisterEnvironmentRequest(provider_id=provider.id, configuration={}),
+        )
+
+
+async def test_connection_tuning_cannot_register_the_same_target_twice(environment_service):
+    providers = []
+    for timeout in (10, 20):
+        providers.append(
+            await environment_service.create_provider(
+                actor=actor(),
+                workspace_id=WORKSPACE_ID,
+                request=CreateProviderRequest(
+                    type="a13n.http-envd",
+                    name=f"External {timeout}",
+                    configuration={"endpoint": "https://envd.example", "request_timeout": timeout},
+                    credential={"token": "test-token"},
+                ),
+            )
+        )
+    state = EnvironmentState(
+        provider_key="a13n.http-envd", state_version="1", state={"daemon_environment_id": "env-native"}
+    )
+    await environment_service.create_environment(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="first-owner",
+        request=RegisterEnvironmentRequest(provider_id=providers[0].id, configuration={}, state=state),
+    )
+    with pytest.raises(EnvironmentManagementError, match="already"):
+        await environment_service.create_environment(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="duplicate-owner",
+            request=RegisterEnvironmentRequest(provider_id=providers[1].id, configuration={}, state=state),
         )

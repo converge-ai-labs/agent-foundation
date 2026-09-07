@@ -16,7 +16,7 @@ from a13n_harness import (
 from a13n_harness import (
     DelegationContextPolicy as HarnessDelegationContextPolicy,
 )
-from a13n_harness.capabilities import SubagentCapability, SubagentOperator
+from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.errors import HarnessError
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
@@ -25,7 +25,6 @@ from a13n_harness.plugin_factories import (
 )
 from a13n_harness.plugins import AbstractHarnessPlugin
 from a13n_harness.tools.client import (
-    ClientToolDefinition,
     ClientToolsCapability,
     ClientToolsetDefinition,
     ClientToolsSpec,
@@ -38,25 +37,10 @@ from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
 
-from a13n_service.skills.domain import SkillRevisionLock
-
 from .domain import (
-    AgentRevision,
-    AssetPublicationConfig,
-    ConnectorConnectionToolSelection,
     EffectiveAgentConfig,
-    EffectiveAgentModel,
-    InputAdapterConfig,
-    MCPConnectionToolSelection,
     OutputSpec,
-    ProtocolConfig,
-    ResolvedAgentModel,
     ResolvedPluginVersion,
-    ResolvedRevisionContent,
-    ResolvedSkillBinding,
-    ResolvedSubagentEdge,
-    RetryConfig,
-    SecretRequirement,
     canonical_digest,
 )
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
@@ -83,14 +67,7 @@ class AgentDefinitionReconstructionContext:
     agent_revision_id: str
     content_digest: str
     is_root: bool
-    input_adapter: InputAdapterConfig
-    skill_bindings: tuple[ResolvedSkillBinding, ...]
-    skill_locks: tuple[SkillRevisionLock, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
-    mcp_tools: tuple[MCPConnectionToolSelection, ...]
-    secret_requirements: tuple[SecretRequirement, ...]
-    asset_publication: AssetPublicationConfig | None
-    protocol: ProtocolConfig
+    config: EffectiveAgentConfig
 
 
 class AgentDefinitionCapabilityProvider(Protocol):
@@ -100,28 +77,6 @@ class AgentDefinitionCapabilityProvider(Protocol):
         self,
         context: AgentDefinitionReconstructionContext,
     ) -> Sequence[AbstractCapability[AgentContext]]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class _NodeSnapshot:
-    agent_id: str
-    agent_revision_id: str
-    content_digest: str
-    resolved_model: ResolvedAgentModel | EffectiveAgentModel
-    resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
-    skill_bindings: tuple[ResolvedSkillBinding, ...]
-    skill_locks: tuple[SkillRevisionLock, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
-    mcp_tools: tuple[MCPConnectionToolSelection, ...]
-    resolved_subagents: tuple[ResolvedSubagentEdge, ...]
-    instructions: str
-    input_adapter: InputAdapterConfig
-    client_tools: tuple[ClientToolDefinition, ...]
-    output_spec: OutputSpec | None
-    retries: RetryConfig | None
-    secret_requirements: tuple[SecretRequirement, ...]
-    asset_publication: AssetPublicationConfig | None
-    protocol: ProtocolConfig
 
 
 class AgentReconstructor:
@@ -145,47 +100,38 @@ class AgentReconstructor:
         agent_id: str,
         agent_revision_id: str,
         effective_config: EffectiveAgentConfig,
-        child_revisions: Mapping[str, AgentRevision],
-        subagent_operator: SubagentOperator | None = None,
+        subagent_capability: SubagentCapability,
     ) -> AgentDefinition[Any]:
         """Reconstruct the accepted root snapshot and its exact immutable child graph."""
 
-        self._verify_effective_config(effective_config)
-        children = dict(child_revisions)
-        for revision_id, revision in children.items():
-            if revision_id != revision.id:
-                raise AgentDefinitionReconstructionError(
-                    "subagent_revision_identity_mismatch",
-                    path=f"child_revisions.{revision_id}",
-                )
-            self._verify_revision(revision)
-
-        root = _snapshot_from_effective(
+        if effective_config.resolved_subagents and subagent_capability.async_enabled != (
+            effective_config.subagent_mode == "async"
+        ):
+            raise AgentDefinitionReconstructionError("subagent_mode_mismatch")
+        root = AgentDefinitionReconstructionContext(
             agent_id=agent_id,
             agent_revision_id=agent_revision_id,
-            effective=effective_config,
+            content_digest=effective_config.content_digest,
+            is_root=True,
+            config=effective_config,
         )
         occurrence_count = [0]
         return self._definition(
             root,
-            child_revisions=children,
-            subagent_operator=subagent_operator,
+            subagent_capability=subagent_capability,
             active_revision_ids=(),
             depth=0,
             occurrence_count=occurrence_count,
-            is_root=True,
         )
 
     def _definition(
         self,
-        node: _NodeSnapshot,
+        node: AgentDefinitionReconstructionContext,
         *,
-        child_revisions: Mapping[str, AgentRevision],
-        subagent_operator: SubagentOperator | None,
+        subagent_capability: SubagentCapability,
         active_revision_ids: tuple[str, ...],
         depth: int,
         occurrence_count: list[int],
-        is_root: bool,
     ) -> AgentDefinition[Any]:
         if depth > MAX_SUBAGENT_DEPTH:
             raise AgentDefinitionReconstructionError("subagent_graph_too_deep")
@@ -195,32 +141,36 @@ class AgentReconstructor:
         if occurrence_count[0] > MAX_SUBAGENT_NODES:
             raise AgentDefinitionReconstructionError("subagent_graph_too_large")
 
+        config = node.config
+        self._verify_effective_config(config)
+        if set(config.child_configs) != {edge.child_agent_revision_id for edge in config.resolved_subagents}:
+            raise AgentDefinitionReconstructionError("subagent_snapshot_mismatch")
         active_path = (*active_revision_ids, node.agent_revision_id)
         child_definitions: list[SubagentDefinition] = []
-        for edge in node.resolved_subagents:
-            child = child_revisions.get(edge.child_agent_revision_id)
-            path = f"subagents.{edge.name}"
-            if child is None:
-                raise AgentDefinitionReconstructionError("subagent_revision_missing", path=path)
+        for edge in config.resolved_subagents:
+            child = config.child_configs[edge.child_agent_revision_id]
             if child.agent_id != edge.child_agent_id:
-                raise AgentDefinitionReconstructionError("subagent_agent_mismatch", path=path)
-            child_node = _snapshot_from_revision(child)
+                raise AgentDefinitionReconstructionError("subagent_agent_mismatch", path=f"subagents.{edge.name}")
             child_definition = self._definition(
-                child_node,
-                child_revisions=child_revisions,
-                subagent_operator=subagent_operator,
+                AgentDefinitionReconstructionContext(
+                    agent_id=edge.child_agent_id,
+                    agent_revision_id=edge.child_agent_revision_id,
+                    content_digest=child.revision_content_digest,
+                    is_root=False,
+                    config=child.effective_config,
+                ),
+                subagent_capability=SubagentCapability(),
                 active_revision_ids=active_path,
                 depth=depth + 1,
                 occurrence_count=occurrence_count,
-                is_root=False,
             )
             child_definitions.append(
                 SubagentDefinition(
                     name=edge.name,
                     description=(
                         edge.description
-                        or child.config.protocol.public_description
-                        or child.config.protocol.public_name
+                        or child.effective_config.protocol.public_description
+                        or child.effective_config.protocol.public_name
                     ),
                     agent=child_definition,
                     context=HarnessDelegationContextPolicy(
@@ -232,15 +182,15 @@ class AgentReconstructor:
                 )
             )
 
-        capabilities = list(self._provided_capabilities(node, is_root=is_root))
-        if node.client_tools:
+        capabilities = list(self._provided_capabilities(node))
+        if config.client_tools:
             capabilities.append(
                 ClientToolsCapability(
                     spec=ClientToolsSpec(
                         default_toolsets=(
                             ClientToolsetDefinition(
                                 toolset_id=_CLIENT_TOOLSET_ID,
-                                tools=node.client_tools,
+                                tools=config.client_tools,
                             ),
                         ),
                         allow_run_override=False,
@@ -248,32 +198,25 @@ class AgentReconstructor:
                 )
             )
         if child_definitions:
-            capabilities.append(
-                SubagentCapability(
-                    async_enabled=subagent_operator is not None,
-                    operator=subagent_operator,
-                )
-            )
+            capabilities.append(subagent_capability)
 
         try:
-            plugins = tuple(self._create_plugin(selection) for selection in node.resolved_plugin_versions)
-            output_type = _output_type(node.output_spec)
+            plugins = tuple(self._create_plugin(selection) for selection in config.resolved_plugin_versions)
+            output_type = _output_type(config.output_spec)
             retries = (
-                None if node.retries is None else AgentRetries(tools=node.retries.tools, output=node.retries.output)
+                None
+                if config.retries is None
+                else AgentRetries(tools=config.retries.tools, output=config.retries.output)
             )
             return AgentDefinition(
                 agent=AgentSpec(
-                    model=(
-                        node.resolved_model.execution.model_id
-                        if isinstance(node.resolved_model, EffectiveAgentModel)
-                        else node.resolved_model.model_id
-                    ),
-                    name=node.protocol.public_name,
-                    description=node.protocol.public_description,
-                    model_settings=dict(node.resolved_model.settings),
-                    system_prompt=node.instructions,
+                    model=config.resolved_model.execution.model_id,
+                    name=config.protocol.public_name,
+                    description=config.protocol.public_description,
+                    model_settings=dict(config.resolved_model.settings),
+                    system_prompt=config.instructions,
                     retries=retries,
-                    model_characteristics=node.resolved_model.characteristics,
+                    model_characteristics=config.resolved_model.characteristics,
                 ),
                 output_type=output_type,
                 definition_id=f"agent-config-{node.content_digest[:24]}",
@@ -290,28 +233,12 @@ class AgentReconstructor:
 
     def _provided_capabilities(
         self,
-        node: _NodeSnapshot,
-        *,
-        is_root: bool,
+        node: AgentDefinitionReconstructionContext,
     ) -> tuple[AbstractCapability[AgentContext], ...]:
         if self._capability_provider is None:
             return ()
-        context = AgentDefinitionReconstructionContext(
-            agent_id=node.agent_id,
-            agent_revision_id=node.agent_revision_id,
-            content_digest=node.content_digest,
-            is_root=is_root,
-            input_adapter=node.input_adapter,
-            skill_bindings=node.skill_bindings,
-            skill_locks=node.skill_locks,
-            connector_tools=node.connector_tools,
-            mcp_tools=node.mcp_tools,
-            secret_requirements=node.secret_requirements,
-            asset_publication=node.asset_publication,
-            protocol=node.protocol,
-        )
         try:
-            capabilities = tuple(self._capability_provider(context))
+            capabilities = tuple(self._capability_provider(node))
         except Exception as error:
             raise AgentDefinitionReconstructionError("capability_provider_failed") from error
         if not all(isinstance(item, AbstractCapability) for item in capabilities):
@@ -345,80 +272,6 @@ class AgentReconstructor:
         payload = config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
         if canonical_digest(payload) != config.content_digest:
             raise AgentDefinitionReconstructionError("effective_config_digest_mismatch")
-
-    @staticmethod
-    def _verify_revision(revision: AgentRevision) -> None:
-        resolved = ResolvedRevisionContent(
-            resolved_model=revision.resolved_model,
-            resolved_plugin_versions=revision.resolved_plugin_versions,
-            runtime_lock_digest=revision.runtime_lock_digest,
-            resolved_skills=revision.resolved_skills,
-            connector_tools=revision.connector_tools,
-            mcp_tools=revision.mcp_tools,
-            resolved_subagents=revision.resolved_subagents,
-        )
-        payload = {
-            "plugin_runtime_mode": revision.plugin_runtime_mode.value,
-            "config": revision.config.model_dump(mode="json", by_alias=True),
-            "resolved": resolved.model_dump(mode="json", by_alias=True),
-        }
-        if canonical_digest(payload) != revision.content_digest:
-            raise AgentDefinitionReconstructionError(
-                "subagent_revision_digest_mismatch",
-                path=f"child_revisions.{revision.id}",
-            )
-
-
-def _snapshot_from_effective(
-    *,
-    agent_id: str,
-    agent_revision_id: str,
-    effective: EffectiveAgentConfig,
-) -> _NodeSnapshot:
-    return _NodeSnapshot(
-        agent_id=agent_id,
-        agent_revision_id=agent_revision_id,
-        content_digest=effective.content_digest,
-        resolved_model=effective.resolved_model,
-        resolved_plugin_versions=effective.resolved_plugin_versions,
-        skill_bindings=(),
-        skill_locks=effective.skills,
-        connector_tools=effective.connector_tools,
-        mcp_tools=effective.mcp_tools,
-        resolved_subagents=effective.resolved_subagents,
-        instructions=effective.instructions,
-        input_adapter=effective.input_adapter,
-        client_tools=effective.client_tools,
-        output_spec=effective.output_spec,
-        retries=effective.retries,
-        secret_requirements=effective.secret_requirements,
-        asset_publication=effective.asset_publication,
-        protocol=effective.protocol,
-    )
-
-
-def _snapshot_from_revision(revision: AgentRevision) -> _NodeSnapshot:
-    config = revision.config
-    return _NodeSnapshot(
-        agent_id=revision.agent_id,
-        agent_revision_id=revision.id,
-        content_digest=revision.content_digest,
-        resolved_model=revision.resolved_model,
-        resolved_plugin_versions=revision.resolved_plugin_versions,
-        skill_bindings=revision.resolved_skills,
-        skill_locks=(),
-        connector_tools=revision.connector_tools,
-        mcp_tools=revision.mcp_tools,
-        resolved_subagents=revision.resolved_subagents,
-        instructions=config.instructions,
-        input_adapter=config.input_adapter,
-        client_tools=config.client_tools,
-        output_spec=config.output_spec,
-        retries=config.retries,
-        secret_requirements=config.secret_requirements,
-        asset_publication=config.asset_publication,
-        protocol=config.protocol,
-    )
 
 
 def _registration_matches(

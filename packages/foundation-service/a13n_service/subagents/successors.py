@@ -21,6 +21,7 @@ from a13n_service.interactions.control_domain import RunAcceptanceReceipt, Threa
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
+from a13n_service.interactions.environment_selection import RetainedRunEnvironment
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
 from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.interactions.objects import (
@@ -36,6 +37,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .result_payload import (
     AsyncSubagentResultAuthority,
+    AsyncSubagentResultError,
     AsyncSubagentResultItemUnavailable,
     load_async_subagent_terminal_item,
     read_async_subagent_result_authority,
@@ -80,13 +82,13 @@ class AsyncSubagentSuccessorReconciler:
         run_id_factory: Callable[[str, str, str], str] | None = None,
         clock: Clock = utc_now,
     ) -> None:
+        self._after_thread_id = ""
         self._sessions = sessions
         self._states = states
         self._replays = replays
         self._signals = signals
         self._run_id_factory = run_id_factory or _successor_run_id
         self._clock = clock
-        self._after_thread_id = ""
 
     async def reconcile_thread(
         self,
@@ -185,7 +187,14 @@ class AsyncSubagentSuccessorReconciler:
                     extra={"event": "async_subagent_successor_item_deferred", "thread_id": thread_id},
                 )
                 continue
-            except (AsyncSubagentSuccessorError, RunObjectError, ObjectStoreError, ApplicationError, TimeoutError):
+            except (
+                AsyncSubagentResultError,
+                AsyncSubagentSuccessorError,
+                RunObjectError,
+                ObjectStoreError,
+                ApplicationError,
+                TimeoutError,
+            ):
                 logger.warning(
                     "async_subagent_successor_recovery_deferred",
                     extra={"event": "async_subagent_successor_recovery_deferred", "thread_id": thread_id},
@@ -284,6 +293,7 @@ class AsyncSubagentSuccessorReconciler:
                     run=prepared.run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
+                    intent=RetainedRunEnvironment(selected.selected_parent.id, selected.selected_parent.thread_id),
                 )
                 await database.flush()
                 consume_async_result_for_successor(

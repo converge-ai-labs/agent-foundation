@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.agents.domain import (
+    ChildAgentExecution,
     ChildEnvironmentPolicy,
     EffectiveAgentConfig,
     ResolvedSubagentEdge,
@@ -14,7 +15,7 @@ from a13n_service.agents.domain import (
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
-    MCPConnectionRunSelection,
+    MCPConnectionToolSelection,
 )
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.acceptance import RunAcceptanceService
@@ -65,7 +66,7 @@ CONNECTOR_SELECTION = ConnectorConnectionRunSelection(
     defer_loading=False,
     tools=("find_order",),
 )
-MCP_SELECTION = MCPConnectionRunSelection(
+MCP_SELECTION = MCPConnectionToolSelection(
     mcp_connection_id="mcpc_2222222222222222",
     defer_loading=True,
     tools=("search_docs",),
@@ -81,6 +82,8 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         interaction_sessions,
         interaction_object_store,
         with_shared_environment=True,
+        connector_connection_selections=(CONNECTOR_SELECTION,),
+        mcp_connection_selections=(MCP_SELECTION,),
     )
     scheduler = AttemptScheduler(
         interaction_sessions,
@@ -131,6 +134,27 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         clock=lambda: NOW + timedelta(seconds=3),
     )
 
+    altered_config = child_config.model_copy(update={"instructions": "Changed after parent acceptance"})
+    altered_config = altered_config.model_copy(
+        update={
+            "content_digest": canonical_digest(
+                altered_config.model_dump(mode="json", by_alias=True, exclude={"content_digest"}),
+            )
+        }
+    )
+    altered = _prepared_child(
+        running_parent,
+        parent_state,
+        authority.run_attempt_id,
+        authority.fence,
+        altered_config,
+        suffix="9",
+        connector_connection_selections=(CONNECTOR_SELECTION,),
+        mcp_connection_selections=(MCP_SELECTION,),
+    )
+    with pytest.raises(ChildRunAcceptanceError, match="accepted execution snapshot"):
+        await service.accept(altered, authority)
+
     accepted = await service.accept(first, authority)
     with pytest.raises(ChildRunAcceptanceError, match="already contains accepted state"):
         await service.accept(first, authority)
@@ -141,6 +165,8 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         authority.fence,
         child_config,
         suffix="4",
+        connector_connection_selections=(CONNECTOR_SELECTION,),
+        mcp_connection_selections=(MCP_SELECTION,),
     )
     second_accepted = await service.accept(second, authority)
 
@@ -320,7 +346,12 @@ async def test_completed_child_can_resume_as_linked_continuation(
     interaction_object_store: ObjectStore,
 ) -> None:
     await _grant_and_seed_child(interaction_sessions)
-    states, parent, parent_state = await _accept_parent(interaction_sessions, interaction_object_store)
+    states, parent, parent_state = await _accept_parent(
+        interaction_sessions,
+        interaction_object_store,
+        connector_connection_selections=(CONNECTOR_SELECTION,),
+        mcp_connection_selections=(MCP_SELECTION,),
+    )
     parent_claim = await AttemptScheduler(
         interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=1),
@@ -384,11 +415,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         subagent_name="researcher",
         delegated_input='{"delegated_task":"continue"}',
         child_definition_id=CHILD_DEFINITION_ID,
-        child_agent_id=CHILD_AGENT_ID,
-        child_agent_revision_id=CHILD_REVISION_ID,
-        child_effective_config=child_config,
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
         source_relationship=source_relationship,
         source_parent_run=running_parent,
         source_thread=source_thread,
@@ -396,7 +422,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         source_state=source_state.envelope,
         child_run_id="run_eeeeeeeeeeeeeeee",
         relationship_id="crr_eeeeeeeeeeeeeeee",
-        recovery_budget=running_parent.recovery_budget,
         created_at=NOW + timedelta(seconds=5),
     )
 
@@ -479,7 +504,7 @@ def _prepared_child(
     suffix: str,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...] = (),
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = (),
 ):
     return prepare_child_run(
         parent_run=parent,
@@ -509,6 +534,8 @@ async def _accept_parent(
     objects: ObjectStore,
     *,
     with_shared_environment: bool = False,
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = (),
 ):
     edge = ResolvedSubagentEdge(
         name="researcher",
@@ -518,7 +545,22 @@ async def _accept_parent(
         environment=ChildEnvironmentPolicy(mode="shared" if with_shared_environment else "none"),
     )
     base = effective_agent_config()
-    candidate = base.model_copy(update={"resolved_subagents": (edge,), "content_digest": "0" * 64})
+    candidate = base.model_copy(
+        update={
+            "resolved_subagents": (edge,),
+            "content_digest": "0" * 64,
+            "subagent_mode": "async",
+            "child_configs": {
+                CHILD_REVISION_ID: ChildAgentExecution(
+                    agent_id=CHILD_AGENT_ID,
+                    revision_content_digest="3" * 64,
+                    effective_config=base,
+                    connector_connection_selections=connector_connection_selections,
+                    mcp_connection_selections=mcp_connection_selections,
+                )
+            },
+        }
+    )
     config = candidate.model_copy(
         update={
             "content_digest": canonical_digest(

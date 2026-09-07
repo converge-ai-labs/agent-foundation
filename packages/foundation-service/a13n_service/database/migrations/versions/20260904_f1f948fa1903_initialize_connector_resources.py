@@ -96,6 +96,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("normalized_name", sa.String(length=128), nullable=False),
         sa.Column("connector_key", sa.String(length=128), nullable=False),
+        sa.Column("external_user_correlation", sa.String(length=128), nullable=True),
         sa.Column("external_ref", sa.String(length=2048), nullable=True),
         sa.Column("safe_metadata_json", sa.JSON(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
@@ -116,8 +117,8 @@ def upgrade() -> None:
             name=op.f("ck_connector_connections_created_by_type_valid"),
         ),
         sa.CheckConstraint(
-            "status IN ('pending', 'disabled') OR external_ref IS NOT NULL",
-            name=op.f("ck_connector_connections_external_ref_required_when_bound"),
+            "status != 'ready' OR (external_ref IS NOT NULL AND external_user_correlation IS NOT NULL)",
+            name=op.f("ck_connector_connections_verified_binding_required_when_ready"),
         ),
         sa.CheckConstraint(
             "status IN ('pending', 'ready', 'action_required', 'disabled')",
@@ -182,10 +183,10 @@ def upgrade() -> None:
         sa.Column("type", sa.String(length=64), nullable=False),
         sa.Column("connector_key", sa.String(length=128), nullable=False),
         sa.Column("external_user_correlation", sa.String(length=128), nullable=False),
-        sa.Column("state_digest", sa.String(length=64), nullable=False),
         sa.Column("return_path", sa.String(length=2048), nullable=False),
         sa.Column("setup_json", sa.JSON(), nullable=False),
         sa.Column("external_ref", sa.String(length=2048), nullable=True),
+        sa.Column("setup_ref", sa.String(length=2048), nullable=True),
         sa.Column("external_handle_digest", sa.String(length=64), nullable=True),
         sa.Column("supports_verified_callback", sa.Boolean(), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
@@ -204,7 +205,7 @@ def upgrade() -> None:
             "initiating_principal_type = 'user'", name=op.f("ck_connector_setup_attempts_initiating_user_required")
         ),
         sa.CheckConstraint(
-            "status IN ('pending', 'attached', 'reserved', 'completed', 'failed', 'expired')",
+            "status IN ('pending', 'starting', 'attached', 'reserved', 'completed', 'failed', 'expired')",
             name=op.f("ck_connector_setup_attempts_status_valid"),
         ),
         sa.CheckConstraint(

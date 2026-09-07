@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from typing import cast
 
 from a13n_harness import HarnessBuilder
+from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from anyio import fail_after
 
@@ -19,7 +20,7 @@ from a13n_service.interactions.control_domain import ThreadInboxEntry
 from a13n_service.interactions.control_wakeups import AttemptControlWakeups
 from a13n_service.interactions.harness_results import StoredHarnessOutcomeAdapter
 from a13n_service.interactions.harness_runtime import HarnessDriver
-from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, RedisThreadControlSignals
+from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, RedisThreadControlSignals, ThreadInboxStore
 from a13n_service.interactions.models import RunAttemptRecord, SessionRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
@@ -28,7 +29,6 @@ from a13n_service.interactions.terminal_committer import DatabaseRunTerminalComm
 from a13n_service.interactions.worker import WorkerCapacitySlot
 from a13n_service.interactions.worker_input import WorkerInputSources
 from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
-from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.observability import ObservabilityRuntime, RunAttemptCorrelation, RunAttemptOutcome
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
@@ -37,6 +37,7 @@ from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
 from a13n_service.skills.runtime import SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
+from a13n_service.subagents.runtime import ServiceSubagents
 from a13n_service.temporal import utc_now
 
 
@@ -67,12 +68,16 @@ class WorkerAttempts:
         self._states = RunStateStore(shared.storage.objects)
         self._payloads = RunPayloadStore(shared.storage.objects)
         self._signals = RedisThreadControlSignals(shared.storage.redis)
-        self._committer = DatabaseRunTerminalCommitter(
+        outcomes = RunOutcomeService(
+            shared.storage.sessions, self._payloads, lifecycle=shared.lifecycle, control_signals=self._signals
+        )
+        self._committer = DatabaseRunTerminalCommitter(shared.storage.sessions, outcomes, self._execution)
+        self._subagents = ServiceSubagents(
             shared.storage.sessions,
-            RunOutcomeService(
-                shared.storage.sessions, self._payloads, lifecycle=shared.lifecycle, control_signals=self._signals
-            ),
-            self._execution,
+            self._states,
+            self._payloads,
+            ThreadInboxStore(shared.storage.sessions, signals=self._signals),
+            outcomes,
         )
 
     async def run(
@@ -140,6 +145,12 @@ class WorkerAttempts:
                 run,
                 workspace_id,
             )
+            config = state.envelope.effective_agent_config
+            subagent_capability = (
+                self._subagents.capability(run=run, authority=control)
+                if config.subagent_mode == "async" and config.resolved_subagents
+                else SubagentCapability()
+            )
             preparer = WorkerAttemptPreparer(
                 sessions=sessions,
                 run=run,
@@ -148,15 +159,13 @@ class WorkerAttempts:
                 control=control,
                 payloads=self._payloads,
                 sources=sources,
-                model_resolver=LiveProviderResolver(
-                    sessions,
-                    self._resources.model_provider_registry,
-                    self._resources.model_endpoint_policy,
-                    self._shared.secret_protector,
-                ),
+                model_resolver=self._resources.live_model_providers,
                 model_factory=self._resources.native_model_factory,
                 skills=self._skills,
                 async_results=AsyncSubagentResultMaterializer(sessions, self._replay),
+                environments=self._environments,
+                external_tools=self._external_tools,
+                subagent_capability=subagent_capability,
             )
             projector = AttemptRunStreamProjector(self._stream, context)
             driver = HarnessDriver(
@@ -165,7 +174,6 @@ class WorkerAttempts:
                 ),
                 control=control,
                 projector=projector,
-                external_tools=self._external_tools,
             )
             limits = state.envelope.effective_agent_config.protocol.limits
             executor = RunAttemptExecutor(
@@ -185,9 +193,7 @@ class WorkerAttempts:
                     ],
                 ),
                 committer=self._committer,
-                cleanup=_AttemptCleanup(sources, projector),
                 capacity_slot=slot,
-                environments=self._environments,
             )
             await register(control)
             await executor.run()
@@ -197,13 +203,3 @@ class WorkerAttempts:
                     finished = await session.get(RunAttemptRecord, context.run_attempt_id)
                     if finished is not None and finished.status in {"succeeded", "yielded", "failed", "cancelled"}:
                         trace.set_outcome(cast(RunAttemptOutcome, finished.status))
-
-
-class _AttemptCleanup:
-    def __init__(self, sources: WorkerInputSources, projector: AttemptRunStreamProjector) -> None:
-        self._sources = sources
-        self._projector = projector
-
-    async def close(self, context: AttemptContext, control: RunAttemptControl, driver: HarnessDriver) -> None:
-        self._sources.close()
-        await self._projector.close()

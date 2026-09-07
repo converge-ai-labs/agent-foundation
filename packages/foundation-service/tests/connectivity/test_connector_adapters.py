@@ -13,6 +13,8 @@ from a13n_service.connectivity.connectors.providers.composio.configuration impor
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from pydantic import ValidationError
 
+from .connector_helpers import allow_dispatch
+
 
 class _AllowEndpoint:
     async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
@@ -137,6 +139,7 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
             provider_version=catalog.items[0].provider_version,
             arguments={},
             request_id="op_2",
+            before_dispatch=allow_dispatch,
         )
 
     assert inspection.status == "ready"
@@ -347,3 +350,68 @@ async def test_malformed_completion_response_retains_unknown_outcome() -> None:
                 session_uri="session", context=_context(callback=True), expected_external_ref="account-1"
             )
         assert raised.value.outcome_unknown
+
+
+async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():
+    from time import monotonic
+
+    import anyio
+
+    active = 0
+    peak = 0
+    names = [f"GITHUB_TOOL_{i}" for i in range(20)]
+
+    async def respond(request):
+        nonlocal active, peak
+        path = request.url.path
+        if path.endswith("/toolkits/github"):
+            return httpx2.Response(200, json={"slug": "github", "meta": {"version": "20260903_01"}})
+        if path.endswith("/tools"):
+            return httpx2.Response(200, json={"items": [{"slug": name} for name in names]})
+        key = path.rsplit("/", 1)[1]
+        assert request.url.params["version"] == "20260903_01"
+        active += 1
+        peak = max(peak, active)
+        try:
+            await anyio.sleep(0.02)
+            return httpx2.Response(
+                200,
+                json={
+                    "slug": key,
+                    "toolkit": {"slug": "github"},
+                    "version": "20260903_01",
+                    "input_parameters": {"type": "object"},
+                },
+            )
+        finally:
+            active -= 1
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        start = monotonic()
+        page = await _composio(http).tool_catalog("github").discover_tools(cursor=None)
+        elapsed = monotonic() - start
+    assert 2 <= peak <= 8
+    assert [item.key for item in page.items] == names
+    print(
+        f"20 tool details at 20ms simulated latency: {elapsed:.3f}s; peak concurrency={peak}; sequential floor=0.400s"
+    )
+
+
+async def test_connector_http_wall_deadline_preserves_unknown_write():
+    import anyio
+
+    class Trickle(httpx2.AsyncByteStream):
+        async def __aiter__(self):
+            for _ in range(1000):
+                await anyio.sleep(0.005)
+                yield b" "
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, stream=Trickle()))
+    ) as client:
+        http = ConnectorHttpClient(client, _AllowEndpoint(), response_max_bytes=1024, timeout_seconds=0.03)
+        with pytest.raises(ConnectorProviderError) as failure:
+            await http.request(
+                "POST", endpoint="https://provider.example", path="/effect", api_key="secret", write=True
+            )
+        assert failure.value.outcome_unknown and failure.value.retryable

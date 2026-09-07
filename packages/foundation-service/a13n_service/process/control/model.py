@@ -6,9 +6,7 @@ from dataclasses import dataclass
 
 from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.provider_operations import NativeProviderOperations
-from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelService
 from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
@@ -18,7 +16,6 @@ from a13n_service.settings import Settings
 
 @dataclass(frozen=True, slots=True)
 class _ModelBundle:
-    accepted: AcceptedModelSelector
     models: ModelService
     providers: ModelProviderService
 
@@ -31,12 +28,7 @@ def build_model_bundle(
 ) -> _ModelBundle:
     """Construct Model and Model Provider APIs."""
 
-    live_provider_resolver = LiveProviderResolver(
-        shared.storage.sessions,
-        execution.model_provider_registry,
-        execution.model_endpoint_policy,
-        shared.secret_protector,
-    )
+    live_provider_resolver = execution.live_model_providers
     connection_tester = components.model_connection_tester or NativeModelConnectionTester(
         provider_resolver=live_provider_resolver,
         model_factory=execution.native_model_factory,
@@ -47,7 +39,6 @@ def build_model_bundle(
         http_client=execution.model_http_client,
     )
     return _ModelBundle(
-        accepted=AcceptedModelSelector(shared.storage.sessions, execution.model_provider_registry),
         models=ModelService(
             shared.storage.sessions,
             execution.model_provider_registry,

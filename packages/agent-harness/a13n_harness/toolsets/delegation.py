@@ -35,6 +35,7 @@ from a13n_harness.observation import observe_operation
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.usage import intersect_usage_limits
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 
@@ -48,15 +49,6 @@ _INLINE_RESULT_POLICY = ToolOutputPolicy(
     max_output_bytes=4 * 1024 * 1024,
     overflow="fail",
     redact=True,
-)
-_LIMIT_FIELDS = (
-    "cost_limit",
-    "request_limit",
-    "tool_calls_limit",
-    "input_tokens_limit",
-    "output_tokens_limit",
-    "total_tokens_limit",
-    "per_request_input_tokens_limit",
 )
 
 
@@ -189,7 +181,7 @@ class DelegationToolset:
         try:
             try:
                 child_input = _build_child_input(ctx, child, prompt)
-                limits = _intersect_usage_limits(
+                limits = intersect_usage_limits(
                     ctx.usage_limits,
                     child.executable._fresh_definition_usage_limits(),
                     child.declaration.usage_limits,
@@ -590,18 +582,6 @@ def _restored_summary_projection(messages: Sequence[ModelMessage]) -> str | None
         ]
         return "\n\n".join(values) if values else None
     return None
-
-
-def _intersect_usage_limits(*values: UsageLimits | None) -> UsageLimits | None:
-    present = tuple(value for value in values if value is not None)
-    if not present:
-        return None
-    fields: dict[str, Any] = {}
-    for name in _LIMIT_FIELDS:
-        ceilings = [getattr(value, name) for value in present if getattr(value, name) is not None]
-        fields[name] = min(ceilings) if ceilings else None
-    fields["count_tokens_before_request"] = any(value.count_tokens_before_request for value in present)
-    return UsageLimits(**fields)
 
 
 async def _finalize_child_bindings(

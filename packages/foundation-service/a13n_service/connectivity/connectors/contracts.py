@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Literal, Protocol
 
@@ -35,7 +36,8 @@ class SetupContext(StrictModel):
 
 
 class SetupStarted(StrictModel):
-    external_ref: str = Field(min_length=1, max_length=2048, repr=False)
+    setup_ref: str = Field(min_length=1, max_length=2048, repr=False)
+    external_ref: str | None = Field(default=None, min_length=1, max_length=2048, repr=False)
     redirect_url: str | None = Field(default=None, max_length=4096, repr=False)
     external_handle: str | None = Field(default=None, max_length=4096, repr=False)
     supports_verified_callback: bool
@@ -102,6 +104,9 @@ class ConnectionBinding(StrictModel):
     connector_key: str = Field(min_length=1, max_length=128)
 
 
+BeforeDispatch = Callable[[], Awaitable[None]]
+
+
 class ConnectorConnectionRuntime(Protocol):
     """One verified external account; construction and close have no remote effects."""
 
@@ -110,7 +115,13 @@ class ConnectorConnectionRuntime(Protocol):
     async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage: ...
 
     async def execute_tool(
-        self, *, tool_key: str, provider_version: str, arguments: JsonObject, request_id: str
+        self,
+        *,
+        tool_key: str,
+        provider_version: str,
+        arguments: JsonObject,
+        request_id: str,
+        before_dispatch: BeforeDispatch,
     ) -> ConnectorToolOutcome: ...
 
     async def revoke(self, *, operation_id: str) -> None: ...
@@ -118,18 +129,32 @@ class ConnectorConnectionRuntime(Protocol):
     async def aclose(self) -> None: ...
 
 
+class ToolCatalog(Protocol):
+    async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage: ...
+
+
+ProviderAccess = Literal["catalog_read", "account_read"]
+
+
 class ConnectorProviderRuntime(Protocol):
     compatibility_profile: str
+    setup_replay_safe: bool
 
-    async def test(self) -> None: ...
+    async def test(self) -> tuple[ProviderAccess, ...]: ...
 
     async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]: ...
 
-    async def start_setup(self, *, setup: JsonObject, context: SetupContext) -> SetupStarted: ...
+    async def start_setup(
+        self, *, setup: JsonObject, context: SetupContext, resume_ref: str | None = None
+    ) -> SetupStarted: ...
 
     async def complete_setup(
         self, *, session_uri: str, context: SetupContext, expected_external_ref: str
     ) -> ConnectionInspection: ...
+
+    async def inspect_setup(self, *, setup_ref: str, context: SetupContext) -> ConnectionInspection | None: ...
+
+    def tool_catalog(self, connector_key: str) -> ToolCatalog: ...
 
     def connect(self, binding: ConnectionBinding) -> ConnectorConnectionRuntime: ...
 

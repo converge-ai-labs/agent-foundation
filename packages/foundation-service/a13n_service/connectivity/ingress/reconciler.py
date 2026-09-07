@@ -41,7 +41,7 @@ class IngressAdmissionReconciler:
         instance_id: str,
         poll_interval_seconds: float,
         lease_seconds: float,
-        max_attempts: int,
+        backoff_steps: int,
         max_backoff_seconds: float,
         input_max_bytes: int,
         clock: Clock = utc_now,
@@ -51,7 +51,7 @@ class IngressAdmissionReconciler:
         self._instance_id = instance_id
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_seconds = lease_seconds
-        self._max_attempts = max_attempts
+        self._backoff_steps = backoff_steps
         self._max_backoff_seconds = max_backoff_seconds
         self._input_max_bytes = input_max_bytes
         self._clock = clock
@@ -200,6 +200,6 @@ class IngressAdmissionReconciler:
             batch.terminal_at = now
 
     def _retry_at(self, attempt_count: int) -> datetime:
-        exponent = min(max(attempt_count - 1, 0), self._max_attempts - 1)
+        exponent = min(max(attempt_count - 1, 0), self._backoff_steps - 1)
         delay = min(self._max_backoff_seconds, self._poll_interval_seconds * 2**exponent)
         return self._clock() + timedelta(seconds=delay)

@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from contextlib import AbstractAsyncContextManager
-from typing import Any, Literal
+from typing import Literal
 
 from a13n_envd_client import EIPSession
 from pydantic import ValidationError
@@ -565,17 +565,12 @@ class DockerEnvironment(_DockerEIPSession, Environment):
                 require_route=inspection.status == "running",
             )
             if inspection.status == "running":
-                try:
-                    await self._runtime.engine.stop_container(
-                        state.container_id,
-                        timeout_seconds=configuration.stop_grace_seconds,
+                await _engine_call(
+                    self._runtime.engine.stop_container(
+                        state.container_id, timeout_seconds=configuration.stop_grace_seconds
                     )
-                except DockerEngineError as error:
-                    raise _unknown_failure("Docker stop outcome is unknown.") from error
-            try:
-                await self._runtime.engine.remove_container(state.container_id)
-            except DockerEngineError as error:
-                raise _unknown_failure("Docker remove outcome is unknown.") from error
+                )
+            await _engine_call(self._runtime.engine.remove_container(state.container_id))
             remaining = await _engine_call(self._runtime.engine.inspect_container(state.container_id))
             if remaining is not None:
                 raise _unknown_failure("Docker target absence could not be confirmed.")
@@ -852,10 +847,12 @@ def _validate_inspection(
         raise _conflict_failure("Docker container has no exact active EIP route.")
 
 
-async def _engine_call(awaitable: Any) -> Any:
+async def _engine_call[T](awaitable: Awaitable[T]) -> T:
     try:
         return await awaitable
     except DockerEngineError as error:
+        if error.dispatched:
+            raise _unknown_failure("Docker mutation outcome is unknown.") from error
         raise _runtime_failure("Docker Engine evidence is unavailable.") from error
 
 

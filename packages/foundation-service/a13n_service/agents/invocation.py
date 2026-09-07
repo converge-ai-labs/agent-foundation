@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, model_validator
 
 from .domain import (
@@ -29,6 +31,7 @@ from .errors import invalid_run_override
 class MergedAgentRunConfig(StrictModel):
     """Typed non-secret config after applying one Run override to a Revision."""
 
+    subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: str
     input_adapter: InputAdapterConfig
@@ -223,6 +226,7 @@ def merge_agent_run_override(
             retries = RetryConfig(tools=tools, output=output)
 
     return MergedAgentRunConfig(
+        subagent_mode=base.subagent_mode,
         model=model,
         instructions=instructions,
         input_adapter=base.input_adapter,

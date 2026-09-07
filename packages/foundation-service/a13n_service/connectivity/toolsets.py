@@ -5,20 +5,16 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Any
 
 from a13n_harness import AgentContext
 from anyio import to_thread
-from fastmcp import FastMCP
-from fastmcp.tools import Tool as LocalTool
-from fastmcp.tools import ToolResult
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from mcp.types import Tool
-from pydantic import Field, JsonValue
+from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
-from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import AbstractToolset, RenamedToolset, ToolsetTool
+from pydantic_ai.tools import Tool as FunctionTool
+from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, RenamedToolset, ToolsetTool
 
 from .domain import JsonObject
 from .tool_validation import validate_result, validate_tools
@@ -62,16 +58,31 @@ def selected_tools(tools: Sequence[Tool], allowed: tuple[str, ...] | None) -> tu
     return tuple(tool for tool in tools if allowed is None or tool.name in allowed)
 
 
-class _BoundTool(LocalTool):
-    handler: ToolHandler = Field(exclude=True, repr=False)
-
-    async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        await to_thread.run_sync(Draft202012Validator(self.parameters).validate, arguments)
-        result = await self.handler(self.name, arguments)
+def _bound_tool(definition: Tool, handler: ToolHandler) -> FunctionTool[AgentContext]:
+    async def invoke(**arguments: JsonValue) -> JsonValue:
+        try:
+            await to_thread.run_sync(Draft202012Validator(definition.inputSchema).validate, arguments)
+        except ValidationError:
+            raise ValueError("tool_arguments_invalid") from None
+        result = await handler(definition.name, arguments)
         await to_thread.run_sync(validate_result, result)
-        if self.output_schema is not None:
-            await to_thread.run_sync(Draft202012Validator(self.output_schema).validate, result)
-        return ToolResult(content=result, structured_content=result if isinstance(result, dict) else None)
+        if definition.outputSchema is not None:
+            try:
+                await to_thread.run_sync(Draft202012Validator(definition.outputSchema).validate, result)
+            except ValidationError:
+                raise ValueError("tool_output_invalid") from None
+        return result
+
+    tool = FunctionTool[AgentContext].from_schema(
+        invoke, name=definition.name, description=definition.description, json_schema=definition.inputSchema
+    )
+    tool.metadata = {
+        "meta": definition.meta,
+        "annotations": definition.annotations.model_dump(by_alias=True) if definition.annotations else None,
+        "task": False,
+    }
+    tool.function_schema.return_schema = definition.outputSchema or {}
+    return tool
 
 
 async def local_capability(
@@ -85,17 +96,6 @@ async def local_capability(
     selected = await to_thread.run_sync(selected_tools, tools, allowed)
     if not selected:
         return None
-    server = FastMCP(key)
-    for tool in selected:
-        server.add_tool(
-            _BoundTool(
-                name=tool.name,
-                description=tool.description,
-                parameters=tool.inputSchema,
-                output_schema=tool.outputSchema,
-                annotations=tool.annotations,
-                handler=handler,
-            )
-        )
-    toolset = MCPToolset[AgentContext](server, id=key, tool_error_behavior="error")
+    toolset = FunctionToolset[AgentContext]([_bound_tool(tool, handler) for tool in selected], id=key)
+    # Upstream accepts AbstractToolset at runtime; its MCP constructor annotation is narrower.
     return MCP(local=namespaced(toolset, key), id=key, defer_loading=defer_loading)  # type: ignore[arg-type]

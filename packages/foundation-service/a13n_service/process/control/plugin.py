@@ -28,7 +28,6 @@ from a13n_service.settings import Settings
 @dataclass(frozen=True, slots=True)
 class _PluginBundle:
     service: PluginService
-    agent_selection: AgentPluginSelectionResolver
     background_task: BackgroundTask | None
 
 
@@ -38,15 +37,11 @@ async def build_plugin_bundle(
     shared: SharedRuntime,
     execution: ExecutionResources,
     local_runner: PluginRunnerSupervisor | None,
+    agent_selection: AgentPluginSelectionResolver,
     stack: AsyncExitStack,
 ) -> _PluginBundle:
     """Construct Plugin APIs, Agent selection, and optional runtime coordination."""
 
-    agent_selection = components.agent_plugin_selection_resolver or AgentPluginSelectionResolver(
-        shared.storage.sessions,
-        runtime_mode=settings.plugin_runtime_mode,
-        worker_release=settings.build_version,
-    )
     staging = await PluginStaging.create(
         shared.storage.files_root,
         limiter=shared.storage.file_limiter,
@@ -123,7 +118,6 @@ async def build_plugin_bundle(
     )
     return _PluginBundle(
         service=service,
-        agent_selection=agent_selection,
         background_task=background_task,
     )
 

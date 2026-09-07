@@ -4,8 +4,7 @@ from .contracts import (
     AgentSelectorKind,
     FrozenAgentInvocation,
     PreparedAgentInvocation,
-    PreparedAgentRevisionGraph,
-    PreparedInvocationSubagent,
+    PreparedChildInvocation,
     RootAgentStatePolicy,
 )
 from .resolver import AgentInvocationResolver
@@ -15,7 +14,6 @@ __all__ = [
     "AgentSelectorKind",
     "FrozenAgentInvocation",
     "PreparedAgentInvocation",
-    "PreparedAgentRevisionGraph",
-    "PreparedInvocationSubagent",
+    "PreparedChildInvocation",
     "RootAgentStatePolicy",
 ]

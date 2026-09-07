@@ -26,7 +26,8 @@ dev = [
     "pytest>=9,<10",
     "pytest-xdist>=3.8,<4",
     "ruff>=0.16,<0.17",
-    "testcontainers[postgres,redis]>=4.8,<5",
+    # 4.15.0 reads mapped ports before Docker publishes them; retain readiness retries.
+    "testcontainers[postgres,redis]==4.13.1",
     "types-aiobotocore-s3>=2.1,<3",
 ]
 docs = [
@@ -73,6 +74,7 @@ include = [
     "scripts/prepare_agent_ui_assets.py",
     "scripts/release_notes.py",
     "scripts/release_version.py",
+    "scripts/run_python_tests.py",
 ]
 exclude = ["**/tests", "**/node_modules", "**/__pycache__", "**/.*", ".venv"]
 pythonVersion = "3.13"
@@ -81,6 +83,11 @@ reportTypedDictNotRequiredAccess = false
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
+filterwarnings = [
+    "error:The garbage collector is trying to clean up non-checked-in connection:sqlalchemy.exc.SAWarning",
+    "error::pytest.PytestUnhandledThreadExceptionWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 testpaths = [
     "packages/agent-envd-client/tests",
     "packages/agent-environment-provider/tests",

@@ -16,9 +16,7 @@ from a13n_service.connectivity.connectors.providers import built_in_connector_pr
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.http import cookie_free_jar
-from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
-from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
-from a13n_service.connectivity.mcp.transport import RemoteTransport
+from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
@@ -45,6 +43,8 @@ from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
+
+from .connectivity_clients import build_mcp_clients, connectivity_http_timeout
 
 
 async def build_worker_runtime(
@@ -99,11 +99,16 @@ async def build_worker_runtime(
         shared.secret_protector,
         shared.storage.files_root,
         timeout_seconds=settings.environment_operation_timeout_seconds,
+        capacity=CapacityLimits(
+            max_targets=settings.environment_max_targets_per_workspace,
+            max_active=settings.environment_max_active_per_workspace,
+        ),
     )
     environment_maintenance = EnvironmentMaintenanceLoop(
         environments,
         interval_seconds=settings.environment_maintenance_interval_seconds,
         concurrency=settings.environment_maintenance_concurrency,
+        batch_size=settings.environment_maintenance_batch_size,
     )
 
     run_stream = RedisRunStream(
@@ -140,33 +145,28 @@ async def build_worker_runtime(
     endpoint_policy = settings.connectivity_endpoint_policy()
     http = await stack.enter_async_context(
         httpx2.AsyncClient(
-            cookies=cookie_free_jar(), timeout=settings.connectivity_total_timeout_seconds, follow_redirects=False
+            cookies=cookie_free_jar(),
+            timeout=connectivity_http_timeout(settings),
+            follow_redirects=False,
         )
     )
+    clients = build_mcp_clients(settings, shared.storage.sessions, shared.secret_protector, http, endpoint_policy)
     external_tools = ExternalToolRuntime(
         shared.storage.sessions,
         shared.secret_protector,
         connector_providers
         or built_in_connector_provider_registry(
-            http, endpoint_policy, response_max_bytes=settings.connectivity_response_max_bytes
+            http,
+            endpoint_policy,
+            response_max_bytes=settings.connectivity_response_max_bytes,
+            timeout_seconds=settings.connectivity_total_timeout_seconds,
         ),
-        RemoteTransport(endpoint_policy, timeout_seconds=settings.connectivity_total_timeout_seconds),
+        clients.transport,
         endpoint_policy,
         http,
-        OAuthCredentialRefresh(
-            shared.storage.sessions,
-            MCPOAuthClient(
-                http,
-                endpoint_policy,
-                response_max_bytes=settings.connectivity_response_max_bytes,
-                max_redirects=settings.connectivity_max_redirects,
-            ),
-            shared.secret_protector,
-            instance_id=settings.service_instance_id or new_object_id("svc"),
-            lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-            skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
-        ),
+        clients.credentials,
     )
+
     skills = SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store)
     assets = AssetObjectStore(
         shared.storage.objects,

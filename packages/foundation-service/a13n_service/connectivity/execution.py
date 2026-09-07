@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
-from dataclasses import dataclass, field
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
+from typing import Protocol
 
 import httpx2
 from a13n_harness import AgentContext
@@ -30,7 +32,13 @@ from a13n_service.temporal import utc_now
 
 from .connectors.connection_access import connection_binding
 from .connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
-from .connectors.management import decode_credentials, require_connection, require_connector_provider
+from .connectors.management import (
+    ProviderSnapshot,
+    configure_provider,
+    decode_credentials,
+    require_connection,
+    require_connector_provider,
+)
 from .connectors.registry import ConnectorProviderRegistry
 from .connectors.tool_discovery import discover_tools, mcp_tool
 from .domain import JsonObject
@@ -39,13 +47,13 @@ from .mcp.refresh import OAuthCredentialRefresh
 from .mcp.transport import RemoteTransport
 from .native import native_capability
 from .native_context import NativeToolContext, parse_native_contexts
-from .selection_domain import ConnectorConnectionRunSelection, MCPConnectionRunSelection
+from .selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
 from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity
 from .tool_validation import validate_result
 from .toolsets import local_capability, namespaced, selected_tools, source_key
 
 _CONNECTORS = TypeAdapter(tuple[ConnectorConnectionRunSelection, ...])
-_MCPS = TypeAdapter(tuple[MCPConnectionRunSelection, ...])
+_MCPS = TypeAdapter(tuple[MCPConnectionToolSelection, ...])
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +63,11 @@ class AttemptToolScope:
     workspace_id: str
     selections: FrozenRunConnectivity
     native_tool_contexts: tuple[NativeToolContext, ...] = field(repr=False)
+    protected_inputs: tuple[object, ...] = field(default=(), repr=False)
+
+
+class ScopeGuard(Protocol):
+    async def __call__(self, session: AsyncSession | None = None) -> None: ...
 
 
 class ExternalToolRuntime:
@@ -77,37 +90,76 @@ class ExternalToolRuntime:
         self._oauth_refresh = oauth_refresh
         self._selections = ConnectivitySelectionResolver(sessions)
 
-    async def _scope(self, context: AttemptContext) -> AttemptToolScope:
+    async def _scope(
+        self,
+        context: AttemptContext,
+        *,
+        child_agent_id: str | None = None,
+        accepted: AttemptToolScope | None = None,
+    ) -> AttemptToolScope:
         async with short_session(self._sessions) as session:
-            run, _, _ = await read_attempt_authority(session, context, utc_now())
-            conversation = await session.get(SessionRecord, run.session_id)
-            if conversation is None:
-                raise ValueError("run_session_unavailable")
-            actor = AuthenticatedActor(
-                principal=PrincipalRef(
-                    principal_type=PrincipalType(run.authority_principal_type), principal_id=run.authority_principal_id
-                ),
-                auth_method="internal",
-                credential_id="attempt-tools",
-                boundary_workspace_id=conversation.workspace_id,
-            )
+            return await self._scope_in_session(session, context, child_agent_id=child_agent_id, accepted=accepted)
+
+    async def _scope_in_session(
+        self,
+        session: AsyncSession,
+        context: AttemptContext,
+        *,
+        child_agent_id: str | None = None,
+        accepted: AttemptToolScope | None = None,
+    ) -> AttemptToolScope:
+        run, _, _ = await read_attempt_authority(session, context, utc_now())
+        conversation = await session.get(SessionRecord, run.session_id)
+        if conversation is None:
+            raise ValueError("run_session_unavailable")
+        actor = AuthenticatedActor(
+            principal=PrincipalRef(
+                principal_type=PrincipalType(run.authority_principal_type), principal_id=run.authority_principal_id
+            ),
+            auth_method="internal",
+            credential_id="attempt-tools",
+            boundary_workspace_id=conversation.workspace_id,
+        )
+        await authorize_agent(
+            session,
+            actor=actor,
+            workspace_id=conversation.workspace_id,
+            agent_id=run.agent_id,
+            action=WorkspaceAction.agent_invoke,
+        )
+        if child_agent_id is not None:
             await authorize_agent(
                 session,
                 actor=actor,
                 workspace_id=conversation.workspace_id,
-                agent_id=run.agent_id,
+                agent_id=child_agent_id,
                 action=WorkspaceAction.agent_invoke,
             )
-            return AttemptToolScope(
-                actor,
-                run.organization_id,
-                conversation.workspace_id,
-                FrozenRunConnectivity(
-                    _CONNECTORS.validate_python(run.connector_connection_selections_json),
-                    _MCPS.validate_python(run.mcp_connection_selections_json),
-                ),
-                parse_native_contexts(run.native_tool_contexts_json),
-            )
+        protected_inputs = (
+            run.connector_connection_selections_json,
+            run.mcp_connection_selections_json,
+            run.native_tool_contexts_json,
+        )
+        if accepted is not None:
+            if (actor, run.organization_id, conversation.workspace_id, protected_inputs) != (
+                accepted.actor,
+                accepted.organization_id,
+                accepted.workspace_id,
+                accepted.protected_inputs,
+            ):
+                raise ValueError("external_tool_scope_changed")
+            return accepted
+        return AttemptToolScope(
+            actor,
+            run.organization_id,
+            conversation.workspace_id,
+            FrozenRunConnectivity(
+                _CONNECTORS.validate_python(run.connector_connection_selections_json),
+                _MCPS.validate_python(run.mcp_connection_selections_json),
+            ),
+            parse_native_contexts(run.native_tool_contexts_json),
+            deepcopy(protected_inputs),
+        )
 
     @asynccontextmanager
     async def capabilities(
@@ -115,11 +167,48 @@ class ExternalToolRuntime:
     ) -> AsyncIterator[tuple[MCP[AgentContext], ...]]:
         accepted = await self._scope(current_context())
 
-        async def guard() -> None:
-            current = await self._scope(current_context())
+        async def guard(session: AsyncSession | None = None) -> None:
+            current = (
+                await self._scope(current_context(), accepted=accepted)
+                if session is None
+                else await self._scope_in_session(session, current_context(), accepted=accepted)
+            )
             if current != accepted:
                 raise ValueError("external_tool_scope_changed")
 
+        async with self._capabilities(accepted, guard) as capabilities:
+            yield capabilities
+
+    @asynccontextmanager
+    async def child_capabilities(
+        self,
+        current_context: Callable[[], AttemptContext],
+        *,
+        agent_id: str,
+        selections: FrozenRunConnectivity,
+    ) -> AsyncIterator[tuple[MCP[AgentContext], ...]]:
+        """Bind an accepted inline child's tools to the owning Attempt, without native ingress context."""
+        parent = await self._scope(current_context(), child_agent_id=agent_id)
+
+        async def guard(session: AsyncSession | None = None) -> None:
+            current = (
+                await self._scope(current_context(), child_agent_id=agent_id, accepted=parent)
+                if session is None
+                else await self._scope_in_session(session, current_context(), child_agent_id=agent_id, accepted=parent)
+            )
+            if current != parent:
+                raise ValueError("external_tool_scope_changed")
+
+        accepted = replace(parent, selections=selections, native_tool_contexts=())
+        async with self._capabilities(accepted, guard) as capabilities:
+            yield capabilities
+
+    @asynccontextmanager
+    async def _capabilities(
+        self,
+        accepted: AttemptToolScope,
+        guard: ScopeGuard,
+    ) -> AsyncIterator[tuple[MCP[AgentContext], ...]]:
         capabilities: list[MCP[AgentContext]] = []
         async with AsyncExitStack() as stack:
             for selection in accepted.selections.connector_connection_selections:
@@ -143,12 +232,11 @@ class ExternalToolRuntime:
             yield tuple(capabilities)
 
     async def _connector(
-        self, selection: ConnectorConnectionRunSelection, guard: Callable[[], Awaitable[None]], scope: AttemptToolScope
+        self, selection: ConnectorConnectionRunSelection, guard: ScopeGuard, scope: AttemptToolScope
     ) -> MCP[AgentContext] | None:
-        @asynccontextmanager
-        async def connection():
-            await guard()
+        async def current_binding():
             async with short_session(self._sessions) as session:
+                await guard(session)
                 await self._selections.require_current_source(
                     session,
                     actor=scope.actor,
@@ -162,15 +250,28 @@ class ExternalToolRuntime:
                     selection.connector_provider_id,
                     scope=ResourceScope(record.organization_id, record.workspace_id),
                 )
-                binding = await connection_binding(session, record)
-                provider_type, configuration = provider.type, dict(provider.configuration_json)
-                context = provider.credential_snapshot()
-            raw = context.decrypt(self._protector)
-            runtime = self._providers.require(provider_type).configure(configuration, decode_credentials(raw))
-            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connected:
-                yield connected
+                return (
+                    record.version,
+                    connection_binding(record),
+                    ProviderSnapshot.from_record(provider),
+                    provider.credential_snapshot(),
+                )
 
-        async with connection() as connected:
+        @asynccontextmanager
+        async def connection():
+            accepted = await current_binding()
+            _, binding, provider, credential = accepted
+            raw = credential.decrypt(self._protector)
+            runtime = configure_provider(self._providers, provider, decode_credentials(raw))
+
+            async def before_dispatch() -> None:
+                if await current_binding() != accepted:
+                    raise ValueError("connector_connection_changed")
+
+            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connected:
+                yield connected, before_dispatch
+
+        async with connection() as (connected, _):
             definitions, _ = await discover_tools(connected)
         by_name = {tool.key: tool for tool in definitions}
         # Preserve the typed outcome envelope while validating its successful payload
@@ -182,12 +283,13 @@ class ExternalToolRuntime:
             if name not in by_name or (selection.tools is not None and name not in selection.tools):
                 raise ValueError("tool_not_authorized")
             try:
-                async with connection() as connected:
+                async with connection() as (connected, before_dispatch):
                     outcome = await connected.execute_tool(
                         tool_key=name,
                         provider_version=by_name[name].provider_version,
                         arguments=arguments,
                         request_id=new_object_id("tool"),
+                        before_dispatch=before_dispatch,
                     )
             except ConnectorProviderError as error:
                 if error.outcome_unknown:
@@ -208,15 +310,15 @@ class ExternalToolRuntime:
 
     @asynccontextmanager
     async def _mcp(
-        self, selection: MCPConnectionRunSelection, guard: Callable[[], Awaitable[None]], scope: AttemptToolScope
+        self, selection: MCPConnectionToolSelection, guard: ScopeGuard, scope: AttemptToolScope
     ) -> AsyncIterator[MCP[AgentContext] | None]:
         async with short_session(self._sessions) as session:
             record = await require_mcp_connection(session, selection.mcp_connection_id)
             endpoint = record.endpoint_url
 
         async def headers() -> dict[str, str]:
-            await guard()
             async with short_session(self._sessions) as session:
+                await guard(session)
                 await self._selections.require_current_source(
                     session,
                     actor=scope.actor,
@@ -228,8 +330,8 @@ class ExternalToolRuntime:
                 if record.endpoint_url != endpoint:
                     raise ValueError("mcp_endpoint_changed")
             current = await self._oauth_refresh.current(selection.mcp_connection_id)
-            await guard()
             async with short_session(self._sessions) as session:
+                await guard(session)
                 await self._selections.require_current_source(
                     session,
                     actor=scope.actor,

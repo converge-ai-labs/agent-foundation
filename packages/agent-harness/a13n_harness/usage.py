@@ -8,7 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -17,7 +17,7 @@ from pydantic_ai.agent import ModelRequestNode
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.usage import RequestUsage
+from pydantic_ai.usage import RequestUsage, UsageLimits
 
 from a13n_harness._json import dump_json_bytes, is_sensitive_key
 from a13n_harness.context import AgentContext
@@ -56,6 +56,30 @@ type PricingStatus = Literal[
     "not_reached",
 ]
 type UsageReportReason = Literal["model_request", "terminal"]
+
+
+_LIMIT_FIELDS = (
+    "cost_limit",
+    "request_limit",
+    "tool_calls_limit",
+    "input_tokens_limit",
+    "output_tokens_limit",
+    "total_tokens_limit",
+    "per_request_input_tokens_limit",
+)
+
+
+def intersect_usage_limits(*values: UsageLimits | None) -> UsageLimits | None:
+    """Return fresh native limits no broader than any supplied ceiling."""
+    present = tuple(value for value in values if value is not None)
+    if not present:
+        return None
+    fields: dict[str, Any] = {}
+    for name in _LIMIT_FIELDS:
+        ceilings = [getattr(value, name) for value in present if getattr(value, name) is not None]
+        fields[name] = min(ceilings) if ceilings else None
+    fields["count_tokens_before_request"] = any(value.count_tokens_before_request for value in present)
+    return UsageLimits(**fields)
 
 
 class UsageMeasure(BaseModel):
@@ -668,4 +692,5 @@ __all__ = [
     "RunUsageLedger",
     "UsageMeasure",
     "UsageRecord",
+    "intersect_usage_limits",
 ]

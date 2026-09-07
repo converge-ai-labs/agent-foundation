@@ -34,17 +34,18 @@ class AgentInvocationResolver:
             runtime_mode=plugin_runtime_mode,
         )
         policy = protocol_policy or AgentProtocolPolicy()
+        connectivity = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self.preparation = AgentInvocationPreparer(
             sessions,
             model_selector,
             plugin_runtime_mode=plugin_runtime_mode,
             plugin_resolver=plugins,
-            connectivity_resolver=connectivity_resolver,
+            connectivity_resolver=connectivity,
             protocol_policy=policy,
         )
         self.freezing = AgentInvocationFreezer(
             model_selector,
             plugin_runtime_mode=plugin_runtime_mode,
             plugin_resolver=plugins,
-            connectivity_resolver=connectivity_resolver,
+            connectivity_resolver=connectivity,
         )

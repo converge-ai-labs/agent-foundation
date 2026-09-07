@@ -18,13 +18,17 @@ CONNECTOR_SECRET_ID = "sec_connector12345678"
 
 async def seed_selection_sources(
     sessions: async_sessionmaker[AsyncSession],
+    *,
+    organization_id: str = ORG_ID,
+    workspace_id: str = WORKSPACE_ID,
+    user_id: str = USER_ID,
 ) -> None:
     async with transaction(sessions) as session:
         session.add(
             ConnectorProviderRecord(
                 id=CONNECTOR_ID,
-                organization_id=ORG_ID,
-                workspace_id=WORKSPACE_ID,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
                 name="Orders",
                 normalized_name="orders",
                 type="fake_connector",
@@ -36,7 +40,7 @@ async def seed_selection_sources(
                 encryption_key_id="test-key",
                 credential_generation=1,
                 created_by_type="user",
-                created_by_id=USER_ID,
+                created_by_id=user_id,
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -45,13 +49,14 @@ async def seed_selection_sources(
         session.add(
             ConnectorConnectionRecord(
                 id=CONNECTOR_CONNECTION_ID,
-                organization_id=ORG_ID,
-                workspace_id=WORKSPACE_ID,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
                 connector_provider_id=CONNECTOR_ID,
                 name="Orders account",
                 normalized_name="orders account",
                 connector_key="orders",
                 external_ref="external-account",
+                external_user_correlation="usrh_workspace",
                 safe_metadata_json={},
                 status="ready",
                 status_reason=None,
@@ -59,7 +64,7 @@ async def seed_selection_sources(
                 setup_generation=1,
                 deleted_at=None,
                 created_by_type="user",
-                created_by_id=USER_ID,
+                created_by_id=user_id,
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -69,8 +74,8 @@ async def seed_selection_sources(
         session.add(
             MCPConnectionRecord(
                 id=MCP_CONNECTION_ID,
-                organization_id=ORG_ID,
-                workspace_id=WORKSPACE_ID,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
                 name="Docs",
                 normalized_name="docs",
                 endpoint_url="https://mcp.example/rpc",
@@ -85,7 +90,7 @@ async def seed_selection_sources(
                 refresh_claim_expires_at=None,
                 deleted_at=None,
                 created_by_type="user",
-                created_by_id=USER_ID,
+                created_by_id=user_id,
                 created_at=NOW,
                 updated_at=NOW,
             )

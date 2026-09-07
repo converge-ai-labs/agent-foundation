@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -120,13 +121,15 @@ class SnapshotRunModelResolver:
     def __init__(
         self,
         *,
-        snapshot: ModelExecutionSnapshot,
+        snapshots: Sequence[ModelExecutionSnapshot],
         organization_id: str,
         workspace_id: str,
         provider_resolver: LiveProviderResolver,
         model_factory: NativeModelFactory,
     ) -> None:
-        self._snapshot = snapshot
+        self._snapshots = {snapshot.model_id: snapshot for snapshot in snapshots}
+        if not snapshots or any(self._snapshots[item.model_id] != item for item in snapshots):
+            raise ValueError("Accepted Model snapshots must be nonempty and consistent")
         self._organization_id = organization_id
         self._workspace_id = workspace_id
         self._provider_resolver = provider_resolver
@@ -137,14 +140,15 @@ class SnapshotRunModelResolver:
         context: ModelResolutionContext[AgentContext],
         model_id: str,
     ) -> PydanticModel[Any]:
-        if model_id != self._snapshot.model_id:
+        snapshot = self._snapshots.get(model_id)
+        if snapshot is None:
             raise ModelResolutionError(
                 "The requested Model does not match the accepted Run snapshot.",
                 code="accepted_model_mismatch",
                 details={"model_id": model_id},
             )
         return await LiveProviderModel.create(
-            snapshot=self._snapshot,
+            snapshot=snapshot,
             organization_id=self._organization_id,
             workspace_id=self._workspace_id,
             provider_resolver=self._provider_resolver,

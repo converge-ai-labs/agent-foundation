@@ -258,15 +258,15 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
     [
         (
             {"connector_tools": [{"connector_connection_id": "cconn_1234567890abcdef"}]},
-            "connector_tool_resolution_unavailable",
+            "connector_connection_unavailable",
         ),
         (
             {"mcp_tools": [{"mcp_connection_id": "mcpc_1234567890abcdef"}]},
-            "mcp_tool_resolution_unavailable",
+            "mcp_connection_unavailable",
         ),
     ],
 )
-async def test_invocation_fails_closed_until_connectivity_resolution_is_available(
+async def test_invocation_rejects_unavailable_connections(
     agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     override: dict[str, object],
@@ -438,3 +438,49 @@ def test_run_override_rejects_direct_credentials(field: str) -> None:
 
     with pytest.raises(ValidationError):
         AgentRunOverride.model_validate({field: "private-value"})
+
+
+@pytest.mark.anyio
+async def test_parent_acceptance_freezes_child_model_defaults_and_detects_child_revocation(
+    agent_management: AgentManagement,
+    agent_invocation_resolver: AgentInvocationResolver,
+    agent_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    from a13n_service.agents.models import AgentRecord
+
+    child = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="child-snapshot",
+        request=CreateAgentRequest(name="Child Snapshot", config=agent_config()),
+    )
+    parent = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="parent-snapshot",
+        request=CreateAgentRequest(
+            name="Parent Snapshot",
+            config=agent_config(
+                subagents={"researcher": {"agent_id": child.agent.id}},
+            ),
+        ),
+    )
+    async with transaction(agent_sessions) as session:
+        model = await session.get(ModelRecord, MODEL_ID)
+        assert model is not None
+        model.settings = {"max_tokens": 321}
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=parent.agent.id)
+    async with transaction(agent_sessions) as session:
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
+    accepted_child = frozen.effective_config.child_configs[child.revision.id]
+    assert accepted_child.agent_id == child.agent.id
+    assert accepted_child.revision_content_digest == child.revision.content_digest
+    assert accepted_child.effective_config.resolved_model.settings == {"temperature": 0.2, "max_tokens": 321}
+    async with transaction(agent_sessions) as session:
+        record = await session.get(AgentRecord, child.agent.id)
+        assert record is not None
+        record.enabled = False
+    with pytest.raises(AgentError):
+        async with transaction(agent_sessions) as session:
+            await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
+    assert accepted_child.effective_config.resolved_model.settings["max_tokens"] == 321

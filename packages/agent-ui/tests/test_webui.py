@@ -50,6 +50,8 @@ async def _network_server(server) -> AsyncIterator[str]:
 
 
 async def _first_frame(response: httpx.Response) -> dict:
+    response.raise_for_status()
+    assert response.headers["content-type"].startswith("text/event-stream")
     with fail_after(5):
         async for line in response.aiter_lines():
             if line.startswith("data: "):
@@ -174,7 +176,7 @@ async def test_real_sse_disconnect_cleanup_resume_and_wrong_lineage(tmp_path: Pa
     server = create_webui(factory, api_key="test-key")
     async with (
         _network_server(server) as url,
-        httpx.AsyncClient(base_url=url, headers={"Authorization": "Bearer test-key"}) as client,
+        httpx.AsyncClient(trust_env=False, base_url=url, headers={"Authorization": "Bearer test-key"}) as client,
     ):
         app = opened[0]
         first = await app.create_thread(title="First")
@@ -259,7 +261,7 @@ async def test_preflight_disconnect_cancels_probe_without_readiness(
 
     async with (
         _network_server(create_webui(factory, api_key="key")) as url,
-        httpx.AsyncClient(base_url=url, headers={"Authorization": "Bearer key"}) as client,
+        httpx.AsyncClient(trust_env=False, base_url=url, headers={"Authorization": "Bearer key"}) as client,
     ):
         async with create_task_group() as tasks:
 

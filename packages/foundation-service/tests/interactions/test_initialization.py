@@ -1,3 +1,4 @@
+import pytest
 from a13n_environment_provider import EnvironmentState
 from a13n_harness import HarnessState
 from a13n_service.interactions.domain import (
@@ -22,6 +23,7 @@ from a13n_service.interactions.state import (
     HostContinuationState,
     WaitingOutcomeCandidate,
 )
+from pydantic_ai.usage import UsageLimits
 
 from .conftest import AGENT_ID, AGENT_REVISION_ID, ATTEMPT_ID, THREAD_ID, effective_agent_config, initial_state
 
@@ -149,3 +151,28 @@ def test_fork_and_fork_retry_clear_environment_and_use_the_correct_thread_identi
     assert forked.harness.environment_states == {}
     assert retried.thread_id == retry_thread_id
     assert retried.harness.environment_states == {}
+
+
+@pytest.mark.parametrize("operation", ["continue", "waiting", "fork", "retry"])
+def test_state_initialization_retains_and_narrows_usage_limits(operation: str) -> None:
+    parent = _waiting_parent() if operation == "waiting" else _completed_parent()
+    parent = parent.model_copy(update={"usage_limits": UsageLimits(request_limit=3, total_tokens_limit=500)})
+    seed = _seed().model_copy(update={"usage_limits": UsageLimits(request_limit=10, tool_calls_limit=2)})
+    if operation == "continue":
+        state = initialize_completed_continuation_state(seed, parent)
+    elif operation == "waiting":
+        state = initialize_waiting_continuation_state(seed, parent)
+    elif operation == "fork":
+        state = initialize_fork_state(seed, parent, thread_id="thread-fedcbafedcbafedcbafedcbafedcbafe")
+    else:
+        state = initialize_retry_state(
+            seed,
+            thread_id="thread-fedcbafedcbafedcbafedcbafedcbafe",
+            source_lineage_kind=RunLineageKind.fork,
+            source_input_kind=RunInputKind.agent_input,
+            parent=parent,
+        )
+    restored = type(state).model_validate_json(state.model_dump_json())
+    assert restored.usage_limits == UsageLimits(request_limit=3, total_tokens_limit=500, tool_calls_limit=2)
+    assert parent.usage_limits.tool_calls_limit is None
+    assert seed.usage_limits.request_limit == 10

@@ -6,6 +6,7 @@ import json
 from typing import Literal
 
 import httpx2
+from anyio import fail_after
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
@@ -28,12 +29,14 @@ class ConnectorHttpClient:
         endpoint_validator: EndpointValidator,
         *,
         response_max_bytes: int,
+        timeout_seconds: float = 30,
     ) -> None:
         if response_max_bytes <= 0:
             raise ValueError("ConnectorProvider response byte limit is invalid")
         self._http_client = http_client
         self._endpoint_validator = endpoint_validator
         self._response_max_bytes = response_max_bytes
+        self._timeout_seconds = timeout_seconds
 
     async def request(
         self,
@@ -65,15 +68,16 @@ class ConnectorHttpClient:
         if extra_headers is not None:
             headers.update(extra_headers)
         try:
-            async with self._http_client.stream(
-                method,
-                f"{base.rstrip('/')}{path}",
-                headers=headers,
-                json=json_body,
-                params=params,
-                follow_redirects=False,
-            ) as response:
-                return await _read_response(response, max_bytes=self._response_max_bytes)
+            with fail_after(self._timeout_seconds):
+                async with self._http_client.stream(
+                    method,
+                    f"{base.rstrip('/')}{path}",
+                    headers=headers,
+                    json=json_body,
+                    params=params,
+                    follow_redirects=False,
+                ) as response:
+                    return await _read_response(response, max_bytes=self._response_max_bytes)
         except ConnectorProviderError as error:
             if write and error.code in {
                 "invalid_provider_response",
@@ -88,7 +92,7 @@ class ConnectorHttpClient:
                     http_status=error.http_status,
                 ) from error
             raise
-        except (ConnectivityHttpError, httpx2.HTTPError) as error:
+        except (ConnectivityHttpError, httpx2.HTTPError, TimeoutError) as error:
             code = error.code if isinstance(error, ConnectivityHttpError) else "provider_unavailable"
             raise ConnectorProviderError(
                 code,

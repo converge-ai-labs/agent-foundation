@@ -5,11 +5,15 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 _ADAPTER_KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 AdapterT = TypeVar("AdapterT")
+
+
+class AdapterResolver[AdapterT](Protocol):
+    def create(self, key: str, *, config_version: str) -> AdapterT: ...
 
 
 @dataclass(frozen=True, slots=True)

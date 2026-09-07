@@ -20,6 +20,7 @@ from a13n_service.plugins.runtime import PluginRuntimeLockError
 
 from ..connectivity_resolution import freeze_invocation_connectivity
 from ..domain import (
+    ChildAgentExecution,
     EffectiveAgentConfig,
     EffectiveAgentModel,
     PluginRuntimeMode,
@@ -36,10 +37,8 @@ from .contracts import (
     AgentSelectorKind,
     FrozenAgentInvocation,
     PreparedAgentInvocation,
-    PreparedAgentRevisionGraph,
-    RootAgentStatePolicy,
 )
-from .graph import freeze_subagents, load_agent_record, load_revision_record, require_invocable_agent
+from .queries import load_agent_record, load_revision_record, require_invocable_agent
 from .signatures import runtime_selection_unchanged
 from .skills import freeze_skills
 
@@ -53,34 +52,18 @@ class AgentInvocationFreezer:
         *,
         plugin_runtime_mode: PluginRuntimeMode,
         plugin_resolver: AgentPluginSelectionResolver,
-        connectivity_resolver: ConnectivitySelectionResolver | None,
+        connectivity_resolver: ConnectivitySelectionResolver,
     ) -> None:
         self._model_selector = model_selector
         self._plugin_runtime_mode = plugin_runtime_mode
         self._plugin_resolver = plugin_resolver
         self._connectivity_resolver = connectivity_resolver
 
-    async def freeze_retained_revision_graph(
-        self,
-        session: AsyncSession,
-        *,
-        prepared: PreparedAgentRevisionGraph,
-    ) -> None:
-        """Recheck all retained graph evidence inside the final transaction."""
-
-        for index, invocation in enumerate(prepared.invocations):
-            await self.freeze_in_transaction(
-                session,
-                prepared=invocation,
-                _root_state_policy=(prepared.root_state_policy if index == 0 else RootAgentStatePolicy.invocable),
-            )
-
     async def freeze_in_transaction(
         self,
         session: AsyncSession,
         *,
         prepared: PreparedAgentInvocation,
-        _root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
     ) -> FrozenAgentInvocation:
         try:
             await authorize_agent(
@@ -99,7 +82,7 @@ class AgentInvocationFreezer:
             )
             require_invocable_agent(
                 agent,
-                policy=_root_state_policy,
+                policy=prepared.root_state_policy,
             )
             if (
                 prepared.expected_current_revision_id is not None
@@ -121,6 +104,7 @@ class AgentInvocationFreezer:
             )
             if (
                 revision_record.content_digest != prepared.revision_content_digest
+                or revision_record.runtime_lock_digest != prepared.revision.runtime_lock_digest
                 or revision_record.plugin_runtime_mode != self._plugin_runtime_mode.value
             ):
                 raise agent_revision_not_executable("revision_changed")
@@ -144,7 +128,6 @@ class AgentInvocationFreezer:
                 )
             except PluginSelectionError as error:
                 raise agent_revision_not_executable(error.reason) from error
-            subagents = await freeze_subagents(session, prepared)
             connectivity = await freeze_invocation_connectivity(
                 self._connectivity_resolver,
                 session,
@@ -153,7 +136,7 @@ class AgentInvocationFreezer:
         except AuthorizationError as error:
             raise map_authorization_error(error) from error
 
-        resolved_subagents = tuple(item.edge for item in subagents)
+        resolved_subagents = tuple(item.edge for item in prepared.subagents)
         try:
             if runtime_selection_unchanged(prepared, plugins, resolved_subagents):
                 runtime_lock = await self._plugin_resolver.runtime_locks.require(
@@ -165,12 +148,27 @@ class AgentInvocationFreezer:
                 runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
                     session,
                     prepared=prepared.plugins,
-                    child_lock_digests=tuple(item.child_runtime_lock_digest for item in subagents),
+                    child_lock_digests=tuple(
+                        item.invocation.revision.runtime_lock_digest for item in prepared.subagents
+                    ),
                     use_active_catalog=True,
                 )
         except PluginRuntimeLockError as error:
             raise agent_revision_not_executable(error.reason) from error
+        child_configs = {}
+        for item in prepared.subagents:
+            child = item.invocation
+            frozen_child = await self.freeze_in_transaction(session, prepared=child)
+            child_configs[child.agent_revision_id] = ChildAgentExecution(
+                agent_id=child.agent_id,
+                revision_content_digest=child.revision_content_digest,
+                effective_config=frozen_child.effective_config,
+                connector_connection_selections=frozen_child.connector_connection_selections,
+                mcp_connection_selections=frozen_child.mcp_connection_selections,
+            )
         config_payload = {
+            "subagent_mode": prepared.merged.subagent_mode,
+            "child_configs": child_configs,
             "schema_version": "1",
             "resolved_model": EffectiveAgentModel(
                 execution=execution,
@@ -212,8 +210,6 @@ class AgentInvocationFreezer:
             agent_revision_id=prepared.agent_revision_id,
             selector_kind=prepared.selector_kind,
             effective_config=effective,
-            connector_connection_selections=(
-                connectivity.connector_connection_selections if connectivity is not None else ()
-            ),
-            mcp_connection_selections=(connectivity.mcp_connection_selections if connectivity is not None else ()),
+            connector_connection_selections=connectivity.connector_connection_selections,
+            mcp_connection_selections=connectivity.mcp_connection_selections,
         )

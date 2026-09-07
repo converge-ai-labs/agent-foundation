@@ -83,16 +83,16 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
         (
             "connector_tools",
             ({"connector_connection_id": "cconn_1234567890abcdef"},),
-            "connector_tool_resolution_unavailable",
+            "connector_connection_unavailable",
         ),
         (
             "mcp_tools",
             ({"mcp_connection_id": "mcpc_1234567890abcdef"},),
-            "mcp_tool_resolution_unavailable",
+            "mcp_connection_unavailable",
         ),
     ],
 )
-async def test_agent_creation_fails_closed_until_connectivity_resolution_is_available(
+async def test_agent_creation_rejects_unavailable_connections(
     agent_management: AgentManagement,
     config_field: str,
     selection: dict[str, object],
@@ -109,7 +109,7 @@ async def test_agent_creation_fails_closed_until_connectivity_resolution_is_avai
         )
 
     assert rejected.value.code == "agent_revision_create_failed"
-    assert rejected.value.details == {"reason": reason, "path": config_field}
+    assert rejected.value.details == {"reason": reason, "path": f"{config_field}.0"}
 
 
 @pytest.mark.anyio

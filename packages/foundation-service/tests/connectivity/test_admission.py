@@ -63,7 +63,7 @@ def reconciler(sessions, acceptor, *, instance="pod-a", clock=lambda: NOW):
         instance_id=instance,
         poll_interval_seconds=0.01,
         lease_seconds=5,
-        max_attempts=5,
+        backoff_steps=5,
         max_backoff_seconds=30,
         input_max_bytes=1024 * 1024,
         clock=clock,

@@ -492,14 +492,14 @@ async def test_inline_delegation_intersects_child_agent_spec_usage_limits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observed_limits: list[UsageLimits | None] = []
-    intersect_limits = delegation_toolset_module._intersect_usage_limits
+    intersect_limits = delegation_toolset_module.intersect_usage_limits
 
     def capture_limits(*values: UsageLimits | None) -> UsageLimits | None:
         result = intersect_limits(*values)
         observed_limits.append(result)
         return result
 
-    monkeypatch.setattr(delegation_toolset_module, "_intersect_usage_limits", capture_limits)
+    monkeypatch.setattr(delegation_toolset_module, "intersect_usage_limits", capture_limits)
 
     async def parent_stream(
         messages: list[ModelMessage],

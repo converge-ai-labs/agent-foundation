@@ -10,19 +10,16 @@ from dataclasses import replace
 from anyio import create_task_group, move_on_after
 from pydantic_ai import prices
 
-from a13n_service.agents.invocation_resolution import AgentInvocationResolver
-from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.providers import ProviderRegistry
-from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
+from a13n_service.process.agents import build_agent_resources
 from a13n_service.process.background import BackgroundTask, run_critical_component
 from a13n_service.process.components import Components
 from a13n_service.process.connectivity import build_connectivity_runtime
@@ -83,7 +80,11 @@ async def open_process_runtime(
                 ),
                 secret_protector=settings.secret_protector(),
             )
-            connectivity_selection = ConnectivitySelectionResolver(storage.sessions)
+            agent_resources = (
+                build_agent_resources(settings, components, shared, model_provider_registry)
+                if owns_control(settings.role) or owns_connectivity_data(settings.role)
+                else None
+            )
             execution = (
                 await build_execution_resources(
                     shared,
@@ -116,7 +117,7 @@ async def open_process_runtime(
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
             if owns_control(settings.role):
-                if execution is None or environment_catalog is None:
+                if execution is None or environment_catalog is None or agent_resources is None:
                     raise RuntimeError("Control execution resources were not constructed")
                 control, control_background = await build_control_runtime(
                     settings,
@@ -125,7 +126,7 @@ async def open_process_runtime(
                     execution,
                     worker,
                     environment_catalog,
-                    connectivity_selection,
+                    agent_resources,
                     trace_query_provider_registry,
                     stack,
                 )
@@ -134,24 +135,18 @@ async def open_process_runtime(
                 if control is not None:
                     commands = control.gateway.commands
                 else:
-                    plugins = components.agent_plugin_selection_resolver or AgentPluginSelectionResolver(
-                        storage.sessions,
-                        runtime_mode=settings.plugin_runtime_mode,
-                        worker_release=settings.build_version,
-                    )
-                    invocations = components.agent_invocation_resolver or AgentInvocationResolver(
-                        storage.sessions,
-                        AcceptedModelSelector(storage.sessions, model_provider_registry),
-                        plugin_runtime_mode=settings.plugin_runtime_mode,
-                        plugin_resolver=plugins,
-                        connectivity_resolver=connectivity_selection,
-                    )
+                    if agent_resources is None:
+                        raise RuntimeError("Connectivity Agent admission resources were not constructed")
                     assets = await build_asset_bundle(settings, shared)
                     commands = build_input_commands(
-                        settings, shared, invocations, assets.service, InlineHookValidator(EndpointPolicy())
+                        settings,
+                        shared,
+                        agent_resources.invocations,
+                        assets.service,
+                        InlineHookValidator(EndpointPolicy()),
                     )
                 input_acceptor = IngressInputAcceptor(storage.sessions, commands)
-            connectivity, connectivity_selection, connectivity_background = await build_connectivity_runtime(
+            connectivity, connectivity_background = await build_connectivity_runtime(
                 settings,
                 storage,
                 shared.secret_protector,
@@ -203,6 +198,10 @@ async def open_process_runtime(
                         worker.environment_maintenance.drain()
                         with move_on_after(settings.environment_operation_timeout_seconds):
                             await worker.environment_maintenance.wait_stopped()
+                    if control is not None:
+                        control.subagent_maintenance.drain()
+                        with move_on_after(settings.subagent_reconcile_drain_seconds):
+                            await control.subagent_maintenance.wait_stopped()
                     background_tasks.cancel_scope.cancel()
                     logger.info(
                         "service_stopped",

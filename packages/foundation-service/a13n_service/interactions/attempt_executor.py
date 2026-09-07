@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
-from a13n_harness import EnvironmentAccess, EnvironmentMount, SafeFailure
-from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, move_on_after, sleep
+from a13n_harness import SafeFailure
+from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
 from anyio.abc import TaskStatus
 
-from a13n_service.environments.lifecycle import EnvironmentLifecycle
-from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.storage.object_store import ObjectStoreUnavailable
 
 from .attempts import (
@@ -20,14 +18,14 @@ from .attempts import (
     AttemptPreparationRejected,
 )
 from .harness_results import HarnessOutcomeAdapter, RunTerminalCommitter, RunTerminalReceipt
-from .harness_runtime import HarnessDriver, HarnessInvocation, NoHarnessEnvironment, SingleHarnessEnvironment
+from .harness_runtime import HarnessDriver, HarnessInvocation
 from .run_control import RunAttemptControl
 
 
 class AttemptPreparer[OutputT](Protocol):
     """Perform non-authoritative dependency preflight and reconstruct one invocation."""
 
-    async def prepare(self, context: AttemptContext) -> HarnessInvocation[OutputT]: ...
+    def prepare(self, context: AttemptContext) -> AbstractAsyncContextManager[HarnessInvocation[OutputT]]: ...
 
 
 class ControlWakeupSource(Protocol):
@@ -36,17 +34,6 @@ class ControlWakeupSource(Protocol):
     async def receive(self) -> object: ...
 
     async def acknowledge(self, signal: object) -> None: ...
-
-
-class AttemptCleanup(Protocol):
-    """Close Attempt-scoped process-local resources within the caller's bound."""
-
-    async def close(
-        self,
-        context: AttemptContext,
-        control: RunAttemptControl,
-        driver: HarnessDriver,
-    ) -> None: ...
 
 
 class CapacitySlot(Protocol):
@@ -117,9 +104,7 @@ class RunAttemptExecutor[OutputT]:
         wakeups: ControlWakeupSource,
         adapter: HarnessOutcomeAdapter,
         committer: RunTerminalCommitter,
-        cleanup: AttemptCleanup,
         capacity_slot: CapacitySlot,
-        environments: EnvironmentLifecycle,
     ) -> None:
         if control.current_context is not context:
             raise ValueError("executor, control, and monitor must share one Attempt context")
@@ -130,50 +115,25 @@ class RunAttemptExecutor[OutputT]:
         self._wakeups = wakeups
         self._adapter = adapter
         self._committer = committer
-        self._cleanup = cleanup
         self._capacity_slot = capacity_slot
-        self._environments = environments
 
     async def run(self) -> RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected:
         finalization: RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected | None = None
-        environment = None
-        runtime_closed = False
         try:
             async with create_task_group() as tasks:
                 self._control.bind_executor(self._driver, tasks.cancel_scope.cancel)
                 try:
                     await tasks.start(LeaseMonitor(self._context, self._control).run)
                     await tasks.start(ControlWatcher(self._context, self._control, self._wakeups).run)
-                    invocation = await self._preparer.prepare(self._context)
-                    environment = await prepare_run_environment(self._environments, self._context)
-                    if environment is None:
-                        invocation = replace(invocation, environment=NoHarnessEnvironment())
-                    else:
-                        access = environment.access
-                        invocation = replace(
-                            invocation,
-                            environment=SingleHarnessEnvironment(
-                                EnvironmentMount(environment, access=EnvironmentAccess(access))
-                            ),
+                    if self._control.current_state.envelope.outcome_candidate is not None:
+                        decision = await self._control.commit_preparation()
+                        finalization = (
+                            decision
+                            if isinstance(decision, AttemptPreparationRejected)
+                            else await self._control.recover_outcome(self._committer)
                         )
-                    decision = await self._control.commit_preparation()
-                    if isinstance(decision, AttemptPreparationRejected):
-                        finalization = decision
-                    elif self._control.current_state.envelope.outcome_candidate is not None:
-                        finalization = await self._control.recover_outcome(self._committer)
                     else:
-                        candidate = await self._driver.run(invocation, preparation=decision)
-                        if self._control.handoff_ready:
-                            with fail_after(self._context.cleanup_timeout.total_seconds()):
-                                if environment is not None:
-                                    await environment.close()
-                                await self._cleanup.close(self._control.current_context, self._control, self._driver)
-                            runtime_closed = True
-                        finalization = await self._control.finalize(
-                            candidate,
-                            adapter=self._adapter,
-                            committer=self._committer,
-                        )
+                        finalization = await self._execute()
                 except AttemptAuthorityError:
                     raise
                 except Exception as error:
@@ -196,18 +156,18 @@ class RunAttemptExecutor[OutputT]:
                 raise AttemptAuthorityError("Attempt executor stopped without an authoritative finalization")
             return finalization
         finally:
-            try:
-                with move_on_after(self._context.cleanup_timeout.total_seconds(), shield=True):
-                    if not runtime_closed:
-                        if environment is not None:
-                            await environment.close()
-                        await self._cleanup.close(self._control.current_context, self._control, self._driver)
-            finally:
-                self._capacity_slot.release()
+            self._capacity_slot.release()
+
+    async def _execute(self) -> RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected:
+        async with self._preparer.prepare(self._context) as invocation:
+            decision = await self._control.commit_preparation()
+            if isinstance(decision, AttemptPreparationRejected):
+                return decision
+            candidate = await self._driver.run(invocation, preparation=decision)
+        return await self._control.finalize(candidate, adapter=self._adapter, committer=self._committer)
 
 
 __all__ = [
-    "AttemptCleanup",
     "AttemptPreparer",
     "CapacitySlot",
     "ControlWakeupSource",

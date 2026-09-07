@@ -7,7 +7,6 @@ from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import copyfile
-from time import monotonic, sleep
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 from uuid import uuid4
@@ -43,19 +42,9 @@ def no_background_price_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(prices, "update_in_background", nullcontext)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def anyio_backend() -> str:
     return "asyncio"
-
-
-@pytest.fixture(scope="package", autouse=True)
-async def foundation_async_runner(anyio_backend: str) -> AsyncIterator[None]:
-    # Selecting a session-scoped backend alone does not keep AnyIO's runner alive.
-    # Lease it through Foundation fixture teardown so late SQLite worker callbacks
-    # do not target a loop closed after an individual test. Other packages keep
-    # their own runner lifetimes; database/session fixtures remain function-scoped.
-    del anyio_backend
-    yield
 
 
 @pytest.fixture(scope="session")
@@ -76,7 +65,7 @@ def service_sqlite_database(tmp_path: Path, service_sqlite_template: Path) -> Pa
 
 @pytest.fixture(scope="session")
 def pg_url() -> Iterator[str]:
-    from testcontainers.community.postgres import PostgresContainer
+    from testcontainers.postgres import PostgresContainer
 
     with PostgresContainer("postgres:17-alpine") as container:
         yield (
@@ -87,7 +76,7 @@ def pg_url() -> Iterator[str]:
 
 @pytest.fixture(scope="session")
 def redis_url() -> Iterator[str]:
-    from testcontainers.community.redis import RedisContainer
+    from testcontainers.redis import RedisContainer
 
     with RedisContainer("redis:8-alpine") as container:
         yield f"redis://{container.get_container_host_ip()}:{container.get_exposed_port(6379)}/0"
@@ -132,6 +121,7 @@ class ProcessRuntimeFactory:
                 hook_subscriptions=hook_subscriptions if hook_subscriptions is not None else placeholder,
                 lifecycle_events=lifecycle_events if lifecycle_events is not None else placeholder,
                 gateway=gateway if gateway is not None else placeholder,
+                subagent_maintenance=placeholder,
             )
             if any(
                 value is not None for value in (agents, trace_queries, hook_subscriptions, lifecycle_events, gateway)
@@ -178,19 +168,8 @@ def s3_service() -> Iterator[S3Service]:
         host = container.get_container_host_ip()
         if host == "localhost":
             host = "127.0.0.1"
-        endpoint = f"http://{host}:{_mapped_port(container, 9000)}"
+        endpoint = f"http://{host}:{container.get_exposed_port(9000)}"
         yield S3Service(endpoint, access_key, secret_key)
-
-
-def _mapped_port(container: DockerContainer, port: int) -> int:
-    deadline = monotonic() + 10
-    while True:
-        try:
-            return container.get_exposed_port(port)
-        except ConnectionError:
-            if monotonic() >= deadline:
-                raise
-            sleep(0.05)
 
 
 @pytest.fixture(params=["memory", "redis"])
@@ -228,6 +207,7 @@ async def _open_s3_store(service: S3Service) -> AsyncGenerator[S3ObjectStore]:
     config = AioConfig(
         connect_timeout=5,
         read_timeout=30,
+        proxies={},
         retries={"total_max_attempts": 1, "mode": "standard"},
         s3={"addressing_style": "path"},
         http_session_cls=HttpxSession,

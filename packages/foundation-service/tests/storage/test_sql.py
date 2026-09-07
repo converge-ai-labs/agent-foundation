@@ -1,5 +1,7 @@
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from threading import Event
 
 import anyio
 import pytest
@@ -169,3 +171,189 @@ async def test_database_scope_honors_the_callers_earlier_deadline(sql_resources)
     assert engine.pool.checkedout() == 0
     async with short_session(sessions) as session:
         assert await session.scalar(text("SELECT 1")) == 1
+
+
+@pytest.mark.parametrize("scope_factory", [short_session, transaction])
+async def test_cancelled_write_rolls_back_and_releases_connection(sql_resources, scope_factory, caplog) -> None:
+    engine, sessions = sql_resources
+    returned = False
+    with anyio.CancelScope() as cancellation:
+
+        def cancel_write(connection, cursor, statement, parameters, context, executemany):
+            if statement.startswith("INSERT INTO storage_contract_records"):
+                asyncio.get_running_loop().call_soon(cancellation.cancel)
+
+        event.listen(engine.sync_engine, "before_cursor_execute", cancel_write)
+        try:
+            async with scope_factory(sessions) as session:
+                await session.execute(insert(records).values(id=1, name="cancelled"))
+                returned = True
+        finally:
+            event.remove(engine.sync_engine, "before_cursor_execute", cancel_write)
+
+    assert cancellation.cancelled_caught
+    assert not returned
+    async with short_session(sessions) as session:
+        assert (await session.execute(select(records))).all() == []
+    assert engine.pool.checkedout() == 0
+    assert "Exception terminating connection" not in caplog.text
+
+
+async def test_cancellation_during_checkout_does_not_orphan_connection(sql_resources) -> None:
+    engine, sessions = sql_resources
+    await engine.dispose()
+    entered = False
+    with anyio.CancelScope() as cancellation:
+
+        async def cancel_connect(driver_connection):
+            cancellation.cancel()
+            await anyio.lowlevel.checkpoint()
+
+        def on_connect(connection, record):
+            connection.run_async(cancel_connect)
+
+        event.listen(engine.sync_engine, "connect", on_connect)
+        try:
+            async with short_session(sessions):
+                entered = True
+        finally:
+            event.remove(engine.sync_engine, "connect", on_connect)
+
+    assert cancellation.cancelled_caught
+    assert not entered
+    assert engine.pool.checkedout() == 0
+    async with short_session(sessions) as session:
+        assert (await session.execute(select(records))).all() == []
+
+
+@pytest.mark.parametrize("consumer_fails", [False, True])
+async def test_session_cleanup_timeout_is_visible_without_masking_consumer_error(
+    sql_resources, monkeypatch: pytest.MonkeyPatch, consumer_fails: bool
+) -> None:
+    _, sessions = sql_resources
+    close = AsyncSession.close
+
+    async def blocked_close(session):
+        await close(session)
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(AsyncSession, "close", blocked_close)
+    failure = RuntimeError("consumer failed")
+    with pytest.raises(RuntimeError if consumer_fails else TimeoutError) as caught:
+        async with short_session(sessions, cleanup_timeout_seconds=0.01) as session:
+            await session.execute(select(records))
+            if consumer_fails:
+                raise failure
+    if consumer_fails:
+        assert caught.value is failure
+        assert "session cleanup failed with TimeoutError" in failure.__notes__
+
+
+async def test_cancellation_during_commit_returns_connection_before_propagating(sql_resources, caplog) -> None:
+    engine, sessions = sql_resources
+    with anyio.CancelScope() as cancellation:
+
+        def cancel_reset(connection, record, reset_state):
+            cancellation.cancel()
+
+        event.listen(engine.sync_engine, "reset", cancel_reset)
+        try:
+            async with transaction(sessions) as session:
+                await session.execute(insert(records).values(id=1, name="committed"))
+        finally:
+            event.remove(engine.sync_engine, "reset", cancel_reset)
+
+    assert cancellation.cancelled_caught
+    assert engine.pool.checkedout() == 0
+    async with short_session(sessions) as session:
+        assert (await session.execute(select(records.c.name))).scalar_one() == "committed"
+    assert "Exception" not in caplog.text
+
+
+async def test_cancelled_sqlite_query_drains_worker_before_closing_connection(tmp_path: Path) -> None:
+    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "cancel-query.sqlite3"))
+    sessions = create_session_factory(engine)
+    started, release = Event(), Event()
+    cancellation = anyio.CancelScope()
+
+    def blocked_query():
+        started.set()
+        if not release.wait(5):
+            raise TimeoutError("query was not released")
+        return 42
+
+    async def install_function(driver):
+        await driver.create_function("blocked_query", 0, blocked_query)
+
+    def on_connect(connection, record):
+        connection.run_async(install_function)
+
+    event.listen(engine.sync_engine, "connect", on_connect)
+
+    async def query():
+        with cancellation:
+            async with short_session(sessions) as session:
+                await session.execute(text("SELECT blocked_query()"))
+        assert cancellation.cancelled_caught
+
+    try:
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(query)
+            try:
+                assert await anyio.to_thread.run_sync(started.wait, 5)
+                cancellation.cancel()
+                await anyio.lowlevel.checkpoint()
+            finally:
+                release.set()
+        assert engine.pool.checkedout() == 0
+        async with short_session(sessions) as session:
+            assert (await session.execute(text("SELECT 1"))).scalar_one() == 1
+    finally:
+        release.set()
+        await engine.dispose()
+
+
+async def test_cancelled_sqlite_read_does_not_retain_snapshot(tmp_path: Path, monkeypatch) -> None:
+    import aiosqlite
+
+    config = SQLiteConfig(path=tmp_path / "cancel-read.sqlite3")
+    engine = create_sql_engine(config)
+    writer = create_sql_engine(config)
+    sessions = create_session_factory(engine)
+    errors = []
+    original = aiosqlite.Cursor.execute
+    cancellation = anyio.CancelScope()
+
+    async def cancel_after_read(cursor, sql, parameters=None):
+        result = await original(cursor, sql, parameters)
+        if sql.startswith("SELECT storage_contract_records"):
+            cancellation.cancel()
+            await anyio.lowlevel.checkpoint()
+        return result
+
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(metadata.create_all)
+            await connection.execute(insert(records).values(id=1, name="original"))
+        with monkeypatch.context() as patch:
+            patch.setattr(aiosqlite.Cursor, "execute", cancel_after_read)
+            with cancellation:
+                try:
+                    async with short_session(sessions) as session:
+                        await session.execute(select(records))
+                except asyncio.CancelledError as error:
+                    # A caller may retain the traceback until well after cleanup.
+                    errors.append(error)
+                    raise
+        assert cancellation.cancelled_caught
+        async with writer.begin() as connection:
+            await connection.execute(records.update().values(name="other-writer"))
+        async with transaction(sessions) as session:
+            await session.execute(records.update().values(name="reused-pool"))
+        async with short_session(sessions) as session:
+            assert (await session.execute(select(records.c.name))).scalar_one() == "reused-pool"
+        assert engine.pool.checkedout() == 0
+    finally:
+        errors.clear()
+        await writer.dispose()
+        await engine.dispose()

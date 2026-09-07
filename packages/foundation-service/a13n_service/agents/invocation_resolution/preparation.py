@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import (
@@ -34,23 +36,26 @@ from ..errors import (
 )
 from ..invocation import merge_agent_run_override
 from ..plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError
-from ..resolution import MAX_SUBAGENT_NODES
+from ..resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
 from ..validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
 from .contracts import (
     AgentSelectorKind,
     PreparedAgentInvocation,
-    PreparedAgentRevisionGraph,
-    PreparedInvocationSubagent,
+    PreparedChildInvocation,
     RootAgentStatePolicy,
 )
-from .graph import (
+from .queries import (
     load_agent_record,
     load_revision_record,
     require_invocable_agent,
     select_child_revision_id,
-    validate_subagent_graph,
 )
 from .skills import prepare_skills
+
+
+@dataclass(slots=True)
+class _GraphBudget:
+    remaining: int = MAX_SUBAGENT_NODES
 
 
 class AgentInvocationPreparer:
@@ -63,7 +68,7 @@ class AgentInvocationPreparer:
         *,
         plugin_runtime_mode: PluginRuntimeMode,
         plugin_resolver: AgentPluginSelectionResolver,
-        connectivity_resolver: ConnectivitySelectionResolver | None,
+        connectivity_resolver: ConnectivitySelectionResolver,
         protocol_policy: AgentProtocolPolicy,
     ) -> None:
         self._sessions = sessions
@@ -81,9 +86,18 @@ class AgentInvocationPreparer:
         agent_revision_id: str | None = None,
         expected_current_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
-        run_id: str | None = None,
-        _root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
+        root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
+        _active_agents: tuple[str, ...] = (),
+        _budget: _GraphBudget | None = None,
     ) -> PreparedAgentInvocation:
+        budget = _budget or _GraphBudget()
+        budget.remaining -= 1
+        if budget.remaining < 0:
+            raise agent_revision_not_executable("subagent_graph_too_large")
+        if agent_id in _active_agents:
+            raise agent_revision_not_executable("subagent_cycle")
+        if len(_active_agents) > MAX_SUBAGENT_DEPTH:
+            raise agent_revision_not_executable("subagent_graph_too_deep")
         workspace_id = actor.workspace_id
         try:
             async with short_session(self._sessions) as session:
@@ -101,7 +115,7 @@ class AgentInvocationPreparer:
                     agent_id=agent_id,
                     for_update=False,
                 )
-                require_invocable_agent(agent, policy=_root_state_policy)
+                require_invocable_agent(agent, policy=root_state_policy)
                 if (
                     expected_current_revision_id is not None
                     and agent.current_revision_id != expected_current_revision_id
@@ -170,7 +184,6 @@ class AgentInvocationPreparer:
                     actor=actor,
                     organization_id=authorized.organization_id,
                     workspace_id=workspace_id,
-                    root_agent_id=agent_id,
                     revision=revision,
                     config=merged,
                 )
@@ -195,12 +208,27 @@ class AgentInvocationPreparer:
                 actor=actor,
                 organization_id=authorized.organization_id,
                 workspace_id=workspace_id,
-                run_id=run_id,
                 config=merged,
             )
         except AuthorizationError as error:
             raise map_authorization_error(error) from error
+        children = tuple(
+            [
+                PreparedChildInvocation(
+                    edge=edge,
+                    invocation=await self.prepare(
+                        actor=actor,
+                        agent_id=edge.child_agent_id,
+                        agent_revision_id=edge.child_agent_revision_id,
+                        _active_agents=(*_active_agents, agent_id),
+                        _budget=budget,
+                    ),
+                )
+                for edge in subagents
+            ]
+        )
         return PreparedAgentInvocation(
+            root_state_policy=root_state_policy,
             actor=actor,
             organization_id=authorized.organization_id,
             workspace_id=workspace_id,
@@ -215,46 +243,8 @@ class AgentInvocationPreparer:
             plugins=plugins,
             skills=skills,
             resolved_plugin_versions=resolved_plugins,
-            subagents=subagents,
+            subagents=children,
             connectivity=connectivity,
-        )
-
-    async def prepare_retained_revision_graph(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        agent_id: str,
-        agent_revision_id: str | None = None,
-        root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
-    ) -> PreparedAgentRevisionGraph:
-        """Preflight one retained root Revision and its complete exact child graph."""
-
-        root = await self.prepare(
-            actor=actor,
-            agent_id=agent_id,
-            agent_revision_id=agent_revision_id,
-            _root_state_policy=root_state_policy,
-        )
-        invocations = [root]
-        visited = {root.agent_revision_id}
-        pending = list(root.subagents)
-        while pending:
-            edge = pending.pop().edge
-            if edge.child_agent_revision_id in visited:
-                continue
-            child = await self.prepare(
-                actor=actor,
-                agent_id=edge.child_agent_id,
-                agent_revision_id=edge.child_agent_revision_id,
-            )
-            visited.add(child.agent_revision_id)
-            if len(visited) > MAX_SUBAGENT_NODES:
-                raise agent_revision_not_executable("subagent_graph_too_large")
-            invocations.append(child)
-            pending.extend(child.subagents)
-        return PreparedAgentRevisionGraph(
-            invocations=tuple(invocations),
-            root_state_policy=root_state_policy,
         )
 
     async def _prepare_subagents(
@@ -264,12 +254,11 @@ class AgentInvocationPreparer:
         actor: AuthenticatedActor,
         organization_id: str,
         workspace_id: str,
-        root_agent_id: str,
         revision: AgentRevision,
         config,
-    ) -> tuple[PreparedInvocationSubagent, ...]:
+    ) -> tuple[ResolvedSubagentEdge, ...]:
         base_edges = {item.name: item for item in revision.resolved_subagents}
-        result: list[PreparedInvocationSubagent] = []
+        result: list[ResolvedSubagentEdge] = []
         for name, selection in config.subagents.items():
             base_selection = revision.config.subagents.get(name)
             base_edge = base_edges.get(name)
@@ -299,34 +288,15 @@ class AgentInvocationPreparer:
                     workspace_id=workspace_id,
                     version=selection.version,
                 )
-            child_revision = await load_revision_record(
-                session,
-                organization_id=organization_id,
-                workspace_id=workspace_id,
-                agent_id=child.id,
-                revision_id=exact_revision_id,
-                for_update=False,
-            )
-            if child_revision.plugin_runtime_mode != self._plugin_runtime_mode.value:
-                raise agent_revision_not_executable("subagent_runtime_mode_mismatch")
-            await validate_subagent_graph(
-                session,
-                root_agent_id=root_agent_id,
-                first_revision=child_revision,
-            )
             result.append(
-                PreparedInvocationSubagent(
-                    edge=ResolvedSubagentEdge(
-                        name=name,
-                        child_agent_id=selection.agent_id,
-                        child_agent_revision_id=child_revision.id,
-                        description=selection.description,
-                        context=selection.context,
-                        usage_limits=selection.usage_limits,
-                        environment=selection.environment,
-                    ),
-                    child_revision_digest=child_revision.content_digest,
-                    child_runtime_lock_digest=child_revision.runtime_lock_digest,
+                ResolvedSubagentEdge(
+                    name=name,
+                    child_agent_id=selection.agent_id,
+                    child_agent_revision_id=exact_revision_id,
+                    description=selection.description,
+                    context=selection.context,
+                    usage_limits=selection.usage_limits,
+                    environment=selection.environment,
                 )
             )
         return tuple(result)

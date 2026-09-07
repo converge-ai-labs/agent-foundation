@@ -7,11 +7,10 @@ from enum import StrEnum
 
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
-    MCPConnectionRunSelection,
+    MCPConnectionToolSelection,
 )
 from a13n_service.connectivity.selection_resolution import (
-    PreparedRevisionConnectivity,
-    PreparedRunConnectivity,
+    PreparedConnectivity,
 )
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -43,17 +42,14 @@ class RootAgentStatePolicy(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedInvocationSubagent:
+class PreparedChildInvocation:
     edge: ResolvedSubagentEdge
-    child_revision_digest: str
-    child_runtime_lock_digest: str
-
-
-PreparedInvocationModel = PreparedModelExecution
+    invocation: PreparedAgentInvocation
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedAgentInvocation:
+    root_state_policy: RootAgentStatePolicy
     actor: AuthenticatedActor
     organization_id: str
     workspace_id: str
@@ -64,12 +60,12 @@ class PreparedAgentInvocation:
     revision_content_digest: str
     revision: AgentRevision
     merged: MergedAgentRunConfig
-    model: PreparedInvocationModel
+    model: PreparedModelExecution
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillLock, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
-    subagents: tuple[PreparedInvocationSubagent, ...]
-    connectivity: PreparedRevisionConnectivity | PreparedRunConnectivity | None
+    subagents: tuple[PreparedChildInvocation, ...]
+    connectivity: PreparedConnectivity
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,10 +75,4 @@ class FrozenAgentInvocation:
     selector_kind: AgentSelectorKind
     effective_config: EffectiveAgentConfig
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
-    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedAgentRevisionGraph:
-    invocations: tuple[PreparedAgentInvocation, ...]
-    root_state_policy: RootAgentStatePolicy
+    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...]

@@ -103,7 +103,7 @@ sequenceDiagram
     Control-->>User: MCPConnection ready
 ```
 
-Foundation publishes one deployment-correct Client ID Metadata Document at `${public_origin}/api/v1/oauth/mcp/client-metadata.json`; the URL itself is the OAuth `client_id`. The document contains that exact client ID, the fixed `${public_origin}/api/v1/oauth/mcp/callback` redirect URI, the configured bounded client name, `authorization_code`, `code`, and `none` token-endpoint authentication. `public_origin` is an operator setting validated as one absolute HTTPS origin and is never derived from `Host` or forwarding headers. The document is a public protocol artifact containing no organization, MCPConnection, registration, or credential data.
+A public origin is required when interactive OAuth is used; Control can manage noninteractive connections without it. Foundation publishes one deployment-correct Client ID Metadata Document at `${public_origin}/api/v1/oauth/mcp/client-metadata.json`; the URL itself is the OAuth `client_id`. The document contains that exact client ID, the fixed `${public_origin}/api/v1/oauth/mcp/callback` redirect URI, the configured bounded client name, `authorization_code`, `code`, and `none` token-endpoint authentication. `public_origin` is an operator setting validated as one absolute HTTPS origin and is never derived from `Host` or forwarding headers. The document is a public protocol artifact containing no organization, MCPConnection, registration, or credential data.
 
 Foundation uses Client ID Metadata when the discovered authorization server advertises it. Otherwise, Foundation uses standards-defined Dynamic Client Registration only when discovery provides a registration endpoint. A server supporting neither mechanism is incompatible with OAuth setup and the MCPConnection does not become ready. Authorization endpoints and client registration values come only from standards-defined discovery and registration.
 
@@ -136,7 +136,7 @@ Tool discovery is authorization-dependent: two MCPConnections for the same endpo
 The conceptual accepted selection is:
 
 ```python
-class MCPConnectionRunSelection:
+class MCPConnectionToolSelection:
     mcp_connection_id: MCPConnectionId
     tools: tuple[str, ...] | None
     defer_loading: bool
@@ -170,3 +170,9 @@ Foundation validates negotiated MCP protocol compatibility through its supported
 4. Workspace MCPConnections require current execution Principal and Workspace authority; external actors cannot confer authority.
 5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned encrypted bundles and never model-visible data.
 6. Discovery and authenticated clients are isolated by MCPConnection identity; accepted Runs retain source selections, not immutable tool catalogs.
+
+## Transport and Maintenance Bounds
+
+Control and Worker construct remote MCP clients with the same configured HTTP phase limits, request deadline, refresh lease, and token-expiry skew. Initialization must negotiate exactly `2025-11-25`; other revisions fail before tool discovery. MCP endpoint requests reject redirects, including same-origin redirects, and never retain cookies. This endpoint rule is stricter than the bounded redirect handling used for OAuth metadata; it prevents changing a selected MCP endpoint during authenticated use.
+
+Expired setup records are processed in bounded short transactions. A productive maintenance pass yields to other tasks and continues draining eligible work; the normal poll delay applies when there is no eligible work. No transaction spans a poll wait or network operation.

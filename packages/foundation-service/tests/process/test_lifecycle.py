@@ -285,7 +285,9 @@ async def test_lifespan_fails_closed_without_secret_master_key(local_settings, t
 
 
 @pytest.mark.anyio
-async def test_control_lifespan_requires_connectivity_public_origin(local_settings, tmp_path: Path) -> None:
+async def test_control_lifespan_allows_noninteractive_connectivity_without_public_origin(
+    local_settings, tmp_path: Path
+) -> None:
     app = create_app(
         local_settings(
             tmp_path,
@@ -294,9 +296,8 @@ async def test_control_lifespan_requires_connectivity_public_origin(local_settin
         )
     )
 
-    with pytest.raises(ValueError, match="FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN"):
-        async with app.router.lifespan_context(app):
-            pytest.fail("lifespan unexpectedly started")
+    async with app.router.lifespan_context(app):
+        assert app.state is not None
 
 
 @pytest.mark.anyio

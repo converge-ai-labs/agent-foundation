@@ -26,21 +26,20 @@ from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.reconciler import MCPReconciler
-from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.service import MCPConnectionService
-from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.connectivity.runtime import (
     ConnectivityControlRuntime,
     ConnectivityDataRuntime,
     ConnectivityRuntime,
 )
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
 from a13n_service.secrets import SecretProtector
 from a13n_service.settings import Settings
 from a13n_service.storage import StorageResources
+
+from .connectivity_clients import build_mcp_clients, connectivity_http_timeout
 
 logger = logging.getLogger("a13n_service.process.connectivity")
 
@@ -72,14 +71,14 @@ async def build_connectivity_runtime(
     input_acceptor: InputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
-) -> tuple[ConnectivityRuntime | None, ConnectivitySelectionResolver | None, tuple[BackgroundTask, ...]]:
+) -> tuple[ConnectivityRuntime | None, tuple[BackgroundTask, ...]]:
     """Construct only the Connectivity capabilities owned by this role."""
 
     if not control_plane and not data_plane:
-        return None, None, ()
+        return None, ()
     if ingress_adapters is None:
         raise RuntimeError("Connectivity ingress adapters were not prepared")
-    control, selection_resolver, control_components = (
+    control, control_components = (
         await _build_control_runtime(
             settings,
             storage,
@@ -89,7 +88,7 @@ async def build_connectivity_runtime(
             stack,
         )
         if control_plane
-        else (None, None, ())
+        else (None, ())
     )
     data, data_components = (
         _build_data_runtime(settings, input_acceptor, storage, ingress_adapters, secret_protector)
@@ -101,7 +100,6 @@ async def build_connectivity_runtime(
             control=control,
             data=data,
         ),
-        selection_resolver,
         (*control_components, *data_components),
     )
 
@@ -113,23 +111,23 @@ async def _build_control_runtime(
     connector_providers: ConnectorProviderRegistry | None,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
-) -> tuple[ConnectivityControlRuntime, ConnectivitySelectionResolver, tuple[BackgroundTask, ...]]:
-    public_origin = settings.validated_connectivity_public_origin()
+) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
+    public_origin = settings.validated_connectivity_public_origin() if settings.connectivity_public_origin else None
     endpoint_policy = settings.connectivity_endpoint_policy()
     if connector_providers is None:
         connector_http_client = await stack.enter_async_context(
             httpx2.AsyncClient(
                 cookies=cookie_free_jar(),
                 follow_redirects=False,
-                timeout=settings.connectivity_total_timeout_seconds,
+                timeout=connectivity_http_timeout(settings),
             )
         )
         connector_providers = built_in_connector_provider_registry(
             connector_http_client,
             endpoint_policy,
             response_max_bytes=settings.connectivity_response_max_bytes,
+            timeout_seconds=settings.connectivity_total_timeout_seconds,
         )
-    selection_resolver = ConnectivitySelectionResolver(storage.sessions)
     connector = _build_connector_control(
         settings,
         storage,
@@ -141,7 +139,7 @@ async def _build_control_runtime(
         httpx2.AsyncClient(
             cookies=cookie_free_jar(),
             follow_redirects=False,
-            timeout=settings.connectivity_total_timeout_seconds,
+            timeout=connectivity_http_timeout(settings),
         )
     )
     mcp = _build_mcp_control(
@@ -176,7 +174,7 @@ async def _build_control_runtime(
         BackgroundTask("connector reconciler", connector.reconciler.run),
         BackgroundTask("MCP reconciler", mcp.reconciler.run),
     )
-    return runtime, selection_resolver, background_components
+    return runtime, background_components
 
 
 def _build_connector_control(
@@ -184,7 +182,7 @@ def _build_connector_control(
     storage: StorageResources,
     connector_providers: ConnectorProviderRegistry,
     secret_protector: SecretProtector,
-    public_origin: str,
+    public_origin: str | None,
 ) -> _ConnectorControl:
     service = ConnectorProviderService(storage.sessions, connector_providers, secret_protector)
     correlation_secret = settings.connectivity_setup_correlation_secret
@@ -195,6 +193,7 @@ def _build_connector_control(
         correlation_secret=(correlation_secret.get_secret_value().encode() if correlation_secret is not None else None),
         public_origin=public_origin,
         setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
+        setup_lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
     )
     instance_id = settings.service_instance_id or new_object_id("svc")
     reconciler = ConnectorReconciler(
@@ -213,31 +212,22 @@ def _build_mcp_control(
     storage: StorageResources,
     endpoint_policy: EndpointPolicy,
     secret_protector: SecretProtector,
-    public_origin: str,
+    public_origin: str | None,
     http_client: httpx2.AsyncClient,
 ) -> _MCPControl:
     instance_id = settings.service_instance_id or new_object_id("svc")
-    oauth_client = MCPOAuthClient(
-        http_client,
-        endpoint_policy,
-        response_max_bytes=settings.connectivity_response_max_bytes,
-        max_redirects=settings.connectivity_max_redirects,
-    )
-    discovery = MCPDiscoveryService(
-        storage.sessions,
-        RemoteTransport(endpoint_policy),
-        OAuthCredentialRefresh(storage.sessions, oauth_client, secret_protector, instance_id=instance_id),
-    )
+    clients = build_mcp_clients(settings, storage.sessions, secret_protector, http_client, endpoint_policy)
+    discovery = MCPDiscoveryService(storage.sessions, clients.transport, clients.credentials)
     connections = MCPConnectionService(
         storage.sessions,
         endpoint_policy,
         secret_protector,
         discovery,
-        registration_cleaner=oauth_client,
+        registration_cleaner=clients.oauth,
     )
     oauth = MCPOAuthService(
         storage.sessions,
-        oauth_client,
+        clients.oauth,
         secret_protector,
         discovery,
         public_origin=public_origin,
@@ -252,7 +242,7 @@ def _build_mcp_control(
     )
     return _MCPControl(
         discovery=discovery,
-        oauth_client=oauth_client,
+        oauth_client=clients.oauth,
         connections=connections,
         oauth=oauth,
         reconciler=reconciler,
@@ -286,7 +276,7 @@ def _build_data_runtime(
         instance_id=settings.service_instance_id or new_object_id("svc"),
         poll_interval_seconds=settings.connectivity_admission_poll_interval_seconds,
         lease_seconds=settings.connectivity_admission_lease_seconds,
-        max_attempts=settings.connectivity_admission_max_attempts,
+        backoff_steps=settings.connectivity_admission_backoff_steps,
         max_backoff_seconds=settings.connectivity_admission_max_backoff_seconds,
         input_max_bytes=settings.connectivity_batch_max_bytes,
     )

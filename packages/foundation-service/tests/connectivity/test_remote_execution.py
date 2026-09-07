@@ -9,7 +9,7 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.connectivity.selection_domain import MCPConnectionRunSelection
+from a13n_service.connectivity.selection_domain import MCPConnectionToolSelection
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.storage import transaction
@@ -57,13 +57,13 @@ async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatc
     revoked = False
     guards = 0
 
-    async def guard():
+    async def guard(session=None):
         nonlocal guards
         guards += 1
         if revoked:
             raise ValueError("test_lease_revoked")
 
-    selection = MCPConnectionRunSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
     async with runtime._mcp(
         selection, guard, AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ())
     ) as capability:
@@ -81,10 +81,10 @@ async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatc
 async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fails(remote_runtime):
     runtime, server = remote_runtime
 
-    async def guard():
+    async def guard(session=None):
         pass
 
-    selection = MCPConnectionRunSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
     async with runtime._mcp(
         selection, guard, AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ())
     ) as capability:
@@ -154,10 +154,10 @@ async def test_replacement_during_authorization_blocks_stale_headers(
 
     monkeypatch.setattr(runtime._oauth_refresh, "current", replace_after_read)
 
-    async def guard():
+    async def guard(session=None):
         pass
 
-    selection = MCPConnectionRunSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
     with pytest.raises(ValueError, match="mcp_connection_changed"):
         async with runtime._mcp(
             selection,

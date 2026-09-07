@@ -17,10 +17,10 @@ from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.connectivity.bounds import (
     MAX_REDIRECTS,
     PROVIDER_REQUEST_MAX_BYTES,
-    TOOL_RESULT_MAX_BYTES,
 )
 from a13n_service.database import MigrationConfig
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.environments.policy import DEFAULT_BATCH_SIZE, DEFAULT_MAX_ACTIVE, DEFAULT_MAX_TARGETS
 from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (
@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
     plugin_runtime_mode: PluginRuntimeMode = PluginRuntimeMode.on_demand
     worker_concurrency: int = Field(default=8, ge=1, le=1024)
+    subagent_reconcile_drain_seconds: float = Field(default=30, gt=0, le=3600)
+    subagent_reconcile_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
     worker_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
     worker_lease_seconds: float = Field(default=30, ge=12, le=3600)
     worker_cleanup_seconds: float = Field(default=10, gt=0, le=300)
@@ -116,6 +118,9 @@ class Settings(BaseSettings):
     environment_provider_extensions: tuple[str, ...] = ()
     environment_maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     environment_operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)
+    environment_max_targets_per_workspace: int = Field(default=DEFAULT_MAX_TARGETS, ge=1)
+    environment_max_active_per_workspace: int = Field(default=DEFAULT_MAX_ACTIVE, ge=1)
+    environment_maintenance_batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, le=10_000)
     environment_maintenance_concurrency: int = Field(default=4, ge=1, le=128)
     pricing_auto_update: bool = True
     observability_tracing: bool = True
@@ -229,18 +234,13 @@ class Settings(BaseSettings):
     connectivity_batch_max_wait_seconds: float = Field(default=300, gt=0, le=3600)
     connectivity_admission_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
     connectivity_admission_lease_seconds: float = Field(default=30, gt=0, le=3600)
-    connectivity_admission_max_attempts: int = Field(default=20, ge=1, le=1_000)
+    connectivity_admission_backoff_steps: int = Field(default=20, ge=1, le=1_000)
     connectivity_admission_max_backoff_seconds: float = Field(default=300, gt=0, le=3600)
     connectivity_dedup_horizon_seconds: int = Field(default=7 * 24 * 60 * 60, ge=60, le=30 * 24 * 60 * 60)
     connectivity_connect_timeout_seconds: float = Field(default=5, gt=0, le=60)
     connectivity_read_timeout_seconds: float = Field(default=30, gt=0, le=300)
     connectivity_total_timeout_seconds: float = Field(default=60, gt=0, le=600)
     connectivity_response_max_bytes: int = Field(default=1024 * 1024, ge=1, le=8 * 1024 * 1024)
-    connectivity_tool_result_max_bytes: int = Field(
-        default=TOOL_RESULT_MAX_BYTES,
-        ge=1,
-        le=TOOL_RESULT_MAX_BYTES,
-    )
     connectivity_max_redirects: int = Field(default=MAX_REDIRECTS, ge=0, le=MAX_REDIRECTS)
     connectivity_oauth_setup_ttl_seconds: int = Field(default=600, ge=60, le=900)
     connectivity_public_origin: str | None = Field(default=None, min_length=1, max_length=2048)

@@ -4,7 +4,7 @@ import json
 
 import httpx2
 import pytest
-from a13n_service.connectivity.native_actions import native_actions
+from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.connectivity.toolsets import selected_tools
 from a13n_service.endpoint_policy import EndpointPolicy
 from pydantic import ValidationError
@@ -22,8 +22,7 @@ async def test_slack_native_reply_hides_target_and_preserves_typed_unknown_outco
         raise httpx2.ReadTimeout("response lost after dispatch")
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(send)) as http:
-        actions = native_actions(
-            "slack",
+        actions = require_native_provider("slack").inbound_actions(
             {"channel_id": "C-bound", "root_thread_ts": "1.0", "conversation_kind": "channel"},
             {"reply_mode": "thread"},
             {},
@@ -48,8 +47,7 @@ async def test_slack_native_reply_hides_target_and_preserves_typed_unknown_outco
 
 async def test_native_auto_reply_only_adds_placement_choice():
     async with httpx2.AsyncClient() as http:
-        actions = native_actions(
-            "slack",
+        actions = require_native_provider("slack").inbound_actions(
             {"channel_id": "C-bound", "root_thread_ts": "1.0", "conversation_kind": "channel"},
             {"reply_mode": "auto"},
             {},
@@ -58,3 +56,40 @@ async def test_native_auto_reply_only_adds_placement_choice():
             EndpointPolicy(),
         )
         assert set(actions["slack.reply"].definition.inputSchema["properties"]) == {"text", "placement"}
+
+
+async def test_lark_inbound_replies_use_distinct_effect_ids_and_reuse_token():
+    from .test_lark import _config
+    from .test_lark_client import _AllowEndpoint, _token_response
+
+    writes = []
+    tokens = []
+
+    def respond(request):
+        if request.url.path.endswith("tenant_access_token/internal"):
+            tokens.append(request)
+            return _token_response()
+        writes.append(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {"message_id": f"om_reply_{len(writes)}", "root_id": "om_root", "thread_id": "omt_thread"},
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        actions = require_native_provider("lark").inbound_actions(
+            {"chat_id": "oc_chat", "message_id": "om_message", "discussion_id": "omt_thread", "chat_type": "group"},
+            {"reply_mode": "thread"},
+            _config(),
+            {"app_secret": "private"},
+            http,
+            _AllowEndpoint(),
+        )
+        for text in ("first", "second"):
+            assert await actions["lark.reply"].call({"content": {"kind": "text", "text": text}}) == {
+                "kind": "succeeded"
+            }
+    assert len(tokens) == 1
+    assert len(writes) == 2 and writes[0]["uuid"] != writes[1]["uuid"]

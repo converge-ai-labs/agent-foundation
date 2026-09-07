@@ -51,44 +51,45 @@ class PeriodicTask:
 
     async def run(self) -> None:
         while True:
-            started = monotonic()
-            try:
-                with anyio.fail_after(self._timeout):
-                    result = await self._scan()
-            except (DBAPIError, ObjectStoreError, httpx2.HTTPError, OSError, TimeoutError) as error:
-                self.last_outcome = "retry"
-                self.last_duration_seconds = monotonic() - started
-                logger.warning(
-                    "background_scan_retry",
-                    extra={
-                        "event": "background_scan_retry",
-                        "task": self.name,
-                        "task_owner": "control",
-                        "error_type": type(error).__name__,
-                        "outcome": "retry",
-                        "duration_seconds": self.last_duration_seconds,
-                    },
-                )
-            else:
-                self.last_result = result
-                self.last_outcome = (
-                    "partial_failure" if result.failed else "deferred" if result.deferred else "completed"
-                )
-                self.last_duration_seconds = monotonic() - started
-                log = logger.info if result.examined or result.failed else logger.debug
-                log(
-                    "background_scan_completed",
-                    extra={
-                        "event": "background_scan_completed",
-                        "task": self.name,
-                        "task_owner": "control",
-                        "outcome": self.last_outcome,
-                        "duration_seconds": self.last_duration_seconds,
-                        "examined": result.examined,
-                        "completed": result.completed,
-                        "deferred": result.deferred,
-                        "failed": result.failed,
-                        "oldest_age_seconds": result.oldest_age_seconds,
-                    },
-                )
+            await self.run_once()
             await anyio.sleep(self._interval)
+
+    async def run_once(self) -> None:
+        started = monotonic()
+        try:
+            with anyio.fail_after(self._timeout):
+                result = await self._scan()
+        except (DBAPIError, ObjectStoreError, httpx2.HTTPError, OSError, TimeoutError) as error:
+            self.last_outcome = "retry"
+            self.last_duration_seconds = monotonic() - started
+            logger.warning(
+                "background_scan_retry",
+                extra={
+                    "event": "background_scan_retry",
+                    "task": self.name,
+                    "task_owner": "control",
+                    "error_type": type(error).__name__,
+                    "outcome": "retry",
+                    "duration_seconds": self.last_duration_seconds,
+                },
+            )
+        else:
+            self.last_result = result
+            self.last_outcome = "partial_failure" if result.failed else "deferred" if result.deferred else "completed"
+            self.last_duration_seconds = monotonic() - started
+            log = logger.info if result.examined or result.completed or result.failed else logger.debug
+            log(
+                "background_scan_completed",
+                extra={
+                    "event": "background_scan_completed",
+                    "task": self.name,
+                    "task_owner": "control",
+                    "outcome": self.last_outcome,
+                    "duration_seconds": self.last_duration_seconds,
+                    "examined": result.examined,
+                    "completed": result.completed,
+                    "deferred": result.deferred,
+                    "failed": result.failed,
+                    "oldest_age_seconds": result.oldest_age_seconds,
+                },
+            )

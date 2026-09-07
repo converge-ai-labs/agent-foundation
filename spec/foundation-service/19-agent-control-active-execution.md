@@ -262,7 +262,7 @@ The executor watcher or inactive-Thread control reconciler acknowledges a signal
 
 ## Completion and Control Races
 
-Inbox acceptance, origin suppression, binding, consumption, waiting rollover, automatic async-result successor acceptance, interrupt, planned yield, explicit branch advancement, and Run outcome selection use the canonical lock order: Thread, current, named, or async-result spawning Runs, current RunAttempt when applicable, affected Environment records in stable Environment-ID order, inbox counter, then inbox entries in `delivery_sequence`; queue rows follow under their owning combined transaction. Runs of the same lock class use stable ID order. Attempt-scoped mutations additionally verify the shared fence and lease. No transaction spans Redis, object storage, Harness execution, model work, or tool work.
+Inbox acceptance, origin suppression, binding, consumption, waiting rollover, automatic async-result successor acceptance, interrupt, planned yield, explicit branch advancement, and Run outcome selection use the canonical lock order: Thread, current, named, or async-result spawning Runs, current RunAttempt when applicable, the consuming Workspace when admitting Environment capacity, affected Environment records in stable Environment-ID order, inbox counter, then inbox entries in `delivery_sequence`; queue rows follow under their owning combined transaction. Runs of the same lock class use stable ID order. Attempt-scoped mutations additionally verify the shared fence and lease. No transaction spans Redis, object storage, Harness execution, model work, or tool work.
 
 Outcome rules distinguish completion from waiting:
 

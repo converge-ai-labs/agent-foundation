@@ -65,6 +65,7 @@ class ConnectorConnectionService:
         correlation_secret: bytes | None,
         public_origin: str | None,
         setup_ttl_seconds: int,
+        setup_lease_seconds: int = 60,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
@@ -78,6 +79,7 @@ class ConnectorConnectionService:
             correlation_secret=correlation_secret,
             public_origin=public_origin,
             setup_ttl_seconds=setup_ttl_seconds,
+            setup_lease_seconds=setup_lease_seconds,
             clock=clock,
         )
         self._revocation = ConnectorRevocationService(sessions, adapters, protector, clock=clock)
@@ -410,19 +412,7 @@ class ConnectorConnectionService:
             if replay is not None:
                 return replay.restore(ConnectorConnection)
             require_version(record.version, expected_version)
-            completed_setup = (
-                await session.scalar(
-                    select(ConnectorSetupAttemptRecord.id).where(
-                        ConnectorSetupAttemptRecord.connector_connection_id == record.id,
-                        ConnectorSetupAttemptRecord.generation == record.setup_generation,
-                        ConnectorSetupAttemptRecord.status == "completed",
-                        ConnectorSetupAttemptRecord.external_ref == record.external_ref,
-                    )
-                )
-                if enabled
-                else None
-            )
-            if enabled and (record.external_ref is None or completed_setup is None):
+            if enabled and (record.external_ref is None or record.external_user_correlation is None):
                 raise ConnectorError(
                     "connection_not_ready",
                     "ConnectorConnection has no verified setup.",
@@ -531,6 +521,7 @@ class ConnectorConnectionService:
                     ) from error
                 connection.setup_generation += 1
                 connection.status = ConnectorConnectionStatus.pending.value
+                connection.external_user_correlation = None
                 connection.status_reason = None
                 connection.version += 1
                 connection.updated_at = now

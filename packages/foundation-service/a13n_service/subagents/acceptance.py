@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from a13n_harness.usage import intersect_usage_limits
 from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
-from a13n_service.environments.domain import ExistingEnvironmentSelection
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
@@ -18,7 +18,11 @@ from a13n_service.interactions.attempts import AttemptContext, lock_attempt_auth
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
-from a13n_service.interactions.environment_selection import child_environment_choice
+from a13n_service.interactions.environment_selection import (
+    ExplicitEnvironment,
+    RetainedRunEnvironment,
+    child_environment_choice,
+)
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
@@ -145,7 +149,7 @@ class ChildRunAcceptanceService:
                     run=child_run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
-                    choice=choice,
+                    intent=ExplicitEnvironment(choice),
                 )
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
@@ -290,12 +294,10 @@ class ChildRunAcceptanceService:
                 )
                 await add_run_with_environment(
                     database,
-                    run=prepared.run.model_copy(update={"environment_access": source_run.environment_access}),
+                    run=prepared.run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
-                    choice=ExistingEnvironmentSelection(environment_id=source_run.environment_id)
-                    if source_run.environment_id
-                    else None,
+                    intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
                 )
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
@@ -380,6 +382,18 @@ def _validate_new_child_parent(
         parent_state=parent_state,
         authority=authority,
     )
+    edge = require_frozen_subagent_edge(parent, parent_state, prepared.relationship.subagent_name)
+    if (prepared.run.agent_id, prepared.run.agent_revision_id) != (edge.child_agent_id, edge.child_agent_revision_id):
+        raise ChildRunAcceptanceError("child_run_edge_conflict", "Child Run does not match the frozen parent edge")
+    accepted = parent_state.effective_agent_config.child_configs.get(prepared.run.agent_revision_id)
+    if accepted is None or (
+        prepared.state.effective_agent_config != accepted.effective_config
+        or prepared.run.connector_connection_selections
+        != tuple(item.model_dump(mode="json") for item in accepted.connector_connection_selections)
+        or prepared.run.mcp_connection_selections
+        != tuple(item.model_dump(mode="json") for item in accepted.mcp_connection_selections)
+    ):
+        raise ChildRunAcceptanceError("child_run_config_conflict", "Child Run changed the accepted execution snapshot")
 
 
 def _validate_parent_authority(
@@ -402,11 +416,13 @@ def _validate_parent_authority(
     ):
         raise ChildRunAcceptanceError("child_run_parent_conflict", "Child Run parent authority changed")
     edge = require_frozen_subagent_edge(parent, parent_state, relationship.subagent_name)
-    if (run.agent_id, run.agent_revision_id) != (
-        edge.child_agent_id,
-        edge.child_agent_revision_id,
+    if (
+        intersect_usage_limits(child_state.usage_limits, edge.usage_limits, parent_state.usage_limits)
+        != child_state.usage_limits
     ):
-        raise ChildRunAcceptanceError("child_run_edge_conflict", "Child Run does not match the frozen parent edge")
+        raise ChildRunAcceptanceError(
+            "child_run_usage_limits_conflict", "Child Run broadened its accepted usage limits"
+        )
 
 
 def _validate_locked_resume_source(
@@ -427,6 +443,18 @@ def _validate_locked_resume_source(
     source = source_run.to_resource()
     relationship = source_relationship.to_resource()
     source_parent = source_parent_run.to_resource()
+    if (
+        prepared.run.agent_id != source.agent_id
+        or prepared.run.agent_revision_id != source.agent_revision_id
+        or prepared.state.effective_agent_config != source_state.envelope.effective_agent_config
+        or prepared.run.connector_connection_selections != source.connector_connection_selections
+        or prepared.run.mcp_connection_selections != source.mcp_connection_selections
+        or intersect_usage_limits(prepared.state.usage_limits, source_state.envelope.usage_limits)
+        != prepared.state.usage_limits
+    ):
+        raise ChildRunAcceptanceError(
+            "child_run_resume_config_conflict", "Child continuation changed its retained execution snapshot"
+        )
     if (
         child_thread.version != prepared.source_thread_version
         or child_thread.session_id != prepared.run.session_id

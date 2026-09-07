@@ -80,7 +80,7 @@ class AgentDuplication:
             raise agent_version_conflict(current.version)
         if current.archived_at is not None:
             raise agent_archived()
-        prepared_graph = await self._invocation_resolver.preparation.prepare_retained_revision_graph(
+        prepared_graph = await self._invocation_resolver.preparation.prepare(
             actor=actor,
             agent_id=agent_id,
             agent_revision_id=current.current_revision_id,
@@ -127,7 +127,7 @@ class AgentDuplication:
                     agent_id=agent_id,
                     revision_id=source.current_revision_id,
                 )
-                await self._invocation_resolver.freezing.freeze_retained_revision_graph(
+                await self._invocation_resolver.freezing.freeze_in_transaction(
                     session,
                     prepared=prepared_graph,
                 )

@@ -214,6 +214,8 @@ Protected-path validation checks the supplied escape-hatch fields; it does not p
 
 Model `settings` are actual request defaults. Discovery `profile` and `limits` are read-only Provider information, never Model create or update fields. A displayed output limit describes upstream capacity; it does not send `max_tokens`. Users set request controls through `settings`. Pydantic AI and trusted integration code retain ownership of the effective native profile and message transformations.
 
+A hosted root and its inline descendants may select different Models and settings. Parent Run acceptance freezes every node's Model execution snapshot and merged settings. The Attempt resolver accepts precisely those Model identities; each outbound request still resolves current Model/Provider eligibility and credentials. An asynchronous child uses its own accepted snapshot when its Worker claims it.
+
 ### Settings precedence
 
 Effective settings are merged at Run acceptance, in ascending precedence: saved Model defaults, Agent settings, and explicit Run settings overrides. Merging is by top-level setting key, matching native settings composition. A later value replaces the entire earlier value at that key, including an object or array; there is no recursive merge. An absent key inherits, and an explicit null is a value only where the setting schema permits it. For example, overriding `openrouter_provider` replaces that whole routing object, while setting `max_tokens` preserves it. An `extra_body` override likewise replaces that whole object.

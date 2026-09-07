@@ -1,15 +1,15 @@
 """Async relational storage construction and short session scopes."""
 
-import asyncio
+from asyncio import CancelledError
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Protocol, cast
 
-from anyio import CancelScope, current_effective_deadline, current_time, fail_after, move_on_after
-from anyio.lowlevel import checkpoint
+from anyio import CancelScope, fail_after
+from anyio.lowlevel import checkpoint_if_cancelled
 from sqlalchemy import URL, event, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import ExceptionContext, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -70,78 +70,53 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
 
 
 @asynccontextmanager
-async def _session_scope(
-    factory: async_sessionmaker[AsyncSession],
-    *,
-    cleanup_timeout_seconds: float,
-    operation_timeout_seconds: float,
-) -> AsyncGenerator[tuple[AsyncSession, CancelScope]]:
-    # Repeated level cancellation can interrupt the driver's own invalidation
-    # and strand a connection before session.close() can recover it.
-    await checkpoint()
-    timeout = min(operation_timeout_seconds, max(0, current_effective_deadline() - current_time()))
+async def short_session(
+    factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
+) -> AsyncGenerator[AsyncSession]:
+    await checkpoint_if_cancelled()
     session = factory()
-    primary_error: BaseException | None = None
+    error: BaseException | None = None
     try:
-        with CancelScope(shield=True) as scope:
-            # SQLAlchemy owns asyncio drivers. Deliver a deadline cancellation
-            # once so their invalidation awaits can finish without another cancel.
-            async with asyncio.timeout(timeout):
-                yield session, scope
-    except BaseException as error:
-        primary_error = error
+        # Checkout must finish assigning the connection to the session before
+        # cancellation can unwind it. Backend connect/pool timeouts still apply.
+        with CancelScope(shield=True):
+            await session.connection()
+        await checkpoint_if_cancelled()
+        yield session
+    except BaseException as caught:
+        error = caught
         raise
     finally:
         try:
-            with move_on_after(cleanup_timeout_seconds, shield=True):
+            with fail_after(cleanup_timeout_seconds, shield=True):
                 await session.close()
         except Exception as cleanup_error:
-            if primary_error is None:
+            if error is None:
                 raise
-            primary_error.add_note(f"session cleanup failed with {type(cleanup_error).__name__}")
-    await checkpoint()
-
-
-@asynccontextmanager
-async def short_session(
-    factory: async_sessionmaker[AsyncSession],
-    *,
-    cleanup_timeout_seconds: float = 5,
-    operation_timeout_seconds: float = 30,
-) -> AsyncGenerator[AsyncSession]:
-    async with _session_scope(
-        factory, cleanup_timeout_seconds=cleanup_timeout_seconds, operation_timeout_seconds=operation_timeout_seconds
-    ) as (session, _scope):
-        yield session
+            error.add_note(f"session cleanup failed with {type(cleanup_error).__name__}")
 
 
 @asynccontextmanager
 async def transaction(
-    factory: async_sessionmaker[AsyncSession],
-    *,
-    cleanup_timeout_seconds: float = 5,
-    operation_timeout_seconds: float = 30,
+    factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
 ) -> AsyncGenerator[AsyncSession]:
-    async with _session_scope(
-        factory, cleanup_timeout_seconds=cleanup_timeout_seconds, operation_timeout_seconds=operation_timeout_seconds
-    ) as (session, scope):
-        database_transaction = await session.begin()
+    async with short_session(factory, cleanup_timeout_seconds=cleanup_timeout_seconds) as session:
         try:
             yield session
-            # Observe drain before starting commit. Once commit starts, its
-            # bounded outcome must settle without repeated cancellation.
-            scope.shield = False
-            await checkpoint()
-            scope.shield = True
-            await database_transaction.commit()
         except BaseException as error:
-            scope.shield = True
             try:
-                with move_on_after(cleanup_timeout_seconds, shield=True):
-                    await database_transaction.rollback()
+                with fail_after(cleanup_timeout_seconds, shield=True):
+                    await session.rollback()
             except Exception as rollback_error:
                 error.add_note(f"rollback cleanup failed with {type(rollback_error).__name__}")
             raise
+        else:
+            await checkpoint_if_cancelled()
+            # Commit also returns the connection to the pool. Finish that
+            # ownership transfer before delivering cancellation to the caller.
+            with CancelScope(shield=True):
+                await session.commit()
+            await checkpoint_if_cancelled()
 
 
 async def check_database(engine: AsyncEngine, *, timeout_seconds: float = 3) -> None:
@@ -163,6 +138,18 @@ def _sqlite_database(path: Path) -> str:
 
 def _configure_sqlite(engine: AsyncEngine, busy_timeout_seconds: float, path: Path) -> None:
     busy_timeout_ms = int(busy_timeout_seconds * 1000)
+
+    @event.listens_for(engine.sync_engine, "handle_error")
+    def discard_cancelled_connection(context: ExceptionContext) -> None:
+        # Cancellation can leave an unfetched cursor holding a WAL snapshot
+        # even after rollback. Drain and close this connection under shielding
+        # so neither the cursor nor interrupted termination reaches the pool.
+        if isinstance(context.original_exception, CancelledError):
+            if context.connection is not None:
+                with CancelScope(shield=True):
+                    context.connection.invalidate()
+            # Other pooled connections are healthy; do not invalidate them.
+            context.is_disconnect = False
 
     @event.listens_for(engine.sync_engine, "connect")
     def configure_connection(dbapi_connection: object, _connection_record: object) -> None:

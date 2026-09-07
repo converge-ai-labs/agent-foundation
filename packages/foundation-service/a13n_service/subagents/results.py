@@ -67,6 +67,7 @@ class AsyncSubagentResultPublisher:
     ) -> None:
         if max_pending_count < 1 or max_pending_bytes < 1:
             raise ValueError("Thread inbox admission limits must be positive")
+        self._after_relationship_id = ""
         self._sessions = sessions
         self._replays = replays
         self._signals = signals
@@ -74,7 +75,6 @@ class AsyncSubagentResultPublisher:
         self._max_pending_bytes = max_pending_bytes
         self._entry_id_factory = entry_id_factory
         self._clock = clock
-        self._after_child_id = ""
 
     async def publish(
         self,
@@ -215,6 +215,7 @@ class AsyncSubagentResultPublisher:
                         select(
                             ChildRunRelationshipRecord.organization_id,
                             ChildRunRelationshipRecord.child_run_id,
+                            ChildRunRelationshipRecord.id,
                             RunRecord.sealed_at,
                         )
                         .join(
@@ -230,9 +231,9 @@ class AsyncSubagentResultPublisher:
                         .where(
                             RunRecord.status.in_(("completed", "failed", "cancelled")),
                             ThreadInboxRecord.id.is_(None),
-                            ChildRunRelationshipRecord.child_run_id > self._after_child_id,
+                            ChildRunRelationshipRecord.id > self._after_relationship_id,
                         )
-                        .order_by(ChildRunRelationshipRecord.child_run_id)
+                        .order_by(ChildRunRelationshipRecord.id)
                         .limit(limit)
                     )
                 )
@@ -240,11 +241,11 @@ class AsyncSubagentResultPublisher:
                 .all()
             )
         if not candidates:
-            self._after_child_id = ""
+            self._after_relationship_id = ""
             return Sweep()
         published = 0
-        for organization_id, child_run_id, _ in candidates:
-            self._after_child_id = child_run_id
+        for organization_id, child_run_id, relationship_id, _ in candidates:
+            self._after_relationship_id = relationship_id
             try:
                 with anyio.fail_after(item_timeout_seconds):
                     await self.publish(organization_id=organization_id, child_run_id=child_run_id)
@@ -273,7 +274,7 @@ class AsyncSubagentResultPublisher:
             deferred=len(candidates) - published,
             oldest_age_seconds=max(
                 (assume_utc(self._clock()) - assume_utc(sealed)).total_seconds()
-                for _, _, sealed in candidates
+                for _, _, _, sealed in candidates
                 if sealed is not None
             ),
         )
