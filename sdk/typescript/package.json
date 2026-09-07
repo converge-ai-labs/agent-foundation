@@ -1,5 +1,5 @@
 {
-  "name": "a13n",
+  "name": "@converge.ai/a13n",
   "version": "0.0.1",
   "description": "TypeScript SDK for a13n Service",
   "license": "Apache-2.0",

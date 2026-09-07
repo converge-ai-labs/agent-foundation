@@ -7,7 +7,7 @@ The a13n Service SDKs live under one standalone `sdk/` boundary. They are intent
 | Python     | `a13n`                                                | `sdk/python`     | `release/a13n/python/<version>`     |
 | Go         | `github.com/converge-ai-labs/agent-foundation/sdk/go` | `sdk/go`         | `release/a13n/go/<version>`         |
 | Rust       | `a13n`                                                | `sdk/rust`       | `release/a13n/rust/<version>`       |
-| TypeScript | `a13n`                                                | `sdk/typescript` | `release/a13n/typescript/<version>` |
+| TypeScript | `@converge.ai/a13n`                                   | `sdk/typescript` | `release/a13n/typescript/<version>` |
 
 The `a13n-service-cli` remote CLI is a companion to these SDKs, not another SDK distribution. It is an independent Cargo project at `sdk/rust/a13n-service-cli` with package name `a13n-service-cli`, its own lock file, and no membership in the root Rust workspace or the Rust SDK project. Network commands use typed operations from `a13n`; they do not maintain a separate HTTP client. The CLI does not manage a13n Service processes or access service implementation internals.
 

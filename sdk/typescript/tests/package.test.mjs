@@ -15,7 +15,7 @@ test("package metadata identifies the public npm package", async () => {
     await readFile(new URL("package.json", packageRoot), "utf8"),
   );
 
-  assert.equal(packageJson.name, "a13n");
+  assert.equal(packageJson.name, "@converge.ai/a13n");
   assert.equal(packageJson.publishConfig.access, "public");
   assert.equal(packageJson.private, undefined);
 });

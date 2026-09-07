@@ -86,7 +86,7 @@ jobs:
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          published="$(npm view a13n version 2>/dev/null || true)"
+          published="$(npm view @converge.ai/a13n version 2>/dev/null || true)"
           if [ -z "$published" ]; then
             exit 0
           fi
