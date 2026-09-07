@@ -166,6 +166,8 @@ The executor uses structured concurrency rather than a Go-style single `select` 
 
 The executor starts `LeaseMonitor` before the initial Run-state read and writer claim, including their reconciliation and [bounded retries](12-run-persistence.md#state-writer-claim-retries). These operations run inside the executor's structured scope, where preparation errors reach the classified fenced failure path; no wrapper performs retryable state admission before renewal supervision begins. Object I/O and retry backoff do not hold the authority serialization needed by renewal. A per-request timeout is not reused as the deadline for the complete multi-request retry sequence.
 
+The executor creates and binds its control facade and cancellation scope before state admission; neither construction requires a restored Harness or claimed state. Until writer claim and the fenced preparation decision permit continuation, watcher activity can check current PostgreSQL authority and observe terminal decisions, but cannot adopt an unclaimed state, repair or confirm its receipts, or offer inbox payloads. The executor installs the final confirmed state as one coherent value before state-dependent reconciliation. [Recovery Preparation](13-run-attempt-scheduling-and-recovery.md#recovery-preparation) owns admission checks, invalidation of speculative preparation, and the outcome-versus-Harness branch. State admission does not recreate the facade or reset authority loss observed during preparation.
+
 When renewal loses the lease or cannot confirm authority within the bounded policy, the monitor calls and awaits `RunAttemptControl.authority_lost(...)` in the monitor's own task. The facade idempotently transitions its private gate to `fenced`, closes local admission, asks the attached driver to issue bounded idempotent Harness cancellation when available, and cancels the executor task scope. The awaited call establishes the local fence and cancellation request; it does not wait for full executor cleanup or a replacement Worker. Scope cancellation interrupts preparation, retry backoff or the root's current stream await, stops both children, and leads to bounded cleanup. No task then publishes an authoritative write under the lost Attempt.
 
 `ControlWatcher` first performs the mandatory PostgreSQL reconciliation, then consumes Redis hints. For each signal it rereads current Thread, Run, Attempt, and inbox facts before calling and awaiting `RunAttemptControl.reconcile(...)` in the watcher task; the call creates no controller task or process-local command queue. Under the private gate, the facade can ask the driver to offer ordinary active steer, fence and cancel a matching terminalized Attempt, or leave durable work pending for a later Capability boundary. Reconciliation returns after that bounded local action, not after Pydantic incorporates an offer, a checkpoint is published, or an inbox receipt becomes `consumed`. Only then may the watcher acknowledge the Redis signal. Reconnect and failure are bounded; an unrecoverable watcher failure cancels the executor scope, while mandatory PostgreSQL checks at Harness boundaries preserve correctness independently of Redis.
@@ -174,10 +176,10 @@ Capability hooks borrow the current `RunContext` or `AgentContext`, ask `Harness
 
 ## Definition Construction
 
-After claim and compatibility preflight, the current `RunAttemptExecutor` reconstructs one process-local `AgentDefinition` from the Run-pinned immutable configuration. It then:
+After confirmed state claim, the fenced preparation decision, and recovery receipt reconciliation, an Attempt that requires Harness continuation reconstructs one process-local `AgentDefinition` from the Run-pinned immutable configuration. An Attempt adopting an existing outcome does not build or enter a Harness Run. On the continuation branch, the executor:
 
 1. reconstructs the accepted Agent specification, exact managed plugin set, Skill and subagent composition, output contract, and model selection;
-2. creates one Attempt-scoped `RunAttemptControl` backed by the executor's current services and `AttemptContext`, plus one `HarnessDriver`; the facade privately owns one `RunControlGate` and binds the driver plus executor cancel scope without exposing them to Agent code;
+2. uses the existing Attempt-scoped `RunAttemptControl` and its bound `HarnessDriver`; the facade retains the current `AttemptContext`, final recovery state, private gate, and executor cancellation binding without exposing them to Agent code;
 3. inserts one direct `RunControlCapability` with ID `a13n.foundation.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
 4. requires the Harness build to validate finalized Capability identity and ordering, rejecting a duplicate reserved ID or an incompatible outer wrapper; and
 5. calls `HarnessBuilder.build(definition)`.
@@ -289,18 +291,35 @@ async def execute_attempt(ctx: AttemptContext, capacity_slot: CapacitySlot):
     try:
         async with structured_task_group() as tasks:
             control.bind_executor(driver, tasks.cancel_scope)
-            tasks.start_soon(LeaseMonitor(ctx, control).run)
-            tasks.start_soon(ControlWatcher(ctx, control).run)
+            await tasks.start(LeaseMonitor(ctx, control).run)
+            await tasks.start(ControlWatcher(ctx, control).run)
             try:
-                candidate = await driver.run()
-                await control.finalize(candidate)
+                state = await control.read_validate_and_claim_state()
+                prepared = await validate_recovery_dependencies(ctx, state)
+                decision = await control.commit_preparation(prepared)
+                if decision.permits_continuation:
+                    await control.reconcile_recovery_state()
+                    if control.current_state.outcome_candidate is not None:
+                        await control.recover_outcome()
+                    else:
+                        invocation = await reconstruct_invocation(ctx, control.current_state)
+                        candidate = await driver.run(invocation, preparation=decision)
+                        await control.finalize(candidate)
+            except AttemptAuthorityLost:
+                await control.authority_lost()
+            except Exception as error:
+                await control.finalize_classified_failure(error)
             finally:
                 await control.close_admission()
                 tasks.cancel_children()
-        await bounded_process_local_cleanup(ctx, control, driver)
     finally:
-        capacity_slot.release()
+        try:
+            await bounded_process_local_cleanup(ctx, control, driver)
+        finally:
+            capacity_slot.release()
 ```
+
+The illustrated state/decision helpers are conceptual operations, not additional durable types or prescribed private APIs. Monitor startup establishes renewal supervision before the first state request. Classified failure handling revalidates authority and follows the preparation or execution failure contract; cancellation and unknown database outcomes never authorize an unfenced fallback write. The driver records fenced Harness entry before beginning model or tool execution. Fresh Environment preparation follows `on_run` or `on_use` only on the Harness continuation branch, while result adoption still verifies all dependencies required by its outcome contract.
 
 The executor root does not enter the private `RunControlGate` around `HarnessDriver.run()`, `async for event in stream`, or an equivalent `anext(stream)` await. Pydantic can invoke the Foundation Capability inside that call chain; holding the same gate across iteration would deadlock the callback. Every Foundation control path instead calls an explicit `RunAttemptControl` operation, and only that facade enters its gate for the bounded state transition or concrete safe-boundary operation.
 

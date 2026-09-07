@@ -211,17 +211,21 @@ sequenceDiagram
         end
     end
     Note over Executor,DB: LeaseMonitor runs throughout state preparation and execution
-    Executor->>Objects: outside transaction, read exact state and frozen artifacts
-    Executor->>Executor: validate state, dependencies, budget, and authority
-    Executor->>Objects: claim state writer under the bounded Run-state retry policy
+    Executor->>Objects: read, validate, and claim complete state under bounded retries
+    Executor->>DB: revalidate authority after confirmed object claim
+    Executor->>Executor: validate dependencies, budget, and current Principal against final state
     Executor->>DB: short fenced preparation-decision CAS
     alt continue
         DB-->>Executor: preparation accepted
-        Executor->>Harness: enter with fresh RunBindings and Environment adapters
-        loop bounded heartbeat
-            Executor->>DB: renew while this Attempt owns the lease
+        Executor->>DB: reconcile retained inbox evidence under current fence
+        alt state contains an outcome candidate
+            Executor->>DB: verify outcome conditions and commit exact candidate
+        else Harness continuation
+            Executor->>Harness: enter with final state, fresh RunBindings and Environment adapters
+            Executor->>DB: fenced Harness entry before model or tool execution
+            Executor->>Objects: complete conditional checkpoints during execution
+            Executor->>DB: fenced receipt, usage, and outcome transactions
         end
-        Executor->>DB: fenced state, usage, and outcome writes
     else retry later
         DB-->>Executor: Attempt failed and Run remains running with available_at
     else fail Run
@@ -231,7 +235,7 @@ sequenceDiagram
 
 After commit, the winning execution loop schedules the executor as its next local action and resumes scanning only according to its remaining capacity. `AttemptContext` is a claim-derived process-local context. Its immutable correlation includes organization, Thread, Run, Attempt, Worker identity and generation, build identity, Runtime lock, fence, lease proof, and fixed policy deadlines; it initializes the expected relational versions and lease deadline that the executor advances only from successful fenced operations or authoritative rereads. It contains no database session, transaction, Harness object, credential, or independent authority; every authoritative operation still revalidates PostgreSQL.
 
-The executor performs state and dependency preparation outside database transactions while its child renewal activity keeps the lease current. When Service tracing is enabled, that committed claim starts the parentless RunAttempt root defined by [Observability](38-observability.md). Before the successful preparation decision, the executor conditionally claims the Run's current state object version for its fence under [State Writer Claim Retries](12-run-persistence.md#state-writer-claim-retries). It then enters the Harness Run through another short fenced transaction: it verifies the current leased attempt and the expected Attempt version returned by the preparation decision, records `harness_run_id` and `started_at`, changes the attempt to `running`, sets the Run's `started_at` if this is its first Harness Run, and appends the attempt lifecycle fact. The Run remains `running`.
+The executor performs state and dependency preparation outside database transactions while its child renewal activity keeps the lease current. When Service tracing is enabled, that committed claim starts the parentless RunAttempt root defined by [Observability](38-observability.md). Before the successful preparation decision, the executor conditionally claims the Run's current state object version for its fence under [State Writer Claim Retries](12-run-persistence.md#state-writer-claim-retries). [Recovery Preparation](#recovery-preparation) uses the final claimed state to select outcome adoption or Harness continuation. On the continuation branch, another short fenced transaction verifies the current leased attempt and preparation decision against the latest expected relational versions, records `harness_run_id` and `started_at`, changes the attempt to `running`, sets the Run's `started_at` if this is its first Harness Run, and appends the attempt lifecycle fact. The Run remains `running`; an adopted outcome requires no Harness entry.
 
 Heartbeat and lease renewal update only the selected attempt, but their conditional update verifies the authority rule above in the same relational transaction. Like every worker-originated durable mutation, they supply `organization_id`, `run_id`, `run_attempt_id`, fence, lease proof, and expected Run version. They cannot revive a terminal or deselected generation. A state write additionally supplies the current opaque object version and conditionally replaces the same deterministic state key.
 
@@ -277,6 +281,14 @@ Only the Run row authorizes another attempt under its accepted recovery, handoff
 
 The following sequence makes the ordinary cross-Worker lease-expiry recovery path explicit. It uses the same relational claim authority and deterministic state key as every other Attempt; it introduces no recovery controller, recovery queue, or second checkpoint selector. The `input_disposition` branches summarize the [Run resume contract](12-run-persistence.md#resume-semantics), which owns their complete semantics.
 
+Takeover crosses three distinct boundaries. They introduce no additional persisted Attempt statuses:
+
+| Boundary                            | What it establishes                                                                                                | What remains required                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| PostgreSQL claim                    | One selected Attempt, a new monotonic fence, and an unexpired lease authorize preparation                          | Confirm object ownership and complete recovery admission; the old process need not have exited         |
+| State writer claim                  | A confirmed complete checkpoint and a fresh write token fence prior object tokens                                  | Revalidate PostgreSQL authority and prepare from this final state                                      |
+| Preparation and execution admission | A fenced preparation decision permits outcome adoption or fresh reconstruction; Harness entry is separately fenced | Reconcile state evidence and continue checking authority at each owned mutation and execution boundary |
+
 ```mermaid
 sequenceDiagram
     participant Old as Old RunAttemptExecutor
@@ -298,27 +310,43 @@ sequenceDiagram
         DB-->>Claimant: Return the claimed replacement Attempt and lease proof
         Claimant->>New: Start one executor task with the reserved capacity
         Note over New,DB: LeaseMonitor runs throughout state preparation, claim retries, and execution
-        New->>Objects: Read the latest complete state.json and frozen artifacts
-        Objects-->>New: Return checkpoint, object version, and writer fence
-        Note over New,Harness: Work absent from this checkpoint can be re-driven without inferred external outcome
-        New->>New: Validate state, dependencies, compatibility, and current Principal authority
-        New->>New: Reconstruct fresh credentials, bindings, plugins, and Environment adapters
-        New->>Objects: Claim writer under the bounded Run-state retry policy
-        Objects-->>New: Confirm complete state, replacement writer fence, and object version
-        New->>New: Reevaluate state-dependent preparation if claim retries refreshed state
+        loop Until claim confirmed, at most four claim cycles
+            New->>DB: Revalidate selected Attempt, fence, and lease
+            New->>Objects: Read complete state, metadata, and matching version
+            Objects-->>New: Return checkpoint, object version, and writer fence
+            New->>New: Validate state identity, integrity, and required codecs
+            New->>Objects: CAS claim preserving body and advancing writer fence
+            alt Claim succeeds
+                Objects-->>New: Confirm state and fresh object version; exit claim loop
+            else CAS conflicts while authority remains valid
+                Note over New,Objects: Bounded backoff, then reread complete state in next cycle
+            else Response is lost or times out
+                New->>Objects: Reconcile exact claim result before another write
+                Note over New,Objects: Confirm success or use remaining bounded retry budget
+            end
+        end
+        break Claim is unconfirmed after exhaustion, permanent failure, or authority loss
+            Note over New,DB: Commit classified preparation failure only if authority can still be confirmed
+            New-->>Claimant: Stop admission and perform bounded cleanup
+        end
+        New->>DB: Revalidate authority after confirmed claim
+        New->>New: Validate final-state dependencies, budget, compatibility, and current Principal
         New->>DB: Commit fenced preparation decision for Attempt N+1
         alt Preparation permits continuation
             DB-->>New: Confirm current lease, fence, and relational versions
+            New->>DB: Reconcile retained inbox evidence under current fence
             alt State contains a valid waiting or completed outcome candidate
-                New->>DB: Commit the prepared Run outcome idempotently
+                New->>DB: Revalidate outcome conditions and commit exact candidate
                 DB-->>New: Seal the Run and terminalize Attempt N+1
             else State requires Harness execution
+                New->>New: Reconstruct fresh collaborators and prepare ready or lazy Environment
                 alt input_disposition is pending
                     New->>Harness: Enter with accepted input and previous_state
                 else input_disposition is applied
                     New->>Harness: Enter with previous_state only
                 end
-                New->>DB: Bind harness_run_id and mark Attempt N+1 running
+                New->>DB: Fence Harness entry, bind harness_run_id, and mark Attempt N+1 running
+                Note over New,Harness: Reconcile new inbox delivery at legal hooks before model or tool execution
                 par Lease renewal
                     loop While Attempt N+1 remains authoritative
                         New->>DB: Renew the selected lease
@@ -327,9 +355,11 @@ sequenceDiagram
                     loop At complete progress boundaries
                         Harness-->>New: Produce a complete progress boundary
                         New->>Objects: Conditionally publish the next complete checkpoint
+                        New->>DB: Revalidate authority and confirm any incorporated inbox receipts
                     end
                     alt Harness returns waiting or completed
                         Harness-->>New: Produce a waiting or completed result candidate
+                        New->>Objects: Publish immutable output payload when required
                         New->>Objects: Conditionally publish the complete terminal checkpoint
                         New->>DB: Commit the Attempt and Run outcome
                         DB-->>New: Succeed Attempt N+1 and seal the Run
@@ -340,6 +370,7 @@ sequenceDiagram
                     end
                 and Stale predecessor if it returns
                     opt Old process becomes runnable again
+                        Note over Old,Objects: This branch occurs after the successor's confirmed object claim
                         Old->>DB: Submit a late renewal, outcome, or authority check for Attempt N
                         DB--xOld: Reject the deselected lease, old fence, or stale version
                         Old->>Objects: Finish an in-flight write with its old object version
@@ -359,12 +390,18 @@ sequenceDiagram
     end
 ```
 
-After any new attempt owns the lease, its executor reads the exact state, attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a database transaction and satisfies the [active-control recovery contract](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
+Before the successor's object claim, a predecessor's previously authorized in-flight checkpoint can still win the object CAS. The successor then claims the complete newer state under the [object fencing contract](12-run-persistence.md#state-key-conditional-writes-and-fencing). The confirmed object determines the recovery point; waiting for the predecessor to acknowledge cancellation is not a takeover prerequisite.
+
+### Recovery Preparation
+
+After any new attempt owns the lease, its executor starts renewal supervision, validates and claims complete state, and revalidates PostgreSQL authority. It then reads attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a long database transaction. The successful preparation decision uses the final confirmed state and requires all of these conditions:
 
 - the latest complete state object passes key, organization, Run, Thread, digest, size, envelope, checkpoint, AgentRevision, Runtime lock, and required Harness, Capability, and Host codec validation;
 - the applicable fixed recovery or handoff count, elapsed-time, and known-usage ceilings still permit this already-created attempt after all durable usage charges;
 - the exact AgentRevision, `EffectiveAgentConfig`, Runtime lock, managed Harness Plugin and Skill artifacts, accepted Connectivity selections and protected Ingress context, the accepted Environment ID/access and compatible template/Provider schemas, and other frozen dependency locks are present, digest-valid, and compatible; and
 - the Run's persisted authority Principal remains active in the same organization, and its current Workspace and principal policy, RoleBindings, Agent invocation authority, ConnectorConnection and MCPConnection ownership or eligibility, Ingress action authority, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
+
+State-dependent preparation follows confirmed writer claim. Any speculative preparation performed earlier is reevaluated when a claim retry reads a different object: the selected Harness state, applied-input decision, deferred continuation, retained inbox evidence, outcome branch, and state-derived invocation arguments must all match the final confirmed state. Validated immutable artifacts may be reused when their exact identities and digests remain applicable; cached authorization and budget observations do not replace current admission checks. The executor never combines the body from one read with the token or continuation decisions from another.
 
 External tool preparation follows [Agent-Facing External Tools](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery): current schemas are discovered under the retained source selections, without a durable tool snapshot compatibility gate. This external I/O occurs outside the claim and preparation-decision transactions.
 
@@ -375,6 +412,34 @@ The executor then uses one short fenced compare-and-swap transaction to revalida
 - **continue**: preserve the Run and attempt as active and permit fresh reconstruction and Harness entry;
 - **retry later**: terminalize the attempt as `failed`, charge known usage, clear the current selection, keep the Run `running`, and set a bounded `available_at`, but only for an explicitly retryable condition while budget remains; or
 - **fail the Run**: terminalize the attempt as `failed`, charge known usage, clear the current selection, release acquired Environment use and update retention, seal the Run as `failed`, retain it as the Thread's current Run, preserve the prior head, and increment the Thread version.
+
+After a **continue** decision, the executor reconciles the final state's retained inbox receipts and any recognized same-Run provenance under the [active-control recovery contract](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption), before new delivery or Agent execution. That contract owns conditional receipt repair, FIFO validation, consumption, and winning terminal dispositions. Reconciliation does not roll back independent PostgreSQL lifecycle, queue, budget, or Environment facts to checkpoint time. A preparation decision is not a lasting authorization: receipt confirmation, outcome adoption, Harness entry, and later mutations revalidate their own current lease and fence preconditions.
+
+The resulting continuation has two branches. An `outcome_candidate` is verified against its output and current relational completion conditions and, when eligible, committed without entering Harness. A candidate alone does not bypass pending-delivery rules or authorize unconditional completion; an ineligible or failed commit follows the owning outcome/recovery classification. When state has no outcome candidate, the executor reconstructs fresh credentials, `RunBindings`, clients, plugins, and Environment operation objects for Harness continuation. It verifies the fixed logical Environment selection during admission; Provider prepare/resume/rebuild occurs only on the execution branch under the Environment's `on_run` or `on_use` policy. It does not restore external resources to checkpoint time or recover prior process-local handles.
+
+```mermaid
+flowchart TD
+    Claimed["Final complete state claim confirmed"] --> Authority["Revalidate PostgreSQL authority"]
+    Authority --> Validate["Validate state, fixed dependencies, current grants, and budget"]
+    Validate --> Decision{"Fenced preparation decision"}
+    Decision -->|retryable and in budget| Retry["Fail Attempt; keep Run running; set available_at"]
+    Decision -->|permanent or exhausted| Fail["Fail Attempt and seal Run failed"]
+    Decision -->|continue| Receipts["Reconcile retained inbox evidence before new delivery"]
+    Receipts --> Outcome{"Outcome candidate present?"}
+    Outcome -->|yes| Verify["Verify output and current completion conditions"]
+    Verify --> Eligible{"Adoption permitted?"}
+    Eligible -->|yes| Seal["Fenced commit of exact Run outcome; no Harness entry"]
+    Eligible -->|no| Classify["Apply owning outcome or recovery failure rule"]
+    Outcome -->|no| Rebuild["Construct fresh runtime collaborators and ready or lazy Environment"]
+    Rebuild --> Input{"input_disposition"}
+    Input -->|pending| Apply["Import state and supply accepted Run input"]
+    Input -->|applied| Resume["Import state without resupplying accepted input"]
+    Apply --> Enter["Fence Harness entry; reconcile delivery at permitted hooks"]
+    Resume --> Enter
+    Enter --> Execute["Begin model or tool execution"]
+```
+
+Loss or inability to confirm Attempt authority at any stage closes local admission and cancels preparation or execution; the old owner does not submit a failure under stale authority. No pending inbox payload is offered before an eligible Harness boundary, and the waiting-successor first-request gate remains in force. A state receipt may be confirmed without offering any new input.
 
 Every Run-failure path records bounded `failure`, sets `sealed_at`, clears the current Attempt selection, freezes the deterministic state key, releases any acquired Environment use and updates retention, retains the failed Run as the Thread's current Run, preserves the prior continuation head, increments the Thread version, and appends Attempt and Run lifecycle facts as applicable. It records `sealed_state` only when exact valid state metadata is already available under the Run state contract.
 
