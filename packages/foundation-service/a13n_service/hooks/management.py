@@ -198,6 +198,12 @@ class HookSubscriptionService:
                 action=WorkspaceAction.secrets_bind,
             )
             require_hook_etag(head, if_match)
+            if head.inline_run_id is not None:
+                raise HookManagementError(
+                    "inline_hook_configuration_immutable",
+                    "An inline Hook subscription's configuration cannot be changed.",
+                    category=ErrorCategory.conflict,
+                )
             await validate_hook_scope(
                 database,
                 organization_id=head.organization_id,
@@ -245,7 +251,7 @@ class HookSubscriptionService:
             require_hook_etag(head, if_match)
             if head.enabled == request.enabled:
                 return head.to_resource(revision)
-            if request.enabled:
+            if request.enabled and head.expired_at is None:
                 try:
                     await require_hook_capacity(
                         database,

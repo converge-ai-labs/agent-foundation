@@ -16,7 +16,7 @@ from a13n_service.connectivity.selection_resolution import ConnectivitySelection
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
-from a13n_service.hooks.persistence import append_matching_webhook_outbox
+from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -67,9 +67,9 @@ async def open_process_runtime(
             shared = SharedRuntime(
                 storage=storage,
                 lifecycle=LifecycleWriter(
-                    (append_matching_webhook_outbox, append_matching_a2a_push_outbox)
+                    (write_hook_lifecycle, append_matching_a2a_push_outbox)
                     if settings.a2a_enabled
-                    else (append_matching_webhook_outbox,)
+                    else (write_hook_lifecycle,)
                 ),
                 secret_protector=settings.secret_protector(),
             )

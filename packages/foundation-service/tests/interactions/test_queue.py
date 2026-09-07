@@ -597,6 +597,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
 async def test_completion_time_handoff_seals_source_and_consumes_queue_atomically(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     states, source, initial = await _accept_root(interaction_sessions, interaction_object_store)
     await seed_hook_actor_access(interaction_sessions)
@@ -626,6 +627,22 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
             signing_secret_id=secret_id,
         ),
     )
+    from a13n_service.hooks.persistence import create_inline_hook_subscription
+
+    monkeypatch.setattr("a13n_service.hooks.persistence.MAX_ACTIVE_HOOK_SUBSCRIPTIONS", 1)
+    async with transaction(interaction_sessions) as database:
+        source_hook = await create_inline_hook_subscription(
+            database,
+            organization_id=ORGANIZATION_ID,
+            workspace_id=WORKSPACE_ID,
+            session_id=source.session_id,
+            thread_id=source.thread_id,
+            run_id=source.id,
+            actor_type="user",
+            actor_id=USER_ID,
+            subscription=hook,
+            now=NOW,
+        )
     endpoint = _RecordingEndpoint()
     inline_hooks = _inline_hooks(endpoint)
     scheduler = AttemptScheduler(
@@ -739,6 +756,9 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
             and hook_head is not None
             and delivery is not None
         )
+        expired_hook = await database.get(HookSubscriptionRecord, source_hook.id)
+        assert expired_hook is not None and expired_hook.expired_at == source_row.sealed_at
+        assert hook_head.expired_at is None
         assert source_row.status == "completed"
         assert successor_row.status == "accepted"
         assert attempt.status == "succeeded"

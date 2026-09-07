@@ -10,7 +10,7 @@ from pydantic_ai import prices
 
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
-from a13n_service.hooks.persistence import append_matching_webhook_outbox
+from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.domain import RunAttemptYieldReason
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.models.providers import built_in_provider_registry
@@ -50,9 +50,9 @@ async def open_runner_worker(settings: Settings, runner: BootstrappedPluginRunti
         shared = SharedRuntime(
             storage,
             LifecycleWriter(
-                (append_matching_webhook_outbox, append_matching_a2a_push_outbox)
+                (write_hook_lifecycle, append_matching_a2a_push_outbox)
                 if settings.a2a_enabled
-                else (append_matching_webhook_outbox,)
+                else (write_hook_lifecycle,)
             ),
             settings.secret_protector(),
         )

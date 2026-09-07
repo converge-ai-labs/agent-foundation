@@ -6,7 +6,11 @@ import pytest
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
-from a13n_service.hooks.persistence import HookSubscriptionInvariantError, create_inline_hook_subscription
+from a13n_service.hooks.persistence import (
+    HookSubscriptionInvariantError,
+    create_hook_subscription,
+    create_inline_hook_subscription,
+)
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import short_session, transaction
@@ -30,23 +34,24 @@ def _input(*hook_names: str) -> InlineHookSubscriptionInput:
     )
 
 
-async def test_inline_creation_precedes_matching_and_outbox_keeps_exact_revision(
+async def test_managed_revision_change_preserves_matching_and_outbox_keeps_exact_revision(
     hook_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await seed_run_and_secret(hook_interaction_sessions)
     async with transaction(hook_interaction_sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
         assert run is not None
-        subscription = await create_inline_hook_subscription(
+        subscription = await create_hook_subscription(
             database,
             organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
-            session_id=SESSION_ID,
-            thread_id=THREAD_ID,
-            run_id=RUN_ID,
             actor_type="user",
             actor_id=USER_ID,
-            subscription=_input("run.accepted", "run.completed"),
+            subscription=_input("run.accepted", "run.completed").bind_run_scope(
+                session_id=SESSION_ID,
+                thread_id=THREAD_ID,
+                run_id=RUN_ID,
+            ),
             now=NOW,
         )
         await test_lifecycle_writer().append_run_lifecycle(
@@ -225,3 +230,90 @@ async def test_postgresql_enforces_current_revision_and_matches_with_jsonb_gin(
         delivery = await database.scalar(select(OutboxRecord))
         assert delivery is not None
         assert delivery.destination_ref == subscription.current_revision_id
+
+
+@pytest.mark.parametrize("head_state", ["active", "paused", "deleted"])
+async def test_failure_before_first_attempt_expires_even_inactive_inline_heads(hook_interaction_sessions, head_state):
+    from a13n_service.interactions.scheduling import AttemptScheduler, SealedClaim
+
+    from tests.interactions.test_attempt_execution import _worker
+
+    sessions = hook_interaction_sessions
+    await seed_run_and_secret(sessions)
+    async with transaction(sessions) as database:
+        run = await database.get(RunRecord, RUN_ID)
+        run.recovery_deadline_at = NOW
+        head = await create_inline_hook_subscription(
+            database,
+            organization_id=ORGANIZATION_ID,
+            workspace_id=WORKSPACE_ID,
+            session_id=SESSION_ID,
+            thread_id=THREAD_ID,
+            run_id=RUN_ID,
+            actor_type="user",
+            actor_id=USER_ID,
+            subscription=_input("run.failed"),
+            now=NOW,
+        )
+        head.enabled = head_state != "paused"
+        head.deleted_at = NOW if head_state == "deleted" else None
+    result = await AttemptScheduler(
+        sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(RUN_ID, _worker())
+    assert isinstance(result, SealedClaim)
+    async with short_session(sessions) as database:
+        failed = await database.get(RunRecord, RUN_ID)
+        expired = await database.get(HookSubscriptionRecord, head.id)
+        assert failed.status == "failed" and failed.attempts_started == 0
+        assert expired.expired_at == failed.sealed_at
+        assert expired.enabled == (head_state != "paused")
+        assert (expired.deleted_at is not None) == (head_state == "deleted")
+        deliveries = (await database.scalars(select(OutboxRecord))).all()
+        assert len(deliveries) == (1 if head_state == "active" else 0)
+
+
+async def test_failed_sealing_transaction_rolls_back_inline_expiry(hook_interaction_sessions):
+    from a13n_service.hooks.persistence import write_hook_lifecycle
+    from a13n_service.interactions.lifecycle import LifecycleWriter
+    from a13n_service.interactions.scheduling import AttemptScheduler
+    from a13n_service.lifecycle.models import LifecycleEventRecord
+
+    from tests.interactions.test_attempt_execution import _worker
+
+    sessions = hook_interaction_sessions
+    await seed_run_and_secret(sessions)
+    async with transaction(sessions) as database:
+        run = await database.get(RunRecord, RUN_ID)
+        run.recovery_deadline_at = NOW
+        head = await create_inline_hook_subscription(
+            database,
+            organization_id=ORGANIZATION_ID,
+            workspace_id=WORKSPACE_ID,
+            session_id=SESSION_ID,
+            thread_id=THREAD_ID,
+            run_id=RUN_ID,
+            actor_type="user",
+            actor_id=USER_ID,
+            subscription=_input("run.failed"),
+            now=NOW,
+        )
+
+    async def abort_after_hooks(database, event):
+        expired = await database.get(HookSubscriptionRecord, head.id)
+        assert expired.expired_at is not None
+        raise RuntimeError("abort sealing")
+
+    scheduler = AttemptScheduler(
+        sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        lifecycle=LifecycleWriter((write_hook_lifecycle, abort_after_hooks)),
+    )
+    with pytest.raises(RuntimeError, match="abort sealing"):
+        await scheduler.claim(RUN_ID, _worker())
+    async with short_session(sessions) as database:
+        run = await database.get(RunRecord, RUN_ID)
+        retained = await database.get(HookSubscriptionRecord, head.id)
+        assert run.status == "accepted" and run.sealed_at is None
+        assert retained.expired_at is None and retained.enabled
+        assert await database.scalar(select(OutboxRecord.id)) is None
+        assert await database.scalar(select(LifecycleEventRecord.id)) is None

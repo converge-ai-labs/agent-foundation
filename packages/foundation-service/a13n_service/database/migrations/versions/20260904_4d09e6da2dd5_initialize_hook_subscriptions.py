@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("inline_run_id", sa.String(length=72), nullable=True),
+        sa.Column("expired_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
@@ -42,6 +43,18 @@ def upgrade() -> None:
             "updated_by_type IN ('user', 'service_account')", name=op.f("ck_hook_subscriptions_updated_by_type_valid")
         ),
         sa.CheckConstraint("version >= 1", name=op.f("ck_hook_subscriptions_version_positive")),
+        sa.CheckConstraint(
+            "inline_run_id IS NULL OR version = 1", name=op.f("ck_hook_subscriptions_inline_version_one")
+        ),
+        sa.CheckConstraint(
+            "expired_at IS NULL OR inline_run_id IS NOT NULL", name=op.f("ck_hook_subscriptions_expiry_inline_only")
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "inline_run_id"],
+            ["runs.organization_id", "runs.id"],
+            name=op.f("fk_hook_subscriptions_organization_id_runs"),
+            ondelete="RESTRICT",
+        ),
         sa.ForeignKeyConstraint(
             ["current_revision_id", "id", "organization_id", "workspace_id"],
             [
@@ -71,8 +84,8 @@ def upgrade() -> None:
         "hook_subscriptions",
         ["organization_id", "workspace_id", "id"],
         unique=False,
-        postgresql_where=sa.text("enabled AND deleted_at IS NULL"),
-        sqlite_where=sa.text("enabled = 1 AND deleted_at IS NULL"),
+        postgresql_where=sa.text("enabled AND deleted_at IS NULL AND expired_at IS NULL"),
+        sqlite_where=sa.text("enabled = 1 AND deleted_at IS NULL AND expired_at IS NULL"),
     )
     op.create_index(
         "ix_hook_subscriptions_workspace_updated",
@@ -205,10 +218,12 @@ def upgrade() -> None:
             initially="DEFERRED",
         )
     _create_revision_guards()
+    _create_inline_guards()
 
 
 def downgrade() -> None:
     """Remove the domain schema in reverse dependency order."""
+    _drop_inline_guards()
     _drop_revision_guards()
     if op.get_bind().dialect.name == "postgresql":
         op.drop_constraint("fk_hook_subscriptions_current_revision", "hook_subscriptions", type_="foreignkey")
@@ -240,8 +255,8 @@ def downgrade() -> None:
     op.drop_index(
         "ix_hook_subscriptions_active_workspace",
         table_name="hook_subscriptions",
-        postgresql_where=sa.text("enabled AND deleted_at IS NULL"),
-        sqlite_where=sa.text("enabled = 1 AND deleted_at IS NULL"),
+        postgresql_where=sa.text("enabled AND deleted_at IS NULL AND expired_at IS NULL"),
+        sqlite_where=sa.text("enabled = 1 AND deleted_at IS NULL AND expired_at IS NULL"),
     )
     op.drop_table("hook_subscriptions")
 
@@ -365,3 +380,68 @@ def _drop_revision_guards() -> None:
         return
     op.execute("DROP TRIGGER validate_hook_subscription_revision_insert")
     op.execute("DROP TRIGGER reject_hook_subscription_revision_update")
+
+
+def _create_inline_guards() -> None:
+    """Keep inline ownership, its single Revision, and expiry irreversible."""
+    postgres = op.get_bind().dialect.name == "postgresql"
+    differs = "IS DISTINCT FROM" if postgres else "IS NOT"
+    scope_invalid = f"""
+        EXISTS (
+            SELECT 1 FROM hook_subscriptions h
+            JOIN runs r ON r.organization_id = h.organization_id AND r.id = h.inline_run_id
+            JOIN sessions s ON s.organization_id = r.organization_id AND s.id = r.session_id
+            WHERE h.id = NEW.hook_subscription_id AND h.inline_run_id IS NOT NULL
+              AND (NEW.version <> 1 OR NEW.id {differs} h.current_revision_id
+                   OR NEW.run_id {differs} r.id OR NEW.thread_id {differs} r.thread_id
+                   OR NEW.session_id {differs} r.session_id OR NEW.workspace_id {differs} s.workspace_id)
+        )
+    """
+    fixed_head = " OR ".join(
+        f"NEW.{column} {differs} OLD.{column}"
+        for column in ("id", "organization_id", "workspace_id", "current_revision_id", "version")
+    )
+    head_changed = f"""
+        NEW.inline_run_id {differs} OLD.inline_run_id
+        OR (OLD.inline_run_id IS NOT NULL AND ({fixed_head}))
+        OR (OLD.expired_at IS NOT NULL AND NEW.expired_at {differs} OLD.expired_at)
+    """
+    for name, table, operation, condition in (
+        ("validate_inline_hook_revision", "hook_subscription_revisions", "INSERT", scope_invalid),
+        ("preserve_inline_hook_head", "hook_subscriptions", "UPDATE", head_changed),
+    ):
+        if postgres:
+            op.execute(f"""
+                CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF {condition} THEN
+                        RAISE EXCEPTION 'Inline Hook configuration and ownership are immutable';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$
+            """)
+            op.execute(f"""
+                CREATE TRIGGER {name} BEFORE {operation} ON {table}
+                FOR EACH ROW EXECUTE FUNCTION {name}()
+            """)
+        else:
+            op.execute(f"""
+                CREATE TRIGGER {name} BEFORE {operation} ON {table}
+                WHEN {condition}
+                BEGIN
+                    SELECT RAISE(ABORT, 'Inline Hook configuration and ownership are immutable');
+                END
+            """)
+
+
+def _drop_inline_guards() -> None:
+    for name, table in (
+        ("validate_inline_hook_revision", "hook_subscription_revisions"),
+        ("preserve_inline_hook_head", "hook_subscriptions"),
+    ):
+        if op.get_bind().dialect.name == "postgresql":
+            op.execute(f"DROP TRIGGER {name} ON {table}")
+            op.execute(f"DROP FUNCTION {name}()")
+        else:
+            op.execute(f"DROP TRIGGER {name}")

@@ -5,7 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    StringConstraints,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.domain import ObjectId, PrincipalRef
@@ -112,6 +121,21 @@ class InlineHookSubscriptionInput(_StrictModel):
         )
 
 
+class InlineHookRequest(_StrictModel):
+    """Run command selection: omission inherits, null opts out, an object replaces."""
+
+    hook_subscription: InlineHookSubscriptionInput | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_hook_selection(self, handler: SerializerFunctionWrapHandler):
+        payload = handler(self)
+        if "hook_subscription" not in self.model_fields_set:
+            payload.pop("hook_subscription", None)
+        elif self.hook_subscription is None:
+            payload["hook_subscription"] = None
+        return payload
+
+
 class CreateHookSubscriptionRequest(InlineHookSubscriptionInput):
     session_id: ObjectId | None = None
     thread_id: ThreadId | None = None
@@ -153,6 +177,8 @@ class HookSubscription(_StrictModel):
     current_revision_id: HookSubscriptionRevisionId
     workspace_id: ObjectId
     enabled: bool
+    inline_run_id: ObjectId | None = None
+    expired_at: datetime | None = None
     deleted_at: datetime | None = None
     created_by: PrincipalRef
     updated_by: PrincipalRef

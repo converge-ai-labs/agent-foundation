@@ -288,3 +288,70 @@ async def test_managed_hook_rejects_invalid_scope_destination_and_secret(
             request=_request(endpoint_url="https://127.0.0.1/hooks"),
         )
     assert endpoint.value.code == "invalid_webhook_endpoint"
+
+
+@pytest.mark.anyio
+async def test_inline_configuration_is_immutable_but_manual_state_remains_manageable(hook_interaction_sessions):
+    from a13n_service.hooks import InlineHookSubscriptionInput
+    from a13n_service.hooks.models import HookSubscriptionRecord
+    from a13n_service.hooks.persistence import create_inline_hook_subscription
+
+    from tests.interactions.conftest import ORGANIZATION_ID, SESSION_ID, THREAD_ID
+
+    sessions = hook_interaction_sessions
+    await _prepare(sessions)
+    service = HookSubscriptionService(sessions, EndpointPolicy(), clock=lambda: NOW)
+    async with transaction(sessions) as database:
+        head = await create_inline_hook_subscription(
+            database,
+            organization_id=ORGANIZATION_ID,
+            workspace_id=WORKSPACE_ID,
+            session_id=SESSION_ID,
+            thread_id=THREAD_ID,
+            run_id=RUN_ID,
+            actor_type="user",
+            actor_id=USER_ID,
+            subscription=InlineHookSubscriptionInput(hook_names=("run.accepted",), webhook=_request().webhook),
+            now=NOW,
+        )
+    created = await service.get(actor=hook_actor(), subscription_id=head.id)
+    assert created.inline_run_id == RUN_ID and created.expired_at is None
+    with pytest.raises(HookManagementError) as immutable:
+        await service.update_configuration(
+            actor=hook_actor(),
+            subscription_id=head.id,
+            if_match=resource_etag(head.id, created.updated_at),
+            request=UpdateHookSubscriptionRequest(
+                hook_names=created.current_revision.hook_names,
+                webhook=created.current_revision.webhook,
+                session_id=SESSION_ID,
+                thread_id=THREAD_ID,
+                run_id=RUN_ID,
+            ),
+        )
+    assert immutable.value.code == "inline_hook_configuration_immutable"
+    assert application_error_status(immutable.value) == 409
+    async with transaction(sessions) as database:
+        persisted = await database.get(HookSubscriptionRecord, head.id)
+        persisted.expired_at = NOW + timedelta(seconds=1)
+        persisted.updated_at = persisted.expired_at
+    expired = await service.get(actor=hook_actor(), subscription_id=head.id)
+    assert resource_etag(head.id, expired.updated_at) != resource_etag(head.id, created.updated_at)
+    for enabled in (False, True):
+        prior_etag = resource_etag(head.id, expired.updated_at)
+        expired = await service.update_state(
+            actor=hook_actor(),
+            subscription_id=head.id,
+            if_match=resource_etag(head.id, expired.updated_at),
+            request=UpdateHookSubscriptionStateRequest(enabled=enabled),
+        )
+        assert resource_etag(head.id, expired.updated_at) != prior_etag
+        assert expired.enabled is enabled and expired.expired_at == NOW + timedelta(seconds=1)
+        assert expired.version == 1 and expired.current_revision == created.current_revision
+    await service.delete(
+        actor=hook_actor(), subscription_id=head.id, if_match=resource_etag(head.id, expired.updated_at)
+    )
+    async with short_session(sessions) as database:
+        persisted = await database.get(HookSubscriptionRecord, head.id)
+        assert persisted.deleted_at is not None and persisted.expired_at is not None
+        assert await database.scalar(select(func.count(HookSubscriptionRevisionRecord.id))) == 1

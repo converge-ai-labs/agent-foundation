@@ -79,7 +79,7 @@ def require_hook_etag(head: HookSubscriptionRecord, if_match: str) -> None:
 def touch_hook(head: HookSubscriptionRecord, actor: AuthenticatedActor, now: datetime) -> None:
     head.updated_by_type = actor.principal.principal_type.value
     head.updated_by_id = actor.principal.principal_id
-    head.updated_at = now
+    head.touch(now)
 
 
 def hook_audit(

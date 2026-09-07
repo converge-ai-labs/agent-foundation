@@ -202,7 +202,7 @@ class QueuedSubmissionService:
                         expected_thread_version=request.expected_thread_version,
                         sealed_state_digest_sha256=request.waiting_resolution.sealed_state_digest_sha256,
                         input=request.input,
-                        hook_subscription=request.hook_subscription,
+                        **request.model_dump(include={"hook_subscription"}, exclude_unset=True),
                     ),
                     transaction_hook=commit_run,
                 )

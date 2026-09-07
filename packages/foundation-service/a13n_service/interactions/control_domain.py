@@ -19,7 +19,7 @@ from pydantic import (
 
 from a13n_service.agents.domain import AgentRunOverride
 from a13n_service.environments.domain import EnvironmentSelection
-from a13n_service.hooks.domain import InlineHookSubscriptionInput
+from a13n_service.hooks.domain import InlineHookRequest, InlineHookSubscriptionInput
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 
@@ -92,6 +92,10 @@ class ThreadRunSubmissionRequest(StrictModel):
             payload.pop("environment", None)
         elif self.environment is None:
             payload["environment"] = None
+        if "hook_subscription" not in self.model_fields_set:
+            payload.pop("hook_subscription", None)
+        elif self.hook_subscription is None:
+            payload["hook_subscription"] = None
         return payload
 
     def intent(self) -> ThreadRunSubmissionIntent:
@@ -137,11 +141,10 @@ SubmittedPendingResolution = Annotated[
 ]
 
 
-class WaitingRunFeedbackRequest(StrictModel):
+class WaitingRunFeedbackRequest(InlineHookRequest):
     expected_thread_version: int = Field(ge=1)
     sealed_state_digest_sha256: Sha256Digest
     resolutions: tuple[SubmittedPendingResolution, ...] = Field(default=(), max_length=256)
-    hook_subscription: InlineHookSubscriptionInput | None = None
 
     @field_validator("resolutions")
     @classmethod

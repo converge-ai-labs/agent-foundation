@@ -176,13 +176,6 @@ class CompletionQueueHandoffService:
                     workspace_id=session_record_value.workspace_id,
                     subscription=consumed.submission.hook_subscription,
                 )
-                successor_hook_subscription_id = await self._inline_hooks.create(
-                    database,
-                    run=successor_record,
-                    workspace_id=session_record_value.workspace_id,
-                    subscription=consumed.submission.hook_subscription,
-                    now=now,
-                )
                 mutation_id = new_mutation_id()
                 await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
@@ -194,6 +187,13 @@ class CompletionQueueHandoffService:
                     occurred_at=now,
                     actor_type="worker",
                     actor_id=attempt.worker_id,
+                )
+                successor_hook_subscription_id = await self._inline_hooks.create(
+                    database,
+                    run=successor_record,
+                    workspace_id=session_record_value.workspace_id,
+                    subscription=consumed.submission.hook_subscription,
+                    now=now,
                 )
                 await self._lifecycle.append_accepted_run_lifecycle(
                     database,

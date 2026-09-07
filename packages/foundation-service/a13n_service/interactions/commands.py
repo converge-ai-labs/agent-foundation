@@ -907,6 +907,9 @@ class InteractionCommands:
                 expected_current_run_id=source.id,
                 expected_head_run_id=thread.head_run_id,
                 next_head_run_id=thread.head_run_id,
+                hook_subscription=request.hook_subscription,
+                hook_source_run_id=source.id if "hook_subscription" not in request.model_fields_set else None,
+                hook_actor=actor.principal,
                 final_validator=validate_final,
                 transaction_hook=RunCommandCommit(actor, stored_key, request_fingerprint, self._clock()),
             )
@@ -1135,11 +1138,7 @@ class InteractionCommands:
             {
                 "expected_thread_version": request.expected_thread_version,
                 "feedback": normalized.model_dump(mode="json", by_alias=True),
-                "hook_subscription": (
-                    None
-                    if request.hook_subscription is None
-                    else request.hook_subscription.model_dump(mode="json", by_alias=True)
-                ),
+                **request.model_dump(mode="json", include={"hook_subscription"}),
             }
         )
         stored_key = _scoped_idempotency_key(
@@ -1237,6 +1236,8 @@ class InteractionCommands:
                 expected_head_run_id=source.id,
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
+                hook_source_run_id=source.id if "hook_subscription" not in request.model_fields_set else None,
+                hook_actor=actor.principal,
                 final_validator=validate_final,
                 transaction_hook=RunCommandCommit(
                     actor, stored_key, request_fingerprint, self._clock(), transaction_hook
@@ -1294,11 +1295,7 @@ class InteractionCommands:
             {
                 "expected_thread_version": request.expected_thread_version,
                 "waiting_continue": normalized.model_dump(mode="json", by_alias=True),
-                "hook_subscription": (
-                    None
-                    if request.hook_subscription is None
-                    else request.hook_subscription.model_dump(mode="json", by_alias=True)
-                ),
+                **request.model_dump(mode="json", include={"hook_subscription"}),
             }
         )
         stored_key = _scoped_idempotency_key(
@@ -1397,6 +1394,8 @@ class InteractionCommands:
                 expected_head_run_id=source.id,
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
+                hook_source_run_id=source.id if "hook_subscription" not in request.model_fields_set else None,
+                hook_actor=actor.principal,
                 final_validator=validate_final,
                 transaction_hook=RunCommandCommit(
                     actor, stored_key, request_fingerprint, self._clock(), transaction_hook

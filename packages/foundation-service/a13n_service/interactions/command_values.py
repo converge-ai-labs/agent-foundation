@@ -5,7 +5,7 @@ from pydantic import Field
 from a13n_service.agents.domain import AgentRunOverride
 from a13n_service.environments.domain import EnvironmentSelection
 from a13n_service.environments.selection import Omitted
-from a13n_service.hooks.domain import InlineHookSubscriptionInput
+from a13n_service.hooks.domain import InlineHookRequest, InlineHookSubscriptionInput
 
 from .domain import StrictModel
 from .input import AgentInput
@@ -39,14 +39,13 @@ class ContinueRunCommand(ContinueRunIntent):
     environment: EnvironmentSelection | Omitted | None = Omitted.UNSET
 
 
-class WaitingContinueRunCommand(StrictModel):
+class WaitingContinueRunCommand(InlineHookRequest):
     expected_thread_version: int = Field(ge=1)
     sealed_state_digest_sha256: str
     input: AgentInput
-    hook_subscription: InlineHookSubscriptionInput | None = None
 
 
-class RetryRunCommand(StrictModel):
+class RetryRunCommand(InlineHookRequest):
     expected_thread_version: int = Field(ge=1)
 
 

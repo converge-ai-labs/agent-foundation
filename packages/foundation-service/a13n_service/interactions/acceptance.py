@@ -17,6 +17,7 @@ from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
+from a13n_service.iam import PrincipalRef
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
 from a13n_service.interactions.environment_selection import queued_environment_choice
 from a13n_service.storage import short_session, transaction
@@ -148,6 +149,8 @@ class RunAcceptanceService:
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
         hook_subscription: InlineHookSubscriptionInput | None = None,
+        hook_source_run_id: str | None = None,
+        hook_actor: PrincipalRef | None = None,
         inherit_parent_environment: bool = False,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
@@ -157,9 +160,14 @@ class RunAcceptanceService:
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
-            await self._require_inline_hook_replay(run, hook_subscription)
+            if hook_source_run_id is None:
+                await self._require_inline_hook_replay(run, hook_subscription)
             return replay
-        await self._inline_hooks.validate_destination(hook_subscription)
+        hook_subscription = await self._inline_hooks.prepare(
+            run=run,
+            subscription=hook_subscription,
+            source_run_id=hook_source_run_id,
+        )
         candidate_payload = await self._verify_input_payload(run)
         await self._verify_retry_payload(run, candidate_payload)
         await self._publish_initial(run, state)
@@ -195,6 +203,8 @@ class RunAcceptanceService:
                     run=run,
                     workspace_id=session_record_value.workspace_id,
                     subscription=hook_subscription,
+                    source_run_id=hook_source_run_id,
+                    actor=hook_actor,
                 )
                 selected_environment = environment
                 if inherit_parent_environment and environment is Omitted.UNSET:

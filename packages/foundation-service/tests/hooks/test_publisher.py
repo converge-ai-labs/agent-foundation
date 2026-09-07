@@ -13,7 +13,7 @@ from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRe
 from a13n_service.hooks.outbox import (
     claim_webhook_deliveries,
 )
-from a13n_service.hooks.persistence import create_inline_hook_subscription
+from a13n_service.hooks.persistence import create_hook_subscription
 from a13n_service.hooks.publisher import WebhookPublisher
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets import SecretProtector
@@ -73,6 +73,7 @@ async def _prepare_delivery(
     sessions: async_sessionmaker[AsyncSession],
     *,
     endpoint_url: str = "https://hooks.example.com/foundation",
+    managed: bool = False,
 ) -> tuple[str, str, SecretProtector]:
     await seed_run_and_secret(sessions)
     protector = SecretProtector(key=b"0123456789abcdef0123456789abcdef", encryption_key_id="key-v1")
@@ -94,13 +95,11 @@ async def _prepare_delivery(
         secret.encryption_key_id = encrypted.encryption_key_id
         run = await database.get(RunRecord, RUN_ID)
         assert run is not None
-        subscription = await create_inline_hook_subscription(
+        subscription = await create_hook_subscription(
             database,
             organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
-            session_id=SESSION_ID,
-            thread_id=THREAD_ID,
-            run_id=RUN_ID,
+            inline_run_id=None if managed else RUN_ID,
             actor_type="user",
             actor_id=USER_ID,
             subscription=InlineHookSubscriptionInput(
@@ -109,7 +108,7 @@ async def _prepare_delivery(
                     endpoint_url=endpoint_url,
                     signing_secret_id=SECRET_ID,
                 ),
-            ),
+            ).bind_run_scope(session_id=SESSION_ID, thread_id=THREAD_ID, run_id=RUN_ID),
             now=NOW,
         )
         await test_lifecycle_writer().append_run_lifecycle(
@@ -128,10 +127,22 @@ async def _prepare_delivery(
     return delivery_id, revision_id, protector
 
 
+@pytest.mark.parametrize("head_state", ["active", "expired", "paused", "deleted"])
 async def test_publisher_sends_signed_canonical_envelope_and_marks_published(
     hook_interaction_sessions: async_sessionmaker[AsyncSession],
+    head_state: str,
 ) -> None:
-    delivery_id, _, protector = await _prepare_delivery(hook_interaction_sessions)
+    delivery_id, revision_id, protector = await _prepare_delivery(hook_interaction_sessions)
+    if head_state != "active":
+        async with transaction(hook_interaction_sessions) as database:
+            revision = await database.get(HookSubscriptionRevisionRecord, revision_id)
+            head = await database.get(HookSubscriptionRecord, revision.hook_subscription_id)
+            if head_state == "expired":
+                head.expired_at = NOW
+            elif head_state == "paused":
+                head.enabled = False
+            else:
+                head.deleted_at = NOW
     requests: list[httpx2.Request] = []
 
     def respond(request: httpx2.Request) -> httpx2.Response:
@@ -174,7 +185,7 @@ async def test_publisher_sends_signed_canonical_envelope_and_marks_published(
 async def test_publisher_resolves_the_exact_revision_selected_by_source_commit(
     hook_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    _, original_revision_id, protector = await _prepare_delivery(hook_interaction_sessions)
+    _, original_revision_id, protector = await _prepare_delivery(hook_interaction_sessions, managed=True)
     async with transaction(hook_interaction_sessions) as database:
         original = await database.get(HookSubscriptionRevisionRecord, original_revision_id)
         assert original is not None

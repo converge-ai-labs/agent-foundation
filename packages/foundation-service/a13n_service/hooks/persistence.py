@@ -110,6 +110,7 @@ async def create_hook_subscription(
         current_revision_id=revision_id,
         enabled=True,
         inline_run_id=inline_run_id,
+        expired_at=None,
         deleted_at=None,
         created_by_type=actor_type,
         created_by_id=actor_id,
@@ -151,6 +152,7 @@ async def require_hook_capacity(
             HookSubscriptionRecord.organization_id == organization_id,
             HookSubscriptionRecord.workspace_id == workspace_id,
             HookSubscriptionRecord.enabled.is_(True),
+            HookSubscriptionRecord.expired_at.is_(None),
             HookSubscriptionRecord.deleted_at.is_(None),
         )
     )
@@ -203,11 +205,11 @@ async def read_hook_subscriptions(
     return tuple((head, revision) for head, revision in rows)
 
 
-async def append_matching_webhook_outbox(
+async def write_hook_lifecycle(
     database: AsyncSession,
     event: LifecycleEventRecord,
 ) -> tuple[OutboxRecord, ...]:
-    """Lock current matching heads and append one delivery intent per Revision."""
+    """Append matching delivery intents, then expire inline Hooks on sealed Runs."""
 
     workspace = await _lock_event_workspace(database, event)
     statement = (
@@ -220,6 +222,7 @@ async def append_matching_webhook_outbox(
             HookSubscriptionRecord.organization_id == event.organization_id,
             HookSubscriptionRecord.workspace_id == workspace.id,
             HookSubscriptionRecord.enabled.is_(True),
+            HookSubscriptionRecord.expired_at.is_(None),
             HookSubscriptionRecord.deleted_at.is_(None),
             or_(
                 HookSubscriptionRevisionRecord.session_id.is_(None),
@@ -271,6 +274,20 @@ async def append_matching_webhook_outbox(
     )
     database.add_all(records)
     await database.flush()
+    if event.event_type in {"run.waiting", "run.completed", "run.failed", "run.cancelled"}:
+        inline = await database.scalar(
+            select(HookSubscriptionRecord)
+            .where(
+                HookSubscriptionRecord.organization_id == event.organization_id,
+                HookSubscriptionRecord.inline_run_id == event.run_id,
+                HookSubscriptionRecord.expired_at.is_(None),
+            )
+            .with_for_update()
+        )
+        if inline is not None:
+            inline.expired_at = event.occurred_at
+            inline.touch(event.occurred_at)
+            await database.flush()
     return records
 
 
@@ -279,20 +296,22 @@ async def load_inline_hook_subscription(
     *,
     organization_id: str,
     run_id: str,
+    lock: bool = False,
 ) -> tuple[HookSubscriptionRecord, HookSubscriptionRevisionRecord] | None:
-    row = (
-        await database.execute(
-            select(HookSubscriptionRecord, HookSubscriptionRevisionRecord)
-            .join(
-                HookSubscriptionRevisionRecord,
-                HookSubscriptionRevisionRecord.id == HookSubscriptionRecord.current_revision_id,
-            )
-            .where(
-                HookSubscriptionRecord.organization_id == organization_id,
-                HookSubscriptionRecord.inline_run_id == run_id,
-            )
+    statement = (
+        select(HookSubscriptionRecord, HookSubscriptionRevisionRecord)
+        .join(
+            HookSubscriptionRevisionRecord,
+            HookSubscriptionRevisionRecord.id == HookSubscriptionRecord.current_revision_id,
         )
-    ).one_or_none()
+        .where(
+            HookSubscriptionRecord.organization_id == organization_id,
+            HookSubscriptionRecord.inline_run_id == run_id,
+        )
+    )
+    if lock:
+        statement = statement.with_for_update(of=HookSubscriptionRecord)
+    row = (await database.execute(statement)).one_or_none()
     return None if row is None else (row[0], row[1])
 
 
@@ -349,7 +368,6 @@ __all__ = [
     "MAX_ACTIVE_HOOK_SUBSCRIPTIONS",
     "HookSubscriptionInvariantCode",
     "HookSubscriptionInvariantError",
-    "append_matching_webhook_outbox",
     "create_hook_subscription",
     "create_inline_hook_subscription",
     "load_inline_hook_subscription",
@@ -357,4 +375,5 @@ __all__ = [
     "read_hook_subscriptions",
     "require_active_workspace_secret",
     "require_hook_capacity",
+    "write_hook_lifecycle",
 ]

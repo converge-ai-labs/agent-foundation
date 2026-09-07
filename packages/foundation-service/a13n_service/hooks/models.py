@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import (
     JSON,
@@ -56,13 +56,20 @@ class HookSubscriptionRecord(Base):
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
         UniqueConstraint("id", "organization_id", "workspace_id", name="uq_hook_subscriptions_organization_id"),
         UniqueConstraint("organization_id", "inline_run_id", name="uq_hook_subscriptions_inline_run"),
+        ForeignKeyConstraint(
+            ("organization_id", "inline_run_id"),
+            ("runs.organization_id", "runs.id"),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("inline_run_id IS NULL OR version = 1", name="inline_version_one"),
+        CheckConstraint("expired_at IS NULL OR inline_run_id IS NOT NULL", name="expiry_inline_only"),
         Index(
             "ix_hook_subscriptions_active_workspace",
             "organization_id",
             "workspace_id",
             "id",
-            postgresql_where=text("enabled AND deleted_at IS NULL"),
-            sqlite_where=text("enabled = 1 AND deleted_at IS NULL"),
+            postgresql_where=text("enabled AND deleted_at IS NULL AND expired_at IS NULL"),
+            sqlite_where=text("enabled = 1 AND deleted_at IS NULL AND expired_at IS NULL"),
         ),
         Index("ix_hook_subscriptions_workspace_updated", "organization_id", "workspace_id", "updated_at", "id"),
     )
@@ -74,6 +81,7 @@ class HookSubscriptionRecord(Base):
     current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     inline_run_id: Mapped[str | None] = mapped_column(String(72))
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -82,6 +90,10 @@ class HookSubscriptionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    def touch(self, now: datetime) -> None:
+        """Advance ETag evidence even when mutations share a clock timestamp."""
+        self.updated_at = max(assume_utc(now), assume_utc(self.updated_at) + timedelta(microseconds=1))
+
     def to_resource(self, revision: HookSubscriptionRevisionRecord) -> HookSubscription:
         return HookSubscription(
             id=self.id,
@@ -89,6 +101,8 @@ class HookSubscriptionRecord(Base):
             current_revision_id=self.current_revision_id,
             workspace_id=self.workspace_id,
             enabled=self.enabled,
+            inline_run_id=self.inline_run_id,
+            expired_at=optional_assume_utc(self.expired_at),
             deleted_at=optional_assume_utc(self.deleted_at),
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
