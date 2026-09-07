@@ -51,7 +51,7 @@ The operation serializes concurrent uses of the same evidence scope. The same ke
 
 Idempotency evidence commits in the same relational transaction as the accepted mutation and result reference. An operation does not hold an idempotency reservation or database transaction across external I/O. If acceptance requires an external effect, Service first commits durable intent and performs the effect outside the transaction under an owning idempotency or reconciliation contract.
 
-Eligibility ends exactly at expiry. A bounded control-plane retention sweep physically deletes expired HTTP evidence independently of protocol bindings, execution identities, and audit retention. Receipts preserve accepted response facts instead of reconstructing them from later mutable resource state.
+Eligibility ends exactly at expiry. A bounded control-plane retention sweep physically deletes expired HTTP evidence independently of protocol bindings, execution identities, and audit retention, under [Control Background Tasks](07-control-background-tasks.md#evidence-and-lifecycle-retention). Receipts preserve accepted response facts instead of reconstructing them from later mutable resource state.
 
 Expired or absent evidence does not prove that an earlier operation was never dispatched. Clients do not invent a new key merely because an acknowledgement was lost.
 
@@ -126,6 +126,8 @@ Publication is at least once:
 A claim increments `claim_generation`; completion succeeds only for the current generation. A crash or lease expiry can therefore duplicate delivery but cannot let a stale publisher record success. Retry preserves the same source identity and uses durable `available_at`. `published` means the configured destination acknowledged, not that an end user processed the event. Dead-lettering emits an operational and security-safe diagnostic, and an authorized redrive reuses the same record and source identity.
 
 Published records remain for a bounded delivery-audit and duplicate-suppression horizon. Dead-lettered records remain redriveable only for a bounded configured horizon. An owning source or destination record cannot be removed while a retained Outbox record can still be delivered or redriven; after the owning horizon expires, cleanup can remove the delivery record and release those retention dependencies together.
+
+The [control retention task](07-control-background-tasks.md#evidence-and-lifecycle-retention) periodically collects eligible records across Outbox source kinds. A delivery horizon releases only its own dependency; an owning operation's unfinished progress and other required evidence remain retained until their own completion and retention conditions allow deletion.
 
 Redis Streams, Pub/Sub, SSE, WebSocket, webhook, and analytical sinks are delivery mechanisms, not relational transactions. Redis is a required distributed dependency, but successful Redis publication alone never proves that the source domain mutation committed. The owning delivery contract defines whether a Redis value is retained, replayable, or intentionally live-only.
 

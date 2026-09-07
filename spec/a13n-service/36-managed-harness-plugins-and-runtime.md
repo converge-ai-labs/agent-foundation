@@ -159,6 +159,8 @@ sequenceDiagram
 
 No relational session or transaction spans request streaming, archive inspection, package-index access, or object-store I/O. Objects are create-only and addressed internally by digest. A retry reconciles an existing object and Version by identity and digest. A failed upload creates no PluginVersion; staged unreferenced bytes are safe reconciliation and garbage-collection candidates.
 
+[Control Background Tasks](07-control-background-tasks.md#objects-and-upload-evidence) owns periodic orphan collection after ownership and concurrent-publication checks. Collection preserves the authoritative artifact and Runtime-lock retention below; an archived Plugin or absent local Runner does not make a successful artifact orphaned.
+
 The authoritative store retains:
 
 - every successful PluginVersion Wheel;

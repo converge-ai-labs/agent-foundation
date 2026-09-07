@@ -441,6 +441,7 @@ class RunAcceptanceService:
         expected_queue_version: int,
         expected_current_run_id: str | None,
         expected_head_run_id: str | None,
+        revalidate: Callable[[AsyncSession], Awaitable[bool]] | None = None,
     ) -> QueuedSubmissionConsumptionReceipt:
         """Record locked permanent invalidity without accepting a Run."""
 
@@ -457,6 +458,8 @@ class RunAcceptanceService:
                 raise RunAcceptanceError("queue_version_conflict", "Thread queue generation changed")
             current = await _load_run(database, organization_id, thread.current_run_id)
             await _require_queue_drain_state(database, thread, current)
+            if revalidate is not None and not await revalidate(database):
+                raise RunAcceptanceError("queue_failure_changed", "Queued intent is no longer permanently invalid")
             try:
                 failed = await fail_first_submission(
                     database,

@@ -420,3 +420,116 @@ async def _seal_parent(
         row = await database.get(RunRecord, parent.id)
         assert row is not None
         return row.to_resource()
+
+
+async def test_periodic_recovery_expires_bound_result_and_releases_capacity(
+    interaction_sessions,
+    interaction_object_store,
+):
+    states, parent, _, child_run_id = await _accept_child(interaction_sessions, interaction_object_store)
+    await _fail_child(interaction_sessions, child_run_id)
+    replays = RunReplayStore(interaction_object_store)
+    result = await AsyncSubagentResultPublisher(
+        interaction_sessions, replays, clock=lambda: NOW + timedelta(seconds=5)
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
+    async with transaction(interaction_sessions) as database:
+        entry = await database.get(ThreadInboxRecord, result.id)
+        assert entry.target_run_id == parent.id
+        entry.expires_at = NOW + timedelta(seconds=6)
+    reconciler = AsyncSubagentSuccessorReconciler(
+        interaction_sessions, states, replays, clock=lambda: NOW + timedelta(seconds=7)
+    )
+    assert (await reconciler.scan()).completed == 1
+    assert (await reconciler.scan()).completed == 0
+    async with short_session(interaction_sessions) as database:
+        entry = await database.get(ThreadInboxRecord, result.id)
+        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        assert entry.status == "expired" and entry.target_run_id is None
+        assert (counter.pending_count, counter.pending_bytes) == (0, 0)
+        assert (await database.get(ThreadRecord, parent.thread_id)).current_run_id == parent.id
+
+
+async def test_completed_inline_hook_collects_only_after_delivery_retention_ends(
+    interaction_sessions,
+    interaction_object_store,
+):
+    from a13n_service.durable_operations.outbox import claim_outbox, complete_outbox
+    from a13n_service.hooks.domain import InlineHookSubscriptionInput, WebhookDestinationConfig
+    from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
+    from a13n_service.hooks.persistence import create_inline_hook_subscription
+    from a13n_service.hooks.retention import HookRetention
+    from a13n_service.lifecycle.retention import LifecycleRetentionReconciler
+    from a13n_service.secrets.models import SecretRecord
+
+    from .conftest import USER_ID, WORKSPACE_ID
+
+    states, parent, authority, _ = await _accept_child(interaction_sessions, interaction_object_store)
+    async with transaction(interaction_sessions) as database:
+        database.add(
+            SecretRecord(
+                id="sec_7777777777777777",
+                organization_id=ORGANIZATION_ID,
+                workspace_id=WORKSPACE_ID,
+                owner_type="workspace",
+                owner_id=WORKSPACE_ID,
+                key="hook",
+                version=1,
+                ciphertext=b"encrypted",
+                nonce=b"0" * 12,
+                encryption_key_id="test-key",
+                created_at=NOW,
+                value_updated_at=NOW,
+            )
+        )
+        await database.flush()
+        head = await create_inline_hook_subscription(
+            database,
+            organization_id=ORGANIZATION_ID,
+            workspace_id=WORKSPACE_ID,
+            session_id=parent.session_id,
+            thread_id=parent.thread_id,
+            run_id=parent.id,
+            actor_type="user",
+            actor_id=USER_ID,
+            now=NOW,
+            subscription=InlineHookSubscriptionInput(
+                hook_names=("run.completed",),
+                webhook=WebhookDestinationConfig(
+                    endpoint_url="https://example.com/hook", signing_secret_id="sec_7777777777777777"
+                ),
+            ),
+        )
+        head_id, revision_id = head.id, head.current_revision_id
+    await _seal_parent(interaction_sessions, interaction_object_store, states, parent, authority, outcome="completed")
+    async with short_session(interaction_sessions) as database:
+        assert (await database.get(HookSubscriptionRecord, head_id)).expired_at is not None
+    assert (
+        await HookRetention(interaction_sessions, minimum_age=timedelta(days=1), batch_limit=10).scan()
+    ).completed == 0
+    async with transaction(interaction_sessions) as database:
+        claims = await claim_outbox(
+            database,
+            source_kind="lifecycle_event",
+            destination_kind="webhook",
+            now=NOW + timedelta(days=1),
+            lease_duration=timedelta(seconds=30),
+            limit=10,
+        )
+        assert len(claims) == 1
+        assert await complete_outbox(database, claims[0], completed_at=NOW + timedelta(days=1))
+    await LifecycleRetentionReconciler(
+        interaction_sessions,
+        event_horizon=timedelta(days=1),
+        published_delivery_horizon=timedelta(days=1),
+        dead_letter_horizon=timedelta(days=1),
+        poll_interval_seconds=1,
+        batch_limit=10,
+        clock=lambda: NOW + timedelta(days=3),
+    ).reconcile_once()
+    assert (
+        await HookRetention(interaction_sessions, minimum_age=timedelta(days=1), batch_limit=10).scan()
+    ).completed == 2
+    async with short_session(interaction_sessions) as database:
+        assert await database.get(HookSubscriptionRecord, head_id) is None
+        assert await database.get(HookSubscriptionRevisionRecord, revision_id) is None
+        assert await database.get(RunRecord, parent.id) is not None

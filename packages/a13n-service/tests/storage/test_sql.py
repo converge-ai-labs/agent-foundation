@@ -111,6 +111,68 @@ def test_database_urls_select_sync_and_async_drivers(tmp_path: Path) -> None:
     assert sync_database_url(postgresql).drivername == "postgresql+psycopg"
 
 
+@pytest.mark.parametrize("write", [False, True])
+async def test_cancellation_during_database_io_finishes_cleanup_before_propagating(sql_resources, write) -> None:
+    engine, sessions = sql_resources
+    entered = anyio.Event()
+    completed_after_scope = False
+    is_sqlite = engine.dialect.name == "sqlite"
+    if is_sqlite:
+        import time
+
+        async with engine.connect() as connection:
+            await connection.run_sync(lambda sync: sync.connection.create_function("test_wait", 1, time.sleep))
+    statement = "SELECT test_wait(0.05)" if is_sqlite else "SELECT pg_sleep(0.05)"
+
+    def started(_conn, _cursor, sql, _parameters, _context, _many):
+        if sql == statement:
+            entered.set()
+
+    event.listen(engine.sync_engine, "before_cursor_execute", started)
+
+    async def query():
+        nonlocal completed_after_scope
+        context = transaction if write else short_session
+        async with context(sessions) as session:
+            if write:
+                await session.execute(insert(records).values(id=99, name="cancelled"))
+            await session.execute(text(statement))
+        completed_after_scope = True
+
+    try:
+        with anyio.fail_after(2):
+            async with anyio.create_task_group() as group:
+                group.start_soon(query)
+                await entered.wait()
+                group.cancel_scope.cancel()
+        assert not completed_after_scope
+        assert engine.pool.checkedout() == 0
+        async with short_session(sessions) as session:
+            assert await session.scalar(text("SELECT 1")) == 1
+            assert (await session.execute(select(records))).all() == []
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", started)
+
+
+async def test_database_scope_honors_the_callers_earlier_deadline(sql_resources) -> None:
+    engine, sessions = sql_resources
+    if engine.dialect.name == "sqlite":
+        import time
+
+        async with engine.connect() as connection:
+            await connection.run_sync(lambda sync: sync.connection.create_function("test_wait", 1, time.sleep))
+        statement = "SELECT test_wait(0.1)"
+    else:
+        statement = "SELECT pg_sleep(0.1)"
+    with pytest.raises(TimeoutError):
+        with anyio.fail_after(0.01):
+            async with short_session(sessions) as session:
+                await session.execute(text(statement))
+    assert engine.pool.checkedout() == 0
+    async with short_session(sessions) as session:
+        assert await session.scalar(text("SELECT 1")) == 1
+
+
 @pytest.mark.parametrize("scope_factory", [short_session, transaction])
 async def test_cancelled_write_rolls_back_and_releases_connection(sql_resources, scope_factory, caplog) -> None:
     engine, sessions = sql_resources
@@ -208,7 +270,7 @@ async def test_cancellation_during_commit_returns_connection_before_propagating(
     assert "Exception" not in caplog.text
 
 
-async def test_cancelled_sqlite_query_drains_worker_before_reusing_connection(tmp_path: Path) -> None:
+async def test_cancelled_sqlite_query_drains_worker_before_closing_connection(tmp_path: Path) -> None:
     engine = create_sql_engine(SQLiteConfig(path=tmp_path / "cancel-query.sqlite3"))
     sessions = create_session_factory(engine)
     started, release = Event(), Event()
@@ -248,4 +310,50 @@ async def test_cancelled_sqlite_query_drains_worker_before_reusing_connection(tm
             assert (await session.execute(text("SELECT 1"))).scalar_one() == 1
     finally:
         release.set()
+        await engine.dispose()
+
+
+async def test_cancelled_sqlite_read_does_not_retain_snapshot(tmp_path: Path, monkeypatch) -> None:
+    import aiosqlite
+
+    config = SQLiteConfig(path=tmp_path / "cancel-read.sqlite3")
+    engine = create_sql_engine(config)
+    writer = create_sql_engine(config)
+    sessions = create_session_factory(engine)
+    errors = []
+    original = aiosqlite.Cursor.execute
+    cancellation = anyio.CancelScope()
+
+    async def cancel_after_read(cursor, sql, parameters=None):
+        result = await original(cursor, sql, parameters)
+        if sql.startswith("SELECT storage_contract_records"):
+            cancellation.cancel()
+            await anyio.lowlevel.checkpoint()
+        return result
+
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(metadata.create_all)
+            await connection.execute(insert(records).values(id=1, name="original"))
+        with monkeypatch.context() as patch:
+            patch.setattr(aiosqlite.Cursor, "execute", cancel_after_read)
+            with cancellation:
+                try:
+                    async with short_session(sessions) as session:
+                        await session.execute(select(records))
+                except asyncio.CancelledError as error:
+                    # A caller may retain the traceback until well after cleanup.
+                    errors.append(error)
+                    raise
+        assert cancellation.cancelled_caught
+        async with writer.begin() as connection:
+            await connection.execute(records.update().values(name="other-writer"))
+        async with transaction(sessions) as session:
+            await session.execute(records.update().values(name="reused-pool"))
+        async with short_session(sessions) as session:
+            assert (await session.execute(select(records.c.name))).scalar_one() == "reused-pool"
+        assert engine.pool.checkedout() == 0
+    finally:
+        errors.clear()
+        await writer.dispose()
         await engine.dispose()

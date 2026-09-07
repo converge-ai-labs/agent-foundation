@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
+from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -28,6 +29,7 @@ from .models import (
     SkillRevisionRecord,
     SkillUploadRecord,
 )
+from .package import skill_package_object_key
 from .persistence import (
     lock_active_skill,
     require_owned_upload,
@@ -439,6 +441,10 @@ class SkillPublicationService:
         prepared: PreparedSkillSource,
         now: datetime,
     ) -> SkillUploadRecord | None:
+        await require_object_publications(
+            session,
+            (skill_package_object_key(organization_id, workspace_id, prepared.package.manifest.content_digest),),
+        )
         if prepared.upload_id is None:
             return None
         upload = await require_owned_upload(

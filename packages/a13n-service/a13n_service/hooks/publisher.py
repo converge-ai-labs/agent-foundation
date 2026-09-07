@@ -11,7 +11,9 @@ import anyio
 import httpx2
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.durable_operations.outbox import OutboxClaim, complete_outbox, fail_outbox
+from a13n_service.durable_operations.publication import dispatch_outbox_batch
 from a13n_service.endpoint_policy import EndpointPolicyError
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
@@ -78,16 +80,17 @@ class WebhookPublisher:
         self._clock = clock or utc_now
 
     async def run(self) -> None:
-        while True:
-            try:
-                await self.publish_once()
-            except anyio.get_cancelled_exc_class():
-                raise
-            except Exception:
-                logger.exception("webhook_publish_batch_failed", extra={"event": "webhook_publish_batch_failed"})
-            await anyio.sleep(self._poll_interval_seconds)
+        await PeriodicTask(
+            "webhook_publication",
+            self.scan,
+            interval_seconds=self._poll_interval_seconds,
+            timeout_seconds=self._lease_duration.total_seconds() + self._delivery_timeout_seconds + 1,
+        ).run()
 
     async def publish_once(self) -> int:
+        return (await self.scan()).examined
+
+    async def scan(self) -> Sweep:
         async with transaction(self._sessions) as database:
             claims = await claim_webhook_deliveries(
                 database,
@@ -95,10 +98,14 @@ class WebhookPublisher:
                 lease_duration=self._lease_duration,
                 limit=self._claim_limit,
             )
-        async with anyio.create_task_group() as deliveries:
-            for claim in claims:
-                deliveries.start_soon(self._publish_claim, claim)
-        return len(claims)
+        return await dispatch_outbox_batch(
+            self._sessions,
+            claims,
+            self._publish_claim,
+            timeout_seconds=self._lease_duration.total_seconds() + self._delivery_timeout_seconds,
+            concurrency=self._claim_limit,
+            clock=self._now,
+        )
 
     async def _publish_claim(self, claim: OutboxClaim) -> None:
         try:

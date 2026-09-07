@@ -330,6 +330,11 @@ class PluginRuntimeLockStore:
             if _validated_record(existing) != runtime_lock:
                 raise PluginRuntimeLockError("plugin_runtime_lock_digest_conflict")
             return
+        from a13n_service.object_retention.persistence import require_object_publications
+
+        await require_object_publications(
+            session, (item.artifact_ref for item in runtime_lock.distributions if item.artifact_ref is not None)
+        )
         try:
             async with session.begin_nested():
                 session.add(

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
+import anyio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.object_retention.collector import ObjectCollector
 from a13n_service.storage.object_store import (
     ObjectInfo,
     ObjectStore,
@@ -96,16 +102,23 @@ class AssetObjectStore:
     async def delete_candidate(
         self,
         *,
+        sessions: async_sessionmaker[AsyncSession],
         asset_id: str,
         organization_id: str,
         workspace_id: str,
     ) -> None:
         try:
-            await self.delete_content(
-                organization_id=organization_id,
-                workspace_id=workspace_id,
-                asset_id=asset_id,
+            collector = ObjectCollector(
+                sessions, self._objects, minimum_age=timedelta(0), batch_limit=1, item_timeout_seconds=5
             )
+            with anyio.fail_after(5):
+                await collector.collect_unowned(
+                    asset_content_key(
+                        organization_id=organization_id,
+                        workspace_id=workspace_id,
+                        asset_id=asset_id,
+                    )
+                )
         except Exception:
             return
 

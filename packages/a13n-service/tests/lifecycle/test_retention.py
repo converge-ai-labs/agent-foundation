@@ -310,3 +310,28 @@ async def test_retention_rejects_invalid_policy(
             poll_interval_seconds=60,
             batch_limit=100,
         )
+
+
+async def test_asset_cleanup_retention_preserves_unfinished_progress(lifecycle_interaction_sessions):
+    sessions = lifecycle_interaction_sessions
+    now = NOW + timedelta(days=100)
+    async with transaction(sessions) as database:
+        for index, status in enumerate(("published", "dead_lettered", "pending"), start=70):
+            record = _delivery(
+                suffix=index, source_id=f"ast_{index}", status=status, timestamp=now - timedelta(days=40)
+            )
+            record.source_kind = "asset"
+            record.destination_kind = "asset_content_cleanup"
+            database.add(record)
+    reconciler = LifecycleRetentionReconciler(
+        sessions,
+        event_horizon=timedelta(days=30),
+        published_delivery_horizon=timedelta(days=7),
+        dead_letter_horizon=timedelta(days=30),
+        poll_interval_seconds=60,
+        batch_limit=100,
+        clock=lambda: now,
+    )
+    assert (await reconciler.reconcile_once()).outbox_records_deleted == 1
+    async with short_session(sessions) as database:
+        assert set(await database.scalars(select(OutboxRecord.status))) == {"dead_lettered", "pending"}

@@ -6,10 +6,12 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import anyio
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.background import Sweep
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.control_domain import (
     ThreadInboxEntry,
@@ -26,7 +28,7 @@ from a13n_service.interactions.inbox_persistence import (
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.run_stream import RunReplayStore
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import ChildRunRelationship
@@ -201,6 +203,9 @@ class AsyncSubagentResultPublisher:
     async def reconcile_once(self, *, limit: int = 64) -> int:
         """Publish a bounded batch of sealed children that lack inbox evidence."""
 
+        return (await self.scan(limit=limit)).completed
+
+    async def scan(self, *, limit: int = 64, item_timeout_seconds: float = 30) -> Sweep:
         if limit < 1 or limit > 1024:
             raise ValueError("child result reconciliation limit is invalid")
         async with short_session(self._sessions) as database:
@@ -211,6 +216,7 @@ class AsyncSubagentResultPublisher:
                             ChildRunRelationshipRecord.organization_id,
                             ChildRunRelationshipRecord.child_run_id,
                             ChildRunRelationshipRecord.id,
+                            RunRecord.sealed_at,
                         )
                         .join(
                             RunRecord,
@@ -234,11 +240,15 @@ class AsyncSubagentResultPublisher:
                 .tuples()
                 .all()
             )
-        self._after_relationship_id = candidates[-1][2] if len(candidates) == limit else ""
+        if not candidates:
+            self._after_relationship_id = ""
+            return Sweep()
         published = 0
-        for organization_id, child_run_id, _ in candidates:
+        for organization_id, child_run_id, relationship_id, _ in candidates:
+            self._after_relationship_id = relationship_id
             try:
-                await self.publish(organization_id=organization_id, child_run_id=child_run_id)
+                with anyio.fail_after(item_timeout_seconds):
+                    await self.publish(organization_id=organization_id, child_run_id=child_run_id)
             except ThreadInboxCapacityExceeded:
                 logger.info(
                     "async_subagent_result_capacity_deferred",
@@ -251,15 +261,23 @@ class AsyncSubagentResultPublisher:
                     extra={"event": "async_subagent_result_item_deferred", "child_run_id": child_run_id},
                 )
                 continue
-            except AsyncSubagentResultError:
+            except (AsyncSubagentResultError, ThreadInboxConflict, ObjectStoreError, TimeoutError):
                 logger.warning(
-                    "async_subagent_result_rejected",
-                    extra={"event": "async_subagent_result_rejected", "child_run_id": child_run_id},
-                    exc_info=True,
+                    "async_subagent_result_recovery_deferred",
+                    extra={"event": "async_subagent_result_recovery_deferred", "child_run_id": child_run_id},
                 )
                 continue
             published += 1
-        return published
+        return Sweep(
+            examined=len(candidates),
+            completed=published,
+            deferred=len(candidates) - published,
+            oldest_age_seconds=max(
+                (assume_utc(self._clock()) - assume_utc(sealed)).total_seconds()
+                for _, _, _, sealed in candidates
+                if sealed is not None
+            ),
+        )
 
     async def _read_publication_authority(
         self,

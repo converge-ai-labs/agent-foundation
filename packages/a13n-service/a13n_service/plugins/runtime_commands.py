@@ -9,12 +9,13 @@ from datetime import datetime, timedelta
 from typing import cast
 
 from a13n_harness import SafeFailure
-from anyio import Event, create_task_group, move_on_after, sleep
+from anyio import Event, create_task_group, move_on_after
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request, is_evidence_unique_race
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import (
@@ -89,6 +90,7 @@ class PluginRuntimeCommandCoordinator:
         self._staging_authority = staging_authority
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_seconds = lease_seconds
+        self._observed_operation_id: str | None = None
         self._clock = clock or utc_now
 
     async def activate(
@@ -165,19 +167,43 @@ class PluginRuntimeCommandCoordinator:
     async def run(self) -> None:
         """Reconcile durable tasks until the owning process lifespan ends."""
 
-        while True:
-            try:
-                await self.reconcile_once()
-            except Exception:
-                logger.exception("plugin_runtime_command_reconcile_failed")
-            await sleep(self._poll_interval_seconds)
+        await PeriodicTask(
+            "plugin_runtime_commands",
+            self.scan,
+            interval_seconds=self._poll_interval_seconds,
+            timeout_seconds=self._lease_seconds,
+        ).run()
+
+    async def scan(self) -> Sweep:
+        self._observed_operation_id = None
+        try:
+            await self.reconcile_once()
+        except _RuntimeTaskLeaseLost:
+            pass
+        if self._observed_operation_id is None:
+            return Sweep()
+        async with transaction(self._sessions) as session:
+            record = await session.get(PluginRuntimeTaskRecord, self._observed_operation_id)
+            complete = record is not None and record.status == "succeeded"
+            failed = record is not None and record.status == "failed"
+            age = max(0, (self._clock() - assume_utc(record.created_at)).total_seconds()) if record else None
+        return Sweep(
+            examined=1,
+            completed=int(complete),
+            failed=int(failed),
+            deferred=int(not complete and not failed),
+            oldest_age_seconds=age,
+        )
 
     async def reconcile_once(self) -> bool:
         claim = await self._claim()
         if claim is None:
             return False
+        self._observed_operation_id = claim.operation_id
         try:
             await self._process(claim)
+        except _RuntimeTaskLeaseLost:
+            return True
         except PluginRuntimeCommandFailure as error:
             task = await self._load_claimed_task(claim)
             if task is None:
@@ -719,6 +745,8 @@ class PluginRuntimeCommandCoordinator:
                 state is None
                 or state.command_operation_id != claim.operation_id
                 or state.command_claim_generation != claim.generation
+                or state.command_lease_expires_at is None
+                or assume_utc(state.command_lease_expires_at) <= assume_utc(self._clock())
             ):
                 return None
             return await session.get(PluginRuntimeTaskRecord, claim.operation_id)
@@ -750,6 +778,8 @@ class PluginRuntimeCommandCoordinator:
                 state is None
                 or state.command_operation_id != claim.operation_id
                 or state.command_claim_generation != claim.generation
+                or state.command_lease_expires_at is None
+                or assume_utc(state.command_lease_expires_at) <= assume_utc(now)
             ):
                 return False
             task = await session.get(PluginRuntimeTaskRecord, claim.operation_id)
@@ -760,6 +790,8 @@ class PluginRuntimeCommandCoordinator:
             return True
 
     async def _with_lease[T](self, claim: _TaskClaim, operation: Callable[[], Awaitable[T]]) -> T:
+        if not await self._renew(claim):
+            raise _RuntimeTaskLeaseLost
         done = Event()
         results: list[T] = []
         errors: list[BaseException] = []
@@ -798,6 +830,8 @@ class PluginRuntimeCommandCoordinator:
                 state is not None
                 and state.command_operation_id == claim.operation_id
                 and state.command_claim_generation == claim.generation
+                and state.command_lease_expires_at is not None
+                and assume_utc(state.command_lease_expires_at) > assume_utc(now)
             ):
                 _clear_claim(state, now=now)
 

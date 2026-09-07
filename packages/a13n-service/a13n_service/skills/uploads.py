@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
+from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -19,7 +20,7 @@ from .domain import SkillUploadReceipt, new_skill_upload_id
 from .errors import SkillError
 from .models import SkillUploadRecord
 from .objects import SkillPackageStore, SkillPackageStoreError
-from .package import NormalizedSkillPackage, SkillPackageError, normalize_skill_zip
+from .package import NormalizedSkillPackage, SkillPackageError, normalize_skill_zip, skill_package_object_key
 from .support import (
     IdempotencyIdentity,
     IdempotencyScope,
@@ -103,6 +104,9 @@ class SkillUploadService:
                 )
                 if replay is not None:
                     return replay
+                await require_object_publications(
+                    session, (skill_package_object_key(organization_id, workspace_id, package.manifest.content_digest),)
+                )
                 session.add(
                     SkillUploadRecord(
                         id=upload_id,

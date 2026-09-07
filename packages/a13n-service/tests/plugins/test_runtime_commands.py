@@ -22,7 +22,7 @@ from a13n_service.plugins.runtime import (
     WorkerReleaseManifest,
     default_runtime_target,
 )
-from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
+from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator, _TaskClaim
 from a13n_service.plugins.service import PluginService
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
@@ -688,6 +688,15 @@ async def test_expired_executor_lease_is_reclaimed_with_new_generation(
         state.command_operation_id = accepted.operation_id
         state.command_claim_generation = 7
         state.command_lease_expires_at = NOW - timedelta(seconds=1)
+
+    stale = _TaskClaim(accepted.operation_id, 7)
+    assert await coordinator._renew(stale) is False
+    assert await coordinator._load_claimed_task(stale) is None
+    await coordinator._release(stale)
+    async with short_session(plugin_sessions) as session:
+        state = await session.get(PluginRuntimeStateRecord, "runtime")
+        assert state.command_operation_id == accepted.operation_id
+        assert state.command_claim_generation == 7
 
     assert await coordinator.reconcile_once() is True
     receipt = await coordinator.get_receipt(

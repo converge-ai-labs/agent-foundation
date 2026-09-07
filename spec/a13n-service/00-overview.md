@@ -233,7 +233,7 @@ Service depends on the public Harness, Environment Provider, Agent Stream Protoc
 One artifact supports three independently deployable roles and their all-in-one composition:
 
 - `all` owns control, worker, and Connectivity components in one process;
-- `control` owns product APIs, authorization, domain-owned control work including Connectivity management operations, deferred feedback, and outbox publication;
+- `control` owns product APIs, authorization, and [domain-owned background work](07-control-background-tasks.md), including Connectivity management reconciliation, Thread recovery, outbox publication, and retention cleanup;
 - `worker` owns `WorkerExecutionLoop` scanning and claim plus one structured `RunAttemptExecutor` root task per successful claim, including two child monitors, one control facade, one root-task `HarnessDriver`, Agent and Environment reconstruction, sole observation consumption, outbound tool composition and dispatch, and fenced publication; and
 - `connectivity` owns provider event ingress, polling, and durable input admission through shared application operations.
 

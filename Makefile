@@ -3,7 +3,8 @@
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
-PYTHON_TEST_DIRS := $(sort $(wildcard packages/*/tests) scripts/tests)
+PYTHON_TEST_DIRS ?=
+PYTHON_TEST_WORKERS ?=
 LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
@@ -215,11 +216,7 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 
 .PHONY: test
 test: sync ## Run Python workspace tests
-	@for directory in $(PYTHON_TEST_DIRS); do \
-		workers=2; \
-		if [ "$$directory" = "packages/a13n-service/tests" ]; then workers=7; fi; \
-		uv run --locked python -m pytest -n "$$workers" --dist loadgroup "$$directory" || exit $$?; \
-	done
+	@uv run --locked python -m scripts.run_python_tests $(if $(PYTHON_TEST_WORKERS),--workers $(PYTHON_TEST_WORKERS)) $(PYTHON_TEST_DIRS)
 
 .PHONY: eip-generate
 eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspection artifacts
@@ -463,8 +460,7 @@ a13n-harness-ui-webui-check: a13n-harness-ui-webui-sync ## Run Harness UI WebUI 
 	@npm --prefix apps/a13n-harness-ui run check
 
 .PHONY: a13n-harness-ui-webui-check-all
-a13n-harness-ui-webui-check-all: a13n-harness-ui-webui-sync ## Run the complete Harness UI WebUI gate
-	@npm --prefix apps/a13n-harness-ui run check:all
+a13n-harness-ui-webui-check-all: a13n-harness-ui-webui-check a13n-harness-ui-webui-build ## Run the complete Harness UI WebUI gate
 
 .PHONY: a13n-harness-ui-assets
 a13n-harness-ui-assets: sync a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging

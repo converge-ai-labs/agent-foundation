@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a13n_service.background import Sweep
 from a13n_service.subagents.cancellation import ChildCancellationReconciler
 from a13n_service.subagents.maintenance import SubagentMaintenance
 from a13n_service.subagents.results import AsyncSubagentResultPublisher
@@ -19,13 +20,14 @@ async def test_drain_finishes_the_active_batch_without_starting_another():
         entered.set()
         await finish.wait()
         trace.append("cancelled")
+        return 1
 
     cancellation = Mock(spec=ChildCancellationReconciler)
     cancellation.reconcile_once = AsyncMock(side_effect=cancel_children)
     results = Mock(spec=AsyncSubagentResultPublisher)
-    results.reconcile_once = AsyncMock(side_effect=lambda: trace.append("published"))
+    results.scan = AsyncMock(side_effect=lambda **kwargs: trace.append("published") or Sweep(completed=1))
     successors = Mock(spec=AsyncSubagentSuccessorReconciler)
-    successors.reconcile_once = AsyncMock(side_effect=lambda: trace.append("accepted"))
+    successors.scan = AsyncMock(side_effect=lambda **kwargs: trace.append("accepted") or Sweep(completed=1))
     maintenance = SubagentMaintenance(cancellation, results, successors, poll_interval_seconds=0.001)
     with fail_after(1):
         async with create_task_group() as tasks:

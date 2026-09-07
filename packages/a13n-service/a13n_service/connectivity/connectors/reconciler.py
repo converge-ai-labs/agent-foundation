@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from contextlib import aclosing
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from anyio import move_on_after, sleep
+from anyio import move_on_after
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     ConnectorProviderError,
@@ -46,9 +47,25 @@ class ConnectorReconciler:
         self._clock = clock
 
     async def run(self) -> None:
-        while True:
-            productive = await self.reconcile_once()
-            await sleep(0 if productive else self._poll_interval_seconds)
+        await PeriodicTask(
+            "connector_setup_reconciliation",
+            self.scan,
+            interval_seconds=self._poll_interval_seconds,
+            timeout_seconds=self._lease_seconds,
+        ).run()
+
+    async def scan(self) -> Sweep:
+        if await self._expire_attempt():
+            return Sweep(examined=1, completed=1)
+        claim = await self._claim_attempt()
+        if claim is None:
+            return Sweep()
+        await self._reconcile_attempt(*claim)
+        async with short_session(self._sessions) as session:
+            record = await session.get(ConnectorSetupAttemptRecord, claim[0])
+            complete = record is not None and record.status not in ("pending", "starting", "attached", "reserved")
+            age = max(0, (self._clock() - assume_utc(record.created_at)).total_seconds()) if record else None
+        return Sweep(examined=1, completed=int(complete), deferred=int(not complete), oldest_age_seconds=age)
 
     async def reconcile_once(self) -> bool:
         if await self._expire_attempt():
@@ -199,7 +216,7 @@ class ConnectorReconciler:
             if (
                 attempt is None
                 or attempt.status not in {"pending", "starting", "attached", "reserved"}
-                or not _owns_attempt(attempt, self._instance_id, claim_generation)
+                or not _owns_attempt(attempt, self._instance_id, claim_generation, self._clock())
             ):
                 return
             attempt.available_at = max(assume_utc(attempt.available_at), self._clock() + timedelta(seconds=5))
@@ -212,5 +229,12 @@ def _owns_attempt(
     attempt: ConnectorSetupAttemptRecord | None,
     owner: str,
     generation: int,
+    now: datetime,
 ) -> bool:
-    return attempt is not None and attempt.claim_owner == owner and attempt.claim_generation == generation
+    return (
+        attempt is not None
+        and attempt.claim_owner == owner
+        and attempt.claim_generation == generation
+        and attempt.claim_expires_at is not None
+        and assume_utc(attempt.claim_expires_at) > now
+    )

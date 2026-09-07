@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-import anyio
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.durable_operations.idempotency import delete_expired_evidence
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.storage import transaction
+from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import assume_utc
 
 from .domain import LifecycleProjectionState
 from .models import LifecycleEventRecord
-
-logger = logging.getLogger("a13n_service.lifecycle.retention")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,27 +56,29 @@ class LifecycleRetentionReconciler:
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def run(self) -> None:
-        while True:
-            try:
-                sweep = await self.reconcile_once()
-                if sweep.outbox_records_deleted or sweep.lifecycle_events_deleted or sweep.idempotency_evidence_deleted:
-                    logger.info(
-                        "lifecycle_retention_sweep_completed",
-                        extra={
-                            "event": "lifecycle_retention_sweep_completed",
-                            "outbox_records_deleted": sweep.outbox_records_deleted,
-                            "lifecycle_events_deleted": sweep.lifecycle_events_deleted,
-                            "idempotency_evidence_deleted": sweep.idempotency_evidence_deleted,
-                        },
-                    )
-            except anyio.get_cancelled_exc_class():
-                raise
-            except Exception:
-                logger.exception(
-                    "lifecycle_retention_sweep_failed",
-                    extra={"event": "lifecycle_retention_sweep_failed"},
-                )
-            await anyio.sleep(self._poll_interval_seconds)
+        await PeriodicTask(
+            "evidence_lifecycle_retention",
+            self.scan,
+            interval_seconds=self._poll_interval_seconds,
+            timeout_seconds=30,
+        ).run()
+
+    async def scan(self) -> Sweep:
+        result = await self.reconcile_once()
+        deleted = result.outbox_records_deleted + result.lifecycle_events_deleted + result.idempotency_evidence_deleted
+        async with short_session(self._sessions) as database:
+            oldest = await database.scalar(
+                select(LifecycleEventRecord.created_at)
+                .where(LifecycleEventRecord.created_at < self._clock() - self._event_horizon)
+                .order_by(LifecycleEventRecord.created_at, LifecycleEventRecord.id)
+                .limit(1)
+            )
+        return Sweep(
+            examined=deleted + int(oldest is not None),
+            completed=deleted,
+            deferred=int(oldest is not None),
+            oldest_age_seconds=((self._clock() - assume_utc(oldest)).total_seconds() if oldest is not None else None),
+        )
 
     async def reconcile_once(self) -> LifecycleRetentionSweep:
         now = self._clock()
@@ -95,12 +95,20 @@ class LifecycleRetentionReconciler:
             await database.scalars(
                 select(OutboxRecord)
                 .where(
-                    OutboxRecord.source_kind == "lifecycle_event",
                     or_(
-                        ((OutboxRecord.status == "published") & (OutboxRecord.published_at < published_before)),
+                        (
+                            (OutboxRecord.status == "published")
+                            & (OutboxRecord.published_at < published_before)
+                            & or_(
+                                OutboxRecord.source_kind == "lifecycle_event",
+                                (OutboxRecord.source_kind == "asset")
+                                & (OutboxRecord.destination_kind == "asset_content_cleanup"),
+                            )
+                        ),
                         (
                             (OutboxRecord.status == "dead_lettered")
                             & (OutboxRecord.dead_lettered_at < dead_lettered_before)
+                            & (OutboxRecord.source_kind == "lifecycle_event")
                         ),
                     ),
                 )

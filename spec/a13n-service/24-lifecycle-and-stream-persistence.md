@@ -108,6 +108,8 @@ The `lifecycle_events` table contains the conceptual fields above and preserves 
 
 Retention deletes bounded event ranges older than the configured horizon. The API rejects a cursor below the lowest retained organization sequence and returns that boundary explicitly. A resource-scoped lifecycle read likewise reports its lowest retained `resource_seq`; a caller can claim gap-free event recovery only while its requested predecessor remains within that boundary. A lifecycle event referenced by a retained Outbox record remains pinned until that delivery is no longer deliverable or redriveable under the bounded [Outbox retention contract](06-durable-operations-and-outbox.md#outbox-contract). Lifecycle events have no cold archive.
 
+[Control Background Tasks](07-control-background-tasks.md#evidence-and-lifecycle-retention) owns periodic execution of this retention policy. Its scans preserve a contiguous retained boundary and wait for unfinished projection or retained delivery dependencies rather than deleting around them.
+
 ## Run Redis Stream
 
 Every accepted Run has one stable organization-scoped Redis Stream shared by all its `RunAttempt` values. The internal stream locator is not a bearer reference, and each event identifies its own attempt and Harness Run. Checkpoint resume neither allocates another presentation stream nor uses a stream cursor as state input.
