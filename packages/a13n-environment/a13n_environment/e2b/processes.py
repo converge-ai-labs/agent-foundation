@@ -260,18 +260,46 @@ class E2BProcesses:
         if not math.isfinite(timeout_seconds) or timeout_seconds < 0:
             raise EnvironmentError("Invalid wait timeout.", code="environment_request_invalid")
         token, record = self._resolve(handle)
-        info = await self.inspect(handle)
-        if info.status.phase in {"exited", "missing"}:
-            return info
-        observation = await self._observe(token, record)
+        observation = record.observation
+        if observation is not None and observation.terminal is not None:
+            return self._info(token, record, observation.terminal)
+        if timeout_seconds == 0:
+            # One native status poll, bounded by the configured request timeout.
+            return await self.inspect(handle)
+        info = self._info(token, record, ProcessStatus(phase="unknown"))
+        loop = asyncio.get_running_loop()
         try:
+            # The budget includes native inspection and stream attachment, not
+            # just waiting for output. Output closure is not process completion.
             async with asyncio.timeout(timeout_seconds):
-                while not observation.closed:
-                    observation.changed.clear()
-                    await observation.changed.wait()
+                info = await self.inspect(handle)
+                if info.status.phase in {"exited", "missing"}:
+                    return info
+                observation = await self._observe(token, record)
+                next_poll = loop.time() + 0.1
+                while True:
+                    if observation.terminal is not None:
+                        return self._info(token, record, observation.terminal)
+                    delay = next_poll - loop.time()
+                    if delay <= 0:
+                        info = await self.inspect(handle)
+                        if info.status.phase in {"exited", "missing"}:
+                            return info
+                        next_poll = loop.time() + 0.1
+                        continue
+                    if observation.closed:
+                        await asyncio.sleep(delay)
+                    else:
+                        observation.changed.clear()
+                        try:
+                            async with asyncio.timeout(delay):
+                                await observation.changed.wait()
+                        except TimeoutError:
+                            pass
         except TimeoutError:
-            pass
-        return await self.inspect(handle)
+            if observation is not None and observation.terminal is not None:
+                return self._info(token, record, observation.terminal)
+            return info
 
     async def write_stdin(
         self, handle: BoundProcessHandle, data: bytes, *, close_after_write: bool = False
@@ -352,7 +380,7 @@ class E2BProcesses:
                 _, record = self._resolve(handle)
                 observation = record.observation
                 assert observation is not None
-                if info.status.phase != "running" or observation.closed:
+                if info.status.phase != "running":
                     stdout = observation.materialize("stdout", request.output_policy)
                     stderr = observation.materialize("stderr", request.output_policy)
                     return ShellExecResult(

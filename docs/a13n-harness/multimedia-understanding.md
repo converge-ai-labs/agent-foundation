@@ -77,7 +77,7 @@ The runtime bounds each file read, dedicated Agent timeout, output, output-valid
 
 ## Use from `view`
 
-Enable Environment file tools through `DynamicEnvironmentCapability`, then use `view` normally:
+Enable Environment file tools through `DynamicEnvironmentCapability`, then use `view` normally. Text viewing requires text-read permission. Media viewing requires both stat and byte-read on the selected mount; permissions on separate mounts do not combine to authorize a media read:
 
 ```python
 from a13n_harness.environment import (

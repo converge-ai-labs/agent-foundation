@@ -25,6 +25,7 @@ from a13n_harness.model_context import (
 from a13n_harness.tools.metadata import CanonicalResource, ToolResourceResolver
 from a13n_harness.toolsets.files import FilePathPair
 
+from ._resources import selection_resource
 from .configuration import DynamicEnvironmentConfiguration
 from .providers import BoundEnvironment
 
@@ -143,9 +144,7 @@ class _DynamicEnvironmentContext:
         if tool_id == "environment.shell_exec":
             alias = _optional_string_argument(arguments, "alias")
             cwd = _optional_string_argument(arguments, "cwd")
-            if cwd is not None:
-                return (await self._path_resource(context, cwd, alias=alias),)
-            return (await self._binding_resource(context, alias, "shell"),)
+            return (await self._binding_resource(context, alias, "shell", path=cwd),)
         if tool_id == "environment.process_info" and arguments.get("process_id") is None:
             return (await self._binding_resource(context, _optional_string_argument(arguments, "alias"), "processes"),)
         if tool_id.startswith("environment.process_"):
@@ -178,44 +177,26 @@ class _DynamicEnvironmentContext:
         selection = await context.environment.resolve_files(path, alias=alias)
         selected = selection.resolved_path
         self._record_fence(selected.mount_id, selection.observed_generation)
-        return CanonicalResource(
-            namespace="environment",
-            kind="file",
-            identifier=f"{selected.mount_id}:{selection.observed_generation}:{selected.path}",
-            approval_revision=self._approval_revision(selected.mount_id, selected.path),
-        )
+        return selection_resource(selection)
 
     async def _binding_resource(
-        self, context: AgentContext, alias: str | None, family: EnvironmentOperationFamily
+        self, context: AgentContext, alias: str | None, family: EnvironmentOperationFamily, *, path: str | None = None
     ) -> CanonicalResource:
-        selection = context.environment.select_files(".", alias=alias)
+        selection = context.environment.select_files(path or ".", alias=alias)
         mount = next(
             item
             for item in context.environment.snapshot.mounts
-            if item.name == (alias or context.environment.snapshot.default_mount)
+            if context.environment.select_files(".", alias=item.name).resolved_path.mount_id
+            == selection.resolved_path.mount_id
         )
         if family in mount.descriptor.operation_families:
             await context.environment.ensure_ready(
                 EnvironmentReadinessRequirement(mounts=frozenset({mount.name}), operations=frozenset({family}))
             )
-        selection = context.environment.select_files(".", alias=alias)
+        selection = context.environment.select_files(path or ".", alias=alias)
         selected = selection.resolved_path
         self._record_fence(selected.mount_id, selection.observed_generation)
-        return CanonicalResource(
-            namespace="environment",
-            kind="mount",
-            identifier=f"{selected.mount_id}:{selection.observed_generation}",
-            approval_revision=self._approval_revision(selected.mount_id),
-        )
-
-    def _approval_revision(self, mount_id: str, path: str = "") -> str:
-        mount = next(
-            item
-            for item in self._environment.snapshot.mounts
-            if self._environment.select_files(".", alias=item.name).resolved_path.mount_id == mount_id
-        )
-        identity = mount.descriptor.backing_identity or f"{mount_id}:{mount.descriptor.generation}"
-        return f"{identity}:{path}"
+        return selection_resource(selection, kind="file" if path is not None else "mount")
 
     def _record_fence(self, mount_id: str, generation: str) -> None:
         builder = self._fence_builder.get()

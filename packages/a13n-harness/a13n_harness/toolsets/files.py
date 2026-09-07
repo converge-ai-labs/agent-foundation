@@ -22,7 +22,7 @@ from a13n_harness.environment.files import (
     FileQueryRequest,
     FileTextSearchRequest,
 )
-from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import FileScopeProvider
 from a13n_harness.errors import HarnessError
 from a13n_harness.events import FileChangeProjection, FilesystemChangedValue, emit_tool_event
@@ -84,21 +84,19 @@ _MAX_MODEL_TEXT_RULE_PAGE_BYTES = 16 * 1024 * 1024
 _SKILL_MARKDOWN_LINE_LIMIT = 800
 _SKILL_MARKDOWN_MAX_LINE_LENGTH = 20_000
 
-_FILE_TOOL_INSTRUCTIONS = (
-    tool_instruction("view"),
-    tool_instruction("write"),
-    tool_instruction("edit"),
-    tool_instruction("multi_edit"),
-    tool_instruction("ls"),
-    tool_instruction("glob"),
-    tool_instruction("grep"),
-)
+_FILE_TOOL_ACTIONS = {
+    "write": EnvironmentAction.FILE_WRITE_TEXT,
+    # Empty-old-string edits can create a file without reading it.
+    "edit": EnvironmentAction.FILE_WRITE_TEXT,
+    "multi_edit": EnvironmentAction.FILE_WRITE_TEXT,
+    "mkdir": EnvironmentAction.FILE_MKDIR,
+    "move": EnvironmentAction.FILE_MOVE,
+    "delete": EnvironmentAction.FILE_REMOVE,
+    "ls": EnvironmentAction.FILE_LIST,
+    "glob": EnvironmentAction.FILE_QUERY,
+    "grep": EnvironmentAction.FILE_SEARCH_TEXT,
+}
 
-_FILE_SHELL_SUPPRESSED_INSTRUCTIONS = (
-    tool_instruction("move"),
-    tool_instruction("copy"),
-    tool_instruction("delete"),
-)
 
 type _UnlimitedOrPositiveResults = Literal[-1] | Annotated[int, Field(gt=0, le=_MAX_MODEL_RESULTS)]
 
@@ -214,15 +212,31 @@ class FileToolset:
         self._media_understanding = media_understanding
         self._mutation_lock = asyncio.Lock()
 
+    @staticmethod
+    def available_names(mount_actions: Sequence[frozenset[EnvironmentAction]]) -> frozenset[str]:
+        """Expose tools with at least one valid branch; facades check actual arguments."""
+        names = {
+            name for name, action in _FILE_TOOL_ACTIONS.items() if any(action in actions for actions in mount_actions)
+        }
+        if any(
+            EnvironmentAction.FILE_READ_TEXT in actions
+            or {EnvironmentAction.FILE_STAT, EnvironmentAction.FILE_READ_BYTES} <= actions
+            for actions in mount_actions
+        ):
+            names.add("view")
+        if any(EnvironmentAction.FILE_COPY_SOURCE in actions for actions in mount_actions) and any(
+            EnvironmentAction.FILE_COPY_DESTINATION in actions for actions in mount_actions
+        ):
+            names.add("copy")
+        return frozenset(names)
+
     def get_toolset(
         self,
         *,
         shell_active: bool = False,
         include_mutations: bool = True,
+        allowed_names: frozenset[str] | None = None,
     ) -> FunctionToolset[AgentContext]:
-        instructions = list(_FILE_TOOL_INSTRUCTIONS)
-        if not shell_active and include_mutations:
-            instructions.extend(_FILE_SHELL_SUPPRESSED_INSTRUCTIONS)
         tools = (
             self._tool(
                 self.view,
@@ -319,6 +333,12 @@ class FileToolset:
         )
         if not include_mutations:
             tools = tuple(tool for tool in tools if tool.name in {"view", "ls", "glob", "grep"})
+        if allowed_names is not None:
+            tools = tuple(tool for tool in tools if tool.name in allowed_names)
+        instruction_names = {"view", "write", "edit", "multi_edit", "ls", "glob", "grep"}
+        if not shell_active:
+            instruction_names.update({"move", "copy", "delete"})
+        instructions = [tool_instruction(tool.name) for tool in tools if tool.name in instruction_names]
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-file-tools",
@@ -1011,7 +1031,11 @@ class FileToolset:
     async def _ensure_parent(self, files: FileOperator, file_path: str) -> None:
         parent = posixpath.dirname(file_path)
         parts = tuple(part for part in parent.split("/") if part)
-        is_binding_root = parent == "/workspace" or (len(parts) == 2 and parts[0] == "environment")
+        is_binding_root = (
+            self._file_access.has_mount_root_parent(file_path)
+            if self._has_file_scopes
+            else parent == "/workspace" or (len(parts) == 2 and parts[0] == "environment")
+        )
         if parent and parent != "." and not is_binding_root:
             await files.mkdir(parent, parents=True, exist_ok=True)
 

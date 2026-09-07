@@ -193,7 +193,7 @@ class DocumentsToolset:
                 overflow="truncate",
                 redact=True,
             ),
-            "resource_resolver": self._file_access.resource_resolver("file_path"),
+            "resource_resolver": self._file_access.resource_resolver("file_path", include_parent=True),
         }
         return InstructionFunctionToolset(
             tools=[

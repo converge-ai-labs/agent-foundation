@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import posixpath
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
 from a13n_harness.context import AgentContext
+from a13n_harness.environment._resources import selection_resource
 from a13n_harness.environment.files import FileCopyResult, FileMutationResult, FileOperator
 from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import FileScopeProvider, FileScopeSelection
@@ -29,7 +31,7 @@ class ScopedFileAccess:
             default=None,
         )
 
-    def resource_resolver(self, argument_name: str) -> ToolResourceResolver | None:
+    def resource_resolver(self, argument_name: str, *, include_parent: bool = False) -> ToolResourceResolver | None:
         scopes = self._scopes
         if scopes is None:
             return None
@@ -48,14 +50,19 @@ class ScopedFileAccess:
                 )
             selection = await scopes.resolve_files(path)
             self._selection.set(selection)
-            selected = selection.resolved_path
-            return (
-                CanonicalResource(
-                    namespace="environment",
-                    kind="file",
-                    identifier=f"{selected.mount_id}:{selection.observed_generation}:{selected.path}",
-                ),
-            )
+            resources = [selection_resource(selection)]
+            if include_parent:
+                parent = scopes.select_files(posixpath.dirname(path) or ".")
+                if (
+                    parent.resolved_path.mount_id != selection.resolved_path.mount_id
+                    or parent.observed_generation != selection.observed_generation
+                ):
+                    raise EnvironmentError(
+                        "Document output parent changed during resource resolution.",
+                        code="environment_stale_mount",
+                    )
+                resources.append(selection_resource(parent))
+            return tuple(resources)
 
         return resolve
 
@@ -133,6 +140,15 @@ class ScopedFileAccess:
             selection = self._scopes.select_files(path)
             self._selection.set(selection)
         return selection.resolved_path
+
+    def has_mount_root_parent(self, path: str) -> bool:
+        """Use the selected provider path, independent of aggregate root flavor or spelling."""
+        selection = self._selection.get()
+        return (
+            selection is not None
+            and selection.logical_path == path
+            and posixpath.dirname(selection.resolved_path.path) == "/"
+        )
 
     def guard(self, path: str) -> None:
         selection = self._selection.get()

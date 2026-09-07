@@ -205,6 +205,10 @@ class _ProcessFacade:
             "processes",
             timeout_seconds=request.limits.wall_time_seconds,
         ) as entered:
+            # Readiness may republish a narrower descriptor. Validate the whole
+            # compound background contract before creating a native process.
+            for action in required_actions:
+                self._environment.require_action(entered.mount_id, action)
             processes = entered.operations.processes
             if processes is None:
                 raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import BoundEnvironment as Environment
-    from a13n_harness.environment.providers import EnvironmentRuntime
+    from a13n_harness.environment.providers import EnvironmentRuntime, FileScopeSelection
     from a13n_harness.events import HarnessEventEmitter
     from a13n_harness.execution import AgentDefinition, ExecutableAgent, SubagentDefinition
     from a13n_harness.model_context import (
@@ -446,16 +446,14 @@ class AgentContext:
 
 
 class _ToolResultSpillStore:
-    """One best-effort run-private spill directory over the logical file facade."""
+    """Best-effort run-private spill directories pinned to their original selections."""
 
     def __init__(self, context: AgentContext) -> None:
         run_digest = hashlib.sha256(context.run_id.encode("utf-8")).hexdigest()[:12]
         self._environment = context.environment
-        self._files = context.environment.files
         self._directory_suffix = f".a13n/tmp/tool-results/run-{run_digest}"
-        self._directory: str | None = None
+        self._directories: dict[tuple[str, str], tuple[FileScopeSelection, str]] = {}
         self._next_sequence = 1
-        self._ready = False
         self._closed = False
         self._lock = asyncio.Lock()
 
@@ -466,16 +464,30 @@ class _ToolResultSpillStore:
             if self._closed:
                 return None
             try:
-                if not self._ready:
-                    self._directory = self._default_directory()
-                    if self._directory is None:
-                        return None
-                    await self._files.mkdir(self._directory, parents=True, exist_ok=True)
-                    self._ready = True
-                assert self._directory is not None
-                path = f"{self._directory}/tool-result-{self._next_sequence}{suffix}"
-                self._next_sequence += 1
-                await self._files.write_bytes_stream(path, _byte_chunks(data), mode="create")
+                directory = self._default_directory()
+                if directory is None:
+                    return None
+                selection = await self._environment.resolve_files(directory)
+                key = (selection.resolved_path.mount_id, selection.observed_generation)
+                record = self._directories.get(key)
+                if record is not None:
+                    selection, directory = record
+                async with self._environment.open_files(selection) as files:
+                    if record is None:
+                        parent = directory.rsplit("/", 1)[0]
+                        await files.mkdir(parent, parents=True, exist_ok=True)
+                        await files.mkdir(directory, exist_ok=False)
+                        # Own the leaf as soon as it exists, including failed writes.
+                        self._directories[key] = (selection, directory)
+                    path = f"{directory}/tool-result-{self._next_sequence}{suffix}"
+                    self._next_sequence += 1
+                    await files.write_bytes_stream(path, _byte_chunks(data), mode="create")
+                current = self._environment.select_files(directory)
+                if (
+                    current.resolved_path != selection.resolved_path
+                    or current.observed_generation != selection.observed_generation
+                ):
+                    return None
             except Exception:
                 return None
             return path
@@ -487,22 +499,23 @@ class _ToolResultSpillStore:
         mount = next((item for item in snapshot.mounts if item.name == snapshot.default_mount), None)
         if mount is None:
             return None
-        root = mount.mount_path or "/workspace"
-        return f"{root.rstrip('/')}/{self._directory_suffix}"
+        root = mount.mount_path or f"/environment/{mount.name}"
+        return f"{root.rstrip('/')}/{self._directory_suffix}-{uuid4().hex[:12]}"
 
     async def close(self) -> None:
         async with self._lock:
             if self._closed:
                 return
             self._closed = True
-            if not self._ready or self._directory is None:
-                return
-            try:
-                await self._files.remove(self._directory, recursive=True)
-            except Exception:
-                # Spill cleanup is finite best effort. It must not turn a completed
-                # tool side effect or run into a retry-shaped failure.
-                return
+            for selection, directory in self._directories.values():
+                try:
+                    async with self._environment.open_files(selection) as files:
+                        await files.remove(directory, recursive=True)
+                except Exception:
+                    # Retired or unavailable selections may leave files behind. Never
+                    # reselect a replacement or turn completed effects into retries.
+                    continue
+            self._directories.clear()
 
 
 async def _byte_chunks(data: bytes) -> AsyncIterator[bytes]:

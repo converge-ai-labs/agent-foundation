@@ -61,6 +61,7 @@ class FileScopeSelection:
     resolved_path: EnvironmentPath
     observed_generation: str
     mount_path: str | None = None
+    backing_identity: str | None = None
 
 
 class FileScopeProvider(Protocol):

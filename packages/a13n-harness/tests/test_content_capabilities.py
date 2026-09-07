@@ -642,7 +642,8 @@ async def test_documents_rejects_stale_revision_before_publication(tmp_path: Pat
     tool_result = next(item for item in _tool_contents(seen) if isinstance(item, dict))
     assert tool_result["ok"] is False
     assert tool_result["error"]["code"] == "environment_stale_mount"
-    assert len(resources) == 1
+    assert len(resources) == 2
+    assert all(resource.approval_revision for resource in resources)
     assert resources[0].kind == "file"
     assert not list(root_a.glob("export_*"))
     assert not list(root_b.glob("export_*"))
@@ -989,3 +990,110 @@ async def test_web_fetch_body_deadline_is_finite() -> None:
     assert result.output_or_raise() == "done"
     error = next(item for item in _tool_contents(seen) if isinstance(item, dict))
     assert error["error"]["code"] == "web_timeout"
+
+
+@pytest.mark.parametrize("tool_name", ["download", "pdf_convert", "office_to_markdown"])
+@pytest.mark.parametrize("change", ["same", "backing", "deny", "legacy"])
+async def test_content_tool_approval_tracks_backing_across_connections(tmp_path: Path, tool_name: str, change: str):
+    from a13n_harness import DeferredToolResume
+    from a13n_harness.tools.approval import RESOURCE_APPROVAL_KEY
+
+    original, replacement = tmp_path / "original", tmp_path / "replacement"
+    original.mkdir()
+    replacement.mkdir()
+    extension = "pdf" if tool_name == "pdf_convert" else "docx"
+    for root in (original, replacement):
+        (root / f"report.{extension}").write_bytes(b"source")
+    converter = _DocumentConverter(
+        DocumentConversionResult(markdown="# Report", total_pages=1, converted_pages=1, page_start=1, page_end=1)
+        if tool_name == "pdf_convert"
+        else DocumentConversionResult(markdown="# Report")
+    )
+    client = _WebClient(
+        [
+            WebResponse(
+                status_code=200,
+                final_url="https://example.com/file.txt",
+                canonical_url="https://example.com/file.txt",
+                headers={},
+                body=_body(b"download"),
+            )
+        ]
+    )
+    is_download = tool_name == "download"
+    arguments = (
+        {"urls": ["https://example.com/file.txt"], "save_dir": "/workspace/downloads"}
+        if is_download
+        else {"file_path": f"/workspace/report.{extension}"}
+    )
+    capability = (
+        WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="off")))
+        if is_download
+        else DocumentsCapability()
+    )
+    attachment = (
+        WebRunCapability(client=client, policy=_WebPolicy())
+        if is_download
+        else DocumentsRunCapability(converter=converter)
+    )
+    captured = []
+
+    class ApprovalPolicy:
+        async def __call__(self, invocation, metadata, *, context):
+            captured.append(invocation.resources)
+            return InvocationPolicyDecision.require_approval()
+
+    class ResumePolicy:
+        async def __call__(self, invocation, metadata, *, context):
+            captured.append(invocation.resources)
+            return (
+                InvocationPolicyDecision.deny("current policy denies")
+                if change == "deny"
+                else InvocationPolicyDecision.allow()
+            )
+
+    seen = []
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_one_tool_model(tool_name, arguments, seen=seen),
+        capabilities=(capability,),
+    )
+    first = await executable.run(
+        "Run the tool",
+        bindings=RunBindings.embedded(
+            environment=_binding(original),
+            capabilities=(InvocationPolicyCapability(evaluator=ApprovalPolicy()), attachment),
+        ),
+    )
+    requests = first.deferred
+    assert requests is not None
+    assert not converter.requests and not client.requests
+    assert len(captured[0]) == (1 if is_download else 2)
+    assert all(resource.approval_revision for resource in captured[0])
+    if change == "legacy":
+        for metadata in requests.metadata.values():
+            metadata.pop(RESOURCE_APPROVAL_KEY, None)
+    resumed = await executable.run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
+        bindings=RunBindings.embedded(
+            environment=_binding(replacement if change == "backing" else original),
+            capabilities=(InvocationPolicyCapability(evaluator=ResumePolicy()), attachment),
+        ),
+    )
+    assert resumed.output_or_raise() == "done"
+    assert bool(client.requests if is_download else converter.requests) == (change == "same")
+    if change == "same":
+        assert captured[0][0].identifier != captured[-1][0].identifier
+        assert captured[0][0].approval_revision == captured[-1][0].approval_revision
+        # User-published output is not a run-private spill and survives cleanup.
+        if is_download:
+            assert [path.read_bytes() for path in (original / "downloads").iterdir()] == [b"download"]
+        else:
+            assert list(original.glob("export_*/**/*.md"))
+    else:
+        assert not list(original.glob("export_*"))
+        assert not (original / "downloads").exists()
+        assert not list(replacement.glob("export_*"))
+        assert not (replacement / "downloads").exists()

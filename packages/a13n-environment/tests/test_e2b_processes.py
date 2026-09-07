@@ -540,3 +540,78 @@ async def test_metadata_guard_is_separate_from_active_and_output_budgets(monkeyp
     await process.start(request())
     assert len(process._processes) == 2
     await process.close()
+
+
+async def test_wait_after_output_cap_polls_process_without_reattaching():
+    native = NativeCommands()
+    process = adapter(native, max_observation_bytes=16)
+    started = await process.start(request("immediate"))
+    await tick()
+    before = asyncio.get_running_loop().time()
+    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.25)
+    elapsed = asyncio.get_running_loop().time() - before
+    assert info.status.phase == "running"
+    assert 0.2 <= elapsed < 0.6
+    assert 1 <= sum(call[0] == "list" for call in native.calls) <= 4
+    assert not any(call[0] == "connect" for call in native.calls)
+    await process.close()
+
+
+@pytest.mark.parametrize("slow_operation", ["list", "connect"])
+async def test_wait_budget_includes_native_requests(slow_operation):
+    native = NativeCommands()
+    process = adapter(native)
+    started = await process.start(request())
+    if slow_operation == "connect":
+        native.drop(10)
+        await tick()
+
+    async def slow(*args, **kwargs):
+        await asyncio.sleep(10)
+
+    setattr(native, slow_operation, slow)
+    before = asyncio.get_running_loop().time()
+    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.03)
+    assert asyncio.get_running_loop().time() - before < 0.3
+    assert info.status.phase == ("unknown" if slow_operation == "list" else "running")
+    await process.close()
+
+
+async def test_exec_does_not_complete_when_output_is_capped():
+    native = NativeCommands()
+    process = adapter(native, max_observation_bytes=16)
+    executing = asyncio.create_task(process.exec(request("immediate")))
+    await asyncio.sleep(0.15)
+    assert not executing.done()
+    native.emit(10, exit_code=7)
+    result = await asyncio.wait_for(executing, timeout=1)
+    # Once detached the SDK cannot recover the exit code; do not fabricate one.
+    assert result.status.phase == "missing"
+    assert result.status.exit_code is None
+    assert result.output.stdout.inline == b"x" * 16
+    assert not any(call[0] in {"kill", "connect"} for call in native.calls)
+    assert process._processes == {}
+
+
+async def test_stdout_wakeups_do_not_trigger_unbounded_status_queries():
+    native = NativeCommands()
+    process = adapter(native)
+    started = await process.start(request())
+
+    async def produce():
+        for _ in range(30):
+            native.emit(10, stdout=b"x")
+            await asyncio.sleep(0.002)
+
+    producer = asyncio.create_task(produce())
+    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.15)
+    await producer
+    assert info.status.phase == "running"
+    assert 1 <= sum(call[0] == "list" for call in native.calls) <= 3
+    native.emit(10, exit_code=9)
+    await tick()
+    before = len(native.calls)
+    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0)
+    assert info.status.exit_code == 9
+    assert len(native.calls) == before
+    await process.close()

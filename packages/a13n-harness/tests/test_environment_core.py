@@ -1865,3 +1865,62 @@ async def test_recovery_publishes_new_generation_even_when_reporting_rebuild() -
         with pytest.raises(EnvironmentError, match="stale"):
             async with environment.open_files(selection):
                 pass
+
+
+async def test_process_start_rechecks_compound_actions_after_readiness() -> None:
+    operations = _IdempotentProcessOperations()
+    provider = _Binding(
+        "processes",
+        families=frozenset({"processes"}),
+        operations=EnvironmentProviderOperations(processes=operations),
+        permissions=_process_permissions(),
+    )
+
+    async def narrow(operations):
+        provider.bound.descriptor = provider.bound.descriptor.model_copy(
+            update={"permissions": EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.PROCESS_START}))}
+        )
+        provider.bound.availability = EnvironmentAvailability(status="available", ready_families=operations)
+
+    provider.bound.ensure_ready = narrow
+    runtime = create_environment_runtime(
+        mounts={"processes": _runtime_mount(provider, permissions=_process_permissions())},
+        default_mount="processes",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as env:
+        assert provider.mount_id is not None
+        operations.configure_mount(provider.mount_id)
+        with pytest.raises(EnvironmentError) as error:
+            await env.processes.start(_process_request(), required_actions=_process_permissions())
+        assert error.value.code == "environment_denied"
+        assert operations._next == 0
+
+
+async def test_command_cwd_resource_prepares_shell_without_file_facet() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.environment import DynamicEnvironmentConfiguration
+    from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
+
+    provider = _Binding(
+        "shell-only",
+        families=frozenset({"shell"}),
+        operations=EnvironmentProviderOperations(shell=SimpleNamespace(exec=AsyncMock())),
+        permissions=frozenset({EnvironmentAction.SHELL_EXEC}),
+    )
+    runtime = create_environment_runtime(
+        mounts={"local": _runtime_mount(provider, permissions=frozenset({EnvironmentAction.SHELL_EXEC}))},
+        default_mount="local",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as env:
+        capability = _DynamicEnvironmentRunCapability(
+            DynamicEnvironmentConfiguration(), run_id="run-1", environment=env
+        )
+        resources = await capability._resource_resolver("environment.shell_exec")(
+            {"command": "true", "cwd": "/workspace/work"},
+            context=SimpleNamespace(environment=env),
+        )
+        assert provider.bound.ready_calls == [frozenset({"shell"})]
+        assert resources[0].approval_revision.endswith(":/work")
+        assert resources[0].kind == "file"

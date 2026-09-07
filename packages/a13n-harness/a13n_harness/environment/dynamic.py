@@ -34,23 +34,6 @@ from .providers import BoundEnvironment
 DYNAMIC_ENVIRONMENT_CAPABILITY_ID = "a13n.dynamic-environment"
 FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID = "a13n.dynamic-environment.file-media-understanding.run"
 
-_FILE_READ_ACTIONS = frozenset(
-    {
-        EnvironmentAction.FILE_STAT,
-        EnvironmentAction.FILE_READ_TEXT,
-        EnvironmentAction.FILE_READ_BYTES,
-        EnvironmentAction.FILE_LIST,
-        EnvironmentAction.FILE_QUERY,
-        EnvironmentAction.FILE_SEARCH_TEXT,
-        EnvironmentAction.FILE_COPY_SOURCE,
-    }
-)
-_FILE_MUTATION_ACTIONS = frozenset(
-    action
-    for action in EnvironmentAction
-    if action.value.startswith("environment.file.") and action not in _FILE_READ_ACTIONS
-)
-
 
 @dataclass(kw_only=True)
 class FileMediaUnderstandingRunCapability(AbstractCapability[AgentContext]):
@@ -147,22 +130,24 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         del ctx
         mounts = self._environment.snapshot.mounts
         operations = frozenset(action for mount in mounts for action in mount.permission_ceiling.operations)
-        has_file_reads = self.configuration.files_enabled and bool(operations & _FILE_READ_ACTIONS)
-        has_file_mutations = self.configuration.files_enabled and bool(operations & _FILE_MUTATION_ACTIONS)
+        file_names = (
+            self._file_toolset.available_names([mount.permission_ceiling.operations for mount in mounts])
+            if self.configuration.files_enabled
+            else frozenset()
+        )
         has_full_access = self.configuration.shell_enabled and EnvironmentAction.SHELL_EXEC in operations
         shell_supersedes_mutations = (
             self.configuration.shell_enabled
             and len(mounts) == 1
-            and has_file_mutations
             and EnvironmentAction.SHELL_EXEC in mounts[0].permission_ceiling.operations
         )
 
         toolsets: list[AbstractToolset[AgentContext]] = []
-        if has_file_reads:
+        if file_names:
             toolsets.append(
                 self._file_toolset.get_toolset(
                     shell_active=shell_supersedes_mutations,
-                    include_mutations=has_file_mutations,
+                    allowed_names=file_names,
                 )
             )
         if self.configuration.shell_enabled and (

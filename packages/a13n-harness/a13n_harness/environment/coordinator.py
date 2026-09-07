@@ -242,6 +242,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             resolved_path=EnvironmentPath(mount_id=route.entered.mount_id, path=route.provider_path),
             observed_generation=route.entered.public.descriptor.generation,
             mount_path=route.mount_path,
+            backing_identity=route.entered.public.descriptor.backing_identity,
         )
 
     @asynccontextmanager

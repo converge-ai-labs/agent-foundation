@@ -1027,7 +1027,7 @@ async def test_copy_streams_across_bindings_when_shell_is_disabled(tmp_path: Pat
             if isinstance(part, ToolReturnPart) and part.tool_name == "copy"
         ]
         names = {tool.name for tool in info.function_tools}
-        assert {"mkdir", "move", "copy", "delete"} <= names
+        assert names == {"copy"}
         assert info.instructions is not None
         assert '<tool-instruction name="copy">' in info.instructions
         assert '<tool-instruction name="environment-shell">' not in info.instructions
@@ -2927,3 +2927,239 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
         assert live["ok"] is True
         assert "process_id" in live
         await toolset.close()
+
+
+async def test_spill_tracks_default_changes_and_owns_only_unique_leaves(tmp_path: Path) -> None:
+    from a13n_harness.context import _ToolResultSpillStore
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    runtime = _two_local_bindings(first, second)
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        context = cast(Any, SimpleNamespace(run_id="run-1", environment=env))
+        store = _ToolResultSpillStore(context)
+        other = _ToolResultSpillStore(context)
+        first_path = await store.write(b"first", suffix=".txt")
+        other_path = await other.write(b"other", suffix=".txt")
+        assert first_path and other_path and first_path != other_path
+        assert first_path.startswith("/environment/local/")
+        relative = first_path.removeprefix("/environment/local/")
+        sentinel = second / relative
+        sentinel.parent.mkdir(parents=True)
+        sentinel.write_bytes(b"not-owned")
+        await runtime.set_default("shared")
+        second_path = await store.write(b"second", suffix=".json")
+        assert second_path and second_path.startswith("/environment/shared/")
+        assert await env.files.read_bytes(first_path) == b"first"
+        assert await env.files.read_bytes(second_path) == b"second"
+        await store.close()
+        assert not (first / relative).exists()
+        assert sentinel.read_bytes() == b"not-owned"
+        assert await env.files.read_bytes(other_path) == b"other"
+        await other.close()
+        assert await store.write(b"closed", suffix=".txt") is None
+
+
+async def test_spill_cleanup_does_not_follow_replaced_mount(tmp_path: Path) -> None:
+    from a13n_harness.context import _ToolResultSpillStore
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    runtime = _local_binding(first)
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        store = _ToolResultSpillStore(cast(Any, SimpleNamespace(run_id="run-1", environment=env)))
+        path = await store.write(b"original", suffix=".txt")
+        assert path
+        relative = path.removeprefix("/environment/local/")
+        sentinel = second / relative
+        sentinel.parent.mkdir(parents=True)
+        sentinel.write_bytes(b"replacement")
+        await runtime.replace("local", _local_mount(second))
+        await store.close()
+        assert (first / relative).read_bytes() == b"original"
+        assert sentinel.read_bytes() == b"replacement"
+
+
+@pytest.mark.parametrize(
+    ("actions", "expected"),
+    [
+        ({EnvironmentAction.FILE_WRITE_TEXT}, {"write", "edit", "multi_edit"}),
+        ({EnvironmentAction.FILE_LIST}, {"ls"}),
+        ({EnvironmentAction.FILE_QUERY}, {"glob"}),
+        ({EnvironmentAction.FILE_SEARCH_TEXT}, {"grep"}),
+        ({EnvironmentAction.FILE_READ_BYTES}, set()),
+        ({EnvironmentAction.FILE_STAT}, set()),
+        ({EnvironmentAction.FILE_READ_TEXT}, {"view"}),
+        ({EnvironmentAction.FILE_STAT, EnvironmentAction.FILE_READ_BYTES}, {"view"}),
+        ({EnvironmentAction.FILE_PATCH_TEXT}, set()),
+    ],
+)
+async def test_file_tool_surface_requires_one_valid_branch(actions, expected):
+    assert FileToolset.available_names([frozenset(actions)]) == expected
+
+
+async def test_file_surface_keeps_media_on_one_mount_but_allows_cross_mount_copy():
+    assert (
+        FileToolset.available_names(
+            [frozenset({EnvironmentAction.FILE_STAT}), frozenset({EnvironmentAction.FILE_READ_BYTES})]
+        )
+        == frozenset()
+    )
+    assert FileToolset.available_names(
+        [frozenset({EnvironmentAction.FILE_COPY_SOURCE}), frozenset({EnvironmentAction.FILE_COPY_DESTINATION})]
+    ) == {"copy"}
+
+
+@pytest.mark.parametrize("tool", ["write", "edit", "multi_edit"])
+@pytest.mark.parametrize("nested", [False, True])
+async def test_write_only_tools_allow_create_but_require_parent_action(tmp_path: Path, tool: str, nested: bool):
+    from .test_content_capabilities import _one_tool_model, _tool_contents
+
+    path = "nested/new.txt" if nested else "new.txt"
+    arguments: dict[str, object] = {"file_path": path}
+    if tool == "write":
+        arguments["content"] = "new"
+    elif tool == "edit":
+        arguments.update(old_string="", new_string="new")
+    else:
+        arguments["edits"] = [{"old_string": "", "new_string": "new"}]
+    # Even an existing parent requires mkdir when the tool actually calls it.
+    (tmp_path / "nested").mkdir()
+    seen = []
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_one_tool_model(tool, arguments, seen=seen),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "create",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, operations=frozenset({EnvironmentAction.FILE_WRITE_TEXT})),
+            capabilities=(_policy(),),
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    content = next(item for item in _tool_contents(seen) if isinstance(item, dict))
+    assert content["ok"] is (not nested)
+    if nested:
+        assert content["error"]["code"] == "environment_denied"
+        assert not (tmp_path / path).exists()
+    else:
+        assert (tmp_path / path).read_text() == "new"
+
+
+@pytest.mark.parametrize("can_read", [False, True])
+async def test_existing_edit_requires_byte_read_not_patch_action(tmp_path: Path, can_read: bool):
+    from .test_content_capabilities import _one_tool_model, _tool_contents
+
+    (tmp_path / "existing.txt").write_text("before")
+    actions = {EnvironmentAction.FILE_WRITE_TEXT}
+    if can_read:
+        actions.add(EnvironmentAction.FILE_READ_BYTES)
+    seen = []
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_one_tool_model(
+            "edit", {"file_path": "existing.txt", "old_string": "before", "new_string": "after"}, seen=seen
+        ),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "edit",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, operations=frozenset(actions)),
+            capabilities=(_policy(),),
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    content = next(item for item in _tool_contents(seen) if isinstance(item, dict))
+    assert content["ok"] is can_read
+    assert (tmp_path / "existing.txt").read_text() == ("after" if can_read else "before")
+
+
+@pytest.mark.parametrize("failure", ["write", "cancel", "cleanup"])
+async def test_spill_failure_keeps_owned_leaf_for_best_effort_cleanup(tmp_path: Path, monkeypatch, failure: str):
+    from a13n_harness.context import _ToolResultSpillStore
+
+    runtime = _local_binding(tmp_path, mount_path="/mounted")
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        store = _ToolResultSpillStore(cast(Any, SimpleNamespace(run_id="run-1", environment=env)))
+
+        async def fail(*args, **kwargs):
+            if failure == "cancel":
+                raise asyncio.CancelledError
+            raise RuntimeError("unavailable")
+
+        if failure != "cleanup":
+            monkeypatch.setattr(VirtualFileOperator, "write_bytes_stream", fail)
+        if failure == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await store.write(b"value", suffix=".txt")
+        else:
+            path = await store.write(b"value", suffix=".txt")
+            if failure == "cleanup":
+                assert path and path.startswith("/mounted/")
+                monkeypatch.setattr(VirtualFileOperator, "remove", fail)
+            else:
+                assert path is None
+        assert list((tmp_path / ".a13n/tmp/tool-results").iterdir())
+        await store.close()
+        assert bool(list((tmp_path / ".a13n/tmp/tool-results").iterdir())) is (failure == "cleanup")
+
+
+@pytest.mark.parametrize("tool", ["write", "edit", "multi_edit"])
+@pytest.mark.parametrize(
+    ("mount_path", "file_path"),
+    [
+        ("/data", "/data/new.txt"),
+        ("C:/", "C:/new.txt"),
+        ("//server/share/", "//server/share/new.txt"),
+        ("C:/Work", "c:/work/new.txt"),
+    ],
+)
+async def test_explicit_write_only_mount_without_default_has_usable_tools(
+    tmp_path: Path,
+    tool: str,
+    mount_path: str,
+    file_path: str,
+):
+    from .test_content_capabilities import _one_tool_model, _tool_contents
+
+    runtime = create_environment_runtime(
+        mounts={
+            "sink": _local_mount(
+                tmp_path, mount_path=mount_path, operations=frozenset({EnvironmentAction.FILE_WRITE_TEXT})
+            )
+        },
+        default_mount=None,
+    )
+    arguments: dict[str, object] = {"file_path": file_path}
+    if tool == "write":
+        arguments["content"] = "new"
+    elif tool == "edit":
+        arguments.update(old_string="", new_string="new")
+    else:
+        arguments["edits"] = [{"old_string": "", "new_string": "new"}]
+    seen = []
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_one_tool_model(tool, arguments, seen=seen),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "create", bindings=RunBindings.embedded(environment=runtime, capabilities=(_policy(),))
+    )
+    assert result.output_or_raise() == "done"
+    assert next(item for item in _tool_contents(seen) if isinstance(item, dict))["ok"] is True
+    assert (tmp_path / "new.txt").read_text() == "new"
