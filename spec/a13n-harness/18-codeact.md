@@ -108,6 +108,8 @@ Canonical names that are Python identifiers remain unchanged. Other valid final 
 
 For each execution, CodeAct derives one immutable name, schema, sequential-policy, and eligibility snapshot from the active run-step's final `ToolManager`. Execution stays on that same manager object. Monty owns Python name resolution, including forward references, closures, and comprehension bindings. The Harness does not approximate Python scoping with a static call-name analyzer; only actual external calls must resolve in the current catalog. An unavailable call may therefore fail after earlier calls have completed, under the normal side-effect uncertainty rules. CodeAct does not construct a divergent manager, call an underlying Python function directly, call `BaseTool.call`, or maintain an independent route table.
 
+Both runner descriptions teach the shared orchestration contract: await every host call, use keyword arguments, separate temporary bindings from explicit stored values and external effects, and return only useful results. Their model-facing directories derive from the current prepared schemas, show asynchronous Python declarations and referenced JSON shapes where representable, and retain exact argument/return schemas and canonical-name mappings. Declarations are documentation, not runtime classes or authority. Tools with argument shapes that cannot be faithfully rendered as named Python parameters retain a `**kwargs` declaration and their exact schema; presentation limitations never remove an otherwise eligible tool.
+
 Each sandbox callback:
 
 1. resolves its sandbox name in the immutable execution catalog;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import hashlib
 import json
@@ -17,6 +18,7 @@ from uuid import uuid4
 from pydantic import Field, JsonValue, ValidationError
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UsageLimitExceeded, UserError
+from pydantic_ai.function_signature import FunctionSignature
 from pydantic_ai.messages import InstructionPart, ToolCallPart, UserContent
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset, ToolsetTool, WrapperToolset
@@ -53,24 +55,61 @@ _INVALID_IDENT_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 _CODEACT_CONTRACT_VERSION = 1
 _MAX_DIAGNOSTIC_BYTES = 4096
 
-_RUN_CODE_DESCRIPTION = """Write and run Python in a restricted Monty sandbox.
+_CODEACT_INSTRUCTIONS = """Use restricted Python to compose tool calls and process their results before returning
+only the information needed for the next reasoning step.
 
-The sandbox provides a Python subset, has no ambient filesystem, network, process,
-environment, credential, or clock access, and cannot install third-party packages.
-Use the functions listed below to interact with the host. Function arguments are
-keyword-only. Async functions must be awaited; independent async calls may be combined
-with `await asyncio.gather(...)`.
+Host calls:
+- Only the functions in the current directory below are available. Call them directly
+  by their listed Python names with keyword arguments; do not import them.
+- Await every host function, including tools whose underlying implementation is synchronous.
+  Await dependent calls in order; use `await asyncio.gather(...)` for independent calls
+  after `import asyncio`. Finish all needed calls before ending the code.
+- Send a runner as the only tool call in a model response. Parallelize inside the code,
+  not by sending sibling runner/tool calls.
+- Arguments and results are finite JSON values, not arbitrary Python objects.
+  Inspect and select useful fields rather than printing or returning entire large results.
 
-The final expression is returned. State is retained between run_code calls in this
-agent run. Set restart=true to discard that state. CodeAct does not make tool calls
-transactional, retry-safe, or reversible."""
+State and failure:
+- Temporary Python bindings are distinct from explicit values saved with store/load.
+- When listed, await store(key=..., value=...) to replace a saved value; await load(key=...)
+  to read a detached copy, or await load() to list keys. A missing key is an error, not null.
+  Mutating a loaded value does not save it; use store again. Use forget(key=...) to delete.
+- Successful explicit writes survive sandbox reset, failure, and cancellation.
+  Cross-run recovery requires the host to persist and restore HarnessState.
+- Tool effects are not transactional or rolled back. After a failure, inspect what completed
+  and recover deliberately; do not blindly replay code that may repeat external effects.
 
-_RUN_PROGRAM_DESCRIPTION = """Execute a reviewed CodeAct Python program from the current Environment workspace.
+The Monty sandbox supports a Python subset, not general CPython. It has no ambient
+filesystem, network, process, environment, credential, or clock access and cannot install
+packages. Use listed host tools for those operations. Function/type declarations below
+are documentation, not definitions to execute or runtime classes to instantiate.
+The JSON schemas preserve exact constraints; an Any annotation does not grant extra authority."""
+
+_RUN_CODE_DESCRIPTION = (
+    """Compose tool calls with inline Python in the restricted CodeAct sandbox.
+
+Pass Python source in the code argument, without Markdown fences. The final expression
+is returned; print output is captured. Successful feeds retain temporary bindings only
+within this agent run. restart=true clears those bindings before evaluation; an unsuccessful
+feed clears them before returning. Neither operation deletes explicitly stored values.
+
+"""
+    + _CODEACT_INSTRUCTIONS
+)
+
+_RUN_PROGRAM_DESCRIPTION = (
+    """Run a reusable CodeAct Python program from the current Environment workspace.
 
 The file must be strict UTF-8, end in .codeact.py, and define exactly
-`async def main(inputs)`. Each invocation uses a fresh Monty session. Source is read
-through the current Environment FileOperator; host effects remain available only
-through injected CodeAct-eligible tools."""
+`async def main(inputs)`. Put execution inside main; module scope is limited to imports,
+function declarations, and side-effect-free constants. Source is read through the current
+Environment FileOperator on every call. Each invocation uses a fresh interpreter, receives
+the inputs mapping (empty when omitted), and returns main's result. It cannot see inline
+Python bindings, but can use the same explicit store/load values when those tools are listed.
+
+"""
+    + _CODEACT_INSTRUCTIONS
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -690,10 +729,10 @@ def render_codeact_runner_description(
     entries: list[str] = []
     for sandbox_name, definition in sorted(catalog.definitions.items()):
         canonical_name = catalog.sandbox_to_canonical[sandbox_name]
-        heading = f"- `{sandbox_name}(**kwargs)`"
+        heading = f"### `{sandbox_name}`"
         if canonical_name != sandbox_name:
             heading += f" (tool `{canonical_name}`)"
-        details = [heading]
+        details = [heading, "```python\n" + _render_tool_declaration(definition) + "\n```"]
         if definition.description:
             details.append(f"  {definition.description}")
         details.append(
@@ -719,6 +758,44 @@ def render_codeact_runner_description(
             )
         entries.append("\n".join(details))
     return base + "\n\nCodeAct callable host tools:\n" + "\n".join(entries)
+
+
+def _render_tool_declaration(definition: ToolDefinition) -> str:
+    """Render documentation from prepared schemas without changing tool semantics."""
+    fallback = f"async def {definition.name}(**kwargs: Any) -> Any: ..."
+    schema = definition.parameters_json_schema
+    properties = schema.get("properties", {})
+    required = set(schema.get("required", []))
+    # The upstream signature renderer does not represent open argument maps or
+    # omission without a default faithfully. Keep the exact schema for these tools.
+    if schema.get("additionalProperties", True) is not False or any(
+        name not in required and (not isinstance(prop, dict) or "default" not in prop)
+        for name, prop in properties.items()
+    ):
+        return fallback
+    try:
+        signature = FunctionSignature.from_schema(
+            name=definition.name,
+            parameters_schema=schema,
+            return_schema=definition.return_schema,
+        )
+        for name in required:
+            if name in signature.params:
+                signature.params[name].default = None
+        # Each entry is self-contained; qualify its referenced JSON shapes so
+        # unrelated tools with identically named models do not imply shared types.
+        names = frozenset(ref.name for ref in signature.referenced_types)
+        if len(names) != len(signature.referenced_types):
+            return fallback  # Input and output schemas reuse a type name for different shapes.
+        declarations = FunctionSignature.render_type_definitions([signature], names)
+        declarations.append(signature.render("...", is_async=True, conflicting_type_names=names))
+        rendered = "\n\n".join(declarations)
+        # This validates generated documentation, never model-authored source.
+        # Non-identifier JSON property names remain callable through **mapping.
+        ast.parse(rendered)
+    except (ValueError, TypeError, SyntaxError, RecursionError):
+        return fallback
+    return rendered
 
 
 def _sanitize_name(name: str) -> str:

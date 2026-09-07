@@ -31,7 +31,9 @@ OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=65536, 
 
 
 @asynccontextmanager
-async def _processes(root: Path, *, powershell: bool = False) -> AsyncIterator[LocalProcessManager]:
+async def _processes(
+    root: Path, *, powershell: bool = False, max_wall_time_seconds: float = 10
+) -> AsyncIterator[LocalProcessManager]:
     provider = DirectLocalEnvironmentProvider()
     profiles = []
     if powershell:
@@ -54,7 +56,7 @@ async def _processes(root: Path, *, powershell: bool = False) -> AsyncIterator[L
             "allowed_environment_keys": ["SYSTEMROOT", "PATH"],
             "shell_profiles": profiles,
             "terminate_grace_seconds": 0.2,
-            "max_wall_time_seconds": 10,
+            "max_wall_time_seconds": max_wall_time_seconds,
         },
     )
     environment = provider.create_environment(
@@ -149,7 +151,10 @@ async def test_native_owned_descendants_are_cleaned(tmp_path: Path, ending: str)
 
 
 async def test_native_powershell_unicode_and_quoting(tmp_path: Path) -> None:
-    async with _processes(tmp_path, powershell=True) as processes:
+    # This checks encoding and quoting, not shell startup latency on a shared CI
+    # runner. Keep a bounded startup allowance; the timeout lifecycle test above
+    # independently checks its explicit 0.5-second deadline.
+    async with _processes(tmp_path, powershell=True, max_wall_time_seconds=60) as processes:
         result = await processes.exec(
             CommandRequest(
                 command=ShellCommand(
@@ -161,7 +166,7 @@ async def test_native_powershell_unicode_and_quoting(tmp_path: Path) -> None:
                 output_policy=OUTPUT,
             )
         )
-        assert result.status.exit_code == 7
+        assert result.status.exit_code == 7, (result.status, result.output)
         assert result.output.stdout.inline is not None
         assert result.output.stdout.inline.decode().strip() == '中文 "quoted"'
         assert result.output.stderr.inline is not None
