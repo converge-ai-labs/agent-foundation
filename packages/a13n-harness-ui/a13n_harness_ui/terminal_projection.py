@@ -37,6 +37,8 @@ from a13n_harness_ui.surfaces import (
     LaunchProjectSelected,
     LaunchProjectUnmatched,
     NewThreadDefaults,
+    NotePage,
+    NoteView,
     PendingDecisionSummary,
     ProjectPathCompletion,
     ProjectPathCompletionPage,
@@ -231,6 +233,42 @@ class TerminalProjectionService:
             rows=tuple(rows),
             total=page.total,
             next_cursor=page.next_cursor,
+        )
+
+    async def note_page(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+    ) -> NotePage:
+        """Full note values, bounded by count and UTF-8 bytes, from the selected checkpoint."""
+        thread = await self._store.threads.get(thread_id)
+        if thread is None:
+            raise ThreadError("Thread does not exist.", code="thread_missing")
+        continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
+        if expected_continuation_id is not None and continuation_id != expected_continuation_id:
+            raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
+        if thread.continuation is None:
+            return NotePage()
+        continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+        entry = continuation.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
+        if entry is None:
+            return NotePage(continuation_id=continuation_id)
+        try:
+            state = WorkingState.model_validate(entry.data)
+        except ValidationError as exc:
+            raise ThreadError("Working State is not readable.", code="thread_note_state_invalid") from exc
+        notes = state.notes
+        visible = []
+        size = 0
+        for key, value in sorted(notes.items()):
+            cost = len(key.encode("utf-8")) + len(value.encode("utf-8"))
+            if len(visible) >= 256 or size + cost > 256 * 1024:
+                break
+            visible.append(NoteView(key=key, value=value))
+            size += cost
+        return NotePage(
+            continuation_id=continuation_id, notes=tuple(visible), total=len(notes), omitted=len(notes) - len(visible)
         )
 
     async def task_page(

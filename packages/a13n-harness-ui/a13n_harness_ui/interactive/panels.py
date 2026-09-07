@@ -26,7 +26,7 @@ def capability_panel(name: object, event: Mapping[str, object]) -> CapabilityPan
         files = event.get("files")
         if isinstance(files, list) and files:
             summary += "\n\nFiles to inspect:\n" + "\n".join(str(path) for path in files)
-        return CapabilityPanel(f"{title} · {event.get('operation_id')}", summary, "compact" if compact else "summary")
+        return CapabilityPanel(title, summary, "compact" if compact else "summary")
     if name == "a13n.filesystem.edit_applied":
         before, after, path = event.get("before"), event.get("after"), event.get("file_path")
         if not isinstance(before, str) or not isinstance(after, str) or not isinstance(path, str):
@@ -92,3 +92,36 @@ def tool_result(name: str, text: str) -> str:
             state = "completed"
         text = json.dumps(value, ensure_ascii=False, indent=2)
     return f"{state}\n{text}"
+
+
+def shell_result_preview(text: str, command: str, max_lines: int) -> str | None:
+    """Read native Shell facts: a successful API call can still exit nonzero."""
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(value, dict) or not isinstance(value.get("status"), dict):
+        return None
+    status = value["status"]
+    phase = status.get("phase")
+    if not isinstance(phase, str):
+        return None
+    code = status.get("exit_code")
+    lines = [phase + (f" · exit {code}" if isinstance(code, int) else "")]
+    if command:
+        lines.append("$ " + " ".join(command.split())[:500])
+    for stream in ("stderr", "stdout"):
+        page = value.get(stream)
+        if not isinstance(page, dict):
+            continue
+        output = page.get("text")
+        if isinstance(output, str) and output.strip():
+            parts = output.strip().splitlines()
+            lines.extend(f"{stream}  {line}" for line in parts[:max_lines])
+            if len(parts) > max_lines:
+                lines.append(f"{stream}  … more output · Ctrl+O details")
+        if page.get("coverage") in {"partial", "unknown"} or page.get("content_complete") is False:
+            lines.append(f"{stream}  [output {page.get('coverage', 'incomplete')}]")
+    if value.get("disclosure"):
+        lines.append("[Output disclosure · Ctrl+O details]")
+    return "\n".join(lines)

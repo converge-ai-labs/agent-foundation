@@ -122,12 +122,12 @@ def test_task_panel_applies_distinct_tasks_at_same_version_and_ignores_stale() -
     )
     assert panel.tasks["task-1"].status == "pending"
     panel.expanded = True
-    assert "[pending] task-1" in panel.lines()
+    assert "[pending] 1 · task-1" in panel.lines()
     panel.restore(TaskPage(available=False))
     assert "unavailable" in panel.lines()[0] and not panel.tasks
 
 
-def test_skill_completion_uses_authoritative_catalog_and_command_names_win() -> None:
+def test_skill_completion_has_its_own_namespace_and_authoritative_references() -> None:
     registry = CommandRegistry()
     catalog = SkillCatalogView(
         catalog_id="a" * 64,
@@ -144,9 +144,12 @@ def test_skill_completion_uses_authoritative_catalog_and_command_names_win() -> 
         ),
     )
     registry.set_skills(catalog)
-    assert ("/inspect", "Skill · Authoritative skill") in registry.completions("/ins")
-    assert registry.skill_references("/inspect this")[0].catalog_id == catalog.catalog_id
+    assert ("$inspect", "Authoritative skill") in registry.completions("$ins")
+    assert registry.skill_references("use $inspect this")[0].catalog_id == catalog.catalog_id
     assert registry.skill_references("/status") == ()
+    assert registry.skill_references("$status")[0].name == "status"
+    assert registry.completions("/ins") == ()
+    assert len(registry.completions("$")) == 2
     registry.set_skills(None)
     assert registry.skill_references("/inspect") == ()
     assert "/login" not in {value for value, _ in registry.completions("/")}
@@ -192,8 +195,9 @@ async def test_ctrl_c_feedback_edit_disarms_exit_and_f2_toggles() -> None:
             pipe.send_text("\x03")
             await until(lambda: shell.composer.text == "")
             assert shell.app.is_running
+            expanded = shell.renderer.tasks.expanded
             pipe.send_text("\x1bOQ")
-            await until(lambda: shell.renderer.tasks.expanded)
+            await until(lambda: shell.renderer.tasks.expanded != expanded)
             pipe.send_text("\x03")
             await asyncio.wait_for(terminal, 3)
         finally:
@@ -311,7 +315,7 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(fragme
         assert status.context_tokens == 0
         assert "Working" in status.line(60) and "$0.1250" in status.line(60)
         assert "ctx 0 (0%)" in status.line(60)
-        assert "cache" not in status.line(120) and "out " not in status.line(120)
+        assert "cache" in status.line(120) and "out " not in status.line(120)
     finally:
         release.set()
         await asyncio.wait_for(task, 2)

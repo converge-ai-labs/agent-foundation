@@ -11,7 +11,7 @@ from a13n_harness_ui.surfaces import TaskPage, TaskView
 class TaskPanel:
     def __init__(self) -> None:
         self.tasks: dict[str, TaskView] = {}
-        self.expanded = False
+        self.expanded = True
         self.available = True
         self.omitted = 0
         self.version = 0
@@ -47,11 +47,15 @@ class TaskPanel:
             return []
         completed = sum(task.status == "completed" for task in tasks)
         active = sum(task.status == "in_progress" for task in tasks)
-        lines = [f"Tasks {completed}/{len(tasks) + self.omitted} complete · {active} active"]
+        pending = len(tasks) - completed - active
+        lines = [
+            f"Tasks · {active} active · {pending} pending · {completed} done · F2 {'collapse' if self.expanded else 'expand'}"
+        ]
         if not self.expanded:
             return lines
         ordered = sorted(tasks, key=lambda task: {"in_progress": 0, "pending": 1, "completed": 2}[task.status])
-        visible = ordered[:5]
+        visible = [task for task in ordered if task.status != "completed"][:5]
+        visible += [task for task in ordered if task.status == "completed"][: min(2, 5 - len(visible))]
         for task in visible:
             blocked = any(
                 dependency not in self.tasks or self.tasks[dependency].status != "completed"
@@ -67,7 +71,10 @@ class TaskPanel:
                 else "pending"
             )
             subject = task.active_form if task.status == "in_progress" and task.active_form else task.subject
-            lines.append(f"[{state}] {subject}")
+            subject = " ".join(subject.split())
+            identifier = task.task_id.removeprefix("task-")
+            suffix = " · waits " + ", ".join(task.blocked_by) if blocked and task.status == "pending" else ""
+            lines.append(f"[{state}] {identifier} · {subject}{suffix}")
         hidden = len(tasks) + self.omitted - len(visible)
         if hidden:
             lines.append(f"{hidden} more tasks")

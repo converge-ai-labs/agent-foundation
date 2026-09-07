@@ -448,7 +448,7 @@ class AgentCompositionResolver:
                 recipes.append(
                     ResolvedCapabilityRecipe(
                         capability=default,
-                        configuration={"notes_enabled": False} if default == "working_state" else {},
+                        configuration={},
                     )
                 )
         return tuple(recipes)

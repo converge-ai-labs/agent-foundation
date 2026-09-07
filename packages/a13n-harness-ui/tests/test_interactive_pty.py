@@ -168,6 +168,7 @@ from a13n_harness_ui.interactive.startup import run_terminal
 
 class Backend:
     thread_id = None
+    resumed_transcript = None
 
     async def skill_catalog(self):
         return None

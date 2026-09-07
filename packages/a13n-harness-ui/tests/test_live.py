@@ -160,7 +160,8 @@ async def test_large_compaction_summary_reaches_live_renderer_without_payload_om
         assert not event.payload_omitted
         renderer.ingest(event.event_type, event.payload, run_id=event.run_id)
     blocks = list(renderer.transcript.blocks.values())
-    assert blocks[1].source == summary + "\n"
+    assert blocks[0].source.endswith(summary + "\n")
+    assert blocks[0].kind == "compact"
     assert not renderer.assistant_seen
 
 

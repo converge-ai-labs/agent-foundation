@@ -238,6 +238,7 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
 
     class Backend:
         thread_id = None
+        resumed_transcript = None
 
         async def skill_catalog(self):
             return None

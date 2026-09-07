@@ -64,7 +64,7 @@ async def test_codex_subscription_resolution_delegates_to_harness_builder(
         calls.append({"model_name": model_name, **kwargs})
         return built
 
-    monkeypatch.setattr("a13n_harness_ui.model_runtime.build_codex_model", build)
+    monkeypatch.setattr("a13n_harness.model_auth.build_codex_model", build)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
         subscription_sources={
@@ -97,7 +97,7 @@ async def test_grok_subscription_resolution_delegates_to_harness_builder(
         calls.append({"model_name": model_name, **kwargs})
         return built
 
-    monkeypatch.setattr("a13n_harness_ui.model_runtime.build_grok_model", build)
+    monkeypatch.setattr("a13n_harness.model_auth.build_grok_model", build)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
         subscription_sources={"grok_subscription": GrokSubscriptionSource(source=source)},
@@ -136,7 +136,7 @@ async def test_fresh_resolver_keeps_sources_without_touching_credentials(monkeyp
     source = _CodexSource()
     expected = object()
 
-    monkeypatch.setattr("a13n_harness_ui.model_runtime.build_codex_model", lambda *args, **kwargs: expected)
+    monkeypatch.setattr("a13n_harness.model_auth.build_codex_model", lambda *args, **kwargs: expected)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
         subscription_sources={"codex_subscription": CodexSubscriptionSource(source=source)},

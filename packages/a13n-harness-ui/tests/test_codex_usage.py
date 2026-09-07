@@ -15,7 +15,7 @@ import pytest
 from a13n_harness.model_auth import CodexCredentials
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.shell import CliShell
-from a13n_harness_ui.interactive.usage import show_codex_usage
+from a13n_harness_ui.interactive.usage import choose_codex_reset, usage_text
 from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
@@ -151,7 +151,7 @@ async def test_uncertain_reset_survives_cancel_and_retries_same_identity(error: 
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = SimpleNamespace(app=app, cancel=AsyncMock())
-        await show_codex_usage(shell)
+        await choose_codex_reset(shell)
         await shell.menu_answer("credit-1")
         assert shell.selection.cursor == -1  # no implicit consent
         assert shell.selection.choices[0].value == "no"
@@ -165,7 +165,7 @@ async def test_uncertain_reset_survives_cancel_and_retries_same_identity(error: 
         await shell.cancel()
         app.redeem_codex_reset.side_effect = None
         app.redeem_codex_reset.return_value = ResetResult(code="already_redeemed")
-        await show_codex_usage(shell)
+        await choose_codex_reset(shell)
         await shell.menu_answer("yes")
         assert [call.args[0] for call in app.redeem_codex_reset.await_args_list] == [pending, pending]
         assert shell.pending_codex_reset is None
@@ -180,7 +180,7 @@ async def test_confirmed_redemption_refresh_error_cannot_reopen_mutation() -> No
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = SimpleNamespace(app=app, cancel=AsyncMock())
-        await show_codex_usage(shell)
+        await choose_codex_reset(shell)
         await shell.menu_answer("credit-1")
         await shell.menu_answer("yes")
         assert shell.menu_handler is None and shell.pending_codex_reset is None
@@ -188,3 +188,54 @@ async def test_confirmed_redemption_refresh_error_cannot_reopen_mutation() -> No
         assert "outcome above is confirmed" in "".join(
             block.source for block in shell.renderer.transcript.blocks.values()
         )
+
+
+@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("credits", [None, _CREDITS, {"available_count": 0}])
+async def test_status_usage_is_nonmodal_even_with_pending_redemption(pending, credits) -> None:
+    usage = CodexUsage(account_id="account-1", **_USAGE, reset_credits=credits)
+    app = SimpleNamespace(codex_usage=AsyncMock(return_value=usage), redeem_codex_reset=AsyncMock())
+    with create_pipe_input(), create_app_session(output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = SimpleNamespace(app=app)
+        shell.status.model = "openai-codex:fixture"
+        shell.composer.text = "keep this draft"
+        if pending:
+            shell.pending_codex_reset = ResetRequest(
+                account_id="account-1", credit_id="credit-1", redeem_request_id=uuid4()
+            )
+        await shell.command(shell.registry.parse("/status"))
+        await shell.job
+        assert shell.menu_handler is None and shell.selection is None
+        assert shell.composer.text == "keep this draft"
+        app.redeem_codex_reset.assert_not_awaited()
+        text = "".join(block.source for block in shell.renderer.transcript.blocks.values())
+        assert "0% remaining" in text
+        if pending:
+            assert "/usage reset" in text
+
+
+@pytest.mark.parametrize("seconds,label", [(18000, "5h"), (604800, "Weekly"), (86400, "Daily"), (420, "Primary (7m)")])
+@pytest.mark.parametrize("used,remaining", [(42, 58), (-5, 100), (150, 0)])
+async def test_usage_remaining_window_labels(seconds, label, used, remaining) -> None:
+    usage = CodexUsage(
+        account_id="account-1",
+        plan_type="plus",
+        rate_limit={
+            "allowed": True,
+            "limit_reached": False,
+            "primary_window": {"used_percent": used, "limit_window_seconds": seconds, "reset_at": 1900000000},
+        },
+    )
+    text = usage_text(usage, now=datetime.fromtimestamp(1900000000, UTC))
+    assert f"{label} limit: {remaining}% remaining" in text
+    assert "on " not in text.split("resets ")[1]
+    assert "on " in usage_text(usage, now=datetime.fromtimestamp(1800000000, UTC)).split("resets ")[1]
+
+
+async def test_missing_windows_are_not_zero_remaining() -> None:
+    text = usage_text(
+        CodexUsage(account_id="a", plan_type="plus", rate_limit={"allowed": True, "limit_reached": False})
+    )
+    assert "Usage windows unavailable" in text
+    assert "% remaining" not in text

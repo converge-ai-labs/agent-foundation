@@ -77,7 +77,7 @@ class DecisionInteraction:
         request = self.request
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
-            return f"{question.header}: {question.question}"
+            return f"{question.header} · {self.question_index + 1}/{len(request.questions)}"
         return (
             f"{request.tool_name} · choose approval"
             if isinstance(request, ApprovalRequestView)
@@ -97,7 +97,7 @@ class DecisionInteraction:
                 if request.metadata_omitted
                 else ""
             )
-            return f"{heading}\n{question.header} ({self.question_index + 1}/{len(request.questions)})\n{question.question}\n{options}{review}\nChoose a number or type your own answer. Timeout: {self.timeout_seconds:g}s per question; no reply rejects this call. /cancel keeps the request pending."
+            return f"{question.header} · {self.question_index + 1}/{len(request.questions)}\n{question.question}\n{options}{review}\nChoose a number or type your own answer. {self.timeout_seconds:g}s timeout · /cancel leaves unanswered."
         arguments = json.dumps(request.arguments, ensure_ascii=False, indent=2)
         metadata = json.dumps(request.metadata, ensure_ascii=False, indent=2) if request.metadata else ""
         content = f"{arguments}\n{metadata}".strip()

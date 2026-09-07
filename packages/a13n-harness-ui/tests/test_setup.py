@@ -327,7 +327,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
 ) -> None:
     import json
 
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -489,7 +489,7 @@ async def test_api_key_setup_publishes_only_reference_and_additional_instruction
 async def test_setup_run_delivers_base_and_additions_through_distinct_native_channels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings

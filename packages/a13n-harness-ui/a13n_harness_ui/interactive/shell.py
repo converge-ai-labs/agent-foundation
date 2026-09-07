@@ -15,7 +15,8 @@ from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
-from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
+from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, KeyPressEvent, merge_key_bindings
+from prompt_toolkit.key_binding.key_bindings import KeyBindingsBase
 from prompt_toolkit.layout import Layout
 from prompt_toolkit.layout.containers import ConditionalContainer, Float, FloatContainer, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -32,6 +33,7 @@ from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local
 from .attachments import DraftImage, add_images, clipboard_images, read_image
 from .commands import CommandRegistry, Invocation
 from .diagnostics import exception_report
+from .history import HistoryBrowser
 from .local_shell import run_local_shell, validate_local_shell_support
 from .rendering import Status, StreamRenderer, terminal_text
 from .selection import Choice, Selection, resolve_choice
@@ -53,7 +55,7 @@ class SlashCompleter(Completer):
 
     def get_completions(self, document: Document, complete_event: CompleteEvent) -> Generator[Completion]:
         text = document.text_before_cursor
-        prefix = text.rsplit(" ", 1)[-1]
+        prefix = text.split()[-1] if text and not text[-1].isspace() else ""
         for value, help_text in self.registry.completions(text):
             yield Completion(value, start_position=-len(prefix), display_meta=help_text)
 
@@ -73,6 +75,7 @@ class CliShell:
         self.renderer = StreamRenderer(self.status)
         self.backend: SessionBackend | None = None
         self.pending_codex_reset: ResetRequest | None = None
+        self.history_browser: HistoryBrowser | None = None
         self.ready = False
         self.closing = False
         self.job: asyncio.Task[None] | None = None
@@ -167,6 +170,38 @@ class CliShell:
             ),
             floats=[Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=8, scroll_offset=1))],
         )
+        self.history_window = Window(
+            FormattedTextControl(""),
+            always_hide_cursor=True,
+            get_vertical_scroll=lambda window: self.history_browser.view.top if self.history_browser else 0,
+        )
+        layout = HSplit(
+            [
+                ConditionalContainer(layout, filter=Condition(lambda: self.history_browser is None)),
+                ConditionalContainer(
+                    HSplit(
+                        [
+                            Window(
+                                FormattedTextControl(
+                                    lambda: self.history_browser.title() if self.history_browser else ""
+                                ),
+                                height=1,
+                                style="class:session-selector.title",
+                            ),
+                            self.history_window,
+                            Window(
+                                FormattedTextControl(
+                                    " ↑↓ / PgUp PgDn scroll · Home page top · End latest · Ctrl+O details · Ctrl+T / q close"
+                                ),
+                                height=1,
+                                style="class:session-selector.hint",
+                            ),
+                        ]
+                    ),
+                    filter=Condition(lambda: self.history_browser is not None),
+                ),
+            ]
+        )
         self.app: Application[None] = Application(
             layout=Layout(layout, focused_element=self.composer),
             key_bindings=self._bindings(),
@@ -251,8 +286,16 @@ class CliShell:
                 self.selector_focused = True
         self.app.invalidate()
 
-    def _task_text(self) -> str:
-        return terminal_text("\n".join(self.renderer.tasks.lines()))
+    def _task_text(self) -> FormattedText:
+        fragments = []
+        for line in self.renderer.tasks.lines():
+            style = "class:session-selector.hint"
+            if line.startswith("[active]"):
+                style = "class:session-selector.key bold"
+            elif line.startswith("[blocked]"):
+                style = "class:warning"
+            fragments.append((style, terminal_text(line) + "\n"))
+        return FormattedText(fragments)
 
     def _toolbar(self) -> FormattedText:
         return FormattedText([("", self.status.line(self.app.output.get_size().columns))])
@@ -288,7 +331,7 @@ class CliShell:
             return f" {submit_hint} · Alt+Enter newline · /help"
         action = "Ctrl+C cancel" if self.busy else "Ctrl+C twice exit"
         follow = "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest output"
-        history = " · /history: earlier output" if self.renderer.transcript.evicted else ""
+        history = " · Ctrl+T history"
         mode = "scroll" if self.mouse else "select"
         return f" [{mode}] {submit_hint} · Alt+Enter newline · Ctrl+O details · F2 tasks · {action} · {follow}{history}"
 
@@ -312,6 +355,12 @@ class CliShell:
         if not self.busy and self.interaction is None:
             self.status.state = "ready"
         self.app.invalidate()
+
+    async def _show_notes(self) -> None:
+        if self.backend is None or self.backend.thread_id is None:
+            self.emit("No saved notes in this session.")
+            return
+        self.renderer.restore_notes(await self.backend.app.thread_notes(thread_id=self.backend.thread_id), force=True)
 
     async def _activate_decisions(self) -> None:
         if self.backend is None or self.closing or self.menu_handler is not None:
@@ -383,7 +432,7 @@ class CliShell:
                     last_second = second
                     self.app.invalidate()
 
-    def _bindings(self) -> KeyBindings:
+    def _bindings(self) -> KeyBindingsBase:
         keys = KeyBindings()
 
         @keys.add("enter")
@@ -408,7 +457,7 @@ class CliShell:
                     self.emit(str(exc))
                     return
             try:
-                if text.startswith("/") and not self.registry.skill_references(text):
+                if text.startswith("/"):
                     invocation = self.registry.parse(text, busy=self.busy)
                     name = invocation.command.name
                     local = {"help", "mode", "status", "quit", "cancel", "theme", "mouse"}
@@ -564,10 +613,115 @@ class CliShell:
         def latest(event: KeyPressEvent) -> None:
             self.view.latest()
 
-        return keys
+        @keys.add("c-t")
+        def history(event: KeyPressEvent) -> None:
+            self.open_history()
+
+        browser_keys = KeyBindings()
+
+        @browser_keys.add("c-t")
+        @browser_keys.add("q")
+        @browser_keys.add("escape")
+        @browser_keys.add("c-c")
+        def close_history(event: KeyPressEvent) -> None:
+            self.close_history()
+
+        @browser_keys.add("up")
+        @browser_keys.add("pageup")
+        @browser_keys.add("down")
+        @browser_keys.add("pagedown")
+        def history_scroll(event: KeyPressEvent) -> None:
+            browser = self.history_browser
+            if browser is not None:
+                key = event.key_sequence[-1].key
+                amount = max(1, browser.view.height - 2) if key in {"pageup", "pagedown"} else 1
+                event.app.create_background_task(browser.scroll(-amount if key in {"up", "pageup"} else amount))
+
+        @browser_keys.add("home")
+        def history_top(event: KeyPressEvent) -> None:
+            if self.history_browser is not None:
+                self.history_browser.view.scroll(-len(self.history_browser.view.transcript.rows))
+
+        @browser_keys.add("end")
+        def history_latest(event: KeyPressEvent) -> None:
+            if self.history_browser is not None:
+                event.app.create_background_task(self.history_browser.navigate())
+
+        @browser_keys.add("c-o")
+        def history_detail(event: KeyPressEvent) -> None:
+            if self.history_browser is not None:
+                transcript = self.history_browser.view.transcript
+                transcript.detailed = not transcript.detailed
+                transcript.dirty = True
+
+        return merge_key_bindings(
+            [
+                ConditionalKeyBindings(keys, filter=Condition(lambda: self.history_browser is None)),
+                ConditionalKeyBindings(browser_keys, filter=Condition(lambda: self.history_browser is not None)),
+            ]
+        )
+
+    def open_history(self) -> None:
+        if self.history_browser is not None:
+            return
+        if self.backend is None or self.backend.thread_id is None:
+            self.emit("No saved messages yet.")
+            return
+        backend, thread_id = self.backend, self.backend.thread_id
+
+        async def load(cursor: str | None, continuation_id: str | None):
+            return await backend.app.get_thread_transcript(
+                thread_id=thread_id,
+                cursor=cursor,
+                expected_continuation_id=continuation_id,
+                limit=50,
+            )
+
+        browser = HistoryBrowser(self.status, load, self.app.invalidate)
+        browser.renderer.transcript.theme = self.renderer.transcript.theme
+        self.history_browser = browser
+        self.history_window.content = browser.view
+        self.app.layout.focus(browser.view)
+        self.app.create_background_task(browser.navigate())
+        self.app.invalidate()
+
+    def close_history(self) -> None:
+        if self.history_browser is not None:
+            self.history_browser.close()
+            self.history_browser = None
+            self.app.layout.focus(self.composer)
+            self.app.invalidate()
+
+    def _restore_resumed_history(self) -> None:
+        assert self.backend is not None
+        page = self.backend.resumed_transcript
+        if page is None:
+            return
+        from .history import restore_transcript
+
+        renderer = StreamRenderer(self.status)
+        renderer.transcript.theme = resolve_theme(self.status.theme)
+        renderer.transcript.detailed = self.status.mode == "detailed"
+        try:
+            restore_transcript(renderer, page)
+        except BaseException:
+            renderer.transcript.close()
+            raise
+        self.renderer.transcript.close()
+        self.renderer = renderer
+        self.view.transcript = renderer.transcript
+        self.view.latest()
+        self.backend.resumed_transcript = None
+
+    async def _resume(self, selected: str | None) -> str:
+        assert self.backend is not None
+        result = await self.backend.resume(selected)
+        self._restore_resumed_history()
+        return result
 
     async def run(self, backend: SessionBackend, *, terminal_task: asyncio.Task[None] | None = None) -> None:
         self.backend = backend
+        self._restore_resumed_history()
         self.renderer.transcript.theme = resolve_theme(self.status.theme)
         self.renderer.transcript.dirty = True
         self.app.style = self._style()
@@ -581,6 +735,7 @@ class CliShell:
         self.registry.set_skills(await backend.skill_catalog())
         if backend.thread_id is not None:
             self.renderer.tasks.restore(await backend.app.thread_tasks(thread_id=backend.thread_id))
+            self.renderer.restore_notes(await backend.app.thread_notes(thread_id=backend.thread_id))
         self.ready = True
         self.status.state = "waiting for you" if self.interaction is not None else "ready"
         self.app.invalidate()
@@ -612,6 +767,7 @@ class CliShell:
         finally:
             loop.set_exception_handler(previous_handler)
             self.closing = True
+            self.close_history()
             await self.cancel()
             if self._input_task is not None and not self._input_task.done():
                 self._input_task.cancel()
@@ -719,6 +875,9 @@ class CliShell:
                             self.renderer.tasks.restore(
                                 await self.backend.app.thread_tasks(thread_id=self.backend.thread_id)
                             )
+                            self.renderer.restore_notes(
+                                await self.backend.app.thread_notes(thread_id=self.backend.thread_id)
+                            )
                         else:
                             self.renderer.tasks.tasks.clear()
                 except Exception as exc:
@@ -782,7 +941,7 @@ class CliShell:
                 self.emit(str(exc))
                 self._restore_rejected_command(text, generation, ())
             return
-        if text.startswith("/") and not self.registry.skill_references(text):
+        if text.startswith("/"):
             generation, images = self._draft_generation, self.images
             try:
                 invocation = self.registry.parse(text, busy=self.busy)
@@ -1080,6 +1239,24 @@ class CliShell:
             raise ValueError(
                 "Answer the selectable prompt or use /cancel before another command. Pending requests stay unapproved."
             )
+        elif name == "usage":
+            from .usage import choose_codex_reset, show_codex_usage, thread_usage_text
+
+            if argument is None:
+                if self.backend.thread_id is None:
+                    self.emit("No Thread selected. Send a message or /resume to inspect recorded usage.")
+                    return
+                view = await self.backend.app.thread_usage(thread_id=self.backend.thread_id)
+                self.emit(thread_usage_text(view))
+                tokens = f"{self.status.context_tokens:,}" if self.status.context_tokens is not None else "unknown"
+                window = f"{self.status.context_window:,}" if self.status.context_window is not None else "unknown"
+                self.emit(f"Current context: {tokens} / {window} tokens. Context occupancy is not cumulative usage.")
+            else:
+                if not self.status.model.startswith("openai-codex:"):
+                    raise ValueError("Subscription usage is available for Codex Agents only.")
+                if self.busy:
+                    raise ValueError("Wait for active work before inspecting subscription limits or resetting.")
+                self.launch(choose_codex_reset(self) if argument == "reset" else show_codex_usage(self), kind="usage")
         elif name == "steer":
             assert argument is not None
             result = await self.backend.steer(argument)
@@ -1106,12 +1283,14 @@ class CliShell:
         elif name == "new":
             self.launch(self.backend.new(), failure_input=invocation.source, discard_images=True)
         elif name == "resume":
-            self.launch(self.backend.resume(argument), failure_input=invocation.source, discard_images=True)
+            self.launch(self._resume(argument), failure_input=invocation.source, discard_images=True)
         elif name == "review":
             assert argument is not None
             self.launch(self.backend.review(argument), failure_input=invocation.source)
+        elif name == "notes":
+            await self._show_notes()
         elif name == "history":
-            self.launch(self.backend.history(argument), failure_input=invocation.source)
+            self.open_history()
         elif name == "config":
             self.emit(
                 f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent for this session; /thinking adjusts its reasoning for subsequent turns.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."

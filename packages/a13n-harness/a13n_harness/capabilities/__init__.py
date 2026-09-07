@@ -1,5 +1,8 @@
 """First-party optional Agent Harness Capabilities."""
 
+from importlib import import_module
+from typing import TYPE_CHECKING
+
 from .codeact import CodeActCapability, CodeActConfig
 from .context import (
     CompactionCapability,
@@ -42,7 +45,6 @@ from .media import (
     MediaResource,
     MediaRunCapability,
 )
-from .mem0 import MEM0_API_KEY_ENV, MEM0_BASE_URL_ENV, Mem0Capability, Mem0Scope
 from .shell_review import (
     AgentShellCommandReviewer,
     ShellCommandReviewer,
@@ -135,6 +137,20 @@ from .working_state import (
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
+
+if TYPE_CHECKING:
+    from .mem0 import MEM0_API_KEY_ENV, MEM0_BASE_URL_ENV, Mem0Capability, Mem0Scope
+
+
+def __getattr__(name: str) -> object:
+    # Importing any capability must not initialize an unused memory SDK and its
+    # vector-store integrations. Preserve the public re-exports on explicit use.
+    if name in {"MEM0_API_KEY_ENV", "MEM0_BASE_URL_ENV", "Mem0Capability", "Mem0Scope"}:
+        value = vars(import_module(".mem0", __name__))[name]
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",

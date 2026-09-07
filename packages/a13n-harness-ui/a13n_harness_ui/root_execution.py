@@ -190,6 +190,7 @@ class RootRunExecutor:
             ):
                 async with stream:
                     async for item in stream:
+                        await self._store.usage.observe(thread_id=thread.thread_id, item=item)
                         try:
                             await self._publish_live(
                                 thread_id=thread.thread_id,

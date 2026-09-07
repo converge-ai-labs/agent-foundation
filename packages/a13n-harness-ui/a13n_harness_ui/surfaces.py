@@ -429,6 +429,18 @@ class TaskView(SurfaceModel):
     blocked_by: tuple[str, ...] = Field(default=(), max_length=256)
 
 
+class NoteView(SurfaceModel):
+    key: str = Field(min_length=1, max_length=512)
+    value: str = Field(max_length=64 * 1024)
+
+
+class NotePage(SurfaceModel):
+    continuation_id: str | None = Field(default=None, pattern=r"^(?:initial:)?[0-9a-f]{64}$")
+    notes: tuple[NoteView, ...] = Field(default=(), max_length=256)
+    total: int = Field(default=0, ge=0)
+    omitted: int = Field(default=0, ge=0)
+
+
 class TaskPage(SurfaceModel):
     continuation_id: str | None = Field(default=None, pattern=r"^(?:initial:)?[0-9a-f]{64}$")
     version: int | None = Field(default=None, ge=1)
@@ -734,6 +746,8 @@ __all__ = [
     "LaunchProjectSelected",
     "LaunchProjectUnmatched",
     "NewThreadDefaults",
+    "NotePage",
+    "NoteView",
     "PendingDecisionSummary",
     "ProjectPathCompletion",
     "ProjectPathCompletionPage",

@@ -153,9 +153,9 @@ def test_compaction_summary_projects_to_an_independent_expanded_block() -> None:
     for event in HarnessAguiObserver().observe(source):
         renderer.ingest(event.type.value, event.model_dump(mode="json"), run_id="run-1")
     blocks = list(renderer.transcript.blocks.values())
-    assert "Compact summary · compaction-1" in blocks[0].source
-    assert blocks[1].source == summary + "\n"
-    assert blocks[1].collapsed_lines is None
+    assert blocks[0].source == "Compact summary\n" + summary + "\n"
+    assert blocks[0].kind == "compact"
+    assert blocks[0].collapsed_lines is None
     assert not renderer.assistant_seen
 
 
@@ -330,3 +330,64 @@ def test_input_events_hide_context_without_marking_user_as_assistant() -> None:
         },
     )
     assert "HIDDEN" not in _source(renderer)
+
+
+def test_native_shell_preview_prioritizes_command_exit_and_partial_output() -> None:
+    import json
+
+    renderer = StreamRenderer(Status())
+    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "shell-one", "tool_call_name": "shell_exec"})
+    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "shell-one", "delta": '{"command":"pytest -q"}'})
+    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "shell-one"})
+    renderer.ingest(
+        "TOOL_CALL_RESULT",
+        {
+            "tool_call_id": "shell-one",
+            "content": json.dumps(
+                {
+                    "ok": True,
+                    "status": {"phase": "exited", "exit_code": 7},
+                    "stderr": {"text": "test failure", "coverage": "partial", "content_complete": False},
+                    "stdout": {"text": "test output", "coverage": "complete"},
+                }
+            ),
+        },
+    )
+    renderer.transcript.render(80)
+    text = _text(renderer.transcript)
+    assert "exited · exit 7" in text
+    assert "$ pytest -q" in text
+    assert text.index("test failure") < text.index("test output")
+    assert "output partial" in text
+    renderer.transcript.close()
+
+
+def test_tools_are_compact_and_question_debug_is_hidden() -> None:
+    renderer = StreamRenderer(Status())
+    for index in range(3):
+        call = {"tool_call_id": str(index), "tool_call_name": "view"}
+        renderer.ingest("TOOL_CALL_START", call)
+        renderer.ingest("TOOL_CALL_RESULT", {**call, "content": "done"})
+    renderer.transcript.render(80)
+    assert len(renderer.transcript.rows) == 3
+    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "private-id", "tool_call_name": "ask_user_question"})
+    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "private-id", "delta": '{"questions": []}'})
+    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "private-id"})
+    assert "ask_user_question" not in _source(renderer) and "private-id" not in _source(renderer)
+    renderer.transcript.close()
+
+
+def test_notes_show_full_values_and_distinct_style_without_repeated_snapshots() -> None:
+    from a13n_harness_ui.surfaces import NotePage, NoteView
+
+    renderer = StreamRenderer(Status())
+    page = NotePage(notes=(NoteView(key="design", value="details " * 30 + "THE END"),), total=1)
+    renderer.restore_notes(page)
+    renderer.restore_notes(page)
+    assert len(renderer.transcript.blocks) == 1
+    assert "THE END" in _source(renderer)
+    renderer.transcript.render(60)
+    assert "THE END" in _text(renderer.transcript)
+    assert any("ansimagenta" in style for row in renderer.transcript.rows for style, _ in row)
+    assert next(iter(renderer.transcript.blocks.values())).kind == "notes"
+    renderer.transcript.close()

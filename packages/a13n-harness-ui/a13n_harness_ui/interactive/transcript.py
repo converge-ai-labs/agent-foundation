@@ -276,8 +276,12 @@ class Transcript:
             value = (
                 TerminalMarkdown(source, code_theme=self.theme.syntax_theme, hyperlinks=False)
                 if markdown
-                else Text(source)
+                else Text(source.rstrip("\n"))
             )
+            if kind in {"summary", "compact", "notes"}:
+                from rich.panel import Panel
+
+                value = Panel(value, border_style="cyan" if kind == "compact" else "magenta", padding=(0, 1))
             # Stream Rich lines into a disposable disk cache, not a giant padded grid.
             for line in Segment.split_and_crop_lines(
                 console.render(value, console.options), width, pad=False, include_new_lines=False
@@ -289,12 +293,21 @@ class Transcript:
                     accent = "fg:ansimagenta italic"
                 elif kind == "user":
                     accent = "fg:ansigreen"
+                elif kind in {"summary", "notes"}:
+                    accent = "fg:ansimagenta"
+                elif kind == "compact":
+                    accent = "fg:ansicyan"
+                elif kind == "tool":
+                    accent = "fg:ansibrightblack"
+                elif kind == "shell":
+                    accent = "fg:ansicyan"
                 elif not markdown and text.startswith("["):
                     accent = "fg:ansicyan bold"
                 elif kind == "edit" and text.startswith(("+", "-")):
                     accent = "fg:ansigreen" if text.startswith("+") else "fg:ansired"
                 yield [(style + " " + accent, text) for style, text in rendered]
-            yield []
+            if kind not in {"tool", "shell", "edit"}:
+                yield []
 
         self.ids = []
         self.ends = []

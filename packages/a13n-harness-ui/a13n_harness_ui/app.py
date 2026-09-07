@@ -105,6 +105,7 @@ from a13n_harness_ui.storage import (
 from a13n_harness_ui.storage import (
     ThreadConfigurationPatch as StoredThreadConfigurationPatch,
 )
+from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
@@ -117,6 +118,7 @@ from a13n_harness_ui.surfaces import (
     ExternalToolResult,
     LaunchProjectResolution,
     NewThreadDefaults,
+    NotePage,
     ProjectPathCompletionPage,
     ProjectSummary,
     QuestionResponse,
@@ -599,6 +601,22 @@ class HarnessUiApp:
             return ActiveWorkSummary(
                 root_operations=root_operations,
                 child_executions=child_executions,
+            )
+
+    async def thread_usage(self, *, thread_id: str) -> ThreadUsageView:
+        async with self._operation():
+            return await self._store.usage.snapshot(thread_id=thread_id)
+
+    async def thread_notes(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+    ) -> NotePage:
+        async with self._operation():
+            return await self._terminal_projections.note_page(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
             )
 
     async def thread_tasks(

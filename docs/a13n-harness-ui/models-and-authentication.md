@@ -144,7 +144,7 @@ Logout and account replacement are explicit credential mutations; inspect which 
 
 `/thinking low` changes reasoning without editing files; `/thinking default` returns to the Agent's configured Model settings. An in-flight operation keeps its captured values. An inherited Markdown child receives the parent's effective recipe; an independently referenced Agent keeps its own Model.
 
-`/status` shows observed root usage and, for Codex, read-only subscription limit information plus separately confirmed credit redemption. Local observed cost is an estimate, not your subscription bill. See [usage and credit confirmation](everyday-use.md#tasks-usage-and-terminal-feedback).
+`/status` shows observed root usage and, for Codex, read-only subscription limit information. `/usage reset` separately opens explicitly confirmed credit redemption. Local observed cost is an estimate, not your subscription bill. See [usage and credit confirmation](everyday-use.md#tasks-usage-and-terminal-feedback).
 
 ## Supported request settings
 

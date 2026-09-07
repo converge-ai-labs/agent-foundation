@@ -17,13 +17,9 @@ from a13n_harness.model_auth import (
     CodexCredentialSource,
     GrokCredentials,
     GrokCredentialSource,
-    build_codex_model,
-    build_grok_model,
 )
-from openai import AsyncOpenAI
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.providers import Provider, infer_provider_class
-from pydantic_ai.providers.openai import OpenAIProvider
 
 from a13n_harness_ui.configuration import (
     ApiKeyAuthentication,
@@ -101,6 +97,8 @@ class HarnessUiModelResolver:
         if isinstance(authentication, ApiKeyAuthentication):
             return await self._api_key_model(recipe, authentication)
         if isinstance(authentication, CodexSubscriptionAuthentication):
+            from a13n_harness.model_auth import build_codex_model
+
             source = self._required_subscription_source(
                 "codex_subscription",
                 CodexSubscriptionSource,
@@ -112,6 +110,8 @@ class HarnessUiModelResolver:
                 originator="a13n-harness-ui",
             )
         if isinstance(authentication, GrokSubscriptionAuthentication):
+            from a13n_harness.model_auth import build_grok_model
+
             source = self._required_subscription_source(
                 "grok_subscription",
                 GrokSubscriptionSource,
@@ -152,6 +152,9 @@ class HarnessUiModelResolver:
                     details={"provider": requested_provider},
                 )
             if route_provider == "grok":
+                from openai import AsyncOpenAI
+                from pydantic_ai.providers.openai import OpenAIProvider
+
                 return OpenAIProvider(openai_client=AsyncOpenAI(api_key=api_key, base_url=_GROK_BASE_URL))
             provider_type = infer_provider_class(requested_provider)
             constructor = cast(Callable[..., Provider[Any]], provider_type)

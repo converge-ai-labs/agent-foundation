@@ -139,6 +139,26 @@ class ChildExecutionRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
+class ThreadUsageRecord(Base):
+    """First observed canonical usage contribution within one root Thread family."""
+
+    __tablename__ = "thread_usage"
+    __table_args__ = (UniqueConstraint("root_thread_id", "record_id", name="identity"),)
+
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    root_thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    origin_thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False
+    )
+    record_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    descendant: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class EnvironmentBindingRecord(Base):
     __tablename__ = "environment_binding"
     __table_args__ = (
@@ -170,4 +190,5 @@ __all__ = [
     "ResourceIndexRecord",
     "ThreadConfigurationRecord",
     "ThreadRecord",
+    "ThreadUsageRecord",
 ]

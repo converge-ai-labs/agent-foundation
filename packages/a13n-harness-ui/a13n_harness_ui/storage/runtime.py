@@ -20,6 +20,7 @@ from .repositories import (
     EnvironmentStateRepository,
     ThreadRepository,
 )
+from .usage import ThreadUsageRepository
 
 if TYPE_CHECKING:
     from a13n_harness_ui.settings import StorageSettings
@@ -42,6 +43,7 @@ class LocalStore:
         self.objects = objects
         self.configurations = ConfigurationRepository(database.sessions)
         self.threads = ThreadRepository(database.sessions)
+        self.usage = ThreadUsageRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)
 

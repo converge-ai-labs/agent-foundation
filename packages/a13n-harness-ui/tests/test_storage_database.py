@@ -37,6 +37,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "resource_index",
             "thread",
             "thread_configuration",
+            "thread_usage",
         }
         with engine.connect() as connection:
             context = MigrationContext.configure(

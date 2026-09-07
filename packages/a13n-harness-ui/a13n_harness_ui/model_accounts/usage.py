@@ -7,7 +7,7 @@ from typing import Literal
 from uuid import UUID
 
 import httpx2
-from a13n_harness.model_auth import CodexCredentials, CodexCredentialSource, build_codex_account_auth
+from a13n_harness.model_auth import CodexCredentials, CodexCredentialSource
 from pydantic import BaseModel, ConfigDict, Field
 
 _BASE_URL = "https://chatgpt.com/backend-api/wham"
@@ -75,6 +75,8 @@ class CodexUsageClient:
         expected_account_id: str | None = None,
         refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     ) -> None:
+        from a13n_harness.model_auth import build_codex_account_auth
+
         self.client = client
         self.client.follow_redirects = False
         self.client.headers["User-Agent"] = "a13n-harness-ui"

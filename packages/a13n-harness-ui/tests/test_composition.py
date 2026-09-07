@@ -290,6 +290,10 @@ async def test_subscription_route_reaches_composition_and_native_reconstruction(
 
     assert composition.root.model.route == route
     assert reconstructed.executable.definition.agent.model.startswith("a13n-harness-ui:model-")
+    from a13n_harness.filters import ColdStartFilterConfiguration
+
+    assert reconstructed.executable.definition.agent.cold_start_filter == ColdStartFilterConfiguration()
+    assert reconstructed.executable.definition.agent.cold_start_filter.idle_seconds == 3600
 
 
 async def test_global_guidance_and_default_file_context_are_captured_for_root_and_children(tmp_path: Path) -> None:
@@ -640,3 +644,30 @@ async def test_legacy_capture_keeps_original_combined_prompt_without_new_default
     )
     assert rebuilt.executable.definition.agent.system_prompt == ["Original frozen identity", "Original additions"]
     assert rebuilt.executable.definition.agent.instructions is None
+
+
+async def test_explicit_notes_opt_out_overrides_the_enabled_default(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent_path.write_text(
+        agent_path.read_text().replace(
+            "capabilities:\n",
+            "capabilities:\n  - capability: working_state\n    configuration: {notes_enabled: false}\n",
+            1,
+        )
+    )
+    source = await load_harness_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    working = [item for item in composition.root.capabilities if item.capability == "working_state"]
+    assert len(working) == 1 and working[0].configuration["notes_enabled"] is False
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(
+        composition,
+        subagent_operator=_UnusedOperator(),
+        subscription_sources={},
+    )
+    from a13n_harness.capabilities import WorkingStateCapability
+
+    native = [
+        item for item in reconstructed.executable.definition.capabilities if isinstance(item, WorkingStateCapability)
+    ]
+    assert len(native) == 1 and native[0].configuration.notes_enabled is False

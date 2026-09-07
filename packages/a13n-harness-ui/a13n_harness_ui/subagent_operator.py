@@ -1015,6 +1015,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             ):
                 async with prepared.stream as stream:
                     async for item in stream:
+                        await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
                         events = observer.observe(item)
                         compactor.observe(events)
                         async with self._lock:

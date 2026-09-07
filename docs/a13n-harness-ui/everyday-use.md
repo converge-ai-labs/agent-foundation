@@ -14,7 +14,7 @@
 | Start a new conversation without deleting history   | `/new`                                           |
 | List recent conversations in this workspace         | `/resume`                                        |
 | Resume one saved conversation                       | `/resume session-id`                             |
-| Read saved messages and tool details                | `/history`, then the next-page command it prints |
+| Read saved messages and tool details                | Ctrl+T or `/history`                             |
 | List/select configured Agents                       | `/agent`, `/agent agent-codex`, `/agent default` |
 | Read/change reasoning                               | `/thinking`, `/thinking low`                     |
 | Read/change execution permissions                   | `/environment`, `/environment sandbox`           |
@@ -25,6 +25,12 @@
 | Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                               |
 
 `/model` is an alias for `/agent` and accepts Agent IDs, not Model IDs. Switching selects the Agent’s model, instructions, tools, and shell-review policy for the next turn while preserving conversation history and execution permissions. It is unavailable during active work. Create another choice with `a13n-harness-ui add agent`.
+
+`--resume` and `/resume` restore recent messages as well as session settings. The initial screen is bounded to the latest 50 saved messages, at most 100 visible parts and 256 KiB, with explicit truncation notices. Live conversation display also evicts old content at 500 blocks or 2 MiB; this does not delete saved history. Press Ctrl+T to browse retained messages without mixing them into live output. Up/PageUp at the top loads an older page; Down/PageDown at the bottom loads a newer page. Home goes to the current page top, End reloads latest, and Ctrl+T, q, Escape or Ctrl+C closes the viewer and restores your draft. The viewer keeps one bounded page, not the whole conversation. It cannot recover messages already absent from the saved continuation after context compaction.
+
+Type `$` to list available Skills with short descriptions, then filter and complete the name. `$name` can appear within an ordinary prompt; `/` is reserved for commands.
+
+CLI Agents inherit the default cold-start filter: after 3600 seconds without model activity, native cold compression can shorten already-consumed tool results. This is separate from transcript display limits.
 
 Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model.
 
@@ -38,7 +44,7 @@ Commands preserve Windows backslashes. Quote paths containing spaces, such as `/
 
 Summarize displays its body from the native `HandoffSummaryEvent` after the handoff summary has been persisted. This is the **prepared** state, distinct from **completed** when the handoff is consumed at the next boundary. The full available summary and file reminders are expanded, with lifecycle status separate from the body.
 
-Compaction displays its generated summary in an independently expanded Markdown block, correlated to the operation ID. The body comes from the native custom event, not inferred saved history or an assistant answer. Lifecycle metadata remains separate; neither summary visibility nor a completed lifecycle event asserts that a new continuation has been saved.
+Compaction displays its generated summary in a distinct, independently expanded bordered panel. Summary and compaction panels use separate accents from ordinary Markdown; operation correlation remains in lifecycle details. The body comes from the native custom event, not inferred saved history or an assistant answer. Lifecycle metadata remains separate; neither summary visibility nor a completed lifecycle event asserts that a new continuation has been saved.
 
 The status bar prioritizes state, `ctx tokens (%)`, and observed model cost, followed by model and elapsed time as width permits. It refreshes on model-request usage reports while the task is still running, not only when the whole task finishes. It does not invent token-by-token usage before the provider reports it. Input/output/cache details and reasoning stay in `/status`. Context percentage uses the last reported root request divided by your configured working budget. `--` means unavailable, not zero; genuine zero is `0%`. Child and auxiliary usage are not summed into it. `/status` shows exact counters and complete settings even in a narrow terminal.
 
@@ -46,11 +52,15 @@ Image, audio, video, and document inputs remain native Harness content. Terminal
 
 ### Tasks, usage, and terminal feedback
 
-F2 expands or collapses the native task panel. Counts and task status come from committed task facts and the selected continuation, not guesses from tool text. The panel is bounded so the composer stays usable on a short terminal.
+The native task panel shows up to five rows, active work first, with task IDs and dependency hints. F2 expands or collapses it. Counts and task status come from committed task facts and the selected continuation, not guesses from tool text. The panel is bounded so the composer stays usable on a short terminal.
 
-`/status` reports observed root-Run input, output, cache-read, cache-write, and cost counters. These are process-local observations, not reconstructed billing totals; child and non-model usage are excluded. An unavailable cost stays unknown rather than becoming zero. Subscription model cost is an estimate, not your subscription invoice.
+`/status` reports observed root-Run input, output, cache-read, cache-write, and cost counters. The bar includes cache rate (cache-read tokens / input plus output tokens), not a prompt-only hit rate. These are process-local observations, not reconstructed billing totals; child and non-model usage are excluded. An unavailable cost stays unknown rather than becoming zero. Subscription model cost is an estimate, not your subscription invoice.
 
-For a Codex model, idle `/status` also reads subscription limits, provider-reported reset times, and available reset credits. **Refresh usage** is read-only. Redeeming a credit requires selecting the entitlement and then explicitly confirming its account and redemption ID; **No** is the safe choice. A timeout or cancellation can leave the result unknown: keep this terminal open and use `/status` to retry the same redemption ID. A confirmed result remains confirmed even when the following usage refresh fails. OAuth token expiry is not a quota-reset time.
+`/usage` works with every model and shows persistent **observed Thread usage**, including root/descendant/combined counters, input/output/cache/audio subsets, known model USD cost, unknown-cost response counts, and separate provider-currency subtotals. The latest 32 Runs show unique contributions and their agent instance; older Runs remain in the totals. Per-model breakdowns are bounded to 32 names with an explicit remainder. Run grouping never adds inclusive parent totals on top of child usage, and a provider receipt is counted once per Thread family at its first observation.
+
+This is recorded-so-far accounting, available during work and retained across compaction, resume, and restart, not a provider invoice. Older history without ledger records has unavailable coverage, not a fabricated zero. Context occupancy and subscription limits are separate. Startup automatically upgrades the local database; existing Thread history is preserved and is not guessed into historical usage.
+
+For a Codex model, idle `/status` or `/usage subscription` shows each subscription window's **remaining percentage**, provider-reported local reset time, and available reset credits, without opening a menu. Missing limits are marked unavailable, not zero. Use `/usage reset` to review eligible credits: redeeming requires selecting an entitlement and explicitly confirming its account and redemption ID; **No** is the safe choice. A timeout or cancellation can leave the result unknown: keep this terminal open and use `/usage reset` to retry the same redemption ID. `/status` only reports the pending identity. A confirmed result remains confirmed even when the following usage refresh fails. OAuth token expiry is not a quota-reset time.
 
 A terminal bell announces a completed Run or a new decision. While idle, the first Ctrl+C clears the draft and immediately explains how to exit; a second within two seconds exits. Editing disarms that exit confirmation. During work, Ctrl+C acknowledges cancellation immediately and waits for owned cleanup rather than exiting early.
 
@@ -83,12 +93,12 @@ CodeAct is disabled by default. Set `enable_codeact: true` to enable the Harness
 
 Flagged shell commands and failed shell reviews open a selectable prompt. Inspect the tool, request, arguments, and review details before choosing **Approve once** or **Deny**. No approval is preselected. The Inspect action and `/review request-id` read retained details when the preview is truncated. Ordinary free text cannot approve a shell request.
 
-Structured questions support single choice, multiple choice with Space, and typed answers. Complete option labels and descriptions remain scrollable above the compact selector, including in narrow terminals. Answers stay local until the complete batch is ready and are submitted against the exact continuation. `/cancel` discards local answers without approving anything; `/status` reopens pending decisions. Resuming a suspended conversation also reopens them. Approvals, denials, and external results use this interface, not `/approve`, `/deny`, or `/result` commands. Task tools and `ask_user_question` are included by default; notes remain opt-in.
+Structured questions support single choice, multiple choice with Space, and typed answers. Complete option labels and descriptions remain scrollable above the compact selector, including in narrow terminals. Answers stay local until the complete batch is ready and are submitted against the exact continuation. `/cancel` discards local answers without approving anything; `/status` reopens pending decisions. Resuming a suspended conversation also reopens them. Approvals, denials, and external results use this interface, not `/approve`, `/deny`, or `/result` commands. Task tools, `ask_user_question`, and native note tools (`note_write`, `note_get`, `note_delete`) are included by default. Notes are injected into model context under the native budgets; explicit `notes_enabled: false` is respected. `/notes` shows saved full values in a dedicated panel, not 120-character previews, with explicit omissions above 256 notes or 256 KiB. Changed saved notes also appear after each completed operation or resume.
 
 ### Theme, scrolling, copy, and images
 
 - `/theme auto|dark|light` changes UI and Markdown syntax colors for this session; `display.theme` sets the file default. Auto preserves your terminal foreground/background and ANSI palette; passive metadata selects syntax variants without consuming input.
-- PageUp/PageDown scroll the bounded display history; Ctrl+End returns to following live output. `/history` retrieves durable pages after display eviction.
+- PageUp/PageDown scroll the bounded display history; Ctrl+End returns to following live output. Ctrl+T browses retained messages after display eviction.
 - Scroll mode (`/mouse on`) is the default. Wheel events belong to the hovered transcript, selector, or composer. In selectors, scrolling only browses; click highlights and Enter confirms. Ctrl+Space switches selector/composer keyboard focus. Esc closes an interaction/completion first, otherwise toggles scroll/select. Select mode (`/mouse off`) restores native selection/copy; application wheel routing is unavailable there. PageUp/PageDown and Ctrl+End work in either mode. Scrolling up freezes follow; returning to the bottom resumes it. Code rendering avoids padded backgrounds and OSC hyperlinks.
 - Ctrl+V, Alt+V, or `/paste-image` explicitly reads clipboard images. Normal text paste remains text and never submits itself. Some terminals intercept Ctrl+V; use Alt+V or the command there.
 - `/attach "path/to/image.png"` is the portable fallback. Linux clipboard images need `wl-paste` or `xclip`; no helper is installed automatically.

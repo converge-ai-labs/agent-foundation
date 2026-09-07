@@ -44,6 +44,29 @@ def test_startup_view_imports_without_loading_execution_dependencies() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_runtime_import_defers_unused_provider_sdks() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; "
+            "import a13n_harness_ui.interactive.runtime; "
+            "assert not {'mem0', 'qdrant_client', 'openai', 'pydantic_ai.models.openai'} & sys.modules.keys(); "
+            "from a13n_harness.model_auth import build_codex_model; "
+            "from a13n_harness.model_auth.runtime import build_codex_model as native; "
+            "assert build_codex_model is native; "
+            "from a13n_harness.capabilities import Mem0Capability; "
+            "from a13n_harness.capabilities.mem0 import Mem0Capability as memory; "
+            "assert Mem0Capability is memory",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_terminal_frontend_requires_interactive_input_and_output(
     tmp_path: Path,
 ) -> None:

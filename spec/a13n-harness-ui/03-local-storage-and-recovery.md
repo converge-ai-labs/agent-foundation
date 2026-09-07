@@ -48,6 +48,16 @@ One App serializes root admission per Thread and state changes per child executi
 
 Harness UI does not use process lock files, PID inspection, heartbeats, or time-based leases to infer whether another App is alive. Current execution ownership is process-local.
 
+## Observed Thread Usage
+
+SQLite retains canonical Harness model and provider usage records separately from continuation history. Root and asynchronous child stream consumers persist each usage-report chunk before best-effort display publication; terminal local records reconcile idempotently. Inline descendant records retain their native attribution. A failed persistence write fails the consuming operation rather than silently dropping accounting facts; already committed records survive cancellation, failed Runs, compaction, and restart.
+
+Records are scoped to the root Thread family. Model record identity deduplicates repeated reports and terminal reconciliation. Provider identity is `(provider, product, usage_id)`, independent of Run attribution: the same receipt is counted once per family and attributed to its first observation. A duplicate identity with changed usage is an explicit integrity error, not an overwrite. This observational ledger is not an invoice, execution journal, or authority to replay effects.
+
+The root Thread usage projection distinguishes root-agent records, inline/asynchronous descendants, and their combined total. It sums individual committed records, never the already-inclusive root RunUsage plus child totals. Cached and audio token counters are subsets, not additions to input/output totals. Known model USD costs and provider costs in each reported currency remain separate; missing costs remain unknown. Bounded model breakdowns disclose omitted groups. The latest 32 observed Runs group unique contributions by native Run ID and agent instance; older Run contributions remain in totals. Run grouping is derived from the same immutable records, not a second execution or billing authority. Queries use a fixed ledger high-water mark and bounded detached batches with no database session held across rendering or external I/O.
+
+Coverage starts with the first persisted observation. No record means unavailable coverage, not proven zero lifetime usage. Pre-ledger history and usage never observed after a crash are not backfilled from messages. While work is active, totals are recorded-so-far; context occupancy and subscription limits are separate projections.
+
 ## Thread Metadata Head
 
 Each Thread has one mutable metadata head containing `version`, nullable `title`, and `archived`. A title/archive mutation compares its required expected version, changes both supplied fields in one short transaction, and increments the version once. A no-op can retain the current version. Metadata changes update Thread recency independently from configuration and continuation selection.

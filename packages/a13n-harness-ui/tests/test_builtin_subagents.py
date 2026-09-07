@@ -340,4 +340,11 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         page = await app.query_child_executions(parent_thread_id=backend.thread_id)
         assert len(page.executions) == 2
         assert {item.persisted_status for item in page.executions} == {"succeeded"}
+        usage = await app.thread_usage(thread_id=backend.thread_id)
+        assert usage.root.model_requests == 5
+        assert usage.descendants.model_requests == 2
+        assert usage.combined.model_requests == 7
+        assert len(usage.recent_runs) == 3
+        assert sum(run.totals.model_requests for run in usage.recent_runs if run.descendant) == 2
+
     assert child_models == (["model-main"] if child_name == "explorer" else ["model-worker"]) * 2

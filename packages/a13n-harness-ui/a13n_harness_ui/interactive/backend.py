@@ -30,6 +30,8 @@ from a13n_harness_ui.surfaces import (
     SkillCatalogView,
     SkillReference,
     ThreadDeferredResponse,
+    ThreadSummary,
+    TranscriptPage,
 )
 
 from .decisions import DecisionInteraction
@@ -62,6 +64,7 @@ class SessionBackend:
         self.receipt_id: str | None = None
         self.cancel_requested = False
         self.import_preview: ExternalSubagentImportPreview | None = None
+        self.resumed_transcript: TranscriptPage | None = None
 
     async def initialize(self) -> bool:
         configuration = await self.app.current_configuration()
@@ -76,15 +79,16 @@ class SessionBackend:
             self.status.max_tool_argument_chars = display.max_tool_argument_chars
         if self.thread_id is not None:
             await self.resume(self.thread_id)
+            return self.status.model != "not configured"
         return await self.refresh()
 
-    async def refresh(self) -> bool:
+    async def refresh(self, *, thread: ThreadSummary | None = None) -> bool:
         configuration = await self.app.current_configuration()
         if configuration is None:
             return False
         agent_id = self.agent_id or configuration.document.defaults.agent
         if self.thread_id is not None:
-            thread = (await self.app.get_thread(self.thread_id)).thread
+            thread = thread or (await self.app.get_thread(self.thread_id)).thread
             agent_id = thread.configuration.agent_source.id
             self.status.session_id = self.thread_id
             self.environment = thread.configuration.environment_profile_id
@@ -235,35 +239,23 @@ class SessionBackend:
             )
         if await self.app.active_root_operation(selected) is not None:
             raise ValueError("This session is already running.")
+        # Fetch one recent page before switching; never replay every saved message.
+        page = await self.app.get_thread_transcript(
+            thread_id=selected, expected_continuation_id=detail.continuation_id, limit=50
+        )
         self.thread_id = selected
         self.status.reset_usage()
         self.overrides = RunModelOverrides()
         usage = await self.app.context_usage(selected)
         self.status.context_tokens = usage.latest_request_tokens
-        await self.refresh()
         agent = configuration.agents.get(detail.thread.configuration.agent_source.id)
         self.agent_id = detail.thread.configuration.agent_source.id
         if agent is not None and usage.model_id == agent.model:
             # Restore reasoning only when the selected Agent still uses that Model.
             self.overrides = RunModelOverrides.model_validate({"model_id": usage.model_id, "thinking": usage.thinking})
-            await self.refresh()
-        return f"Resumed {selected}. Use /history to print retained messages.\n{await self.pending()}"
-
-    async def history(self, cursor: str | None = None) -> str:
-        if self.thread_id is None:
-            return "No messages yet."
-        # Explicitly bounded page; old output is never rerendered automatically.
-        page = await self.app.get_thread_transcript(thread_id=self.thread_id, cursor=cursor, limit=50)
-        lines = []
-        for entry in page.entries:
-            for part in entry.parts:
-                if not part.metadata.display:
-                    continue
-                value = part.text or json.dumps(part.value, ensure_ascii=False)
-                lines.append(f"[{part.kind}] {part.tool_name or ''}\n{value}")
-        if page.next_cursor is not None:
-            lines.append(f"[More retained messages: /history {page.next_cursor}]")
-        return "\n".join(lines) or "No retained messages."
+        await self.refresh(thread=detail.thread)
+        self.resumed_transcript = page
+        return f"Resumed {selected}. Recent messages restored; Ctrl+T browses retained messages."
 
     async def interaction(self) -> DecisionInteraction | None:
         if self.thread_id is None:
@@ -286,7 +278,13 @@ class SessionBackend:
         # The typed selector owns arguments and response instructions. Do not
         # duplicate its preview or advertise commands blocked by that selector.
         lines = ["Pending decisions (nothing is approved automatically):"]
-        lines.extend(f"{item.request_id}: {item.kind} {item.tool_name}" for item in detail.deferred_requests)
+        lines.extend(
+            f"{item.request_id}: {item.kind} {item.tool_name}"
+            for item in detail.deferred_requests
+            if item.tool_name != "ask_user_question"
+        )
+        if len(lines) == 1:
+            return ""
         return "\n".join(lines)
 
     async def review(self, request_id: str) -> str:

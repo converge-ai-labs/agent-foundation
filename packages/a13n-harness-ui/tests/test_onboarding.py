@@ -306,7 +306,9 @@ async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready(
     async def empty():
         return None
 
-    backend = SimpleNamespace(thread_id=None, interaction=empty, skill_catalog=skill_catalog, cancel=empty)
+    backend = SimpleNamespace(
+        thread_id=None, resumed_transcript=None, interaction=empty, skill_catalog=skill_catalog, cancel=empty
+    )
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):

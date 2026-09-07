@@ -22,6 +22,18 @@ from a13n_harness_ui.settings import EnvdRuntimeSettings, HarnessUiSettings, Sto
 from pydantic_ai.models.function import FunctionModel
 
 
+async def _retained_history(backend: SessionBackend) -> str:
+    from a13n_harness_ui.interactive.history import restore_transcript
+
+    page = await backend.app.get_thread_transcript(thread_id=backend.thread_id, limit=50)
+    renderer = StreamRenderer(backend.status)
+    try:
+        restore_transcript(renderer, page)
+        return "\n".join(block.source for block in renderer.transcript.blocks.values())
+    finally:
+        renderer.transcript.close()
+
+
 @pytest.fixture(autouse=True)
 def no_real_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     import pydantic_ai.models
@@ -284,7 +296,7 @@ async def test_ambiguous_cwd_projects_require_explicit_resume_without_creating_a
 async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     cwd = tmp_path / "workspace"
@@ -323,8 +335,8 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         # A fresh adapter reads retained native metadata, not transient renderer state.
         resumed = SessionBackend(app, CliRequest(), cwd, Status())
         await resumed.resume(backend.thread_id)
-        assert "GLOBAL GUIDANCE" not in await resumed.history()
-        history = await backend.history()
+        assert "GLOBAL GUIDANCE" not in await _retained_history(resumed)
+        history = await _retained_history(backend)
         assert "Do the task" in history and "done" in history
         assert "GLOBAL GUIDANCE" not in history
         assert "Repository rule" not in history
@@ -354,7 +366,7 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
 async def test_session_overrides_capture_native_context_and_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     before = (path.parent / "models/codex.yaml").read_bytes()
@@ -382,6 +394,10 @@ async def test_session_overrides_capture_native_context_and_resume(
         assert await backend.execute(renderer, prompt="First") == ""
         assert "Hello from the mock." in renderer.drain()
         thread_id = backend.thread_id
+        thread_usage = await app.thread_usage(thread_id=thread_id)
+        assert thread_usage.root.model_requests == 1
+        assert thread_usage.combined.model_requests == 1
+        assert thread_usage.recent_runs[0].totals.model_requests == 1
         usage = await app.context_usage(thread_id)
         assert usage.thinking == "low"
         assert usage.context_window == 350000
@@ -389,10 +405,34 @@ async def test_session_overrides_capture_native_context_and_resume(
         await backend.thinking("medium")
         assert await backend.execute(StreamRenderer(status), prompt="Second") == ""
         assert (await app.context_usage(thread_id)).thinking == "medium"
+        assert (await app.thread_usage(thread_id=thread_id)).combined.model_requests == 2
         resumed = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        from unittest.mock import AsyncMock
+
+        from a13n_harness_ui.interactive.shell import CliShell
+        from prompt_toolkit.application import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+
+        original_get = app.get_thread
+        spy = AsyncMock(wraps=original_get)
+        monkeypatch.setattr(app, "get_thread", spy)
         await resumed.initialize()
+        spy.assert_awaited_once_with(thread_id)
+        assert resumed.resumed_transcript is not None
+        with create_pipe_input(), create_app_session(output=DummyOutput()):
+            shell = CliShell(CliRequest(thread_id=thread_id), status=resumed.status)
+            shell.backend = resumed
+            shell._restore_resumed_history()
+            displayed = "\n".join(block.source for block in shell.renderer.transcript.blocks.values())
+            assert "First" in displayed and "Second" in displayed and "Hello from the mock." in displayed
+            shell.emit("temporary screen content")
+            await shell._resume(thread_id)
+            displayed = "\n".join(block.source for block in shell.renderer.transcript.blocks.values())
+            assert "First" in displayed and "temporary screen content" not in displayed
+            shell.renderer.transcript.close()
         assert resumed.overrides.thinking == "medium"
-        assert "First" in await resumed.history()
+        assert "First" in await _retained_history(resumed)
         assert (await app.get_thread(thread_id)).thread.configuration.version == 1
         from a13n_harness_ui.cli_runtime import _run_one_shot
 
@@ -406,7 +446,7 @@ async def test_session_overrides_capture_native_context_and_resume(
 
 @pytest.mark.anyio
 async def test_cancel_is_receipt_owned_and_session_is_reusable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     entered = asyncio.Event()
@@ -451,7 +491,7 @@ async def test_terminal_flush_retains_semantic_output_independently_of_draw() ->
 async def test_native_compaction_is_active_not_only_written_to_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     import yaml
     from pydantic_ai.messages import ModelResponse, TextPart
 
@@ -487,7 +527,7 @@ async def test_native_compaction_is_active_not_only_written_to_config(
         second = await backend.execute(second_renderer, prompt="Continue")
         assert second == ""
         assert len(calls) == 3, "Two foreground requests plus one same-agent compaction request"
-        history = await backend.history()
+        history = await _retained_history(backend)
         assert "Mock context summary" in history
 
 
@@ -559,7 +599,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 ) -> None:
     if mode == "sandbox" and os.environ.get("A13N_HARNESS_UI_TEST_SANDBOX") != "1":
         pytest.skip("Set A13N_HARNESS_UI_TEST_SANDBOX=1 with a compatible envd binary and native isolation support")
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -634,7 +674,7 @@ async def test_native_image_input_reaches_model_and_survives_continuation(
 ) -> None:
     from io import BytesIO
 
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from PIL import Image
     from pydantic_ai import BinaryContent
     from pydantic_ai.messages import ModelRequest, UserPromptPart
@@ -713,7 +753,7 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
 ) -> None:
     import asyncio
 
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from pydantic_ai.messages import ModelRequest, UserPromptPart
 
     path = await _seed(tmp_path, monkeypatch)
@@ -828,7 +868,7 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
 
 @pytest.mark.anyio
 async def test_configured_codeact_executes_and_disabled_questions_are_not_exposed(tmp_path: Path, monkeypatch) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
 
@@ -868,7 +908,7 @@ async def test_configured_codeact_executes_and_disabled_questions_are_not_expose
 async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     tmp_path: Path, monkeypatch, timeout: bool
 ) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
 
@@ -928,11 +968,11 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     ) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         renderer = StreamRenderer(backend.status)
-        assert "Pending decisions" in await backend.execute(renderer, prompt="Create a task and ask")
+        assert await backend.execute(renderer, prompt="Create a task and ask") == ""
         assert len(renderer.tasks.tasks) == 1
         assert len((await app.thread_tasks(thread_id=backend.thread_id)).tasks) == 1
         interaction = await backend.interaction()
-        assert interaction is not None and interaction.title() == "Option: Which option?"
+        assert interaction is not None and interaction.title() == "Option · 1/1"
         assert interaction.timeout_seconds == 30
         if timeout:
             interaction.question_started -= interaction.timeout_seconds
@@ -947,7 +987,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
 
 @pytest.mark.anyio
 async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
 
@@ -990,7 +1030,7 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
 async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from a13n_harness_ui.interactive.commands import CommandRegistry
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1033,7 +1073,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
         assert backend.thread_id == thread_id
         assert backend.overrides.thinking is None
         assert backend.status.model == "openai-codex:gpt-6-astra"
-        assert "First agent" in await backend.history()
+        assert "First agent" in await _retained_history(backend)
         resumed = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
         await resumed.initialize()
         assert resumed.status.model == "openai-codex:gpt-6-astra"
@@ -1054,7 +1094,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
 async def test_usage_updates_before_root_operation_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import asyncio
 
-    import a13n_harness_ui.model_runtime as runtime
+    import a13n_harness.model_auth as runtime
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1088,10 +1128,11 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
             await asyncio.wait_for(updated.wait(), 10)
             assert not task.done()
             assert status.requests == 1
+            assert (await app.thread_usage(thread_id=backend.thread_id)).combined.model_requests == 1
             assert status.context_tokens is not None
             assert "ctx " in status.line(80)
             assert "cost --" in status.line(80)  # FunctionModel has no invented price.
-            assert "in " not in status.line(80) and "cache" not in status.line(80)
+            assert "in " not in status.line(80) and "cache 0.0%" in status.line(80)
         finally:
             release.set()
             await asyncio.wait_for(task, 10)
@@ -1110,3 +1151,62 @@ def test_add_agent_cli_routes_to_terminal_with_explicit_advanced_flag(monkeypatc
     assert len(seen) == 1
     assert seen[0].command == "add" and seen[0].action == "agent"
     assert seen[0].setup_advanced and seen[0].no_update_check
+
+
+@pytest.mark.anyio
+async def test_default_notes_are_injected_and_survive_resume_with_full_projection(tmp_path: Path, monkeypatch) -> None:
+    import a13n_harness.model_auth as runtime
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+    from pydantic_ai.models.function import DeltaToolCall
+
+    path = await _seed(tmp_path, monkeypatch)
+    value = "Long detailed note. " * 30 + "FINAL NOTE DETAIL"
+    injected = False
+
+    async def stream(messages, info):
+        nonlocal injected
+        assert {"note_write", "note_delete", "note_get"} <= {tool.name for tool in info.function_tools}
+        results = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.tool_name == "note_write"
+        ]
+        if not results:
+            yield {
+                0: DeltaToolCall(
+                    name="note_write", tool_call_id="note-one", json_args=json.dumps({"key": "design", "value": value})
+                )
+            }
+        else:
+            injected = any(
+                value in str(part.content)
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            )
+            yield "Note saved."
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        renderer = StreamRenderer(backend.status)
+        await backend.execute(renderer, prompt="Remember this note")
+        page = await app.thread_notes(thread_id=backend.thread_id)
+        assert page.total == 1 and page.omitted == 0 and page.notes[0].value == value
+        renderer.restore_notes(page)
+        assert "FINAL NOTE DETAIL" in "\n".join(block.source for block in renderer.transcript.blocks.values())
+        thread_id = backend.thread_id
+        renderer.transcript.close()
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        assert (await app.thread_notes(thread_id=thread_id)).notes == page.notes
+        resumed = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        await resumed.execute(StreamRenderer(resumed.status), prompt="Use the saved note")
+        assert injected
+        from a13n_harness_ui.errors import ThreadError
+
+        with pytest.raises(ThreadError, match="continuation changed"):
+            await app.thread_notes(thread_id=thread_id, expected_continuation_id="f" * 64)

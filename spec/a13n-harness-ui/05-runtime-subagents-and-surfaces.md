@@ -220,6 +220,8 @@ A bounded Project-path completion query searches only logical paths beneath the 
 
 A Working State task projection binds to one selected continuation and carries the authoritative task-state version, bounded task entries, and explicit completeness or omitted-count information. Each task entry contains only its stable ID, version, subject, active form, status, owner, and dependency IDs. A live task delta is provisional presentation until a later selected continuation contains it. A focused snapshot or explicit subscriber-gap recovery reloads the projection from that continuation; the surface never reads the raw Capability namespace.
 
+`thread_notes` returns complete note keys and values from one selected continuation, bounded to 256 entries and 256 KiB of UTF-8 content with total and omitted counts. An expected continuation mismatch is rejected. Surfaces do not reconstruct note mutations from tool arguments or read the raw Working State namespace.
+
 A review projection is either embedded in a deferred request or queried through exact correlation. Deferred review names the selected continuation and request ID; retained tool review names the selected continuation, transcript position, and tool-call ID; process-local live review names the exact receipt, Run, and tool-call ID. The detached value identifies its lifecycle and review kind and can contain safe arguments, managed effect and resource summaries, bounded diff or confirmed file-change detail, and explicit truncation, omission, or unavailability facts. Harness UI never reads current mutable Project files to reconstruct a historical or pre-approval diff. Detail that existed only in a dropped live event or a prior App process is explicitly unavailable. A review value grants no approval, filesystem, or tool-execution authority.
 
 Thread title and archive state share a metadata head independent from sticky configuration. A metadata mutation supplies its exact expected metadata version and changes title, archive state, or both atomically. Archiving an active root Thread is rejected. Unarchiving is valid, and a title can be explicitly cleared. Child metadata is managed only through parent-scoped child operations.
@@ -370,3 +372,7 @@ Every editable API response includes its current source digest. A stale mutation
 13. Summary subscriptions carry invalidations; detailed live events remain root-lineage scoped and bounded.
 14. Terminal presentation has no execution authority; future transports reuse the detached App boundary.
 15. Shutdown is bounded and does not invent completion.
+
+### Thread Usage Projection
+
+`App.thread_usage` returns detached observed usage for a root Thread family, including bounded model and recent-Run breakdowns. Its persistence, deduplication, attribution, and coverage semantics are owned by [Observed Thread Usage](03-local-storage-and-recovery.md#observed-thread-usage). This read-only projection does not control active Runs or reconstruct invoices from conversation history.

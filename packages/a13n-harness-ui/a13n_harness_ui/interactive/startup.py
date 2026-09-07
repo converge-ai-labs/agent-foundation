@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
@@ -50,10 +52,20 @@ async def run_terminal(
 
     try:
         async with landing:
+            started = time.perf_counter()
+            landing.emit("Loading runtime…")
             factory = await asyncio.to_thread(runtime_loader)
+            runtime_loaded = time.perf_counter()
+            landing.emit("Opening local storage and configuration…")
             from a13n_harness_ui.settings_loader import resolve_harness_ui_data_root
 
             async with factory(request, directory, status, emit) as backend:
+                logger = logging.getLogger("a13n_harness_ui.startup")
+                logger.info(
+                    "Startup runtime_import=%.3fs app_open=%.3fs",
+                    runtime_loaded - started,
+                    time.perf_counter() - runtime_loaded,
+                )
                 if not request.no_update_check:
                     configuration = await backend.app.current_configuration()
                     if configuration is None or configuration.document.process.terminal_update_check:
@@ -61,7 +73,10 @@ async def run_terminal(
                         update = await prompt_update(root, landing)
                         if update is not None:
                             return update
+                landing.emit("Restoring session…" if request.thread_id else "Preparing session…")
+                session_started = time.perf_counter()
                 configured = await backend.initialize()
+                logger.info("Startup session_initialize=%.3fs", time.perf_counter() - session_started)
                 if request.command in {"setup", "add"} or not configured:
                     landing.title = "Harness UI · Add agent" if request.command == "add" else "Harness UI · Setup"
                     completed = await run_setup(

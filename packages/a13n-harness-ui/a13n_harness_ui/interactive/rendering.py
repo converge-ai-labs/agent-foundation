@@ -8,11 +8,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from .panels import capability_panel, tool_arguments, tool_preview, tool_result
+from .panels import capability_panel, shell_result_preview, tool_arguments, tool_preview, tool_result
 from .transcript import Transcript
 
 if TYPE_CHECKING:
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
+
+    from a13n_harness_ui.surfaces import NotePage
 
     from .local_shell import LocalShellEvent
 
@@ -69,6 +71,13 @@ class Status:
             cost = None if cost is None or previous.cost is None else previous.cost + cost
         self.usage = BoundedRequestUsage(**values, cost=cost)
 
+    @property
+    def cache_rate(self) -> float | None:
+        if self.usage is None:
+            return None
+        total = self.usage.input_tokens + self.usage.output_tokens
+        return 100 * self.usage.cache_read_tokens / total if total else None
+
     def usage_details(self) -> str:
         if self.usage is None:
             return "Root Run usage: unavailable (no observed model response)."
@@ -77,8 +86,13 @@ class Status:
         return (
             f"Observed root Run: {self.requests} requests · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
             f"Cache read {usage.cache_read_tokens:,} · cache write {usage.cache_write_tokens:,} (provider-reported counters)\n"
+            f"Cache rate: {self.cache_rate_text} of input + output. "
             f"Cost: {cost}. Child and non-model usage excluded."
         )
+
+    @property
+    def cache_rate_text(self) -> str:
+        return "--" if self.cache_rate is None else f"{self.cache_rate:.1f}%"
 
     def line(self, width: int | None = None) -> str:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
@@ -88,7 +102,14 @@ class Status:
         if self.context_tokens is not None and self.context_window:
             context += f" ({100 * self.context_tokens / self.context_window:.0f}%)"
         cost = "cost --" if self.usage is None or self.usage.cost is None else f"${self.usage.cost:.4f}"
-        fields = [self.state.capitalize(), f"ctx {context}", cost, self.model.split(":")[-1], f"{elapsed:.0f}s"]
+        fields = [
+            self.state.capitalize(),
+            f"ctx {context}",
+            f"cache {self.cache_rate_text}",
+            cost,
+            self.model.split(":")[-1],
+            f"{elapsed:.0f}s",
+        ]
         while width is not None and get_cwidth(" · ".join(fields)) + 2 > width and len(fields) > 1:
             fields.pop()
         return terminal_text(" " + " · ".join(fields) + " ")
@@ -121,6 +142,7 @@ class StreamRenderer:
         self.status = status
         self.transcript = Transcript()
         self.tasks = TaskPanel()
+        self._notes: NotePage | None = None
         self._local_inputs: dict[str, int] = {}
         self._messages: dict[tuple[str, str, str], int] = {}
         self._limit = limit
@@ -133,6 +155,23 @@ class StreamRenderer:
         self._line_open = False
         self._local_output: dict[str, int] = {}
         self._custom_events = CustomEventAssembler()
+
+    def restore_notes(self, page: NotePage, *, force: bool = False) -> None:
+        previous = self._notes
+        self._notes = page
+        if not force and (
+            (previous is None and not page.total)
+            or (previous is not None and previous.notes == page.notes and previous.omitted == page.omitted)
+        ):
+            return
+        lines = [f"Notes · {page.total} saved"]
+        for note in page.notes:
+            lines.extend((f"{note.key}", note.value, ""))
+        if page.omitted:
+            lines.append(
+                f"[{page.omitted} notes omitted: 256-note / 256 KiB display budget. Saved values are unchanged.]"
+            )
+        self.append("\n".join(lines).rstrip() + "\n", kind="notes")
 
     def local_input(self, source_id: str, text: str) -> None:
         self.finish()
@@ -289,10 +328,10 @@ class StreamRenderer:
                 self._tools[key] = preview
                 if not child and self.status.state != "cancelling":
                     self.status.state = preview.name
-                if not child or detailed:
+                if (not child or detailed) and (preview.name != "ask_user_question" or detailed):
                     self.finish()
                     header = f"{preview.name} · running" + (f" · {identity}" if child else "")
-                    preview.block_id = self.transcript.append(header + "\n", collapsed_lines=1)
+                    preview.block_id = self.transcript.append(header + "\n", collapsed_lines=1, kind="tool")
                     self.append(header + "\n", display=False)
             elif event_type.endswith(("ARGS", "CHUNK")):
                 if preview is None:
@@ -310,7 +349,7 @@ class StreamRenderer:
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
                 name = preview.name if preview else "tool"
-                if not child or detailed:
+                if (not child or detailed) and (name != "ask_user_question" or detailed):
                     elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
                     result = tool_result(name, text)
                     state, _, output = result.partition("\n")
@@ -321,14 +360,17 @@ class StreamRenderer:
                         for item in (header, " ".join(summary.split())[:100], output.split("\n", 1)[0][:100])
                         if item
                     )
-                    if name.startswith("shell") and summary:
-                        brief = header + "\n" + summary
+                    shell_preview = shell_result_preview(text, summary, self.status.max_tool_result_lines)
+                    if shell_preview is not None:
+                        brief = f"{name} · {shell_preview}"
                     arguments = preview.arguments if preview else ""
                     body = header + "\n" + (f"Arguments · {label}\n{arguments}\n" if arguments else "") + result + "\n"
                     block_id = preview.block_id if preview is not None else None
                     if block_id is None or not self.transcript.replace(block_id, terminal_text(body)):
-                        block_id = self.transcript.append(terminal_text(body), collapsed_lines=1)
-                    self.transcript.preview(block_id, terminal_text(brief), 4 if name.startswith("shell") else 1)
+                        block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind="tool")
+                    self.transcript.preview(
+                        block_id, terminal_text(brief), len(brief.splitlines()) if shell_preview is not None else 1
+                    )
                     self.append(header + "\n", display=False)
                 self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
@@ -384,8 +426,7 @@ class StreamRenderer:
                 if panel is not None:
                     if not child or detailed:
                         self.finish()
-                        self.append(f"[{panel.title}]\n", kind=panel.kind)
-                        self.append(panel.body + "\n", kind=panel.kind, markdown=panel.kind in {"summary", "compact"})
+                        self.append(f"{panel.title}\n{panel.body}\n", kind=panel.kind)
                     return
                 if event.get("event_kind") == "capability":
                     if not child or detailed:
@@ -407,6 +448,7 @@ class StreamRenderer:
                             + json.dumps(mutation, ensure_ascii=False, indent=2)
                             + "\n",
                             collapsed_lines=1,
+                            kind="compact" if kind.startswith("compaction_") else "summary",
                         )
                     elif kind == "task_changed" and not child:
                         self.tasks.ingest(mutation)

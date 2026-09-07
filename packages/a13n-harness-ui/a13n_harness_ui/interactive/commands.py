@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 from dataclasses import dataclass
 
@@ -57,7 +58,15 @@ COMMANDS = (
         "remove", "Remove one image or all images from the current draft.", "index|all", minimum=1, maximum=1, busy=True
     ),
     Command("recover", "Restore an unsent prompt."),
-    Command("status", "Show model, context, environment, and session details.", busy=True),
+    Command("status", "Show model, context, environment, and subscription usage.", busy=True),
+    Command(
+        "usage",
+        "Show recorded Thread usage; subscription/reset inspect Codex limits.",
+        "[subscription|reset]",
+        maximum=1,
+        choices=("subscription", "reset"),
+        busy=True,
+    ),
     Command(
         "steer",
         "Add guidance while the agent is working.",
@@ -91,7 +100,8 @@ COMMANDS = (
     ),
     Command("new", "Start a fresh session; keep all saved history."),
     Command("resume", "List recent sessions in this workspace or resume one.", "[session-id]", maximum=1),
-    Command("history", "Print retained history for the current session.", "[cursor]", maximum=1),
+    Command("history", "Browse retained messages (Ctrl+T)."),
+    Command("notes", "Show saved notes with full contents within display budgets."),
     Command("config", "Find your configuration files."),
     Command(
         "review", "Inspect a pending request against the selected continuation.", "request-id", minimum=1, maximum=1
@@ -124,7 +134,7 @@ class CommandRegistry:
         if catalog is None:
             return
         for item in catalog.items:
-            if item.name in self._index or any(char.isspace() for char in item.name):
+            if any(char.isspace() for char in item.name):
                 continue
             self.skills[item.name] = (
                 item.description,
@@ -132,9 +142,8 @@ class CommandRegistry:
             )
 
     def skill_references(self, text: str) -> tuple[SkillReference, ...]:
-        head = text.split(maxsplit=1)[0] if text else ""
-        item = self.skills.get(head[1:]) if head.startswith("/") else None
-        return (item[1],) if item is not None else ()
+        names = dict.fromkeys(re.findall(r"(?:^|\s)\$([^\s]+)", text))
+        return tuple(self.skills[name][1] for name in names if name in self.skills)
 
     def parse(self, text: str, *, busy: bool = False) -> Invocation:
         source = text.removeprefix("/")
@@ -180,12 +189,20 @@ class CommandRegistry:
                 "`Enter` send or guide · `Alt+Enter` newline · `Tab` complete",
                 "`Ctrl+C` stop / twice to exit · `Ctrl+D` exit · `Ctrl+O` details",
                 "`Ctrl+V` paste image · `PgUp/PgDn` scroll · `Ctrl+End` latest · `/mouse off` copy",
+                "`Ctrl+T` browse retained messages · `$` complete available skills · `/` commands",
                 "",
                 "Add agents with `a13n-harness-ui add agent`. `/model` is an alias for `/agent`.",
             ]
         return "\n".join(lines)
 
     def completions(self, text: str) -> tuple[tuple[str, str], ...]:
+        token = text.split()[-1] if text and not text[-1].isspace() else ""
+        if token.startswith("$"):
+            return tuple(
+                (f"${name}", " ".join(item[0].split())[:160])
+                for name, item in sorted(self.skills.items())
+                if name.startswith(token[1:])
+            )
         if not text.startswith("/"):
             return ()
         head, separator, tail = text[1:].partition(" ")
@@ -194,7 +211,7 @@ class CommandRegistry:
                 (f"/{head if head in item.aliases else item.name}", item.summary)
                 for item in self.commands
                 if any(name.startswith(head) for name in (item.name, *item.aliases))
-            ) + tuple((f"/{name}", f"Skill · {item[0]}") for name, item in self.skills.items() if name.startswith(head))
+            )
         command = self._index.get(head)
         if command is None:
             return ()
