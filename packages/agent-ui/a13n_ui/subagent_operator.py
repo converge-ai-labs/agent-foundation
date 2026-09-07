@@ -232,6 +232,10 @@ class AgentUiSubagentOperator(SubagentOperator):
         self._task_group: TaskGroup | None = None
         self._accepting = False
 
+    def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
+        """Use newly discovered stores for future child reconstructions."""
+        self._subscription_sources = dict(sources)
+
     async def start(self) -> None:
         """Open the App-owned task lifetime and begin accepting child work."""
 

@@ -20,7 +20,7 @@ Read `00`, then [Harness Events and Usage](../agent-harness/12-events-observabil
 
 ### Build Agent UI Surfaces
 
-Read `00`, then [Agent UI Runtime Subagents and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md). Both local surfaces consume the same post-processor AG-UI events, while Agent UI owns persistence, replay, fan-out, and transport.
+Read `00`, then [Agent UI Runtime Subagents and Surfaces](../agent-cli/05-runtime-subagents-and-surfaces.md). Both local surfaces consume the same post-processor AG-UI events, while Agent UI owns persistence, replay, fan-out, and transport.
 
 ### Add Hosted AG-UI Delivery
 

@@ -1069,7 +1069,7 @@ async def test_grok_device_oauth_lifetime_starts_with_authorization_response(
             http_client=client,
         )
         now = 101.0
-        with pytest.raises(CredentialRefreshError, match="device code expired"):
+        with pytest.raises(CredentialRefreshError, match="Device authorization expired"):
             await authorization.wait_for_credentials()
 
 
@@ -1102,7 +1102,7 @@ async def test_grok_device_oauth_bounds_each_token_request(
             http_client=client,
         )
         authorization = replace(authorization, _expires_at=time.monotonic() + 0.01)
-        with pytest.raises(CredentialRefreshError, match="device code expired"):
+        with pytest.raises(CredentialRefreshError, match="Device authorization expired"):
             await authorization.wait_for_credentials()
 
 
@@ -1168,3 +1168,74 @@ def test_codex_subscription_settings_use_harness_thread_affinity() -> None:
         "Thread-ID": "explicit-thread",
         "X-Custom": "custom",
     }
+
+
+async def test_codex_device_authorization_uses_vendor_protocol_and_device_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from a13n_harness.model_auth import CodexDeviceAuthorizationFlow
+
+    attempts = 0
+
+    async def fake_sleep(delay: float) -> None:
+        assert delay == 2
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        assert "authorization" not in request.headers
+        if request.url.path.endswith("/usercode"):
+            assert json.loads(request.content)["client_id"]
+            return httpx2.Response(
+                200, json={"device_auth_id": "device-secret", "user_code": "ABCD-1234", "interval": "2"}
+            )
+        if request.url.path.endswith("deviceauth/token"):
+            assert json.loads(request.content) == {"device_auth_id": "device-secret", "user_code": "ABCD-1234"}
+            attempts += 1
+            if attempts < 3:
+                return httpx2.Response(403 if attempts == 1 else 404)
+            return httpx2.Response(200, json={"authorization_code": "auth-secret", "code_verifier": "pkce-secret"})
+        assert request.url.path == "/oauth/token"
+        form = parse_qs(request.content.decode())
+        assert form["redirect_uri"] == ["https://auth.openai.com/deviceauth/callback"]
+        assert form["code"] == ["auth-secret"]
+        assert form["code_verifier"] == ["pkce-secret"]
+        return httpx2.Response(
+            200,
+            json={
+                "access_token": _unsigned_jwt({"exp": 2000000000}),
+                "refresh_token": "refresh-secret",
+                "account_id": "account-device",
+            },
+        )
+
+    monkeypatch.setattr("a13n_harness.model_auth.oauth.anyio.sleep", fake_sleep)
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle), auth=("ambient", "secret")) as client:
+        grant = await CodexDeviceAuthorizationFlow.start(http_client=client)
+        assert "device-secret" not in repr(grant)
+        assert grant.verification_uri == "https://auth.openai.com/codex/device"
+        credentials = await grant.wait_for_credentials()
+        assert credentials.account_id == "account-device"
+    assert attempts == 3
+
+
+async def test_codex_device_unsupported_expiry_and_cancellation(monkeypatch: pytest.MonkeyPatch) -> None:
+    from a13n_harness.model_auth import CodexDeviceAuthorizationFlow, DeviceAuthorizationError
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _: httpx2.Response(404))) as client:
+        with pytest.raises(DeviceAuthorizationError) as caught:
+            await CodexDeviceAuthorizationFlow.start(http_client=client)
+        assert caught.value.reason == "unsupported"
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(
+            lambda _: httpx2.Response(
+                200, json={"device_auth_id": "private-device", "user_code": "ABC-123", "interval": 1}
+            )
+        )
+    ) as client:
+        grant = await CodexDeviceAuthorizationFlow.start(http_client=client)
+        with pytest.raises(DeviceAuthorizationError) as caught:
+            await replace(grant, _expires_at=time.monotonic() - 1).wait_for_credentials()
+        assert caught.value.reason == "expired"
+        with anyio.move_on_after(0.01) as scope:
+            await grant.wait_for_credentials()
+        assert scope.cancel_called

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
@@ -30,6 +31,23 @@ class BuiltInEnvironmentProfile:
 
 FULL_CONTROL_PROFILE_ID: Final = "environment-native"
 SANDBOX_PROFILE_ID: Final = "environment-sandbox"
+WINDOWS_EXECUTION_NOTICE: Final = (
+    "Windows supports Full Control only for built-in local execution. "
+    "Commands run as your Host account with filesystem and network access; this is not a sandbox. "
+    "Windows Sandbox is not available. Choose Full Control explicitly; no automatic fallback."
+)
+
+
+def local_sandbox_supported() -> bool:
+    """Report the release's local Windows limitation, not runtime readiness."""
+    return sys.platform != "win32"
+
+
+def require_supported_local_profile(profile_id: str | None) -> None:
+    """Reject an unavailable built-in profile without altering saved selections."""
+    if profile_id == SANDBOX_PROFILE_ID and not local_sandbox_supported():
+        raise ValueError(WINDOWS_EXECUTION_NOTICE)
+
 
 FULL_CONTROL_PROFILE: Final = BuiltInEnvironmentProfile(
     profile_id=FULL_CONTROL_PROFILE_ID,

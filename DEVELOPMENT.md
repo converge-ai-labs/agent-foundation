@@ -1,6 +1,18 @@
 # Development Standards
 
-This file explains the engineering choices shared by deployable Python services. Product semantics and subsystem ownership belong in `spec/`; contributor workflow belongs in [CONTRIBUTING.md](CONTRIBUTING.md); package command catalogs and exhaustive configuration references belong in the nearest package README. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
+This guide defines code quality principles for all repository code and engineering conventions for the components they concern. Service rules apply within their stated boundaries. Product semantics and subsystem ownership belong in `spec/`, contribution workflow in [CONTRIBUTING.md](CONTRIBUTING.md), and component setup and commands in package READMEs. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
+
+## Code Quality and Design
+
+Good code expresses the problem clearly and makes behavior and change easy to follow. Apply these principles to features, bug fixes, refactoring, and reviews while meeting required capabilities, reliability, and performance:
+
+- Use consistent domain terms and clear responsibilities. Give shared rules one owner, preserving real lifecycle, protocol, and security differences rather than abstracting merely similar code.
+- Prefer direct flows and cohesive modules. Make interfaces predictable and state ownership, side effects, resource lifetimes, and failure handling easy to trace.
+- Justify abstractions, options, and extra paths with current needs. Reduce what maintainers must understand and change together; line counts and layer counts alone do not establish quality.
+- Explain necessary concepts and prerequisites. Keep common workflows understandable without first learning unrelated mechanisms or exceptional cases; use realistic tasks to assess ease of use and change.
+- Fix faulty rules at their owner, check affected callers, and update related contracts, tests, and documentation. Remove artifacts that no longer serve a requirement, keeping unrelated cleanup outside the task.
+
+Consider runtime, recovery, operational, and maintenance costs. Support performance trade-offs with measurements or an explicit capacity model. Match explanation and validation to the change; routine fixes do not need a separate design exercise.
 
 ## Service Shape
 

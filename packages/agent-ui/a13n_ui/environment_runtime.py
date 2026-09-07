@@ -224,20 +224,23 @@ class EnvironmentSnapshotReconstructor:
             for item in recipes
         )
 
+    async def resolve_sandbox_executable(self) -> Path:
+        """Resolve the exact Host-selected runtime for preparation and preflight."""
+        executable = self._envd_settings.executable
+        if executable is not None:
+            return await to_thread.run_sync(partial(resolve_agent_envd_executable, executable))
+        if self._managed_envd is None:
+            raise EnvironmentLifecycleError(
+                "Local Envd requires the Agent UI runtime cache or an executable override.",
+                code="local_envd_runtime_unavailable",
+            )
+        return await self._managed_envd.resolve()
+
     async def _runtime_collaborator(self, provider: EnvironmentProvider) -> object | None:
         if provider.key == NATIVE_PROVIDER_KEY:
             return DirectLocalProviderRuntime()
         if provider.key == LOCAL_ENVD_PROVIDER_KEY:
-            executable = self._envd_settings.executable
-            if executable is None:
-                if self._managed_envd is None:
-                    raise EnvironmentLifecycleError(
-                        "Local Envd requires the Agent UI runtime cache or an executable override.",
-                        code="local_envd_runtime_unavailable",
-                    )
-                resolved = await self._managed_envd.resolve()
-            else:
-                resolved = await to_thread.run_sync(partial(resolve_agent_envd_executable, executable))
+            resolved = await self.resolve_sandbox_executable()
             return LocalEnvdProviderRuntime(
                 executable=resolved,
                 allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=self._local_runtime_parent),

@@ -1,9 +1,9 @@
-"""Root-only Thread tools over detached Agent UI commands and queries."""
+"""Opt-in embedding collaboration tools over detached Agent UI commands and queries."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
@@ -15,19 +15,35 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_ui.errors import AgentUiError
 from a13n_ui.root_run import RootRunCoordinator
-from a13n_ui.surfaces import RootOperationStatus
+from a13n_ui.surfaces import NewThreadDefaults, ThreadSummary
 from a13n_ui.thread_projection import ThreadProjectionService
 
-_THREAD_CAPABILITY_ID = "a13n.agent-ui.threads"
+_THREAD_CAPABILITY_ID = "a13n.agent-ui.thread-collaboration"
 _MAX_OUTPUT_CHARS = 64 * 1024
+
+
+class ThreadCreator(Protocol):
+    async def __call__(
+        self,
+        *,
+        defaults: NewThreadDefaults,
+        title: str | None = None,
+    ) -> ThreadSummary: ...
 
 
 class ThreadToolController:
     """Narrow detached command/query boundary consumed by the root Capability."""
 
-    def __init__(self, *, projections: ThreadProjectionService, root_runs: RootRunCoordinator) -> None:
+    def __init__(
+        self,
+        *,
+        projections: ThreadProjectionService,
+        root_runs: RootRunCoordinator,
+        create_thread: ThreadCreator,
+    ) -> None:
         self._projections = projections
         self._root_runs = root_runs
+        self._create_thread = create_thread
 
     async def list_threads(
         self,
@@ -59,8 +75,35 @@ class ThreadToolController:
 
     async def run_thread(self, *, thread_id: str, prompt: str) -> dict[str, Any]:
         receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt)
-        operation = await self._root_runs.wait(receipt.receipt_id)
-        return operation.model_dump(mode="json")
+        return receipt.model_dump(mode="json")
+
+    async def create_thread(
+        self,
+        *,
+        source_thread_id: str,
+        prompt: str,
+        title: str | None,
+        agent_id: str | None,
+    ) -> dict[str, Any]:
+        source = await self._projections.detail(source_thread_id)
+        configuration = source.thread.configuration
+        created = await self._create_thread(
+            defaults=NewThreadDefaults(
+                project_id=configuration.project_id,
+                agent_id=agent_id or configuration.agent_source.id,
+                environment_profile_id=configuration.environment_profile_id,
+                harness_plugin_ids=configuration.harness_plugin_ids,
+                environment_run_extension_ids=configuration.environment_run_extension_ids,
+                mcp_server_ids=configuration.mcp_server_ids,
+            ),
+            title=title,
+        )
+        try:
+            receipt = await self.run_thread(thread_id=created.thread_id, prompt=prompt)
+        except AgentUiError as exc:
+            # Creation and run admission are separate durable effects. Never hide the created identity.
+            return {**_failure(exc, "thread_run_failed"), "thread_id": created.thread_id}
+        return {"ok": True, "thread_id": created.thread_id, "receipt": receipt}
 
     async def steer_thread(self, *, thread_id: str, message: str) -> dict[str, Any]:
         operation = await self._root_runs.active(thread_id)
@@ -74,7 +117,7 @@ class ThreadToolController:
 
 
 @dataclass(kw_only=True, slots=True)
-class AgentUiThreadCapability(AbstractCapability[AgentContext]):
+class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
     """Expose bounded cross-Thread operations only to one root invocation."""
 
     controller: ThreadToolController
@@ -83,7 +126,7 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
 
     def __post_init__(self) -> None:
         if self.id != _THREAD_CAPABILITY_ID:
-            raise ValueError(f"AgentUiThreadCapability.id must be {_THREAD_CAPABILITY_ID!r}")
+            raise ValueError(f"ThreadCollaborationCapability.id must be {_THREAD_CAPABILITY_ID!r}")
         if not self.source_thread_id:
             raise ValueError("source_thread_id must not be blank")
 
@@ -92,6 +135,12 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
             tools=[
                 _tool(self.list_threads, name="list_threads", effects={"read"}),
                 _tool(self.get_thread, name="get_thread", effects={"read"}),
+                _tool(
+                    self.create_thread,
+                    name="create_thread",
+                    effects={"read", "write", "external_communication"},
+                    idempotency="none",
+                ),
                 _tool(
                     self.run_thread,
                     name="run_thread",
@@ -150,6 +199,7 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
         thread_id: str,
         prompt: str,
     ) -> dict[str, Any]:
+        """Start another idle Thread and return its admission receipt without waiting for completion."""
         self._require_context(ctx)
         if thread_id == self.source_thread_id:
             return _failure_code(
@@ -157,13 +207,35 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
                 "A Thread cannot recursively run itself from its active root invocation.",
             )
         try:
-            operation = await self.controller.run_thread(thread_id=thread_id, prompt=prompt)
-            return {
-                "ok": operation["status"] == RootOperationStatus.completed.value,
-                "operation": operation,
-            }
+            receipt = await self.controller.run_thread(thread_id=thread_id, prompt=prompt)
+            return {"ok": True, "receipt": receipt}
         except AgentUiError as exc:
             return _failure(exc, "thread_run_failed")
+
+    async def create_thread(
+        self,
+        ctx: RunContext[AgentContext],
+        prompt: str,
+        title: str | None = None,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create work in this Thread's Project and return immediately after run admission.
+
+        The returned receipt is not completion. Use get_thread to inspect progress.
+        If admission fails after creation, the returned thread_id remains valid; do not create a duplicate.
+        """
+        self._require_context(ctx)
+        if not prompt.strip():
+            return _failure_code("thread_prompt_empty", "A non-empty initial prompt is required.")
+        try:
+            return await self.controller.create_thread(
+                source_thread_id=self.source_thread_id,
+                prompt=prompt,
+                title=title,
+                agent_id=agent_id,
+            )
+        except AgentUiError as exc:
+            return _failure(exc, "thread_create_failed")
 
     async def steer_thread(
         self,
@@ -232,4 +304,4 @@ def _failure_code(code: str, message: str) -> dict[str, Any]:
     return {"ok": False, "error": {"code": code, "message": _bounded(message)}}
 
 
-__all__ = ["AgentUiThreadCapability", "ThreadToolController"]
+__all__ = ["ThreadCollaborationCapability", "ThreadToolController"]

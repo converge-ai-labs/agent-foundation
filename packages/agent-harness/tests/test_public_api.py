@@ -231,6 +231,9 @@ def test_model_auth_feature_facade_is_public_without_root_reexports() -> None:
     expected = {
         "CodexCredentialSource",
         "CodexCredentials",
+        "CodexDeviceAuthorization",
+        "CodexDeviceAuthorizationFlow",
+        "DeviceAuthorizationError",
         "CodexOAuthFlow",
         "CodexSubscriptionModel",
         "CredentialPersistenceError",

@@ -72,6 +72,8 @@ class _SupportedModelSettings(BaseModel):
     logit_bias: dict[str, int] | None = None
     stop_sequences: tuple[str, ...] | None = None
     thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
+    openai_reasoning_summary: Literal["auto", "concise", "detailed"] | None = None
+    openai_store: bool | None = None
     service_tier: Literal["auto", "default", "flex", "priority"] | None = None
 
     @field_validator("stop_sequences", mode="before")

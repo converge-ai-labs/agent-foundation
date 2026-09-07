@@ -15,6 +15,7 @@ on:
       - "pyproject.toml"
       - "scripts/check-agent-ui-distribution.py"
       - "scripts/check_agent_ui_distribution.py"
+      - "scripts/export-agent-ui-openapi.py"
       - "scripts/prepare-agent-ui-assets.py"
       - "scripts/prepare_agent_ui_assets.py"
       - "scripts/release_version.py"
@@ -36,6 +37,7 @@ on:
       - "pyproject.toml"
       - "scripts/check-agent-ui-distribution.py"
       - "scripts/check_agent_ui_distribution.py"
+      - "scripts/export-agent-ui-openapi.py"
       - "scripts/prepare-agent-ui-assets.py"
       - "scripts/prepare_agent_ui_assets.py"
       - "scripts/release_version.py"
@@ -60,7 +62,7 @@ jobs:
     name: Agent UI (${{ matrix.name }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - name: Linux
@@ -132,6 +134,12 @@ jobs:
       - name: Test Agent UI on Windows and macOS
         if: matrix.name != 'Linux'
         run: uv run --locked python -m pytest packages/agent-ui/tests
+
+      - name: Test native command lifecycle
+        run: >-
+          uv run --locked python -m pytest
+          packages/agent-environment-provider/tests/test_direct_local.py
+          packages/agent-environment-provider/tests/test_direct_local_processes.py
 
       - name: Build Agent UI distribution
         if: matrix.name == 'Linux'

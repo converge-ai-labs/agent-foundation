@@ -61,7 +61,7 @@ repos:
 
       - id: harness-ui-prettier
         name: Prettier (Harness UI)
-        entry: npm exec --offline --prefix apps/harness-ui -- prettier --write
+        entry: npm exec --offline --prefix apps/harness-ui -- prettier --write --ignore-path apps/harness-ui/.prettierignore
         language: system
         files: ^apps/harness-ui/.*\.(css|html|js|json|jsx|md|mjs|ts|tsx|yaml|yml)$
 

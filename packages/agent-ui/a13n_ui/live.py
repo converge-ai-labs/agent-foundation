@@ -9,9 +9,11 @@ from contextlib import asynccontextmanager
 from typing import Literal
 from uuid import uuid4
 
+from a13n_harness.usage import ModelUsageRecord
 from ag_ui.core import Event as AguiEvent
 from anyio import (
     BrokenResourceError,
+    CancelScope,
     ClosedResourceError,
     EndOfStream,
     Lock,
@@ -52,6 +54,44 @@ class LiveEvent(_StreamModel):
     event_type: str = Field(min_length=1, max_length=128)
     payload: dict[str, JsonValue] | None
     payload_omitted: bool
+
+
+class RequestContextSample(_StreamModel):
+    run_id: str
+    response_ordinal: int
+    tokens: int
+
+
+def root_context_samples(event: LiveEvent) -> tuple[RequestContextSample, ...]:
+    """Project request-local root usage, excluding children and provider totals."""
+    if event.run_kind != "root" or event.event_type != "CUSTOM" or event.payload is None:
+        return ()
+    value = event.payload.get("value")
+    source = value.get("event") if isinstance(value, dict) else None
+    payload = source.get("payload") if isinstance(source, dict) else None
+    if not isinstance(payload, dict) or payload.get("type") != "usage_report":
+        return ()
+    records = payload.get("records")
+    if not isinstance(records, list):
+        return ()
+    samples = []
+    for record in records:
+        try:
+            model = ModelUsageRecord.model_validate(record)
+        except ValidationError:
+            continue
+        if (
+            model.run_id != event.run_id
+            or model.parent_agent_instance_id is not None
+            or model.delegation_id is not None
+        ):
+            continue
+        tokens = model.request_usage.input_tokens + model.request_usage.output_tokens
+        if tokens > 0:
+            samples.append(
+                RequestContextSample(run_id=model.run_id, response_ordinal=model.response_ordinal, tokens=tokens)
+            )
+    return tuple(samples)
 
 
 class _LiveSubscriber:
@@ -104,6 +144,17 @@ class LiveSubscription:
                 code="live_cursor_expired",
             )
         return event.model_copy(deep=True)
+
+    def drain_pending(self) -> tuple[LiveEvent, ...]:
+        """Drain already delivered events after the producer has completed."""
+        if self._subscriber.gap:
+            raise LivePresentationError("Detailed events were dropped.", code="live_cursor_expired")
+        events: list[LiveEvent] = []
+        while True:
+            try:
+                events.append(self._subscriber.receive.receive_nowait().model_copy(deep=True))
+            except (WouldBlock, EndOfStream, ClosedResourceError):
+                return tuple(events)
 
 
 class AgentUiLiveHub:
@@ -220,8 +271,11 @@ class AgentUiLiveHub:
         try:
             yield subscription
         finally:
-            async with self._lock:
-                self._discard_subscriber(subscriber)
+            # Delivery consumers can be cancelled while the producer continues.
+            # Unsubscribe is bounded local cleanup and must survive that scope.
+            with CancelScope(shield=True):
+                async with self._lock:
+                    self._discard_subscriber(subscriber)
 
     def _validate_cursor(self, after: LiveCursor | None) -> int:
         if after is None:
@@ -384,8 +438,11 @@ class AgentUiSummaryHub:
         try:
             yield subscription
         finally:
-            async with self._lock:
-                self._discard_subscriber(subscriber)
+            # Delivery consumers can be cancelled while the producer continues.
+            # Unsubscribe is bounded local cleanup and must survive that scope.
+            with CancelScope(shield=True):
+                async with self._lock:
+                    self._discard_subscriber(subscriber)
 
     def _validate_cursor(self, after: SummaryCursor | None) -> int:
         if after is None:

@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from a13n_harness.model_auth import GrokCredentials
-from anyio import Lock
+from anyio import CancelScope, Lock
+from anyio.lowlevel import checkpoint
 
 from ._common import (
     JsonSnapshot,
@@ -450,8 +451,15 @@ class GrokAccountStore:
                 )
         document = dict(latest.snapshot.document or {})
         document[self.scope] = _merge_entry(document.get(self.scope), result)
-        await write_json_if_unchanged(self._path(), document, latest.snapshot.digest, provider=Provider.GROK)
-        return await self.inspect()
+        # Cancellation before publication prevents the write. After this boundary,
+        # complete persistence and its projection before reporting the outcome.
+        await checkpoint()
+        projection: AccountProjection | None = None
+        with CancelScope(shield=True):
+            await write_json_if_unchanged(self._path(), document, latest.snapshot.digest, provider=Provider.GROK)
+            projection = await self.inspect()
+        assert projection is not None
+        return projection
 
     async def logout(self) -> bool:
         """Remove this shared Grok OAuth scope with a CAS write."""

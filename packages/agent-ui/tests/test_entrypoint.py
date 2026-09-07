@@ -25,15 +25,13 @@ def test_module_entrypoint_exposes_cli_help() -> None:
     assert "--config" in result.stdout
 
 
-@pytest.mark.parametrize("command", [(), ("tui",)])
 def test_terminal_frontend_requires_interactive_input_and_output(
     tmp_path: Path,
-    command: tuple[str, ...],
 ) -> None:
     settings = _write_settings(tmp_path)
 
     result = subprocess.run(
-        [sys.executable, "-m", "a13n_ui", "--config", str(settings), *command],
+        [sys.executable, "-m", "a13n_ui", "--config", str(settings)],
         input="",
         check=False,
         capture_output=True,
@@ -42,7 +40,7 @@ def test_terminal_frontend_requires_interactive_input_and_output(
     )
 
     assert result.returncode == 1
-    assert "tui_tty_required" in result.stderr
+    assert "Interactive mode requires a terminal" in result.stderr
     assert "a13n-ui run <prompt>" in result.stderr
 
 
@@ -64,21 +62,24 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
             **os.environ,
             "A13N_UI_DATA_ROOT": str(tmp_path / "state"),
             "TERM": "xterm-256color",
+            "HOME": str(tmp_path),
+            "CODEX_HOME": str(tmp_path / "codex"),
+            "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
         },
         close_fds=True,
     )
     output = bytearray()
     try:
         startup_deadline = time.monotonic() + _ENTRYPOINT_TIMEOUT_SECONDS
-        while b"Agent UI" not in output and process.poll() is None:
+        while b"Agent CLI" not in output and process.poll() is None:
             if time.monotonic() >= startup_deadline:
                 break
             readable, _, _ = select.select([master], [], [], 0.1)
             if readable:
                 output.extend(os.read(master, 65536))
-        assert b"Agent UI" in output, output.decode(errors="replace")
+        assert b"Agent CLI" in output, output.decode(errors="replace")
 
-        os.write(master, b"\x03")
+        os.write(master, b"/quit\r")
         exit_deadline = time.monotonic() + 10
         while process.poll() is None and time.monotonic() < exit_deadline:
             readable, _, _ = select.select([master], [], [], 0.1)
@@ -89,8 +90,13 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
                     break
         assert process.poll() is not None, output.decode(errors="replace")
         assert process.returncode == 0, output.decode(errors="replace")
-        assert termios.tcgetattr(slave) == original
-        assert b"tui_tty_required" not in output
+        restored = termios.tcgetattr(slave)
+        # BSD/macOS may set PENDIN when queued PTY input is reprocessed after
+        # raw mode ends. It is transient line-discipline state, not an input
+        # mode the Application owns. Compare every other flag and control byte.
+        restored[3] &= ~termios.PENDIN
+        original[3] &= ~termios.PENDIN
+        assert restored == original
     finally:
         if process.poll() is None:
             process.terminate()

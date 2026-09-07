@@ -430,7 +430,7 @@ The first checkpoint after the accepted Run input has crossed a complete Harness
 
 `requests` is the exact serialized native Pydantic `DeferredToolRequests` value; Foundation classifies its approval, client-tool, and structured-user-input calls in the relational summary without reconstructing the native value from that summary. Its call IDs and kinds exactly equal the waiting pending summary. Foundation defines no additional provider-owned pending kind or Host-request collection. Provider-native public-message continuation remains a Harness/model-integration capability and does not become a Foundation waiting reason. Asynchronous child results remain independent Thread-inbox entries and never enter deferred state, impersonate the original spawn call, or enter `DeferredToolResume`.
 
-`consumed_inbox_entries` is the bounded receipt set for [`thread_inbox`](19-agent-control-active-execution.md#thread-inbox) entries incorporated into this Run. Each receipt correlates the exact inbox identity and kind with Harness or Host state already present in the same envelope. Replacement Attempts of this Run preserve the receipts. A new Run does not inherit its parent's receipts; it records only inbox entries consumed by that new Run's own acceptance.
+`consumed_inbox_entries` is the bounded receipt set for [`thread_inbox`](19-agent-control-active-execution.md#thread-inbox) entries incorporated into this Run. Each receipt correlates the exact inbox identity and kind with the continuation represented by Harness or Host state in the same envelope. Foundation records incorporation independently of message history before compaction can remove the original input. The next complete checkpoint merges those records with prior receipts and publishes them with the current, possibly compacted history in one conditional write. Replacement Attempts preserve the receipts without requiring original messages to remain in history. A new Run does not inherit its parent's receipts; it records only inbox entries consumed by that new Run's own acceptance. Stable message provenance, synchronous incorporation recording, and recovery of a prior checkpoint missing a receipt follow the [active-control contract](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption).
 
 `RunStateEnvelope` contains no Asset publication ledger, receipt, reference list, or Asset Capability namespace. When a successful `publish_asset` tool result has crossed a complete Harness checkpoint, its `AssetRef` can already appear in ordinary `harness` message history. The independent Asset row and selected content object remain publication authority whether or not that tool result was checkpointed.
 
@@ -563,22 +563,24 @@ sequenceDiagram
 During an active Harness Run, Foundation requests a progress checkpoint only at a complete public state boundary:
 
 1. after the accepted Run input has crossed the Harness input boundary and before the first model request, except that waiting Feedback and waiting Continue defer their first applied checkpoint until the isolated first-request hook boundary;
-2. when the complete [inbox-consumption flow](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment) requires durable incorporation before the Agent can act on accepted delivery;
+2. when flushing recorded Thread-inbox incorporation under the complete [inbox-consumption flow](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment), which permits compaction before that publication;
 3. after a complete tool batch and its results have entered the next complete message boundary, before another model request;
 4. between internal `ModelAttempt` values when the Harness exposes a new complete normalized state.
 
 A waiting or completed Harness outcome always triggers its matching outcome checkpoint. Raw stream deltas, an in-flight model response, an incomplete tool batch, an active inline child, a lease heartbeat, and elapsed time alone never trigger state publication. Adjacent progress triggers with no Harness or Host state change are coalesced rather than creating duplicate checkpoints.
 
+Synchronous incorporation recording and compaction do not require an additional pre-compaction checkpoint. Recorded entries are merged into the next ordinary complete checkpoint, including a post-tool, model-boundary, recovery, handoff, or terminal checkpoint. Its history may already be compacted; no recorded incorporation in that continuation is deferred to a later write because the original message is absent or an event has not arrived. Until publication and the fenced consumption transaction succeed, PostgreSQL still reports the entries as pending.
+
 A graceful-handoff request reaches state persistence only at a complete boundary selected by [Foundation–Harness Runtime Integration](14-harness-runtime-integration.md#safe-boundaries-and-corresponding-hooks). At that boundary, state persistence publishes or reuses one ordinary complete progress checkpoint; [RunAttempt planned handoff](13-run-attempt-scheduling-and-recovery.md#graceful-handoff-transaction) owns request observation, continued lease authority, local quiescence, and the `yielded` transaction.
 
 During execution, a checkpoint operation:
 
-1. exports complete Harness state and builds bounded Host state;
+1. exports complete Harness state and snapshots the incorporation records for that continuation under the same run-control critical section, then builds bounded Host state by merging those records with prior receipts under the active-control contract;
 2. validates current Run, attempt, fence, lease, and expected object version;
 3. conditionally replaces the same `state.json` with the next checkpoint sequence and matching metadata;
 4. treats only the returned object version as the next valid write token.
 
-When the checkpoint incorporates Thread inbox entries, the complete envelope contains their `ConsumedThreadInboxEntry` receipts. The active-control contract owns their relational consumption, recovery, and terminal-race semantics; this contract owns only the complete state representation and conditional object write.
+When the checkpoint incorporates Thread inbox entries, the complete envelope contains their `ConsumedThreadInboxEntry` receipts. The current continuation and its receipts are assembled at one complete safe boundary and published together. A receipt can derive from a synchronous record made before compaction; it does not require the original message or metadata to remain in the exported history. Neither event-consumer delay nor history replacement can defer such a receipt to another checkpoint. Multiple entries can share the write. The active-control contract owns their identity confirmation, relational consumption, recovery, and terminal-race semantics; this contract owns only the complete state representation and conditional object write.
 
 Checkpoint writes do not create a Run row, attempt row, lifecycle transition, or historical checkpoint selector. A failed or unknown put is reconciled by `stat` and exact body validation before any retry.
 

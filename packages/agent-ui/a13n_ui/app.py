@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from a13n_environment_provider import EnvironmentProvider
 from a13n_harness.environment import EnvironmentRunExtensionFactory
+from a13n_harness.input import RunInputValue
 from a13n_harness.model_auth import CodexCredentials, GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
-from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep
+from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import prices
 from pydantic_ai.capabilities import AbstractCapability
@@ -40,6 +43,14 @@ from a13n_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
+from a13n_ui.configuration.setup import (
+    SetupPreview,
+    SetupPublication,
+    SetupSelection,
+    preview_setup,
+    publish_setup,
+    setup_generation,
+)
 from a13n_ui.content_plugins import ContentPluginStore
 from a13n_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
 from a13n_ui.environment_runtime import (
@@ -57,6 +68,7 @@ from a13n_ui.live import (
     AgentUiLiveHub,
     AgentUiSummaryHub,
     LiveCursor,
+    LiveEvent,
     LiveSubscription,
     SummaryCursor,
     SummarySubscription,
@@ -74,10 +86,14 @@ from a13n_ui.model_accounts import (
     resolve_grok_policy,
     resolve_grok_scope,
 )
+from a13n_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
+from a13n_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
 from a13n_ui.root_execution import RootRunExecutor
+from a13n_ui.root_input import detach_input
 from a13n_ui.root_run import RootRunCoordinator
 from a13n_ui.settings import AgentUiSettings
+from a13n_ui.setup import EnvironmentReadiness, SetupProvider, SetupStatus, preflight_environment
 from a13n_ui.storage import (
     AgentResourceSource,
     LocalStore,
@@ -92,6 +108,7 @@ from a13n_ui.surfaces import (
     ActiveWorkSummary,
     ChildControlResult,
     ChildExecutionPage,
+    ContextUsageView,
     DecisionBatchView,
     DecisionResponseBatch,
     EnvironmentProfileSummary,
@@ -105,9 +122,11 @@ from a13n_ui.surfaces import (
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
+    RunModelOverrides,
     SkillCatalogView,
     SkillReference,
     TaskPage,
+    ThreadActivityPage,
     ThreadConfigurationMutationInput,
     ThreadDeferredResponse,
     ThreadDetail,
@@ -117,10 +136,10 @@ from a13n_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
-    WorkbenchPage,
+    WorkspaceContext,
 )
 from a13n_ui.terminal_projection import TerminalProjectionService
-from a13n_ui.thread_capability import AgentUiThreadCapability, ThreadToolController
+from a13n_ui.thread_capability import ThreadCollaborationCapability, ThreadToolController
 from a13n_ui.thread_projection import ThreadProjectionService
 from a13n_ui.thread_service import RootThreadDefaults, ThreadService
 
@@ -183,7 +202,12 @@ class AgentUiApp:
         subagent_operator: AgentUiSubagentOperator,
         live_hub: AgentUiLiveHub,
         summary_hub: AgentUiSummaryHub,
-        codex_account: CodexAccountStore,
+        codex_account: CodexAccountStore | None,
+        codex_account_error: AccountStoreError | None,
+        rediscover_accounts: Callable[
+            [], Awaitable[tuple[CodexAccountStore | None, GrokAccountStore | None, dict[Provider, AccountStoreError]]]
+        ],
+        resolve_sandbox_executable: Callable[[], Awaitable[Path]],
         grok_account: GrokAccountStore | None,
         grok_account_error: AccountStoreError | None,
         codex_login: CodexLoginCallback | None,
@@ -192,6 +216,8 @@ class AgentUiApp:
     ) -> None:
         self._settings = settings
         self._store = store
+        self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
+        self._logins: LoginSessions | None = None
         self._configuration_path = configuration_path
         self._content_plugin_root = store.layout.content_plugins
         self._catalog = catalog
@@ -204,6 +230,11 @@ class AgentUiApp:
         self._live_hub = live_hub
         self._summary_hub = summary_hub
         self._codex_account = codex_account
+        self._codex_account_error = codex_account_error
+        self._rediscover_accounts = rediscover_accounts
+        self._resolve_sandbox_executable = resolve_sandbox_executable
+        self._setup_lock = Lock()
+        self._sandbox_ready_paths: set[Path] = set()
         self._grok_account = grok_account
         self._grok_account_error = grok_account_error
         self._codex_login = codex_login
@@ -216,6 +247,36 @@ class AgentUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
+
+    async def start_login(self, request: LoginRequest) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return self._logins.start(request)
+
+    async def login_status(self, session_id: str) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return self._logins.status(session_id)
+
+    async def cancel_login(self, session_id: str) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return await self._logins.cancel(session_id)
+
+    async def list_api_keys(self) -> tuple[ApiKeyStatus, ...]:
+        async with self._operation():
+            return await self._api_keys.list()
+
+    async def put_api_key(self, value: ApiKeyInput) -> ApiKeyStatus:
+        async with self._operation():
+            return await self._api_keys.put(value)
+
+    async def delete_api_key(self, reference: str) -> None:
+        async with self._operation():
+            await self._api_keys.delete(reference)
 
     @property
     def state(self) -> AppState:
@@ -289,6 +350,8 @@ class AgentUiApp:
             if self._state is not AppState.ready:
                 return
             path = self._require_configuration_path()
+            if not self._configuration_seen and not path.exists():
+                continue
             try:
                 fingerprint = await configuration_tree_fingerprint(
                     path,
@@ -346,6 +409,7 @@ class AgentUiApp:
         *,
         product: ExternalSubagentProduct | str,
         scope: ExternalSubagentScope | str,
+        inherit_runtime: bool = False,
         project_root: Path | None = None,
         user_home: Path | None = None,
     ) -> ExternalSubagentImportPreview:
@@ -353,6 +417,7 @@ class AgentUiApp:
             return await preview_external_subagent_import(
                 self._require_configuration_path(),
                 product=product,
+                inherit_runtime=inherit_runtime,
                 scope=scope,
                 project_root=project_root,
                 user_home=user_home,
@@ -429,6 +494,58 @@ class AgentUiApp:
                 )
             return tuple(result)
 
+    async def ensure_cwd_workspace(self, directory: Path) -> WorkspaceContext:
+        """Bind an exact cwd without retargeting existing saved sessions.
+
+        Resources remain internal configuration facts. This command is invoked
+        on first submission, never merely to paint an editable landing prompt.
+        """
+        normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
+        if not normalized.is_dir():
+            raise AppStateError("Workspace must be a directory.", code="workspace_invalid")
+        root = str(normalized)
+        project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
+        for attempt in range(2):
+            source = await self.current_configuration()
+            if source is None:
+                raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
+            exact = sorted(
+                item.id for item in source.projects.values() if len(item.roots) == 1 and item.roots[0].path == root
+            )
+            if exact:
+                return WorkspaceContext(directory=root, project_id=exact[0])
+            if project_id in source.projects:
+                raise AppStateError(
+                    "Workspace identity conflicts with a configured resource.", code="workspace_conflict"
+                )
+            try:
+                await self.mutate_configuration(
+                    relative_path=f"projects/{project_id}.yaml",
+                    request=ResourceMutationRequest(
+                        content=json.dumps(
+                            {
+                                "schema_version": "1",
+                                "kind": "project",
+                                "id": project_id,
+                                "name": normalized.name or root,
+                                "roots": [{"path": root}],
+                            }
+                        )
+                    ),
+                )
+            except ConfigurationError as exc:
+                if attempt or exc.code != "configuration_source_conflict":
+                    raise
+                await self.reload_configuration()
+                continue
+            return WorkspaceContext(directory=root, project_id=project_id)
+        raise AppStateError("Workspace changed during preparation; retry.", code="workspace_conflict")
+
+    async def context_usage(self, thread_id: str) -> ContextUsageView:
+        """Last reported root request footprint, not accumulated Run usage."""
+        async with self._operation():
+            return await self._projections.context_usage(thread_id)
+
     async def resolve_launch_project(
         self,
         directory: Path,
@@ -441,7 +558,7 @@ class AgentUiApp:
                 project_id=project_id,
             )
 
-    async def workbench(
+    async def thread_activity(
         self,
         *,
         project_id: str | None,
@@ -449,9 +566,9 @@ class AgentUiApp:
         include_archived: bool = False,
         cursor: str | None = None,
         limit: int = 20,
-    ) -> WorkbenchPage:
+    ) -> ThreadActivityPage:
         async with self._operation():
-            return await self._terminal_projections.workbench(
+            return await self._terminal_projections.thread_activity(
                 project_id=project_id,
                 query=query,
                 include_archived=include_archived,
@@ -710,10 +827,12 @@ class AgentUiApp:
         self,
         *,
         thread_id: str,
-        prompt: str,
+        prompt: RunInputValue,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
     ) -> RootRunReceipt:
+        prompt = detach_input(prompt)
         async with self._operation():
             catalog = await self._terminal_projections.skill_catalog(thread_id=thread_id)
             self._terminal_projections.validate_references_against(
@@ -724,6 +843,7 @@ class AgentUiApp:
                 thread_id=thread_id,
                 prompt=prompt,
                 mutation=mutation,
+                model_overrides=model_overrides,
             )
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -738,12 +858,14 @@ class AgentUiApp:
         thread_id: str,
         response: ThreadDeferredResponse,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
         async with self._operation():
             return await self._root_runs.submit_response(
                 thread_id=thread_id,
                 response=response,
                 mutation=mutation,
+                model_overrides=model_overrides,
             )
 
     async def respond_decisions(
@@ -752,6 +874,7 @@ class AgentUiApp:
         thread_id: str,
         response: DecisionResponseBatch,
         mutation: ThreadConfigurationMutation | None = None,
+        model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
         projected = await self.thread_decisions(
             thread_id=thread_id,
@@ -801,6 +924,7 @@ class AgentUiApp:
                 responses=tuple(converted),
             ),
             mutation=mutation,
+            model_overrides=model_overrides,
         )
 
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:
@@ -909,6 +1033,108 @@ class AgentUiApp:
                 persisted_status=result.status,
             )
 
+    async def setup_status(self, *, rediscover: bool = False) -> SetupStatus:
+        """Discover compatible accounts without login, token refresh, or model calls."""
+        async with self._operation(), self._setup_lock:
+            if rediscover:
+                self._codex_account, self._grok_account, errors = await self._rediscover_accounts()
+                self._codex_account_error = errors.get(Provider.CODEX)
+                self._grok_account_error = errors.get(Provider.GROK)
+            providers: list[SetupProvider] = []
+            for provider in (Provider.CODEX, Provider.GROK):
+                try:
+                    account = await self._account(provider).inspect()
+                    selected = account.usable or (
+                        account.availability.value == "available" and account.required_action.value == "refresh"
+                    )
+                    providers.append(
+                        SetupProvider(
+                            provider=provider.value,
+                            available=selected,
+                            selected=selected,
+                            action=account.required_action.value,
+                        )
+                    )
+                except (AccountStoreError, AppStateError) as exc:
+                    providers.append(
+                        SetupProvider(
+                            provider=provider.value,
+                            available=False,
+                            selected=False,
+                            action="retry",
+                            diagnostic=str(exc),
+                        )
+                    )
+            current = await self._configurations.current()
+            defaults = None if current is None else current.document.defaults
+            path = self._require_configuration_path()
+            return SetupStatus(
+                needed=current is None
+                or not current.agents
+                or defaults is None
+                or defaults.agent is None
+                or defaults.project is None,
+                configuration_path=str(path),
+                suggested_project_path=str(Path.cwd()),
+                generation=await setup_generation(path),
+                providers=tuple(providers),
+                agents={} if current is None else {key: value.name for key, value in current.agents.items()},
+                projects={} if current is None else {key: value.name for key, value in current.projects.items()},
+                project_paths={}
+                if current is None
+                else {key: tuple(root.path for root in value.roots) for key, value in current.projects.items()},
+                default_agent=None if defaults is None else defaults.agent,
+                default_project=None if defaults is None else defaults.project,
+                environment_profile="environment-native"
+                if defaults is None or defaults.environment_profile is None
+                else defaults.environment_profile,
+                diagnostic=None if self._candidate_error is None else str(self._candidate_error),
+            )
+
+    async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
+        async with self._operation():
+            return await preview_setup(
+                self._require_configuration_path(),
+                selection,
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+
+    async def apply_setup(self, selection: SetupSelection, *, expected_generation: str) -> SetupPublication:
+        async with self._operation(), self._setup_lock:
+            if selection.environment_profile == "environment-sandbox":
+                preview = await preview_setup(
+                    self._require_configuration_path(),
+                    selection,
+                    validate_candidate=self._configurations.validate,
+                    content_plugin_root=self._content_plugin_root,
+                )
+                if any(Path(root).resolve() not in self._sandbox_ready_paths for root in preview.project_paths):
+                    raise AppStateError(
+                        "Run Sandbox preflight for the selected project before applying setup, or explicitly choose Full Control.",
+                        code="sandbox_preflight_required",
+                    )
+            result = await publish_setup(
+                self._require_configuration_path(),
+                selection,
+                expected_generation=expected_generation,
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            await self._reload_configuration_from_path()
+            return result
+
+    async def preflight_environment(
+        self, profile_id: Literal["environment-native", "environment-sandbox"], *, project_path: str
+    ) -> EnvironmentReadiness:
+        async with self._operation():
+            path = Path(project_path).expanduser().resolve()
+            self._sandbox_ready_paths.discard(path)
+            result = await preflight_environment(profile_id, path, resolve_executable=self._resolve_sandbox_executable)
+            if profile_id == "environment-sandbox" and result.ready:
+                self._sandbox_ready_paths.add(path)
+            return result
+
     async def inspect_model_account(self, provider: Provider | str) -> AccountProjection:
         async with self._operation():
             selected = Provider(provider)
@@ -928,7 +1154,9 @@ class AgentUiApp:
                         "No Codex login flow is registered.",
                         code="model_account_login_unavailable",
                     )
-                return await self._codex_account.login(
+                account = self._account(Provider.CODEX)
+                assert isinstance(account, CodexAccountStore)
+                return await account.login(
                     self._codex_login,
                     allow_account_switch=allow_account_switch,
                 )
@@ -982,6 +1210,17 @@ class AgentUiApp:
                     expected_continuation_id=thread.continuation_id,
                 )
             cursor = subscription.cursor
+            recent = await self._live_hub.snapshot(root_thread_id=root_thread_id)
+            retained_events: list[LiveEvent] = []
+            remaining_bytes = 128 * 1024
+            for event in reversed(recent):
+                if event.sequence > cursor.sequence:
+                    continue
+                size = len(event.model_dump_json().encode())
+                if size > remaining_bytes:
+                    break
+                retained_events.append(event)
+                remaining_bytes -= size
             yield ThreadWatch(
                 snapshot=ThreadFocusSnapshot(
                     epoch=cursor.epoch,
@@ -990,6 +1229,7 @@ class AgentUiApp:
                     root_operation=root_operation,
                     children=children,
                     tasks=tasks,
+                    recent_events=tuple(reversed(retained_events)),
                 ),
                 events=subscription,
             )
@@ -1029,6 +1269,10 @@ class AgentUiApp:
 
     def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore:
         if provider is Provider.CODEX:
+            if self._codex_account is None:
+                if self._codex_account_error is not None:
+                    raise self._codex_account_error
+                raise AppStateError("Codex account store is unavailable.", code="model_account_integration_unavailable")
             return self._codex_account
         if self._grok_account is None:
             if self._grok_account_error is not None:
@@ -1121,6 +1365,7 @@ async def open_agent_ui_app(
     settings: AgentUiSettings,
     *,
     configuration_path: Path | None = None,
+    host_mode: Literal["local", "webui"] = "local",
     configuration_error: ConfigurationError | None = None,
     codex_refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     codex_login: CodexLoginCallback | None = None,
@@ -1182,14 +1427,19 @@ async def open_agent_ui_app(
                 runtime_factories=selected_integrations.provider_runtime_factories,
             )
             environment_service = EnvironmentRunService(store, environment_reconstructor)
-            agent_reconstructor = AgentReconstructor(catalog)
+            agent_reconstructor = AgentReconstructor(catalog, api_keys=ApiKeyStore(store.layout.root / "auth.json"))
             live_hub = AgentUiLiveHub()
             summary_hub = AgentUiSummaryHub(epoch=live_hub.epoch)
             cleanup_timeout = min(
                 settings.shutdown_timeout_seconds,
                 settings.storage.cleanup_timeout_seconds,
             )
-            codex_account = CodexAccountStore(await resolve_codex_policy())
+            codex_account_error: AccountStoreError | None = None
+            try:
+                codex_account = CodexAccountStore(await resolve_codex_policy())
+            except AccountStoreError as exc:
+                codex_account = None
+                codex_account_error = exc
             grok_account_error: AccountStoreError | None = None
             try:
                 grok_policy = resolve_grok_policy()
@@ -1198,12 +1448,11 @@ async def open_agent_ui_app(
             except AccountStoreError as exc:
                 grok_account = None
                 grok_account_error = exc
-            subscription_sources: dict[str, SubscriptionSource] = {
-                "codex_subscription": CodexSubscriptionSource(
-                    source=codex_account,
-                    refresh=codex_refresh,
-                ),
-            }
+            subscription_sources: dict[str, SubscriptionSource] = {}
+            if codex_account is not None:
+                subscription_sources["codex_subscription"] = CodexSubscriptionSource(
+                    source=codex_account, refresh=codex_refresh
+                )
             if grok_account is not None:
                 subscription_sources["grok_subscription"] = GrokSubscriptionSource(
                     source=grok_account,
@@ -1252,13 +1501,32 @@ async def open_agent_ui_app(
                 children=operator,
                 configuration_path=configuration_path,
             )
-            thread_tools = ThreadToolController(projections=projections, root_runs=root_runs)
-            root_executor.set_root_capability_factory(
-                lambda thread_id: AgentUiThreadCapability(
-                    controller=thread_tools,
-                    source_thread_id=thread_id,
-                )
-            )
+
+            async def rediscover_accounts() -> tuple[
+                CodexAccountStore | None, GrokAccountStore | None, dict[Provider, AccountStoreError]
+            ]:
+                errors: dict[Provider, AccountStoreError] = {}
+                sources: dict[str, SubscriptionSource] = {}
+                discovered_codex: CodexAccountStore | None = None
+                discovered_grok: GrokAccountStore | None = None
+                try:
+                    discovered_codex = CodexAccountStore(await resolve_codex_policy())
+                    sources["codex_subscription"] = CodexSubscriptionSource(
+                        source=discovered_codex, refresh=codex_refresh
+                    )
+                except AccountStoreError as exc:
+                    errors[Provider.CODEX] = exc
+                try:
+                    policy = resolve_grok_policy()
+                    scope = grok_scope or await resolve_grok_scope(policy) or DEFAULT_GROK_OAUTH_SCOPE
+                    discovered_grok = GrokAccountStore(policy, scope=scope)
+                    sources["grok_subscription"] = GrokSubscriptionSource(source=discovered_grok, refresh=grok_refresh)
+                except AccountStoreError as exc:
+                    errors[Provider.GROK] = exc
+                root_executor.replace_subscription_sources(sources)
+                operator.replace_subscription_sources(sources)
+                return discovered_codex, discovered_grok, errors
+
             app = AgentUiApp(
                 settings,
                 store,
@@ -1273,17 +1541,33 @@ async def open_agent_ui_app(
                 live_hub=live_hub,
                 summary_hub=summary_hub,
                 codex_account=codex_account,
+                codex_account_error=codex_account_error,
+                rediscover_accounts=rediscover_accounts,
+                resolve_sandbox_executable=environment_reconstructor.resolve_sandbox_executable,
                 grok_account=grok_account,
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,
                 grok_login=grok_login,
                 candidate_error=candidate_error,
             )
+            if host_mode == "webui":
+                thread_tools = ThreadToolController(
+                    projections=projections,
+                    root_runs=root_runs,
+                    create_thread=app.create_thread,
+                )
+                root_executor.set_root_capability_factory(
+                    lambda thread_id: ThreadCollaborationCapability(
+                        controller=thread_tools,
+                        source_thread_id=thread_id,
+                    )
+                )
             try:
                 await operator.start()
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
+                    app._logins = LoginSessions(background, app._account)
                     if configuration_path is not None:
                         background.start_soon(app._observe_configuration)
                     try:

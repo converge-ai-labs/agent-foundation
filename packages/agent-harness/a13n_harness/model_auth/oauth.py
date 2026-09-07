@@ -24,7 +24,7 @@ import httpx2
 import jwt
 from pydantic_ai.exceptions import UserError
 
-from .models import CodexCredentials, CredentialRefreshError, GrokCredentials
+from .models import CodexCredentials, CredentialRefreshError, DeviceAuthorizationError, GrokCredentials
 
 _CODEX_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 _CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -166,6 +166,84 @@ class CodexOAuthFlow(OAuthFlow[CodexCredentials]):
 
 
 @dataclass(frozen=True, slots=True)
+class CodexDeviceAuthorization:
+    """Codex's two-stage device grant (not the RFC 8628 token grant)."""
+
+    verification_uri: str
+    user_code: str
+    expires_in: int
+    interval: int
+    _device_auth_id: str = field(repr=False)
+    _expires_at: float = field(repr=False)
+    _http_client: httpx2.AsyncClient | None = field(default=None, repr=False)
+
+    async def wait_for_credentials(self) -> CodexCredentials:
+        try:
+            with anyio.fail_after(max(0, self._expires_at - time.monotonic())):
+                while True:
+                    await anyio.sleep(self.interval)
+                    response = await _request(
+                        "POST",
+                        "https://auth.openai.com/api/accounts/deviceauth/token",
+                        http_client=self._http_client,
+                        json_data={"device_auth_id": self._device_auth_id, "user_code": self.user_code},
+                    )
+                    if response.status_code in {403, 404}:
+                        continue
+                    if response.status_code != 200:
+                        raise CredentialRefreshError("openai-codex", "The Codex device authorization failed.")
+                    document = _json_object(response, provider="openai-codex")
+                    tokens = await _post_token(
+                        _CODEX_TOKEN_URL,
+                        {
+                            "grant_type": "authorization_code",
+                            "code": _required_string(document, "authorization_code", "openai-codex"),
+                            "code_verifier": _required_string(document, "code_verifier", "openai-codex"),
+                            "redirect_uri": "https://auth.openai.com/deviceauth/callback",
+                            "client_id": _CODEX_CLIENT_ID,
+                        },
+                        http_client=self._http_client,
+                    )
+                    return _codex_credentials(tokens)
+        except TimeoutError:
+            raise DeviceAuthorizationError("openai-codex", "expired") from None
+
+
+class CodexDeviceAuthorizationFlow:
+    """Start the reviewed Codex device protocol without a local callback listener."""
+
+    @staticmethod
+    async def start(*, http_client: httpx2.AsyncClient | None = None) -> CodexDeviceAuthorization:
+        response = await _request(
+            "POST",
+            "https://auth.openai.com/api/accounts/deviceauth/usercode",
+            http_client=http_client,
+            json_data={"client_id": _CODEX_CLIENT_ID},
+        )
+        if response.status_code == 404:
+            raise DeviceAuthorizationError("openai-codex", "unsupported")
+        if response.status_code != 200:
+            raise CredentialRefreshError("openai-codex", "The Codex device authorization request failed.")
+        document = _json_object(response, provider="openai-codex")
+        user_code = _required_string(document, "user_code", "openai-codex")
+        if not all(c.isascii() and (c.isalnum() or c == "-") for c in user_code):
+            raise CredentialRefreshError("openai-codex", "The Codex device user code is invalid.")
+        interval_value = document.get("interval", 5)
+        if isinstance(interval_value, str) and interval_value.isascii() and interval_value.isdecimal():
+            interval_value = int(interval_value)
+        interval = _positive_integer(interval_value, "interval", provider="openai-codex")
+        return CodexDeviceAuthorization(
+            verification_uri="https://auth.openai.com/codex/device",
+            user_code=user_code,
+            expires_in=900,
+            interval=min(interval, 900),
+            _device_auth_id=_required_string(document, "device_auth_id", "openai-codex"),
+            _expires_at=time.monotonic() + 900,
+            _http_client=http_client,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class _GrokDiscovery:
     authorization_endpoint: str
     token_endpoint: str
@@ -298,13 +376,13 @@ class GrokDeviceAuthorization:
         while True:
             remaining = self._expires_at - time.monotonic()
             if remaining <= 0:
-                raise CredentialRefreshError("grok", "The Grok device code expired.")
+                raise DeviceAuthorizationError("grok", "expired")
             await anyio.sleep(min(interval, remaining))
             if time.monotonic() >= self._expires_at:
-                raise CredentialRefreshError("grok", "The Grok device code expired.")
+                raise DeviceAuthorizationError("grok", "expired")
             remaining = self._expires_at - time.monotonic()
             if remaining <= 0:
-                raise CredentialRefreshError("grok", "The Grok device code expired.")
+                raise DeviceAuthorizationError("grok", "expired")
             try:
                 with anyio.fail_after(remaining):
                     response = await _request(
@@ -318,7 +396,7 @@ class GrokDeviceAuthorization:
                         },
                     )
             except TimeoutError:
-                raise CredentialRefreshError("grok", "The Grok device code expired.") from None
+                raise DeviceAuthorizationError("grok", "expired") from None
             document = _json_object(response, provider="grok")
             if response.status_code == 200:
                 return _grok_direct_credentials(
@@ -333,9 +411,9 @@ class GrokDeviceAuthorization:
                 interval += 5
                 continue
             if error == "access_denied":
-                raise CredentialRefreshError("grok", "The Grok device authorization was denied.")
+                raise DeviceAuthorizationError("grok", "denied")
             if error == "expired_token":
-                raise CredentialRefreshError("grok", "The Grok device code expired.")
+                raise DeviceAuthorizationError("grok", "expired")
             raise CredentialRefreshError("grok", "The Grok device token request failed.")
 
 
@@ -367,6 +445,8 @@ class GrokDeviceAuthorizationFlow:
             http_client=http_client,
             data=form,
         )
+        if response.status_code == 404:
+            raise DeviceAuthorizationError("grok", "unsupported")
         if response.status_code != 200:
             raise CredentialRefreshError("grok", "The Grok device authorization request failed.")
         document = _json_object(response, provider="grok")
@@ -662,14 +742,16 @@ async def _request(
     *,
     http_client: httpx2.AsyncClient | None,
     data: Mapping[str, str] | None = None,
+    json_data: Mapping[str, str] | None = None,
 ) -> httpx2.Response:
     if http_client is None:
         async with httpx2.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
-            return await client.request(method, url, data=data, headers={"Accept": "application/json"})
+            return await client.request(method, url, data=data, json=json_data, headers={"Accept": "application/json"})
     return await http_client.request(
         method,
         url,
         data=data,
+        json=json_data,
         headers={"Accept": "application/json"},
         auth=_no_auth,
         follow_redirects=False,
@@ -890,6 +972,8 @@ def _account_id(token: str) -> str | None:
 
 
 __all__ = [
+    "CodexDeviceAuthorization",
+    "CodexDeviceAuthorizationFlow",
     "CodexOAuthFlow",
     "GrokDeviceAuthorization",
     "GrokDeviceAuthorizationFlow",

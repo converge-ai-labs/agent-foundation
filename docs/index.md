@@ -8,6 +8,7 @@ The project builds on [Pydantic AI](https://ai.pydantic.dev/). Pydantic AI owns 
 
 | If you want to...                                                        | Read...                                                                                                  |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Use a native local coding CLI with subscription or API-key setup         | [Agent CLI](agent-cli.md)                                                                                |
 | Build and run an Agent inside a Python application                       | [Agent Harness overview](agent-harness/index.md) and [Getting Started](agent-harness/getting-started.md) |
 | Integrate the Harness into a Host with persistence and current authority | [Embedding in a Host](agent-harness/hosting.md)                                                          |
 | Give an Agent access to files, commands, processes, or ports             | [Environment overview](environments/index.md)                                                            |

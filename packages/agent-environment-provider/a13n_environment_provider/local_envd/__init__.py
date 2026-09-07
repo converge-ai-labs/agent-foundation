@@ -4,7 +4,7 @@ from .configuration import (
     LocalEnvdShellProfile,
     LocalEnvdWorkspaceConfiguration,
 )
-from .provider import LocalEnvdEnvironment, LocalEnvdEnvironmentProvider
+from .provider import LocalEnvdEnvironment, LocalEnvdEnvironmentProvider, validate_local_envd_runtime
 from .runtime import (
     A13N_AGENT_ENVD_EXECUTABLE,
     LocalEnvdProviderRuntime,
@@ -25,4 +25,5 @@ __all__ = [
     "LocalEnvdWorkspaceConfiguration",
     "TemporaryLocalEnvdRuntimeAllocator",
     "resolve_agent_envd_executable",
+    "validate_local_envd_runtime",
 ]

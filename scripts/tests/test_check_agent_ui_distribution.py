@@ -11,18 +11,18 @@ import pytest
 SCRIPTS_DIRECTORY = Path(__file__).parents[1]
 sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
-from check_agent_ui_distribution import DistributionError, validate_wheel  # noqa: E402
+from check_agent_ui_distribution import TERMINAL_PACKAGE_PATHS, DistributionError, validate_wheel  # noqa: E402
 
 
 def _write_wheel(
     path: Path,
     *,
-    index: bytes,
+    index: bytes = b'<script src="/assets/main.js"></script>',
     provider_version: str | None = "1.2.3",
     harness_version: str | None = "1.2.3",
     protocol_version: str | None = "1.2.3",
     include_runtime_manifest: bool = True,
-    include_terminal_style: bool = True,
+    include_terminal_shell: bool = True,
     include_entrypoint: bool = True,
     cli_content: bytes = b"def main(): pass\n",
     extra_packaged_files: dict[str, bytes] | None = None,
@@ -44,14 +44,22 @@ def _write_wheel(
             "a13n_ui/static/asset-manifest.json",
             json.dumps(manifest),
         )
-        archive.writestr("a13n_ui/__init__.py", b"\n")
-        archive.writestr("a13n_ui/__main__.py", b"from a13n_ui.cli import main\nmain()\n")
-        archive.writestr("a13n_ui/cli.py", cli_content)
-        archive.writestr("a13n_ui/terminal.py", b"\n")
-        archive.writestr("a13n_ui/tui/__init__.py", b"\n")
-        archive.writestr("a13n_ui/tui/application.py", b"class AgentUiTerminalApp: pass\n")
-        if include_terminal_style:
-            archive.writestr("a13n_ui/tui/styles/terminal.tcss", b"Screen { color: white; }\n")
+        archive.writestr(
+            "a13n_ui-9.8.7.dist-info/licenses/YAACLI-LICENSE",
+            (SCRIPTS_DIRECTORY.parent / "packages/agent-ui/YAACLI-LICENSE").read_bytes(),
+        )
+        for module in TERMINAL_PACKAGE_PATHS:
+            if module.as_posix() == "a13n_ui/interactive/shell.py" and not include_terminal_shell:
+                continue
+            content = b"\n"
+            if module.as_posix() == "a13n_ui/interactive/shell.py":
+                content = b"class CliShell: pass\n"
+            elif module.as_posix() == "a13n_ui/webui.py":
+                content = b"def create_webui(): pass\n"
+            elif module.as_posix() == "a13n_ui/cli.py":
+                content = cli_content
+            archive.writestr(module.as_posix(), content)
+        archive.writestr("a13n_ui/interactive/__init__.py", b"\n")
         if include_runtime_manifest:
             archive.writestr(
                 "a13n_ui/assets/agent-envd-release.json",
@@ -89,11 +97,10 @@ def _write_wheel(
             archive.writestr(f"a13n_ui/static/{name}", content)
 
 
-def test_validates_declared_shell_assets(tmp_path: Path) -> None:
+def test_validates_cli_distribution(tmp_path: Path) -> None:
     wheel = tmp_path / "agent-ui.whl"
     _write_wheel(
         wheel,
-        index=(b'<link rel="stylesheet" href="/assets/main.css"><script type="module" src="/assets/main.js"></script>'),
     )
 
     validate_wheel(wheel, require_exact_internal_version=True)
@@ -103,7 +110,6 @@ def test_development_validation_allows_unpinned_workspace_dependencies(tmp_path:
     wheel = tmp_path / "agent-ui.whl"
     _write_wheel(
         wheel,
-        index=b'<script src="/assets/main.js"></script>',
         provider_version=None,
         harness_version=None,
         protocol_version=None,
@@ -116,7 +122,6 @@ def test_rejects_missing_agent_envd_manifest(tmp_path: Path) -> None:
     wheel = tmp_path / "agent-ui.whl"
     _write_wheel(
         wheel,
-        index=b'<script src="/assets/main.js"></script>',
         include_runtime_manifest=False,
     )
 
@@ -128,7 +133,6 @@ def test_rejects_missing_console_entrypoint(tmp_path: Path) -> None:
     wheel = tmp_path / "agent-ui.whl"
     _write_wheel(
         wheel,
-        index=b'<script src="/assets/main.js"></script>',
         include_entrypoint=False,
     )
 
@@ -140,24 +144,34 @@ def test_rejects_unimportable_entrypoint(tmp_path: Path) -> None:
     wheel = tmp_path / "agent-ui.whl"
     _write_wheel(
         wheel,
-        index=b'<script src="/assets/main.js"></script>',
         cli_content=b"raise RuntimeError('broken wheel')\n",
     )
 
-    with pytest.raises(DistributionError, match="cannot import its entrypoint and TUI"):
+    with pytest.raises(DistributionError, match="cannot import its entrypoint and CLI"):
         validate_wheel(wheel)
 
 
-def test_rejects_missing_terminal_style(tmp_path: Path) -> None:
+def test_rejects_missing_terminal_shell(tmp_path: Path) -> None:
     wheel = tmp_path / "agent-ui.whl"
     _write_wheel(
         wheel,
-        index=b'<script src="/assets/main.js"></script>',
-        include_terminal_style=False,
+        include_terminal_shell=False,
     )
 
-    with pytest.raises(DistributionError, match=r"missing a13n_ui/tui/styles/terminal\.tcss"):
+    with pytest.raises(DistributionError, match=r"missing a13n_ui/interactive/shell\.py"):
         validate_wheel(wheel)
+
+
+def test_rejects_mismatched_internal_dependency_pins(tmp_path: Path) -> None:
+    wheel = tmp_path / "agent-ui.whl"
+    _write_wheel(
+        wheel,
+        harness_version="1.2.3",
+        protocol_version="1.2.4",
+    )
+
+    with pytest.raises(DistributionError, match="internal dependency versions do not match"):
+        validate_wheel(wheel, require_exact_internal_version=True)
 
 
 def test_rejects_undeclared_shell_reference(tmp_path: Path) -> None:
@@ -165,19 +179,6 @@ def test_rejects_undeclared_shell_reference(tmp_path: Path) -> None:
     _write_wheel(wheel, index=b'<script src="/assets/missing.js"></script>')
 
     with pytest.raises(DistributionError, match="shell references an undeclared or missing asset"):
-        validate_wheel(wheel, require_exact_internal_version=True)
-
-
-def test_rejects_mismatched_internal_dependency_pins(tmp_path: Path) -> None:
-    wheel = tmp_path / "agent-ui.whl"
-    _write_wheel(
-        wheel,
-        index=b'<script src="/assets/main.js"></script>',
-        harness_version="1.2.3",
-        protocol_version="1.2.4",
-    )
-
-    with pytest.raises(DistributionError, match="internal dependency versions do not match"):
         validate_wheel(wheel, require_exact_internal_version=True)
 
 

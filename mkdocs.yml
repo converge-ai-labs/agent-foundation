@@ -10,6 +10,7 @@ strict: true
 
 nav:
   - Home: index.md
+  - Agent CLI: agent-cli.md
   - Agent Harness:
       - Overview: agent-harness/index.md
       - Get started:
