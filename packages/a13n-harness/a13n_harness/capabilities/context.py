@@ -8,6 +8,7 @@ from collections import deque
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from importlib.resources import files
 from secrets import token_urlsafe
 from typing import Any, Literal, cast
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -74,59 +75,7 @@ _HANDOFF_METADATA_KEY = "a13n.context"
 _RESTORED_BOUNDARY_METADATA_KEY = "a13n.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
 # Mirrors ya-agent-sdk's cache-friendly compact instruction and request.
-_COMPACTION_PROMPT = """Generate a compact continuation summary for the conversation history.
-Return only the summary text. Do not call tools.
-Do not carry a merely inspected or rejected candidate's workflow, mandatory requirements, referenced-resource instructions, or proposed next steps into any continuation section; if historically relevant, record only that it was inspected and not activated.
-Use this exact Markdown structure:
-
-## Condensed conversation summary
-
-### Analysis
-
-[Brief analysis of the conversation and what matters for continuation.]
-
-### Context
-
-1. Primary Request and Intent:
-   [User's explicit requests and intent]
-
-2. Key Technical Concepts:
-   - [Concepts, technologies, APIs, and architecture points]
-
-3. Files and Code Sections:
-   - [Files examined, edited, or created, with important details]
-
-4. Problem Solving:
-   [Problems solved and ongoing troubleshooting]
-
-5. Pending Tasks:
-   - [Explicit pending tasks]
-
-6. Current Work:
-   [Precise current work immediately before compaction. If the current user request references numbered items, "above", "that", or similar phrases, resolve those references using the previous assistant response and spell out what they refer to.]
-
-7. Optional Next Step:
-   [Direct next step aligned with the current work]
-
-8. Past Interactions:
-   - [Key interactions already completed, including actions and outcomes]
-
-9. Activated Skills:
-   [List only Skills that were activated and remain relevant to unfinished work, and remind the next agent to re-read them. Do not include Skills that were merely inspected or rejected as candidates.]
-
-10. Files to Inspect on Resume:
-   [List only file paths that may need to be inspected when resuming. Do not include file contents.]
-
-11. Relevant Note Keys (omit this section when no supplied note key is relevant):
-   - [Exact note key and why it matters for continuation]
-
-
-Compact the conversation history into the requested continuation summary format.
-Focus on details needed to continue the user's work accurately after older messages are removed.
-Return only the summary text.
-
-Do not call any tools or investigate unresolved questions yourself. Record any uncertainties in the summary for the resumed agent to investigate.
-"""
+_COMPACTION_PROMPT = files("a13n_harness.toolsets.prompts").joinpath("compact.md").read_text(encoding="utf-8").strip()
 _PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS = 32_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_HEAD = 24_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_TAIL = 6_000
