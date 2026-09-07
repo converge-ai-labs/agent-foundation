@@ -191,7 +191,9 @@ async def test_update_precedes_setup_and_handoff_closes_app_and_terminal(
     monkeypatch.setattr(onboarding, "LandingScreen", Landing)
     monkeypatch.setattr(onboarding, "run_setup", setup)
     monkeypatch.setattr(updates, "prompt_update", prompt)
-    monkeypatch.setattr(shell.CliShell, "run", chat)
+    # This checks startup orchestration, not native console construction (covered
+    # by the PTY suite). Windows CI has no console even when run() is replaced.
+    monkeypatch.setattr(shell, "CliShell", lambda *args, **kwargs: SimpleNamespace(run=chat))
     result = await startup.run_terminal(
         CliRequest(no_update_check=disabled == "flag"), directory=tmp_path, runtime_loader=lambda: factory
     )
