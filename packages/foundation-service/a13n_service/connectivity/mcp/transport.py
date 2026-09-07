@@ -16,6 +16,8 @@ from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.tool_validation import validate_tools
 from a13n_service.endpoint_policy import EndpointPolicy
 
+from .domain import MCP_PROTOCOL_REVISION
+
 
 class BoundedMCPClient(Client):
     async def list_tools(self, max_pages: int = DISCOVERY_MAX_PAGES) -> list[Tool]:
@@ -61,11 +63,17 @@ class _BoundedStream(httpx2.AsyncByteStream):
 
 class RemoteTransport:
     def __init__(
-        self, policy: EndpointPolicy, *, timeout_seconds: float = 30, transport: httpx2.AsyncBaseTransport | None = None
+        self,
+        policy: EndpointPolicy,
+        *,
+        timeout_seconds: float = 30,
+        http_timeout: httpx2.Timeout | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
         self._transport = transport
         self._policy = policy
         self._timeout = timeout_seconds
+        self._http_timeout = http_timeout or httpx2.Timeout(timeout_seconds)
 
     @asynccontextmanager
     async def connect(
@@ -99,7 +107,7 @@ class RemoteTransport:
             return httpx2.AsyncClient(
                 cookies=cookie_free_jar(),
                 headers=headers,
-                timeout=self._timeout,
+                timeout=self._http_timeout,
                 follow_redirects=False,
                 transport=self._transport,
                 event_hooks={"request": [request_guard], "response": [response_guard]},
@@ -111,4 +119,6 @@ class RemoteTransport:
             httpx_client_factory=http_factory,  # type: ignore[arg-type]
         )
         async with BoundedMCPClient(transport, timeout=self._timeout) as client:
+            if client.initialize_result is None or client.initialize_result.protocolVersion != MCP_PROTOCOL_REVISION:
+                raise ValueError("mcp_protocol_incompatible")
             yield client

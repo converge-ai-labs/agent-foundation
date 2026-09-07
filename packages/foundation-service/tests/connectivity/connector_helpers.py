@@ -66,6 +66,7 @@ class FakeConnectorBackend:
 
 class FakeConnectorProvider:
     compatibility_profile = "fake_v1"
+    setup_replay_safe = True
 
     def __init__(self, backend: FakeConnectorBackend) -> None:
         self.backend = backend
@@ -76,8 +77,8 @@ class FakeConnectorProvider:
     def connect(self, binding: ConnectionBinding) -> FakeConnection:
         return FakeConnection(self.backend, binding)
 
-    async def test(self) -> None:
-        pass
+    async def test(self):
+        return ("account_read",)
 
     async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]:
         return (
@@ -86,9 +87,24 @@ class FakeConnectorProvider:
             ),
         )
 
-    async def start_setup(self, *, setup: JsonObject, context: SetupContext) -> SetupStarted:
+    def tool_catalog(self, connector_key: str):
+        return self.backend
+
+    async def inspect_setup(self, *, setup_ref: str, context: SetupContext):
+        return await self.connect(
+            ConnectionBinding(
+                external_ref=self.backend.external_accounts[setup_ref],
+                connector_key=context.connector_key,
+                external_user_correlation=context.external_user_correlation,
+            )
+        ).inspect()
+
+    async def start_setup(
+        self, *, setup: JsonObject, context: SetupContext, resume_ref: str | None = None
+    ) -> SetupStarted:
         self.backend.started += 1
         return SetupStarted(
+            setup_ref=context.external_user_correlation,
             external_ref=self.backend.external_accounts.setdefault(
                 context.external_user_correlation, f"external-{len(self.backend.external_accounts) + 1}"
             ),

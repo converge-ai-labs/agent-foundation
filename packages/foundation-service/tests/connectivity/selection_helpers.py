@@ -52,6 +52,7 @@ async def seed_selection_sources(
                 normalized_name="orders account",
                 connector_key="orders",
                 external_ref="external-account",
+                external_user_correlation="usrh_workspace",
                 safe_metadata_json={},
                 status="ready",
                 status_reason=None,

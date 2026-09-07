@@ -1,7 +1,5 @@
 """Shared bounded validation for provider tool previews and connection discovery."""
 
-from typing import Protocol
-
 from anyio import fail_after, to_thread
 from mcp.types import Tool, ToolAnnotations
 
@@ -9,7 +7,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
 from a13n_service.connectivity.tool_validation import validate_tools
 
-from .contracts import ConnectorTool, ConnectorToolPage
+from .contracts import ConnectorTool, ToolCatalog
 from .errors import ConnectorError
 
 
@@ -21,10 +19,6 @@ def mcp_tool(tool: ConnectorTool) -> Tool:
         outputSchema=tool.output_schema,
         annotations=ToolAnnotations.model_validate(tool.annotations),
     )
-
-
-class ToolCatalog(Protocol):
-    async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage: ...
 
 
 async def discover_tools(runtime: ToolCatalog) -> tuple[tuple[ConnectorTool, ...], str]:

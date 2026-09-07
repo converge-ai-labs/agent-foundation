@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from anyio import Semaphore, create_task_group
+
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from a13n_service.connectivity.domain import JsonObject
 
@@ -17,6 +19,7 @@ from ...contracts import (
     ConnectorToolOutcome,
     ConnectorToolPage,
     DiscoveredConnector,
+    ProviderAccess,
     SetupContext,
     SetupStarted,
 )
@@ -36,6 +39,7 @@ _TOOLKIT_VERSION = re.compile(r"^[0-9]{8}_[0-9]{2}$")
 
 class ComposioProvider:
     compatibility_profile = "composio_v3_1"
+    setup_replay_safe = True
 
     def __init__(
         self, http: ConnectorHttpClient, configuration: ComposioConfiguration, credentials: ApiKeyCredentials
@@ -53,15 +57,26 @@ class ComposioProvider:
             raise ConnectorProviderError("connector_not_enabled")
         return ComposioConnection(self._http, self._configuration, self._credentials, binding)
 
-    async def test(
-        self,
-    ) -> None:
+    def tool_catalog(self, connector_key: str) -> ComposioToolCatalog:
+        return ComposioToolCatalog(self._http, self._configuration, self._credentials, connector_key)
+
+    async def inspect_setup(self, *, setup_ref: str, context: SetupContext) -> ConnectionInspection:
+        return await self.connect(
+            ConnectionBinding(
+                external_ref=setup_ref,
+                connector_key=context.connector_key,
+                external_user_correlation=context.external_user_correlation,
+            )
+        ).inspect()
+
+    async def test(self) -> tuple[ProviderAccess, ...]:
         await self._http.request(
             "GET",
             endpoint=self._configuration.endpoint,
             path="/api/v3.1/connected_accounts?limit=1",
             api_key=self._credentials.api_key,
         )
+        return ("account_read",)
 
     async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]:
         budget = DirectoryBudget()
@@ -117,6 +132,7 @@ class ComposioProvider:
         *,
         setup: JsonObject,
         context: SetupContext,
+        resume_ref: str | None = None,
     ) -> SetupStarted:
         configured = ComposioSetup.model_validate(setup)
         await validate_discovered_setup(self.discover_connectors, context.connector_key, setup)
@@ -138,6 +154,7 @@ class ComposioProvider:
         try:
             response = required_object(value)
             return SetupStarted(
+                setup_ref=required_string(response, "connected_account_id"),
                 external_ref=required_string(response, "connected_account_id"),
                 external_handle=required_string(response, "session_uri", max_length=4096),
                 redirect_url=same_origin_url(response.get("redirect_url"), endpoint=self._configuration.endpoint),
@@ -230,10 +247,17 @@ class ComposioToolCatalog:
         items = value.get("items")
         if not isinstance(items, list) or len(items) > 100:
             raise ConnectorProviderError("invalid_provider_response")
-        tools: list[ConnectorTool] = []
-        for item in items:
-            summary = required_object(item)
-            key = required_string(summary, "slug", max_length=128)
+        keys = [required_string(required_object(item), "slug", max_length=128) for item in items]
+        if len(keys) != len(set(keys)):
+            raise ConnectorProviderError("invalid_provider_response")
+        tools: dict[str, ConnectorTool] = {}
+        limit = Semaphore(8)
+
+        async def load(key: str) -> None:
+            async with limit:
+                tools[key] = await detail_for(key)
+
+        async def detail_for(key: str) -> ConnectorTool:
             detail = required_object(
                 await self._http.request(
                     "GET",
@@ -250,9 +274,18 @@ class ComposioToolCatalog:
                 or required_string(detail, "version", max_length=128) != version
             ):
                 raise ConnectorProviderError("incompatible_tool_version")
-            tools.append(_tool(detail))
+            return _tool(detail)
+
+        try:
+            async with create_task_group() as group:
+                for key in keys:
+                    group.start_soon(load, key)
+        except* (ConnectorProviderError, ValueError) as failures:
+            raise failures.exceptions[0] from None
         return ConnectorToolPage(
-            items=tuple(tools), next_cursor=optional_string(value.get("next_cursor")), provider_version=version
+            items=tuple(tools[key] for key in keys),
+            next_cursor=optional_string(value.get("next_cursor")),
+            provider_version=version,
         )
 
 

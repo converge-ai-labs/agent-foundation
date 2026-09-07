@@ -17,7 +17,7 @@ from a13n_service.connectivity.mcp.service import MCPConnectionService
 class ConnectivityControlRuntime:
     """Connectivity management capabilities owned by Control-plane roles."""
 
-    public_origin: str
+    public_origin: str | None
     accounts: AccountService
     targets: AccountTargetService
     connector_providers: ConnectorProviderService

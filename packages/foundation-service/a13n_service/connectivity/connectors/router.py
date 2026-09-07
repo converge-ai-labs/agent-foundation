@@ -15,6 +15,7 @@ from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from .connections import ConnectorConnectionService
+from .contracts import ConnectorToolPage
 from .domain import (
     ConnectorCollection,
     ConnectorConnection,
@@ -72,6 +73,18 @@ def _etag(response: Response, resource: ConnectorProvider | ConnectorConnection)
 @router.get("/api/v1/connector-provider-types", response_model=ConnectorProviderDefinitionCollection)
 async def list_connector_provider_types(request: Request, actor: Actor) -> ConnectorProviderDefinitionCollection:
     return await _connector_providers(request).type_definitions(actor=actor)
+
+
+@router.get(
+    "/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools",
+    response_model=ConnectorToolPage,
+)
+async def preview_connector_tools(
+    request: Request, actor: Actor, connector_provider_id: str, connector_key: str
+) -> ConnectorToolPage:
+    return await _connector_providers(request).preview_tools(
+        actor=actor, connector_provider_id=connector_provider_id, connector_key=connector_key
+    )
 
 
 @router.post(
@@ -387,7 +400,7 @@ async def connector_setup_callback(
 ) -> RedirectResponse:
     return_path = await _connections(request).complete_callback(actor=actor, session_uri=session_uri)
     runtime = get_connectivity_control_runtime(request)
-    if runtime is None:
+    if runtime is None or runtime.public_origin is None:
         raise ConnectorError(
             "callback_unavailable", "ConnectorProvider callback is unavailable.", category=ErrorCategory.unavailable
         )

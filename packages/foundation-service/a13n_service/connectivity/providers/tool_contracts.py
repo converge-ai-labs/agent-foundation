@@ -15,7 +15,7 @@ ProviderId = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
 @dataclass(frozen=True, slots=True)
-class Provider:
+class AccountTools:
     scope: type[BaseModel]
     tools: frozenset[str]
     actions: Callable[[JsonObject, JsonObject, JsonObject, httpx2.AsyncClient, EndpointPolicy], dict[str, NativeAction]]

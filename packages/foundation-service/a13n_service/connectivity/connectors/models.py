@@ -1,4 +1,4 @@
-"""Relational ConnectorProvider, ConnectorConnection, setup, operation, and catalog facts."""
+"""Durable Provider and verified Connection facts, with temporary setup attempts."""
 
 from __future__ import annotations
 
@@ -117,8 +117,8 @@ class ConnectorConnectionRecord(Base):
             name="status_reason_valid",
         ),
         CheckConstraint(
-            "status IN ('pending', 'disabled') OR external_ref IS NOT NULL",
-            name="external_ref_required_when_bound",
+            "status != 'ready' OR (external_ref IS NOT NULL AND external_user_correlation IS NOT NULL)",
+            name="verified_binding_required_when_ready",
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("setup_generation >= 1", name="setup_generation_positive"),
@@ -148,6 +148,7 @@ class ConnectorConnectionRecord(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
     connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    external_user_correlation: Mapped[str | None] = mapped_column(String(128))
     external_ref: Mapped[str | None] = mapped_column(String(2048))
     safe_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -212,10 +213,10 @@ class ConnectorSetupAttemptRecord(Base):
     type: Mapped[str] = mapped_column(String(64), nullable=False)
     connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
     external_user_correlation: Mapped[str] = mapped_column(String(128), nullable=False)
-    state_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     return_path: Mapped[str] = mapped_column(String(2048), nullable=False)
     setup_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     external_ref: Mapped[str | None] = mapped_column(String(2048))
+    setup_ref: Mapped[str | None] = mapped_column(String(2048))
     external_handle_digest: Mapped[str | None] = mapped_column(String(64))
     supports_verified_callback: Mapped[bool] = mapped_column(Boolean, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)

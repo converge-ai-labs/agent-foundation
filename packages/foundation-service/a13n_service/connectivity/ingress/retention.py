@@ -30,13 +30,14 @@ class IngressRetentionReconciler:
 
     async def run(self) -> None:
         while True:
+            removed = 0
             try:
-                await self.reconcile_once()
+                removed = await self.reconcile_once()
             except anyio.get_cancelled_exc_class():
                 raise
             except Exception:
                 logger.exception("ingress_retention_reconcile_failed")
-            await anyio.sleep(self._poll_interval_seconds)
+            await anyio.sleep(0 if removed else self._poll_interval_seconds)
 
     async def reconcile_once(self) -> int:
         now = self._clock()

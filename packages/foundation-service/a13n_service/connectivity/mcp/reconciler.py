@@ -20,8 +20,8 @@ class MCPReconciler:
 
     async def run(self) -> None:
         while True:
-            await sleep(self._poll_interval_seconds)
-            await self.reconcile_one()
+            productive = await self.reconcile_one()
+            await sleep(0 if productive else self._poll_interval_seconds)
 
     async def reconcile_one(self) -> bool:
         now = self._clock()

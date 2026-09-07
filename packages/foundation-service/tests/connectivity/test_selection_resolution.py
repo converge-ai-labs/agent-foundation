@@ -13,11 +13,10 @@ pytestmark = pytest.mark.anyio
 async def test_acceptance_retains_requested_scope_without_discovery(connectivity_sessions, connectivity_objects):
     await seed_selection_sources(connectivity_sessions)
     resolver = ConnectivitySelectionResolver(connectivity_sessions)
-    prepared = await resolver.prepare_invocation(
+    prepared = await resolver.prepare(
         actor=actor(),
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
-        run_id="run_1234567890abcdef",
         connector_tools=(
             ConnectorConnectionToolSelection(
                 connector_connection_id=CONNECTOR_CONNECTION_ID, tools=("not-discovered",), defer_loading=True
@@ -26,7 +25,7 @@ async def test_acceptance_retains_requested_scope_without_discovery(connectivity
         mcp_tools=(MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID),),
     )
     async with transaction(connectivity_sessions) as session:
-        retained = await resolver.freeze_invocation(session, prepared=prepared)
+        retained = await resolver.freeze(session, prepared=prepared)
     assert retained.connector_connection_selections[0].tools == ("not-discovered",)
     assert retained.connector_connection_selections[0].defer_loading
     assert retained.mcp_connection_selections[0].tools is None
@@ -36,7 +35,7 @@ async def test_acceptance_retains_requested_scope_without_discovery(connectivity
 async def test_acceptance_rechecks_resource_revocation(connectivity_sessions):
     await seed_selection_sources(connectivity_sessions)
     resolver = ConnectivitySelectionResolver(connectivity_sessions)
-    prepared = await resolver.prepare_revision_creation(
+    prepared = await resolver.prepare(
         actor=actor(),
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
@@ -48,13 +47,13 @@ async def test_acceptance_rechecks_resource_revocation(connectivity_sessions):
         source.status = "disabled"
     async with transaction(connectivity_sessions) as session:
         with pytest.raises(ConnectivitySelectionError, match="connector_connection_unavailable"):
-            await resolver.freeze_revision_creation(session, prepared=prepared)
+            await resolver.freeze(session, prepared=prepared)
 
 
 async def test_workspace_sources_reject_another_workspace(connectivity_sessions):
     await seed_selection_sources(connectivity_sessions)
     with pytest.raises(ConnectivitySelectionError):
-        await ConnectivitySelectionResolver(connectivity_sessions).prepare_revision_creation(
+        await ConnectivitySelectionResolver(connectivity_sessions).prepare(
             actor=actor(),
             organization_id=ORG_ID,
             workspace_id="ws_other",
@@ -69,11 +68,10 @@ async def test_dispatch_checks_only_current_source_without_freezing_other_connec
 
     await seed_selection_sources(connectivity_sessions)
     resolver = ConnectivitySelectionResolver(connectivity_sessions)
-    prepared = await resolver.prepare_invocation(
+    prepared = await resolver.prepare(
         actor=actor(),
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
-        run_id="run_source_check",
         connector_tools=(ConnectorConnectionToolSelection(connector_connection_id=CONNECTOR_CONNECTION_ID),),
         mcp_tools=(MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID),),
     )

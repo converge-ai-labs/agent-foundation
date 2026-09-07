@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, PreparedRevisionConnectivity
+from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, PreparedConnectivity
 from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
@@ -60,7 +60,7 @@ class PreparedRevisionResolution:
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
-    connectivity: PreparedRevisionConnectivity | None
+    connectivity: PreparedConnectivity | None
 
 
 class AgentResolver:

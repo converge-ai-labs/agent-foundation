@@ -195,7 +195,6 @@ class AgentInvocationPreparer:
                 actor=actor,
                 organization_id=authorized.organization_id,
                 workspace_id=workspace_id,
-                run_id=run_id,
                 config=merged,
             )
         except AuthorizationError as error:

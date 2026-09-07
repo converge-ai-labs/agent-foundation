@@ -35,16 +35,11 @@ class FrozenRunConnectivity:
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedRevisionConnectivity:
+class PreparedConnectivity:
     actor: AuthenticatedActor
     organization_id: str
     workspace_id: str
     selections: FrozenRunConnectivity
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedRunConnectivity(PreparedRevisionConnectivity):
-    run_id: str
 
 
 class ConnectivitySelectionResolver:
@@ -53,7 +48,7 @@ class ConnectivitySelectionResolver:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    async def prepare_revision_creation(
+    async def prepare(
         self,
         *,
         actor: AuthenticatedActor,
@@ -61,7 +56,7 @@ class ConnectivitySelectionResolver:
         workspace_id: str,
         connector_tools: tuple[ConnectorConnectionToolSelection, ...],
         mcp_tools: tuple[MCPConnectionToolSelection, ...],
-    ) -> PreparedRevisionConnectivity:
+    ) -> PreparedConnectivity:
         async with short_session(self._sessions) as session:
             selections = await self.resolve_in_session(
                 session,
@@ -71,9 +66,9 @@ class ConnectivitySelectionResolver:
                 connector_tools=connector_tools,
                 mcp_tools=mcp_tools,
             )
-        return PreparedRevisionConnectivity(actor, organization_id, workspace_id, selections)
+        return PreparedConnectivity(actor, organization_id, workspace_id, selections)
 
-    async def freeze_revision_creation(self, session: AsyncSession, *, prepared: PreparedRevisionConnectivity) -> None:
+    async def freeze(self, session: AsyncSession, *, prepared: PreparedConnectivity) -> FrozenRunConnectivity:
         current = await self.resolve_in_session(
             session,
             actor=prepared.actor,
@@ -85,6 +80,7 @@ class ConnectivitySelectionResolver:
         )
         if current != prepared.selections:
             raise ConnectivitySelectionError("connection_changed", path="connectivity")
+        return prepared.selections
 
     async def require_current_source(
         self,
@@ -110,31 +106,6 @@ class ConnectivitySelectionResolver:
         )
         if current != expected:
             raise ConnectivitySelectionError("connection_changed", path="connectivity")
-
-    async def prepare_invocation(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        organization_id: str,
-        workspace_id: str,
-        run_id: str,
-        connector_tools: tuple[ConnectorConnectionToolSelection, ...],
-        mcp_tools: tuple[MCPConnectionToolSelection, ...],
-    ) -> PreparedRunConnectivity:
-        prepared = await self.prepare_revision_creation(
-            actor=actor,
-            organization_id=organization_id,
-            workspace_id=workspace_id,
-            connector_tools=connector_tools,
-            mcp_tools=mcp_tools,
-        )
-        return PreparedRunConnectivity(actor, organization_id, workspace_id, prepared.selections, run_id)
-
-    async def freeze_invocation(
-        self, session: AsyncSession, *, prepared: PreparedRunConnectivity
-    ) -> FrozenRunConnectivity:
-        await self.freeze_revision_creation(session, prepared=prepared)
-        return prepared.selections
 
     @staticmethod
     async def resolve_in_session(

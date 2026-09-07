@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
@@ -55,8 +54,8 @@ def verify_inspection(
     inspection: ConnectionInspection,
 ) -> None:
     if (
-        inspection.external_ref != attempt.external_ref
-        or inspection.external_ref != connection.external_ref
+        (attempt.external_ref is not None and inspection.external_ref != attempt.external_ref)
+        or (connection.external_ref is not None and inspection.external_ref != connection.external_ref)
         or inspection.connector_key != attempt.connector_key
         or inspection.connector_key != connection.connector_key
         or inspection.external_user_correlation != attempt.external_user_correlation
@@ -74,6 +73,8 @@ def apply_inspection(
     *,
     now: datetime,
 ) -> None:
+    connection.external_ref = inspection.external_ref
+    connection.external_user_correlation = inspection.external_user_correlation
     connection.status = inspection.status.value
     connection.status_reason = inspection.status_reason.value if inspection.status_reason is not None else None
     connection.safe_metadata_json = inspection.safe_metadata
@@ -128,20 +129,13 @@ def external_error(error: ConnectorProviderError) -> ConnectorError:
     )
 
 
-async def connection_binding(session: AsyncSession, connection: ConnectorConnectionRecord) -> ConnectionBinding:
-    attempt = await session.scalar(
-        select(ConnectorSetupAttemptRecord).where(
-            ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
-            ConnectorSetupAttemptRecord.generation == connection.setup_generation,
-            ConnectorSetupAttemptRecord.external_ref == connection.external_ref,
-        )
-    )
-    if attempt is None or connection.external_ref is None:
+def connection_binding(connection: ConnectorConnectionRecord) -> ConnectionBinding:
+    if connection.external_user_correlation is None or connection.external_ref is None:
         raise ConnectorError(
             "setup_unavailable", "Verified connection binding is unavailable.", category=ErrorCategory.conflict
         )
     return ConnectionBinding(
         external_ref=connection.external_ref,
         connector_key=connection.connector_key,
-        external_user_correlation=attempt.external_user_correlation,
+        external_user_correlation=connection.external_user_correlation,
     )

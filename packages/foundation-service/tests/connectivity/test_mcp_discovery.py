@@ -135,3 +135,31 @@ async def test_discovery_completion_rejects_concurrent_invalidation(
             expected_version=ready.version,
             idempotency_key="reconnect-race",
         )
+
+
+@pytest.mark.parametrize("protocol_version", ["2024-11-05", "2025-03-26"])
+async def test_remote_transport_rejects_other_negotiated_protocols(protocol_version):
+    from a13n_service.connectivity.mcp.transport import RemoteTransport
+
+    from .test_openconnector_runtime import AllowEndpoint
+
+    def respond(request):
+        if request.method in {"GET", "DELETE"}:
+            return httpx2.Response(405)
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return _rpc(
+                body["id"],
+                {
+                    "protocolVersion": protocol_version,
+                    "serverInfo": {"name": "old-server", "version": "1"},
+                    "capabilities": {"tools": {}},
+                },
+            )
+        assert body["method"] == "notifications/initialized"
+        return httpx2.Response(202)
+
+    remote = RemoteTransport(AllowEndpoint(), transport=httpx2.MockTransport(respond))
+    with pytest.raises(ValueError, match="mcp_protocol_incompatible"):
+        async with remote.connect("https://mcp.example/mcp", headers={}):
+            pytest.fail("unsupported negotiation was accepted")

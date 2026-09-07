@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints,
 from a13n_service.connectivity.domain import AdapterKey, BoundedName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
+from .contracts import ProviderAccess
+
 ConnectorKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9._-]{0,127}$")]
 
 
@@ -159,6 +161,7 @@ class ConnectorSetupLaunch(StrictModel):
 
 
 class ConnectorProviderTestResult(StrictModel):
+    verified_access: tuple[ProviderAccess, ...]
     connector_provider_id: str
     status: Literal["succeeded"] = "succeeded"
     connector_provider_version: int = Field(ge=1)

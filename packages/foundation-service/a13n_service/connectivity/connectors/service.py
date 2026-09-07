@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from asyncio import timeout
-from contextlib import aclosing
+from collections.abc import AsyncIterator
+from contextlib import aclosing, asynccontextmanager
 from datetime import datetime
 
 from sqlalchemy import and_, or_, select
@@ -34,9 +35,10 @@ from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, assume_utc, utc_now
+from a13n_service.temporal import Clock, utc_now
 
 from .connection_access import external_error
+from .contracts import ConnectorProviderRuntime, ConnectorToolPage
 from .discovery import validate_connectors
 from .domain import (
     Connector,
@@ -51,6 +53,7 @@ from .domain import (
 )
 from .errors import ConnectorError
 from .management import (
+    ProviderSnapshot,
     audit,
     authorize,
     authorize_provider,
@@ -63,6 +66,7 @@ from .management import (
 )
 from .models import ConnectorProviderRecord
 from .registry import ConnectorProviderDefinitionCollection
+from .tool_discovery import discover_tools
 
 
 class ConnectorProviderService:
@@ -87,6 +91,26 @@ class ConnectorProviderService:
     async def discover_connectors(
         self, *, actor: AuthenticatedActor, connector_provider_id: str
     ) -> ConnectorCollection:
+        async with self._discovery_runtime(actor=actor, connector_provider_id=connector_provider_id) as runtime:
+            discovered = await runtime.discover_connectors()
+            validate_connectors(discovered)
+        return ConnectorCollection(
+            items=tuple(
+                Connector(connector_provider_id=connector_provider_id, **item.model_dump()) for item in discovered
+            )
+        )
+
+    async def preview_tools(
+        self, *, actor: AuthenticatedActor, connector_provider_id: str, connector_key: str
+    ) -> ConnectorToolPage:
+        async with self._discovery_runtime(actor=actor, connector_provider_id=connector_provider_id) as runtime:
+            tools, version = await discover_tools(runtime.tool_catalog(connector_key))
+        return ConnectorToolPage(items=tools, provider_version=version)
+
+    @asynccontextmanager
+    async def _discovery_runtime(
+        self, *, actor: AuthenticatedActor, connector_provider_id: str
+    ) -> AsyncIterator[ConnectorProviderRuntime]:
         async with transaction(self._sessions) as session:
             record = await require_connector_provider(
                 session, connector_provider_id, scope=await connector_actor_scope(session, actor)
@@ -97,14 +121,15 @@ class ConnectorProviderService:
                     "connector_provider_disabled", "Connector Provider is disabled.", category=ErrorCategory.conflict
                 )
             generation = record.credential_generation
+            credential = record.credential_snapshot()
+            provider = ProviderSnapshot.from_record(record)
         try:
-            raw = record.credential_snapshot().decrypt(self._protector)
+            raw = credential.decrypt(self._protector)
             async with (
                 timeout(30),
-                aclosing(configure_provider(self._adapters, record, decode_credentials(raw))) as runtime,
+                aclosing(configure_provider(self._adapters, provider, decode_credentials(raw))) as runtime,
             ):
-                discovered = await runtime.discover_connectors()
-            validate_connectors(discovered)
+                yield runtime
         except TimeoutError as error:
             raise ConnectorError(
                 "connector_provider_unavailable",
@@ -136,9 +161,6 @@ class ConnectorProviderService:
                     "Connector Provider changed during discovery.",
                     category=ErrorCategory.conflict,
                 )
-        return ConnectorCollection(
-            items=tuple(Connector(connector_provider_id=record.id, **item.model_dump()) for item in discovered)
-        )
 
     async def create(
         self,
@@ -458,11 +480,7 @@ class ConnectorProviderService:
             except IdempotencyConflict as error:
                 raise map_management_value_error(error) from error
             if replay is not None:
-                return ConnectorProviderTestResult(
-                    connector_provider_id=record.id,
-                    connector_provider_version=replay.result_version,
-                    tested_at=assume_utc(replay.created_at),
-                )
+                return replay.restore(ConnectorProviderTestResult)
             _require_version(record.version, expected_version)
             if record.status != ConnectorProviderStatus.active.value:
                 raise ConnectorError(
@@ -470,11 +488,12 @@ class ConnectorProviderService:
                 )
             frozen_version = record.version
             frozen_credential_generation = record.credential_generation
+            credential = record.credential_snapshot()
+            provider = ProviderSnapshot.from_record(record)
         try:
-            raw = record.credential_snapshot().decrypt(self._protector)
-            adapter = require_implementation(self._adapters, record.type)
-            async with aclosing(adapter.configure(record.configuration_json, decode_credentials(raw))) as runtime:
-                await runtime.test()
+            raw = credential.decrypt(self._protector)
+            async with aclosing(configure_provider(self._adapters, provider, decode_credentials(raw))) as runtime:
+                verified_access = await runtime.test()
         except ConnectorProviderError as error:
             raise external_error(error) from error
         except SecretProtectionError as error:
@@ -522,7 +541,10 @@ class ConnectorProviderService:
                 result_version=current.version,
                 now=tested_at,
                 resource=ConnectorProviderTestResult(
-                    connector_provider_id=current.id, connector_provider_version=current.version, tested_at=tested_at
+                    verified_access=verified_access,
+                    connector_provider_id=current.id,
+                    connector_provider_version=current.version,
+                    tested_at=tested_at,
                 ),
             )
             session.add(
@@ -537,6 +559,7 @@ class ConnectorProviderService:
                 )
             )
         return ConnectorProviderTestResult(
+            verified_access=verified_access,
             connector_provider_id=connector_provider_id,
             connector_provider_version=frozen_version,
             tested_at=tested_at,

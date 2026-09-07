@@ -10,8 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
-from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.adapters import AccountAdapter, JsonObject
+from a13n_service.connectivity.composition import AdapterResolver
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.management import canonical_json, clear_credentials, fingerprint, record_command
@@ -52,7 +52,7 @@ class AccountService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: AdapterRegistry[IngressAdapter],
+        adapters: AdapterResolver[AccountAdapter],
         protector: SecretProtector,
         *,
         batch_max_events: int = 100,
@@ -414,7 +414,7 @@ class AccountService:
             return record.to_resource()
 
 
-def _validate_config(adapter: IngressAdapter, value: object, version: str) -> JsonObject:
+def _validate_config(adapter: AccountAdapter, value: object, version: str) -> JsonObject:
     try:
         return adapter.validate_config(value, config_version=version)
     except ValueError as error:
@@ -425,7 +425,7 @@ def _validate_config(adapter: IngressAdapter, value: object, version: str) -> Js
         ) from error
 
 
-def _validate_credentials(adapter: IngressAdapter, value: dict[str, SecretStr], version: str) -> JsonObject:
+def _validate_credentials(adapter: AccountAdapter, value: dict[str, SecretStr], version: str) -> JsonObject:
     try:
         return adapter.validate_credentials(clear_credentials(value), config_version=version)
     except ValueError as error:
@@ -470,7 +470,7 @@ def _parse_reception(value: object) -> Reception:
         ) from error
 
 
-def _validate_policy(adapter: IngressAdapter, value: JsonObject, version: str) -> JsonObject:
+def _validate_policy(adapter: AccountAdapter, value: JsonObject, version: str) -> JsonObject:
     try:
         return adapter.validate_reception_policy(value, config_version=version)
     except ValueError as error:

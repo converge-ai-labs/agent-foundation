@@ -15,11 +15,9 @@ from a13n_service.connectivity.ingress.provider import (
 )
 
 
-class IngressAdapter(Protocol):
+class AccountAdapter(Protocol):
     provider_key: str
     config_versions: frozenset[str]
-    max_request_bytes: int
-    dedup_horizon_seconds: int
 
     def validate_config(self, value: object, *, config_version: str) -> JsonObject: ...
 
@@ -30,6 +28,11 @@ class IngressAdapter(Protocol):
     def validate_reception_policy(self, value: object, *, config_version: str) -> JsonObject: ...
 
     def validate_target(self, kind: str, external_id: str) -> str: ...
+
+
+class IngressAdapter(AccountAdapter, Protocol):
+    max_request_bytes: int
+    dedup_horizon_seconds: int
 
     def event_target(self, event: InboundEvent) -> tuple[str, str]: ...
 

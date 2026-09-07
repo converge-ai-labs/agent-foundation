@@ -481,7 +481,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
         calls.append((self.binding, kwargs))
         return ConnectorToolOutcome(kind="outcome_unknown", request_id=kwargs["request_id"])
 
-    async def guard():
+    async def guard(session=None):
         guards.append(True)
 
     monkeypatch.setattr(FakeConnection, "execute_tool", execute)
@@ -674,3 +674,172 @@ async def test_connection_listing_query_count_is_constant(connector_services, co
             event.remove(engine, "before_cursor_execute", record)
         counts.append(len(statements))
     assert counts[0] == counts[1] == counts[2]
+
+
+@pytest.mark.parametrize("completion", ["callback", "polling", "after_inspection"])
+async def test_setup_rechecks_initiator_management_authority(
+    connector_services, connector_backend, connectivity_sessions, completion
+):
+    from a13n_service.iam.models import RoleBindingRecord
+
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(connections, connector_provider_id=provider.id, idempotency_key="role-change")
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        idempotency_key="setup",
+        expected_version=connection.version,
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    inspection = None
+    if completion == "after_inspection":
+        inspection = await connections.setup_coordinator._complete_attempt(
+            launch.attempt_id, session_uri=f"session://{launch.attempt_id}"
+        )
+    async with transaction(connectivity_sessions) as session:
+        binding = await session.get(RoleBindingRecord, "rb_connectivity_admin")
+        binding.role_key = "viewer"
+    with pytest.raises(ConnectorError):
+        if completion == "callback":
+            await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+        elif completion == "polling":
+            await connections.setup_coordinator.attempt_snapshot(launch.attempt_id)
+        else:
+            await connections.setup_coordinator.finish_attempt(launch.attempt_id, inspection)
+    async with transaction(connectivity_sessions) as session:
+        record = await session.get(ConnectorConnectionRecord, connection.id)
+        assert record.status == "pending"
+        assert record.external_user_correlation is None
+
+
+async def test_verified_binding_survives_setup_history_removal(connector_services, connectivity_sessions):
+    from a13n_service.connectivity.connectors.connection_access import connection_binding
+
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(connections, connector_provider_id=provider.id, idempotency_key="independent")
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        idempotency_key="setup",
+        expected_version=connection.version,
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+    async with transaction(connectivity_sessions) as session:
+        record = await session.get(ConnectorConnectionRecord, connection.id)
+        expected = connection_binding(record)
+        version = record.version
+        await session.delete(await session.get(ConnectorSetupAttemptRecord, launch.attempt_id))
+    disabled = await connections.set_enabled(
+        actor=actor(), connection_id=connection.id, expected_version=version, idempotency_key="disable", enabled=False
+    )
+    enabled = await connections.set_enabled(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=disabled.version,
+        idempotency_key="enable",
+        enabled=True,
+    )
+    assert enabled.status == "ready"
+    async with transaction(connectivity_sessions) as session:
+        assert connection_binding(await session.get(ConnectorConnectionRecord, connection.id)) == expected
+
+
+async def test_provider_tool_preview_needs_no_connection(connector_services, connectivity_sessions):
+    providers, _ = connector_services
+    provider = await create_connector(providers)
+    preview = await providers.preview_tools(actor=actor(), connector_provider_id=provider.id, connector_key="github")
+    assert [tool.key for tool in preview.items] == ["issues.create"]
+    async with transaction(connectivity_sessions) as session:
+        assert await session.scalar(select(ConnectorConnectionRecord.id)) is None
+        assert await session.scalar(select(ConnectorSetupAttemptRecord.id)) is None
+
+
+async def test_expired_unattached_setup_requires_action_without_a_binding(
+    connector_services, connector_registry, connectivity_sessions, monkeypatch
+):
+    from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
+
+    from .connector_helpers import FakeConnectorProvider
+
+    async def unavailable(self, **kwargs):
+        raise ConnectorProviderError("provider_unavailable", retryable=True)
+
+    monkeypatch.setattr(FakeConnectorProvider, "start_setup", unavailable)
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(connections, connector_provider_id=provider.id, idempotency_key="expire")
+    with pytest.raises(ConnectorError):
+        await connections.start_setup(
+            actor=actor(),
+            connection_id=connection.id,
+            expected_version=connection.version,
+            idempotency_key="setup",
+            setup={"scopes": ["read"]},
+            return_path="/connections",
+        )
+    reconciler = ConnectorReconciler(
+        connectivity_sessions,
+        connector_registry,
+        connections.setup_coordinator,
+        instance_id="expiry",
+        poll_interval_seconds=2,
+        lease_seconds=60,
+        clock=lambda: NOW + timedelta(seconds=601),
+    )
+    assert await reconciler.reconcile_once()
+    async with transaction(connectivity_sessions) as session:
+        record = await session.get(ConnectorConnectionRecord, connection.id)
+        assert record.status == "action_required" and record.external_ref is None
+        assert record.external_user_correlation is None
+        assert (await session.scalar(select(ConnectorSetupAttemptRecord))).status == "expired"
+
+
+async def test_reconnect_cannot_reenable_a_previous_verified_generation(connector_services):
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(connections, connector_provider_id=provider.id, idempotency_key="reconnect")
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=connection.version,
+        idempotency_key="setup",
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+    ready = await connections.get(actor=actor(), connection_id=connection.id)
+    ready = await connections.set_enabled(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=ready.version,
+        idempotency_key="disable-before-reconnect",
+        enabled=False,
+    )
+    reconnect = await connections.reconnect(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=ready.version,
+        idempotency_key="reconnect",
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    disabled = await connections.set_enabled(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=reconnect.connection.version,
+        idempotency_key="disable",
+        enabled=False,
+    )
+    with pytest.raises(ConnectorError, match="no verified setup"):
+        await connections.set_enabled(
+            actor=actor(),
+            connection_id=connection.id,
+            expected_version=disabled.version,
+            idempotency_key="enable",
+            enabled=True,
+        )

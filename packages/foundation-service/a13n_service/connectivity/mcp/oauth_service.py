@@ -84,7 +84,7 @@ class MCPOAuthService:
         protector: SecretProtector,
         discovery: ConnectionDiscovery,
         *,
-        public_origin: str,
+        public_origin: str | None,
         client_name: str,
         instance_id: str,
         setup_ttl_seconds: int = 600,
@@ -95,7 +95,7 @@ class MCPOAuthService:
         self._oauth = oauth
         self._protector = protector
         self._discovery = discovery
-        self._public_origin = public_origin.rstrip("/")
+        self._public_origin = public_origin.rstrip("/") if public_origin is not None else None
         self._client_name = client_name
         self._instance_id = instance_id
         self._setup_ttl_seconds = setup_ttl_seconds
@@ -104,11 +104,21 @@ class MCPOAuthService:
 
     @property
     def client_metadata_url(self) -> str:
+        self._require_origin()
         return f"{self._public_origin}/api/v1/oauth/mcp/client-metadata.json"
 
     @property
     def redirect_uri(self) -> str:
+        self._require_origin()
         return f"{self._public_origin}/api/v1/oauth/mcp/callback"
+
+    def _require_origin(self) -> None:
+        if self._public_origin is None:
+            raise MCPConnectionError(
+                "oauth_unavailable",
+                "Interactive OAuth requires a configured public origin.",
+                category=ErrorCategory.unavailable,
+            )
 
     async def authorize(
         self,
@@ -119,6 +129,7 @@ class MCPOAuthService:
         expected_version: int,
     ) -> MCPAuthorizationLaunch:
         _require_user(actor)
+        self._require_origin()
         key_digest = _idempotency_digest(idempotency_key)
         request_fingerprint = digest_request({"expected_version": expected_version})
         source = await self._authorize_source(

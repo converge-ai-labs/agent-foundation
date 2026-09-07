@@ -10,8 +10,7 @@ from a13n_service.connectivity.selection_domain import (
     MCPConnectionRunSelection,
 )
 from a13n_service.connectivity.selection_resolution import (
-    PreparedRevisionConnectivity,
-    PreparedRunConnectivity,
+    PreparedConnectivity,
 )
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -69,7 +68,7 @@ class PreparedAgentInvocation:
     skills: tuple[PreparedSkillLock, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     subagents: tuple[PreparedInvocationSubagent, ...]
-    connectivity: PreparedRevisionConnectivity | PreparedRunConnectivity | None
+    connectivity: PreparedConnectivity | None
 
 
 @dataclass(frozen=True, slots=True)

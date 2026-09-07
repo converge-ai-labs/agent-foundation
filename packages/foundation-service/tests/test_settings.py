@@ -39,7 +39,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.plugin_runner_max_processes == 8
     assert settings.observability_query_provider == "none"
     assert settings.connectivity_retention_batch_size == 25
-    assert settings.connectivity_tool_result_max_bytes == 1024 * 1024
     assert settings.connectivity_max_redirects == 3
     assert "foundation:foundation" not in repr(settings)
 

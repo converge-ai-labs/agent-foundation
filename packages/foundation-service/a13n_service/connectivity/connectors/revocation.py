@@ -6,6 +6,7 @@ import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.management import record_command
 from a13n_service.durable_operations.idempotency import digest_request
@@ -23,7 +24,7 @@ from .connection_access import (
     replay_connection_command,
     require_version,
 )
-from .contracts import ConnectorProviderError
+from .contracts import ConnectionBinding, ConnectorProviderError
 from .errors import ConnectorError
 from .management import (
     ProviderSnapshot,
@@ -83,7 +84,28 @@ class ConnectorRevocationService:
             require_version(connection.version, expected_version)
             if connection.external_ref is not None:
                 try:
-                    binding = await connection_binding(session, connection)
+                    if connection.external_user_correlation is not None:
+                        binding = connection_binding(connection)
+                    else:
+                        # Pending authorization can still need remote cleanup, but is never a runtime binding.
+                        attempt = await session.scalar(
+                            select(ConnectorSetupAttemptRecord).where(
+                                ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
+                                ConnectorSetupAttemptRecord.generation == connection.setup_generation,
+                                ConnectorSetupAttemptRecord.external_ref == connection.external_ref,
+                            )
+                        )
+                        if attempt is None:
+                            raise ConnectorError(
+                                "setup_unavailable",
+                                "Setup cleanup reference is unavailable.",
+                                category=ErrorCategory.conflict,
+                            )
+                        binding = ConnectionBinding(
+                            external_ref=connection.external_ref,
+                            connector_key=connection.connector_key,
+                            external_user_correlation=attempt.external_user_correlation,
+                        )
                     connector = await require_connector_provider(
                         session,
                         connection.connector_provider_id,
@@ -108,7 +130,8 @@ class ConnectorRevocationService:
                     ConnectorSetupAttemptRecord.status.in_(("pending", "attached", "reserved")),
                 )
             )
-            for attempt in attempts:
+            pending_attempts = tuple(attempts)
+            for attempt in pending_attempts:
                 attempt.status = "expired"
                 attempt.claim_generation += 1
                 attempt.claim_owner = None
@@ -117,7 +140,10 @@ class ConnectorRevocationService:
             receipt = ConnectionCleanupReceipt(
                 connection_id=connection_id,
                 local_status="deleted" if delete else "disabled",
-                remote_status="unknown" if connection.external_ref is not None else "not_required",
+                remote_status="unknown"
+                if connection.external_ref is not None
+                or any(attempt.setup_ref is not None for attempt in pending_attempts)
+                else "not_required",
             )
             command = record_command(
                 session,

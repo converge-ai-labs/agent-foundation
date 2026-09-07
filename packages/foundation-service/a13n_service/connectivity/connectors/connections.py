@@ -410,19 +410,7 @@ class ConnectorConnectionService:
             if replay is not None:
                 return replay.restore(ConnectorConnection)
             require_version(record.version, expected_version)
-            completed_setup = (
-                await session.scalar(
-                    select(ConnectorSetupAttemptRecord.id).where(
-                        ConnectorSetupAttemptRecord.connector_connection_id == record.id,
-                        ConnectorSetupAttemptRecord.generation == record.setup_generation,
-                        ConnectorSetupAttemptRecord.status == "completed",
-                        ConnectorSetupAttemptRecord.external_ref == record.external_ref,
-                    )
-                )
-                if enabled
-                else None
-            )
-            if enabled and (record.external_ref is None or completed_setup is None):
+            if enabled and (record.external_ref is None or record.external_user_correlation is None):
                 raise ConnectorError(
                     "connection_not_ready",
                     "ConnectorConnection has no verified setup.",
@@ -531,6 +519,7 @@ class ConnectorConnectionService:
                     ) from error
                 connection.setup_generation += 1
                 connection.status = ConnectorConnectionStatus.pending.value
+                connection.external_user_correlation = None
                 connection.status_reason = None
                 connection.version += 1
                 connection.updated_at = now

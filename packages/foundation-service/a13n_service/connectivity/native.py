@@ -15,14 +15,11 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 
-from .accounts.providers import account_actions
 from .connectors.management import decode_credentials
 from .domain import JsonObject
-from .native_actions import NativeAction, native_actions
+from .native_actions import NativeAction
 from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
-from .providers.github.wire import CONTEXT_VERSION as GITHUB_CONTEXT_VERSION
-from .providers.lark.wire import CONTEXT_VERSION as LARK_CONTEXT_VERSION
-from .providers.slack.adapter import CONTEXT_VERSION as SLACK_CONTEXT_VERSION
+from .providers.registry import require_native_provider
 from .toolsets import local_capability, source_key
 
 if TYPE_CHECKING:
@@ -94,10 +91,10 @@ def _actions(
     http: httpx2.AsyncClient,
     endpoints: EndpointPolicy,
 ) -> dict[str, NativeAction]:
+    provider = require_native_provider(context.provider_key)
     if isinstance(context, AccountRunContext):
-        return account_actions(context.provider_key, configuration, credentials, context.target_scope, http, endpoints)
-    return native_actions(
-        context.provider_key,
+        return provider.account_tools.actions(configuration, credentials, context.target_scope, http, endpoints)
+    return provider.inbound_actions(
         context.provider_context,
         context.action_policy,
         configuration,
@@ -108,10 +105,6 @@ def _actions(
 
 
 def _validate_context(context: InboundRunContext) -> None:
-    supported_version = {
-        "slack": SLACK_CONTEXT_VERSION,
-        "lark": LARK_CONTEXT_VERSION,
-        "github": GITHUB_CONTEXT_VERSION,
-    }.get(context.provider_key)
+    supported_version = require_native_provider(context.provider_key).context_version
     if context.provider_context_version != supported_version:
         raise ValueError("native_context_incompatible")

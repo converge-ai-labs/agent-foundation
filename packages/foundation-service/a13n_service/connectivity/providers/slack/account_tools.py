@@ -4,13 +4,13 @@ import httpx2
 from pydantic import Field
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.native_actions import NativeAction, _credential, action
+from a13n_service.connectivity.native_actions import NativeAction, action, credential
 from a13n_service.connectivity.providers.slack.client import SlackNativeClient
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 
-from ..domain import StrictModel
-from .contracts import Provider, ProviderId
+from ...accounts.domain import StrictModel
+from ..tool_contracts import AccountTools, ProviderId
 
 _SEND_MESSAGE = "slack.send_message"
 
@@ -40,12 +40,12 @@ def actions(
         return await client.send_message(
             arguments.channel_id,
             arguments.text,
-            bot_token=_credential(credentials, "bot_token"),
+            bot_token=credential(credentials, "bot_token"),
             request_id=new_object_id("message"),
         )
 
-    selected = action(_SEND_MESSAGE, SlackSendArguments, send_slack)
+    selected = action(_SEND_MESSAGE, SlackSendArguments, send_slack, hide_receipt=True)
     return {selected.definition.name: selected}
 
 
-PROVIDER = Provider(SlackScope, frozenset({_SEND_MESSAGE}), actions)
+ACCOUNT_TOOLS = AccountTools(SlackScope, frozenset({_SEND_MESSAGE}), actions)

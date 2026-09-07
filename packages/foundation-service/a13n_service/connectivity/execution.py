@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import httpx2
 from a13n_harness import AgentContext
@@ -57,6 +58,10 @@ class AttemptToolScope:
     native_tool_contexts: tuple[NativeToolContext, ...] = field(repr=False)
 
 
+class ScopeGuard(Protocol):
+    async def __call__(self, session: AsyncSession | None = None) -> None: ...
+
+
 class ExternalToolRuntime:
     def __init__(
         self,
@@ -79,35 +84,38 @@ class ExternalToolRuntime:
 
     async def _scope(self, context: AttemptContext) -> AttemptToolScope:
         async with short_session(self._sessions) as session:
-            run, _, _ = await read_attempt_authority(session, context, utc_now())
-            conversation = await session.get(SessionRecord, run.session_id)
-            if conversation is None:
-                raise ValueError("run_session_unavailable")
-            actor = AuthenticatedActor(
-                principal=PrincipalRef(
-                    principal_type=PrincipalType(run.authority_principal_type), principal_id=run.authority_principal_id
-                ),
-                auth_method="internal",
-                credential_id="attempt-tools",
-                boundary_workspace_id=conversation.workspace_id,
-            )
-            await authorize_agent(
-                session,
-                actor=actor,
-                workspace_id=conversation.workspace_id,
-                agent_id=run.agent_id,
-                action=WorkspaceAction.agent_invoke,
-            )
-            return AttemptToolScope(
-                actor,
-                run.organization_id,
-                conversation.workspace_id,
-                FrozenRunConnectivity(
-                    _CONNECTORS.validate_python(run.connector_connection_selections_json),
-                    _MCPS.validate_python(run.mcp_connection_selections_json),
-                ),
-                parse_native_contexts(run.native_tool_contexts_json),
-            )
+            return await self._scope_in_session(session, context)
+
+    async def _scope_in_session(self, session: AsyncSession, context: AttemptContext) -> AttemptToolScope:
+        run, _, _ = await read_attempt_authority(session, context, utc_now())
+        conversation = await session.get(SessionRecord, run.session_id)
+        if conversation is None:
+            raise ValueError("run_session_unavailable")
+        actor = AuthenticatedActor(
+            principal=PrincipalRef(
+                principal_type=PrincipalType(run.authority_principal_type), principal_id=run.authority_principal_id
+            ),
+            auth_method="internal",
+            credential_id="attempt-tools",
+            boundary_workspace_id=conversation.workspace_id,
+        )
+        await authorize_agent(
+            session,
+            actor=actor,
+            workspace_id=conversation.workspace_id,
+            agent_id=run.agent_id,
+            action=WorkspaceAction.agent_invoke,
+        )
+        return AttemptToolScope(
+            actor,
+            run.organization_id,
+            conversation.workspace_id,
+            FrozenRunConnectivity(
+                _CONNECTORS.validate_python(run.connector_connection_selections_json),
+                _MCPS.validate_python(run.mcp_connection_selections_json),
+            ),
+            parse_native_contexts(run.native_tool_contexts_json),
+        )
 
     @asynccontextmanager
     async def capabilities(
@@ -115,8 +123,12 @@ class ExternalToolRuntime:
     ) -> AsyncIterator[tuple[MCP[AgentContext], ...]]:
         accepted = await self._scope(current_context())
 
-        async def guard() -> None:
-            current = await self._scope(current_context())
+        async def guard(session: AsyncSession | None = None) -> None:
+            current = (
+                await self._scope(current_context())
+                if session is None
+                else await self._scope_in_session(session, current_context())
+            )
             if current != accepted:
                 raise ValueError("external_tool_scope_changed")
 
@@ -143,12 +155,12 @@ class ExternalToolRuntime:
             yield tuple(capabilities)
 
     async def _connector(
-        self, selection: ConnectorConnectionRunSelection, guard: Callable[[], Awaitable[None]], scope: AttemptToolScope
+        self, selection: ConnectorConnectionRunSelection, guard: ScopeGuard, scope: AttemptToolScope
     ) -> MCP[AgentContext] | None:
         @asynccontextmanager
         async def connection():
-            await guard()
             async with short_session(self._sessions) as session:
+                await guard(session)
                 await self._selections.require_current_source(
                     session,
                     actor=scope.actor,
@@ -162,7 +174,7 @@ class ExternalToolRuntime:
                     selection.connector_provider_id,
                     scope=ResourceScope(record.organization_id, record.workspace_id),
                 )
-                binding = await connection_binding(session, record)
+                binding = connection_binding(record)
                 provider_type, configuration = provider.type, dict(provider.configuration_json)
                 context = provider.credential_snapshot()
             raw = context.decrypt(self._protector)
@@ -208,15 +220,15 @@ class ExternalToolRuntime:
 
     @asynccontextmanager
     async def _mcp(
-        self, selection: MCPConnectionRunSelection, guard: Callable[[], Awaitable[None]], scope: AttemptToolScope
+        self, selection: MCPConnectionRunSelection, guard: ScopeGuard, scope: AttemptToolScope
     ) -> AsyncIterator[MCP[AgentContext] | None]:
         async with short_session(self._sessions) as session:
             record = await require_mcp_connection(session, selection.mcp_connection_id)
             endpoint = record.endpoint_url
 
         async def headers() -> dict[str, str]:
-            await guard()
             async with short_session(self._sessions) as session:
+                await guard(session)
                 await self._selections.require_current_source(
                     session,
                     actor=scope.actor,
@@ -228,8 +240,8 @@ class ExternalToolRuntime:
                 if record.endpoint_url != endpoint:
                     raise ValueError("mcp_endpoint_changed")
             current = await self._oauth_refresh.current(selection.mcp_connection_id)
-            await guard()
             async with short_session(self._sessions) as session:
+                await guard(session)
                 await self._selections.require_current_source(
                     session,
                     actor=scope.actor,

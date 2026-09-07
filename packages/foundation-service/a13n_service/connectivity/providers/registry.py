@@ -1,39 +1,32 @@
-"""Distribution-owned built-in Ingress adapter registry."""
+"""Explicit distribution registry of cohesive native providers."""
 
-from a13n_service.connectivity.adapters import IngressAdapter
-from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
+from functools import partial
 
+from ..adapters import IngressAdapter
+from ..composition import AdapterDefinition, AdapterRegistry
 from .common.origins import normalize_provider_origins
-from .github import GitHubIngressAdapter
-from .lark import LarkIngressAdapter
-from .slack import SlackIngressAdapter
+from .definition import NativeProvider
+from .github.definition import PROVIDER as GITHUB
+from .lark.definition import PROVIDER as LARK
+from .slack.definition import PROVIDER as SLACK
+
+_PROVIDERS = {provider.key: provider for provider in (SLACK, LARK, GITHUB)}
+
+
+def require_native_provider(key: str) -> NativeProvider:
+    try:
+        return _PROVIDERS[key]
+    except KeyError as error:
+        raise ValueError("native_provider_unavailable") from error
 
 
 def built_in_ingress_adapter_registry(
-    *,
-    allowed_provider_origins: tuple[str, ...] = (),
+    *, allowed_provider_origins: tuple[str, ...] = ()
 ) -> AdapterRegistry[IngressAdapter]:
-    normalized_origins = tuple(normalize_provider_origins(allowed_provider_origins))
+    origins = tuple(normalize_provider_origins(allowed_provider_origins))
     return AdapterRegistry(
-        (
-            AdapterDefinition[IngressAdapter](
-                key=SlackIngressAdapter.provider_key,
-                config_versions=SlackIngressAdapter.config_versions,
-                factory=SlackIngressAdapter,
-            ),
-            AdapterDefinition[IngressAdapter](
-                key=LarkIngressAdapter.provider_key,
-                config_versions=LarkIngressAdapter.config_versions,
-                factory=lambda: LarkIngressAdapter(
-                    allowed_provider_origins=normalized_origins,
-                ),
-            ),
-            AdapterDefinition[IngressAdapter](
-                key=GitHubIngressAdapter.provider_key,
-                config_versions=GitHubIngressAdapter.config_versions,
-                factory=lambda: GitHubIngressAdapter(
-                    allowed_provider_origins=normalized_origins,
-                ),
-            ),
+        AdapterDefinition[IngressAdapter](
+            key=p.key, config_versions=p.config_versions, factory=partial(p.ingress, origins)
         )
+        for p in _PROVIDERS.values()
     )

@@ -1,4 +1,4 @@
-"""Shared persistence and validation primitives for Account, Ingress, and Route management."""
+"""Shared persistence and validation primitives for native provider resources."""
 
 from __future__ import annotations
 
@@ -7,8 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.adapters import IngressAdapter
-from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.composition import AdapterResolver
 from a13n_service.connectivity.management import CommandReceipt
 from a13n_service.connectivity.management import (
     replay_command as shared_replay_command,
@@ -31,9 +30,7 @@ from a13n_service.ids import new_object_id
 from .errors import NativeError
 
 
-def require_adapter(
-    adapters: AdapterRegistry[IngressAdapter], provider_key: str, config_version: str
-) -> IngressAdapter:
+def require_adapter[AdapterT](adapters: AdapterResolver[AdapterT], provider_key: str, config_version: str) -> AdapterT:
     try:
         return adapters.create(provider_key, config_version=config_version)
     except ValueError as error:

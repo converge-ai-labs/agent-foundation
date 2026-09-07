@@ -8,10 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, WorkspaceAction, authorize_workspace
 
 from .accounts.models import AccountRecord
-from .accounts.providers import validate_scope
 from .accounts.queries import require_account
 from .domain import JsonObject
 from .ingress.admission_domain import PreparedIngressBatch
+from .providers.registry import require_native_provider
 
 ActionName = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 
@@ -36,7 +36,7 @@ class AccountRunContext(_NativeContext):
 
     @model_validator(mode="after")
     def valid_scope(self):
-        validate_scope(self.provider_key, self.target_scope, self.allowed_actions)
+        _validate_scope(self.provider_key, self.target_scope, self.allowed_actions)
         return self
 
 
@@ -120,3 +120,10 @@ async def bind_account_tools(
         allowed_actions=allowed_actions,
         target_scope=target_scope,
     )
+
+
+def _validate_scope(provider: str, scope: JsonObject, tools: tuple[str, ...]) -> None:
+    definition = require_native_provider(provider).account_tools
+    if not set(tools) <= definition.tools:
+        raise ValueError("unsupported_account_tools")
+    definition.scope.model_validate(scope)

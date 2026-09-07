@@ -9,6 +9,7 @@ from anyio import sleep
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     ConnectorProviderError,
@@ -17,12 +18,11 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .contracts import ConnectionBinding
 from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason
 from .errors import ConnectorError
 from .management import configure_provider, require_active_provider
 from .models import ConnectorConnectionRecord, ConnectorSetupAttemptRecord
-from .setup import ConnectorSetupCoordinator
+from .setup import ConnectorSetupCoordinator, _setup_context
 
 
 class ConnectorReconciler:
@@ -47,8 +47,8 @@ class ConnectorReconciler:
 
     async def run(self) -> None:
         while True:
-            await sleep(self._poll_interval_seconds)
-            await self.reconcile_once()
+            productive = await self.reconcile_once()
+            await sleep(0 if productive else self._poll_interval_seconds)
 
     async def reconcile_once(self) -> bool:
         if await self._expire_attempt():
@@ -147,17 +147,17 @@ class ConnectorReconciler:
             if status == "attached" and snapshot.attempt.supports_verified_callback:
                 await self._defer_attempt(attempt_id, claim_generation, code=None, increment=False)
                 return
-            if snapshot.attempt.external_ref is None:
-                return
+            if snapshot.attempt.setup_ref is None:
+                raise ConnectorError(
+                    "setup_unavailable", "Setup reference is unavailable.", category=ErrorCategory.conflict
+                )
             runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
-            binding = ConnectionBinding(
-                external_ref=snapshot.attempt.external_ref,
-                connector_key=snapshot.attempt.connector_key,
-                external_user_correlation=snapshot.attempt.external_user_correlation,
-            )
-            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
-                inspection = await connection_runtime.inspect()
-            if inspection.status is AdapterConnectionStatus.pending:
+            async with aclosing(runtime):
+                inspection = await runtime.inspect_setup(
+                    setup_ref=snapshot.attempt.setup_ref,
+                    context=_setup_context(snapshot.attempt, callback_url=self._setup.callback_url()),
+                )
+            if inspection is None or inspection.status is AdapterConnectionStatus.pending:
                 await self._defer_attempt(attempt_id, claim_generation, code=None)
             else:
                 await self._setup.finish_attempt(
@@ -167,7 +167,10 @@ class ConnectorReconciler:
                     claim_generation=claim_generation,
                 )
         except ConnectorProviderError as error:
-            await self._defer_attempt(attempt_id, claim_generation, code=error.code)
+            if error.retryable or error.outcome_unknown:
+                await self._defer_attempt(attempt_id, claim_generation, code=error.code)
+            else:
+                await self._setup.fail_attempt(attempt_id, code=error.code)
         except ConnectorError as error:
             if error.code == "connection_substitution":
                 await self._setup.fail_attempt(attempt_id, code=error.code)
