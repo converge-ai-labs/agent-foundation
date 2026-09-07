@@ -7,6 +7,8 @@ description: Redesign a scoped part of Agent Foundation for simplicity before go
 
 Choose the simplest clear design that meets real capability, reliability, and performance requirements and remains easy for people and agents to understand, maintain, and extend.
 
+Treat elegance as an observable developer experience: concepts fit the problem, interfaces make behavior predictable, and code structure makes execution and change easy to follow. Judge it through concrete use and maintenance tasks rather than brevity, cleverness, or fixed counts of lines, files, or layers.
+
 ## Activation and Scope
 
 This optional mode requires explicit user invocation or opt-in for a defined scope, and current task context establishing intensive pre-public development with breaking changes acceptable for that surface. Reuse authorization from the ongoing task. The skill's presence or a development version alone does not establish eligibility; clarify missing eligibility before dependent breaking changes while continuing independent authorized work.
@@ -33,10 +35,21 @@ Generate new or replacement revisions through the owning disposable-database wor
 
 ## Choose the Least Overall Complexity
 
-- Reduce the concepts, rules, states, branches, and dependencies a maintainer must understand, and the places that must change together. Line counts and file splitting alone do not establish improvement.
-- Give shared rules and facts clear owners. Consolidate semantic duplication while preserving real differences in ownership, lifecycle, and external protocols; name concepts by meaning.
-- Prefer direct flows and small shared functions. Extra abstractions, frameworks, options, and execution paths need concrete current justification. Extensibility should make a realistic change local and understandable.
+- Reduce the concepts, rules, states, branches, and dependencies a maintainer must understand, and the places that must change together.
+- Give shared rules and facts clear owners. Consolidate semantic duplication while preserving real differences in ownership, lifecycle, and external protocols. Use domain terms consistently across public APIs, implementation, and documentation; make each core concept's responsibility and relationships easy to explain.
+- Prefer direct flows and small shared functions. Make state ownership, side effects, resource lifetimes, and failure handling traceable from the entry point. Extra abstractions, frameworks, options, and execution paths need concrete current justification. Extensibility should make a realistic change local and understandable.
+- Make common tasks straightforward through coherent interfaces and useful defaults. Similar operations should follow consistent parameter, result, and error conventions. Keep timeout, cancellation, retry, and partial-success behavior understandable, with errors and diagnostics that help developers determine what happened and how to respond.
 - Include runtime, storage, network, recovery, operational, and contributor costs. Remove obvious waste; support performance trade-offs with measurements or an explicit capacity model. Separate assumptions from evidence and account for known bottlenecks.
+
+## Design for Open-source Developers
+
+Evaluate the affected surface from first use through contribution:
+
+- A small, complete example accomplishes a useful task with little prerequisite knowledge.
+- Following that example into the public entry point and core implementation reveals the same concepts and a traceable execution path. Readers can learn the common flow before needing specialized machinery.
+- A realistic contribution has a discoverable change location, clear contracts and impact, and a practical way to validate it.
+
+Use a concrete task within scope to demonstrate the relevant improvements in the before-and-after explanation and final report. A polished API alone is insufficient if its implementation remains hard to understand or modify. Preserve required guarantees and performance; make necessary complexity and its boundaries understandable.
 
 ## Explain Before and After
 
