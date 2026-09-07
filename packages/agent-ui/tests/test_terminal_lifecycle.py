@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 import shlex
+import subprocess
 import time
 from pathlib import Path
 
@@ -52,18 +54,30 @@ async def test_terminal_logs_are_files_and_plugin_diagnostics_are_once(
     assert captured.err == ""
 
 
+def _assert_resume_command(hint: str, arguments: list[str]) -> None:
+    command = hint.splitlines()[1]
+    if os.name == "nt":
+        # shlex is a POSIX parser: it consumes unquoted Windows path backslashes.
+        assert command == subprocess.list2cmdline(arguments)
+    else:
+        assert shlex.split(command) == arguments
+
+
 def test_resume_hint_keeps_explicit_roots(tmp_path: Path) -> None:
     request = CliRequest(config_path=tmp_path / "a b.yaml", data_root=tmp_path / "data files")
     hint = resume_hint(request, "thread_123", tmp_path)
-    assert shlex.split(hint.splitlines()[1]) == [
-        "a13n-ui",
-        "--config",
-        str(request.config_path),
-        "--data-root",
-        str(request.data_root),
-        "--resume",
-        "thread_123",
-    ]
+    _assert_resume_command(
+        hint,
+        [
+            "a13n-ui",
+            "--config",
+            str(request.config_path),
+            "--data-root",
+            str(request.data_root),
+            "--resume",
+            "thread_123",
+        ],
+    )
 
 
 @pytest.mark.anyio
@@ -98,12 +112,13 @@ async def test_update_checker_is_bounded_public_and_failure_tolerant(
     assert (tmp_path / "cache" / "terminal-update.json").exists() == (behavior == "success")
 
 
-def test_resume_hint_preserves_environment_data_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("A13N_UI_DATA_ROOT", str(tmp_path))
-    assert shlex.split(resume_hint(CliRequest(), "thread_1", tmp_path).splitlines()[1]) == [
-        "a13n-ui",
-        "--data-root",
-        str(tmp_path),
-        "--resume",
-        "thread_1",
-    ]
+@pytest.mark.parametrize("directory_name", ["plain", "with spaces"])
+def test_resume_hint_preserves_environment_data_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory_name: str
+) -> None:
+    data_root = tmp_path / directory_name
+    monkeypatch.setenv("A13N_UI_DATA_ROOT", str(data_root))
+    _assert_resume_command(
+        resume_hint(CliRequest(), "thread_1", tmp_path),
+        ["a13n-ui", "--data-root", str(data_root), "--resume", "thread_1"],
+    )
