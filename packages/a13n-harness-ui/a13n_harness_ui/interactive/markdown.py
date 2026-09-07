@@ -1,4 +1,4 @@
-"""Copy-safe Markdown, adapted from YAACLI; see YAACLI-LICENSE."""
+"""Copy-safe terminal Markdown rendering."""
 
 from typing import ClassVar
 

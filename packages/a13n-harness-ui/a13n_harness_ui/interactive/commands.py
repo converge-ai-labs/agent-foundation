@@ -37,7 +37,7 @@ COMMANDS = (
     ),
     Command(
         "theme",
-        "Select terminal colors without probing keyboard input.",
+        "Choose a terminal theme.",
         "[auto|dark|light]",
         maximum=1,
         choices=("auto", "dark", "light"),
@@ -56,11 +56,11 @@ COMMANDS = (
     Command(
         "remove", "Remove one image or all images from the current draft.", "index|all", minimum=1, maximum=1, busy=True
     ),
-    Command("recover", "Restore the last prompt that failed before admission."),
+    Command("recover", "Restore an unsent prompt."),
     Command("status", "Show model, context, environment, and session details.", busy=True),
     Command(
         "steer",
-        "Send additional text guidance to the current running receipt.",
+        "Add guidance while the agent is working.",
         "message",
         minimum=1,
         maximum=1,
@@ -68,7 +68,13 @@ COMMANDS = (
         raw_tail=True,
     ),
     Command("import", "Preview and optionally enable external subagents with parent inheritance."),
-    Command("model", "List configured models or select one for this session.", "[model-id]", maximum=1),
+    Command(
+        "agent",
+        "Switch agent, including its model, instructions, and tools.",
+        "[agent-id]",
+        aliases=("model",),
+        maximum=1,
+    ),
     Command(
         "thinking",
         "Show or change reasoning effort for subsequent turns.",
@@ -86,12 +92,12 @@ COMMANDS = (
     Command("new", "Start a fresh session; keep all saved history."),
     Command("resume", "List recent sessions in this workspace or resume one.", "[session-id]", maximum=1),
     Command("history", "Print retained history for the current session.", "[cursor]", maximum=1),
-    Command("config", "Show configuration paths and effective precedence."),
+    Command("config", "Find your configuration files."),
     Command(
         "review", "Inspect a pending request against the selected continuation.", "request-id", minimum=1, maximum=1
     ),
-    Command("cancel", "Cancel active work and wait for durable cleanup.", busy=True),
-    Command("quit", "Exit; cancel active work and close the App.", aliases=("exit",), busy=True),
+    Command("cancel", "Stop the current task.", busy=True),
+    Command("quit", "End this session.", aliases=("exit",), busy=True),
 )
 
 
@@ -162,14 +168,20 @@ class CommandRegistry:
             if selected is None:
                 raise ValueError(f"Unknown command: {name}")
             commands = (selected,)
-        lines = [f"{command.usage:36} {command.summary}" for command in commands]
+        lines = ["## Commands" if name is None else f"## /{commands[0].name}", ""]
+        lines.extend(f"`{command.usage}` — {command.summary}" for command in commands)
+        if name is not None and commands[0].aliases:
+            lines += ["", "Aliases: " + ", ".join(f"`/{alias}`" for alias in commands[0].aliases)]
         if name is None:
             lines += [
                 "",
-                "Enter: send   Alt+Enter: newline   Tab: complete   Ctrl+C: cancel / twice to exit   Ctrl+D: exit",
-                "Enter adds text guidance during a run. Bracketed multiline paste stays a draft until Enter.",
-                "Quote paths containing spaces. Decisions use the selection panel. Sign in with a13n-harness-ui login; configure with a13n-harness-ui setup.",
-                "Ctrl+V / Alt+V: paste image   PgUp/PgDn: scroll   Ctrl+End: latest   /mouse off: native copy",
+                "### Shortcuts",
+                "",
+                "`Enter` send or guide · `Alt+Enter` newline · `Tab` complete",
+                "`Ctrl+C` stop / twice to exit · `Ctrl+D` exit · `Ctrl+O` details",
+                "`Ctrl+V` paste image · `PgUp/PgDn` scroll · `Ctrl+End` latest · `/mouse off` copy",
+                "",
+                "Add agents with `a13n-harness-ui add agent`. `/model` is an alias for `/agent`.",
             ]
         return "\n".join(lines)
 
@@ -179,7 +191,7 @@ class CommandRegistry:
         head, separator, tail = text[1:].partition(" ")
         if not separator:
             return tuple(
-                (f"/{item.name}", item.summary)
+                (f"/{head if head in item.aliases else item.name}", item.summary)
                 for item in self.commands
                 if any(name.startswith(head) for name in (item.name, *item.aliases))
             ) + tuple((f"/{name}", f"Skill · {item[0]}") for name, item in self.skills.items() if name.startswith(head))

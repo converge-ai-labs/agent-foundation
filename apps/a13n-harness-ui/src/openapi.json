@@ -4022,6 +4022,22 @@
             "title": "Instructions",
             "default": ""
           },
+          "new_agent_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "new_agent_name": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "New Agent Name",
+            "default": ""
+          },
           "connect_default": {
             "type": "boolean",
             "title": "Connect Default",
@@ -4074,6 +4090,16 @@
             ],
             "title": "Codex Model",
             "default": "gpt-5.6-sol"
+          },
+          "grok_model": {
+            "type": "string",
+            "enum": [
+              "grok-4.6",
+              "grok-4.5",
+              "grok-4.20-0309-reasoning"
+            ],
+            "title": "Grok Model",
+            "default": "grok-4.6"
           },
           "codex_thinking": {
             "type": "string",

@@ -681,3 +681,62 @@ async def test_windows_sandbox_shell_recipe_stays_in_eip_configuration(
     assert shell.fixed_arguments == ("-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-Command")
     assert not shell.allow_login
     assert configuration.execution_network.value == "deny"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "provider,model", [("codex", "gpt-6-astra"), ("grok", "grok-4.5"), ("grok", "grok-4.20-0309-reasoning")]
+)
+async def test_add_agent_preserves_existing_files_defaults_and_retry_identity(
+    tmp_path: Path, provider: str, model: str
+) -> None:
+    path = tmp_path / "config.yaml"
+    initial = _selection(tmp_path, providers=("codex",))
+    preview = await preview_setup(path, initial, validate_candidate=_validate())
+    assert (
+        await publish_setup(path, initial, expected_generation=preview.generation, validate_candidate=_validate())
+    ).completed
+    baseline = {p: p.read_bytes() for p in tmp_path.rglob("*.yaml")}
+    added = _selection(
+        tmp_path,
+        providers=(provider,),
+        new_agent_id="agent-second",
+        new_agent_name="Second agent",
+        **{f"{provider}_model": model},
+    )
+    preview = await preview_setup(path, added, validate_candidate=_validate())
+    assert preview.project_paths == ()
+    assert path.name not in preview.files
+    assert not any(name.startswith("projects/") for name in preview.files)
+    assert (
+        await publish_setup(path, added, expected_generation=preview.generation, validate_candidate=_validate())
+    ).completed
+    source = await load_harness_ui_configuration(path)
+    assert source.agents["agent-second"].model == "model-agent-second"
+    assert source.models["model-agent-second"].route.endswith(":" + model)
+    assert source.document.defaults.agent == "agent-codex"
+    assert all(p.read_bytes() == content for p, content in baseline.items())
+    again = await preview_setup(path, added, validate_candidate=_validate())
+    assert not again.files
+    changed = added.model_copy(update={"new_agent_name": "An accidental collision"})
+    with pytest.raises(ConfigurationError, match="already in use"):
+        await preview_setup(path, changed, validate_candidate=_validate())
+
+
+@pytest.mark.anyio
+async def test_setup_new_subscription_model_does_not_rewrite_shared_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    initial = _selection(tmp_path, providers=("codex",))
+    preview = await preview_setup(path, initial, validate_candidate=_validate())
+    assert (
+        await publish_setup(path, initial, expected_generation=preview.generation, validate_candidate=_validate())
+    ).completed
+    model = (tmp_path / "models/codex.yaml").read_bytes()
+    changed = initial.model_copy(update={"codex_model": "gpt-6-astra", "connect_default": True})
+    preview = await preview_setup(path, changed, validate_candidate=_validate())
+    assert (
+        await publish_setup(path, changed, expected_generation=preview.generation, validate_candidate=_validate())
+    ).completed
+    source = await load_harness_ui_configuration(path)
+    assert source.models[source.agents["agent-codex"].model].route == "openai-codex:gpt-6-astra"
+    assert (tmp_path / "models/codex.yaml").read_bytes() == model

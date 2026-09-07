@@ -29,6 +29,7 @@ class CliRequest:
 
     display: str | None = None
     no_update_check: bool = False
+    setup_advanced: bool = False
     command: str | None = None
     action: str | None = None
     config_path: Path | None = None
@@ -180,10 +181,26 @@ def webui_command(
 
 
 @cli.command("setup")
+@click.option(
+    "--advanced", is_flag=True, help="Also choose context, reasoning, shell review, subagents, and instructions."
+)
 @click.pass_context
-def setup_command(ctx: click.Context) -> None:
+def setup_command(ctx: click.Context, advanced: bool) -> None:
     """Configure a model, context budget, and execution permissions interactively."""
-    _execute(_request(ctx, command="setup"))
+    _execute(_request(ctx, command="setup", setup_advanced=advanced))
+
+
+@cli.group("add")
+def add_group() -> None:
+    """Add to your local configuration."""
+
+
+@add_group.command("agent")
+@click.option("--advanced", is_flag=True, help="Also customize reasoning, shell review, and instructions.")
+@click.pass_context
+def add_agent_command(ctx: click.Context, advanced: bool) -> None:
+    """Create another agent without changing existing agents or defaults."""
+    _execute(_request(ctx, command="add", action="agent", setup_advanced=advanced))
 
 
 @cli.command("run")
@@ -552,7 +569,7 @@ def _execute(request: CliRequest) -> None:
         )
     from a13n_harness_ui.errors import HarnessUiError
 
-    if request.command in {None, "setup"}:
+    if request.command in {None, "setup", "add"}:
         from a13n_harness_ui.terminal import start
 
         start(request)

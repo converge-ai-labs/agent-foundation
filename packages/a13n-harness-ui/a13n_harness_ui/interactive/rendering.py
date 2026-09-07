@@ -27,6 +27,7 @@ class Status:
     theme: Literal["auto", "dark", "light"] = "auto"
     theme_explicit: bool = False
     state: str = "starting"
+    agent: str = "not configured"
     model: str = "not configured"
     thinking: str = "default"
     environment: str = "not selected"
@@ -81,24 +82,14 @@ class Status:
 
     def line(self, width: int | None = None) -> str:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
-        context = (
-            "--"
-            if self.context_tokens is None or not self.context_window
-            else f"{100 * self.context_tokens / self.context_window:.0f}%"
-        )
-        fields = [self.state.capitalize(), self.model.split(":")[-1]]
-        if self.usage is not None:
-            usage = self.usage
-            fields.extend(
-                [
-                    "cost --" if usage.cost is None else f"${usage.cost:.4f}",
-                    f"in {usage.input_tokens:,} / out {usage.output_tokens:,}",
-                ]
-            )
-        fields.extend([f"ctx {context}", self.thinking, f"{elapsed:.0f}s"])
-        if self.usage is not None:
-            fields.append(f"cache r {self.usage.cache_read_tokens:,} / w {self.usage.cache_write_tokens:,}")
-        while width is not None and len(" · ".join(fields)) + 2 > width and len(fields) > 2:
+        from prompt_toolkit.utils import get_cwidth
+
+        context = "--" if self.context_tokens is None else f"{self.context_tokens:,}"
+        if self.context_tokens is not None and self.context_window:
+            context += f" ({100 * self.context_tokens / self.context_window:.0f}%)"
+        cost = "cost --" if self.usage is None or self.usage.cost is None else f"${self.usage.cost:.4f}"
+        fields = [self.state.capitalize(), f"ctx {context}", cost, self.model.split(":")[-1], f"{elapsed:.0f}s"]
+        while width is not None and get_cwidth(" · ".join(fields)) + 2 > width and len(fields) > 1:
             fields.pop()
         return terminal_text(" " + " · ".join(fields) + " ")
 

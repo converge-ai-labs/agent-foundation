@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass, field, replace
 
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
@@ -40,6 +42,7 @@ _QUESTIONS = (
         "Store keys separately with `a13n-harness-ui auth key set <id>`.",
         "env:OPENAI_API_KEY",
     ),
+    Question("model", "Choose a model", "gpt-5.6-sol", ("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra")),
     Question(
         "environment",
         "Execution permissions",
@@ -52,7 +55,6 @@ _QUESTIONS = (
         "all",
         ("all", "none"),
     ),
-    Question("model", "Codex model", "gpt-5.6-sol", ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra")),
     Question(
         "context",
         "Working context budget (does not change provider limits)",
@@ -77,6 +79,8 @@ class SetupWizard:
     default_provider: str = "codex"
     default_environment: str = "full-control"
     provider_descriptions: dict[str, str] = field(default_factory=dict)
+    add_agent: bool = False
+    suggested_name: str = ""
 
     @property
     def question(self) -> Question | None:
@@ -86,6 +90,19 @@ class SetupWizard:
         default = self.values.get(question.key, question.default)
         if question.key == "provider":
             default = self.values.get("provider", self.default_provider)
+        if question.key == "model" and self.values.get("provider") == "grok":
+            return Question(
+                "model",
+                "Choose a model",
+                self.values.get("model", "grok-4.6"),
+                ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
+            )
+        if question.key == "environment" and self.add_agent:
+            return Question(
+                "name",
+                "Name this agent",
+                self.values.get("name", self.suggested_name or self.values.get("model", "API agent")),
+            )
         if question.key == "environment":
             default = self.values.get("environment", self.default_environment)
             if not local_sandbox_supported():
@@ -104,9 +121,21 @@ class SetupWizard:
             "sandbox": "Sandbox",
             "all": "Include all defaults",
             "none": "Do not include defaults",
+            "gpt-6-astra": "GPT-6 Astra",
+            "gpt-5.6-sol": "GPT-5.6 Sol",
+            "gpt-5.6-terra": "GPT-5.6 Terra",
+            "grok-4.6": "Grok 4.6",
+            "grok-4.5": "Grok 4.5",
+            "grok-4.20-0309-reasoning": "Grok 4.20 Reasoning",
         }
         descriptions = {
             **self.provider_descriptions,
+            "gpt-6-astra": "Most capable · complex, end-to-end work",
+            "gpt-5.6-sol": "Recommended · strong coding and reasoning",
+            "gpt-5.6-terra": "Lighter · balance capability and cost",
+            "grok-4.6": "Recommended · latest coding and agentic model",
+            "grok-4.5": "Previous generation · configurable reasoning",
+            "grok-4.20-0309-reasoning": "Earlier reasoning model · long-context work",
             "api": "Use a stored key or environment variable",
             "full-control": "Run directly as your host account; not a sandbox",
             "sandbox": "Isolated execution; prerequisites checked before saving",
@@ -119,12 +148,6 @@ class SetupWizard:
             cursor=question.choices.index(question.default),
         )
 
-    def customize(self) -> None:
-        self.advanced = True
-        self.index = 5
-        self.preview_generation = None
-        self._skip_irrelevant()
-
     def back(self) -> bool:
         if not self.history:
             return False
@@ -135,25 +158,26 @@ class SetupWizard:
     def prompt(self) -> str:
         question = self.question
         if question is None:
-            return "Review configuration before saving."
+            return "Ready to save."
         return question.text
 
     def accept(self, text: str) -> None:
         question = self.question
         if question is None:
-            raise ValueError("Setup is awaiting publication confirmation.")
+            raise ValueError("Setup choices are complete.")
         selected = text.strip() or question.default
         if question.choices:
             selected = str(resolve_choice(selected, question.choices)).lower()
             if selected not in question.choices:
                 raise ValueError(f"Choose one of: {', '.join(question.choices)}")
+        if question.key == "name" and (not selected or len(selected) > 128):
+            raise ValueError("Choose an agent name between 1 and 128 characters.")
         if question.key == "credential":
             kind, separator, name = selected.partition(":")
             if not separator or kind not in {"env", "key"} or not name or any(c.isspace() for c in name):
                 raise ValueError("Use env:VARIABLE or key:credential-id; do not enter the API key itself.")
         if question.key == "provider" and self.values.get("provider") != selected:
             self.values.clear()
-            self.advanced = False
         self.values[question.key] = selected
         self.preview_generation = None
         self.history.append(self.index)
@@ -164,9 +188,11 @@ class SetupWizard:
         provider = self.values.get("provider", self.default_provider)
         while self.question is not None:
             key = self.question.key
-            if key in {"route", "credential"} and provider != "api":
+            if key == "subagents" and self.add_agent:
                 self.index += 1
-            elif key in {"model", "context", "thinking"} and provider != "codex":
+            elif key in {"route", "credential"} and provider != "api":
+                self.index += 1
+            elif (key == "model" and provider == "api") or (key in {"context", "thinking"} and provider != "codex"):
                 self.index += 1
             elif key == "review" and provider == "api":
                 self.index += 1
@@ -180,13 +206,24 @@ class SetupWizard:
             "default_agent": f"agent-{provider if provider != 'api' else 'api-key'}",
             "project_path": directory,
             "environment_profile": "environment-native"
-            if self.values["environment"] == "full-control"
+            if self.values.get("environment", self.default_environment) == "full-control"
             else "environment-sandbox",
             "shell_review": provider != "api" and self.values.get("review", "yes") == "yes",
             "connect_default": True,
             "include_default_subagents": self.values.get("subagents", "all") == "all",
             "instructions": self.values.get("instructions", ""),
         }
+        if self.add_agent:
+            name = self.values["name"]
+            slug = (
+                re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:80]
+                or hashlib.sha256(name.encode()).hexdigest()[:12]
+            )
+            result.update(
+                new_agent_id=f"agent-{slug}", new_agent_name=name, include_default_subagents=None, connect_default=False
+            )
+        if provider == "grok":
+            result["grok_model"] = self.values.get("model", "grok-4.6")
         if provider == "codex":
             result.update(
                 codex_model=self.values.get("model", "gpt-5.6-sol"),

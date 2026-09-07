@@ -236,8 +236,8 @@ def test_native_theme_and_context_percentage_are_truthful() -> None:
     assert rules[""] == "bg:default fg:default"
     assert "#" not in " ".join(rules.values())
     assert "ctx --" in Status(context_window=100).line()
-    assert "ctx 0%" in Status(context_window=100, context_tokens=0).line()
-    assert "ctx 38%" in Status(context_window=100, context_tokens=38).line()
+    assert "ctx 0 (0%)" in Status(context_window=100, context_tokens=0).line()
+    assert "ctx 38 (38%)" in Status(context_window=100, context_tokens=38).line()
     assert "Cancelling" in Status(state="cancelling").line(20)
 
 

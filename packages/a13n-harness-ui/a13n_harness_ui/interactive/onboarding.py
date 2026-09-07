@@ -19,6 +19,7 @@ from prompt_toolkit.widgets import TextArea
 from .rendering import terminal_text
 from .selection import Choice, Selection, resolve_choice
 from .setup import Question, SetupWizard
+from .theme import prompt_toolkit_style_rules, resolve_theme
 
 if TYPE_CHECKING:
     from a13n_harness_ui.app import HarnessUiApp
@@ -89,26 +90,35 @@ class LandingScreen:
             layout=Layout(
                 HSplit(
                     [
-                        Window(FormattedTextControl(lambda: self.title), height=1),
+                        Window(height=1),
                         Window(
-                            FormattedTextControl(lambda: terminal_text(self.notice)),
+                            FormattedTextControl(lambda: "  " + self.title),
+                            height=1,
+                            style="class:session-selector.title",
+                        ),
+                        Window(height=1),
+                        Window(
+                            FormattedTextControl(lambda: "  " + terminal_text(self.notice)),
                             wrap_lines=True,
                             dont_extend_height=True,
                         ),
                         Window(
-                            FormattedTextControl(lambda: terminal_text(self.question.text) if self.question else ""),
+                            FormattedTextControl(
+                                lambda: "  " + terminal_text(self.question.text) if self.question else ""
+                            ),
                             wrap_lines=True,
                             dont_extend_height=True,
                         ),
+                        Window(height=1),
                         Window(FormattedTextControl(self._choices), wrap_lines=True, dont_extend_height=True),
                         ConditionalContainer(self.field, filter=Condition(lambda: self.question is not None)),
                         Window(),
                         Window(
                             FormattedTextControl(
                                 lambda: (
-                                    "Up/Down choose · Enter confirm · Esc back · Ctrl+C cancel"
+                                    "  Enter continue · Esc back · Ctrl+C cancel"
                                     if self.question
-                                    else "Working · Ctrl+C cancels"
+                                    else "  Working · Ctrl+C cancels"
                                 )
                             ),
                             height=1,
@@ -120,12 +130,19 @@ class LandingScreen:
             key_bindings=keys,
             full_screen=True,
             mouse_support=False,
-            style=Style.from_dict({"selection.focus": "reverse", "selection.hint": "italic"}),
+            style=Style.from_dict(
+                {
+                    **prompt_toolkit_style_rules(resolve_theme("auto")),
+                    "selection.focus": "reverse",
+                    "selection.description": "fg:ansibrightblack",
+                    "selection.hint": "fg:ansibrightblack",
+                }
+            ),
         )
 
     def _choices(self) -> FormattedText:
         if self.selection is not None:
-            return FormattedText(self.selection.lines(max_choices=len(self.selection.choices), descriptions=True))
+            return FormattedText(self.selection.lines(max_choices=len(self.selection.choices), descriptions=True)[:-1])
         if self.question is not None:
             return FormattedText([("", f"Default: {terminal_text(self.question.default) or '(none)'}")])
         return FormattedText([])
@@ -240,16 +257,27 @@ async def run_setup(
     ask_user: Ask,
     emit: Callable[[str], None],
     environment: str | None = None,
+    add_agent: bool = False,
+    advanced: bool = False,
 ) -> bool:
-    """Configure, preview, and explicitly publish. Cancellation never starts chat."""
+    """Publish the completed choices. Cancellation never starts chat."""
     from a13n_harness_ui.configuration.setup import SetupSelection
 
-    emit("Harness UI setup · Ctrl+C cancels. Existing resource files are preserved.")
+    emit(
+        "Add an agent · Existing agents and defaults stay unchanged."
+        if add_agent
+        else "Three choices to get started. Saved after the final choice · Ctrl+C to cancel."
+    )
     status = await app.setup_status(rediscover=True)
     if status.diagnostic:
         emit(f"Configuration needs repair: {status.diagnostic}\nFix the source and run a13n-harness-ui setup again.")
         return False
+    if add_agent and status.needed:
+        emit("Run a13n-harness-ui setup first, then add another agent.")
+        return False
     wizard = SetupWizard(
+        add_agent=add_agent,
+        advanced=advanced,
         default_provider=next((item.provider for item in status.providers if item.available), "codex"),
         default_environment="sandbox"
         if (environment or status.environment_profile) == "environment-sandbox"
@@ -262,60 +290,49 @@ async def run_setup(
             try:
                 question = wizard.question
                 if question is not None:
+                    step = {"provider": 1, "model": 2, "environment": 3, "name": 3}.get(question.key)
+                    if step is not None and not advanced:
+                        hint = (
+                            "Saved after this choice. Existing defaults stay unchanged."
+                            if add_agent and step == 3
+                            else "Saved after this choice. Shell review is on."
+                            if step == 3 and wizard.values.get("provider") != "api"
+                            else "Saved after this choice."
+                            if step == 3
+                            else "Availability depends on your account."
+                            if step == 2
+                            else "Reuse a subscription or connect an API key."
+                        )
+                        emit(f"{step} / 3 · {hint}")
                     wizard.accept(await ask_user(question, wizard.selection_prompt()))
+                    if question.key == "provider" and wizard.values["provider"] != "api":
+                        await _ensure_account(app, wizard.values["provider"], ask_user, emit)
+                        checked_provider = wizard.values["provider"]
+                    if question.key in {"model", "credential"} and add_agent:
+                        base = wizard.values.get("model", "API agent")
+                        name, number = base, 2
+                        while name in status.agents.values():
+                            name = f"{base} {number}"
+                            number += 1
+                        wizard.suggested_name = name
                     continue
                 provider = wizard.values["provider"]
                 if provider != "api" and provider != checked_provider:
                     await _ensure_account(app, provider, ask_user, emit)
                     checked_provider = provider
                 selection = SetupSelection.model_validate(wizard.selection(str(directory)))
-                projects = await app.cwd_project_ids(directory)
-                if len(projects) > 1:
-                    raise ValueError("Multiple Projects use this default directory. Resolve their roots before setup.")
-                if projects:
-                    selection = selection.model_copy(update={"project": projects[0]})
+                if not add_agent:
+                    projects = await app.cwd_project_ids(directory)
+                    if len(projects) > 1:
+                        raise ValueError(
+                            "Multiple Projects use this default directory. Resolve their roots before setup."
+                        )
+                    if projects:
+                        selection = selection.model_copy(update={"project": projects[0]})
                 preview = await app.preview_setup(selection)
                 wizard.preview_generation = preview.generation
-                model = (
-                    f"{selection.codex_model} · {selection.codex_thinking} reasoning · {selection.codex_context_window:,} tokens"
-                    if provider == "codex"
-                    else "grok-4.6"
-                    if provider == "grok"
-                    else wizard.values["route"]
-                )
-                emit(
-                    f"Review setup\nProject: {selection.project}\nDirectories (first is default):\n"
-                    + "\n".join(f"  {root}" for root in preview.project_paths)
-                    + f"\nConnection: {provider}\nStarter model: {model}\n"
-                    f"Execution: {wizard.values['environment']}\nShell review: {'enabled' if selection.shell_review else 'disabled'}\n"
-                    f"Default subagents: {wizard.values['subagents']}\n"
-                    "Existing edited resources retain their settings.\nFiles to publish:\n"
-                    + "\n".join(f"  {path}" for path in preview.files)
-                    + ("\nPreserved: " + ", ".join(preview.preserved_paths) if preview.preserved_paths else "")
-                )
-                action = await _choose(
-                    ask_user,
-                    "Save this configuration?",
-                    (
-                        Choice("save", "Save configuration"),
-                        Choice(
-                            "customize",
-                            "Adjust model options",
-                            "Model, context, reasoning, shell review, and instructions",
-                        ),
-                        Choice("back", "Change connection or permissions"),
-                        Choice("cancel", "Cancel", "No configuration publication"),
-                    ),
-                )
-                if action == "cancel":
-                    raise SetupCancelled()
-                if action == "back":
-                    wizard.back()
-                    continue
-                if action == "customize":
-                    wizard.customize()
-                    continue
-                if selection.environment_profile == "environment-sandbox":
+                emit("Saving agent…" if add_agent else "Saving your configuration…")
+                if not add_agent and selection.environment_profile == "environment-sandbox":
                     emit("Checking Sandbox prerequisites. Ctrl+C cancels; no fallback to Full Control.")
                     for root in preview.project_paths:
                         ready = await app.preflight_environment("environment-sandbox", project_path=root)
@@ -325,7 +342,9 @@ async def run_setup(
                 if not publication.completed:
                     raise ValueError(publication.error_message or "Setup publication is incomplete.")
                 emit(
-                    "Configuration saved. Run a13n-harness-ui setup to change it; /import can migrate subagents later."
+                    f"Added {selection.new_agent_name}. Select it with /agent {selection.new_agent_id}."
+                    if add_agent
+                    else "Ready. Use /agent to switch agents, /help for shortcuts."
                 )
                 return True
             except SetupBack:
@@ -339,7 +358,7 @@ async def run_setup(
                     ask_user,
                     "Next action",
                     (
-                        Choice("retry", "Preview again"),
+                        Choice("retry", "Try saving again"),
                         Choice("back", "Change selections"),
                         Choice("cancel", "Cancel"),
                     ),

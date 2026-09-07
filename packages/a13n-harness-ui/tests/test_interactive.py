@@ -103,12 +103,11 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
 
 def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("a13n_harness_ui.interactive.setup.local_sandbox_supported", lambda: True)
-    wizard = SetupWizard()
+    wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
+    wizard.accept("gpt-5.6-sol")
     wizard.accept("sandbox")
-    wizard.accept("all")
-    wizard.customize()
-    for value in ("", "extended", "medium", "no", ""):
+    for value in ("all", "extended", "medium", "no", ""):
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
@@ -120,7 +119,10 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     assert selection["codex_thinking"] == "medium"
 
 
-@pytest.mark.parametrize("arguments", [["--help"], ["--version"], ["login", "--help"], ["run", "--help"]])
+@pytest.mark.parametrize(
+    "arguments",
+    [["--help"], ["--version"], ["login", "--help"], ["run", "--help"], ["add", "--help"], ["add", "agent", "--help"]],
+)
 def test_cli_help_never_imports_runtime(arguments: list[str], tmp_path: Path) -> None:
     script = f"""
 import sys
@@ -982,3 +984,129 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
         await resumed.initialize()
         assert await resumed.execute(StreamRenderer(resumed.status), prompt="Load the saved value") == ""
     assert requests == 4
+
+
+@pytest.mark.anyio
+async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import a13n_harness_ui.model_runtime as runtime
+    from a13n_harness_ui.interactive.commands import CommandRegistry
+
+    path = await _seed(tmp_path, monkeypatch)
+    second = SetupSelection(
+        providers=("codex",),
+        codex_model="gpt-6-astra",
+        new_agent_id="agent-astra",
+        new_agent_name="Astra",
+        instructions="SECOND AGENT INSTRUCTIONS",
+        project_path=str(tmp_path),
+        environment_profile="environment-native",
+        shell_review=False,
+    )
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(info.instructions)
+        yield "Done"
+
+    monkeypatch.setattr(
+        runtime,
+        "build_codex_model",
+        lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
+    )
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        preview = await app.preview_setup(second)
+        assert (await app.apply_setup(second, expected_generation=preview.generation)).completed
+        baseline = {p: p.read_bytes() for p in path.parent.rglob("*.yaml")}
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        await backend.thinking("low")
+        await backend.execute(StreamRenderer(backend.status), prompt="First agent")
+        thread_id = backend.thread_id
+        assert CommandRegistry().parse("/model agent-astra").command.name == "agent"
+        with pytest.raises(ValueError, match="unavailable"):
+            CommandRegistry().parse("/agent agent-astra", busy=True)
+        await backend.agents("agent-astra")
+        assert backend.thread_id == thread_id
+        assert backend.overrides.thinking is None
+        assert backend.status.model == "openai-codex:gpt-6-astra"
+        assert "First agent" in await backend.history()
+        resumed = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        await resumed.initialize()
+        assert resumed.status.model == "openai-codex:gpt-6-astra"
+        assert resumed.overrides.thinking is None
+        await resumed.execute(StreamRenderer(resumed.status), prompt="Second agent")
+        assert "SECOND AGENT INSTRUCTIONS" in seen[-1]
+        assert "SECOND AGENT INSTRUCTIONS" not in seen[0]
+        assert all(p.read_bytes() == content for p, content in baseline.items())
+        assert (await app.get_thread(thread_id)).thread.configuration.agent_source.id == "agent-astra"
+        assert all("review" not in choice.value for choice in await backend.choices("agent"))
+        await resumed.new()
+        fresh = await resumed.ensure_session()
+        assert fresh != thread_id
+        assert (await app.get_thread(fresh)).thread.configuration.agent_source.id == "agent-astra"
+
+
+@pytest.mark.anyio
+async def test_usage_updates_before_root_operation_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    import a13n_harness_ui.model_runtime as runtime
+    from pydantic_ai.models.function import DeltaToolCall
+
+    path = await _seed(tmp_path, monkeypatch)
+    release, second_request, updated = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {0: DeltaToolCall(name="shell_exec", json_args='{"command":"echo ready"}', tool_call_id="call-live")}
+        else:
+            second_request.set()
+            await release.wait()
+            yield "Done"
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        status = Status(state="working")
+        backend = SessionBackend(app, CliRequest(), tmp_path, status)
+
+        async def flush():
+            if status.requests:
+                updated.set()
+
+        task = asyncio.create_task(backend.execute(StreamRenderer(status), prompt="Run a command", flush=flush))
+        try:
+            await asyncio.wait_for(second_request.wait(), 10)
+            await asyncio.wait_for(updated.wait(), 10)
+            assert not task.done()
+            assert status.requests == 1
+            assert status.context_tokens is not None
+            assert "ctx " in status.line(80)
+            assert "cost --" in status.line(80)  # FunctionModel has no invented price.
+            assert "in " not in status.line(80) and "cache" not in status.line(80)
+        finally:
+            release.set()
+            await asyncio.wait_for(task, 10)
+        assert status.requests == 2
+
+
+def test_add_agent_cli_routes_to_terminal_with_explicit_advanced_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    import a13n_harness_ui.cli as cli_module
+    import a13n_harness_ui.terminal as terminal_module
+    from click.testing import CliRunner
+
+    seen = []
+    monkeypatch.setattr(terminal_module, "start", seen.append)
+    result = CliRunner().invoke(cli_module.cli, ["--no-update-check", "add", "agent", "--advanced"])
+    assert result.exit_code == 0, result.output
+    assert len(seen) == 1
+    assert seen[0].command == "add" and seen[0].action == "agent"
+    assert seen[0].setup_advanced and seen[0].no_update_check

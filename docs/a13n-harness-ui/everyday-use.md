@@ -15,7 +15,7 @@
 | List recent conversations in this workspace         | `/resume`                                        |
 | Resume one saved conversation                       | `/resume session-id`                             |
 | Read saved messages and tool details                | `/history`, then the next-page command it prints |
-| List/select configured Models                       | `/model`, `/model model-codex`, `/model default` |
+| List/select configured Agents                       | `/agent`, `/agent agent-codex`, `/agent default` |
 | Read/change reasoning                               | `/thinking`, `/thinking low`                     |
 | Read/change execution permissions                   | `/environment`, `/environment sandbox`           |
 | Show current settings, usage, and pending decisions | `/status`                                        |
@@ -23,6 +23,8 @@
 | Send additional guidance to the current Run         | Enter while running                              |
 | Cancel active work                                  | `/cancel`                                        |
 | Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                               |
+
+`/model` is an alias for `/agent` and accepts Agent IDs, not Model IDs. Switching selects the Agent’s model, instructions, tools, and shell-review policy for the next turn while preserving conversation history and execution permissions. It is unavailable during active work. Create another choice with `a13n-harness-ui add agent`.
 
 Bracketed multiline paste stays in the draft until Enter. Terminal support for Alt+Enter varies; terminals normally encode it as Escape followed by Enter. An unknown slash command is never sent to the model.
 
@@ -38,7 +40,7 @@ Summarize displays its body from the native `HandoffSummaryEvent` after the hand
 
 Compaction displays its generated summary in an independently expanded Markdown block, correlated to the operation ID. The body comes from the native custom event, not inferred saved history or an assistant answer. Lifecycle metadata remains separate; neither summary visibility nor a completed lifecycle event asserts that a new continuation has been saved.
 
-The status bar prioritizes state, model, observed model cost, input/output tokens, `ctx N%`, reasoning effort, elapsed time, and cache counters as width permits. Context percentage uses the last reported root request divided by your configured working budget. `--` means unavailable, not zero; genuine zero is `0%`. Child and auxiliary usage are not summed into it. `/status` shows exact counters and complete settings even in a narrow terminal.
+The status bar prioritizes state, `ctx tokens (%)`, and observed model cost, followed by model and elapsed time as width permits. It refreshes on model-request usage reports while the task is still running, not only when the whole task finishes. It does not invent token-by-token usage before the provider reports it. Input/output/cache details and reasoning stay in `/status`. Context percentage uses the last reported root request divided by your configured working budget. `--` means unavailable, not zero; genuine zero is `0%`. Child and auxiliary usage are not summed into it. `/status` shows exact counters and complete settings even in a narrow terminal.
 
 Image, audio, video, and document inputs remain native Harness content. Terminal presentation shows compact media descriptions and available links, not base64. AG-UI clients also receive structured media references and caller metadata such as `image_object_id`, so a frontend can resolve its own content without the CLI returning image bytes.
 

@@ -62,12 +62,18 @@ async def run_terminal(
                         if update is not None:
                             return update
                 configured = await backend.initialize()
-                if request.command == "setup" or not configured:
-                    landing.title = "Harness UI · Setup"
+                if request.command in {"setup", "add"} or not configured:
+                    landing.title = "Harness UI · Add agent" if request.command == "add" else "Harness UI · Setup"
                     completed = await run_setup(
-                        backend.app, directory, ask_user=landing.ask, emit=emit, environment=backend.environment
+                        backend.app,
+                        directory,
+                        ask_user=landing.ask,
+                        emit=emit,
+                        environment=backend.environment,
+                        **({"add_agent": True} if request.command == "add" else {}),
+                        **({"advanced": True} if request.setup_advanced else {}),
                     )
-                    if not completed or request.command == "setup":
+                    if not completed or request.command in {"setup", "add"}:
                         await landing.close()
                         print_formatted_text(terminal_text(landing.notice))
                         return

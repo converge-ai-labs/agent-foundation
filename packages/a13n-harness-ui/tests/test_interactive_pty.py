@@ -86,12 +86,6 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         os.write(master, b"\r")
         output += _read_until(master, b"Execution permissions")
         os.write(master, b"\r")
-        output += _read_until(master, b"(code-reviewer, executor, explorer)?")
-        os.write(master, b"\r")
-        output += _read_until(master, b"Save this configuration?")
-        assert b"\x1b[?1049l" not in output
-        assert output.count(b"\x1b[?1049h") == 1
-        os.write(master, b"\r")
         if not command:
             output += _read_until(master, b"Enter sends a message")
             assert output.count(b"\x1b[?1049h") == 1
@@ -99,7 +93,7 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
             os.write(master, b"/quit\r")
             output += _read_until(master, b"\x1b[?1049l")
         else:
-            output += _read_until(master, b"Configuration saved")
+            output += _read_until(master, b"Ready. Use /agent")
             assert output.count(b"\x1b[?1049h") == 1
         process.wait(timeout=5)
         assert process.returncode == 0

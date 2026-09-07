@@ -573,7 +573,7 @@ class CliShell:
         self.app.style = self._style()
         self.status.state = "preparing"
         self.emit(
-            f"Harness UI · {self.directory}\n/help for commands · Alt+Enter newline · Ctrl+O detail · PageUp scroll\nEnter sends a message, or adds guidance while the agent is running. !command runs on this host."
+            f"Harness UI · {self.directory}\n{self.status.agent} · /agent to switch · /help for commands\nEnter sends a message or guides active work. !command runs on this host."
         )
         if not local_sandbox_supported():
             self.emit(WINDOWS_EXECUTION_NOTICE)
@@ -1009,7 +1009,7 @@ class CliShell:
         name = invocation.command.name
         argument = invocation.arguments[0] if invocation.arguments else None
         if name == "help":
-            self.emit(self.registry.help(argument))
+            self.renderer.append(self.registry.help(argument) + "\n", markdown=True, kind="notice")
         elif name == "quit":
             self.closing = True
             if self.app.is_running:
@@ -1018,9 +1018,7 @@ class CliShell:
             self.status.mode_explicit = True
             self.renderer.finish()
             self.status.mode = argument or ("detailed" if self.status.mode == "concise" else "concise")
-            self.emit(
-                f"Display: {self.status.mode}. Ctrl+O expands/folds retained tool details; /history reads saved content."
-            )
+            self.emit(f"Display · {self.status.mode}. Ctrl+O toggles details.")
             self.renderer.transcript.detailed = self.status.mode == "detailed"
             self.renderer.transcript.dirty = True
         elif name == "theme":
@@ -1031,7 +1029,7 @@ class CliShell:
             self.renderer.transcript.theme = resolve_theme(self.status.theme)
             self.renderer.transcript.dirty = True
             self.app.style = self._style()
-            self.emit(f"Theme: {self.renderer.transcript.theme.variant} ({self.renderer.transcript.theme.source}).")
+            self.emit(f"Theme · {self.status.theme}.")
         elif name == "mouse":
             self.mouse = argument == "on" if argument else not self.mouse
             self.emit(
@@ -1065,7 +1063,7 @@ class CliShell:
                 self.status.line()
                 + "\n"
                 + self.status.usage_details()
-                + f"\nContext: {self.status.context_tokens if self.status.context_tokens is not None else 'unknown'}/{self.status.context_window or 'unknown'} tokens (working budget)\nModel: {self.status.model}\nDisplay: {self.status.mode}\nWorkspace: {self.directory}\nSession: {self.status.session_id or '(new)'}\nEnvironment: {self.status.environment}\nContext is the last reported request footprint, not accumulated usage or an estimate of the next prompt."
+                + f"\nAgent: {self.status.agent}\nReasoning: {self.status.thinking}\nContext: {self.status.context_tokens if self.status.context_tokens is not None else 'unknown'}/{self.status.context_window or 'unknown'} tokens (working budget)\nModel: {self.status.model}\nDisplay: {self.status.mode}\nWorkspace: {self.directory}\nSession: {self.status.session_id or '(new)'}\nEnvironment: {self.status.environment}\nContext is the last reported request footprint, not accumulated usage or an estimate of the next prompt."
             )
             if self.backend is not None and not self.busy:
                 if self.status.model.startswith("openai-codex:") and self.interaction is None:
@@ -1086,10 +1084,10 @@ class CliShell:
             assert argument is not None
             result = await self.backend.steer(argument)
             self.emit(result)
-        elif name in {"model", "thinking", "environment", "resume"} and argument is None:
+        elif name in {"agent", "thinking", "environment", "resume"} and argument is None:
             choices = await self.backend.choices(name)
             if not choices:
-                self.emit("No choices available. a13n-harness-ui setup configures a model; /new starts a session.")
+                self.emit("No choices yet. Add an agent with a13n-harness-ui add agent.")
                 return
 
             async def selected(value: str | tuple[str, ...]) -> None:
@@ -1099,8 +1097,8 @@ class CliShell:
             self.open_menu(f"Select {name}", choices, selected)
         elif name == "import":
             self.offer_import()
-        elif name == "model":
-            self.launch(self.backend.models(argument), failure_input=invocation.source)
+        elif name == "agent":
+            self.launch(self.backend.agents(argument), failure_input=invocation.source)
         elif name == "thinking":
             self.launch(self.backend.thinking(argument), failure_input=invocation.source)
         elif name == "environment":
@@ -1116,5 +1114,5 @@ class CliShell:
             self.launch(self.backend.history(argument), failure_input=invocation.source)
         elif name == "config":
             self.emit(
-                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\nSession /model and /thinking override configured model settings for subsequent turns only.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
+                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent for this session; /thinking adjusts its reasoning for subsequent turns.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
             )

@@ -31,7 +31,7 @@ Model resources may include native `HarnessModelCharacteristics` under `model_ch
 
 For the `runtime_context` capability, an omitted `context_window_tokens` is resolved from the effective Model's characteristics at capture time. An explicitly configured value remains authoritative. Native handoff reminders and compaction retain their own derivation and explicit-policy semantics.
 
-The App accepts detached per-operation `RunModelOverrides` for a selected Model ID and reasoning effort. These values are copied before scheduling and applied while resolving the root graph, before inherited Markdown children are constructed. They do not mutate files, Thread configuration, previous compositions, or explicitly selected auxiliary/child models. Invalid selections fail without fallback. The [CLI contract](07-interactive-cli.md#per-operation-model-selection) owns interactive precedence and resume behavior.
+The App accepts detached per-operation `RunModelOverrides` for a selected Model ID and reasoning effort. These values are copied before scheduling and applied while resolving the root graph, before inherited Markdown children are constructed. They do not mutate files, Thread configuration, previous compositions, or explicitly selected auxiliary/child models. Invalid selections fail without fallback. The [CLI contract](07-interactive-cli.md#agent-selection-and-reasoning) owns interactive precedence and resume behavior.
 
 ### Shell Review Auxiliary Model
 

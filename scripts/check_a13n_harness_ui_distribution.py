@@ -253,8 +253,8 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
         _validate_assets(archive.read, names, PACKAGE_PREFIX)
         _validate_runtime_manifest(archive.read, names, RUNTIME_MANIFEST_PATH)
         _validate_terminal_package(names)
-        if not any(name.endswith(".dist-info/licenses/YAACLI-LICENSE") for name in names):
-            raise DistributionError("Harness UI wheel is missing the YAACLI BSD notice")
+        if not any(name.endswith(".dist-info/licenses/LICENSE") for name in names):
+            raise DistributionError("Harness UI wheel is missing the project license")
         entrypoint_paths = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         if len(entrypoint_paths) != 1:
             raise DistributionError(f"Expected one entry_points.txt in {path}, found {len(entrypoint_paths)}")
@@ -289,8 +289,8 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
         _validate_assets(read, names, PurePosixPath(root) / PACKAGE_PREFIX)
         _validate_runtime_manifest(read, names, PurePosixPath(root) / RUNTIME_MANIFEST_PATH)
         _validate_terminal_package(names, PurePosixPath(root))
-        if f"{root}/YAACLI-LICENSE" not in names:
-            raise DistributionError("Harness UI sdist is missing the YAACLI BSD notice")
+        if f"{root}/LICENSE" not in names:
+            raise DistributionError("Harness UI sdist is missing the project license")
         if any("apps/a13n-harness-ui" in name for name in names):
             raise DistributionError("Harness UI sdist must not require the Harness UI WebUI source tree")
         pyproject_path = f"{root}/pyproject.toml"

@@ -1,4 +1,4 @@
-"""Passive terminal themes, adapted from YAACLI; see YAACLI-LICENSE."""
+"""Passive terminal themes."""
 
 from __future__ import annotations
 

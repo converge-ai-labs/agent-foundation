@@ -20,15 +20,32 @@ For API access, run the hidden key prompt first, then choose `api` in setup and 
 
 Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
 
+## Starter model choices
+
+Setup and `a13n-harness-ui add agent` offer these explicit routes:
+
+| Provider | Model                      | Best fit                                        |
+| -------- | -------------------------- | ----------------------------------------------- |
+| Codex    | `gpt-6-astra`              | Most demanding end-to-end reasoning and coding  |
+| Codex    | `gpt-5.6-sol`              | Default; strong coding and reasoning            |
+| Codex    | `gpt-5.6-terra`            | Everyday work with lower model cost             |
+| Grok     | `grok-4.6`                 | Default; current coding and agentic model       |
+| Grok     | `grok-4.5`                 | Previous generation with configurable reasoning |
+| Grok     | `grok-4.20-0309-reasoning` | Earlier reasoning model with long context       |
+
+Reviewed against the official [Codex model guide](https://developers.openai.com/codex/models), [xAI release notes](https://docs.x.ai/developers/release-notes), and [Grok 4.20 model page](https://docs.x.ai/developers/models/grok-4.20-beta-0309-reasoning) on September 7, 2026. These choices do not query entitlement or promise that all subscription accounts can access every model. Grok choices are model generations, not three verified subscription price tiers. API-key setup accepts an explicit supported route instead.
+
+Auxiliary Models are named **Codex shell review** or **Grok shell review**. They are not selectable root Agents. Codex review uses Luna with low reasoning; Grok review uses 4.6 with low reasoning. Existing user-edited reviewer resources are preserved.
+
 ## Codex reasoning and context
 
 The defaults are release-owned recommendations, not claims that every account supports every model or context size.
 
-| Setup choice | Working context budget | When to choose it                                                                             |
-| ------------ | ---------------------: | --------------------------------------------------------------------------------------------- |
-| standard     |                272,000 | Conservative local budget matching the current Codex catalog default                          |
-| balanced     |                350,000 | Default for repository work                                                                   |
-| extended     |                872,000 | Large tasks where your account supports the catalog maximum; expect greater latency and usage |
+| Advanced setup choice | Working context budget | When to choose it                                                                             |
+| --------------------- | ---------------------: | --------------------------------------------------------------------------------------------- |
+| standard              |                272,000 | Conservative local budget matching the current Codex catalog default                          |
+| balanced              |                350,000 | Default for repository work                                                                   |
+| extended              |                872,000 | Large tasks where your account supports the catalog maximum; expect greater latency and usage |
 
 A **working budget** controls local reminders and compaction. It does not increase the provider's limit or grant access. The default reminder threshold is 65% and automatic compaction starts at 90%, based on the latest reported root request footprint rather than cumulative tokens. At 350k these are 227,500 and 315,000 tokens.
 
@@ -121,9 +138,11 @@ a13n-harness-ui login codex --allow-account-switch
 
 Logout and account replacement are explicit credential mutations; inspect which shared account/store you are changing. Never post account files, tokens, or stored-key files in diagnostics.
 
-## Change models during a conversation
+## Change agents during a conversation
 
-`/model` lists configured resources. `/model model-primary` and `/thinking low` apply to subsequent operations without editing files. `/model default` and `/thinking default` return their axes to configured defaults. An in-flight operation keeps its captured values. An inherited Markdown child receives the parent's effective recipe; an independently referenced Agent keeps its own Model.
+`/agent` lists configured Agents with their model routes. `/agent agent-primary` switches the full Agent configuration for the next operation and resets session reasoning. `/model` is an alias with the same Agent-ID syntax. History and Environment selection remain intact, and YAML is not rewritten. Add another model-backed Agent with `a13n-harness-ui add agent`, then switch to it.
+
+`/thinking low` changes reasoning without editing files; `/thinking default` returns to the Agent's configured Model settings. An in-flight operation keeps its captured values. An inherited Markdown child receives the parent's effective recipe; an independently referenced Agent keeps its own Model.
 
 `/status` shows observed root usage and, for Codex, read-only subscription limit information plus separately confirmed credit redemption. Local observed cost is an estimate, not your subscription bill. See [usage and credit confirmation](everyday-use.md#tasks-usage-and-terminal-feedback).
 

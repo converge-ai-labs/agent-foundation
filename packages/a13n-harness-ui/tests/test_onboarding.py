@@ -42,7 +42,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_pa
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=-1 if expired else 1))
     original = account.read_bytes()
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
-    answers = deque(["codex", "full-control", "all", "save"])
+    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
     asked, output = [], []
 
     async def ask(question, selection):
@@ -59,7 +59,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_pa
         codex_refresh=unexpected,
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
-    assert asked == ["provider", "environment", "subagents", "action"]
+    assert asked == ["provider", "model", "environment"]
     assert not answers
     assert "Using existing Codex login" in "\n".join(output)
     assert account.read_bytes() == original
@@ -97,7 +97,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
     )
     original = project.read_bytes()
     output = []
-    answers = deque(["codex", "full-control", "all", "save"])
+    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
 
     async def ask(question, selection):
         return answers.popleft()
@@ -113,9 +113,6 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
         assert await app.ensure_cwd_project(directory) == "project-custom"
     assert project.read_bytes() == original
     assert not (project.parent / "project-local.yaml").exists()
-    preview = next(text for text in output if text.startswith("Review setup"))
-    assert "Project: project-custom" in preview
-    assert preview.index(str(directory)) < preview.index(str(notes))
 
 
 @pytest.mark.anyio
@@ -144,7 +141,7 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
         )
     )
     original = grok.read_bytes()
-    answers = deque(["grok", "full-control", "all", "save"])
+    answers = deque(["grok", "grok-4.6", "full-control"])
     output = []
 
     async def ask(question, selection):
@@ -164,7 +161,7 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("cancel_at", ["provider", "action"])
+@pytest.mark.parametrize("cancel_at", ["provider", "model", "environment"])
 async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cancel_at: str) -> None:
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
@@ -188,7 +185,7 @@ async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cance
 @pytest.mark.anyio
 async def test_missing_account_requires_external_login_and_allows_retry(tmp_path: Path) -> None:
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
-    answers = deque(["codex", "full-control", "all", "later", "save"])
+    answers = deque(["codex", "later", "gpt-5.6-sol", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -214,17 +211,11 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
     answers = deque(
         [
             "codex",
-            "full-control",
-            "all",
-            SetupBack(),
-            SetupBack(),
             SetupBack(),
             "api",
             "openai:gpt-test",
             "env:TEST_KEY",
             "full-control",
-            "all",
-            "save",
         ]
     )
 
@@ -243,13 +234,11 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
 
 
 def test_custom_settings_are_optional_and_connection_change_clears_stale_values() -> None:
-    wizard = SetupWizard()
+    wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
+    wizard.accept("gpt-6-astra")
     wizard.accept("full-control")
-    wizard.accept("all")
-    assert wizard.question is None
-    wizard.customize()
-    for value in ("gpt-6-astra", "extended", "low", "no", "be concise"):
+    for value in ("all", "extended", "low", "no", "be concise"):
         wizard.accept(value)
     assert wizard.question is None
     assert wizard.selection("/tmp")["codex_context_window"] == 872000
@@ -257,7 +246,7 @@ def test_custom_settings_are_optional_and_connection_change_clears_stale_values(
         assert wizard.back()
     wizard.accept("api")
     assert wizard.values == {"provider": "api"}
-    assert not wizard.advanced
+    assert wizard.advanced
 
 
 @pytest.mark.anyio
@@ -370,3 +359,30 @@ async def test_landing_busy_cancellation_releases_terminal() -> None:
             await asyncio.wait_for(task, 2)
     assert screen.cancel_requested
     assert not screen.application.is_running
+
+
+@pytest.mark.anyio
+async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaults(tmp_path: Path) -> None:
+    _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
+    path = tmp_path / "config.yaml"
+    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+    asked = []
+
+    async def ask(question, selection):
+        asked.append(question.key)
+        return answers.popleft()
+
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
+        configuration_path=path,
+    ) as app:
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
+        root = path.read_bytes()
+        asked.clear()
+        answers.extend(["codex", "gpt-6-astra", "Astra coding"])
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
+        assert asked == ["provider", "model", "name"]
+        assert path.read_bytes() == root
+        source = await app.current_configuration()
+        assert source.models[source.agents["agent-astra-coding"].model].route == "openai-codex:gpt-6-astra"
+        assert source.document.defaults.agent == "agent-codex"

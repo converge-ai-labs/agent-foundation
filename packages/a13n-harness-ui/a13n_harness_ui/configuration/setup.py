@@ -44,6 +44,8 @@ class SetupSelection(StrictModel):
     providers: tuple[Literal["codex", "grok"], ...] = ()
     api_key_model: SetupApiKeyModel | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
+    new_agent_id: ResourceId | None = None
+    new_agent_name: str = Field(default="", max_length=128)
     connect_default: bool = False
     default_agent: ResourceId = "agent-default"
     project: ResourceId = "project-local"
@@ -52,6 +54,8 @@ class SetupSelection(StrictModel):
     shell_review: bool = True
     include_default_subagents: bool | None = None
     codex_model: Literal["gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"] = "gpt-5.6-sol"
+
+    grok_model: Literal["grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"] = "grok-4.6"
 
     codex_thinking: Literal["low", "medium", "high", "xhigh"] = "high"
     codex_context_window: int = Field(default=350000, ge=16000, le=872000)
@@ -117,7 +121,7 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
     resources: dict[str, dict[str, object]] = {}
     for provider in dict.fromkeys(selection.providers):
         codex = provider == "codex"
-        model = selection.codex_model if codex else "grok-4.6"
+        model = selection.codex_model if codex else selection.grok_model
         resources[f"models/{provider}.yaml"] = {
             "schema_version": "1",
             "kind": "model",
@@ -152,7 +156,7 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
             {"capability": "runtime_context", "configuration": {}},
         ]
         if selection.shell_review:
-            reviewer = "model-codex-review" if "codex" in selection.providers else "model-grok"
+            reviewer = "model-codex-review" if "codex" in selection.providers else "model-grok-shell-review"
             capabilities.append(
                 {
                     "capability": "ShellReviewCapability",
@@ -177,9 +181,19 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
             "schema_version": "1",
             "kind": "model",
             "id": "model-codex-review",
-            "name": "Codex lightweight shell review",
+            "name": "Codex shell review",
             "route": "openai-codex:gpt-5.6-luna",
             "authentication": {"kind": "codex_subscription"},
+            "settings": {"thinking": "low"},
+        }
+    if selection.shell_review and "grok" in selection.providers and "codex" not in selection.providers:
+        resources["models/grok-shell-review.yaml"] = {
+            "schema_version": "1",
+            "kind": "model",
+            "id": "model-grok-shell-review",
+            "name": "Grok shell review",
+            "route": "grok:grok-4.6",
+            "authentication": {"kind": "grok_subscription"},
             "settings": {"thinking": "low"},
         }
     if selection.api_key_model is not None:
@@ -219,17 +233,30 @@ def _templates(selection: SetupSelection) -> dict[str, str]:
                 {"capability": "runtime_context", "configuration": {}},
             ],
         }
+    if selection.new_agent_id is not None:
+        agents = [value for value in resources.values() if value["kind"] == "agent"]
+        if len(agents) != 1 or not agents[0].get("model") or not selection.new_agent_name.strip():
+            raise ConfigurationError("Adding an Agent requires one connection and a name.", code="setup_agent_invalid")
+        agent = agents[0]
+        model = next(value for value in resources.values() if value["id"] == agent.get("model"))
+        suffix = selection.new_agent_id.removeprefix("agent-")
+        resources = {key: value for key, value in resources.items() if value is not agent and value is not model}
+        agent.update(id=selection.new_agent_id, name=selection.new_agent_name, model=f"model-agent-{suffix}")
+        model.update(id=f"model-agent-{suffix}", name=selection.new_agent_name)
+        resources[f"agents/{suffix}.yaml"] = agent
+        resources[f"models/agent-{suffix}.yaml"] = model
     if selection.instructions.strip():
         for resource in resources.values():
-            if resource["id"] == selection.default_agent:
+            if resource["id"] == (selection.new_agent_id or selection.default_agent):
                 resource["instructions"] = selection.instructions
-    resources[f"projects/{selection.project}.yaml"] = {
-        "schema_version": "1",
-        "kind": "project",
-        "id": selection.project,
-        "name": "Local project",
-        "roots": [{"path": selection.project_path}],
-    }
+    if selection.new_agent_id is None:
+        resources[f"projects/{selection.project}.yaml"] = {
+            "schema_version": "1",
+            "kind": "project",
+            "id": selection.project,
+            "name": "Local project",
+            "roots": [{"path": selection.project_path}],
+        }
     return {name: yaml.safe_dump(value, sort_keys=False) for name, value in resources.items()}
 
 
@@ -255,9 +282,21 @@ async def preview_setup(
             resource = _parse_yaml_mapping(path.parent / name, content, code="configuration_resource_invalid")
             if isinstance(resource, dict) and isinstance(resource.get("id"), str):
                 existing[resource["id"]] = (name, resource)
+    if selection.new_agent_id is not None and path.name not in baseline:
+        raise ConfigurationError("Run setup before adding an Agent.", code="setup_required")
     templates = _templates(selection)
     connection_model: str | None = None
-    if selection.api_key_model is not None:
+    if selection.new_agent_id is not None:
+        connection_model = "model-" + selection.new_agent_id
+        current_agent = existing.get(selection.new_agent_id)
+        desired_agent = next(
+            yaml.safe_load(text) for text in templates.values() if yaml.safe_load(text)["id"] == selection.new_agent_id
+        )
+        if current_agent is not None and current_agent[1] != desired_agent:
+            raise ConfigurationError(
+                "This Agent name is already in use. Choose another name.", code="configuration_mutation_conflict"
+            )
+    elif selection.api_key_model is not None:
         connection_model = "model-api-key"
         old_model = existing.get(connection_model)
         if old_model is not None:
@@ -274,11 +313,34 @@ async def preview_setup(
     elif selection.providers:
         provider = selection.default_agent.removeprefix("agent-")
         connection_model = f"model-{provider if provider in selection.providers else selection.providers[0]}"
+        old_model = existing.get(connection_model)
+        if old_model is not None:
+            model_path, desired = next(
+                (name, yaml.safe_load(text))
+                for name, text in templates.items()
+                if yaml.safe_load(text)["id"] == connection_model
+            )
+            if not _same_connection(old_model[1], desired):
+                suffix = hashlib.sha256(json.dumps(desired, sort_keys=True).encode()).hexdigest()[:12]
+                previous_model = connection_model
+                connection_model = f"{previous_model}-{suffix}"
+                desired["id"] = connection_model
+                del templates[model_path]
+                templates[f"models/{connection_model.removeprefix('model-')}.yaml"] = yaml.safe_dump(
+                    desired, sort_keys=False
+                )
+                for name, text in list(templates.items()):
+                    resource = yaml.safe_load(text)
+                    if resource.get("model") == previous_model:
+                        resource["model"] = connection_model
+                        templates[name] = yaml.safe_dump(resource, sort_keys=False)
     if connection_model is not None and connection_model in existing:
         desired = next(
             yaml.safe_load(text) for text in templates.values() if yaml.safe_load(text)["id"] == connection_model
         )
-        if not _same_connection(existing[connection_model][1], desired):
+        if (selection.new_agent_id is not None and existing[connection_model][1] != desired) or not _same_connection(
+            existing[connection_model][1], desired
+        ):
             raise ConfigurationError(
                 "The existing Model was edited and no longer matches this connection. Review the Model resource before retrying.",
                 code="configuration_mutation_conflict",
@@ -294,7 +356,7 @@ async def preview_setup(
                 code="configuration_mutation_conflict",
             )
         files[name] = text
-    if selection.connect_default and connection_model is not None:
+    if selection.new_agent_id is None and selection.connect_default and connection_model is not None:
         current_agent = existing.get(selection.default_agent)
         if current_agent is not None:
             name, resource = current_agent
@@ -305,27 +367,29 @@ async def preview_setup(
         else:
             for name, text in list(files.items()):
                 resource = yaml.safe_load(text)
-                if resource["id"] == selection.default_agent:
+                if resource["id"] == (selection.new_agent_id or selection.default_agent):
                     resource["model"] = connection_model
                     files[name] = yaml.safe_dump(resource, sort_keys=False)
     root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
-    root.setdefault(
-        "display", {"mode": "concise", "show_status": True, "max_tool_result_lines": 5, "max_tool_argument_chars": 8192}
-    )
-    if not isinstance(root, dict):
-        raise ConfigurationError("The root configuration must be a mapping.", code="configuration_invalid")
-    defaults = root.get("defaults", {})
-    if not isinstance(defaults, dict):
-        raise ConfigurationError("Configuration defaults must be a mapping.", code="configuration_invalid")
-    root["defaults"] = {
-        **defaults,
-        "agent": selection.default_agent,
-        "project": selection.project,
-        "environment_profile": selection.environment_profile,
-    }
-    if selection.include_default_subagents is not None:
-        root["subagents"] = {"include": list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []}
-    files[path.name] = yaml.safe_dump(root, sort_keys=False)
+    if selection.new_agent_id is None:
+        root.setdefault(
+            "display",
+            {"mode": "concise", "show_status": True, "max_tool_result_lines": 5, "max_tool_argument_chars": 8192},
+        )
+        if not isinstance(root, dict):
+            raise ConfigurationError("The root configuration must be a mapping.", code="configuration_invalid")
+        defaults = root.get("defaults", {})
+        if not isinstance(defaults, dict):
+            raise ConfigurationError("Configuration defaults must be a mapping.", code="configuration_invalid")
+        root["defaults"] = {
+            **defaults,
+            "agent": selection.default_agent,
+            "project": selection.project,
+            "environment_profile": selection.environment_profile,
+        }
+        if selection.include_default_subagents is not None:
+            root["subagents"] = {"include": list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []}
+        files[path.name] = yaml.safe_dump(root, sort_keys=False)
     candidate = dict(baseline)
     candidate.update({name: text.encode() for name, text in files.items()})
     staging = Path(await to_thread.run_sync(tempfile.mkdtemp))
@@ -343,7 +407,9 @@ async def preview_setup(
         generation=_generation(baseline),
         files=files,
         preserved_paths=tuple(sorted(name for name in baseline if name not in files)),
-        project_paths=tuple(root.path for root in loaded.projects[selection.project].roots),
+        project_paths=()
+        if selection.new_agent_id is not None
+        else tuple(root.path for root in loaded.projects[selection.project].roots),
         candidate_digest=loaded.source_digest,
     )
 

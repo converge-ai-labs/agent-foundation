@@ -207,13 +207,13 @@ def test_question_and_approval_batch_is_typed_and_complete() -> None:
 
 
 def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
-    wizard = SetupWizard()
+    wizard = SetupWizard(advanced=True)
     wizard.accept("3")
     assert wizard.question is not None and wizard.question.key == "route"
     wizard.accept("")
     wizard.accept("key:work")
     wizard.accept("1")
-    wizard.customize()
+    wizard.accept("all")
     wizard.accept("Keep replies concise")
     assert wizard.question is None
     selection = wizard.selection("/workspace")

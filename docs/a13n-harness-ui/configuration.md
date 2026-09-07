@@ -1,6 +1,6 @@
 # Configuration reference
 
-Harness UI uses ordinary YAML and Markdown files. Start with `a13n-harness-ui setup`, then edit the resulting files when you need more control. There is no generated configuration database to edit and no generic CLI resource-creation command.
+Harness UI uses ordinary YAML and Markdown files. Start with `a13n-harness-ui setup`, add more agents with `a13n-harness-ui add agent`, then edit the resulting files when you need more control. There is no generated configuration database to edit and no generic CLI resource-creation command.
 
 ## Locate and validate your files
 
@@ -113,7 +113,7 @@ For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, f
 
 ## What wins, and when edits apply
 
-- A live `/model` or `/thinking` choice applies to subsequent operations without writing YAML.
+- A live `/agent` (also `/model`) or `/thinking` choice applies to subsequent operations without writing YAML.
 - Launch options such as `--agent` and `--environment-mode` select a new session's values.
 - Otherwise accepted Agent resources and root defaults apply, then documented package defaults.
 - Resume restores the selected continuation's Model and reasoning against current resources. It does not invent a replacement for a deleted Model. Resume cannot be combined with Agent, Environment, or title overrides.

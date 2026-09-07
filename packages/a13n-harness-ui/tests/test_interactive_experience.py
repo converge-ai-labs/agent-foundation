@@ -227,3 +227,100 @@ def test_terminal_is_one_consumer_of_structured_media_input() -> None:
     assert "https://example.test/picture.png" in _text(renderer)
     assert "private pixels" not in _text(renderer)
     assert observed[0].model_extra["metadata"]["image_object_id"] == "image-one"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fragmented", [False, True])
+async def test_live_cost_and_zero_context_are_projected_before_completion(fragmented: bool, tmp_path: Path) -> None:
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.live import HarnessUiLiveHub
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from a13n_stream_protocol import fragment_custom_event
+    from ag_ui.core import CustomEvent
+
+    root = ModelUsageRecord(
+        record_id="root-1",
+        run_id="run-one",
+        response_ordinal=0,
+        agent_instance_id="root",
+        response_state="complete",
+        response_timestamp=datetime.now(UTC),
+        request_usage=BoundedRequestUsage(input_tokens=100, output_tokens=20, cost=Decimal("0.125")),
+        cost_source="unknown",
+        pricing_status="disabled",
+    )
+    zero = root.model_copy(
+        update={"record_id": "root-2", "response_ordinal": 1, "request_usage": BoundedRequestUsage(cost=Decimal("0"))}
+    )
+    child = root.model_copy(update={"record_id": "child-1", "parent_agent_instance_id": "root"})
+    report = CustomEvent(
+        name="a13n.usage",
+        value={
+            "event": {
+                "payload": {
+                    "type": "usage_report",
+                    "records": [item.model_dump(mode="json") for item in (root, root, child, zero)],
+                    "padding": "x" * (50000 if fragmented else 0),
+                }
+            }
+        },
+    )
+    events = fragment_custom_event(report, identity="usage-one")
+    assert (len(events) > 1) == fragmented
+    hub = HarnessUiLiveHub()
+    release, updated = asyncio.Event(), asyncio.Event()
+
+    async def submit(**kwargs):
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="thread-one",
+            parent_thread_id=None,
+            thread_id="thread-one",
+            run_id="run-one",
+            events=events,
+        )
+        return SimpleNamespace(receipt_id="receipt-one")
+
+    async def wait(receipt_id):
+        await release.wait()
+        return SimpleNamespace(status=RootOperationStatus.cancelled, outcome=None, failure=None)
+
+    app = SimpleNamespace(
+        live_events=hub.subscribe,
+        submit_thread=submit,
+        wait_root_operation=wait,
+        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+    )
+    status = Status(state="working", context_window=350000)
+    backend = SessionBackend(app, CliRequest(), tmp_path, status)
+    backend.refresh = AsyncMock(return_value=True)
+    backend.ensure_session = AsyncMock(return_value="thread-one")
+
+    async def flush():
+        if status.requests:
+            updated.set()
+
+    renderer = StreamRenderer(status)
+    task = asyncio.create_task(backend.execute(renderer, prompt="test", flush=flush))
+    try:
+        await asyncio.wait_for(updated.wait(), 2)
+        assert not task.done()
+        assert not renderer.gap
+        assert status.requests == 2  # Duplicate and child records excluded.
+        assert status.usage.cost == Decimal("0.125")
+        assert status.context_tokens == 0
+        assert "Working" in status.line(60) and "$0.1250" in status.line(60)
+        assert "ctx 0 (0%)" in status.line(60)
+        assert "cache" not in status.line(120) and "out " not in status.line(120)
+    finally:
+        release.set()
+        await asyncio.wait_for(task, 2)
+        await hub.close()
+
+
+def test_agent_alias_is_an_exact_completion_and_never_an_independent_picker() -> None:
+    registry = CommandRegistry()
+    assert registry.parse("/model").command is registry.parse("/agent").command
+    assert registry.completions("/model")[0][0] == "/model"
+    assert "/model" in registry.help("agent")
+    assert "[agent-id]" in registry.help("model")

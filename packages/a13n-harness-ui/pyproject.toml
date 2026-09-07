@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "Interactive coding CLI and WebUI for Agent Foundation Harness"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE", "YAACLI-LICENSE"]
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "aiosqlite>=0.21,<1",
@@ -65,7 +65,6 @@ include = [
     "a13n_harness_ui",
     "hatch_build.py",
     "LICENSE",
-    "YAACLI-LICENSE",
     "README.md",
     "pyproject.toml",
 ]

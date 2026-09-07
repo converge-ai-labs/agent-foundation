@@ -23,6 +23,7 @@ def _write_wheel(
     protocol_version: str | None = "1.2.3",
     include_runtime_manifest: bool = True,
     include_terminal_shell: bool = True,
+    include_license: bool = True,
     omitted_package_file: str | None = None,
     include_entrypoint: bool = True,
     cli_content: bytes = b"def main(): pass\n",
@@ -45,10 +46,11 @@ def _write_wheel(
             "a13n_harness_ui/static/asset-manifest.json",
             json.dumps(manifest),
         )
-        archive.writestr(
-            "a13n_harness_ui-9.8.7.dist-info/licenses/YAACLI-LICENSE",
-            (SCRIPTS_DIRECTORY.parent / "packages/a13n-harness-ui/YAACLI-LICENSE").read_bytes(),
-        )
+        if include_license:
+            archive.writestr(
+                "a13n_harness_ui-9.8.7.dist-info/licenses/LICENSE",
+                (SCRIPTS_DIRECTORY.parent / "packages/a13n-harness-ui/LICENSE").read_bytes(),
+            )
         for module in TERMINAL_PACKAGE_PATHS:
             if module.as_posix() == "a13n_harness_ui/interactive/shell.py" and not include_terminal_shell:
                 continue
@@ -112,6 +114,14 @@ def test_validates_cli_distribution(tmp_path: Path) -> None:
     )
 
     validate_wheel(wheel, require_exact_internal_version=True)
+
+
+def test_rejects_missing_project_license(tmp_path: Path) -> None:
+    wheel = tmp_path / "a13n-harness-ui.whl"
+    _write_wheel(wheel, include_license=False)
+
+    with pytest.raises(DistributionError, match="missing the project license"):
+        validate_wheel(wheel)
 
 
 def test_development_validation_allows_unpinned_workspace_dependencies(tmp_path: Path) -> None:

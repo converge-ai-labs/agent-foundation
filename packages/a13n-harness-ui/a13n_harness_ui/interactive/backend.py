@@ -10,6 +10,7 @@ from pathlib import Path
 
 import yaml
 from a13n_harness.input import RunInputValue
+from a13n_stream_protocol import CustomEventAssembler
 
 from a13n_harness_ui.app import HarnessUiApp
 from a13n_harness_ui.cli import CliRequest
@@ -21,7 +22,7 @@ from a13n_harness_ui.environment_profiles import (
 )
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
-from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
+from a13n_harness_ui.storage import AgentResourceSource, ThreadConfigurationMutation, ThreadConfigurationPatch
 from a13n_harness_ui.surfaces import (
     NewThreadDefaults,
     RootOperationStatus,
@@ -53,6 +54,7 @@ class SessionBackend:
         self.directory = directory
         self.status = status
         self.thread_id = request.thread_id
+        self.agent_id = request.agent_id
         self.overrides = RunModelOverrides()
         self.environment = request.environment_profile_id or (
             environment_profile_id_for_mode(request.environment_mode) if request.environment_mode else None
@@ -80,13 +82,14 @@ class SessionBackend:
         configuration = await self.app.current_configuration()
         if configuration is None:
             return False
-        agent_id = self.request.agent_id or configuration.document.defaults.agent
+        agent_id = self.agent_id or configuration.document.defaults.agent
         if self.thread_id is not None:
             thread = (await self.app.get_thread(self.thread_id)).thread
             agent_id = thread.configuration.agent_source.id
             self.status.session_id = self.thread_id
             self.environment = thread.configuration.environment_profile_id
         agent = configuration.agents.get(agent_id or "")
+        self.status.agent = "not configured" if agent is None else agent.name
         model_id = self.overrides.model_id or (None if agent is None else agent.model)
         model = configuration.models.get(model_id or "")
         self.status.environment = (
@@ -117,28 +120,41 @@ class SessionBackend:
         return await self.app.skill_catalog(
             defaults=NewThreadDefaults(
                 project_id=next(iter(projects)),
-                agent_id=self.request.agent_id,
+                agent_id=self.agent_id,
                 environment_profile_id=self.environment,
             )
         )
 
-    async def models(self, selected: str | None = None) -> str:
+    async def agents(self, selected: str | None = None) -> str:
         configuration = await self.app.current_configuration()
         if configuration is None:
-            raise ValueError("Use `a13n-harness-ui setup` first.")
+            raise ValueError("Run a13n-harness-ui setup first.")
         if selected is None:
             return (
-                "\n".join(f"{item.id}: {item.route}" for item in configuration.models.values())
-                or "No models. Use `a13n-harness-ui setup`."
+                "\n".join(f"{item.id}: {item.name}" for item in configuration.agents.values())
+                or "No agents yet. Run a13n-harness-ui add agent."
             )
         if selected == "default":
-            selected = None
-        elif selected not in configuration.models:
-            raise ValueError("Unknown model ID. Use /model to list configured choices.")
-        self.overrides = RunModelOverrides(model_id=selected, thinking=None)
+            selected = configuration.document.defaults.agent
+        agent = configuration.agents.get(selected or "")
+        if agent is None:
+            raise ValueError("Unknown agent. Use /agent to see available choices.")
+        if agent.model is None:
+            raise ValueError("This agent has no model. Configure it before switching.")
+        if self.thread_id is not None:
+            detail = await self.app.get_thread(self.thread_id)
+            await self.app.update_thread_configuration(
+                thread_id=self.thread_id,
+                mutation=ThreadConfigurationMutation(
+                    expected_version=detail.thread.configuration.version,
+                    patch=ThreadConfigurationPatch(agent_source=AgentResourceSource(id=agent.id)),
+                ),
+            )
+        self.agent_id = agent.id
+        self.overrides = RunModelOverrides()
         self.status.context_tokens = None
         await self.refresh()
-        return f"Model: {self.status.model}. Reasoning reset to this model's configured default; applies next turn."
+        return f"Agent · {agent.name} · {self.status.model}. Ready for the next turn."
 
     async def thinking(self, selected: str | None) -> str:
         if selected is not None:
@@ -175,7 +191,7 @@ class SessionBackend:
             thread = await self.app.create_thread(
                 defaults=NewThreadDefaults(
                     project_id=project_id,
-                    agent_id=self.request.agent_id,
+                    agent_id=self.agent_id,
                     environment_profile_id=self.environment,
                 ),
                 title=self.request.title,
@@ -225,8 +241,10 @@ class SessionBackend:
         usage = await self.app.context_usage(selected)
         self.status.context_tokens = usage.latest_request_tokens
         await self.refresh()
-        if usage.model_id is not None:
-            # Restore the effective last-turn selection for reproducible continuation.
+        agent = configuration.agents.get(detail.thread.configuration.agent_source.id)
+        self.agent_id = detail.thread.configuration.agent_source.id
+        if agent is not None and usage.model_id == agent.model:
+            # Restore reasoning only when the selected Agent still uses that Model.
             self.overrides = RunModelOverrides.model_validate({"model_id": usage.model_id, "thinking": usage.thinking})
             await self.refresh()
         return f"Resumed {selected}. Use /history to print retained messages.\n{await self.pending()}"
@@ -319,7 +337,7 @@ class SessionBackend:
             configuration = await self.app.current_configuration()
             if configuration is None:
                 raise ValueError("No accepted configuration.")
-            agent_id = self.request.agent_id or configuration.document.defaults.agent
+            agent_id = self.agent_id or configuration.document.defaults.agent
             if self.thread_id is not None:
                 agent_id = (await self.app.get_thread(self.thread_id)).thread.configuration.agent_source.id
             source = next((item for item in configuration.sources if item.resource_id == agent_id), None)
@@ -345,12 +363,18 @@ class SessionBackend:
             ) from exc
 
     async def choices(self, kind: str) -> tuple[Choice, ...]:
-        if kind == "model":
+        if kind == "agent":
             configuration = await self.app.current_configuration()
             return (
-                (
-                    Choice("default", "Agent default"),
-                    *(Choice(item.id, item.id, item.route) for item in configuration.models.values()),
+                tuple(
+                    Choice(
+                        item.id,
+                        item.name,
+                        configuration.models[item.model].route
+                        if item.model in configuration.models
+                        else "No model configured",
+                    )
+                    for item in configuration.agents.values()
                 )
                 if configuration
                 else ()
@@ -418,11 +442,18 @@ class SessionBackend:
         await self.refresh()
         thread_id = await self.ensure_session()
         last_ordinal = -1
+        custom_events = CustomEventAssembler()
         self.status.reset_usage()
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
-            def ingest(event: LiveEvent) -> None:
+            def ingest(event: LiveEvent) -> bool:
                 nonlocal last_ordinal
+                if event.event_type == "CUSTOM" and event.payload is not None:
+                    payload = custom_events.accept(event.payload)
+                    renderer.gap |= custom_events.gap
+                    if payload is None:
+                        return False
+                    event = event.model_copy(update={"payload": payload})
                 renderer.ingest(
                     event.event_type,
                     event.payload,
@@ -430,18 +461,20 @@ class SessionBackend:
                     run_id=event.run_id,
                     execution_id=event.execution_id,
                 )
-                for record in root_model_usage(event):
+                records = root_model_usage(event)
+                for record in records:
                     self.status.record_usage(record)
                 for sample in root_context_samples(event):
                     if sample.response_ordinal > last_ordinal:
                         self.status.context_tokens = sample.tokens
                         last_ordinal = sample.response_ordinal
+                return bool(records)
 
             async def consume() -> None:
                 try:
                     async for event in subscription:
-                        ingest(event)
-                        if flush is not None and renderer.should_flush:
+                        usage_changed = ingest(event)
+                        if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
                 except HarnessUiError:
                     renderer.gap = True
@@ -475,8 +508,8 @@ class SessionBackend:
                 self.receipt_id = None
                 try:
                     for event in subscription.drain_pending():
-                        ingest(event)
-                        if flush is not None and renderer.should_flush:
+                        usage_changed = ingest(event)
+                        if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
                 except HarnessUiError:
                     renderer.gap = True
