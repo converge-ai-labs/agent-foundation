@@ -10,6 +10,7 @@ from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.domain import NewEnvironmentSelection
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.runtime import prepare_run_environment
+from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.records import run_record, thread_record
 from a13n_service.interactions.scheduling import AttemptScheduler
@@ -48,6 +49,7 @@ async def sibling_run(sessions, run, environment_id):
         )
         session.add(thread_record(sibling_thread))
         await session.flush()
+        session.add(inbox_counter_record(sibling_thread))
         sibling = _accepted_run(
             run_id="run_capacity123456789012",
             thread_id=sibling_thread.id,

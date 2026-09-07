@@ -9,7 +9,7 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.environments.usage import lock_run_environments, schedule_environment_maintenance
+from a13n_service.environments.usage import lock_run_environments, refresh_run_retention
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
 from a13n_service.interactions.environment_selection import queued_environment_choice
@@ -441,14 +441,6 @@ async def _seal_completed_source(
     candidate: CompletedOutcomeCandidate,
     now: datetime,
 ) -> None:
-    await schedule_environment_maintenance(database, run=source, now=now)
-    await apply_run_outcome(
-        database,
-        run=source,
-        outcome="completed",
-        state=source_state,
-        now=now,
-    )
     apply_completed_outcome(source, candidate, now)
     select_sealed_state(source, run_attempt_id=attempt.id, state=source_state, now=now)
     terminalize_attempt(attempt, RunAttemptStatus.succeeded, now)
@@ -456,6 +448,8 @@ async def _seal_completed_source(
     source.current_run_attempt_id = None
     source.updated_at = now
     source.version += 1
+    await refresh_run_retention(database, run=source, now=now)
+    await apply_run_outcome(database, run=source, outcome="completed", state=source_state, now=now)
 
 
 async def _consume_queue_head(

@@ -14,7 +14,8 @@ from .models import EnvironmentRecord
 from .retention import refresh_retention
 
 
-async def schedule_environment_maintenance(database: AsyncSession, *, run: RunRecord, now: datetime) -> None:
+async def refresh_run_retention(database: AsyncSession, *, run: RunRecord, now: datetime) -> None:
+    """Refresh aggregate retention after the complete Run status change, before inbox locks."""
     if run.environment_id is None or run.environment_use_started_at is None:
         return
     environment = await database.scalar(

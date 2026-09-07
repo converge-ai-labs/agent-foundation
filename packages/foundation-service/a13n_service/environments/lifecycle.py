@@ -265,13 +265,13 @@ class EnvironmentLifecycle:
         environment = recovering
         effect_known = False
         expires_at = None
+        observation = None
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 if operation.action in {"stop", "delete"}:
                     await self.authorize_command(operation)
                 if environment is None:
                     environment = await self.construct(operation)
-                observation = None
                 if operation.action == "reconcile":
                     observation = await environment.reconcile()
                 elif operation.action == "prepare":
@@ -308,7 +308,12 @@ class EnvironmentLifecycle:
             try:
                 with fail_after(10, shield=True):
                     await self.publish(
-                        operation, environment, error=error, effect_known=effect_known, expires_at=expires_at
+                        operation,
+                        environment,
+                        error=error,
+                        effect_known=effect_known,
+                        observation=observation,
+                        expires_at=expires_at,
                     )
             except BaseException as publication_error:
                 error.add_note(f"Lifecycle failure publication also failed: {publication_error!r}")
@@ -347,7 +352,12 @@ class EnvironmentLifecycle:
         provider = self.catalog.require(operation.provider_type)
         identity = None
         target_conflict = isinstance(error, EnvironmentError) and error.code == "environment_target_conflict"
-        if not target_conflict and (state is not None or succeeded) and operation.action in {"prepare", "reconcile"}:
+        if (
+            not target_conflict
+            and observation != "absent"
+            and (state is not None or succeeded)
+            and operation.action in {"prepare", "reconcile"}
+        ):
             configuration = provider.validate_configuration(
                 schema_version=operation.configuration.configuration_schema_version,
                 value=operation.configuration.configuration,
@@ -376,35 +386,36 @@ class EnvironmentLifecycle:
                 row.expires_at = None
             if operation.action == "keepalive" and expires_at is not None:
                 row.expires_at = expires_at
-            if succeeded:
+            # Preserve a confirmed observation even if its first publication failed.
+            if succeeded or (observation is not None and not target_conflict):
                 if operation.action == "prepare" and row.generation == 0:
                     row.generation = 1
-                if operation.action == "delete":
+                if operation.action == "delete" or observation == "absent":
                     row.status, row.state, row.target_identity = "deleted", None, None
+                    row.expires_at = None
                 elif operation.action == "stop":
                     row.status = (
                         operation.previous_status
                         if operation.previous_status in {"unprepared", "deleted"}
                         else "stopped"
                     )
+                    row.expires_at = None
                 elif operation.action == "prepare":
                     row.status = "running"
                 elif operation.action == "reconcile":
                     assert observation is not None
-                    row.status = "unavailable" if observation == "absent" else observation
-                if operation.action in {"stop", "delete"}:
-                    row.expires_at = None
-                row.last_error = None
-            else:
-                if operation.action in {"prepare", "reconcile"}:
-                    row.status = (
-                        operation.previous_status
-                        if resolved and state is None and operation.previous_status in {"unprepared", "deleted"}
-                        else "unavailable"
-                    )
-                row.last_error = {
-                    "code": "environment_operation_failed" if resolved else "environment_operation_unresolved"
-                }
+                    row.status = observation
+            elif operation.action in {"prepare", "reconcile"}:
+                row.status = (
+                    operation.previous_status
+                    if resolved and state is None and operation.previous_status in {"unprepared", "deleted"}
+                    else "unavailable"
+                )
+            row.last_error = (
+                None
+                if succeeded
+                else {"code": "environment_operation_failed" if resolved else "environment_operation_unresolved"}
+            )
             if resolved:
                 command = await session.get(EnvironmentCommandRecord, operation.operation_id)
                 if command is not None:

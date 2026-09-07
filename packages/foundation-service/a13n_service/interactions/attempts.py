@@ -11,7 +11,7 @@ from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.environments.usage import schedule_environment_maintenance
+from a13n_service.environments.usage import refresh_run_retention
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -207,9 +207,9 @@ class AttemptExecutionService:
                 )
             terminalize_attempt(attempt, RunAttemptStatus.failed, now, failure=failure)
             charge_attempt_usage(run, attempt)
-            await schedule_environment_maintenance(database, run=run, now=now)
-            await apply_run_outcome(database, run=run, outcome="failed", now=now)
             seal_failed_run(run, thread, failure, now)
+            await refresh_run_retention(database, run=run, now=now)
+            await apply_run_outcome(database, run=run, outcome="failed", now=now)
             await self._lifecycle.append_run_with_attempt_lifecycle(
                 database,
                 run,
@@ -307,9 +307,9 @@ class AttemptExecutionService:
                     occurred_at=now,
                 )
             else:
-                await schedule_environment_maintenance(database, run=run, now=now)
-                await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, failure, now)
+                await refresh_run_retention(database, run=run, now=now)
+                await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 await self._lifecycle.append_run_with_attempt_lifecycle(
                     database,
                     run,

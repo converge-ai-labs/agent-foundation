@@ -186,8 +186,17 @@ async def test_known_stop_failure_releases_operation_and_records_failed_command(
     )
 
 
+@pytest.mark.parametrize("had_target", [False, True])
+@pytest.mark.parametrize("publication_fails", [False, True])
 async def test_abandoned_preparation_is_observed_without_starting_target(
-    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
+    environment_service,
+    environment_sessions,
+    provider_catalog,
+    protector,
+    tmp_path,
+    monkeypatch,
+    had_target,
+    publication_fails,
 ):
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
@@ -200,18 +209,102 @@ async def test_abandoned_preparation_is_observed_without_starting_target(
             return "absent"
 
     async def construct(operation):
-        return ObservedTarget(None, events)
+        return ObservedTarget(operation.state, events)
 
     monkeypatch.setattr(lifecycle, "construct", construct)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
+        row.status = "unavailable"
+        if had_target:
+            row.state = EnvironmentState(
+                provider_key="a13n.docker", state_version="1", state={"target": "gone"}
+            ).model_dump(mode="json")
+            row.target_identity = "a" * 64
+            row.generation = 3
+            row.expires_at = now
         row.operation_id, row.operation_action = "envop-abandoned", "prepare"
         row.operation_expires_at = now - timedelta(seconds=1)
-    await lifecycle.maintain(environment.id)
+    if publication_fails:
+        publish = lifecycle.publish
+
+        async def fail_once(*args, **kwargs):
+            monkeypatch.setattr(lifecycle, "publish", publish)
+            raise RuntimeError("Publication unavailable")
+
+        monkeypatch.setattr(lifecycle, "publish", fail_once)
+        with pytest.raises(RuntimeError, match="Publication unavailable"):
+            await lifecycle.maintain(environment.id)
+    else:
+        await lifecycle.maintain(environment.id)
     assert events == ["observe", "close"]
     async with short_session(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
-        assert row.operation_id is None and row.status == "unavailable"
+        assert row.operation_id is None and row.status == "deleted"
+        assert row.state is row.target_identity is row.expires_at is row.next_maintenance_at is None
+        assert row.generation == (3 if had_target else 0)
+
+
+async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempotent(
+    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
+):
+    from unittest.mock import Mock
+
+    from a13n_environment_provider import EnvironmentError
+    from a13n_environment_provider.docker.runtime import DockerEngine, DockerSDKEngine
+    from a13n_service.environments.capacity import CapacityLimits
+    from a13n_service.environments.domain import EnvironmentCommandRequest
+    from a13n_service.environments.models import EnvironmentCommandRecord, EnvironmentTemplateRevisionRecord
+
+    first = await fixture_environment(environment_service)
+    async with short_session(environment_sessions) as session:
+        revision = await session.get(EnvironmentTemplateRevisionRecord, first.template_revision_id)
+        template_id = revision.template_id
+    second = await environment_service.create_environment(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=NewEnvironmentSelection(template_id=template_id),
+        idempotency_key="second-allocation",
+    )
+    now = datetime(2026, 9, 5, tzinfo=UTC)
+    capacity = CapacityLimits(max_targets=1)
+    lifecycle = EnvironmentLifecycle(
+        environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now, capacity=capacity
+    )
+    engine = Mock(spec=DockerEngine)
+    engine.find_containers.return_value = ()
+    monkeypatch.setattr(DockerSDKEngine, "connect", lambda _: engine)
+    async with transaction(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, first.id)
+        row.status = "unavailable"
+        row.operation_id, row.operation_action = "envop-abandoned", "prepare"
+        row.operation_expires_at = now - timedelta(seconds=1)
+
+    async def admit(environment_id):
+        async with transaction(environment_sessions) as session:
+            await capacity.lock_workspace(session, environment_id)
+            await capacity.admit(session, await session.get(EnvironmentRecord, environment_id))
+
+    with pytest.raises(EnvironmentError, match="capacity is exhausted"):
+        await admit(second.id)
+    await lifecycle.maintain(first.id)
+    command = await environment_service.request_command(
+        actor=actor(),
+        environment_id=first.id,
+        idempotency_key="delete-absent",
+        request=EnvironmentCommandRequest(action="delete"),
+    )
+    await lifecycle.maintain(first.id)
+    async with short_session(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, first.id)
+        assert row.status == "deleted" and row.operation_id is row.state is None
+        assert (await session.get(EnvironmentCommandRecord, command.id)).status == "completed"
+    engine.find_containers.assert_awaited_once()
+    engine.create_container.assert_not_awaited()
+    engine.stop_container.assert_not_awaited()
+    engine.remove_container.assert_not_awaited()
+    await admit(second.id)
+    with pytest.raises(EnvironmentError, match="capacity is exhausted"):
+        await admit(first.id)
 
 
 async def test_retention_transition_uses_aggregate_entry_time():
@@ -221,14 +314,7 @@ async def test_retention_transition_uses_aggregate_entry_time():
     from a13n_service.environments.retention import refresh_retention
 
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    waiting = SimpleNamespace(
-        pending=SimpleNamespace(calls=[SimpleNamespace(kind="approval")]), sealed_at=now - timedelta(hours=2)
-    )
-    session = SimpleNamespace(
-        flush=AsyncMock(),
-        scalar=AsyncMock(return_value=None),
-        scalars=AsyncMock(return_value=[SimpleNamespace(to_resource=lambda: waiting)]),
-    )
+    session = SimpleNamespace(flush=AsyncMock(), scalar=AsyncMock(return_value=None))
     row = SimpleNamespace(id="env-shared", retention_condition="active", condition_since=now - timedelta(hours=3))
     await refresh_retention(session, row, now)
     assert row.retention_condition == "idle" and row.condition_since == now

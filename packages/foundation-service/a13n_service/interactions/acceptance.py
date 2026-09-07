@@ -13,7 +13,6 @@ from a13n_service.agents.domain import canonical_digest
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection
 from a13n_service.environments.selection import Omitted
-from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -247,8 +246,6 @@ class RunAcceptanceService:
                         )
                 thread.version += 1
                 thread.current_run_id = run.id
-                if current is not None:
-                    await schedule_environment_maintenance(database, run=current, now=self._clock())
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = self._clock()
                 await database.flush()
@@ -380,8 +377,6 @@ class RunAcceptanceService:
                 thread.version += 1
                 thread.queue_version += 1
                 thread.current_run_id = run.id
-                if current is not None:
-                    await schedule_environment_maintenance(database, run=current, now=self._clock())
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = now
                 await database.flush()
