@@ -44,20 +44,21 @@ def copy_release_files(destination: Path) -> None:
         shutil.copy2(REPOSITORY_ROOT / relative_path, target)
 
 
-def select_harness_ui_releases(root: Path, version: str) -> None:
+def select_harness_ui_releases(root: Path, version: str, *, envd_version: str = "3.2.1") -> None:
     path = root / "packages/a13n-harness-ui/pyproject.toml"
     content = path.read_text(encoding="utf-8")
-    updated, replacements = re.subn(
-        r'^harness-version = "[^"]*"$',
-        f'harness-version = "{version}"',
-        content,
-        count=1,
-        flags=re.MULTILINE,
-    )
-    assert replacements == 1
-    path.write_text(updated.replace('envd-version = "0.0.0"', 'envd-version = "3.2.1"'), encoding="utf-8")
+    for key, selected in (("harness-version", version), ("envd-version", envd_version)):
+        content, replacements = re.subn(
+            rf'^{key} = "[^"]*"$',
+            f'{key} = "{selected}"',
+            content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        assert replacements == 1
+    path.write_text(content, encoding="utf-8")
     runtime_manifest = root / "packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-release.json"
-    runtime_manifest.write_text(json.dumps({"release": "3.2.1"}), encoding="utf-8")
+    runtime_manifest.write_text(json.dumps({"release": envd_version}), encoding="utf-8")
 
 
 def snapshot(root: Path) -> dict[Path, bytes]:
@@ -438,9 +439,7 @@ def test_checker_validates_nested_npm_lock_version(tmp_path: Path) -> None:
 @pytest.mark.parametrize("select_harness", [False, True])
 def test_unselected_ui_release_is_blocked_without_writes(tmp_path: Path, select_harness: bool) -> None:
     copy_release_files(tmp_path)
-    if select_harness:
-        path = tmp_path / "packages/a13n-harness-ui/pyproject.toml"
-        path.write_text(path.read_text().replace('harness-version = "0.0.0"', 'harness-version = "3.2.1"'))
+    select_harness_ui_releases(tmp_path, "3.2.1" if select_harness else "0.0.0", envd_version="0.0.0")
     before = snapshot(tmp_path)
     result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
     assert result.returncode != 0

@@ -75,8 +75,8 @@ include = [
 path = "hatch_build.py"
 
 [tool.a13n.harness-ui-release]
-harness-version = "0.0.0"
-envd-version = "0.0.0"
+harness-version = "0.0.4"
+envd-version = "0.0.4"
 
 [tool.deptry]
 known_first_party = ["a13n_harness_ui"]
