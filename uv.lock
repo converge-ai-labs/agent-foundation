@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -13,10 +13,10 @@ members = [
     "a13n-envd-client",
     "a13n-environment",
     "a13n-harness",
+    "a13n-harness-ui",
     "a13n-logging",
     "a13n-service",
     "a13n-stream-protocol",
-    "a13n-harness-ui",
     "a13n-workspace",
 ]
 
@@ -130,6 +130,95 @@ requires-dist = [
 [package.metadata.requires-dev]
 test = [
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
+    { name = "pytest", specifier = ">=9,<10" },
+]
+
+[[package]]
+name = "a13n-harness-ui"
+version = "0.0.0"
+source = { editable = "packages/a13n-harness-ui" }
+dependencies = [
+    { name = "a13n-environment" },
+    { name = "a13n-harness" },
+    { name = "a13n-logging" },
+    { name = "a13n-stream-protocol" },
+    { name = "ag-ui-protocol" },
+    { name = "aiosqlite" },
+    { name = "alembic" },
+    { name = "anyio" },
+    { name = "click" },
+    { name = "fastapi" },
+    { name = "fastmcp-slim", extra = ["client"] },
+    { name = "filelock" },
+    { name = "httpcore2" },
+    { name = "httpx" },
+    { name = "httpx2" },
+    { name = "mammoth" },
+    { name = "markdownify" },
+    { name = "openai" },
+    { name = "openpyxl" },
+    { name = "packaging" },
+    { name = "pillow" },
+    { name = "prompt-toolkit" },
+    { name = "pydantic" },
+    { name = "pydantic-ai-slim" },
+    { name = "pypdf" },
+    { name = "python-pptx" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "starlette" },
+    { name = "uvicorn" },
+    { name = "zstandard" },
+]
+
+[package.dev-dependencies]
+test = [
+    { name = "fastmcp" },
+    { name = "pyright" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "a13n-environment", editable = "packages/a13n-environment" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
+    { name = "a13n-logging", editable = "packages/a13n-logging" },
+    { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
+    { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
+    { name = "aiosqlite", specifier = ">=0.21,<1" },
+    { name = "alembic", specifier = ">=1.17.1,<2" },
+    { name = "anyio", specifier = ">=4,<5" },
+    { name = "click", specifier = ">=8.2,<9" },
+    { name = "fastapi", specifier = ">=0.135,<1" },
+    { name = "fastmcp-slim", extras = ["client"], specifier = ">=3.4,<4" },
+    { name = "filelock", specifier = ">=3.18,<4" },
+    { name = "httpcore2", specifier = ">=2.12,<3" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "httpx2", specifier = ">=2.5,<3" },
+    { name = "mammoth", specifier = ">=1.11,<2" },
+    { name = "markdownify", specifier = ">=1,<2" },
+    { name = "openai", specifier = ">=3.5,<4" },
+    { name = "openpyxl", specifier = ">=3.1,<4" },
+    { name = "packaging", specifier = ">=24,<27" },
+    { name = "pillow", specifier = ">=11,<13" },
+    { name = "prompt-toolkit", specifier = ">=3.0.52,<4" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pydantic-ai-slim", specifier = ">=2.40,<3" },
+    { name = "pypdf", specifier = ">=6,<7" },
+    { name = "python-pptx", specifier = ">=1,<2" },
+    { name = "pyyaml", specifier = ">=6.0.2,<7" },
+    { name = "rich", specifier = ">=15,<16" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
+    { name = "starlette", specifier = ">=0.52,<2" },
+    { name = "uvicorn", specifier = ">=0.34,<1" },
+    { name = "zstandard", specifier = ">=0.25,<0.26" },
+]
+
+[package.metadata.requires-dev]
+test = [
+    { name = "fastmcp", specifier = ">=3.4,<4" },
+    { name = "pyright", specifier = ">=1.1,<2" },
     { name = "pytest", specifier = ">=9,<10" },
 ]
 
@@ -261,93 +350,6 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "a13n-harness-ui"
-version = "0.0.0"
-source = { editable = "packages/a13n-harness-ui" }
-dependencies = [
-    { name = "a13n-environment" },
-    { name = "a13n-harness" },
-    { name = "a13n-logging" },
-    { name = "a13n-stream-protocol" },
-    { name = "ag-ui-protocol" },
-    { name = "aiosqlite" },
-    { name = "alembic" },
-    { name = "anyio" },
-    { name = "click" },
-    { name = "fastapi" },
-    { name = "fastmcp-slim", extra = ["client"] },
-    { name = "filelock" },
-    { name = "httpcore2" },
-    { name = "httpx" },
-    { name = "httpx2" },
-    { name = "mammoth" },
-    { name = "markdownify" },
-    { name = "openai" },
-    { name = "openpyxl" },
-    { name = "packaging" },
-    { name = "pillow" },
-    { name = "prompt-toolkit" },
-    { name = "pydantic" },
-    { name = "pydantic-ai-slim" },
-    { name = "pypdf" },
-    { name = "python-pptx" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "starlette" },
-    { name = "uvicorn" },
-    { name = "zstandard" },
-]
-
-[package.dev-dependencies]
-test = [
-    { name = "pyright" },
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "a13n-environment", editable = "packages/a13n-environment" },
-    { name = "a13n-harness", editable = "packages/a13n-harness" },
-    { name = "a13n-logging", editable = "packages/a13n-logging" },
-    { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
-    { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
-    { name = "aiosqlite", specifier = ">=0.21,<1" },
-    { name = "alembic", specifier = ">=1.17.1,<2" },
-    { name = "anyio", specifier = ">=4,<5" },
-    { name = "click", specifier = ">=8.2,<9" },
-    { name = "fastapi", specifier = ">=0.135,<1" },
-    { name = "fastmcp-slim", extras = ["client"], specifier = ">=3.4,<4" },
-    { name = "filelock", specifier = ">=3.18,<4" },
-    { name = "httpcore2", specifier = ">=2.12,<3" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "httpx2", specifier = ">=2.5,<3" },
-    { name = "mammoth", specifier = ">=1.11,<2" },
-    { name = "markdownify", specifier = ">=1,<2" },
-    { name = "openai", specifier = ">=3.5,<4" },
-    { name = "openpyxl", specifier = ">=3.1,<4" },
-    { name = "packaging", specifier = ">=24,<27" },
-    { name = "pillow", specifier = ">=11,<13" },
-    { name = "prompt-toolkit", specifier = ">=3.0.52,<4" },
-    { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-ai-slim", specifier = ">=2.40,<3" },
-    { name = "pypdf", specifier = ">=6,<7" },
-    { name = "python-pptx", specifier = ">=1,<2" },
-    { name = "pyyaml", specifier = ">=6.0.2,<7" },
-    { name = "rich", specifier = ">=15,<16" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
-    { name = "starlette", specifier = ">=0.52,<2" },
-    { name = "uvicorn", specifier = ">=0.34,<1" },
-    { name = "zstandard", specifier = ">=0.25,<0.26" },
-]
-
-[package.metadata.requires-dev]
-test = [
-    { name = "pyright", specifier = ">=1.1,<2" },
-    { name = "pytest", specifier = ">=9,<10" },
-]
-
-[[package]]
 name = "a13n-workspace"
 version = "0.0.0"
 source = { virtual = "." }
@@ -355,6 +357,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "deptry" },
+    { name = "fastmcp" },
     { name = "grpcio-tools" },
     { name = "mdformat" },
     { name = "mdformat-footnote" },
@@ -380,6 +383,7 @@ docs = [
 [package.metadata.requires-dev]
 dev = [
     { name = "deptry", specifier = ">=0.25,<0.26" },
+    { name = "fastmcp", specifier = ">=3.4,<4" },
     { name = "grpcio-tools", specifier = ">=1.75,<2" },
     { name = "mdformat", specifier = "==1.0.0" },
     { name = "mdformat-footnote", specifier = "==0.1.3" },
