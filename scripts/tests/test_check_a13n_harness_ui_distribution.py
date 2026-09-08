@@ -21,7 +21,8 @@ def _write_wheel(
     provider_version: str | None = "1.2.3",
     harness_version: str | None = "1.2.3",
     protocol_version: str | None = "1.2.3",
-    include_runtime_manifest: bool = True,
+    include_runtime_version: bool = True,
+    runtime_version: bytes = b"0.0.4\n",
     include_terminal_shell: bool = True,
     include_license: bool = True,
     omitted_package_file: str | None = None,
@@ -70,18 +71,8 @@ def _write_wheel(
                 content = cli_content
             archive.writestr(module.as_posix(), content)
         archive.writestr("a13n_harness_ui/interactive/__init__.py", b"\n")
-        if include_runtime_manifest:
-            archive.writestr(
-                "a13n_harness_ui/assets/a13n-envd-release.json",
-                json.dumps(
-                    {
-                        "schema_version": "1",
-                        "release": "0.0.3",
-                        "base_url": "https://example.test/releases/0.0.3",
-                        "targets": {"test-target": {}},
-                    }
-                ),
-            )
+        if include_runtime_version:
+            archive.writestr("a13n_harness_ui/assets/a13n-envd-version.txt", runtime_version)
         if include_entrypoint:
             archive.writestr(
                 "a13n_harness_ui-9.8.7.dist-info/entry_points.txt",
@@ -136,14 +127,14 @@ def test_development_validation_allows_unpinned_workspace_dependencies(tmp_path:
     validate_wheel(wheel)
 
 
-def test_rejects_missing_a13n_envd_manifest(tmp_path: Path) -> None:
+def test_rejects_missing_a13n_envd_version(tmp_path: Path) -> None:
     wheel = tmp_path / "a13n-harness-ui.whl"
     _write_wheel(
         wheel,
-        include_runtime_manifest=False,
+        include_runtime_version=False,
     )
 
-    with pytest.raises(DistributionError, match=r"missing a13n_harness_ui/assets/a13n-envd-release\.json"):
+    with pytest.raises(DistributionError, match=r"missing a13n_harness_ui/assets/a13n-envd-version\.txt"):
         validate_wheel(wheel)
 
 
@@ -218,3 +209,11 @@ def test_rejects_packaged_file_missing_from_manifest(tmp_path: Path) -> None:
 
     with pytest.raises(DistributionError, match="manifest does not match packaged files"):
         validate_wheel(wheel, require_exact_internal_version=True)
+
+
+@pytest.mark.parametrize("value", [b"", b"../0.0.4", b"0.0.4rc1", b"\xff"])
+def test_rejects_invalid_native_version(tmp_path: Path, value: bytes) -> None:
+    wheel = tmp_path / "a13n-harness-ui.whl"
+    _write_wheel(wheel, runtime_version=value)
+    with pytest.raises(DistributionError, match="Invalid a13n-envd version"):
+        validate_wheel(wheel)

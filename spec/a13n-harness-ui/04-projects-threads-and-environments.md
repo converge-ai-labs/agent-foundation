@@ -248,7 +248,11 @@ Each segment receives fresh Provider runtime collaborators, adapters, and Enviro
 
 ## Local EIP Runtime
 
-Harness UI releases select one exact `a13n-envd` release manifest and target hashes. Sandbox resolves only that managed executable or one explicit validated local override. It does not search ambient `PATH` or download a binary for Full Control execution.
+Harness UI selects one exact canonical `a13n-envd` version in the packaged `assets/a13n-envd-version.txt` resource. The application derives the GitHub Release tag and archive name from that version and the current OS/architecture; it maintains no per-target hashes, sizes, or asset catalog. The `0.0.0` placeholder leaves acquisition unconfigured and blocks a Harness UI release. Sandbox resolves only that managed executable or one explicit validated local override. It does not search ambient `PATH` or download a binary for Full Control execution.
+
+Acquisition uses HTTPS from the repository-owned release location. Download and extracted executable sizes are bounded by the runtime acquisition limit. Only the named executable is copied out of an archive; archive paths and links are not installed. A candidate must report the selected version through `--version` before atomic publication to the version-and-target cache. A cached executable is reusable only when it is a regular executable reporting that version. Failed acquisition leaves no selected candidate and does not replace an existing cache entry.
+
+This is version-based selection, not byte-level identity verification. Harness UI trusts the release source and does not detect replacement bytes that report the same version. Checksums published alongside native releases remain available to standalone installers and other consumers; Harness UI does not embed or require them.
 
 Every Sandbox Project root uses a fresh Local Envd adapter and private EIP daemon generation. Harness UI configures denied execution networking, and Local Envd requires the native isolation probe to prove filesystem containment, process containment, and network isolation before admitting the EIP session. Unsupported Hosts or failed prerequisites make Sandbox unavailable for that Run; Harness UI neither weakens the policy nor substitutes Full Control.
 

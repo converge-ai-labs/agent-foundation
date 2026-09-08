@@ -21,10 +21,12 @@ from pathlib import Path, PurePosixPath
 from typing import ClassVar
 from urllib.parse import unquote, urlsplit
 
+from release_version import ReleaseVersionError, parse_release_version
+
 DISTRIBUTION_STEM = "a13n_harness_ui"
 MANIFEST_NAME = "asset-manifest.json"
 PACKAGE_PREFIX = PurePosixPath("a13n_harness_ui/static")
-RUNTIME_MANIFEST_PATH = PurePosixPath("a13n_harness_ui/assets/a13n-envd-release.json")
+RUNTIME_VERSION_PATH = PurePosixPath("a13n_harness_ui/assets/a13n-envd-version.txt")
 TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/__init__.py"),
     PurePosixPath("a13n_harness_ui/__main__.py"),
@@ -208,25 +210,14 @@ def _validate_console_entrypoint(content: bytes) -> None:
         raise DistributionError("Harness UI artifact is missing the a13n-harness-ui console entrypoint")
 
 
-def _validate_runtime_manifest(read: Callable[[str], bytes], names: set[str], path: PurePosixPath) -> None:
-    manifest_path = path.as_posix()
-    if manifest_path not in names:
-        raise DistributionError(f"Harness UI artifact is missing {manifest_path}")
+def _validate_runtime_version(read: Callable[[str], bytes], names: set[str], path: PurePosixPath) -> None:
+    version_path = path.as_posix()
+    if version_path not in names:
+        raise DistributionError(f"Harness UI artifact is missing {version_path}")
     try:
-        manifest = json.loads(read(manifest_path))
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
-        raise DistributionError(f"Invalid a13n-envd release manifest: {error}") from error
-    if manifest == {"schema_version": "1", "release": "0.0.0", "base_url": None, "targets": {}}:
-        return
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("schema_version") != "1"
-        or not isinstance(manifest.get("release"), str)
-        or not isinstance(manifest.get("base_url"), str)
-        or not isinstance(manifest.get("targets"), dict)
-        or not manifest["targets"]
-    ):
-        raise DistributionError("Unsupported a13n-envd release manifest")
+        parse_release_version(read(version_path).decode("utf-8").strip())
+    except (UnicodeError, ReleaseVersionError) as error:
+        raise DistributionError(f"Invalid a13n-envd version in {version_path}: {error}") from error
 
 
 def _validate_internal_requirements(requirements: list[str]) -> str:
@@ -251,7 +242,7 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
         _validate_assets(archive.read, names, PACKAGE_PREFIX)
-        _validate_runtime_manifest(archive.read, names, RUNTIME_MANIFEST_PATH)
+        _validate_runtime_version(archive.read, names, RUNTIME_VERSION_PATH)
         _validate_terminal_package(names)
         if not any(name.endswith(".dist-info/licenses/LICENSE") for name in names):
             raise DistributionError("Harness UI wheel is missing the project license")
@@ -287,7 +278,7 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
             return file.read()
 
         _validate_assets(read, names, PurePosixPath(root) / PACKAGE_PREFIX)
-        _validate_runtime_manifest(read, names, PurePosixPath(root) / RUNTIME_MANIFEST_PATH)
+        _validate_runtime_version(read, names, PurePosixPath(root) / RUNTIME_VERSION_PATH)
         _validate_terminal_package(names, PurePosixPath(root))
         if f"{root}/LICENSE" not in names:
             raise DistributionError("Harness UI sdist is missing the project license")

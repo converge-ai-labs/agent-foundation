@@ -38,7 +38,7 @@ HARNESS_PACKAGES = (
 HARNESS_UI_MANIFEST = Path("packages/a13n-harness-ui/pyproject.toml")
 HARNESS_UI_PACKAGE = "a13n-harness-ui"
 HARNESS_UI_RELEASE_TOOL = "tool.a13n.harness-ui-release"
-HARNESS_UI_ENVD_RELEASE_MANIFEST = Path("packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-release.json")
+HARNESS_UI_ENVD_VERSION = Path("packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-version.txt")
 A13N_SERVICE_MANIFESTS = (
     Path("pyproject.toml"),
     Path("packages/a13n-logging/pyproject.toml"),
@@ -204,12 +204,10 @@ def _harness_ui_harness_release(root: Path) -> ReleaseVersion:
 
 
 def _harness_ui_envd_release(root: Path) -> ReleaseVersion:
-    selected = _harness_ui_release_selection(root, "envd-version", "a13n-envd")
-    manifest = _load_json(root, HARNESS_UI_ENVD_RELEASE_MANIFEST)
-    actual = _string(manifest.get("release"), f"release in {HARNESS_UI_ENVD_RELEASE_MANIFEST}")
-    if actual != selected.canonical:
+    selected = parse_release_version(_read_text(root, HARNESS_UI_ENVD_VERSION).strip())
+    if selected.canonical == "0.0.0":
         raise ReleaseVersionError(
-            f"Expected {HARNESS_UI_ENVD_RELEASE_MANIFEST} release {selected.canonical}, found {actual}"
+            f"Select a published a13n-envd release in {HARNESS_UI_ENVD_VERSION} before releasing Harness UI"
         )
     return selected
 

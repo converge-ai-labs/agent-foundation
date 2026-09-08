@@ -19,7 +19,7 @@ RELEASE_FILES = (
     Path("packages/a13n-harness/pyproject.toml"),
     Path("packages/a13n-stream-protocol/pyproject.toml"),
     Path("packages/a13n-harness-ui/pyproject.toml"),
-    Path("packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-release.json"),
+    Path("packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-version.txt"),
     Path("packages/a13n-logging/pyproject.toml"),
     Path("packages/a13n-service/pyproject.toml"),
     Path("packages/a13n-envd-client/pyproject.toml"),
@@ -47,18 +47,17 @@ def copy_release_files(destination: Path) -> None:
 def select_harness_ui_releases(root: Path, version: str, *, envd_version: str = "3.2.1") -> None:
     path = root / "packages/a13n-harness-ui/pyproject.toml"
     content = path.read_text(encoding="utf-8")
-    for key, selected in (("harness-version", version), ("envd-version", envd_version)):
-        content, replacements = re.subn(
-            rf'^{key} = "[^"]*"$',
-            f'{key} = "{selected}"',
-            content,
-            count=1,
-            flags=re.MULTILINE,
-        )
-        assert replacements == 1
+    content, replacements = re.subn(
+        r'^harness-version = "[^"]*"$',
+        f'harness-version = "{version}"',
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    assert replacements == 1
     path.write_text(content, encoding="utf-8")
-    runtime_manifest = root / "packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-release.json"
-    runtime_manifest.write_text(json.dumps({"release": envd_version}), encoding="utf-8")
+    runtime_version = root / "packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-version.txt"
+    runtime_version.write_text(f"{envd_version}\n", encoding="utf-8")
 
 
 def snapshot(root: Path) -> dict[Path, bytes]:
