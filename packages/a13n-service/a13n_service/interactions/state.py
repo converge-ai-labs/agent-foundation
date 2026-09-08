@@ -47,7 +47,7 @@ class InboxReceipt(StrictModel):
 
 
 class HostContinuationState(StrictModel):
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["1"] = "1"
     deferred: DeferredContinuationState | None = None
     inbox_receipts: tuple[InboxReceipt, ...] = Field(default=(), max_length=1024)
 
@@ -101,7 +101,7 @@ RunStateOutcomeCandidate = Annotated[
 
 
 class RunCheckpoint(StrictModel):
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["1"] = "1"
     run_id: ObjectId
     thread_id: ThreadId
     checkpoint_seq: int = Field(ge=0)

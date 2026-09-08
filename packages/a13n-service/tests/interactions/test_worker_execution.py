@@ -6,10 +6,12 @@ from a13n_service.agents.domain import canonical_digest
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.control_models import ThreadInboxRecord
+from a13n_service.interactions.domain import RunAttemptYieldReason
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.interactions.outcomes import RunOutcomeService
+from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, WorkerClaim
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.plugins.models import PluginRuntimeLockRecord
@@ -40,6 +42,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     monkeypatch,
     recover_candidate,
     late_input,
+    handoff=False,
 ):
     lock = PluginRuntimeLock(
         mode="on_demand",
@@ -155,6 +158,17 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         return await commit(service, authority, verified, **kwargs)
 
     monkeypatch.setattr(RunOutcomeService, "commit_verified_state_outcome", commit_with_late_input)
+    handed_off = False
+    stream_entry = RunAttemptControl.after_stream_entry
+
+    async def handoff_continuation(control):
+        nonlocal handed_off
+        if handoff and not handed_off and control.current_state.envelope.outcome_candidate is not None:
+            handed_off = True
+            await control.request_handoff(RunAttemptYieldReason.service_drain)
+        await stream_entry(control)
+
+    monkeypatch.setattr(RunAttemptControl, "after_stream_entry", handoff_continuation)
     requests = []
 
     async def model(messages, info):
@@ -163,7 +177,13 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=model)
-    settings = Settings(_env_file=None, build_version="test", worker_concurrency=1, worker_poll_interval_seconds=0.02)
+    settings = Settings(
+        _env_file=None,
+        build_version="test",
+        worker_concurrency=1,
+        worker_poll_interval_seconds=0.02,
+        worker_lease_seconds=12 if handoff else 30,
+    )
     async with worker_runtime(
         interaction_sessions,
         interaction_object_store,
@@ -175,7 +195,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     ) as (runtime, _shared, preflight):
         loop = runtime.execution_loop
         assert loop is not None
-        with fail_after(15):
+        with fail_after(20 if handoff else 15):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 while True:
@@ -202,7 +222,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         checkpoint = await states.read(ORGANIZATION_ID, run.id)
         assert checkpoint.envelope.checkpoint_kind == "completed"
         assert checkpoint.envelope.initial_input_applied
-        assert checkpoint.writer_fence == (2 if recover_candidate or late_input else 1)
+        assert checkpoint.writer_fence == (3 if handoff else 2 if recover_candidate or late_input else 1)
         assert len(requests) == (int(not recover_candidate) + int(late_input))
         if late_input:
             async with short_session(interaction_sessions) as session:
@@ -217,8 +237,14 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                         )
                     ).all()
                 )
-                assert attempts[-1].start_reason == ("lease_expired" if recover_candidate else "pending_input")
-                assert len(attempts) == 2
+                assert attempts[-1].start_reason == (
+                    "planned_handoff" if handoff else "lease_expired" if recover_candidate else "pending_input"
+                )
+                assert len(attempts) == (3 if handoff else 2)
+                if handoff:
+                    assert handed_off
+                    assert attempts[-2].status == "yielded"
+                    assert attempts[-2].failure_json is None
             assert [r.inbox_entry_id for r in checkpoint.envelope.host.inbox_receipts] == [entry.id]
             prompts = [
                 item.content if isinstance(item, NativeTextContent) else item
@@ -230,7 +256,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
             ]
             assert prompts.count("new direction") == 1
             assert prompts.count("hello") == int(not recover_candidate)
-        assert preflight.await_count == (2 if late_input and not recover_candidate else 1)
+        assert preflight.await_count == (2 if late_input and not recover_candidate else 1) + int(handoff)
         assert all(call.args == (lock,) for call in preflight.await_args_list)
 
 
@@ -240,4 +266,20 @@ async def test_postgresql_worker_continues_late_input_in_same_run(
 ):
     await test_worker_claims_and_executes_an_accepted_run_in_process(
         postgres_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate, True
+    )
+
+
+@pytest.mark.parametrize("recover_candidate", [False, True])
+async def test_worker_handoff_waits_for_late_input_incorporation(
+    relational_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate
+):
+    sessions = relational_interaction_sessions
+    await test_worker_claims_and_executes_an_accepted_run_in_process(
+        sessions,
+        interaction_object_store,
+        tmp_path,
+        monkeypatch,
+        recover_candidate=recover_candidate,
+        late_input=True,
+        handoff=True,
     )

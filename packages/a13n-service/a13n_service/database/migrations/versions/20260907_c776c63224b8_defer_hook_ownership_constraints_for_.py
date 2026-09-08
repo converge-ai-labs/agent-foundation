@@ -1,7 +1,7 @@
 """defer hook ownership constraints for atomic retention.
 
 Revision ID: c776c63224b8
-Revises: 427751eb042a
+Revises: b1fb6c9be012
 Create Date: 2026-09-07 09:16:51.226638+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c776c63224b8"
-down_revision: str | Sequence[str] | None = "427751eb042a"
+down_revision: str | Sequence[str] | None = "b1fb6c9be012"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

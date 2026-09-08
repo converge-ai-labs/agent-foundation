@@ -253,7 +253,14 @@ class RunAttemptControl:
             self._require_open()
             driver = self._require_driver()
             try:
-                if self._gate.handoff_reason is None or not self.current_state.envelope.initial_input_applied:
+                # Continuation input is prepared at stream entry but is not yet
+                # incorporated. Its first model hook publishes the new receipts.
+                state = self.current_state.envelope
+                if (
+                    self._gate.handoff_reason is None
+                    or not state.initial_input_applied
+                    or state.outcome_candidate is not None
+                ):
                     return
                 await self._prepare_boundary()
                 await self._checkpoint_state(await driver.export_state())

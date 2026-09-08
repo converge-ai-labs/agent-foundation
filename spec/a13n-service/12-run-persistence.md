@@ -416,7 +416,7 @@ class InboxReceipt:
 
 
 class HostContinuationState:
-    schema_version: Literal["2"]
+    schema_version: Literal["1"]
     deferred: DeferredContinuationState | None
     inbox_receipts: tuple[InboxReceipt, ...] = ()
 
@@ -431,7 +431,7 @@ class RunStateOutcomeCandidate:
 
 
 class RunCheckpoint:
-    schema_version: Literal["2"]
+    schema_version: Literal["1"]
     run_id: str
     thread_id: str
     checkpoint_seq: int
@@ -716,7 +716,7 @@ Cancellation before durable acceptance creates no Run. Interrupt after acceptanc
 
 ## Compatibility
 
-Run checkpoint and Host continuation schema version `2` remove redundant facts from version `1`. The checkpoint no longer serializes input disposition, and the Host evidence is named `inbox_receipts`. Deployments with pre-change checkpoints require a separate explicit data migration or fresh state storage before adopting version `2`. Draining Workers alone does not make historical checkpoints readable for continuation or fork. Service provides no legacy checkpoint adapter or mixed-version execution support; the relational migration preserves rows but does not rewrite object checkpoints.
+Run checkpoint and Host continuation use schema version `1`. The initial relational revisions build this schema directly from an empty database.
 
 The compatibility axes remain independent:
 

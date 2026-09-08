@@ -257,14 +257,14 @@ class RunRecord(Base):
         CheckConstraint(
             "max_attempts >= 0 AND max_handoffs >= 0 AND attempts_started >= 0 "
             "AND attempts_charged >= 0 AND handoffs_completed >= 0",
-            name="recovery_values_non_negative",
+            name="execution_values_non_negative",
         ),
         CheckConstraint(
             "attempts_charged <= max_attempts "
             "AND handoffs_completed <= max_handoffs "
             "AND attempts_charged <= attempts_started "
             "AND attempts_started <= attempts_charged + handoffs_completed",
-            name="recovery_counts_valid",
+            name="execution_counts_valid",
         ),
         CheckConstraint(
             "(input_object_key IS NULL AND input_object_digest_sha256 IS NULL AND input_object_size_bytes IS NULL "

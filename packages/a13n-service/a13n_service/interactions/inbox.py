@@ -21,7 +21,6 @@ from .attempts import (
     AttemptContext,
     AttemptMutationReceipt,
     lock_attempt_authority,
-    read_attempt_authority,
 )
 from .control_domain import (
     SteerReceipt,
@@ -34,7 +33,12 @@ from .control_domain import (
 from .control_models import ThreadInboxRecord
 from .inbox_allocation import allocate_steer
 from .inbox_delivery import AdaptedThreadInboxEntry
-from .inbox_persistence import ThreadInboxConflict, reconcile_checkpoint
+from .inbox_persistence import (
+    ThreadInboxConflict,
+    finalize_ineligible_async_results,
+    lock_inbox_counter,
+    reconcile_checkpoint,
+)
 from .input import AcceptedAgentInput
 from .models import RunRecord, ThreadRecord
 from .objects import StoredRunState
@@ -229,8 +233,9 @@ class DatabaseThreadInboxReconciler:
         config: EffectiveAgentConfig,
     ) -> Sequence[AdaptedThreadInboxEntry]:
         now = assume_utc(self._clock())
-        async with short_session(self._sessions) as database:
-            run, _, _ = await read_attempt_authority(database, authority, now)
+        async with transaction(self._sessions) as database:
+            run, _, _ = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
+            counter = await lock_inbox_counter(database, run.organization_id, run.thread_id)
             pending = tuple(
                 (
                     await database.scalars(
@@ -241,10 +246,16 @@ class DatabaseThreadInboxReconciler:
                             ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                         )
                         .order_by(ThreadInboxRecord.delivery_sequence, ThreadInboxRecord.id)
+                        .with_for_update()
                     )
                 ).all()
             )
-            rows = _contiguous_target_prefix(pending, run_id=run.id)
+            await finalize_ineligible_async_results(
+                database, organization_id=run.organization_id, rows=pending, now=now, locked_counter=counter
+            )
+            rows = _contiguous_target_prefix(
+                tuple(row for row in pending if row.status == ThreadInboxStatus.pending.value), run_id=run.id
+            )
             entries = tuple(row.to_resource() for row in rows)
 
         adapted: list[AdaptedThreadInboxEntry] = []

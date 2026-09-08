@@ -214,14 +214,3 @@ def test_completed_candidate_continues_only_with_new_input_receipts():
                 run_attempt_id=ATTEMPT_ID,
                 attempt_number=1,
             )
-
-
-def test_previous_checkpoint_schema_is_rejected_without_reinterpretation():
-    from a13n_service.interactions.state import RunCheckpoint
-
-    legacy = initial_state().model_dump(mode="python")
-    legacy["schema_version"] = "1"
-    legacy["input_disposition"] = "pending"
-    legacy["host"] = {"schema_version": "1", "deferred": None, "consumed_inbox_entries": ()}
-    with pytest.raises(ValidationError):
-        RunCheckpoint.model_validate(legacy)

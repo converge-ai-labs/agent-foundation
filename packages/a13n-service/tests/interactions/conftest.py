@@ -158,6 +158,11 @@ async def postgres_interaction_sessions(
         await engine.dispose()
 
 
+@pytest.fixture(params=["interaction_sessions", "postgres_interaction_sessions"])
+def relational_interaction_sessions(request):
+    return request.getfixturevalue(request.param)
+
+
 async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as database:
         database.add(OrganizationRecord(id=ORGANIZATION_ID, name="Test", created_at=NOW, updated_at=NOW))
