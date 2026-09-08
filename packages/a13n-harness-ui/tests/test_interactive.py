@@ -488,16 +488,23 @@ async def test_model_selection_is_session_only_and_preserves_agent(
         assert backend.overrides.model_id == "model-alternate"
         assert await backend.execute(StreamRenderer(backend.status), prompt="Hello") == ""
         assert (await app.context_usage(thread_id)).model_id == "model-alternate"
+        assert backend.status.requests == 1
         assert (await app.get_thread(thread_id)).thread.configuration == original
         await backend.agents("agent-codex")
         assert backend.overrides.model_id == "model-alternate"
         await backend.new()
         assert backend.overrides.model_id == "model-alternate"
+        assert backend.status.requests == 0
         await backend.resume(thread_id)
         assert backend.overrides.model_id == "model-alternate"
+        assert backend.status.requests == 1
+        await backend.execute(StreamRenderer(backend.status), prompt="Continue")
+        assert backend.status.requests == 2
+        assert (await app.thread_usage(thread_id=thread_id)).root.model_requests == 2
         fresh = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
         await fresh.initialize()
         assert fresh.overrides.model_id is None
+        assert fresh.status.requests == 2
         await backend.models("default")
         assert backend.overrides.model_id is None
         assert backend.status.agent == fresh.status.agent

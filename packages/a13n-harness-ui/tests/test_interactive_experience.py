@@ -408,6 +408,7 @@ async def test_subscription_close_invalidates_outliving_child_process_observatio
             return_value=SimpleNamespace(status=RootOperationStatus.cancelled, outcome=None, failure=None)
         ),
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+        thread_usage=AsyncMock(return_value=SimpleNamespace(root=_usage_totals(requests=0))),
     )
     backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)
     backend.refresh = AsyncMock(return_value=True)
