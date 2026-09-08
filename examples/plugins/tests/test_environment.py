@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment_provider import (
+from a13n_environment import (
     EnvironmentProviderError,
     build_environment_provider_catalog,
 )
@@ -59,7 +59,7 @@ def test_environment_explicit_provider_needs_no_metadata_scan(
     from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
 
     monkeypatch.setattr(
-        "a13n_environment_provider.catalog._entry_points",
+        "a13n_environment.catalog._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
     catalog = build_environment_provider_catalog(

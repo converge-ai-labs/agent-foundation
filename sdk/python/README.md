@@ -1,6 +1,6 @@
-# a13n-sdk
+# a13n
 
-Python SDK package for Agent Foundation Service.
+Python SDK package for a13n Service.
 
 ## Status
 
@@ -9,13 +9,13 @@ This `0.0.x` package reserves the stable distribution and import names while the
 ## Installation
 
 ```bash
-uv add a13n-sdk
+uv add a13n
 ```
 
 ```python
-import a13n_sdk
+import a13n
 
-print(a13n_sdk.__version__)
+print(a13n.__version__)
 ```
 
 ## Development

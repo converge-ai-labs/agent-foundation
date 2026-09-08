@@ -8,17 +8,17 @@ on:
       - ".github/workflows/ci-containers.yml"
       - "Cargo.lock"
       - "Cargo.toml"
-      - "deploy/containers/foundation-service/Dockerfile"
+      - "deploy/containers/a13n-service/Dockerfile"
       - "deploy/containers/sandbox/Dockerfile"
       - "LICENSE"
-      - "crates/agent-envd/**"
-      - "packages/agent-envd-client/pyproject.toml"
-      - "packages/agent-environment-provider/pyproject.toml"
-      - "packages/agent-harness/pyproject.toml"
-      - "packages/agent-stream-protocol/pyproject.toml"
-      - "packages/agent-ui/pyproject.toml"
-      - "packages/foundation-service/**"
-      - "packages/logging/**"
+      - "crates/a13n-envd/**"
+      - "packages/a13n-envd-client/pyproject.toml"
+      - "packages/a13n-environment/pyproject.toml"
+      - "packages/a13n-harness/pyproject.toml"
+      - "packages/a13n-stream-protocol/pyproject.toml"
+      - "packages/a13n-harness-ui/pyproject.toml"
+      - "packages/a13n-service/**"
+      - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "scripts/docker-entrypoint.sh"
       - "uv.lock"
@@ -54,17 +54,17 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            foundation:
+            service:
               - '.dockerignore'
               - '.github/workflows/ci-containers.yml'
-              - 'deploy/containers/foundation-service/Dockerfile'
-              - 'packages/agent-envd-client/pyproject.toml'
-              - 'packages/agent-environment-provider/pyproject.toml'
-              - 'packages/agent-harness/pyproject.toml'
-              - 'packages/agent-stream-protocol/pyproject.toml'
-              - 'packages/agent-ui/pyproject.toml'
-              - 'packages/foundation-service/**'
-              - 'packages/logging/**'
+              - 'deploy/containers/a13n-service/Dockerfile'
+              - 'packages/a13n-envd-client/pyproject.toml'
+              - 'packages/a13n-environment/pyproject.toml'
+              - 'packages/a13n-harness/pyproject.toml'
+              - 'packages/a13n-stream-protocol/pyproject.toml'
+              - 'packages/a13n-harness-ui/pyproject.toml'
+              - 'packages/a13n-service/**'
+              - 'packages/a13n-logging/**'
               - 'pyproject.toml'
               - 'scripts/docker-entrypoint.sh'
               - 'uv.lock'
@@ -73,14 +73,14 @@ jobs:
               - '.github/workflows/ci-containers.yml'
               - 'Cargo.lock'
               - 'Cargo.toml'
-              - 'crates/agent-envd/**'
+              - 'crates/a13n-envd/**'
               - 'deploy/containers/sandbox/Dockerfile'
               - 'LICENSE'
 
       - name: Build image matrix
         id: matrix
         env:
-          FOUNDATION_CHANGED: ${{ steps.filter.outputs.foundation }}
+          A13N_SERVICE_CHANGED: ${{ steps.filter.outputs.service }}
           SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
         run: |
           python - <<'PY'
@@ -88,15 +88,15 @@ jobs:
           import os
 
           images = []
-          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["FOUNDATION_CHANGED"] == "true":
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["A13N_SERVICE_CHANGED"] == "true":
               images.append({
-                  "name": "foundation-service",
-                  "build_target": "image-foundation-service",
-                  "check_target": "image-check-foundation-service",
+                  "name": "a13n-service",
+                  "build_target": "image-a13n-service",
+                  "check_target": "image-check-a13n-service",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               images.append({
-                  "name": "sandbox",
+                  "name": "a13n-sandbox",
                   "build_target": "image-sandbox",
                   "check_target": "image-check-sandbox",
               })

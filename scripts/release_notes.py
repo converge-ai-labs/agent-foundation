@@ -6,26 +6,26 @@ from pathlib import Path
 from release_version import COMPONENTS, parse_release_version, validate_version_syntax
 
 TAG_PREFIXES = {
-    "harness": "release/harness-v",
-    "agent-ui": "release/agent-ui-v",
-    "foundation": "release/foundation-v",
-    "agent-envd": "release/agent-envd-v",
-    "foundation-cli": "release/foundation-cli-v",
-    "sdk-python": "release/sdk/python/",
-    "sdk-go": "release/sdk/go/",
-    "sdk-rust": "release/sdk/rust/",
-    "sdk-typescript": "release/sdk/typescript/",
+    "a13n-harness": "release/a13n-harness-v",
+    "a13n-harness-ui": "release/a13n-harness-ui-v",
+    "a13n-service": "release/a13n-service-v",
+    "a13n-envd": "release/a13n-envd-v",
+    "a13n-service-cli": "release/a13n-service-cli-v",
+    "a13n-python": "release/a13n/python/",
+    "a13n-go": "release/a13n/go/",
+    "a13n-rust": "release/a13n/rust/",
+    "a13n-typescript": "release/a13n/typescript/",
 }
 INITIAL_NOTES = {
-    "harness": "Initial release for Agent Foundation Harness libraries.",
-    "agent-ui": "Initial release for Agent Foundation UI.",
-    "foundation": "Initial release for Agent Foundation.",
-    "agent-envd": "Initial release for agent-envd.",
-    "foundation-cli": "Initial release for the Agent Foundation CLI.",
-    "sdk-python": "Initial release for the Foundation SDK for Python.",
-    "sdk-go": "Initial release for the Foundation SDK for Go.",
-    "sdk-rust": "Initial release for the Foundation SDK for Rust.",
-    "sdk-typescript": "Initial release for the Foundation SDK for TypeScript.",
+    "a13n-harness": "Initial release for a13n Harness libraries.",
+    "a13n-harness-ui": "Initial release for a13n Harness UI.",
+    "a13n-service": "Initial release for a13n Service.",
+    "a13n-envd": "Initial release for a13n-envd.",
+    "a13n-service-cli": "Initial release for the a13n Service CLI.",
+    "a13n-python": "Initial release for the a13n SDK for Python.",
+    "a13n-go": "Initial release for the a13n SDK for Go.",
+    "a13n-rust": "Initial release for the a13n SDK for Rust.",
+    "a13n-typescript": "Initial release for the a13n SDK for TypeScript.",
 }
 RELEASE_NOTES_DIRECTORY = Path(".github/release-notes")
 
@@ -116,7 +116,7 @@ def build_release_command(
         "--title",
         title,
     ]
-    if component == "foundation-cli":
+    if component == "a13n-service-cli":
         command.append("--latest=false")
     if parse_release_version(version).is_prerelease:
         command.append("--prerelease")

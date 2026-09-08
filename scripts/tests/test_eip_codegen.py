@@ -17,10 +17,10 @@ from scripts.eip_codegen.__main__ import (
 )
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
-OPENRPC_PATH = REPOSITORY_ROOT / "proto/agent-envd/eip/v1/artifacts/openrpc.json"
-SCHEMA_PATH = REPOSITORY_ROOT / "proto/agent-envd/eip/v1/artifacts/schema.json"
-DATA_FRAME_PROFILE_PATH = REPOSITORY_ROOT / "proto/agent-envd/eip/v1/artifacts/data-frame-profile.json"
-METHODS_PATH = REPOSITORY_ROOT / "proto/agent-envd/eip/v1/artifacts/methods.json"
+OPENRPC_PATH = REPOSITORY_ROOT / "proto/a13n-envd/eip/v1/artifacts/openrpc.json"
+SCHEMA_PATH = REPOSITORY_ROOT / "proto/a13n-envd/eip/v1/artifacts/schema.json"
+DATA_FRAME_PROFILE_PATH = REPOSITORY_ROOT / "proto/a13n-envd/eip/v1/artifacts/data-frame-profile.json"
+METHODS_PATH = REPOSITORY_ROOT / "proto/a13n-envd/eip/v1/artifacts/methods.json"
 
 
 def write_generated_tree(root: Path) -> None:

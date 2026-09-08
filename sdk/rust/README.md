@@ -1,6 +1,6 @@
-# a13n-sdk
+# a13n
 
-Rust SDK crate for Agent Foundation Service.
+Rust SDK crate for a13n Service.
 
 ## Status
 
@@ -10,11 +10,11 @@ This `0.0.x` crate reserves the stable package and crate names while the service
 
 ```toml
 [dependencies]
-a13n-sdk = "0.0"
+a13n = "0.0"
 ```
 
 ```rust
-use a13n_sdk as foundation_sdk;
+use a13n as service_client;
 ```
 
 ## Development

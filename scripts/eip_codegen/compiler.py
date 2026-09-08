@@ -10,7 +10,7 @@ from google.protobuf import descriptor_pb2
 from grpc_tools import protoc
 
 PROTO_ROOT = Path("proto")
-EIP_PROTO_ROOT = PROTO_ROOT / "agent-envd" / "eip" / "v1"
+EIP_PROTO_ROOT = PROTO_ROOT / "a13n-envd" / "eip" / "v1"
 
 
 def compile_descriptor(output_dir: Path) -> tuple[descriptor_pb2.FileDescriptorSet, bytes, ModuleType]:
@@ -37,7 +37,7 @@ def compile_descriptor(output_dir: Path) -> tuple[descriptor_pb2.FileDescriptorS
         f"-I{PROTO_ROOT}",
         f"-I{bundled_proto}",
         f"--python_out={python_out}",
-        "agent-envd/eip/v1/options.proto",
+        "a13n-envd/eip/v1/options.proto",
     ]
     if protoc.main(options_args) != 0:
         raise RuntimeError("failed to compile EIP custom options")

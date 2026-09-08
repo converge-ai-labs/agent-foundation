@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from a13n_environment_provider import (
+from a13n_environment import (
     DirectLocalEnvironment,
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,

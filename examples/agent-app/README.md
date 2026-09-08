@@ -147,5 +147,5 @@ The caller owns model credentials, SDK clients, retry policy, and client cleanup
 - `HarnessState` is portable conversation continuation data, not live Environment authority.
 - The state file is a small single-process example, not a distributed checkpoint store or lease protocol.
 - The local demo Environment is intentionally the only Environment in this application.
-- Advanced multi-Environment routing and mixed ownership remain documented in the [Environment guide](../../docs/agent-harness/environments.md).
-- Production Host lifecycle and checkpoint authority are documented in [Embedding in a Host](../../docs/agent-harness/hosting.md).
+- Advanced multi-Environment routing and mixed ownership remain documented in the [Environment guide](../../docs/a13n-harness/environments.md).
+- Production Host lifecycle and checkpoint authority are documented in [Embedding in a Host](../../docs/a13n-harness/hosting.md).

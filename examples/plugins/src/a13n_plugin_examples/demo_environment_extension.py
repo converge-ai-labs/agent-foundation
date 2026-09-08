@@ -10,7 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from a13n_environment_provider import Environment
+from a13n_environment import Environment
 from a13n_harness import (
     AgentSpec,
     HarnessBuilder,

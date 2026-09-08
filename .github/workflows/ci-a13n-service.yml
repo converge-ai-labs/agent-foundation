@@ -1,0 +1,112 @@
+name: a13n Service CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-a13n-service.yml"
+      - ".github/workflows/release-a13n-service.yml"
+      - "conftest.py"
+      - "dev/**"
+      - "packages/a13n-service/**"
+      - "packages/a13n-logging/**"
+      - "pyproject.toml"
+      - "scripts/dev.sh"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-a13n-service.yml"
+      - ".github/workflows/release-a13n-service.yml"
+      - "conftest.py"
+      - "dev/**"
+      - "packages/a13n-service/**"
+      - "packages/a13n-logging/**"
+      - "pyproject.toml"
+      - "scripts/dev.sh"
+      - "uv.lock"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validation:
+    name: a13n Service Python (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: checks
+            runner: ubuntu-latest
+          - name: tests
+            runner: ubuntu-24.04-8core
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Synchronize Python workspace
+        run: uv sync --locked --all-packages
+
+      - name: Type-check a13n Service Python packages
+        if: matrix.name == 'checks'
+        run: >-
+          uv run --locked pyright
+          packages/a13n-logging/a13n_logging
+          packages/a13n-service/a13n_service
+
+      - name: Test logging
+        if: matrix.name == 'checks'
+        run: uv run --locked python -m pytest packages/a13n-logging/tests
+
+      - name: Test a13n Service
+        if: matrix.name == 'tests'
+        timeout-minutes: 10
+        run: >-
+          /usr/bin/time -p uv run --locked python -m pytest
+          -n 7 --dist loadgroup --max-worker-restart=0
+          -vv --tb=short --durations=30
+          -o faulthandler_timeout=120
+          -o faulthandler_exit_on_timeout=true
+          packages/a13n-service/tests
+
+      - name: Build a13n Service Python distributions
+        if: matrix.name == 'checks'
+        run: |
+          uv build --package a13n-logging --out-dir dist/a13n-service
+          uv build --package a13n-service --out-dir dist/a13n-service
+
+  python:
+    name: a13n Service Python
+    needs: validation
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all a13n Service checks to pass
+        env:
+          VALIDATION_RESULT: ${{ needs.validation.result }}
+        run: test "$VALIDATION_RESULT" = success

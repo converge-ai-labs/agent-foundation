@@ -30,9 +30,9 @@ using `make db-upgrade`. Check Docker's published PostgreSQL port if the configu
 port is not reachable.
 
 Separate processes require the same compatible S3 bucket. Configure
-`FOUNDATION_OBJECT_BACKEND=s3`, `FOUNDATION_OBJECT_BUCKET`,
-`FOUNDATION_OBJECT_ENDPOINT_URL`, `FOUNDATION_OBJECT_REGION`, and, if required,
-`FOUNDATION_OBJECT_FORCE_PATH_STYLE=true`, plus the backend's AWS credentials.
+`A13N_SERVICE_OBJECT_BACKEND=s3`, `A13N_SERVICE_OBJECT_BUCKET`,
+`A13N_SERVICE_OBJECT_ENDPOINT_URL`, `A13N_SERVICE_OBJECT_REGION`, and, if required,
+`A13N_SERVICE_OBJECT_FORCE_PATH_STYLE=true`, plus the backend's AWS credentials.
 The endpoint must pass the service's conditional-write/delete compatibility probe.
 The default local object backend is not supported for these separate processes.
 
@@ -88,4 +88,4 @@ remains unchanged. Missing, incorrect or duplicate bearer credentials are reject
 Waiting Run responses expose `sealed_state_digest_sha256`; case 8 passes this
 public value to Native feedback without reading private state from the database.
 
-For the local model fixture, set `FOUNDATION_MODEL_PRIVATE_ENDPOINT_CIDRS='["127.0.0.1/32"]'` in `.env` and restart both roles so Worker model calls can reach the loopback fixture.
+For the local model fixture, set `A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS='["127.0.0.1/32"]'` in `.env` and restart both roles so Worker model calls can reach the loopback fixture.

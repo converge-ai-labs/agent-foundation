@@ -68,7 +68,7 @@ def local_app(config: dict, role: str):
     settings = settings_for(config, role)
     if settings.object_backend is not ObjectBackend.s3:
         raise RuntimeError(
-            "Separate live Control/Worker roles require shared S3 storage. Configure FOUNDATION_OBJECT_BACKEND=s3 "
+            "Separate live Control/Worker roles require shared S3 storage. Configure A13N_SERVICE_OBJECT_BACKEND=s3 "
             "and a compatible endpoint/bucket in .env before starting the live roles."
         )
     authenticate = bearer_authenticator(config)

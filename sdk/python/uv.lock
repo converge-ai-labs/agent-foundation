@@ -12,7 +12,7 @@ wheels = [
 ]
 
 [[package]]
-name = "a13n-sdk"
+name = "a13n"
 version = "0.0.0"
 source = { editable = "." }
 

@@ -36,17 +36,7 @@ An asynchronous acceptance never holds an HTTP request open until execution fini
 
 ## JSON Representations
 
-Resource, mutation, command, and error representations are UTF-8 JSON unless the
-owning domain defines the binary content-transfer exception below. A domain can
-define an explicit bounded content-transfer endpoint with one exact binary media
-type when encoding the bytes in JSON would defeat streaming or size safety. A
-binary upload accepts that media type as its request body and returns
-JSON metadata or a receipt; a binary download returns that media type directly.
-Failures still use the shared JSON error representation. Neither form accepts an
-ambiguous mixed representation or turns storage keys or signed URLs into resource
-authority. Object fields and query parameters use `snake_case`; enum values use
-stable lowercase `snake_case`. First-party SDKs use the idiomatic casing of their
-language while preserving the same concise domain meaning.
+Resource, mutation, command, and error representations are UTF-8 JSON unless the owning domain defines the binary content-transfer exception below. A domain can define an explicit bounded content-transfer endpoint with one exact binary media type when encoding the bytes in JSON would defeat streaming or size safety. A binary upload accepts that media type as its request body and returns JSON metadata or a receipt; a binary download returns that media type directly. Failures still use the shared JSON error representation. Neither form accepts an ambiguous mixed representation or turns storage keys or signed URLs into resource authority. Object fields and query parameters use `snake_case`; enum values use stable lowercase `snake_case`. First-party SDKs use the idiomatic casing of their language while preserving the same concise domain meaning.
 
 Presence has one consistent meaning:
 
@@ -79,7 +69,7 @@ GET /api/v1/workspaces/ws_123/agents?limit=50&cursor=opaque-value
 
 Each endpoint defines one deterministic default order and uses a unique stable tie-breaker. It exposes only explicit filters and sort choices rather than a platform query language. A cursor is bound to the authenticated scope and the query that created it. A changed scope, filter, or ordering, or an invalid or expired cursor, returns a typed error instead of an empty page.
 
-A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in [Model discovery](foundation-service/30-model-management.md#management-api). This does not change ordinary resource collection pagination.
+A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in [Model discovery](a13n-service/30-model-management.md#management-api). This does not change ordinary resource collection pagination.
 
 The cursor is a continuation value, not an object ID or bearer authority. Clients do not parse or construct it, and the server reauthorizes every page. Ordinary collection pagination does not imply a database snapshot; an API that requires snapshot isolation or durable replay defines that stronger contract separately.
 
@@ -121,28 +111,11 @@ SDKs expose one common API error base carrying HTTP status, `code`, `message`, `
 
 ## Mutations and Retries
 
-A revision publication or versioned state-machine mutation that can lose a
-concurrent update accepts `expected_version` and compares it with the model's
-`version`. When one request boundary necessarily exposes multiple independent
-version axes, secondary preconditions are qualified just enough to distinguish
-them, such as `expected_queue_version`. A mismatch returns `409`. A mutable representation without an
-addressable history requires a strong `ETag` plus `If-Match`; an absent
-precondition returns `428` and a stale tag returns `412`. The tag changes
-whenever that complete representation changes and is not an addressable
-version, revision, or history selector. A stable head may therefore use
-`expected_version` to publish a Revision and `If-Match` for an independent
-metadata or lifecycle mutation, but one mutation axis never mixes the two
-contracts. Resources that cannot lose updates do not require an artificial
-concurrency token.
+A revision publication or versioned state-machine mutation that can lose a concurrent update accepts `expected_version` and compares it with the model's `version`. When one request boundary necessarily exposes multiple independent version axes, secondary preconditions are qualified just enough to distinguish them, such as `expected_queue_version`. A mismatch returns `409`. A mutable representation without an addressable history requires a strong `ETag` plus `If-Match`; an absent precondition returns `428` and a stale tag returns `412`. The tag changes whenever that complete representation changes and is not an addressable version, revision, or history selector. A stable head may therefore use `expected_version` to publish a Revision and `If-Match` for an independent metadata or lifecycle mutation, but one mutation axis never mixes the two contracts. Resources that cannot lose updates do not require an artificial concurrency token.
 
 A create or command that callers may safely retry accepts an `Idempotency-Key` header. Within the operation's documented authenticated principal and resource scope, the same key and same canonical request return the original receipt or result; reuse with different content returns `409`. Ordinary Foundation HTTP keys contain 1–512 visible ASCII bytes. Evidence is eligible for 24 hours from the original successful commit; replay does not extend that deadline. Scope includes the principal, applicable Workspace or credential boundary, operation, target, and key digest. The server reauthorizes replay access before returning an original receipt. AG-UI and A2A external identities and durable execution identities retain their separately owned semantics. Once evidence has expired, absence does not prove that an earlier request was never dispatched.
 
-Idempotent replay is resolved before evaluating `expected_version` or
-`If-Match`, so replay of a committed mutation does not conflict with the state
-it already changed. A timeout or lost response after possible dispatch has
-unknown outcome unless the same idempotency key or authoritative receipt
-reconciles it. A caller never changes the key merely because acknowledgement
-was lost.
+Idempotent replay is resolved before evaluating `expected_version` or `If-Match`, so replay of a committed mutation does not conflict with the state it already changed. A timeout or lost response after possible dispatch has unknown outcome unless the same idempotency key or authoritative receipt reconciles it. A caller never changes the key merely because acknowledgement was lost.
 
 SDKs automatically retry only bounded reads and mutations whose owning contract and idempotency evidence make replay safe. They honor `Retry-After` when present and never label an unknown mutation outcome as failure or success.
 
@@ -161,8 +134,6 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 3. JSON wire fields use `snake_case`, presence is explicit, timestamps are UTC, and scalar units appear in field names; an owning binary transfer route declares one exact bounded media type.
 4. Every collection read is bounded, deterministically ordered, and reauthorized; cursors are opaque and non-authoritative.
 5. Clients branch on stable error codes, never message text, and errors disclose no implementation-private or secret data.
-6. Each concurrent mutation axis uses either its owning counter and expected
-   counter or a strong `ETag` and `If-Match`; it never adds a second generic
-   revision counter or mixes both preconditions on one axis.
+6. Each concurrent mutation axis uses either its owning counter and expected counter or a strong `ETag` and `If-Match`; it never adds a second generic revision counter or mixes both preconditions on one axis.
 7. A mutation is retried only with idempotency or other authoritative replay evidence; post-dispatch uncertainty remains explicit.
 8. `v1` changes are additive, and unknown response additions do not prevent an older client from decoding the response.

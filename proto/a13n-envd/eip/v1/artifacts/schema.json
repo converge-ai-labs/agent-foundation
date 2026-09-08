@@ -1,0 +1,3378 @@
+{
+  "$defs": {
+    "ArgvCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Arguments",
+          "type": "array"
+        },
+        "executable_spec": {
+          "$ref": "#/$defs/ExecutableSpec"
+        },
+        "kind": {
+          "const": "argv",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "executable_spec"
+      ],
+      "title": "ArgvCommand",
+      "type": "object"
+    },
+    "CleanupOutcome": {
+      "enum": [
+        "pending",
+        "complete",
+        "residual_confined",
+        "failed"
+      ],
+      "title": "CleanupOutcome",
+      "type": "string"
+    },
+    "CommandEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "set": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Set",
+          "type": "object"
+        },
+        "unset": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Unset",
+          "type": "array"
+        }
+      },
+      "title": "CommandEnvironment",
+      "type": "object"
+    },
+    "CommandLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_time_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Time Ms"
+        },
+        "memory_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Bytes"
+        },
+        "process_count": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Process Count"
+        },
+        "stdin_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stdin Bytes"
+        },
+        "wall_time_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Time Ms"
+        }
+      },
+      "title": "CommandLimits",
+      "type": "object"
+    },
+    "CommandNetwork": {
+      "enum": [
+        "configured",
+        "deny"
+      ],
+      "title": "CommandNetwork",
+      "type": "string"
+    },
+    "CommandRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/CommandSpec"
+        },
+        "cwd": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "environment": {
+          "$ref": "#/$defs/CommandEnvironment"
+        },
+        "initial_stdin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EncodedBytes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "keep_stdin_open": {
+          "default": false,
+          "title": "Keep Stdin Open",
+          "type": "boolean"
+        },
+        "limits": {
+          "$ref": "#/$defs/CommandLimits"
+        },
+        "network": {
+          "$ref": "#/$defs/CommandNetwork",
+          "default": "configured"
+        }
+      },
+      "required": [
+        "command",
+        "cwd"
+      ],
+      "title": "CommandRequest",
+      "type": "object"
+    },
+    "CommandSpec": {
+      "discriminator": {
+        "mapping": {
+          "argv": "#/$defs/ArgvCommand",
+          "shell": "#/$defs/ShellCommand"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ArgvCommand"
+        },
+        {
+          "$ref": "#/$defs/ShellCommand"
+        }
+      ]
+    },
+    "ContentDigest": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "sha256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "algorithm",
+        "value"
+      ],
+      "title": "ContentDigest",
+      "type": "object"
+    },
+    "DesiredPortStatus": {
+      "enum": [
+        "listening",
+        "not_listening"
+      ],
+      "title": "DesiredPortStatus",
+      "type": "string"
+    },
+    "DispatchStage": {
+      "enum": [
+        "pre_dispatch",
+        "dispatching",
+        "dispatched",
+        "completed",
+        "unknown"
+      ],
+      "title": "DispatchStage",
+      "type": "string"
+    },
+    "EIPCallContext": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout Ms"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "EIPCallContext",
+      "type": "object"
+    },
+    "EIPClientInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "EIPClientInfo",
+      "type": "object"
+    },
+    "EIPError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "title": "Code",
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/EIPErrorData"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "data"
+      ],
+      "title": "EIPError",
+      "type": "object"
+    },
+    "EIPErrorData": {
+      "additionalProperties": false,
+      "properties": {
+        "dispatch_stage": {
+          "$ref": "#/$defs/DispatchStage"
+        },
+        "dropped_items": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dropped Items"
+        },
+        "emitted_items": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Emitted Items"
+        },
+        "environment_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Environment Id"
+        },
+        "error_type": {
+          "$ref": "#/$defs/ErrorType"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation"
+        },
+        "handle_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handle Kind"
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation Id"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "process": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "process_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "produced_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Produced Bytes"
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OperationReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retry_hint": {
+          "$ref": "#/$defs/RetryHint"
+        },
+        "safe_detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Safe Detail"
+        }
+      },
+      "required": [
+        "error_type",
+        "retry_hint",
+        "dispatch_stage"
+      ],
+      "title": "EIPErrorData",
+      "type": "object"
+    },
+    "EIPLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_concurrent_file_transfers": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Concurrent File Transfers",
+          "type": "integer"
+        },
+        "max_concurrent_operations": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Concurrent Operations",
+          "type": "integer"
+        },
+        "max_file_transfer_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max File Transfer Bytes",
+          "type": "integer"
+        },
+        "max_operation_duration_ms": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Operation Duration Ms",
+          "type": "integer"
+        },
+        "max_output_bytes_per_stream": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Output Bytes Per Stream",
+          "type": "integer"
+        },
+        "max_output_preview_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Output Preview Bytes",
+          "type": "integer"
+        },
+        "max_processes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Processes",
+          "type": "integer"
+        },
+        "max_request_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Request Bytes",
+          "type": "integer"
+        },
+        "max_response_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Response Bytes",
+          "type": "integer"
+        },
+        "max_transfer_frame_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 25,
+          "title": "Max Transfer Frame Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_request_bytes",
+        "max_response_bytes",
+        "max_concurrent_operations",
+        "max_processes",
+        "max_operation_duration_ms",
+        "max_output_preview_bytes",
+        "max_output_bytes_per_stream",
+        "max_transfer_frame_bytes",
+        "max_concurrent_file_transfers",
+        "max_file_transfer_bytes"
+      ],
+      "title": "EIPLimits",
+      "type": "object"
+    },
+    "EIPPath": {
+      "additionalProperties": false,
+      "properties": {
+        "mount_id": {
+          "minLength": 1,
+          "title": "Mount Id",
+          "type": "string"
+        },
+        "path": {
+          "format": "eip-absolute-path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mount_id",
+        "path"
+      ],
+      "title": "EIPPath",
+      "type": "object"
+    },
+    "EIPServerInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "const": "a13n-envd",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "EIPServerInfo",
+      "type": "object"
+    },
+    "EncodedBytes": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "format": "eip-base64-unpadded",
+          "title": "Data",
+          "type": "string"
+        },
+        "encoding": {
+          "const": "base64",
+          "title": "Encoding",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoding",
+        "data"
+      ],
+      "title": "EncodedBytes",
+      "type": "object"
+    },
+    "EnvironmentDescribeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "EnvironmentDescribeParams",
+      "type": "object"
+    },
+    "EnvironmentDescribeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "descriptor": {
+          "$ref": "#/$defs/EnvironmentDescriptor"
+        }
+      },
+      "required": [
+        "descriptor"
+      ],
+      "title": "EnvironmentDescribeResult",
+      "type": "object"
+    },
+    "EnvironmentDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "available_methods": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Available Methods",
+          "type": "array"
+        },
+        "environment_id": {
+          "minLength": 1,
+          "title": "Environment Id",
+          "type": "string"
+        },
+        "execution_features": {
+          "$ref": "#/$defs/ExecutionFeatures"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "isolation": {
+          "$ref": "#/$defs/IsolationPosture"
+        },
+        "limits": {
+          "$ref": "#/$defs/EIPLimits"
+        },
+        "mounts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MountDescriptor"
+          },
+          "title": "Mounts",
+          "type": "array"
+        },
+        "root_mount_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root Mount Id"
+        },
+        "shell_profiles": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ShellProfileDescriptor"
+          },
+          "title": "Shell Profiles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "environment_id",
+        "generation",
+        "limits",
+        "isolation",
+        "execution_features"
+      ],
+      "title": "EnvironmentDescriptor",
+      "type": "object"
+    },
+    "EnvironmentReadinessParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "EnvironmentReadinessParams",
+      "type": "object"
+    },
+    "EnvironmentReadinessResult": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "minLength": 1,
+          "title": "Environment Id",
+          "type": "string"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready",
+        "environment_id",
+        "generation"
+      ],
+      "title": "EnvironmentReadinessResult",
+      "type": "object"
+    },
+    "ErrorType": {
+      "enum": [
+        "parse_error",
+        "invalid_request",
+        "method_not_found",
+        "invalid_params",
+        "internal_error",
+        "not_initialized",
+        "already_initialized",
+        "protocol_incompatible",
+        "denied",
+        "not_found_or_denied",
+        "unsupported",
+        "stale_generation",
+        "invalid_handle",
+        "busy",
+        "quota_exceeded",
+        "output_limit_exceeded",
+        "timeout",
+        "cancelled",
+        "unknown_outcome",
+        "operation_in_progress",
+        "provider_unavailable",
+        "execution_isolation_failed",
+        "cleanup_failed",
+        "command_start_failed",
+        "conflict",
+        "integrity_mismatch"
+      ],
+      "title": "ErrorType",
+      "type": "string"
+    },
+    "ExecutableName": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "name",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "ExecutableName",
+      "type": "object"
+    },
+    "ExecutablePath": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "path",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "kind",
+        "path"
+      ],
+      "title": "ExecutablePath",
+      "type": "object"
+    },
+    "ExecutableSpec": {
+      "discriminator": {
+        "mapping": {
+          "name": "#/$defs/ExecutableName",
+          "path": "#/$defs/ExecutablePath"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ExecutableName"
+        },
+        {
+          "$ref": "#/$defs/ExecutablePath"
+        }
+      ]
+    },
+    "ExecutionFeatures": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_time_limit": {
+          "title": "Cpu Time Limit",
+          "type": "boolean"
+        },
+        "memory_bytes_limit": {
+          "title": "Memory Bytes Limit",
+          "type": "boolean"
+        },
+        "per_command_network_deny": {
+          "title": "Per Command Network Deny",
+          "type": "boolean"
+        },
+        "process_count_limit": {
+          "title": "Process Count Limit",
+          "type": "boolean"
+        },
+        "signal_interrupt": {
+          "title": "Signal Interrupt",
+          "type": "boolean"
+        },
+        "signal_terminate": {
+          "title": "Signal Terminate",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "process_count_limit",
+        "memory_bytes_limit",
+        "cpu_time_limit",
+        "per_command_network_deny",
+        "signal_interrupt",
+        "signal_terminate"
+      ],
+      "title": "ExecutionFeatures",
+      "type": "object"
+    },
+    "FileByteRange": {
+      "additionalProperties": false,
+      "properties": {
+        "length": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        }
+      },
+      "title": "FileByteRange",
+      "type": "object"
+    },
+    "FileCopyParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "destination": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "replace": {
+          "default": false,
+          "title": "Replace",
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "source",
+        "destination"
+      ],
+      "title": "FileCopyParams",
+      "type": "object"
+    },
+    "FileCopyResult": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes_copied": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Bytes Copied",
+          "type": "integer"
+        },
+        "destination": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "destination",
+        "bytes_copied",
+        "receipt"
+      ],
+      "title": "FileCopyResult",
+      "type": "object"
+    },
+    "FileFindParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "include_hidden": {
+          "default": false,
+          "title": "Include Hidden",
+          "type": "boolean"
+        },
+        "kinds": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileKind"
+          },
+          "title": "Kinds",
+          "type": "array"
+        },
+        "max_results": {
+          "default": 100,
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Max Results",
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "pattern": {
+          "title": "Pattern",
+          "type": "string"
+        },
+        "recursive": {
+          "default": true,
+          "title": "Recursive",
+          "type": "boolean"
+        },
+        "respect_git_ignore": {
+          "default": false,
+          "title": "Respect Git Ignore",
+          "type": "boolean"
+        },
+        "root": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "root",
+        "pattern"
+      ],
+      "title": "FileFindParams",
+      "type": "object"
+    },
+    "FileFindResult": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileListEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "has_more": {
+          "title": "Has More",
+          "type": "boolean"
+        },
+        "offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "omitted_unrepresentable_entries": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Omitted Unrepresentable Entries",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "offset",
+        "has_more",
+        "omitted_unrepresentable_entries"
+      ],
+      "title": "FileFindResult",
+      "type": "object"
+    },
+    "FileInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "executable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable"
+        },
+        "kind": {
+          "$ref": "#/$defs/FileKind"
+        },
+        "modified_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modified At"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Bytes"
+        }
+      },
+      "required": [
+        "path",
+        "kind"
+      ],
+      "title": "FileInfo",
+      "type": "object"
+    },
+    "FileKind": {
+      "enum": [
+        "file",
+        "directory",
+        "symlink",
+        "other"
+      ],
+      "title": "FileKind",
+      "type": "string"
+    },
+    "FileListEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_path",
+        "info"
+      ],
+      "title": "FileListEntry",
+      "type": "object"
+    },
+    "FileListParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "include_hidden": {
+          "default": false,
+          "title": "Include Hidden",
+          "type": "boolean"
+        },
+        "max_results": {
+          "default": 100,
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Max Results",
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "path"
+      ],
+      "title": "FileListParams",
+      "type": "object"
+    },
+    "FileListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileListEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "has_more": {
+          "title": "Has More",
+          "type": "boolean"
+        },
+        "offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "omitted_unrepresentable_entries": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Omitted Unrepresentable Entries",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "offset",
+        "has_more",
+        "omitted_unrepresentable_entries"
+      ],
+      "title": "FileListResult",
+      "type": "object"
+    },
+    "FileMkdirParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "exist_ok": {
+          "default": false,
+          "title": "Exist Ok",
+          "type": "boolean"
+        },
+        "parents": {
+          "default": false,
+          "title": "Parents",
+          "type": "boolean"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "path"
+      ],
+      "title": "FileMkdirParams",
+      "type": "object"
+    },
+    "FileMkdirResult": {
+      "additionalProperties": false,
+      "properties": {
+        "created_directories": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Created Directories",
+          "type": "integer"
+        },
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "info",
+        "created_directories",
+        "receipt"
+      ],
+      "title": "FileMkdirResult",
+      "type": "object"
+    },
+    "FileMoveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "destination": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "replace": {
+          "default": false,
+          "title": "Replace",
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "source",
+        "destination"
+      ],
+      "title": "FileMoveParams",
+      "type": "object"
+    },
+    "FileMoveResult": {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "destination",
+        "receipt"
+      ],
+      "title": "FileMoveResult",
+      "type": "object"
+    },
+    "FilePatchTextParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "patch_format": {
+          "const": "unified_diff",
+          "title": "Patch Format",
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "path",
+        "patch_format",
+        "patch"
+      ],
+      "title": "FilePatchTextParams",
+      "type": "object"
+    },
+    "FilePatchTextResult": {
+      "additionalProperties": false,
+      "properties": {
+        "hunks_applied": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Hunks Applied",
+          "type": "integer"
+        },
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "info",
+        "hunks_applied",
+        "receipt"
+      ],
+      "title": "FilePatchTextResult",
+      "type": "object"
+    },
+    "FileReadCompletion": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/ContentDigest"
+        },
+        "produced_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Produced Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "produced_bytes",
+        "digest"
+      ],
+      "title": "FileReadCompletion",
+      "type": "object"
+    },
+    "FileReadTextParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "line_limit": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Line Limit",
+          "type": "integer"
+        },
+        "line_offset": {
+          "default": 0,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Line Offset",
+          "type": "integer"
+        },
+        "max_line_length": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Line Length",
+          "type": "integer"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "path",
+        "line_limit",
+        "max_line_length"
+      ],
+      "title": "FileReadTextParams",
+      "type": "object"
+    },
+    "FileReadTextResult": {
+      "additionalProperties": false,
+      "properties": {
+        "has_more": {
+          "title": "Has More",
+          "type": "boolean"
+        },
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "line_offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Line Offset",
+          "type": "integer"
+        },
+        "lines_read": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Lines Read",
+          "type": "integer"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "truncated_lines": {
+          "default": [],
+          "items": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "Truncated Lines",
+          "type": "array"
+        }
+      },
+      "required": [
+        "info",
+        "text",
+        "line_offset",
+        "lines_read",
+        "has_more"
+      ],
+      "title": "FileReadTextResult",
+      "type": "object"
+    },
+    "FileReaderCloseParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "reader": {
+          "$ref": "#/$defs/FileReaderHandle"
+        }
+      },
+      "required": [
+        "context",
+        "reader"
+      ],
+      "title": "FileReaderCloseParams",
+      "type": "object"
+    },
+    "FileReaderCloseResult": {
+      "additionalProperties": false,
+      "properties": {
+        "completion": {
+          "$ref": "#/$defs/FileReadCompletion"
+        }
+      },
+      "required": [
+        "completion"
+      ],
+      "title": "FileReaderCloseResult",
+      "type": "object"
+    },
+    "FileReaderHandle": {
+      "minLength": 1,
+      "title": "FileReaderHandle",
+      "type": "string"
+    },
+    "FileReaderOpenParams": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileByteRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "transfer_timeout_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transfer Timeout Ms"
+        }
+      },
+      "required": [
+        "context",
+        "path"
+      ],
+      "title": "FileReaderOpenParams",
+      "type": "object"
+    },
+    "FileReaderOpenResult": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "reader": {
+          "$ref": "#/$defs/FileReaderHandle"
+        }
+      },
+      "required": [
+        "reader",
+        "info",
+        "expires_at"
+      ],
+      "title": "FileReaderOpenResult",
+      "type": "object"
+    },
+    "FileRemoveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "expected_kind": {
+          "$ref": "#/$defs/FileKind"
+        },
+        "max_entries": {
+          "default": 1,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Max Entries",
+          "type": "integer"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "recursive": {
+          "default": false,
+          "title": "Recursive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "context",
+        "path",
+        "expected_kind"
+      ],
+      "title": "FileRemoveParams",
+      "type": "object"
+    },
+    "FileRemoveResult": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        },
+        "removed_entries": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Removed Entries",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "removed_entries",
+        "receipt"
+      ],
+      "title": "FileRemoveResult",
+      "type": "object"
+    },
+    "FileSearchMatch": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "default": "",
+          "title": "Context",
+          "type": "string"
+        },
+        "context_start_line": {
+          "default": 1,
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Context Start Line",
+          "type": "integer"
+        },
+        "line_number": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Line Number",
+          "type": "integer"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "preview": {
+          "title": "Preview",
+          "type": "string"
+        },
+        "preview_truncated": {
+          "title": "Preview Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "line_number",
+        "preview",
+        "preview_truncated"
+      ],
+      "title": "FileSearchMatch",
+      "type": "object"
+    },
+    "FileSearchParams": {
+      "additionalProperties": false,
+      "properties": {
+        "case_sensitive": {
+          "default": true,
+          "title": "Case Sensitive",
+          "type": "boolean"
+        },
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "context_lines": {
+          "default": 0,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Context Lines",
+          "type": "integer"
+        },
+        "include_hidden": {
+          "default": false,
+          "title": "Include Hidden",
+          "type": "boolean"
+        },
+        "include_pattern": {
+          "default": "**/*",
+          "title": "Include Pattern",
+          "type": "string"
+        },
+        "max_file_bytes": {
+          "default": 67108864,
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max File Bytes",
+          "type": "integer"
+        },
+        "max_files": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Files"
+        },
+        "max_line_length": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Line Length",
+          "type": "integer"
+        },
+        "max_matches_per_file": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Matches Per File"
+        },
+        "max_results": {
+          "default": 100,
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Max Results",
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/SearchMode"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "respect_git_ignore": {
+          "default": false,
+          "title": "Respect Git Ignore",
+          "type": "boolean"
+        },
+        "root": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "root",
+        "query",
+        "mode",
+        "max_line_length"
+      ],
+      "title": "FileSearchParams",
+      "type": "object"
+    },
+    "FileSearchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "has_more": {
+          "title": "Has More",
+          "type": "boolean"
+        },
+        "matches": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileSearchMatch"
+          },
+          "title": "Matches",
+          "type": "array"
+        },
+        "offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "omitted_unrepresentable_entries": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Omitted Unrepresentable Entries",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "offset",
+        "has_more",
+        "omitted_unrepresentable_entries"
+      ],
+      "title": "FileSearchResult",
+      "type": "object"
+    },
+    "FileStatParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "follow_symlinks": {
+          "default": true,
+          "title": "Follow Symlinks",
+          "type": "boolean"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "path"
+      ],
+      "title": "FileStatParams",
+      "type": "object"
+    },
+    "FileStatResult": {
+      "additionalProperties": false,
+      "properties": {
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        }
+      },
+      "required": [
+        "info"
+      ],
+      "title": "FileStatResult",
+      "type": "object"
+    },
+    "FileWriteMode": {
+      "enum": [
+        "create",
+        "replace",
+        "upsert",
+        "append"
+      ],
+      "title": "FileWriteMode",
+      "type": "string"
+    },
+    "FileWriteTextParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "executable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable"
+        },
+        "mode": {
+          "$ref": "#/$defs/FileWriteMode"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "path",
+        "mode",
+        "text"
+      ],
+      "title": "FileWriteTextParams",
+      "type": "object"
+    },
+    "FileWriteTextResult": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes_written": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Bytes Written",
+          "type": "integer"
+        },
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "info",
+        "bytes_written",
+        "receipt"
+      ],
+      "title": "FileWriteTextResult",
+      "type": "object"
+    },
+    "FileWriterAbortParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "writer": {
+          "$ref": "#/$defs/FileWriterHandle"
+        }
+      },
+      "required": [
+        "context",
+        "writer"
+      ],
+      "title": "FileWriterAbortParams",
+      "type": "object"
+    },
+    "FileWriterAbortResult": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/FileWriterAbortStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "FileWriterAbortResult",
+      "type": "object"
+    },
+    "FileWriterAbortStatus": {
+      "enum": [
+        "aborted",
+        "already_aborted",
+        "commit_in_progress",
+        "already_committed"
+      ],
+      "title": "FileWriterAbortStatus",
+      "type": "string"
+    },
+    "FileWriterCommitParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "transfer_digest": {
+          "$ref": "#/$defs/ContentDigest"
+        },
+        "transferred_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Transferred Bytes",
+          "type": "integer"
+        },
+        "writer": {
+          "$ref": "#/$defs/FileWriterHandle"
+        }
+      },
+      "required": [
+        "context",
+        "writer",
+        "transferred_bytes",
+        "transfer_digest"
+      ],
+      "title": "FileWriterCommitParams",
+      "type": "object"
+    },
+    "FileWriterCommitResult": {
+      "additionalProperties": false,
+      "properties": {
+        "info": {
+          "$ref": "#/$defs/FileInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        },
+        "transfer_digest": {
+          "$ref": "#/$defs/ContentDigest"
+        },
+        "transferred_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Transferred Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "info",
+        "transferred_bytes",
+        "transfer_digest",
+        "receipt"
+      ],
+      "title": "FileWriterCommitResult",
+      "type": "object"
+    },
+    "FileWriterHandle": {
+      "minLength": 1,
+      "title": "FileWriterHandle",
+      "type": "string"
+    },
+    "FileWriterOpenParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "executable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable"
+        },
+        "mode": {
+          "$ref": "#/$defs/FileWriteMode"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "transfer_timeout_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transfer Timeout Ms"
+        }
+      },
+      "required": [
+        "context",
+        "path",
+        "mode"
+      ],
+      "title": "FileWriterOpenParams",
+      "type": "object"
+    },
+    "FileWriterOpenResult": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "max_transfer_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Max Transfer Bytes",
+          "type": "integer"
+        },
+        "writer": {
+          "$ref": "#/$defs/FileWriterHandle"
+        }
+      },
+      "required": [
+        "writer",
+        "max_transfer_bytes",
+        "expires_at"
+      ],
+      "title": "FileWriterOpenResult",
+      "type": "object"
+    },
+    "InitializeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "$ref": "#/$defs/EIPClientInfo"
+        },
+        "expected_environment_id": {
+          "minLength": 1,
+          "title": "Expected Environment Id",
+          "type": "string"
+        },
+        "required_methods": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Methods",
+          "type": "array"
+        },
+        "supported_protocol_versions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supported Protocol Versions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "supported_protocol_versions",
+        "client",
+        "expected_environment_id"
+      ],
+      "title": "InitializeParams",
+      "type": "object"
+    },
+    "InitializeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "descriptor": {
+          "$ref": "#/$defs/EnvironmentDescriptor"
+        },
+        "protocol_version": {
+          "pattern": "^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$",
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "server": {
+          "$ref": "#/$defs/EIPServerInfo"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "server",
+        "descriptor"
+      ],
+      "title": "InitializeResult",
+      "type": "object"
+    },
+    "IsolationBackend": {
+      "enum": [
+        "linux_bubblewrap",
+        "macos_seatbelt",
+        "outer_host",
+        "windows_appcontainer"
+      ],
+      "title": "IsolationBackend",
+      "type": "string"
+    },
+    "IsolationCleanupGuarantee": {
+      "enum": [
+        "namespace_complete",
+        "residual_confined_possible",
+        "outer_host",
+        "job_complete"
+      ],
+      "title": "IsolationCleanupGuarantee",
+      "type": "string"
+    },
+    "IsolationMode": {
+      "enum": [
+        "required",
+        "disabled"
+      ],
+      "title": "IsolationMode",
+      "type": "string"
+    },
+    "IsolationNetworkPolicy": {
+      "enum": [
+        "host",
+        "deny"
+      ],
+      "title": "IsolationNetworkPolicy",
+      "type": "string"
+    },
+    "IsolationPosture": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/IsolationBackend"
+        },
+        "cleanup_guarantee": {
+          "$ref": "#/$defs/IsolationCleanupGuarantee"
+        },
+        "filesystem_containment": {
+          "title": "Filesystem Containment",
+          "type": "boolean"
+        },
+        "mode": {
+          "$ref": "#/$defs/IsolationMode"
+        },
+        "network_containment": {
+          "title": "Network Containment",
+          "type": "boolean"
+        },
+        "network_policy": {
+          "$ref": "#/$defs/IsolationNetworkPolicy"
+        },
+        "process_containment": {
+          "title": "Process Containment",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "backend",
+        "filesystem_containment",
+        "process_containment",
+        "network_containment",
+        "network_policy",
+        "cleanup_guarantee"
+      ],
+      "title": "IsolationPosture",
+      "type": "object"
+    },
+    "MountDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "case_sensitive": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Sensitive"
+        },
+        "logical_root": {
+          "format": "eip-absolute-path",
+          "title": "Logical Root",
+          "type": "string"
+        },
+        "max_file_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Max File Bytes",
+          "type": "integer"
+        },
+        "mount_id": {
+          "minLength": 1,
+          "title": "Mount Id",
+          "type": "string"
+        },
+        "supports_atomic_replace": {
+          "title": "Supports Atomic Replace",
+          "type": "boolean"
+        },
+        "writable": {
+          "title": "Writable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mount_id",
+        "logical_root",
+        "writable",
+        "supports_atomic_replace",
+        "max_file_bytes"
+      ],
+      "title": "MountDescriptor",
+      "type": "object"
+    },
+    "OperationCancelParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "target_operation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Target Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "target_operation_id"
+      ],
+      "title": "OperationCancelParams",
+      "type": "object"
+    },
+    "OperationCancelResult": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/OperationCancelStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "OperationCancelResult",
+      "type": "object"
+    },
+    "OperationCancelStatus": {
+      "enum": [
+        "not_found",
+        "already_terminal",
+        "cancellation_requested",
+        "not_cancellable"
+      ],
+      "title": "OperationCancelStatus",
+      "type": "string"
+    },
+    "OperationReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "minLength": 1,
+          "title": "Environment Id",
+          "type": "string"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "operation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReceiptOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "request_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Request Digest",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/ReceiptStage"
+        }
+      },
+      "required": [
+        "operation_id",
+        "method",
+        "environment_id",
+        "generation",
+        "request_digest",
+        "stage",
+        "observed_at"
+      ],
+      "title": "OperationReceipt",
+      "type": "object"
+    },
+    "OutputInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "content_complete": {
+          "title": "Content Complete",
+          "type": "boolean"
+        },
+        "preview": {
+          "$ref": "#/$defs/EncodedBytes"
+        },
+        "produced_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Produced Bytes",
+          "type": "integer"
+        },
+        "producer_complete": {
+          "title": "Producer Complete",
+          "type": "boolean"
+        },
+        "reference": {
+          "$ref": "#/$defs/OutputReference"
+        },
+        "retained_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Retained Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "reference",
+        "producer_complete",
+        "content_complete",
+        "produced_bytes",
+        "retained_bytes",
+        "preview"
+      ],
+      "title": "OutputInfo",
+      "type": "object"
+    },
+    "OutputReadParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "reference": {
+          "$ref": "#/$defs/OutputReference"
+        },
+        "start_offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Start Offset",
+          "type": "integer"
+        },
+        "wait_ms": {
+          "default": 0,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Wait Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "context",
+        "reference",
+        "start_offset"
+      ],
+      "title": "OutputReadParams",
+      "type": "object"
+    },
+    "OutputReadResult": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/EncodedBytes"
+        },
+        "next_offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Next Offset",
+          "type": "integer"
+        },
+        "output": {
+          "$ref": "#/$defs/OutputInfo"
+        },
+        "start_offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Start Offset",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "next_offset",
+        "start_offset",
+        "data",
+        "output"
+      ],
+      "title": "OutputReadResult",
+      "type": "object"
+    },
+    "OutputReference": {
+      "minLength": 1,
+      "title": "OutputReference",
+      "type": "string"
+    },
+    "OutputReleaseParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "reference": {
+          "$ref": "#/$defs/OutputReference"
+        }
+      },
+      "required": [
+        "context",
+        "reference"
+      ],
+      "title": "OutputReleaseParams",
+      "type": "object"
+    },
+    "OutputReleaseResult": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        },
+        "released": {
+          "title": "Released",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "released",
+        "receipt"
+      ],
+      "title": "OutputReleaseResult",
+      "type": "object"
+    },
+    "PortAddress": {
+      "enum": [
+        "loopback",
+        "any"
+      ],
+      "title": "PortAddress",
+      "type": "string"
+    },
+    "PortInspectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "target": {
+          "$ref": "#/$defs/PortTarget"
+        }
+      },
+      "required": [
+        "context",
+        "target"
+      ],
+      "title": "PortInspectParams",
+      "type": "object"
+    },
+    "PortInspectResult": {
+      "additionalProperties": false,
+      "properties": {
+        "observation": {
+          "$ref": "#/$defs/PortObservation"
+        }
+      },
+      "required": [
+        "observation"
+      ],
+      "title": "PortInspectResult",
+      "type": "object"
+    },
+    "PortObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "managed_process": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessHandle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PortStatus"
+        },
+        "target": {
+          "$ref": "#/$defs/PortTarget"
+        }
+      },
+      "required": [
+        "target",
+        "status",
+        "observed_at"
+      ],
+      "title": "PortObservation",
+      "type": "object"
+    },
+    "PortStatus": {
+      "enum": [
+        "listening",
+        "not_listening",
+        "unknown"
+      ],
+      "title": "PortStatus",
+      "type": "string"
+    },
+    "PortTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/PortAddress"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        },
+        "protocol": {
+          "const": "tcp",
+          "title": "Protocol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "address",
+        "port"
+      ],
+      "title": "PortTarget",
+      "type": "object"
+    },
+    "PortWaitParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "desired_status": {
+          "$ref": "#/$defs/DesiredPortStatus"
+        },
+        "target": {
+          "$ref": "#/$defs/PortTarget"
+        }
+      },
+      "required": [
+        "context",
+        "target",
+        "desired_status"
+      ],
+      "title": "PortWaitParams",
+      "type": "object"
+    },
+    "PortWaitResult": {
+      "additionalProperties": false,
+      "properties": {
+        "observation": {
+          "$ref": "#/$defs/PortObservation"
+        }
+      },
+      "required": [
+        "observation"
+      ],
+      "title": "PortWaitResult",
+      "type": "object"
+    },
+    "ProcessCloseStdinParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        }
+      },
+      "required": [
+        "context",
+        "handle"
+      ],
+      "title": "ProcessCloseStdinParams",
+      "type": "object"
+    },
+    "ProcessCloseStdinResult": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        },
+        "stdin_open": {
+          "const": false,
+          "title": "Stdin Open",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stdin_open",
+        "receipt"
+      ],
+      "title": "ProcessCloseStdinResult",
+      "type": "object"
+    },
+    "ProcessHandle": {
+      "minLength": 1,
+      "title": "ProcessHandle",
+      "type": "string"
+    },
+    "ProcessInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "minLength": 1,
+          "title": "Environment Id",
+          "type": "string"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        },
+        "output": {
+          "$ref": "#/$defs/ProcessOutput"
+        },
+        "status": {
+          "$ref": "#/$defs/ProcessStatus"
+        },
+        "stdin_open": {
+          "title": "Stdin Open",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "handle",
+        "environment_id",
+        "generation",
+        "status",
+        "stdin_open",
+        "output"
+      ],
+      "title": "ProcessInfo",
+      "type": "object"
+    },
+    "ProcessInspectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        }
+      },
+      "required": [
+        "context",
+        "handle"
+      ],
+      "title": "ProcessInspectParams",
+      "type": "object"
+    },
+    "ProcessInspectResult": {
+      "additionalProperties": false,
+      "properties": {
+        "process": {
+          "$ref": "#/$defs/ProcessInfo"
+        }
+      },
+      "required": [
+        "process"
+      ],
+      "title": "ProcessInspectResult",
+      "type": "object"
+    },
+    "ProcessKillParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        }
+      },
+      "required": [
+        "context",
+        "handle"
+      ],
+      "title": "ProcessKillParams",
+      "type": "object"
+    },
+    "ProcessKillResult": {
+      "additionalProperties": false,
+      "properties": {
+        "process": {
+          "$ref": "#/$defs/ProcessInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "process",
+        "receipt"
+      ],
+      "title": "ProcessKillResult",
+      "type": "object"
+    },
+    "ProcessOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "stderr": {
+          "$ref": "#/$defs/OutputInfo"
+        },
+        "stdout": {
+          "$ref": "#/$defs/OutputInfo"
+        }
+      },
+      "required": [
+        "stdout",
+        "stderr"
+      ],
+      "title": "ProcessOutput",
+      "type": "object"
+    },
+    "ProcessPhase": {
+      "enum": [
+        "starting",
+        "running",
+        "exited",
+        "signaled",
+        "timed_out",
+        "cancelled",
+        "failed"
+      ],
+      "title": "ProcessPhase",
+      "type": "string"
+    },
+    "ProcessReleaseParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        }
+      },
+      "required": [
+        "context",
+        "handle"
+      ],
+      "title": "ProcessReleaseParams",
+      "type": "object"
+    },
+    "ProcessReleaseResult": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        },
+        "released": {
+          "title": "Released",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "released",
+        "receipt"
+      ],
+      "title": "ProcessReleaseResult",
+      "type": "object"
+    },
+    "ProcessSignal": {
+      "enum": [
+        "interrupt",
+        "terminate",
+        "kill"
+      ],
+      "title": "ProcessSignal",
+      "type": "string"
+    },
+    "ProcessSignalParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        },
+        "signal": {
+          "$ref": "#/$defs/RequestedProcessSignal"
+        }
+      },
+      "required": [
+        "context",
+        "handle",
+        "signal"
+      ],
+      "title": "ProcessSignalParams",
+      "type": "object"
+    },
+    "ProcessSignalResult": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "process": {
+          "$ref": "#/$defs/ProcessInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "accepted",
+        "process",
+        "receipt"
+      ],
+      "title": "ProcessSignalResult",
+      "type": "object"
+    },
+    "ProcessStartParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "request": {
+          "$ref": "#/$defs/CommandRequest"
+        }
+      },
+      "required": [
+        "context",
+        "request"
+      ],
+      "title": "ProcessStartParams",
+      "type": "object"
+    },
+    "ProcessStartResult": {
+      "additionalProperties": false,
+      "properties": {
+        "process": {
+          "$ref": "#/$defs/ProcessInfo"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "process",
+        "receipt"
+      ],
+      "title": "ProcessStartResult",
+      "type": "object"
+    },
+    "ProcessStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanup": {
+          "$ref": "#/$defs/CleanupOutcome"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ended At"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "phase": {
+          "$ref": "#/$defs/ProcessPhase"
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessSignal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "termination_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TerminationReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "phase",
+        "cleanup"
+      ],
+      "title": "ProcessStatus",
+      "type": "object"
+    },
+    "ProcessWaitCondition": {
+      "enum": [
+        "initial_terminal",
+        "tree_cleaned"
+      ],
+      "title": "ProcessWaitCondition",
+      "type": "string"
+    },
+    "ProcessWaitParams": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/ProcessWaitCondition"
+        },
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        }
+      },
+      "required": [
+        "context",
+        "handle",
+        "condition"
+      ],
+      "title": "ProcessWaitParams",
+      "type": "object"
+    },
+    "ProcessWaitResult": {
+      "additionalProperties": false,
+      "properties": {
+        "process": {
+          "$ref": "#/$defs/ProcessInfo"
+        }
+      },
+      "required": [
+        "process"
+      ],
+      "title": "ProcessWaitResult",
+      "type": "object"
+    },
+    "ProcessWriteStdinParams": {
+      "additionalProperties": false,
+      "properties": {
+        "close_after_write": {
+          "default": false,
+          "title": "Close After Write",
+          "type": "boolean"
+        },
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "data": {
+          "$ref": "#/$defs/EncodedBytes"
+        },
+        "handle": {
+          "$ref": "#/$defs/ProcessHandle"
+        }
+      },
+      "required": [
+        "context",
+        "handle",
+        "data"
+      ],
+      "title": "ProcessWriteStdinParams",
+      "type": "object"
+    },
+    "ProcessWriteStdinResult": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Accepted Bytes",
+          "type": "integer"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        },
+        "stdin_open": {
+          "title": "Stdin Open",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted_bytes",
+        "stdin_open",
+        "receipt"
+      ],
+      "title": "ProcessWriteStdinResult",
+      "type": "object"
+    },
+    "ReceiptGetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "operation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "operation_id"
+      ],
+      "title": "ReceiptGetParams",
+      "type": "object"
+    },
+    "ReceiptGetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "receipt"
+      ],
+      "title": "ReceiptGetResult",
+      "type": "object"
+    },
+    "ReceiptOutcome": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "cancelled",
+        "timed_out",
+        "unknown"
+      ],
+      "title": "ReceiptOutcome",
+      "type": "string"
+    },
+    "ReceiptStage": {
+      "enum": [
+        "accepted",
+        "dispatched",
+        "exec_confirmed",
+        "completed",
+        "unknown"
+      ],
+      "title": "ReceiptStage",
+      "type": "string"
+    },
+    "RequestedProcessSignal": {
+      "enum": [
+        "interrupt",
+        "terminate"
+      ],
+      "title": "RequestedProcessSignal",
+      "type": "string"
+    },
+    "RetryHint": {
+      "enum": [
+        "never",
+        "same_request",
+        "after_refresh",
+        "after_capacity",
+        "reconcile_first"
+      ],
+      "title": "RetryHint",
+      "type": "string"
+    },
+    "SearchMode": {
+      "enum": [
+        "literal",
+        "regex"
+      ],
+      "title": "SearchMode",
+      "type": "string"
+    },
+    "SessionCloseParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "SessionCloseParams",
+      "type": "object"
+    },
+    "SessionCloseResult": {
+      "additionalProperties": false,
+      "properties": {
+        "closed": {
+          "const": true,
+          "title": "Closed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "closed"
+      ],
+      "title": "SessionCloseResult",
+      "type": "object"
+    },
+    "ShellCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "shell",
+          "title": "Kind",
+          "type": "string"
+        },
+        "login": {
+          "default": false,
+          "title": "Login",
+          "type": "boolean"
+        },
+        "profile_id": {
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "script": {
+          "title": "Script",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "profile_id",
+        "script"
+      ],
+      "title": "ShellCommand",
+      "type": "object"
+    },
+    "ShellExecParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "request": {
+          "$ref": "#/$defs/CommandRequest"
+        }
+      },
+      "required": [
+        "context",
+        "request"
+      ],
+      "title": "ShellExecParams",
+      "type": "object"
+    },
+    "ShellExecResult": {
+      "additionalProperties": false,
+      "properties": {
+        "output": {
+          "$ref": "#/$defs/ProcessOutput"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        },
+        "status": {
+          "$ref": "#/$defs/ProcessStatus"
+        }
+      },
+      "required": [
+        "status",
+        "output",
+        "receipt"
+      ],
+      "title": "ShellExecResult",
+      "type": "object"
+    },
+    "ShellProfileDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "max_script_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Max Script Bytes",
+          "type": "integer"
+        },
+        "profile_id": {
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "supports_login_mode": {
+          "title": "Supports Login Mode",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile_id",
+        "display_name",
+        "supports_login_mode",
+        "max_script_bytes"
+      ],
+      "title": "ShellProfileDescriptor",
+      "type": "object"
+    },
+    "TerminationReason": {
+      "enum": [
+        "exit",
+        "signal",
+        "timeout",
+        "cancelled",
+        "output_limit",
+        "backend_lost"
+      ],
+      "title": "TerminationReason",
+      "type": "string"
+    }
+  },
+  "$id": "https://github.com/converge-ai-labs/agent-foundation/eip/v1/schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Environment Interaction Protocol 0.1"
+}

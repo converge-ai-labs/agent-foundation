@@ -1,0 +1,54 @@
+[package]
+name = "a13n-envd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Environment daemon and protocol provider for Agent Foundation"
+readme = "README.md"
+keywords = ["agents", "ai", "cloud", "daemon", "sandbox"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "a13n-envd"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22.1"
+bytes = "1.10.1"
+cap-primitives = "3.4.5"
+cap-std = "3.4.5"
+chrono = { version = "0.4.42", features = ["serde"] }
+fs2 = "0.4.3"
+futures-util = "0.3.31"
+getrandom = "0.3.3"
+globset = "0.4.16"
+http-body-util = "0.1.3"
+hyper = { version = "1.7.0", features = ["http1", "server"] }
+ignore = "0.4.25"
+hyper-util = { version = "0.1.17", features = ["tokio"] }
+libc = "0.2.175"
+regex = "1.11.2"
+rustls = { version = "0.23.36", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.4"
+rustls-pemfile = "2.2.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+sha2 = "0.10.9"
+tokio = { version = "1.47.1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "tls12"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
+url = "2.5.7"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp"] }
+
+[build-dependencies]
+heck = "0.5.0"
+prost = "0.14.1"
+prost-build = "0.14.1"
+prost-reflect = "0.16.2"
+prost-types = "0.14.1"
+sha2 = "0.10.9"
