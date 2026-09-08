@@ -18,7 +18,7 @@ from a13n_service.interactions.domain import (
     new_thread_id,
 )
 from a13n_service.interactions.objects import RunStateStore
-from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -77,7 +77,7 @@ class ChildRunAdmissionPreparer:
             parent_run=parent,
             parent_state=parent_state,
             parent_run_attempt_id=authority.run_attempt_id,
-            parent_run_attempt_fence=authority.fence,
+            parent_run_attempt_fence=authority.attempt_number,
             parent_agent_instance_id=plan.parent.parent_agent_instance_id,
             subagent_name=request.subagent_name,
             delegated_input=delegated_input,
@@ -90,7 +90,7 @@ class ChildRunAdmissionPreparer:
             child_thread_id=self._thread_id_factory(),
             child_run_id=self._run_id_factory(),
             relationship_id=self._relationship_id_factory(),
-            recovery_budget=parent.recovery_budget,
+            execution_budget=parent.execution_budget,
             created_at=assume_utc(self._clock()),
             usage_limits=plan.usage_limits,
         )
@@ -114,7 +114,7 @@ class ChildRunAdmissionPreparer:
             parent_run=parent,
             parent_state=parent_state,
             parent_run_attempt_id=authority.run_attempt_id,
-            parent_run_attempt_fence=authority.fence,
+            parent_run_attempt_fence=authority.attempt_number,
             parent_agent_instance_id=plan.parent.parent_agent_instance_id,
             subagent_name=source.relationship.subagent_name,
             delegated_input=delegated_input,
@@ -130,7 +130,7 @@ class ChildRunAdmissionPreparer:
             usage_limits=plan.usage_limits,
         )
 
-    async def _parent(self, authority: AttemptContext) -> tuple[Run, RunStateEnvelope]:
+    async def _parent(self, authority: AttemptContext) -> tuple[Run, RunCheckpoint]:
         async with short_session(self._sessions) as database:
             parent, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             parent_resource = parent.to_resource()

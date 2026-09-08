@@ -90,6 +90,8 @@ def test_status_keeps_native_cache_counters_decimal_cost_and_unknown_cost() -> N
     status.record_usage(first)
     status.record_usage(record("two", Decimal("0.000001")))
     assert status.requests == 2
+    assert status.total_tokens == 240  # Cache read/write are subsets, not extra tokens.
+    assert "240 total tokens" in status.usage_details()
     assert status.usage.cost == Decimal("0.012346")
     assert status.usage.input_tokens == 200 and status.usage.cache_read_tokens == 160
     assert "cache write 20" in status.usage_details().lower()
@@ -98,6 +100,7 @@ def test_status_keeps_native_cache_counters_decimal_cost_and_unknown_cost() -> N
     assert status.usage.cost is None and "Cost: unknown" in status.usage_details()
     status.reset_usage()
     assert status.usage is None and status.requests == 0
+    assert status.total_tokens is None
 
 
 def _usage_totals(*, requests: int = 3, cost: Decimal = Decimal("0.3"), unknown: int = 0) -> UsageTotals:
@@ -121,6 +124,7 @@ def test_status_restores_ledger_cost_coverage_without_provider_costs(cost: Decim
     assert status.requests == 3
     assert status.usage.cost == cost
     assert status.cache_rate == 50
+    assert status.total_tokens == 360
     assert "Observed root Thread" in status.usage_details()
     # Reconciliation replaces rather than adds the same durable observations.
     status.restore_usage(totals)
@@ -129,10 +133,13 @@ def test_status_restores_ledger_cost_coverage_without_provider_costs(cost: Decim
     # A ledger with only provider receipts is not proven zero model usage.
     status.restore_usage(_usage_totals(requests=0))
     assert status.usage is None and status.requests == 0
+    assert status.total_tokens is None
     assert "unavailable" in status.usage_details()
     assert "cost --" in status.line()
     status.restore_usage(replace(_usage_totals(requests=1, cost=Decimal("0")), tokens=()))
     assert status.cache_rate is None
+    assert status.total_tokens == 0
+    assert "tokens 0" in status.line()
     assert "$0.0000" in status.line()
 
 
@@ -540,3 +547,14 @@ def test_model_and_agent_have_independent_commands_and_help() -> None:
             registry.parse(command, busy=True)
     assert registry.parse("/ps", busy=True).command.name == "ps"
     assert registry.parse("/subagents", busy=True).command.name == "subagents"
+
+
+@pytest.mark.parametrize(
+    "tokens, label",
+    [(0, "0"), (999, "999"), (1000, "1.0K"), (12560, "12.6K"), (1000000, "1.0M"), (1256000, "1.3M")],
+)
+def test_status_token_abbreviations_keep_one_decimal_at_every_width(tokens: int, label: str) -> None:
+    status = Status(state="ready", usage=BoundedRequestUsage(input_tokens=tokens))
+    for width in (24, 80, 160, None):
+        assert f"{'tok' if width == 24 else 'tokens'} {label}" in status.line(width)
+    assert f"{tokens:,} total tokens" in status.usage_details()

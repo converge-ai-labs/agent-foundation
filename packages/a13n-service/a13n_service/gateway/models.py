@@ -113,7 +113,7 @@ class AguiRunBindingRecord(Base):
         ),
         CheckConstraint("length(request_digest_sha256) = 64", name="request_digest_sha256"),
         UniqueConstraint("thread_binding_id", "external_run_id", name="uq_agui_run_bindings_external_run"),
-        UniqueConstraint("organization_id", "run_id", name="uq_agui_run_bindings_foundation_run"),
+        UniqueConstraint("organization_id", "run_id", name="uq_agui_run_bindings_run"),
         Index(
             "uq_agui_run_bindings_id_scope",
             "id",
@@ -121,7 +121,7 @@ class AguiRunBindingRecord(Base):
             "workspace_id",
             unique=True,
         ),
-        Index("ix_agui_run_bindings_foundation_run", "organization_id", "run_id", "id"),
+        Index("ix_agui_run_bindings_run", "organization_id", "run_id", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)

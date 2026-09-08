@@ -53,7 +53,7 @@ from .harness_control import (
     compose_run_control,
     validate_control_order,
 )
-from .state import RunStateEnvelope
+from .state import CompletedOutcomeCandidate, RunCheckpoint
 
 _DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
 logger = logging.getLogger("a13n_service.interactions.harness_runtime")
@@ -223,7 +223,7 @@ class HarnessDriver:
         if self._used:
             raise RunError(
                 "Harness driver cannot be reused.",
-                code="foundation_driver_reused",
+                code="service_driver_reused",
             )
         self._used = True
         try:
@@ -285,18 +285,18 @@ class HarnessDriver:
         if binding is None:
             raise RunError(
                 "Service run-control hook is missing its ModelAttempt binding.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
         self.validate_binding(binding)
         if self._model_attempt_run_id != ctx.run_id:
             raise RunError(
                 "Service run control received a binding from another ModelAttempt.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
         if self._boundary is not None:
             raise RunError(
                 "Service run-control hook boundaries cannot overlap.",
-                code="foundation_control_reentrant",
+                code="service_control_reentrant",
             )
         boundary = _DriverHookBoundary(self, ctx)
         self._boundary = boundary
@@ -314,18 +314,27 @@ class HarnessDriver:
         ):
             raise RunError(
                 "Service run control received an incompatible Harness binding.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
 
     def validate_boundary(self, boundary: HarnessHookBoundary) -> None:
         if boundary is not self._boundary:
             raise RunError(
                 "Service run control received an inactive Harness hook boundary.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
 
-    async def steer(self, input: RunInputValue) -> str:
-        return await self._require_stream().steer(input)
+    async def steer(self, input: RunInputValue) -> str | None:
+        """Leave input pending when the Harness has stopped accepting delivery."""
+        stream = self._stream
+        if stream is None:
+            return None
+        try:
+            return await stream.steer(input)
+        except RunError as error:
+            if error.code != "run_not_active":
+                raise
+            return None
 
     async def cancel(self) -> None:
         stream = self._stream
@@ -345,12 +354,12 @@ class HarnessDriver:
                 if terminal is not None:
                     raise RunError(
                         "Harness stream emitted more than one terminal result.",
-                        code="foundation_stream_terminal_duplicate",
+                        code="service_stream_terminal_duplicate",
                     )
                 if item.thread_id != stream.thread_id or item.run_id != stream.run_id:
                     raise RunError(
                         "Harness terminal result does not match the entered stream.",
-                        code="foundation_control_identity_mismatch",
+                        code="service_control_identity_mismatch",
                     )
                 terminal = item.result
                 if self._control.terminal_observation_allowed:
@@ -359,13 +368,13 @@ class HarnessDriver:
             if terminal is not None:
                 raise RunError(
                     "Harness stream emitted an observation after its terminal result.",
-                    code="foundation_stream_event_after_terminal",
+                    code="service_stream_event_after_terminal",
                 )
             await self._project_live(item)
         if terminal is None:
             raise RunError(
                 "Harness stream ended without a terminal result.",
-                code="foundation_stream_terminal_missing",
+                code="service_stream_terminal_missing",
             )
         return terminal
 
@@ -403,7 +412,7 @@ class HarnessDriver:
         if stream.thread_id != thread_id or context.instance is not instance:
             raise RunError(
                 "Harness Run identity does not match Service preparation.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
         self._stream = stream
         self._run_token = object()
@@ -421,7 +430,7 @@ class HarnessDriver:
         if ctx.deps is not self._require_stream().context:
             raise RunError(
                 "Service run control received an incompatible Harness context.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
 
     def _require_run_token(self) -> object:
@@ -461,7 +470,7 @@ class _DriverHookBoundary:
         if enqueue_id is None:
             raise RunError(
                 "A Thread inbox entry produced no Harness input.",
-                code="foundation_inbox_input_invalid",
+                code="service_inbox_input_invalid",
             )
         return enqueue_id
 
@@ -479,22 +488,26 @@ class _DriverHookBoundary:
         if self._ctx is None:
             raise RunError(
                 "Harness hook boundary is no longer active.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
         return self._ctx
 
 
 def _select_attempt_input[OutputT](
     invocation: HarnessInvocation[OutputT],
-    state: RunStateEnvelope,
+    state: RunCheckpoint,
 ) -> tuple[HarnessInput, DeferredToolResume | None]:
-    if state.input_disposition == "applied":
+    if state.initial_input_applied:
         if state.host.deferred is not None:
             raise RunError(
                 "Applied Service state still contains a deferred continuation.",
-                code="foundation_run_state_invalid",
+                code="service_run_state_invalid",
             )
-        return ImmediateHarnessInput(), None
+        return (
+            invocation.input
+            if isinstance(state.outcome_candidate, CompletedOutcomeCandidate)
+            else ImmediateHarnessInput()
+        ), None
 
     deferred = state.host.deferred
     resume = invocation.deferred_resume
@@ -502,25 +515,25 @@ def _select_attempt_input[OutputT](
         if resume is not None:
             raise RunError(
                 "Service supplied deferred results without pending state.",
-                code="foundation_deferred_resume_invalid",
+                code="service_deferred_resume_invalid",
             )
     else:
         if resume is None:
             raise RunError(
                 "Service pending state requires complete deferred results.",
-                code="foundation_deferred_resume_required",
+                code="service_deferred_resume_required",
             )
         try:
             expected = _DEFERRED_REQUESTS_ADAPTER.validate_python(deferred.requests)
         except ValidationError as error:
             raise RunError(
                 "Service state contains invalid deferred requests.",
-                code="foundation_run_state_invalid",
+                code="service_run_state_invalid",
             ) from error
         if expected != resume.requests:
             raise RunError(
                 "Service deferred results do not match the committed pending requests.",
-                code="foundation_deferred_resume_mismatch",
+                code="service_deferred_resume_mismatch",
             )
     return invocation.input, resume
 
@@ -531,7 +544,7 @@ def _create_stream[OutputT](
     input_source: HarnessInput,
     bindings: RunBindings,
     environment: ServiceHarnessEnvironment,
-    previous_state: RunStateEnvelope,
+    previous_state: RunCheckpoint,
     deferred_resume: DeferredToolResume | None,
     usage: RunUsage | None,
     usage_limits: UsageLimits | None,

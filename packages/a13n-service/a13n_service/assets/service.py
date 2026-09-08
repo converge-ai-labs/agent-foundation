@@ -32,6 +32,7 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
+from a13n_service.interactions.models import RunAttemptRecord
 from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
@@ -56,6 +57,7 @@ from .errors import (
 )
 from .models import AssetRecord
 from .objects import AssetObjectStore, asset_content_key
+from .queries import asset_query, require_active_asset
 from .staging import AssetStaging, StagedAssetContent
 
 _UPLOAD_OPERATION = "asset.upload"
@@ -327,21 +329,14 @@ class AssetService:
                 workspace_id=workspace_id,
                 action=WorkspaceAction.asset_read,
             )
-            query = select(AssetRecord).where(
-                AssetRecord.organization_id == workspace.organization_id,
-                AssetRecord.workspace_id == workspace_id,
-                AssetRecord.deleted_at.is_(None),
-                # Run persistence and its authorization join are not part of
-                # this service artifact yet. Fail closed for rows whose safe
-                # public source projection cannot be authorized.
-                AssetRecord.source_kind == "upload",
+            query = asset_query(
+                organization_id=workspace.organization_id,
+                workspace_id=workspace_id,
             )
             if source_kind is not None:
                 query = query.where(AssetRecord.source_kind == source_kind.value)
-            # Run persistence is not present in the current service artifact. No
-            # run-output Assets can exist yet, so a run filter has an empty result.
             if source_run_id is not None:
-                query = query.where(AssetRecord.source_kind == "run_output", AssetRecord.id.is_(None))
+                query = query.where(AssetRecord.source_kind == "run_output", RunAttemptRecord.run_id == source_run_id)
             if after is not None:
                 created_at, asset_id = after
                 query = query.where(
@@ -352,18 +347,18 @@ class AssetService:
                 )
             records = tuple(
                 (
-                    await session.scalars(
+                    await session.execute(
                         query.order_by(AssetRecord.created_at.desc(), AssetRecord.id.desc()).limit(limit + 1)
                     )
                 ).all()
             )
             page = records[:limit]
-            assets = tuple(record.to_resource() for record in page)
+            assets = tuple(record.to_resource(source_run_id=run_id) for record, run_id in page)
             next_cursor = None
             if len(records) > limit and page:
                 next_cursor = encode_asset_cursor(
-                    created_at=page[-1].created_at,
-                    asset_id=page[-1].id,
+                    created_at=page[-1][0].created_at,
+                    asset_id=page[-1][0].id,
                     scope=scope,
                 )
             return AssetCollection(items=assets, next_cursor=next_cursor)
@@ -438,18 +433,12 @@ class AssetService:
                 action=action,
                 not_found_code="asset_not_found",
             )
-            record = await session.scalar(
-                select(AssetRecord).where(
-                    AssetRecord.id == asset_id,
-                    AssetRecord.organization_id == workspace.organization_id,
-                    AssetRecord.workspace_id == workspace_id,
-                    AssetRecord.deleted_at.is_(None),
-                    AssetRecord.source_kind == "upload",
-                )
+            return await require_active_asset(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace_id,
+                asset_id=asset_id,
             )
-            if record is None:
-                raise asset_not_found()
-            return record.to_resource()
 
     async def _preauthorize_create(self, *, actor: AuthenticatedActor, workspace_id: str) -> str:
         try:

@@ -198,3 +198,52 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
             records = tuple((await session.execute(select(AcceptedConfigurationRecord))).scalars())
             assert [record.generation_digest for record in records] == ["1" * 64]
             assert records[0].accepted_at.tzinfo is UTC
+
+
+def test_mcp_bundle_index_upgrade_preserves_rows_and_rejects_lossy_downgrade(tmp_path: Path) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "11422c5bac45"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO accepted_configuration (generation_digest, object_schema_version, object_digest, accepted_at) "
+                    "VALUES (:digest, '1', :digest, :created)"
+                ),
+                {"digest": "a" * 64, "created": datetime.now(UTC).isoformat()},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO resource_index "
+                    "(generation_digest, relative_path, resource_kind, resource_id, name, source_digest, normalized_digest) "
+                    "VALUES (:digest, 'mcp/servers.json', 'mcp_server', 'mcp-one', 'One', :digest, :digest)"
+                ),
+                {"digest": "a" * 64},
+            )
+        migrator.upgrade()
+        migrator.upgrade()
+        migrator.verify_current()
+        assert inspect(engine).get_pk_constraint("resource_index")["constrained_columns"] == [
+            "generation_digest",
+            "resource_kind",
+            "resource_id",
+        ]
+        with engine.begin() as connection:
+            assert connection.execute(text("SELECT resource_id FROM resource_index")).scalar_one() == "mcp-one"
+            connection.execute(
+                text(
+                    "INSERT INTO resource_index "
+                    "(generation_digest, relative_path, resource_kind, resource_id, name, source_digest, normalized_digest) "
+                    "VALUES (:digest, 'mcp/servers.json', 'mcp_server', 'mcp-two', 'Two', :digest, :digest)"
+                ),
+                {"digest": "a" * 64},
+            )
+        with pytest.raises(RuntimeError, match="multi-server"):
+            migrator._run(lambda config: command.downgrade(config, "11422c5bac45"), write=True)
+        migrator.verify_current()
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM resource_index")).scalar_one() == 2
+    finally:
+        engine.dispose()

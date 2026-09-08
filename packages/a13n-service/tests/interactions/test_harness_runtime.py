@@ -50,7 +50,7 @@ from a13n_service.interactions.harness_runtime import (
     SingleHarnessEnvironment,
 )
 from a13n_service.interactions.objects import RunStateStore, StoredRunState
-from a13n_service.interactions.state import DeferredContinuationState, HostContinuationState, RunStateEnvelope
+from a13n_service.interactions.state import DeferredContinuationState, HostContinuationState, RunCheckpoint
 from pydantic import TypeAdapter
 from pydantic_ai import Tool
 from pydantic_ai.capabilities import Capability, NodeResult
@@ -177,7 +177,7 @@ async def _stored_state(objects, envelope) -> StoredRunState:
 
 def _instance() -> AgentInstanceContext:
     return AgentInstanceContext(
-        identity=AgentIdentityRef(issuer="foundation", subject="test-user"),
+        identity=AgentIdentityRef(issuer="a13n.service", subject="test-user"),
         agent_instance_id="instance-1",
         actor="user:test-user",
         host_refs={"session_id": "session-1"},
@@ -187,7 +187,7 @@ def _instance() -> AgentInstanceContext:
 def _preparation() -> AttemptPreparationAccepted:
     return AttemptPreparationAccepted(
         run_attempt_id=ATTEMPT_ID,
-        fence=1,
+        attempt_number=1,
         mutation=AttemptMutationReceipt(
             run_version=1,
             attempt_version=1,
@@ -310,7 +310,7 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     assert coordinator.boundaries
     with pytest.raises(RunError) as error:
         await coordinator.boundaries[0].enqueue("late input", priority="asap")
-    assert error.value.code == "foundation_control_identity_mismatch"
+    assert error.value.code == "service_control_identity_mismatch"
 
 
 async def test_recovery_omits_already_applied_input_factory(
@@ -414,7 +414,7 @@ async def test_pending_deferred_state_requires_native_resume(
             preparation=_preparation(),
         )
 
-    assert exc_info.value.code == "foundation_deferred_resume_required"
+    assert exc_info.value.code == "service_deferred_resume_required"
 
 
 async def test_runtime_passes_exact_native_deferred_resume(
@@ -468,7 +468,7 @@ async def test_runtime_passes_exact_native_deferred_resume(
     assert prior.deferred is not None
     deferred_value = TypeAdapter(DeferredToolRequests).dump_python(prior.deferred, mode="json")
     initial_envelope = initial_state()
-    pending = RunStateEnvelope.model_validate(
+    pending = RunCheckpoint.model_validate(
         {
             **initial_envelope.model_dump(mode="python"),
             "thread_id": prior.state.thread_id,

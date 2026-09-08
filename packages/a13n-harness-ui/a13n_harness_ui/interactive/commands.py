@@ -103,6 +103,13 @@ COMMANDS = (
         maximum=1,
     ),
     Command(
+        "fast",
+        "Toggle priority service for this session without saving configuration.",
+        "[on|off|reset]",
+        maximum=1,
+        choices=("on", "off", "reset"),
+    ),
+    Command(
         "thinking",
         "Show or change reasoning effort for subsequent turns.",
         "[level]",

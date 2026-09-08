@@ -273,7 +273,7 @@ class MCPOAuthClient:
                 "params": {
                     "protocolVersion": MCP_PROTOCOL_REVISION,
                     "capabilities": {},
-                    "clientInfo": {"name": "agent-foundation", "version": "1"},
+                    "clientInfo": {"name": "a13n-service", "version": "1"},
                 },
             },
             sensitive=False,

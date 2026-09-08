@@ -36,7 +36,8 @@ Setup runs automatically when needed. To change configuration later, leave chat 
 
 1. **Connect a model:** choose Codex subscription, Grok subscription, or an API key. Existing compatible Codex/Grok logins are detected and reused without another login prompt, including credentials that can refresh when used. API-key access guides you through provider/protocol, base URL, a hidden key or environment-variable/stored-key reference, model ID, and settings preset.
 2. **Choose a model:** Codex offers Astra, Sol, and Terra; Grok offers 4.6, 4.5, and 4.20 Reasoning. Sol and Grok 4.6 are the defaults. Availability depends on your account.
-3. **Choose execution permissions and finish:** Full Control runs as your host account; Sandbox checks isolation prerequisites before saving. Your answer saves the configuration directly, with no extra confirmation. There is no automatic fallback between modes.
+3. **Choose Codex service tier:** Fast is selected by default and saves a priority request; Standard saves the default tier. This step is skipped for other providers. Priority may use more quota or cost more and does not guarantee speed. See [temporary and permanent Fast settings](models-and-authentication.md#fast-mode-and-service-tiers).
+4. **Choose execution permissions and finish:** Full Control runs as your host account; Sandbox checks isolation prerequisites before saving. Your answer saves the configuration directly, with no extra confirmation. There is no automatic fallback between modes.
 
 The subscription starter enables shell review at the extra-high risk threshold and all three built-in subagents (`code-reviewer`, `executor`, `explorer`). Codex uses high reasoning and a 350k working budget. Use `a13n-harness-ui setup --advanced` for optional context, reasoning, review, subagent, and instruction choices. These remain ordinary editable configuration values.
 

@@ -671,3 +671,25 @@ async def test_explicit_notes_opt_out_overrides_the_enabled_default(tmp_path: Pa
         item for item in reconstructed.executable.definition.capabilities if isinstance(item, WorkingStateCapability)
     ]
     assert len(native) == 1 and native[0].configuration.notes_enabled is False
+
+
+@pytest.mark.parametrize("tier", [None, "auto", "default", "flex", "priority"])
+async def test_generic_service_tier_override_only_changes_root_and_inherited_children(tmp_path: Path, tier) -> None:
+    from a13n_harness_ui.surfaces import RunModelOverrides
+
+    path = _write_source(tmp_path)
+    model = tmp_path / "models/primary.yaml"
+    model.write_text(model.read_text().replace("settings: {temperature: 0}", "settings: {service_tier: default}"))
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    original = resolver.resolve_run(source, _selection())
+    composition = resolver.resolve_run(
+        source, _selection(), model_overrides=RunModelOverrides(service_tier=tier, thinking="low")
+    )
+    assert composition.root.model.route == "openai:gpt-5"  # Not a Codex-only path.
+    assert composition.root.model.settings["service_tier"] == (tier or "default")
+    assert composition.root.model.settings["thinking"] == "low"
+    assert composition.root.children[0].definition.model == composition.root.model
+    assert composition.root.children[1].definition.model == original.root.children[1].definition.model
+    assert source.models["model-primary"].settings == {"service_tier": "default"}
+    assert resolver.resolve_run(source, _selection()).root == original.root

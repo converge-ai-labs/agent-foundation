@@ -46,6 +46,8 @@ a13n-harness-ui = "a13n_harness_ui.cli:main"
 
 [dependency-groups]
 test = [
+    # MCP integration fixtures run real servers; the runtime only needs the client.
+    "fastmcp>=3.4,<4",
     "pyright>=1.1,<2",
     "pytest>=9,<10",
 ]

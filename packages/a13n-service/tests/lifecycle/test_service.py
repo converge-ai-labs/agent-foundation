@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions.domain import RecoveryUsage, RunAttempt, RunAttemptStatus
+from a13n_service.interactions.domain import RunAttempt, RunAttemptStatus, RunUsage
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.records import run_attempt_record
 from a13n_service.lifecycle.models import LifecycleEventRecord
@@ -222,19 +222,16 @@ async def test_run_attempt_lifecycle_resolves_authority_through_owning_run(
                 organization_id=run.organization_id,
                 run_id=run.id,
                 attempt_number=1,
-                fence=1,
                 status=RunAttemptStatus.leased,
                 worker_id="worker-1",
-                worker_generation="generation-1",
                 worker_build_id="build-1",
                 runtime_lock_digest=run.runtime_lock_digest,
                 model_execution_observation=run.to_resource().model_execution_observation,
                 lease_token_digest="d" * 64,
                 lease_expires_at=NOW + timedelta(minutes=5),
                 heartbeat_at=NOW,
-                usage=RecoveryUsage(),
+                usage=RunUsage(),
                 created_at=NOW,
-                claimed_at=NOW,
                 updated_at=NOW,
             )
         )

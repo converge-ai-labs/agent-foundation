@@ -32,7 +32,7 @@ from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRec
 from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
-from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry
+from a13n_service.interactions.state import CompletedOutcomeCandidate, InboxReceipt
 from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
@@ -144,7 +144,7 @@ async def _complete_run(
     *,
     run_id: str,
     expected_thread_version: int = 1,
-    consumed_entries: tuple[ConsumedThreadInboxEntry, ...] = (),
+    consumed_entries: tuple[InboxReceipt, ...] = (),
     a2a_enabled: bool = True,
 ) -> None:
     states = RunStateStore(objects)
@@ -161,25 +161,20 @@ async def _complete_run(
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id=f"harness-{run_id}",
-    )
-    authority = _authority(
-        claim,
-        run_version=entered.run_version,
-        attempt_version=entered.attempt_version,
     )
     current = await states.read(ORGANIZATION_ID, run_id)
     candidate = _completed_state(
         current.envelope,
         claim.attempt.id,
-        claim.attempt.fence,
+        claim.attempt.attempt_number,
         outcome=CompletedOutcomeCandidate(output={"answer": 42}),
     )
     candidate = candidate.model_copy(
-        update={"host": candidate.host.model_copy(update={"consumed_inbox_entries": consumed_entries})}
+        update={"host": candidate.host.model_copy(update={"inbox_receipts": consumed_entries})}
     )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
     await RunOutcomeService(
@@ -187,7 +182,7 @@ async def _complete_run(
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=3),
         lifecycle=test_lifecycle_writer(a2a_enabled=a2a_enabled),
-    ).commit_state_outcome(authority, stored, expected_thread_version=expected_thread_version)
+    ).commit_state_outcome(authority, stored)
 
 
 async def _wait_run(
@@ -211,18 +206,13 @@ async def _wait_run(
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id=f"harness-{run_id}",
     )
-    authority = _authority(
-        claim,
-        run_version=entered.run_version,
-        attempt_version=entered.attempt_version,
-    )
     current = await states.read(ORGANIZATION_ID, run_id)
-    waiting = _waiting_state(current.envelope, claim.attempt.id, claim.attempt.fence)
+    waiting = _waiting_state(current.envelope, claim.attempt.id, claim.attempt.attempt_number)
     if pending_kind == "client_tool":
         payload = waiting.model_dump(mode="python", by_alias=True)
         payload["host"]["deferred"] = {
@@ -264,7 +254,7 @@ async def _wait_run(
     )
     await RunOutcomeService(
         sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    ).commit_state_outcome(authority, stored)
     return stored.digest_sha256
 
 
@@ -515,9 +505,8 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         terminal = await database.get(RunRecord, source_receipt.run_id)
         assert terminal is not None
         terminal.attempts_started = 2
-        terminal.recovery_attempts_started = 1
+        terminal.attempts_charged = 1
         terminal.handoffs_completed = 1
-        terminal.next_attempt_fence = 3
         terminal.started_at = NOW
 
     request = RetryRunCommand(expected_thread_version=2)
@@ -547,8 +536,7 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
     assert retried.input_json == source.input_json
     assert retried.authority_principal_id == source.authority_principal_id
     assert thread.current_run_id == retried.id
-    assert retried.attempts_started == retried.recovery_attempts_started == retried.handoffs_completed == 0
-    assert retried.next_attempt_fence == 1
+    assert retried.attempts_started == retried.attempts_charged == retried.handoffs_completed == 0
     assert retried.started_at is None and retried.sealed_at is None and retried.environment_use_started_at is None
 
 

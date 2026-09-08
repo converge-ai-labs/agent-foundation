@@ -78,17 +78,41 @@ async def test_unconditional_delete_is_idempotent_when_endpoint_returns_not_foun
     await store.delete("missing")
 
 
-async def test_legacy_unframed_s3_object_remains_readable_and_replaceable(s3_object_store: S3ObjectStore) -> None:
+@pytest.mark.parametrize("operation", ["stat", "open", "range", "list"])
+@pytest.mark.parametrize(
+    "encoding,body,error",
+    [
+        (None, b"unframed object body long enough to pass a length check", "encoding is unsupported"),
+        ("unsupported-object-v1", b"unknown object body long enough to pass a length check", "encoding is unsupported"),
+        ("a13n-object-v1", b"short", "envelope is truncated"),
+    ],
+)
+async def test_invalid_s3_envelope_is_rejected(
+    s3_object_store: S3ObjectStore, operation: str, encoding: str | None, body: bytes, error: str
+) -> None:
     store = s3_object_store
-    await store._client.put_object(Bucket=store._bucket, Key="legacy", Body=b"legacy body", Metadata={"writer": "old"})
-    legacy = await store.stat("legacy")
-    assert legacy.size == 11
-    async with store.open("legacy") as reader:
-        assert b"".join([chunk async for chunk in reader]) == b"legacy body"
-    async with store.open("legacy", byte_range=ByteRange(1, 4)) as reader:
-        assert b"".join([chunk async for chunk in reader]) == b"ega"
-    replacement = await store.put("legacy", b"legacy body", metadata={"writer": "new"}, if_match=legacy.version)
-    assert replacement.version != legacy.version
-    assert replacement.size == 11
-    async with store.open("legacy", byte_range=ByteRange(1, 4)) as reader:
-        assert b"".join([chunk async for chunk in reader]) == b"ega"
+    if encoding is None:
+        await store._client.put_object(Bucket=store._bucket, Key="invalid", Body=body)
+    else:
+        await store._client.put_object(Bucket=store._bucket, Key="invalid", Body=body, ContentEncoding=encoding)
+
+    with pytest.raises(ObjectStoreUnavailable, match=error):
+        if operation == "stat":
+            await store.stat("invalid")
+        elif operation == "list":
+            await store.list(prefix="invalid")
+        else:
+            byte_range = ByteRange(1, 4) if operation == "range" else None
+            async with store.open("invalid", byte_range=byte_range) as reader:
+                _ = [chunk async for chunk in reader]
+
+
+async def test_full_read_rejects_invalid_s3_envelope_header(s3_object_store: S3ObjectStore) -> None:
+    store = s3_object_store
+    await store._client.put_object(
+        Bucket=store._bucket, Key="invalid", Body=b"wronghdr" + bytes(16) + b"body", ContentEncoding="a13n-object-v1"
+    )
+
+    with pytest.raises(ObjectStoreUnavailable, match="envelope is invalid"):
+        async with store.open("invalid") as reader:
+            _ = [chunk async for chunk in reader]

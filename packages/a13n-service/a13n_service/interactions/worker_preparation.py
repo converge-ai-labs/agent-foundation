@@ -24,12 +24,15 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
+from a13n_service.assets.publication import AgentAssetPublisher, AssetCapability, AssetPublicationScope
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
+from a13n_service.secrets.agent_inputs import graph_secret_requirements
+from a13n_service.secrets.agent_runtime import AgentSecretRuntime, BoundAgentSecrets
 from a13n_service.skills.runtime import PreparedSkillRuntime, SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
@@ -37,9 +40,10 @@ from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializ
 from .agent_resources import prepare_agent_resources, validate_agent_resources
 from .attempt_resources import attempt_resource_stack
 from .attempts import AttemptContext
-from .control_domain import ThreadInboxEntry, ThreadInboxKind, WaitingRunContinueInput, WaitingRunFeedback
+from .control_domain import WaitingRunContinueInput, WaitingRunFeedback
 from .control_models import ThreadInboxRecord
-from .domain import Run, RunInputKind, RunPayloadObjectRef
+from .domain import Run, RunInputKind
+from .harness_results import AttemptCommitter
 from .harness_runtime import (
     HarnessCollaborators,
     HarnessInvocation,
@@ -47,10 +51,12 @@ from .harness_runtime import (
     MaterializedHarnessInput,
     SingleHarnessEnvironment,
 )
-from .input import AcceptedAgentInput, AgentInputMapper, native_input_adapter
+from .input import AcceptedAgentInput
 from .objects import RunPayloadStore
+from .protocol_context import ProtocolContextCapability
 from .run_control import RunAttemptControl
-from .worker_input import WorkerInputCapability, WorkerInputSources
+from .state import CompletedOutcomeCandidate
+from .worker_input import WorkerInputCapability, WorkerInputMaterializer, WorkerInputSources
 
 
 class WorkerAttemptPreparer:
@@ -62,8 +68,10 @@ class WorkerAttemptPreparer:
         workspace_id: str,
         catalog: HarnessPluginFactoryCatalog,
         control: RunAttemptControl,
+        committer: AttemptCommitter,
         payloads: RunPayloadStore,
         sources: WorkerInputSources,
+        inputs: WorkerInputMaterializer,
         model_resolver: LiveProviderResolver,
         model_factory: NativeModelFactory,
         skills: SkillRuntimePreparer,
@@ -71,8 +79,13 @@ class WorkerAttemptPreparer:
         environments: EnvironmentLifecycle,
         external_tools: ExternalToolRuntime,
         subagent_capability: Callable[[], SubagentCapability],
+        asset_publisher: AgentAssetPublisher | None = None,
+        secrets: AgentSecretRuntime | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
+        self._asset_publisher = asset_publisher
+        self._secrets = secrets
+        self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
         self._external_tools = external_tools
         self._sessions = sessions
@@ -80,18 +93,34 @@ class WorkerAttemptPreparer:
         self._workspace_id = workspace_id
         self._catalog = catalog
         self._control = control
+        self._committer = committer
         self._payloads = payloads
         self._sources = sources
+        self._inputs = inputs
         self._model_resolver = model_resolver
         self._model_factory = model_factory
         self._skills = skills
         self._async_results = async_results
         self._prepared_skills: dict[str, PreparedSkillRuntime] | None = None
 
-    async def validate(self, context: AttemptContext) -> None:
-        """Claim the final recovery state and validate it before admitting continuation."""
-        await self._control.claim_state(self._run)
+    async def claim_state_writer(self) -> None:
+        await self._control.claim_state_writer(self._run)
+
+    async def validate_dependencies(self, context: AttemptContext) -> None:
+        """Validate resources against the final claimed checkpoint."""
         config = self._control.current_state.envelope.effective_agent_config
+        bindings = self._control.current_state.envelope.secret_bindings
+        if bindings or graph_secret_requirements(config):
+            if self._secrets is None:
+                raise RuntimeError("Agent Secret runtime is unavailable")
+            self._bound_secrets = self._secrets.bind(
+                run=self._run,
+                workspace_id=self._workspace_id,
+                config=config,
+                bindings=bindings,
+                current_attempt=lambda: self._control.current_context,
+            )
+            await self._bound_secrets.validate()
         AgentReconstructor(self._catalog).validate(
             agent_id=self._run.agent_id,
             agent_revision_id=self._run.agent_revision_id,
@@ -110,7 +139,7 @@ class WorkerAttemptPreparer:
         await validate_run_environment(self._environments, self._control.current_context)
 
     @asynccontextmanager
-    async def prepare(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[Any]]:
+    async def open_runtime(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[Any]]:
         async with attempt_resource_stack(cleanup_timeout_seconds=context.cleanup_timeout.total_seconds()) as stack:
             stack.callback(self._sources.close)
             invocation = await self._prepare(context, stack)
@@ -141,6 +170,21 @@ class WorkerAttemptPreparer:
 
         def capabilities(context: AgentDefinitionReconstructionContext):
             selected = resources.for_definition(context)
+            protocol_context = self._control.current_state.envelope.protocol_context
+            if context.is_root and protocol_context is not None:
+                selected = (*selected, ProtocolContextCapability(protocol_context))
+            if context.config.asset_publication is not None:
+                if self._asset_publisher is None:
+                    raise RuntimeError("Asset publication runtime is unavailable")
+                selected = (
+                    *selected,
+                    AssetCapability(
+                        self._asset_publisher,
+                        AssetPublicationScope(
+                            lambda: self._control.current_context, self._workspace_id, context.agent_id
+                        ),
+                    ),
+                )
             return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
         definition = AgentReconstructor(self._catalog, capability_provider=capabilities).reconstruct(
@@ -149,14 +193,14 @@ class WorkerAttemptPreparer:
             effective_config=config,
             subagent_capability=self._subagent_capability(),
         )
-        payload = (
-            run.input
-            if run.input_object is None
-            else (await self._payloads.read(run.organization_id, run.input_object)).payload
-        )
         resume = None
         accepted: AcceptedAgentInput | None = None
-        if self._control.current_state.envelope.input_disposition == "pending":
+        if not self._control.current_state.envelope.initial_input_applied:
+            payload = (
+                run.input
+                if run.input_object is None
+                else (await self._payloads.read(run.organization_id, run.input_object)).payload
+            )
             if run.input_kind is RunInputKind.agent_input:
                 accepted = AcceptedAgentInput.model_validate(payload)
             elif run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
@@ -198,7 +242,7 @@ class WorkerAttemptPreparer:
                     }
                 )
         instance = AgentInstanceContext(
-            identity=AgentIdentityRef(issuer="foundation", subject=run.authority_principal.principal_id),
+            identity=AgentIdentityRef(issuer="a13n.service", subject=run.authority_principal.principal_id),
             agent_instance_id=run.thread_id,
             actor=f"{run.authority_principal.principal_type}:{run.authority_principal.principal_id}",
             host_refs={"session_id": run.session_id, "thread_id": run.thread_id, "run_id": run.id},
@@ -209,12 +253,17 @@ class WorkerAttemptPreparer:
             async def input_factory(preparation: RunPreparationContext) -> RunInputValue:
                 self._sources.environment = preparation.environment
                 assert accepted is not None
-                value = await self._map(accepted, run.id)
-                if value is None:
-                    raise ValueError("Accepted Agent input produced no semantic content")
+                value = await self._inputs.map(accepted, run.id, config)
                 return value
 
             input_source = MaterializedHarnessInput(input_factory)
+        elif isinstance(self._control.current_state.envelope.outcome_candidate, CompletedOutcomeCandidate):
+
+            async def continuation_factory(preparation: RunPreparationContext) -> RunInputValue:
+                self._sources.environment = preparation.environment
+                return await self._control.continuation_input(self._committer)
+
+            input_source = MaterializedHarnessInput(continuation_factory)
         return HarnessInvocation(
             definition=definition,
             usage_limits=self._control.current_state.envelope.usage_limits,
@@ -222,6 +271,7 @@ class WorkerAttemptPreparer:
             deferred_resume=resume,
             collaborators=HarnessCollaborators(
                 instance=instance,
+                capabilities=() if self._bound_secrets is None else (self._bound_secrets.capability(),),
                 model_resolver=SnapshotRunModelResolver(
                     snapshots=resources.models,
                     organization_id=run.organization_id,
@@ -230,34 +280,4 @@ class WorkerAttemptPreparer:
                     model_factory=self._model_factory,
                 ),
             ),
-        )
-
-    async def materialize_inbox(self, entry: ThreadInboxEntry) -> RunInputValue:
-        if entry.kind is ThreadInboxKind.async_subagent_result:
-            return await self._async_results(entry)
-        payload = entry.payload
-        if entry.payload_object is not None:
-            stored = await self._payloads.read(
-                entry.organization_id,
-                RunPayloadObjectRef.model_validate(entry.payload_object.model_dump()),
-            )
-            if stored.run_id != entry.accepted_against_run_id or stored.payload_kind != "input":
-                raise ValueError("Inbox payload object does not belong to its accepted Run")
-            payload = stored.payload
-        value = await self._map(AcceptedAgentInput.model_validate(payload), entry.id)
-        if value is None:
-            raise ValueError("Inbox entry produced no semantic content")
-        return value
-
-    async def _map(self, accepted: AcceptedAgentInput, instance_id: str) -> RunInputValue | None:
-        mapper = AgentInputMapper(
-            self._sources,
-            {"native": native_input_adapter},
-            max_binary_bytes=self._control.current_state.envelope.effective_agent_config.protocol.limits.max_input_bytes,
-        )
-        return await mapper.map(
-            accepted,
-            input_instance_id=instance_id,
-            adapter=self._control.current_state.envelope.effective_agent_config.input_adapter,
-            environment=self._sources if self._sources.environment is not None else None,
         )

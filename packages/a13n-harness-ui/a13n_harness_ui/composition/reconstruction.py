@@ -116,8 +116,10 @@ class AgentReconstructor:
         *,
         user_skills_root: Path | None = None,
         api_keys: ApiKeyStore | None = None,
+        configuration_root: Path | None = None,
     ) -> None:
         self._api_keys = api_keys
+        self._configuration_root = configuration_root
         self._catalog = catalog or HarnessUiExtensionCatalog()
         self._user_skills_root = user_skills_root
 
@@ -216,7 +218,9 @@ class AgentReconstructor:
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
-        capabilities.extend(HarnessUiMCP(item) for item in node.mcp_servers)
+        capabilities.extend(
+            HarnessUiMCP(item, configuration_root=self._configuration_root) for item in node.mcp_servers
+        )
         if node.children:
             if not isinstance(subagent_operator, SubagentOperator):
                 raise CompositionError(

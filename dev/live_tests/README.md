@@ -92,16 +92,16 @@ For the local model fixture, set `A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS='["1
 
 ## Second round: persistence, concurrency and faults
 
-| File                             | Variants and acceptance evidence                                                                                                                                             |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_09_failures.py`            | Model authentication failure, model read timeout, and exhausted tool retries: bounded failed Run, diagnostic failure, no tool effect, released capacity                      |
-| `test_10_worker_recovery.py`     | SIGKILL recovery and suspended stale owner: same Run/input/revision, increasing Attempt/fence, checkpointed effect retained once, immutable replaced Attempt and seal        |
-| `test_11_graceful_shutdown.py`   | SIGTERM: clean process exit, no new claims, ordinary completion or planned handoff, replacement Worker drains pending work                                                   |
-| `test_12_worker_competition.py`  | Two one-slot Workers and four slow Runs: bounded admission, one successful Attempt per Run, eventual completion                                                              |
-| `test_13_queue_retry_fork.py`    | Busy-Thread FIFO consumption, explicit Retry after repairing the upstream, Fork retaining context in a separate Thread; original history remains immutable                   |
-| `test_14_async_subagents.py`     | Two durable children, correlated results, stable publication; parent cancellation leaves default independent children running and suppresses automatic result successors     |
-| `test_15_dependency_outages.py`  | Worker-only PostgreSQL, Redis and object-store connection cuts: prove the cut was exercised, restore and restart, validate terminal state and continued service availability |
-| `test_16_workspace_isolation.py` | Another User in the same Organization and a different Workspace: valid own access, denied reads/stream/control, no unauthorized state changes                                |
+| File                             | Variants and acceptance evidence                                                                                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `test_09_failures.py`            | Model authentication failure, model read timeout, and exhausted tool retries: bounded failed Run, diagnostic failure, no tool effect, released capacity                                          |
+| `test_10_worker_recovery.py`     | SIGKILL recovery and suspended stale owner: same Run/input/revision, increasing Attempt number, replacement start reason, checkpointed effect retained once, immutable replaced Attempt and seal |
+| `test_11_graceful_shutdown.py`   | SIGTERM: clean process exit, no new claims, ordinary completion or planned handoff, replacement Worker drains pending work                                                                       |
+| `test_12_worker_competition.py`  | Two one-slot Workers and four slow Runs: bounded admission, one successful Attempt per Run, eventual completion                                                                                  |
+| `test_13_queue_retry_fork.py`    | Busy-Thread FIFO consumption, explicit Retry after repairing the upstream, Fork retaining context in a separate Thread; original history remains immutable                                       |
+| `test_14_async_subagents.py`     | Two durable children, correlated results, stable publication; parent cancellation leaves default independent children running and suppresses automatic result successors                         |
+| `test_15_dependency_outages.py`  | Worker-only PostgreSQL, Redis and object-store connection cuts: prove the cut was exercised, restore and restart, validate terminal state and continued service availability                     |
+| `test_16_workspace_isolation.py` | Another User in the same Organization and a different Workspace: valid own access, denied reads/stream/control, no unauthorized state changes                                                    |
 
 These are 16 additional live variants in eight files. They use the real Control,
 Worker and embedded Harness, with HTTP model responses and an uploaded test tool
@@ -199,11 +199,11 @@ exercise the Composio peer through the production adapter and validate MCP and
 OTLP wire bodies without starting Service processes.
 
 Missing product integration is an assertion failure when live tests are enabled,
-not an automatic skip or a fixture-installed capability. In the source reviewed
-when these cases were added, Worker preparation mounts the Environment but does
-not select `DynamicEnvironmentCapability`, and `asset_publication` is retained in
-configuration without a reconstructed `publish_asset` tool. Environment/Skill
-file-tool and output-publication journeys are designed to expose those gaps.
+not an automatic skip or a fixture-installed capability. Environment/Skill
+file-tool and output-publication journeys exercise the Service's reconstructed
+`DynamicEnvironmentCapability` and `publish_asset` tool. Their availability in
+source does not establish a passing end-to-end result; run the enabled journeys
+against the configured lab to validate the complete path.
 
 These tests do not exercise external model inference quality, hosted OAuth user
 interaction, Runner activation, plugin version/instance isolation, Secret

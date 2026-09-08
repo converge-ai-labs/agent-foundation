@@ -15,9 +15,9 @@ from .domain import OutputSpec, ProtocolConfig
 _DEFAULT_OUTPUT_MODES = frozenset({"text"})
 _DEFAULT_EVENT_VISIBILITY = frozenset(
     {
-        "a13n.foundation.artifact",
-        "a13n.foundation.replay_gap",
-        "a13n.foundation.run_status",
+        "a13n.service.artifact",
+        "a13n.service.replay_gap",
+        "a13n.service.run_status",
     }
 )
 

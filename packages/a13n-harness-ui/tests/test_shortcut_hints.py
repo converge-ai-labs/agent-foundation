@@ -44,6 +44,7 @@ def test_chat_hints_prioritize_history_without_repeating_submission(
         shell.mouse, shell.view.follow = mouse, follow
         hints = shell._hints()
         assert hints.startswith(" Ctrl+T history")
+        assert "/notes" in hints
         assert "Enter send" not in hints and "Enter steer" not in hints
         assert len(hints.splitlines()) <= 2
         assert all(get_cwidth(row) <= width for row in hints.splitlines())
@@ -52,12 +53,17 @@ def test_chat_hints_prioritize_history_without_repeating_submission(
                 assert shortcut in hints
             assert ("Ctrl+C cancel" if shell.busy else "Ctrl+C twice exit") in hints
             assert ("Esc select" if mouse else "Esc scroll") in hints
-            assert ("PgUp/PgDn scroll" if follow else "Ctrl+End latest") in hints
+            if width >= 80:
+                assert ("PgUp/PgDn scroll" if follow else "Ctrl+End latest") in hints
         else:
             assert "/help" in hints
+            assert ("Esc select" if mouse else "Esc scroll") in hints
         if width == 160:
             assert len(hints.splitlines()) == 1
         header = "".join(text for _, text in shell._composer_header())
+        if width < 60:
+            assert ("Scroll" if mouse else "Select") in header
+            assert get_cwidth(header) <= width
         if width >= 60:
             expected = {
                 "preparing": "draft only · preparing",
@@ -79,6 +85,7 @@ def test_modal_hints_describe_current_focus_and_completion(
         hints = shell._hints()
         assert "Enter confirm" in hints and "Esc back" in hints
         assert "Ctrl+T history" not in hints and "Enter send" not in hints
+        assert "/notes" not in hints
         assert all(get_cwidth(row) <= width for row in hints.splitlines())
         if width >= 60:
             assert "Ctrl+Space focus" in hints
@@ -91,7 +98,7 @@ def test_modal_hints_describe_current_focus_and_completion(
     shell.composer.buffer._set_completions([Completion("/help")])
     hints = shell._hints()
     assert "Enter complete" in hints and "Esc dismiss" in hints
-    assert "Esc select" not in hints
+    assert "Esc select" not in hints and "/notes" not in hints
     assert all(get_cwidth(row) <= width for row in hints.splitlines())
     shell.menu_handler = AsyncMock()
     assert "Esc back" in shell._hints()
@@ -100,9 +107,11 @@ def test_modal_hints_describe_current_focus_and_completion(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("mode", ["chat", "selector", "history"])
+@pytest.mark.parametrize("mouse", [True, False])
 async def test_rendered_footer_reflows_on_resize_and_preserves_input(
-    shell: CliShell, monkeypatch: pytest.MonkeyPatch, mode: str
+    shell: CliShell, monkeypatch: pytest.MonkeyPatch, mode: str, mouse: bool
 ) -> None:
+    shell.mouse = mouse
     if mode == "selector":
         shell.selection = Selection((Choice("yes", "Yes"),))
     elif mode == "history":
@@ -125,7 +134,12 @@ async def test_rendered_footer_reflows_on_resize_and_preserves_input(
                     # String checks alone miss the original fixed-height clipping bug.
                     assert rows[-len(expected) :] == expected
                     assert len(expected) <= (2 if height >= 12 else 1)
+                    if mode == "chat":
+                        assert "/notes" in "\n".join(rows[-len(expected) :])
+                        if width < 60:
+                            assert ("Scroll" if mouse else "Select") in "\n".join(rows)
                     if mode == "history":
+                        assert "/notes" not in "\n".join(expected)
                         assert "Ctrl+T/q close" in "\n".join(expected)
                         if width >= 60 and height >= 12:
                             assert "Home page top" in "\n".join(expected)
@@ -139,3 +153,114 @@ async def test_rendered_footer_reflows_on_resize_and_preserves_input(
                     assert shell.composer.window.render_info.window_height >= 1
     finally:
         await shell.app.cancel_and_wait_for_background_tasks()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("total", "omitted"), [(0, 0), (2, 0), (257, 256)])
+async def test_note_count_uses_saved_total_and_shares_activity_row(
+    shell: CliShell, monkeypatch, total, omitted
+) -> None:
+    from a13n_harness_ui.surfaces import NotePage, NoteView
+
+    page = NotePage(
+        notes=tuple(NoteView(key=f"note-{i}", value="body") for i in range(total - omitted)),
+        total=total,
+        omitted=omitted,
+    )
+    shell.backend = SimpleNamespace(
+        thread_id="thread-one", app=SimpleNamespace(thread_notes=AsyncMock(return_value=page))
+    )
+    shell._activity_thread = "thread-one"
+    shell._subagent_total = 3
+    assert "Notes" not in shell._activity_hint()
+    await shell._load_notes()
+    shell.renderer.gap = True
+    hint = shell._activity_hint()
+    assert hint.startswith(f"Notes {total} · /notes")
+    assert "Subagents 3 total · /subagents" in hint
+    assert "Background 0+ observed · /ps" in hint
+    for width in (24, 40, 60, 80, 160):
+        monkeypatch.setattr(shell.app.output, "get_size", lambda width=width: Size(rows=24, columns=width))
+        text = "".join(text for _, text in shell._activity_text())
+        assert text.startswith(f"Notes {total}")
+        assert "\n" not in text and get_cwidth(text) <= width
+        if width >= 60:
+            assert "Subagents 3" in text and "Background 0+" in text
+        with set_app(shell.app):
+            shell.app.render_counter += 1
+            shell.app.renderer.render(shell.app, shell.app.layout)
+            screen = shell.app.renderer._last_screen
+            assert screen is not None
+            rows = ["".join(screen.data_buffer[y][x].char for x in range(width)).rstrip() for y in range(24)]
+            assert text in rows
+    shell.backend.thread_id = "thread-two"
+    assert "Notes" not in shell._activity_hint()
+
+
+@pytest.mark.anyio
+async def test_note_count_refreshes_and_discards_cross_thread_snapshot(shell: CliShell) -> None:
+    import asyncio
+
+    from a13n_harness_ui.surfaces import NotePage
+
+    query = AsyncMock(return_value=NotePage(total=4, omitted=4))
+    shell.backend = SimpleNamespace(thread_id="thread-one", app=SimpleNamespace(thread_notes=query))
+    await shell._load_notes()
+    assert shell.renderer.note_count == 4
+    query.return_value = NotePage()
+    await shell._load_notes()
+    assert shell.renderer.note_count == 0
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    async def delayed(**kwargs):
+        started.set()
+        await gate.wait()
+        return NotePage(total=7, omitted=7)
+
+    query.side_effect = delayed
+    pending = asyncio.create_task(shell._load_notes())
+    await started.wait()
+    shell.backend.thread_id = "thread-two"
+    gate.set()
+    await pending
+    assert "Notes" not in shell._activity_hint()
+    assert shell.renderer.note_count == 0
+
+
+@pytest.mark.parametrize("width", [24, 40, 59, 60, 80, 100, 160])
+@pytest.mark.parametrize("tier", [None, "default", "priority", "flex"])
+@pytest.mark.parametrize("tokens", [None, 0, 12345, 1234567])
+@pytest.mark.anyio
+async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
+    shell: CliShell, monkeypatch, width, tier, tokens
+) -> None:
+    from a13n_harness.usage import BoundedRequestUsage
+
+    shell.status.state = "ready"
+    shell.status.service_tier = tier
+    shell.status.context_tokens = 1200
+    shell.status.context_window = 350000
+    if tokens is not None:
+        shell.status.usage = BoundedRequestUsage(input_tokens=tokens, cache_read_tokens=tokens // 2)
+    monkeypatch.setattr(shell.app.output, "get_size", lambda: Size(rows=24, columns=width))
+    line = shell.status.line(width)
+    assert get_cwidth(line) <= width
+    assert ("Fast" in line) == (tier == "priority")
+    assert ("tok " if width < 60 else "tokens ") in line
+    if tokens is None:
+        assert "--" in line
+    elif tokens == 0:
+        assert " 0" in line
+    else:
+        assert ("12.3K" if tokens == 12345 else "1.2M") in line
+    if width >= 80:
+        assert "ctx 1,200 (0%)" in line
+    with set_app(shell.app):
+        shell.app.render_counter += 1
+        shell.app.renderer.render(shell.app, shell.app.layout)
+        screen = shell.app.renderer._last_screen
+        assert screen is not None
+        rows = ["".join(screen.data_buffer[y][x].char for x in range(width)).rstrip() for y in range(24)]
+        assert line.rstrip() in rows
+    await shell.app.cancel_and_wait_for_background_tasks()

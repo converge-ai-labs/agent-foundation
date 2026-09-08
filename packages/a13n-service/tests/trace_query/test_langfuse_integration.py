@@ -80,7 +80,7 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         agent_revision_id=f"preset-revision-it-{suffix}",
     )
     with runtime.run_attempt(correlation, input_value={"prompt": search_token}) as attempt:
-        with attempt.phase("foundation.reconstruct"):
+        with attempt.phase("a13n.service.reconstruct"):
             pass
         attempt.set_outcome("succeeded", output_value={"answer": "integration-ok"})
     await runtime.aclose()
@@ -124,9 +124,9 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
     assert detail is not None
     assert detail.trace.correlation.workspace_id == workspace_id
     observations = {item.name: item for item in detail.observations}
-    assert observations.keys() == {"foundation.run_attempt", "foundation.reconstruct"}
-    assert observations["foundation.run_attempt"].parent_id is None
-    assert observations["foundation.reconstruct"].parent_id == observations["foundation.run_attempt"].id
+    assert observations.keys() == {"a13n.service.run_attempt", "a13n.service.reconstruct"}
+    assert observations["a13n.service.run_attempt"].parent_id is None
+    assert observations["a13n.service.reconstruct"].parent_id == observations["a13n.service.run_attempt"].id
 
     actor = AuthenticatedActor(
         principal=PrincipalRef(principal_type=PrincipalType.user, principal_id=f"user_{uuid4().hex[:16]}"),

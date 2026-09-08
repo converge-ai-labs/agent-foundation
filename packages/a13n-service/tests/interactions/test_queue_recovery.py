@@ -4,7 +4,7 @@ from a13n_service.iam.models import UserRecord, WorkspaceRecord
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
-from a13n_service.interactions.recovery import QueueRecovery
+from a13n_service.interactions.queue_recovery import QueueRecovery
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
 

@@ -88,7 +88,6 @@ class WorkerExecutionLoop:
         self._lock_digest = runtime_lock_digest
         self._capacity = Semaphore(concurrency)
         self._worker_id = new_object_id("wrk")
-        self._generation = new_object_id("wgen")
         self._draining = Event()
         self._stopped = Event()
         self._controls: dict[str, RunAttemptControl] = {}
@@ -133,7 +132,6 @@ class WorkerExecutionLoop:
                             claim = WorkerClaim(
                                 organization_id=organization_id,
                                 worker_id=self._worker_id,
-                                worker_generation=self._generation,
                                 worker_build_id=self._build_id,
                                 runtime_lock_digest=lock.digest,
                                 lease_duration=self._lease,
@@ -208,7 +206,11 @@ class WorkerExecutionLoop:
                 self._scopes[context.run_attempt_id] = scope
                 logger.info(
                     "run_attempt_execution_started",
-                    extra={"run_id": context.run_id, "run_attempt_id": context.run_attempt_id, "fence": context.fence},
+                    extra={
+                        "run_id": context.run_id,
+                        "run_attempt_id": context.run_attempt_id,
+                        "attempt_number": context.attempt_number,
+                    },
                 )
                 await self._attempts.run(context, catalog, slot, register)
         except Exception:
@@ -225,15 +227,11 @@ class WorkerExecutionLoop:
             thread_id=result.thread_id,
             run_id=attempt.run_id,
             run_attempt_id=attempt.id,
-            fence=attempt.fence,
+            attempt_number=attempt.attempt_number,
             lease_token=result.lease_token,
             worker_id=claim.worker_id,
-            worker_generation=claim.worker_generation,
             worker_build_id=claim.worker_build_id,
             runtime_lock_digest=claim.runtime_lock_digest,
-            expected_run_version=result.run_version,
-            expected_attempt_version=attempt.version,
-            lease_expires_at=attempt.lease_expires_at,
             lease_duration=self._lease,
             renewal_interval=self._lease / 3,
             renewal_timeout=self._lease / 6,

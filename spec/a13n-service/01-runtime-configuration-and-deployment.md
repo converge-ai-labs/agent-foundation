@@ -30,7 +30,7 @@ The executable selects a TOML file only through an explicit `--config PATH`. It 
 3. `A13N_SERVICE_*` environment variables;
 4. explicit `--role` and `--host` executable overrides.
 
-When no configuration path is supplied, no TOML file is loaded. The process does not search the working directory, user home, or image filesystem for `.env`, `foundation.toml`, or another implicit file. It does not merge several files or implement include, inheritance, or named profile semantics.
+When no configuration path is supplied, no TOML file is loaded. The process does not search the working directory, user home, or image filesystem for `.env`, `a13n-service.toml`, or another implicit file. It does not merge several files or implement include, inheritance, or named profile semantics.
 
 TOML groups settings by stable operational concern:
 
@@ -50,7 +50,7 @@ backend = "redis"
 backend = "s3"
 
 [filesystem]
-root = "/var/lib/foundation"
+root = "/var/lib/a13n-service"
 
 [control]
 
@@ -147,7 +147,7 @@ One service process runs one ASGI worker. A deployment scales by adding service 
 
 ## Worker Build Identity
 
-Every a13n Service build artifact carries one immutable `worker_build_id`. Official images derive the value from the release version and source/build revision supplied by the existing `BUILD_VERSION` and `BUILD_REVISION` build inputs. Replicas of the same artifact therefore report the same build ID, while `worker_generation` remains unique to one Worker process lifetime. Runtime freezes both values at process startup and copies the build ID into every claimed `RunAttempt`.
+Every a13n Service build artifact carries one immutable `worker_build_id`. Official images derive the value from the release version and source/build revision supplied by the existing `BUILD_VERSION` and `BUILD_REVISION` build inputs. Replicas of the same artifact therefore report the same build ID, while `worker_id` remains unique to one Worker process lifetime. Runtime freezes both values at process startup and copies the build ID into every claimed `RunAttempt`.
 
 The build ID comes only from trusted artifact metadata. It is not read from the database, Kubernetes API, organization input, or claim candidate, and cannot change while the process runs. A distributed `worker` or `all` process with missing, malformed, or placeholder production build identity never becomes ready. A local development artifact may use an explicit documented development identity that still remains immutable for that process.
 

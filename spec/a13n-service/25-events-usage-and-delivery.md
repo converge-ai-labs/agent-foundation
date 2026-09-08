@@ -55,7 +55,7 @@ One observer belongs to one Harness Run. The current executor root runs one `Har
 
 Inline-child presentation IDs are scoped to their Harness Run before joining the parent Run Stream. Tool-call, message, parent-message, and retained Item correlations use that same scope, so repeated model tool-call IDs cannot merge parent or sibling content. Root tool-call IDs retain their native values for deferred-feedback correlation.
 
-Before publishing its first live observation, the executor durably binds the immutable Harness Run identity to the current RunAttempt. It then appends bounded messages to the one stable organization-scoped Redis Stream owned by the Run. Replacement RunAttempts create fresh Harness Runs but continue the same Run Stream; every entry carries exact RunAttempt and Harness Run provenance.
+Before publishing its first Harness observation, the executor durably binds the immutable Harness Run identity to the current RunAttempt. It appends bounded messages under the [Run Stream publication contract](24-lifecycle-and-stream-persistence.md#publication-activation-and-fencing). Replacement RunAttempts create fresh Harness Runs but continue the same Run Stream; each event preserves its source Attempt and Harness Run identities when present.
 
 Expected planned handoff is a Service Attempt transition, not a Harness Run outcome. Closing the old process-local stream for `run_attempt.yielded` emits no AG-UI `RUN_FINISHED`, `RUN_ERROR`, or synthetic cancelled result, does not close the Run Stream, and does not repeat `run.running`. The successor's fresh Harness Run continues observations in the same Run Stream under new Attempt and Run provenance.
 
@@ -185,5 +185,5 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
 11. Live-only Run Stream entries and Items never create durable Hook-delivery intents; durable subscriptions select committed lifecycle events only.
 12. Native, Hosted AG-UI, and A2A delivery are independent projections over shared Service facts and never translate through one another.
 13. A Webhook envelope identifies its resource sequence and version, but the Webhook transport makes no ordering or exactly-once-processing guarantee.
-14. Planned handoff has an internal `run_attempt.yielded` lifecycle fact but no AG-UI Run terminal event and no Run Stream boundary.
+14. Planned handoff has an internal `run_attempt.yielded` lifecycle fact without closing the Run Stream or emitting an AG-UI Run terminal event.
 15. Only explicit Asset publication creates independent binary identity; automatic large-content handling remains owned by its Run or Item.

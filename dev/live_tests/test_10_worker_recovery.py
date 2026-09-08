@@ -38,7 +38,8 @@ async def test_worker_replacement_preserves_run_and_checkpoint(round_two, fault)
     assert attempts[0] == replaced and replaced["status"] == "failed"
     assert attempts[1]["status"] == "succeeded"
     assert attempts[1]["replaces_run_attempt_id"] == first["id"]
-    assert attempts[1]["attempt_number"] > first["attempt_number"] and attempts[1]["fence"] > first["fence"]
+    assert attempts[1]["attempt_number"] > first["attempt_number"]
+    assert attempts[1]["start_reason"] == "lease_expired"
     assert attempts[1]["harness_run_id"] != first["harness_run_id"]
     for key in ("id", "session_id", "thread_id", "input", "agent_revision_id", "parent_run_id"):
         assert finished[key] == before[key]

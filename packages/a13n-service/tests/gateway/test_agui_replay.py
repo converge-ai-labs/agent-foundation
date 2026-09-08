@@ -14,13 +14,14 @@ from a13n_service.storage.object_store import LocalObjectStore
 
 
 @pytest.mark.anyio
-async def test_reads_existing_version_one_replay_without_rewriting(tmp_path) -> None:
-    # This is the persisted version-one representation, independent of the current model.
+@pytest.mark.parametrize("terminal_name", [None, "a13n.service.run_status"])
+async def test_replay_round_trip_preserves_canonical_bytes(tmp_path, terminal_name: str | None) -> None:
+    # Exercise the serialized contract independently of the current model.
     body = json.dumps(
         {
             "schema_version": "1",
             "binding_id": "binding_1",
-            "foundation_run_id": "run_1",
+            "run_id": "run_1",
             "external_thread_id": "external-thread",
             "external_run_id": "external-run",
             "agent_revision_id": "revision_1",
@@ -36,11 +37,11 @@ async def test_reads_existing_version_one_replay_without_rewriting(tmp_path) -> 
                 },
                 {
                     "ordinal": 1,
-                    "event": {
-                        "type": "RUN_FINISHED",
-                        "threadId": "external-thread",
-                        "runId": "external-run",
-                    },
+                    "event": (
+                        {"type": "CUSTOM", "name": terminal_name, "value": {"schema_version": "1", "status": "waiting"}}
+                        if terminal_name is not None
+                        else {"type": "RUN_FINISHED", "threadId": "external-thread", "runId": "external-run"}
+                    ),
                 },
             ],
         },
@@ -65,6 +66,6 @@ async def test_reads_existing_version_one_replay_without_rewriting(tmp_path) -> 
 
     snapshot = await store.read("org_1", "binding_1")
 
-    assert snapshot.foundation_run_id == "run_1"
+    assert snapshot.run_id == "run_1"
     assert canonical_model_bytes(snapshot) == body
     assert await store.publish("org_1", snapshot) == snapshot

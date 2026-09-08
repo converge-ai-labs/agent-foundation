@@ -8,7 +8,7 @@ from anyio import current_effective_deadline, current_time, fail_after, sleep
 from a13n_service.storage import ObjectStoreUnavailable
 from a13n_service.temporal import utc_now
 
-from .attempts import AttemptAuthorityError, AttemptContext
+from .attempts import AttemptAuthorityError, AttemptContext, AttemptMutationReceipt
 from .domain import Run
 from .objects import RunObjectIntegrityError, RunStateStore, StaleStateWriter, StoredRunState
 
@@ -28,25 +28,23 @@ async def claim_run_state(
     run: Run,
     states: RunStateStore,
     *,
-    current_context: Callable[[], AttemptContext],
-    validate_authority: Callable[[], Awaitable[None]],
+    context: AttemptContext,
+    validate_authority: Callable[[], Awaitable[AttemptMutationReceipt]],
 ) -> StoredRunState:
     """Reread complete objects on admission conflicts, never rebase Agent work."""
 
-    context = current_context()
     reserve = min(1.0, context.renewal_timeout.total_seconds())
     total = min(CLAIM_TOTAL_SECONDS, current_effective_deadline() - current_time() - reserve)
-    if run.recovery_budget.recovery_deadline_at is not None:
-        total = min(total, (run.recovery_budget.recovery_deadline_at - utc_now()).total_seconds() - reserve)
+    if run.execution_budget.execution_deadline_at is not None:
+        total = min(total, (run.execution_budget.execution_deadline_at - utc_now()).total_seconds() - reserve)
 
-    def request_timeout() -> float:
-        remaining = (current_context().lease_expires_at - utc_now()).total_seconds()
-        if remaining <= 0:
-            raise AttemptAuthorityError("State admission lease expired")
-        return max(
-            0.0,
-            min(CLAIM_REQUEST_SECONDS, remaining - reserve),
-        )
+    async def validate() -> AttemptMutationReceipt:
+        with fail_after(context.renewal_timeout.total_seconds()):
+            return await validate_authority()
+
+    def request_timeout(authority: AttemptMutationReceipt) -> float:
+        remaining = (authority.lease_expires_at - utc_now()).total_seconds()
+        return max(0.0, min(CLAIM_REQUEST_SECONDS, remaining - reserve))
 
     pending: StoredRunState | None = None
     try:
@@ -54,31 +52,28 @@ async def claim_run_state(
             for cycle in range(CLAIM_CYCLES):
                 # This lock is held only by the callback's short PG check. Reads,
                 # writes, reconciliation and backoff must allow lease renewal.
-                with fail_after(request_timeout()):
-                    await validate_authority()
+                authority = await validate()
                 try:
-                    with fail_after(request_timeout()):
+                    with fail_after(request_timeout(authority)):
                         observed = await states.read_run(run)
-                    if observed.writer_fence > context.fence:
+                    if observed.writer_fence > context.attempt_number:
                         raise AttemptAuthorityError("State writer belongs to a newer Attempt")
-                    if pending is not None and observed.writer_fence == context.fence:
+                    if pending is not None and observed.writer_fence == context.attempt_number:
                         if (
                             observed.body != pending.body
                             or observed.digest_sha256 != pending.digest_sha256
                             or observed.info.version == pending.info.version
                         ):
                             raise RunObjectIntegrityError("Uncertain state claim does not match its exact publication")
-                    with fail_after(request_timeout()):
-                        await validate_authority()
-                    if observed.writer_fence < context.fence:
+                    authority = await validate()
+                    if observed.writer_fence < context.attempt_number:
                         pending = observed
-                    with fail_after(request_timeout()):
-                        claimed = await states.claim_writer(observed, fence=context.fence)
-                    with fail_after(request_timeout()):
-                        await validate_authority()
+                    with fail_after(request_timeout(authority)):
+                        claimed = await states.claim_writer(observed, attempt_number=context.attempt_number)
+                    authority = await validate()
                     logger.info(
                         "run_state_writer_claimed",
-                        extra={"run_id": run.id, "fence": context.fence, "claim_cycle": cycle + 1},
+                        extra={"run_id": run.id, "attempt_number": context.attempt_number, "claim_cycle": cycle + 1},
                     )
                     return claimed
                 except (ObjectStoreUnavailable, TimeoutError, StaleStateWriter) as error:
@@ -86,14 +81,15 @@ async def claim_run_state(
                         "run_state_claim_retry",
                         extra={
                             "run_id": run.id,
-                            "fence": context.fence,
+                            "attempt_number": context.attempt_number,
                             "claim_cycle": cycle + 1,
                             "error_type": type(error).__name__,
                         },
                     )
                     if cycle + 1 == CLAIM_CYCLES:
                         raise StateClaimExhausted("State writer claim retry budget exhausted") from error
-                    with fail_after(request_timeout()):
+                    authority = await validate()
+                    with fail_after(request_timeout(authority)):
                         await sleep(CLAIM_BACKOFF_SECONDS * 2**cycle)
     except TimeoutError as error:
         raise StateClaimExhausted("State writer claim deadline exhausted") from error

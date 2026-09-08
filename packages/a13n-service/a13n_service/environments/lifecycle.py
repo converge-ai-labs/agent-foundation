@@ -109,7 +109,7 @@ class EnvironmentLifecycle:
     async def acquire(
         self, environment_id: str, action: Action, *, attempt: AttemptContext | None = None
     ) -> LifecycleOperation:
-        from a13n_service.interactions.attempts import lock_attempt_lease
+        from a13n_service.interactions.attempts import lock_attempt_authority
 
         if action == "prepare" and attempt is None:
             raise ValueError("Run preparation requires current Attempt authority")
@@ -117,7 +117,7 @@ class EnvironmentLifecycle:
         async with transaction(self.sessions) as session:
             run = None
             if attempt is not None:
-                run, _, _ = await lock_attempt_lease(session, attempt, now)
+                run, _, _ = await lock_attempt_authority(session, attempt, now)
                 if run.environment_id != environment_id:
                     raise ValueError("Environment is not the Run's accepted selection")
                 await self.capacity.lock_workspace(session, environment_id)
@@ -198,10 +198,10 @@ class EnvironmentLifecycle:
             )
 
     async def validate_use(self, attempt: AttemptContext, environment_id: str) -> None:
-        from a13n_service.interactions.attempts import lock_attempt_lease
+        from a13n_service.interactions.attempts import lock_attempt_authority
 
         async with transaction(self.sessions) as session:
-            run, _, _ = await lock_attempt_lease(session, attempt, assume_utc(self.clock()))
+            run, _, _ = await lock_attempt_authority(session, attempt, assume_utc(self.clock()))
             row = await session.get(EnvironmentRecord, environment_id)
             if row is None or run.environment_id != environment_id:
                 raise ValueError("Environment is not the Run selection")

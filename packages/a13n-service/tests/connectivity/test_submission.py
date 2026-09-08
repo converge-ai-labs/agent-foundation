@@ -12,7 +12,7 @@ from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.models import RunRecord
-from a13n_service.interactions.state import ConsumedThreadInboxEntry
+from a13n_service.interactions.state import InboxReceipt
 from a13n_service.storage import transaction
 from sqlalchemy import func, select
 
@@ -165,7 +165,7 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
         sessions,
         objects,
         run_id=run_id,
-        consumed_entries=(ConsumedThreadInboxEntry(inbox_entry_id=entry.id, kind="steer"),),
+        consumed_entries=(InboxReceipt(inbox_entry_id=entry.id, kind="steer"),),
     )
     now[0] += timedelta(seconds=10)
     await delivery.receive(account_id=ACCOUNT, request=_request("continue"))

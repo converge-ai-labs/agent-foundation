@@ -142,7 +142,7 @@ class SkillRuntimePreparer:
         await _require_current(fence)
         catalog_digest = _catalog_digest(selected_locks)
         root = f"{_MATERIALIZATION_ROOT}/{catalog_digest}"
-        source_id = f"foundation-skills-{catalog_digest[:24]}"
+        source_id = f"service-skills-{catalog_digest[:24]}"
         plan = SkillMaterializationPlan(
             target_root=root,
             catalog_digest=catalog_digest,
@@ -151,7 +151,7 @@ class SkillRuntimePreparer:
             workspace_id=workspace_id,
         )
         materializer = EnvironmentSkillMaterializer(
-            f"foundation-materializer-{catalog_digest[:24]}",
+            f"service-materializer-{catalog_digest[:24]}",
             plan,
             self._packages,
             fence=fence,
@@ -216,7 +216,7 @@ async def _require_current(fence: SkillAttemptFence | None) -> None:
 def _catalog_digest(locks: tuple[SkillRevisionLock, ...]) -> str:
     payload = [item.model_dump(mode="json") for item in locks]
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True).encode()
-    return hashlib.sha256(b"a13n.foundation.skill-runtime.v1\n" + encoded).hexdigest()
+    return hashlib.sha256(b"a13n.service.skill-runtime.v1\n" + encoded).hexdigest()
 
 
 def _validate_locks(locks: tuple[ResolvedSkillLock, ...]) -> tuple[SkillRevisionLock, ...]:

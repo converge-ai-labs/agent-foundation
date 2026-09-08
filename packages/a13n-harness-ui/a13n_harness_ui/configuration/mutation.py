@@ -201,7 +201,8 @@ def _select_target(
         directory, filename = relative.parts
         yaml_source = directory in _RESOURCE_DIRECTORIES and filename.endswith(".yaml")
         markdown_source = directory == "subagents" and filename.endswith(".md") and filename != "README.md"
-        if not (yaml_source or markdown_source):
+        json_source = directory == "mcp" and filename.endswith(".json")
+        if not (yaml_source or markdown_source or json_source):
             raise _error("configuration_mutation_invalid", "The configuration source path is invalid.", selected)
 
     target = selected.parent.joinpath(*relative.parts)

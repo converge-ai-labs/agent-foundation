@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -351,7 +350,7 @@ async def _accept_another_child(
         parent_run=parent,
         parent_state=parent_state.envelope,
         parent_run_attempt_id=authority.run_attempt_id,
-        parent_run_attempt_fence=authority.fence,
+        parent_run_attempt_fence=authority.attempt_number,
         parent_agent_instance_id="agent-parent",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"second"}',
@@ -364,7 +363,7 @@ async def _accept_another_child(
         child_thread_id="thread-12121212121212121212121212121212",
         child_run_id="run_1212121212121212",
         relationship_id="crr_1212121212121212",
-        recovery_budget=parent.recovery_budget,
+        execution_budget=parent.execution_budget,
         created_at=NOW + timedelta(seconds=2),
     )
     accepted = await ChildRunAcceptanceService(
@@ -390,31 +389,23 @@ async def _seal_parent(
     )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    authority = replace(
-        authority,
-        expected_run_version=preparation.mutation.run_version,
-        expected_attempt_version=preparation.mutation.attempt_version,
-    )
-    entered = await execution.enter_harness(
+
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id=f"parent-{outcome}",
     )
-    authority = replace(
-        authority,
-        expected_run_version=entered.run_version,
-        expected_attempt_version=entered.attempt_version,
-    )
+
     current = await states.read(ORGANIZATION_ID, parent.id)
     candidate = (
-        _completed_state(current.envelope, authority.run_attempt_id, authority.fence)
+        _completed_state(current.envelope, authority.run_attempt_id, authority.attempt_number)
         if outcome == "completed"
-        else _waiting_state(current.envelope, authority.run_attempt_id, authority.fence)
+        else _waiting_state(current.envelope, authority.run_attempt_id, authority.attempt_number)
     )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
     receipt = await RunOutcomeService(
         sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    ).commit_state_outcome(authority, stored)
     assert receipt.run_status.value == outcome
     async with short_session(sessions) as database:
         row = await database.get(RunRecord, parent.id)

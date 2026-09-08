@@ -32,7 +32,7 @@ from a13n_service.interactions.objects import (
     StoredRunState,
 )
 from a13n_service.interactions.records import thread_record
-from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -59,7 +59,7 @@ class ChildRunAcceptanceReceipt(StrictModel):
 
 
 class ChildRunAcceptanceService:
-    """Accept one prepared child under the spawning Attempt's live fence."""
+    """Accept one prepared child under the spawning Attempt's live attempt_number."""
 
     def __init__(
         self,
@@ -368,7 +368,7 @@ def _validate_new_child_parent(
     prepared: PreparedChildRunAcceptance,
     parent: Run,
     parent_thread: Thread,
-    parent_state: RunStateEnvelope,
+    parent_state: RunCheckpoint,
     authority: AttemptContext,
 ) -> None:
     if prepared.thread.origin_thread_id != parent.thread_id:
@@ -399,17 +399,17 @@ def _validate_new_child_parent(
 def _validate_parent_authority(
     *,
     run: Run,
-    child_state: RunStateEnvelope,
+    child_state: RunCheckpoint,
     relationship: ChildRunRelationship,
     parent: Run,
     parent_thread: Thread,
-    parent_state: RunStateEnvelope,
+    parent_state: RunCheckpoint,
     authority: AttemptContext,
 ) -> None:
     if (
         relationship.parent_run_id != parent.id
         or relationship.parent_run_attempt_id != authority.run_attempt_id
-        or relationship.parent_run_attempt_fence != authority.fence
+        or relationship.parent_run_attempt_fence != authority.attempt_number
         or parent_thread.id != parent.thread_id
         or run.session_id != parent.session_id
         or run.authority_principal != parent.authority_principal

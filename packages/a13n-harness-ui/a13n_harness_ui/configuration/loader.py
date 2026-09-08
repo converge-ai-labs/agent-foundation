@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import stat
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from .models import (
     HarnessPluginResource,
     HarnessUiDocument,
     LoadedHarnessUiConfiguration,
+    McpFileValueSource,
     McpServerResource,
     ModelResource,
     ProjectResource,
@@ -39,6 +41,8 @@ _MAX_DIRECTORY_ENTRIES = 4096
 _MAX_YAML_NODES = 100_000
 _MAX_YAML_DEPTH = 64
 _STABLE_READ_ATTEMPTS = 3
+# Version normalized snapshots independently of user-owned source byte digests.
+_NORMALIZATION_VERSION = "2"
 _YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects")
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,
@@ -153,6 +157,7 @@ def empty_harness_ui_configuration(
         root_digest=root_digest,
         source_digest=canonical_digest(
             (
+                _NORMALIZATION_VERSION,
                 (source.relative_path, source.source_digest),
                 *tuple(
                     (f"content-plugins/{item.plugin_id}/registration.json", canonical_digest(item))
@@ -213,7 +218,7 @@ def _scan_directory(
                 wanted = (
                     entry.name != "README.md" and entry.name.endswith(".md")
                     if markdown
-                    else entry.name.endswith(".yaml")
+                    else entry.name.endswith(".yaml") or (directory.name == "mcp" and entry.name.endswith(".json"))
                 )
                 if not wanted:
                     continue
@@ -279,6 +284,22 @@ def _parse_complete_tree(
             )
             continue
         directory = relative_path.split("/", 1)[0]
+        if directory == "mcp":
+            resources = _parse_mcp_resources(source_path, content)
+            for resource in resources:
+                _insert_unique(mcp, resource.id, resource, source_path)
+            sources.append(
+                SourceDocument(
+                    relative_path=relative_path,
+                    source_digest=digest,
+                    resource_kind="mcp_server",
+                    resource_id=resources[0].id if len(resources) == 1 else None,
+                    resource_ids=tuple(item.id for item in resources) if len(resources) != 1 else (),
+                    # Source files remain authoritative; do not duplicate literal values in snapshots or show.
+                    content="",
+                )
+            )
+            continue
         if directory == "subagents":
             resource = parse_canonical_markdown(source_path, content)
             _insert_unique(subagents, resource.id, resource, source_path)
@@ -361,7 +382,11 @@ def _parse_complete_tree(
             document=document,
             root_digest=sources[0].source_digest,
             source_digest=canonical_digest(
-                (tuple((item.relative_path, item.source_digest) for item in sources), tuple(plugin_diagnostics))
+                (
+                    _NORMALIZATION_VERSION,
+                    tuple((item.relative_path, item.source_digest) for item in sources),
+                    tuple(plugin_diagnostics),
+                )
             ),
             sources=tuple(sources),
             content_plugins=content_plugins,
@@ -382,6 +407,158 @@ def _parse_complete_tree(
             root_path,
             exc,
         ) from exc
+
+
+def _parse_json_mapping(path: Path, content: bytes) -> dict[str, Any]:
+    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+
+    def reject_constant(value: str) -> None:
+        raise ValueError("non-finite JSON number")
+
+    try:
+        raw = json.loads(
+            _decode_source(path, content, code="configuration_resource_invalid"),
+            object_pairs_hook=unique,
+            parse_constant=reject_constant,
+        )
+        if not isinstance(raw, dict):
+            raise ValueError("expected JSON object")
+        pending: list[tuple[Any, int]] = [(raw, 0)]
+        nodes = 0
+        while pending:
+            value, depth = pending.pop()
+            nodes += 1
+            if nodes > _MAX_YAML_NODES or depth > _MAX_YAML_DEPTH:
+                raise _error("configuration_source_limit", "MCP JSON exceeds structural limits.", path)
+            if isinstance(value, dict):
+                pending.extend((item, depth + 1) for item in value.values())
+            elif isinstance(value, list):
+                pending.extend((item, depth + 1) for item in value)
+        return raw
+    except (ValueError, RecursionError):
+        raise _error(
+            "configuration_resource_invalid", "MCP JSON must be a valid object with unique keys.", path
+        ) from None
+
+
+def _parse_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResource, ...]:
+    # Do not chain raw parser/Pydantic errors: their inputs may contain literal tokens.
+    try:
+        return _normalize_mcp_resources(path, content)
+    except ConfigurationError as exc:
+        error = ConfigurationError(str(exc), code=exc.code, details=exc.details)
+    raise error
+
+
+def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResource, ...]:
+    raw = (
+        _parse_json_mapping(path, content)
+        if path.suffix == ".json"
+        else _parse_yaml_mapping(path, content, code="configuration_resource_invalid")
+    )
+    digest = hashlib.sha256(content).hexdigest()
+    if "mcpServers" not in raw:
+        definitions = [(raw, ("transport",))]
+    else:
+        if set(raw) != {"mcpServers"} or not isinstance(raw["mcpServers"], dict):
+            raise _error("configuration_resource_invalid", "Expected an mcpServers object without extra fields.", path)
+        definitions = []
+        for name, server in raw["mcpServers"].items():
+            if not isinstance(name, str) or not name or not isinstance(server, dict):
+                raise _error("configuration_resource_invalid", "MCP server entries must be named objects.", path)
+            transport = dict(server)
+            transport_type = transport.pop("type", None)
+            expected_type = "stdio" if "command" in transport else "http"
+            if transport_type == "streamable-http":
+                transport_type = "http"
+            if transport_type not in (None, expected_type):
+                raise _error("configuration_resource_invalid", "MCP type must match stdio or http transport.", path)
+            for external, canonical in (("args", "arguments"), ("env", "environment")):
+                if canonical in transport:
+                    raise _error("configuration_resource_invalid", "mcpServers entries use args and env fields.", path)
+                if external in transport:
+                    transport[canonical] = transport.pop(external)
+            slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+            if not slug:
+                slug = hashlib.sha256(name.encode()).hexdigest()[:12]
+            resource_id = slug if slug.startswith("mcp-") else f"mcp-{slug}"
+            definitions.append(
+                (
+                    {
+                        "schema_version": "1",
+                        "kind": "mcp_server",
+                        "id": resource_id,
+                        "name": name,
+                        "transport": transport,
+                    },
+                    ("mcpServers", name),
+                )
+            )
+    resources = []
+    for definition, prefix in definitions:
+        transport = definition.get("transport")
+        if isinstance(transport, dict):
+            for field in ("environment", "headers"):
+                values = transport.get(field, {})
+                if not isinstance(values, dict):
+                    continue  # The typed transport validator reports invalid mappings.
+                for key, value in values.items():
+                    if isinstance(value, str):
+                        if "\x00" in value:
+                            raise _error("configuration_resource_invalid", "MCP values must be NUL-free.", path)
+                        match = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", value)
+                        source_field = "env" if prefix[0] == "mcpServers" and field == "environment" else field
+                        values[key] = (
+                            {"env": match[1]}
+                            if match
+                            else {
+                                "file": f"mcp/{path.name}",
+                                "source_digest": digest,
+                                "path": [*prefix, source_field, key],
+                            }
+                        )
+                    elif not isinstance(value, dict) or set(value) != {"env"}:
+                        raise _error(
+                            "configuration_resource_invalid", "MCP values must be strings or env references.", path
+                        )
+        resources.append(_validate_model(McpServerResource, definition, path, code="configuration_resource_invalid"))
+    return tuple(resources)
+
+
+def read_mcp_file_values(
+    configuration_root: Path, sources: tuple[McpFileValueSource, ...]
+) -> dict[tuple[str, ...], str]:
+    """Read one exact source file for Run-local literal/template resolution."""
+    source = sources[0]
+    path = configuration_root / source.file
+    # The directory follows the same non-symlink boundary as discovery.
+    if path.parent.is_symlink():
+        raise _error("configuration_source_invalid", "The MCP source directory cannot be a symlink.", path)
+    content, _ = _read_bounded_stable(path, _MAX_SOURCE_BYTES)
+    if hashlib.sha256(content).hexdigest() != source.source_digest:
+        raise _error(
+            "mcp_source_changed", "The captured MCP source changed; start a new Run with current configuration.", path
+        )
+    raw = (
+        _parse_json_mapping(path, content)
+        if path.suffix == ".json"
+        else _parse_yaml_mapping(path, content, code="configuration_resource_invalid")
+    )
+    result = {}
+    for item in sources:
+        value: Any = raw
+        for key in item.path:
+            value = value[key]
+        if not isinstance(value, str):
+            raise _error("configuration_resource_invalid", "The captured MCP value is not a string.", path)
+        result[item.path] = value
+    return result
 
 
 def _merge_content_plugin_subagents(

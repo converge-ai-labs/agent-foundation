@@ -77,18 +77,18 @@ async def test_cross_layer_evidence_and_telemetry_failure_does_not_change_result
             "spans": [
                 span
                 for span in exported_spans(journey.lab.root)
-                if span["attrs"].get("a13n.foundation.run.id") == result["id"]
+                if span["attrs"].get("a13n.service.run.id") == result["id"]
             ]
         }
 
     exported = (
         await live.wait(
             spans,
-            lambda value: any(span["name"] == "foundation.run_attempt" for span in value["spans"]),
+            lambda value: any(span["name"] == "a13n.service.run_attempt" for span in value["spans"]),
             "OTLP Attempt root",
         )
     )["spans"]
-    root = next(span for span in exported if span["name"] == "foundation.run_attempt")
+    root = next(span for span in exported if span["name"] == "a13n.service.run_attempt")
     harness = next(span for span in exported if span["name"] == "harness.run")
     assert root["attrs"]["a13n.run_attempt.outcome"] == "succeeded"
     assert harness["attrs"]["a13n.run.id"] == attempts[0]["harness_run_id"]

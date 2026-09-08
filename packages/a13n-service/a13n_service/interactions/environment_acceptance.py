@@ -18,7 +18,7 @@ from a13n_service.interactions.input import (
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import run_state_key
 from a13n_service.interactions.records import run_record
-from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.object_retention.persistence import require_object_publications
 
 from .environment_selection import EnvironmentIntent, select_run_environment
@@ -28,7 +28,7 @@ async def add_run_with_environment(
     database: AsyncSession,
     *,
     run: Run,
-    state: RunStateEnvelope,
+    state: RunCheckpoint,
     workspace_id: str,
     intent: EnvironmentIntent,
 ) -> RunRecord:
