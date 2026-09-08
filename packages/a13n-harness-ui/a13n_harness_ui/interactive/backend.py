@@ -38,6 +38,7 @@ from a13n_harness_ui.thread_files import ComposerInput
 from .decisions import DecisionInteraction
 from .rendering import Status, StreamRenderer
 from .selection import Choice
+from .subagents import subagent_status
 
 
 class SessionBackend:
@@ -330,7 +331,15 @@ class SessionBackend:
             review = await self.app.child_review(parent_thread_id=thread_id, execution_id=execution_id)
             if self.thread_id != thread_id:
                 return "Conversation changed; subagent inspection discarded. /subagents retries."
-            lines = [f"{review.title} · {review.lifecycle}"]
+            state: str = review.lifecycle
+            local_active = False
+            if isinstance(review.value, dict):
+                saved_state = review.value.get("persisted_status")
+                if isinstance(saved_state, str):
+                    state = saved_state
+                local_active = review.value.get("local_status") == "active"
+            state = subagent_status(state, local_active=local_active)
+            lines = [f"{review.title} · {state}"]
             lines.extend(item for item in (review.summary, review.content, review.unavailable_reason) if item)
             if review.value is not None:
                 lines.append(json.dumps(review.value, ensure_ascii=False, indent=2))
@@ -347,11 +356,9 @@ class SessionBackend:
             return "Conversation changed; subagent inspection discarded. /subagents retries."
         self._child_page_thread = thread_id
         self._child_page_cursor = page.next_cursor
-        lines = [f"Subagents · {page.total} executions"]
+        lines = [f"Subagents · {len(page.executions)} shown · {page.total} executions"]
         for item in page.executions:
-            state = "active" if item.local_status == "active" else item.persisted_status
-            if state == "running":
-                state = "running (local execution unavailable)"
+            state = subagent_status(item.persisted_status, local_active=item.local_status == "active")
             lines.append(f"{item.execution_id} · {item.subagent_name} · {state}")
         if not page.executions:
             lines.append("No subagent executions.")

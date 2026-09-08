@@ -163,12 +163,16 @@ class CommandRegistry:
         names = dict.fromkeys(re.findall(r"(?:^|\s)\$([^\s]+)", text))
         return tuple(self.skills[name][1] for name in names if name in self.skills)
 
+    def lookup(self, text: str) -> Command | None:
+        """Match a complete command name or alias, never a prose prefix."""
+        head = text.removeprefix("/").split(maxsplit=1)
+        return self._index.get(head[0]) if head else None
+
     def parse(self, text: str, *, busy: bool = False) -> Invocation:
         source = text.removeprefix("/")
-        head = source.split(maxsplit=1)
-        command = self._index.get(head[0]) if head else None
+        command = self.lookup(text)
         if command is None:
-            raise ValueError("Unknown command. Use /help; slash input is never sent to the model.")
+            raise ValueError("Unknown command. Use /help for available commands.")
         if command.raw_tail:
             # Text and JSON are values, not shell syntax. Preserve the final
             # argument byte-for-byte, including quotes, backslashes and newlines.

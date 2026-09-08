@@ -88,3 +88,37 @@ def migrate(message: str) -> None:
 
     _migrator().revision(message)
     click.echo(f"Migration generated: {message}")
+
+
+@main.group()
+def iam() -> None:
+    """Operate local identity initialization from a protected terminal."""
+
+
+@iam.command("reissue-bootstrap")
+def reissue_bootstrap() -> None:
+    """Invalidate the pending administrator link and issue its replacement."""
+    import asyncio
+
+    from a13n_service.iam.runtime import build_identity_runtime
+    from a13n_service.storage.relational import create_session_factory, create_sql_engine
+
+    async def reissue() -> None:
+        settings = get_settings()
+        engine = create_sql_engine(settings.database_config())
+        try:
+            runtime = await build_identity_runtime(create_session_factory(engine), settings.identity_configuration())
+            issued = await runtime.invitations.initialize(reissue=True)
+            if issued is None:
+                raise click.ClickException("Administrator initialization is already complete.")
+            delivery = await runtime.invitations.deliver(issued)
+            if delivery.invitation_url is not None:
+                click.echo(delivery.invitation_url)
+            elif delivery.delivery == "failed":
+                raise click.ClickException("Invitation saved but email delivery failed. Fix SMTP and reissue.")
+            else:
+                click.echo("Administrator invitation sent.")
+        finally:
+            await engine.dispose()
+
+    asyncio.run(reissue())

@@ -6,11 +6,11 @@ from collections.abc import Collection
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
 from a13n_logging import LogFormat
-from pydantic import Field, SecretStr, model_validator
+from pydantic import EmailStr, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from a13n_service.agents.domain import PluginRuntimeMode
@@ -21,6 +21,7 @@ from a13n_service.connectivity.bounds import (
 from a13n_service.database import MigrationConfig
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.environments.policy import DEFAULT_BATCH_SIZE, DEFAULT_MAX_ACTIVE, DEFAULT_MAX_TARGETS
+from a13n_service.iam.configuration import IdentityConfiguration
 from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (
@@ -76,6 +77,17 @@ class Settings(BaseSettings):
     build_version: str = "unknown"
     deployment_environment_name: str = Field(default="default", min_length=1, max_length=256)
     service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
+    iam_public_origin: str = "http://127.0.0.1:8000"
+    iam_initial_admin_email: EmailStr | None = None
+    iam_session_days: int = Field(default=7, ge=1, le=90)
+    iam_invitation_days: int = Field(default=7, ge=1, le=30)
+    iam_smtp_host: str | None = None
+    iam_smtp_port: int = Field(default=587, ge=1, le=65535)
+    iam_smtp_username: str | None = Field(default=None, repr=False)
+    iam_smtp_password: SecretStr | None = None
+    iam_smtp_sender: EmailStr | None = None
+    iam_smtp_tls: Literal["starttls", "tls"] = "starttls"
+
     plugin_runtime_mode: PluginRuntimeMode = PluginRuntimeMode.on_demand
     worker_concurrency: int = Field(default=8, ge=1, le=1024)
     subagent_reconcile_drain_seconds: float = Field(default=30, gt=0, le=3600)
@@ -325,6 +337,20 @@ class Settings(BaseSettings):
         if self.webhook_retry_max_seconds < self.webhook_retry_base_seconds:
             raise ValueError("Webhook maximum retry delay must cover the base delay")
         return self
+
+    def identity_configuration(self) -> IdentityConfiguration:
+        return IdentityConfiguration(
+            public_origin=self.iam_public_origin,
+            initial_admin_email=self.iam_initial_admin_email,
+            session_days=self.iam_session_days,
+            invitation_days=self.iam_invitation_days,
+            smtp_host=self.iam_smtp_host,
+            smtp_port=self.iam_smtp_port,
+            smtp_username=self.iam_smtp_username,
+            smtp_password=self.iam_smtp_password,
+            smtp_sender=self.iam_smtp_sender,
+            smtp_tls=self.iam_smtp_tls,
+        )
 
     def database_config(self) -> PostgreSQLConfig | SQLiteConfig:
         if self.database_backend is DatabaseBackend.sqlite:

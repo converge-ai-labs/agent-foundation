@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
-from .authorization import AuthenticatedActor
+from .domain import AuthenticatedActor
 from .models import SecurityAuditRecord
 
 
@@ -16,10 +17,20 @@ class SystemAuditActor:
     request_id: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class AuthenticationAuditActor:
+    """Credential authentication evidence before resource authority exists."""
+
+    user_id: str | None
+    auth_method: Literal["password", "session", "api_key", "unknown"]
+    credential_id: str | None
+    request_id: str | None
+
+
 def security_audit_record(
     *,
     audit_id: str,
-    actor: AuthenticatedActor | SystemAuditActor,
+    actor: AuthenticatedActor | SystemAuditActor | AuthenticationAuditActor,
     organization_id: str | None,
     workspace_id: str | None,
     action: str,
@@ -31,7 +42,13 @@ def security_audit_record(
 ) -> SecurityAuditRecord:
     """Build an audit row without changing caller-owned policy or time semantics."""
 
-    if isinstance(actor, SystemAuditActor):
+    if isinstance(actor, AuthenticationAuditActor):
+        actor_type = "user" if actor.user_id is not None else "anonymous"
+        actor_id = actor.user_id
+        auth_method = actor.auth_method
+        credential_id = actor.credential_id
+        request_id = actor.request_id
+    elif isinstance(actor, SystemAuditActor):
         actor_type = "system"
         actor_id = None
         auth_method = "internal"
@@ -61,4 +78,4 @@ def security_audit_record(
     )
 
 
-__all__ = ["SystemAuditActor", "security_audit_record"]
+__all__ = ["AuthenticationAuditActor", "SystemAuditActor", "security_audit_record"]

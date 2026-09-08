@@ -207,6 +207,8 @@ The plaintext token appears only in an `HttpOnly`, `Secure` cookie. Sessions do 
 
 One grant exists per `(invitation_id, resource_type, resource_id)`. The stored Organization and Workspace scope fields must match both the Invitation and target resource.
 
+Invitations carry a positive `version`. Resend and revoke require `expected_version`; stale intent fails with a conflict.
+
 An invitation is pending exactly when it is unaccepted, unrevoked, and unexpired. Resend keeps the invitation ID, rotates `token_hash`, and invalidates the old link. Pending invitations create neither a User nor a RoleBinding.
 
 Acceptance locks the invitation and atomically creates or links the User, creates `password_credentials` when local setup is required, creates the Organization Member or Admin RoleBinding, creates the authorized Workspace RoleBindings, and sets `accepted_at`. A Workspace Admin can invite only to its own Workspace; acceptance also creates an Organization Member binding when needed. An Organization Admin can invite to the Organization and several Workspaces. Adding an existing Organization member to a Workspace creates the RoleBinding directly and may send a notification without creating an Invitation.
@@ -289,31 +291,30 @@ Role loading validates every persisted binding against the same finite compatibi
 
 | Column            | Durable meaning and constraint                                          |
 | ----------------- | ----------------------------------------------------------------------- |
-| `id`              | Stable public key identifier retained across rotation                   |
+| `id`              | Immutable public key identifier                                         |
 | `principal_type`  | `user` or `service_account`                                             |
 | `principal_id`    | Owning Principal                                                        |
 | `organization_id` | Organization containing the credential boundary                         |
 | `boundary_type`   | `workspace` in OSS; extension enum owned by IAM                         |
 | `boundary_id`     | Exact Workspace ID for an OSS key                                       |
-| `name`            | Mutable non-blank display label                                         |
+| `name`            | Immutable non-blank display label                                       |
 | `secret_hash`     | Non-reversible verifier for the current high-entropy secret             |
 | `expires_at`      | Optional expiry; OSS creation defaults to 90 days and permits no expiry |
-| `rotated_at`      | Latest successful rotation time; null before first rotation             |
 | `revoked_at`      | Permanent revocation time; null while unrevoked                         |
 | `created_at`      | Immutable creation time                                                 |
-| `updated_at`      | Latest name, rotation, or revocation mutation time                      |
+| `updated_at`      | Latest creation or revocation time                                      |
 
 Credential boundary is represented by `boundary_type + boundary_id`; the row does not duplicate a `workspace_id`. For a Workspace key, Service validates that `boundary_id` belongs to `organization_id`. OSS accepts only `workspace`.
 
-A Personal API Key belongs to a User. Only that User can create or rotate it. A Workspace Admin can inspect safe metadata and revoke it but cannot create it for the User or observe its secret. A Service Account API Key is created, rotated, and revoked only by Workspace Admin or inherited Organization Admin authority. Several active keys per Principal and boundary are allowed for zero-downtime caller migration.
+A Personal API Key belongs to a User. Only that User can create it. A Workspace Admin can inspect safe metadata and revoke it but cannot create it for the User or observe its secret. A Service Account API Key is created and revoked only by Workspace Admin or inherited Organization Admin authority. Several active keys per Principal and boundary are allowed for zero-downtime caller migration.
 
 Creation returns a bearer value once. Its shape contains a stable public key ID and an independent high-entropy secret, for example `afk_key-7m4q9x2c.<high-entropy-secret>`. Storage retains only the public ID and secret verifier. Authentication accepts it only as `Authorization: Bearer <value>`; query, cookie, body, and alternate API-key headers are rejected.
 
-Rotation atomically replaces `secret_hash`, retains the same key ID, name, owner, and boundary, sets `rotated_at`, and immediately invalidates the old secret. It does not create a grace period or another key ID. A caller needing overlap creates a second key and later revokes the first. Revoked or expired keys remain tombstones and are never hard-deleted through the API.
+Keys have no rotation operation. To replace a credential, create a second key, migrate callers, then revoke the first. Revoked or expired keys remain tombstones and are never hard-deleted through the API.
 
 API key state is derived rather than stored: an unrevoked key before its optional expiry is `active`; a past expiry is `expired`; and any `revoked_at` is `revoked`. Revocation is terminal even when expiry would also apply.
 
-Removing a User's access to a key boundary permanently revokes that boundary's Personal API Keys. Removing a Service Account's Workspace binding or deleting the Service Account revokes all of its keys. Role changes do not rotate or revoke a key; the next request observes the new effective permissions.
+Removing a User's access to a key boundary permanently revokes that boundary's Personal API Keys. Removing a Service Account's Workspace binding or deleting the Service Account revokes all of its keys. Role changes do not revoke a key; the next request observes the new effective permissions.
 
 An OSS API Key carries no per-key capability or permission toggles. It authenticates its existing User or Service Account Principal and narrows only to its credential boundary; every management or direct Agent invocation authorizes the current RoleBindings and target resource again. Agent-facing in-process a13n MCP handlers bind the current RunAttempt authority and reauthorize each external action; they require neither a product API key nor a separate internal MCP credential.
 
@@ -369,7 +370,9 @@ async def accept_invitation(token: str, profile: NewUserProfile) -> UserRef:
     return UserRef(user.id)
 ```
 
-The transaction revalidates every grant and the last-Admin invariant. It performs no external I/O while open.
+Password hashing and existing-account password verification happen outside the transaction. Linking an existing User requires its current password; the transaction rechecks that verifier and active status. Invitation grants are additive and never demote an existing role. The transaction revalidates every grant, the inviter's current authority, and the last-Admin invariant. It performs no external I/O while open.
+
+The initializer and ordinary onboarding share the invitation acceptance endpoint. An unaccepted bootstrap invitation can be reissued only through the protected local `a13n-service iam reissue-bootstrap` command; reissue invalidates its previous token. Completed initialization cannot be reopened by this command. SMTP delivery occurs after commit; failure retains the pending invitation and permits an explicit resend. Manual links use a URL fragment, and the minimal same-origin acceptance page clears it before submitting the token.
 
 ## Built-in Roles and Permissions
 
@@ -545,7 +548,7 @@ Authorization changes take effect on the next request or stream continuation. Re
 | Last effective Organization Admin would be lost    | Mutation fails atomically                                                          |
 | Authorization dependency is unavailable            | Protected operation fails closed                                                   |
 
-Passwords, session tokens, invitation and reset tokens, API key secrets, Secret values, authorization headers, and credential verifiers never enter ordinary logs, traces, metrics, events, errors, model payloads, or API responses. Public authentication failures do not distinguish absent email, wrong password, disabled status, or unverified recovery eligibility.
+Passwords, session tokens, invitation and reset tokens, API key secrets, Secret values, authorization headers, and credential verifiers never enter ordinary logs, traces, metrics, events, errors, or model payloads. Secrets leave the service only through their explicitly defined issuance channels: the session cookie, one-time key or manual-invitation response, SMTP delivery, or protected bootstrap output. Metadata responses never contain verifiers or credential secrets. Public authentication failures do not distinguish absent email, wrong password, disabled status, or unverified recovery eligibility.
 
 ## Compatibility
 

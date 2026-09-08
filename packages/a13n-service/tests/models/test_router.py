@@ -36,6 +36,7 @@ async def successful_model_test(**_: object) -> None:
 def settings(tmp_path: Path, database_path: Path) -> Settings:
     return Settings(
         _env_file=None,
+        iam_initial_admin_email="admin@example.com",
         database_backend="sqlite",
         database_sqlite_path=database_path,
         redis_backend="memory",

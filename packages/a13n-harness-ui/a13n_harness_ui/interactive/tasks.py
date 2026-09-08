@@ -39,7 +39,7 @@ class TaskPanel:
         self.version = change.task_state_version
         self.tasks[task.id] = TaskView(task_id=task.id, **task.model_dump(exclude={"id"}))
 
-    def lines(self) -> list[str]:
+    def lines(self, width: int | None = None) -> list[str]:
         if not self.available:
             return ["Tasks unavailable in the selected continuation (external provider)."]
         tasks = tuple(self.tasks.values())
@@ -48,9 +48,14 @@ class TaskPanel:
         completed = sum(task.status == "completed" for task in tasks)
         active = sum(task.status == "in_progress" for task in tasks)
         pending = len(tasks) - completed - active
-        lines = [
-            f"Tasks · {active} active · {pending} pending · {completed} done · F2 {'collapse' if self.expanded else 'expand'}"
-        ]
+        counts = [f"{active} active", f"{pending} pending", f"{completed} done"]
+        action = f"F2 {'collapse' if self.expanded else 'expand'}"
+        while width is not None and counts and len(" · ".join(["Tasks", *counts, action])) > width:
+            counts.pop()
+        heading = " · ".join(["Tasks", *counts, action])
+        if width is not None and len(heading) > width:
+            heading = "Tasks · F2" if width >= 10 else "Tasks"
+        lines = [heading]
         if not self.expanded:
             return lines
         ordered = sorted(tasks, key=lambda task: {"in_progress": 0, "pending": 1, "completed": 2}[task.status])

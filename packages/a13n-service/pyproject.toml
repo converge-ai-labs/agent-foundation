@@ -32,7 +32,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.39,<2",
     "opentelemetry-sdk>=1.39,<2",
     "packaging>=25,<26",
-    "pydantic>=2.12,<3",
+    "pydantic[email]>=2.12,<3",
     "pydantic-ai>=2.40,<3",
     "pydantic-core>=2.41,<3",
     "pydantic-graph>=2.38,<3",
@@ -46,6 +46,8 @@ dependencies = [
     "uvicorn>=0.35,<1",
     "mypy-boto3-bedrock-runtime>=1.43,<2",
     "authlib>=1.8,<2",
+    "argon2-cffi>=25,<26",
+    "aiosmtplib>=5,<6",
 ]
 
 [project.scripts]

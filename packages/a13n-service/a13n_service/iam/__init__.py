@@ -1,9 +1,7 @@
 """Identity, organization, authorization, and security-audit persistence."""
 
-from .authentication import AuthenticationError, RequestAuthenticator, authenticate_request
+from .authentication import AuthenticationError, RequestAuthenticator
 from .authorization import (
-    AuthenticatedActor,
-    AuthorizationError,
     AuthorizedAgentCollection,
     AuthorizedWorkspace,
     WorkspaceAction,
@@ -14,7 +12,8 @@ from .authorization import (
     authorize_persisted_agent_principal_actions,
     authorize_workspace,
 )
-from .domain import PrincipalRef, PrincipalType, ResourceRef
+from .domain import AuthenticatedActor, AuthorizationError, PrincipalRef, PrincipalType, ResourceRef
+from .http.authentication import authenticate_request
 from .models import (
     OrganizationRecord,
     RoleBindingRecord,
