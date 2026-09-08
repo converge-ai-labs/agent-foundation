@@ -523,3 +523,125 @@ async def test_long_paste_delete_replacement_and_undo_keep_payload(tmp_path: Pat
             shell.app.exit()
             await task
             shell.renderer.transcript.close()
+
+
+def _shell_approval(**changes) -> DecisionInteraction:
+    request = ApprovalRequestView(
+        request_id="shell-call",
+        tool_name="shell_exec",
+        arguments={"command": "rm report.txt", "cwd": "/workspace", "environment": {"TOKEN": "hidden-value"}},
+        metadata={"a13n.harness.shell-review": {"status": "flagged", "risk": "high", "reason": "Deletes a report"}},
+    ).model_copy(update=changes)
+    return DecisionInteraction(DecisionBatchView(continuation_id="b" * 64, requests=(request,)))
+
+
+def test_approval_panel_puts_reason_before_command_and_keeps_explicit_choices() -> None:
+    interaction = _shell_approval()
+    text = interaction.prompt()
+    assert interaction.prompt_kind == "approval"
+    assert text.index("Risk: high") < text.index("Reason: Deletes a report") < text.index("Command:")
+    assert "Working directory: /workspace" in text
+    assert "TOKEN" in text and "hidden-value" not in text
+    assert "Inspect request details" in text and "Approve once" in text and "Deny" in text
+    selection = interaction.selection()
+    assert selection is not None and selection.cursor == -1
+    with pytest.raises(ValueError):
+        interaction.accept("")
+    interaction.question_started = 0
+    assert not interaction.expired
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"a13n.harness.shell-review": {"status": "error"}},
+        {"policy": "Operator confirmation required"},
+    ],
+)
+def test_approval_panel_handles_missing_assessment_and_generic_metadata(metadata) -> None:
+    text = _shell_approval(metadata=metadata).prompt()
+    assert "Risk: high" not in text and "Deletes a report" not in text
+    if "policy" in metadata:
+        assert "Operator confirmation required" in text
+    else:
+        assert "The reviewer failed; no risk assessment or reason is available" in text
+
+
+def test_approval_panel_discloses_bounded_and_source_omissions() -> None:
+    interaction = _shell_approval(arguments={"command": "echo line\n" * 1000}, metadata_omitted=True)
+    text = interaction.prompt()
+    assert len(text) < 8192
+    assert "Preview truncated" in text and "/review shell-call" in text
+    assert "Reason: Deletes a report" in text
+    assert "No automatic approval" in text
+
+
+@pytest.mark.parametrize("width", [24, 100])
+def test_approval_panel_renders_untrusted_reason_as_literal_terminal_safe_text(width) -> None:
+    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+
+    interaction = _shell_approval(
+        metadata={
+            "a13n.harness.shell-review": {
+                "status": "flagged",
+                "risk": "high",
+                "reason": "[red]reason[/red]\x1b[2J",
+            }
+        }
+    )
+    renderer = StreamRenderer(Status())
+    try:
+        renderer.append(interaction.display_prompt(), kind=interaction.prompt_kind)
+        renderer.transcript.render(width)
+        block = next(iter(renderer.transcript.blocks.values()))
+        rendered = "\n".join("".join(text for _, text in line) for line in block.rows)
+        assert "\x1b" not in block.source
+        assert "[red]" in rendered and "[/red]" in rendered
+        assert "Approval" in rendered
+        assert block.kind == "approval"
+    finally:
+        renderer.transcript.close()
+
+
+@pytest.mark.parametrize("arguments", ["raw argument", ["one", "two"], 0, False])
+def test_generic_approval_panel_preserves_non_object_arguments(arguments) -> None:
+    import json
+
+    text = _shell_approval(arguments=arguments, metadata=None).prompt()
+    assert json.dumps(arguments, ensure_ascii=False, indent=2) in text
+    assert "Shell review" not in text
+
+
+def test_approval_panel_handles_omitted_arguments_without_losing_reason_or_choices() -> None:
+    text = _shell_approval(arguments=None, arguments_omitted=True).prompt()
+    assert "Reason: Deletes a report" in text
+    assert "/review shell-call" in text and "Approve once" in text
+
+
+@pytest.mark.parametrize("theme_name", ["dark", "light"])
+def test_approval_panel_uses_styled_sections_and_code_not_a_metadata_dump(theme_name) -> None:
+    import json
+
+    from a13n_harness_ui.interactive.approvals import approval_panel
+    from a13n_harness_ui.interactive.theme import resolve_theme
+    from rich.console import Group
+    from rich.syntax import Syntax
+    from rich.text import Text
+
+    metadata = {
+        "a13n.harness.shell-review": {"status": "flagged", "risk": "high", "reason": "Deletes a report"},
+        "a13n.harness.invocation-policy": {"decision": "allow", "metadata": {"token": "details-only"}},
+    }
+    interaction = _shell_approval(metadata=metadata)
+    source = interaction.display_prompt()
+    assert "details-only" not in source and "invocation-policy" not in source
+    assert json.loads(source)["reason"] == "Deletes a report"
+    panel = approval_panel(source, resolve_theme(theme_name))
+    assert isinstance(panel.renderable, Group)
+    sections = list(panel.renderable.renderables)
+    code = [part for part in sections if isinstance(part, Syntax)]
+    assert len(code) == 1 and code[0].code == "rm report.txt"
+    risk = next(part for part in sections if isinstance(part, Text) and part.plain.startswith("Risk "))
+    assert "HIGH" in risk.plain and any("bold" in str(span.style) for span in risk.spans)
+    assert not any(isinstance(part, Text) and "Approve once" in part.plain for part in sections)
+    assert interaction.request.metadata == metadata

@@ -35,7 +35,7 @@ from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput
 
 from .attachments import add_images, clipboard_images, read_attachment
 from .commands import CommandRegistry, Invocation
-from .diagnostics import exception_report
+from .diagnostics import exception_report, pending_task_warning
 from .history import HistoryBrowser
 from .local_shell import run_local_shell, validate_local_shell_support
 from .pastes import PendingPastes
@@ -539,8 +539,17 @@ class CliShell:
         self.interaction = pending
         self.selection = pending.selection()
         self.status.state = "waiting for you"
-        self.emit(pending.prompt())
+        self._emit_decision()
         self.bell()
+
+    def _emit_decision(self) -> None:
+        assert self.interaction is not None
+        self.renderer.finish()
+        self.renderer.transcript.append(
+            terminal_text(self.interaction.display_prompt()), kind=self.interaction.prompt_kind
+        )
+        self.renderer.append(self.interaction.prompt() + "\n", display=False)
+        self.app.invalidate()
 
     def bell(self) -> None:
         with suppress(OSError):
@@ -953,18 +962,37 @@ class CliShell:
         previous_handler = loop.get_exception_handler()
 
         def terminal_failure(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+            lost_task = (
+                context.get("message") == "Task was destroyed but it is pending!"
+                and context.get("exception") is None
+                and isinstance(context.get("task"), asyncio.Task)
+            )
             error = context.get("exception")
             if not isinstance(error, BaseException):
                 error = RuntimeError(str(context.get("message", "Terminal background task failed")))
-            message = exception_report(
-                error,
-                session_id=self.status.session_id,
-                phase="terminal event loop",
-                request=self.request,
-                directory=self.directory,
-            )
-            if self.app.is_running:
-                self.app.exit(exception=RuntimeError(message))
+            if lost_task:
+                message = pending_task_warning(error, session_id=self.status.session_id, context=context)
+            else:
+                message = exception_report(
+                    error,
+                    session_id=self.status.session_id,
+                    phase="terminal event loop",
+                    request=self.request,
+                    directory=self.directory,
+                    loop_context=context,
+                )
+
+            def present() -> None:
+                if self.closing or not self.app.is_running or self.app.is_done:
+                    return
+                if lost_task:
+                    self.emit(message)
+                else:
+                    self.app.exit(exception=RuntimeError(message))
+
+            # GC may report a lost task from another thread, or during rendering.
+            # Capture its locations now, but never re-enter the terminal renderer.
+            loop.call_soon_threadsafe(present)
 
         loop.set_exception_handler(terminal_failure)
         try:
@@ -1367,7 +1395,7 @@ class CliShell:
         if response is None:
             self.selection = self.interaction.selection()
             self.composer.text = ""
-            self.emit(self.interaction.prompt())
+            self._emit_decision()
         else:
             self.interaction = None
             self._restore_draft()

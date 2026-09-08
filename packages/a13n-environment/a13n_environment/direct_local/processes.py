@@ -292,7 +292,13 @@ class LocalProcessManager:
                     raise EnvironmentError("Direct Local process manager is closed.", code="environment_closed")
             argv = await asyncio.to_thread(self._argv, request)
             cwd = await self._files.resolve_native_directory(request.cwd or "/")
-            environment = dict(request.environment.set)
+            environment = os.environ.copy() if self._policy.inherit_environment else {}
+            # Windows environment names are case-insensitive, including PATH/Path.
+            for key in request.environment.unset:
+                environment.pop(key.upper() if os.name == "nt" else key, None)
+            environment.update(
+                {(key.upper() if os.name == "nt" else key): value for key, value in request.environment.set.items()}
+            )
             output_policy = request.output_policy
             stdout_collector = _OutputCollector(
                 policy=output_policy,
@@ -422,10 +428,14 @@ class LocalProcessManager:
             raise EnvironmentError(
                 "Direct Local cannot enforce a process count ceiling.", code="environment_unsupported"
             )
-        if not set(request.environment.set) <= self._policy.allowed_environment_keys:
-            raise EnvironmentError("Command environment key is not allowed.", code="environment_denied")
-        if not set(request.environment.unset) <= self._policy.allowed_environment_keys:
-            raise EnvironmentError("Command environment key is not allowed.", code="environment_denied")
+        allowed_keys = self._policy.allowed_environment_keys
+        if allowed_keys is not None:
+            requested_keys = set(request.environment.set) | set(request.environment.unset)
+            if os.name == "nt":
+                allowed_keys = frozenset(key.upper() for key in allowed_keys)
+                requested_keys = {key.upper() for key in requested_keys}
+            if not requested_keys <= allowed_keys:
+                raise EnvironmentError("Command environment key is not allowed.", code="environment_denied")
         stdin_limit = self._effective_stdin_limit(request)
         if request.initial_stdin is not None and stdin_limit is not None and len(request.initial_stdin) > stdin_limit:
             raise EnvironmentError("Initial stdin exceeds its finite limit.", code="environment_too_large")

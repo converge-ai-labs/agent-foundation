@@ -9,7 +9,7 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from a13n_environment import (
     DirectLocalEnvironmentProvider,
@@ -33,28 +33,6 @@ NATIVE_PROVIDER_KEY = FULL_CONTROL_PROFILE.provider_key
 LOCAL_ENVD_PROVIDER_KEY = SANDBOX_PROFILE.provider_key
 NATIVE_ADAPTER_KEY = FULL_CONTROL_PROFILE.adapter_key
 LOCAL_ENVD_ADAPTER_KEY = SANDBOX_PROFILE.adapter_key
-_NATIVE_ENVIRONMENT_KEYS = frozenset(
-    {
-        "CI",
-        "COLORTERM",
-        "COMSPEC",
-        "HOME",
-        "LANG",
-        "LC_ALL",
-        "LOGNAME",
-        "NO_COLOR",
-        "PATH",
-        "PATHEXT",
-        "SHELL",
-        "SYSTEMROOT",
-        "TEMP",
-        "TERM",
-        "TMP",
-        "TMPDIR",
-        "USER",
-        "USERPROFILE",
-    }
-)
 
 
 class ValidatedAdapterConfiguration(BaseModel):
@@ -124,7 +102,6 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
     ) -> Environment:
         _require_provider(provider, DirectLocalEnvironmentProvider, profile.provider_schema_version)
         shell = _host_shell()
-        environment_keys = [cast(JsonValue, key) for key in sorted(_NATIVE_ENVIRONMENT_KEYS) if key in os.environ]
         value: dict[str, JsonValue] = {
             "root": {"path": str(root), "read_only": False},
             "shell_profiles": (
@@ -142,7 +119,8 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
                     }
                 ]
             ),
-            "allowed_environment_keys": environment_keys,
+            "inherit_environment": True,
+            "allowed_environment_keys": None,
         }
         configuration = provider.validate_configuration(
             schema_version=profile.provider_schema_version,

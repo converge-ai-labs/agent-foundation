@@ -402,3 +402,38 @@ def test_unavailable_native_status_never_falls_back_to_output_preview(result: st
     else:
         assert result in expanded
     renderer.transcript.close()
+
+
+@pytest.mark.parametrize("mode", ["concise", "detailed"])
+def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(mode) -> None:
+    renderer = StreamRenderer(Status(mode=mode))
+    try:
+        _start(renderer, name="shell_exec")
+        assert "Automatically denied" not in _visible(renderer)
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": "a13n.harness.invocation",
+                "value": {
+                    "event": {
+                        "kind": "invocation",
+                        "payload": {
+                            "phase": "denied",
+                            "reason_code": "shell_review_timeout",
+                            "timeout_seconds": 120.0,
+                            "tool_id": "environment.shell_exec",
+                            "tool_name": "shell_exec",
+                            "tool_call_id": "call-one",
+                        },
+                    }
+                },
+            },
+        )
+        visible = _visible(renderer, detailed=mode == "detailed")
+        assert "Shell review · timed out" in visible
+        assert "after 120s" in visible
+        assert "Automatically denied; command was not executed" in visible
+        assert "call-one" in visible
+        assert renderer.background_hint == ""
+    finally:
+        renderer.transcript.close()

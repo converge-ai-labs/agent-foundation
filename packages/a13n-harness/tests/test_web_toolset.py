@@ -227,3 +227,116 @@ async def test_web_text_fetch_distinguishes_transport_and_disclosure_truncation(
     spilled = json.loads(context.spills[0])
     assert spilled["content"] == "a" * 40_000 + "b" * 40_000
     assert spilled["truncated"] is False
+
+
+@pytest.mark.parametrize("cancel_caller", [False, True])
+@pytest.mark.parametrize("fail_close", [False, True])
+async def test_response_cleanup_retains_late_tasks_until_completion(cancel_caller: bool, fail_close: bool) -> None:
+    import asyncio
+    import gc
+    import weakref
+
+    from a13n_harness.toolsets import web
+
+    baseline = set(web._RESPONSE_CLOSE_TASKS)
+    started = asyncio.Event()
+    resisting = asyncio.Event()
+    finished = asyncio.Event()
+    pending_ref = None
+    failures: list[str] = []
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: failures.append(context["message"]))
+
+    async def close():
+        nonlocal pending_ref
+        started.set()
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            pending = asyncio.Future()
+            pending_ref = weakref.ref(pending)
+            resisting.set()
+            await pending
+        finished.set()
+        if fail_close:
+            raise RuntimeError("late close failure")
+
+    async def body():
+        yield b""
+
+    response = WebResponse(
+        status_code=200,
+        final_url="https://example.com/",
+        canonical_url="https://example.com/",
+        headers={},
+        body=body(),
+        _close=close,
+    )
+    caller = asyncio.create_task(web._close_response(response))
+    try:
+        async with asyncio.timeout(2):
+            await started.wait()
+            if cancel_caller:
+                caller.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await caller
+            else:
+                await caller
+            await resisting.wait()
+            while any(task.get_name() == "web-response-close-drain" for task in web._RESPONSE_CLOSE_TASKS - baseline):
+                await asyncio.sleep(0.01)
+            gc.collect()
+            assert failures == []
+            assert pending_ref is not None and pending_ref() is not None
+            assert len(web._RESPONSE_CLOSE_TASKS - baseline) == 1
+            pending_ref().set_result(None)
+            await finished.wait()
+            while web._RESPONSE_CLOSE_TASKS != baseline:
+                await asyncio.sleep(0.01)
+            gc.collect()
+            assert failures == []
+    finally:
+        caller.cancel()
+        await asyncio.gather(caller, return_exceptions=True)
+        remaining = web._RESPONSE_CLOSE_TASKS - baseline
+        for task in remaining:
+            task.cancel()
+        await asyncio.gather(*remaining, return_exceptions=True)
+        loop.set_exception_handler(previous_handler)
+
+
+@pytest.mark.parametrize("behavior", ["success", "error", "cancel"])
+async def test_response_cleanup_releases_completed_tasks(behavior: str) -> None:
+    import asyncio
+
+    from a13n_harness.toolsets import web
+
+    baseline = set(web._RESPONSE_CLOSE_TASKS)
+    calls = 0
+
+    async def close():
+        nonlocal calls
+        calls += 1
+        if behavior == "error":
+            raise RuntimeError("close failure")
+        if behavior == "cancel":
+            await asyncio.Future()
+
+    async def body():
+        yield b""
+
+    response = WebResponse(
+        status_code=200,
+        final_url="https://example.com/",
+        canonical_url="https://example.com/",
+        headers={},
+        body=body(),
+        _close=close,
+    )
+    async with asyncio.timeout(2):
+        await web._close_response(response)
+        await web._close_response(response)
+        await asyncio.sleep(0)
+    assert calls == 1
+    assert web._RESPONSE_CLOSE_TASKS == baseline

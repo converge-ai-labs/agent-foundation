@@ -66,7 +66,7 @@ class DecisionInteraction:
         if isinstance(request, ApprovalRequestView):
             return Selection(
                 (
-                    Choice("review", "Inspect full request", "Read the command and review evidence before deciding"),
+                    Choice("review", "Inspect request details", "Read retained arguments and review evidence"),
                     Choice("approve", "Approve once", "Execute only this pending request"),
                     Choice("deny", "Deny", "Do not execute this request"),
                 )
@@ -79,10 +79,20 @@ class DecisionInteraction:
             question = request.questions[self.question_index]
             return f"{question.header} · {self.question_index + 1}/{len(request.questions)}"
         return (
-            f"{request.tool_name} · choose approval"
-            if isinstance(request, ApprovalRequestView)
-            else f"{request.tool_name} · result required"
+            "Choose an action" if isinstance(request, ApprovalRequestView) else f"{request.tool_name} · result required"
         )
+
+    @property
+    def prompt_kind(self) -> str:
+        return "approval" if isinstance(self.request, ApprovalRequestView) else "notice"
+
+    def display_prompt(self) -> str:
+        """Keep structured display fields separate from untrusted text boundaries."""
+        if isinstance(self.request, ApprovalRequestView):
+            return json.dumps(
+                _approval_content(self.request, self.index + 1, len(self.batch.requests)), ensure_ascii=False
+            )
+        return self.prompt()
 
     def prompt(self) -> str:
         request = self.request
@@ -98,13 +108,13 @@ class DecisionInteraction:
                 else ""
             )
             return f"{question.header} · {self.question_index + 1}/{len(request.questions)}\n{question.question}\n{options}{review}\nChoose a number or type your own answer. {self.timeout_seconds:g}s timeout · /cancel leaves unanswered."
+        if isinstance(request, ApprovalRequestView):
+            return _approval_prompt(request, self.index + 1, len(self.batch.requests))
         arguments = json.dumps(request.arguments, ensure_ascii=False, indent=2)
         metadata = json.dumps(request.metadata, ensure_ascii=False, indent=2) if request.metadata else ""
         content = f"{arguments}\n{metadata}".strip()
         if len(content) > 8192 or request.arguments_omitted or request.metadata_omitted:
             content = content[:8192] + f"\n[Preview incomplete; /review {request.request_id} reads retained details]"
-        if isinstance(request, ApprovalRequestView):
-            return f"{heading}\n{content}\nNo automatic approval. Choose an action, or type yes / no [reason] / review."
         return f"{heading}\n{content}\nEnter a JSON result, or type deny [reason]. /cancel keeps the request pending."
 
     def accept(self, text: str) -> str | ThreadDeferredResponse | None:
@@ -167,3 +177,80 @@ class DecisionInteraction:
                 expected_continuation_id=self.batch.continuation_id, responses=tuple(self.responses)
             )
         return None
+
+
+def _approval_content(request: ApprovalRequestView, index: int, total: int) -> dict[str, str]:
+    """Expose review evidence before arguments without interpreting it as markup."""
+    incomplete = request.arguments_omitted or request.metadata_omitted
+
+    def preview(value: str, limit: int = 1000) -> str:
+        nonlocal incomplete
+        lines = value[:limit].splitlines()
+        clipped = len(value) > limit or len(lines) > 30
+        incomplete |= clipped
+        return "\n".join(lines[:30]) + ("\n[Preview truncated]" if clipped else "")
+
+    content = {"tool": request.tool_name, "position": f"{index}/{total}", "details": f"/review {request.request_id}"}
+    metadata = dict(request.metadata or {})
+    review = metadata.pop("a13n.harness.shell-review", None)
+    if isinstance(review, dict):
+        if review.get("status") == "error":
+            content["error"] = "The reviewer failed; no risk assessment or reason is available."
+        else:
+            risk, reason = review.get("risk"), review.get("reason")
+            content["risk"] = preview(risk, 80) if isinstance(risk, str) and risk else "unavailable"
+            content["reason"] = preview(reason, 2000) if isinstance(reason, str) and reason else "unavailable"
+    elif review is not None:
+        content["error"] = "Shell review unavailable (invalid review metadata)"
+    arguments = request.arguments
+    if isinstance(arguments, str):
+        # Native ToolCallPart arguments can be a JSON string or an object.
+        # Only expand complete objects; retain malformed/truncated text verbatim.
+        try:
+            decoded = json.loads(arguments)
+        except ValueError:
+            pass
+        else:
+            if isinstance(decoded, dict):
+                arguments = decoded
+    if isinstance(arguments, dict):
+        arguments = dict(arguments)
+    command = arguments.get("command") if isinstance(arguments, dict) else None
+    if isinstance(arguments, dict) and isinstance(command, str):
+        arguments.pop("command")
+        cwd = arguments.pop("cwd", None)
+        content["command"] = preview(command, 2500)
+        content["cwd"] = preview(cwd, 500) if isinstance(cwd, str) else "not specified"
+        environment = arguments.pop("environment", None)
+        if isinstance(environment, dict) and environment:
+            content["environment"] = preview(", ".join(sorted(environment)), 500) + " (values hidden)"
+    if arguments is not None and arguments != {}:
+        content["arguments"] = preview(json.dumps(arguments, ensure_ascii=False, indent=2))
+    if metadata and review is None:
+        content["context"] = preview(json.dumps(metadata, ensure_ascii=False, indent=2))
+    if incomplete:
+        content["notice"] = "Preview incomplete; inspect retained request details before deciding."
+    return content
+
+
+def _approval_prompt(request: ApprovalRequestView, index: int, total: int) -> str:
+    """Plain-text counterpart for non-rendering callers and transcript output."""
+    content = _approval_content(request, index, total)
+    parts = [f"Tool Approval Required · {content['position']}", f"Tool: {content['tool']}"]
+    for key, label in (
+        ("risk", "Risk"),
+        ("reason", "Reason"),
+        ("error", "Shell review unavailable"),
+        ("command", "Command"),
+        ("cwd", "Working directory"),
+        ("environment", "Environment keys"),
+        ("arguments", "Arguments"),
+        ("context", "Approval context"),
+        ("notice", "Notice"),
+    ):
+        if key in content:
+            parts.append(f"{label}:" + ("\n" if key in {"command", "arguments"} else " ") + content[key])
+    parts.append(
+        "1. Inspect request details   2. Approve once   3. Deny\nNo automatic approval · " + content["details"]
+    )
+    return "\n".join(parts)

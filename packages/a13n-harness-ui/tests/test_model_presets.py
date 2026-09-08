@@ -583,6 +583,8 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
         source = await app.current_configuration()
         assert source.models["model-api-key"].name == title
         assert source.agents["agent-api-key"].name == f"{title} · Coding"
+        assert f"name: {title}\n" in (tmp_path / "models/api-key.yaml").read_text(encoding="utf-8")
+        assert f"name: {title} · Coding\n" in (tmp_path / "agents/api-key.yaml").read_text(encoding="utf-8")
         characteristics = source.models["model-api-key"].model_characteristics
         assert characteristics.context_window == window
         composition = AgentCompositionResolver().resolve_run(

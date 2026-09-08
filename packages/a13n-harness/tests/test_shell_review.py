@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import (
     AgentShellCommandReviewer,
+    ShellCommandReviewer,
     ShellReviewAction,
     ShellReviewAssessment,
     ShellReviewCapability,
@@ -120,12 +122,13 @@ def _result(risk: ShellRiskLevel, *, usage: tuple[ProviderUsage, ...] = ()) -> S
 
 
 def _build(
-    reviewer: _Reviewer,
+    reviewer: ShellCommandReviewer,
     executed: list[dict[str, Any]],
     *,
     risk_threshold: ShellRiskLevel = ShellRiskLevel.HIGH,
     on_flagged: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
     on_error: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
+    timeout_seconds: float = 120.0,
 ):
     def shell_exec(
         command: str,
@@ -169,6 +172,7 @@ def _build(
                 risk_threshold=risk_threshold,
                 on_flagged=on_flagged,
                 on_error=on_error,
+                timeout_seconds=timeout_seconds,
             ),
         ),
     )
@@ -197,6 +201,7 @@ def test_agent_spec_registers_shell_review_without_global_registry_mutation() ->
     capability = next(item for item in leaves if isinstance(item, ShellReviewCapability))
 
     assert capability.model == "logical:review-model"
+    assert capability.timeout_seconds == 120.0
     assert capability.risk_threshold == ShellRiskLevel.EXTRA_HIGH
     assert capability.on_flagged == ShellReviewAction.DENY
 
@@ -533,3 +538,136 @@ def test_shell_toolset_marks_only_command_launch_for_review() -> None:
 
     assert command.metadata[HARNESS_TOOL_METADATA_KEY].shell_review is True
     assert wait.metadata[HARNESS_TOOL_METADATA_KEY].shell_review is False
+
+
+@pytest.mark.parametrize("on_error", list(ShellReviewAction))
+async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_usage(on_error) -> None:
+    receipt = ProviderUsage(
+        usage_id="review-timeout-usage",
+        provider="review-provider",
+        product="review-model",
+        timestamp=datetime.now(UTC),
+        measures=(UsageMeasure(unit="requests", quantity=Decimal(1)),),
+    )
+    executed = []
+    executable = _build(
+        _Reviewer([ShellReviewError("shell_review_timeout", usage=(receipt,))]), executed, on_error=on_error
+    )
+    result = await executable.run(
+        "go",
+        bindings=RunBindings.embedded(
+            capabilities=(
+                InvocationPolicyCapability(
+                    evaluator=_Policy(InvocationPolicyDecision.require_approval("confirm")),
+                ),
+            )
+        ),
+    )
+    assert result.status == "completed"
+    assert result.deferred is None
+    assert executed == []
+    records = [item for item in result.usage_records if isinstance(item, ProviderUsageRecord)]
+    assert len(records) == 1 and records[0].source == "shell.review"
+
+
+async def test_custom_reviewer_deadline_cancels_review_and_never_dispatches() -> None:
+    cancelled = asyncio.Event()
+
+    class WaitingReviewer:
+        async def review(self, request, *, context):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+    executed = []
+    result = await _build(WaitingReviewer(), executed, timeout_seconds=0.01).run("go")
+    assert result.status == "completed"
+    assert result.deferred is None and executed == []
+    assert cancelled.is_set()
+
+
+async def test_review_cancellation_propagates_without_dispatch() -> None:
+    entered = asyncio.Event()
+
+    class WaitingReviewer:
+        async def review(self, request, *, context):
+            entered.set()
+            await asyncio.Event().wait()
+
+    executed = []
+    task = asyncio.create_task(_build(WaitingReviewer(), executed).run("go"))
+    await asyncio.wait_for(entered.wait(), 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert executed == []
+
+
+async def test_default_reviewer_timeout_preserves_proven_usage() -> None:
+    async def slow_review(messages, info):
+        yield '{"risk":'
+        await asyncio.Event().wait()
+
+    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=slow_review), timeout_seconds=0.01)
+    with pytest.raises(ShellReviewError) as error:
+        await reviewer.review(
+            ShellReviewRequest(tool_id="environment.shell_exec", tool_call_id="timeout-call", command="echo safe"),
+            context=cast(AgentContext, object()),
+        )
+    assert error.value.code == "shell_review_timeout"
+    assert error.value.usage
+    assert any(measure.unit == "requests" for receipt in error.value.usage for measure in receipt.measures)
+
+
+async def test_timeout_on_approved_resume_still_denies() -> None:
+    reviewer = _Reviewer([_result(ShellRiskLevel.HIGH), ShellReviewError("shell_review_timeout")])
+    executed = []
+    executable = _build(reviewer, executed)
+    first = await executable.run("go")
+    assert first.deferred is not None and first.state is not None
+    call_id = first.deferred.approvals[0].tool_call_id
+    result = await executable.run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(
+            first.deferred,
+            first.deferred.build_results(approvals={call_id: ToolApproved()}, metadata=first.deferred.metadata),
+        ),
+    )
+    assert result.status == "completed"
+    assert result.deferred is None and executed == []
+
+
+async def test_other_review_failure_still_requests_approval_without_assessment() -> None:
+    executed = []
+    result = await _build(_Reviewer([ShellReviewError("shell_review_failed")]), executed).run("go")
+    assert result.status == "suspended"
+    assert result.deferred is not None
+    call_id = result.deferred.approvals[0].tool_call_id
+    assert result.deferred.metadata[call_id]["a13n.harness.shell-review"] == {
+        "action": "approval_required",
+        "status": "error",
+    }
+    assert executed == []
+
+
+async def test_timeout_emits_observable_denial_before_any_authorization() -> None:
+    from a13n_harness import HarnessEvent, HarnessExtensionEvent
+
+    executed = []
+    executable = _build(_Reviewer([ShellReviewError("shell_review_timeout")]), executed)
+    async with executable.stream("go", bindings=RunBindings.embedded()) as stream:
+        events = [item async for item in stream]
+    invocations = [
+        item.event.payload
+        for item in events
+        if isinstance(item, HarnessEvent)
+        and isinstance(item.event, HarnessExtensionEvent)
+        and item.event.kind == "invocation"
+    ]
+    assert [event["phase"] for event in invocations] == ["prepared", "denied"]
+    assert invocations[-1]["reason_code"] == "shell_review_timeout"
+    assert invocations[-1]["timeout_seconds"] == 120.0
+    assert invocations[-1]["tool_call_id"] == "shell-call-1"
+    assert executed == []
+    assert stream.result is not None and stream.result.status == "completed"
