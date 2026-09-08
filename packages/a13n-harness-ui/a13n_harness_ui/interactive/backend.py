@@ -277,10 +277,6 @@ class SessionBackend:
         detail = await self.app.get_thread(selected)
         if detail.thread.parent_thread_id is not None or detail.thread.archived:
             raise ValueError("Only non-archived root sessions can be resumed.")
-        if detail.thread.configuration.project_id not in matches:
-            raise ValueError(
-                "This session belongs to another Project. Launch a13n-harness-ui from its default directory."
-            )
         if await self.app.active_root_operation(selected) is not None:
             raise ValueError("This session is already running.")
         # Fetch one recent page before switching; never replay every saved message.
@@ -289,12 +285,22 @@ class SessionBackend:
         )
         totals = await self.app.thread_usage(thread_id=selected)
         usage = await self.app.context_usage(selected)
+        thread = detail.thread
+        if thread.configuration.project_id not in matches:
+            project_id = await self.app.ensure_cwd_project(self.directory)
+            thread = await self.app.update_thread_configuration(
+                thread_id=selected,
+                mutation=ThreadConfigurationMutation(
+                    expected_version=thread.configuration.version,
+                    patch=ThreadConfigurationPatch(project_id=project_id),
+                ),
+            )
         # All fallible I/O precedes the local selection change.
         self.thread_id = selected
         self.status.restore_usage(totals.root)
         self.status.context_tokens = usage.latest_request_tokens
-        agent = configuration.agents.get(detail.thread.configuration.agent_source.id)
-        self.agent_id = detail.thread.configuration.agent_source.id
+        agent = configuration.agents.get(thread.configuration.agent_source.id)
+        self.agent_id = thread.configuration.agent_source.id
         if self.overrides.model_id is None:
             # Historical usage never restores a temporary model selection.
             self.overrides = RunModelOverrides.model_validate(
@@ -303,7 +309,7 @@ class SessionBackend:
                     "service_tier": self.overrides.service_tier,
                 }
             )
-        self._refresh_status(configuration, detail.thread)
+        self._refresh_status(configuration, thread)
         self.resumed_transcript = page
         return f"Resumed {selected}."
 

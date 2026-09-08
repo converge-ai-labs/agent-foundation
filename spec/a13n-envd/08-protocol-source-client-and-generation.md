@@ -174,7 +174,7 @@ The repository provides two standalone installer entry points:
 - `scripts/install-a13n-envd.sh` for Linux and macOS;
 - `scripts/install-a13n-envd.ps1` for native Windows PowerShell.
 
-Both accept an exact `--version`, an absolute `--install-dir`, and mutually exclusive `--add-to-path` or `--no-add-to-path` behavior. The corresponding documented installer environment values provide the same inputs; explicit flags override environment values, which override defaults. Without an explicit version, the installer resolves the newest stable GitHub Release whose tag matches `release/a13n-envd-v*`; prereleases are excluded, so an RC requires an explicit canonical version.
+Both accept an exact `--version`, an absolute `--install-dir`, and mutually exclusive `--add-to-path` or `--no-add-to-path` behavior. `A13N_ENVD_VERSION`, `A13N_ENVD_INSTALL_DIR`, and `A13N_ENVD_ADD_TO_PATH` (`1` or `0`) provide the same inputs; explicit flags override environment values, which override defaults. Without an explicit version, the installer resolves the newest stable GitHub Release whose tag matches `release/a13n-envd-v*`; prereleases are excluded, so an RC requires an explicit canonical version.
 
 The default install directory is `~/.local/bin` for a non-root POSIX user, `/usr/local/bin` for POSIX root, and `%LOCALAPPDATA%\A13N\bin` on Windows. A supplied install directory must be absolute. Installers do not modify `PATH` by default. `--add-to-path` is the only opt-in mutation and updates the appropriate user shell or Windows user environment without changing system-wide configuration; `--no-add-to-path` explicitly preserves the default behavior.
 

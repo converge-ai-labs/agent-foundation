@@ -45,7 +45,7 @@
 | Resume the selected session                                    | Enter             |
 | Cancel naming or return to the original conversation           | Escape            |
 
-Search covers all matching saved metadata, not just the visible page, and treats `%` and `_` literally. The default scope includes all Projects whose first root matches this directory. All-directories mode also lets you inspect other, unresolved, or projectless sessions; it does not retarget their execution directory. For a session in another configured directory, Enter shows the launch command to use there. Active sessions cannot be resumed.
+Search covers all matching saved metadata, not just the visible page, and treats `%` and `_` literally. The default scope includes all Projects whose first root matches this directory. All-directories mode also lets you inspect and resume sessions from other directories, sessions with a missing Project, and projectless sessions. Enter resumes the conversation in the directory where you launched the terminal and assigns it to that directory's Project, creating one if needed. `/resume <id>` and `--resume <id>` behave the same way. History, Agent, and execution permissions are preserved; later turns use the current directory's roots and guidance. Merely browsing or inspecting history changes nothing. Active sessions cannot be resumed.
 
 Search, naming, preview, and history inspection make no model requests. Closing history returns to the same browser selection. Cancelling the browser or a failed resume preserves composer text, cursor, folded pastes, and attachments. A successful resume retains the existing policy of discarding only unchanged prior attachments.
 

@@ -183,7 +183,9 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.mark.anyio
-async def test_exact_cwd_project_never_retargets_saved_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cross_directory_resume_reassigns_thread_without_retargeting_projects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = await _seed(tmp_path, monkeypatch)
     nested = tmp_path / "nested"
     nested.mkdir()
@@ -199,10 +201,121 @@ async def test_exact_cwd_project_never_retargets_saved_project(tmp_path: Path, m
         assert configuration.projects[first].roots[0].path == str(nested)
         backend = SessionBackend(app, CliRequest(), nested, Status())
         thread_id = await backend.ensure_session()
-        other = SessionBackend(app, CliRequest(), tmp_path, Status())
-        with pytest.raises(ValueError, match="another Project"):
-            await other.resume(thread_id)
-        assert thread_id in {item.thread_id for item in (await backend.resume_sessions()).threads}
+        before = await app.get_thread(thread_id)
+        other = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        assert await other.initialize()
+        after = await app.get_thread(thread_id)
+        assert after.thread.configuration.project_id == "project-local"
+        assert after.thread.configuration.version == before.thread.configuration.version + 1
+        assert after.thread.configuration.model_dump(exclude={"project_id", "version"}) == (
+            before.thread.configuration.model_dump(exclude={"project_id", "version"})
+        )
+        assert after.continuation_id == before.continuation_id
+        assert other.thread_id == thread_id
+        assert thread_id not in {item.thread_id for item in (await backend.resume_sessions()).threads}
+        assert thread_id in {item.thread_id for item in (await other.resume_sessions()).threads}
+        assert (await app.current_configuration()).projects == configuration.projects
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("historical_project", ["existing", "missing", "none"])
+async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, historical_project: str
+) -> None:
+    import a13n_harness.model_auth as runtime
+    from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
+    from pydantic_ai.models.function import DeltaToolCall
+
+    path = await _seed(tmp_path, monkeypatch)
+    directory = tmp_path / "new-work"
+    directory.mkdir()
+    (directory / "AGENTS.md").write_text("NEW DIRECTORY GUIDANCE")
+    calls = []
+
+    async def stream(messages, info):
+        calls.append(messages)
+        if len(calls) % 2:
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps({"command": "echo current-directory > resumed-marker.txt"}),
+                    tool_call_id=f"write-{len(calls)}",
+                )
+            }
+        else:
+            yield "Saved answer"
+
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        renderer = StreamRenderer(backend.status)
+        try:
+            assert await backend.execute(renderer, prompt="Original question") == ""
+        finally:
+            renderer.transcript.close()
+        thread_id = backend.thread_id
+        assert (tmp_path / "resumed-marker.txt").read_text().strip() == "current-directory"
+        if historical_project == "none":
+            thread = (await app.get_thread(thread_id)).thread
+            await app.update_thread_configuration(
+                thread_id=thread_id,
+                mutation=ThreadConfigurationMutation(
+                    expected_version=thread.configuration.version,
+                    patch=ThreadConfigurationPatch(project_id=None),
+                ),
+            )
+        elif historical_project == "missing":
+            import yaml
+
+            project = next(
+                candidate
+                for candidate in (path.parent / "projects").glob("*.yaml")
+                if yaml.safe_load(candidate.read_text())["id"] == "project-local"
+            )
+            project.unlink()
+            # Remove the creation default too, leaving a valid resource generation.
+            document = yaml.safe_load(path.read_text())
+            document["defaults"].pop("project", None)
+            path.write_text(yaml.safe_dump(document))
+            await app.reload_configuration()
+        before = await app.get_thread(thread_id)
+        original_files = {item: item.read_bytes() for item in path.parent.rglob("*.yaml")}
+
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        resumed = SessionBackend(app, CliRequest(thread_id=thread_id), directory, Status())
+        assert await resumed.initialize()
+        assert len(calls) == 2  # Resume itself neither executes tools nor calls the Model.
+        after = await app.get_thread(thread_id)
+        project_id = after.thread.configuration.project_id
+        assert project_id not in (None, "project-local")
+        assert after.thread.configuration.version == before.thread.configuration.version + 1
+        assert after.thread.configuration.model_dump(exclude={"project_id", "version"}) == (
+            before.thread.configuration.model_dump(exclude={"project_id", "version"})
+        )
+        assert after.continuation_id == before.continuation_id
+        assert after.thread.metadata_version == before.thread.metadata_version
+        assert "Original question" in await _retained_history(resumed)
+        assert "Saved answer" in await _retained_history(resumed)
+        assert not (directory / "resumed-marker.txt").exists()
+        assert all(item.read_bytes() == content for item, content in original_files.items())
+        assert (await app.current_configuration()).projects[project_id].roots[0].path == str(directory)
+        renderer = StreamRenderer(resumed.status)
+        try:
+            assert await resumed.execute(renderer, prompt="Continue in the new directory") == ""
+        finally:
+            renderer.transcript.close()
+        assert (directory / "resumed-marker.txt").read_text().strip() == "current-directory"
+        assert "Original question" in str(calls[2])
+        assert "NEW DIRECTORY GUIDANCE" in str(calls[2])
+
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        resumed = SessionBackend(app, CliRequest(thread_id=thread_id), directory, Status())
+        assert await resumed.initialize()
+        saved = (await app.get_thread(thread_id)).thread.configuration
+        assert saved.project_id == project_id
+        assert saved.version == after.thread.configuration.version
+        assert len(calls) == 4
 
 
 @pytest.mark.anyio
@@ -330,6 +443,91 @@ async def test_ambiguous_cwd_projects_require_explicit_resume_without_creating_a
         resumed = SessionBackend(app, CliRequest(), tmp_path, Status())
         await resumed.resume(thread_id)
         assert resumed.thread_id == thread_id
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["ambiguous", "active", "archived", "conflict"])
+async def test_cross_directory_resume_failure_preserves_saved_and_local_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from unittest.mock import AsyncMock
+
+    import yaml
+    from a13n_harness_ui.errors import HarnessUiError
+    from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
+    from a13n_harness_ui.surfaces import ThreadMetadataMutation, ThreadMetadataPatch
+
+    path = await _seed(tmp_path, monkeypatch)
+    directory = tmp_path / "elsewhere"
+    directory.mkdir()
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        original = SessionBackend(app, CliRequest(), tmp_path, Status())
+        target = await original.ensure_session()
+        backend = SessionBackend(app, CliRequest(), directory, Status())
+        current = await backend.ensure_session()
+        before = (await app.get_thread(target)).thread
+        if failure == "ambiguous":
+            (path.parent / "projects/duplicate.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "schema_version": "1",
+                        "kind": "project",
+                        "id": "project-duplicate",
+                        "name": "Duplicate",
+                        "roots": [{"path": str(directory)}],
+                    }
+                )
+            )
+            await app.reload_configuration()
+        elif failure == "active":
+            monkeypatch.setattr(app, "active_root_operation", AsyncMock(return_value=object()))
+        elif failure == "archived":
+            await app.update_thread_metadata(
+                thread_id=target,
+                mutation=ThreadMetadataMutation(
+                    expected_version=before.metadata_version,
+                    patch=ThreadMetadataPatch(archived=True),
+                ),
+            )
+        else:
+            # Simulate another surface updating the head after resume read it.
+            context_usage = app.context_usage
+
+            async def conflicting_usage(thread_id):
+                await app.update_thread_configuration(
+                    thread_id=thread_id,
+                    mutation=ThreadConfigurationMutation(
+                        expected_version=before.configuration.version,
+                        patch=ThreadConfigurationPatch(project_id=None),
+                    ),
+                )
+                return await context_usage(thread_id)
+
+            monkeypatch.setattr(app, "context_usage", conflicting_usage)
+        projects = (await app.current_configuration()).projects
+        status = (backend.status.session_id, backend.status.agent, backend.status.context_tokens)
+        with pytest.raises((ValueError, HarnessUiError)) as exc:
+            await backend.resume(target)
+        if failure == "ambiguous":
+            assert exc.value.code == "project_ambiguous"
+        elif failure == "active":
+            assert "already running" in str(exc.value)
+        elif failure == "archived":
+            assert "non-archived root" in str(exc.value)
+        else:
+            assert "version" in str(exc.value).lower()
+        saved = (await app.get_thread(target)).thread.configuration
+        if failure == "conflict":
+            assert saved.project_id is None
+            assert saved.version == before.configuration.version + 1
+        else:
+            assert saved == before.configuration
+        assert backend.thread_id == current
+        assert (backend.status.session_id, backend.status.agent, backend.status.context_tokens) == status
+        assert backend.resumed_transcript is None
+        assert (await app.current_configuration()).projects == projects
 
 
 @pytest.mark.anyio
@@ -1584,14 +1782,18 @@ async def test_resume_usage_read_failure_keeps_current_selection(
     from unittest.mock import AsyncMock
 
     path = await _seed(tmp_path, monkeypatch)
+    directory = tmp_path / "other"
+    directory.mkdir()
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
-        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        original = SessionBackend(app, CliRequest(), tmp_path, Status())
+        target = await original.ensure_session()
+        before = (await app.get_thread(target)).thread.configuration
+        backend = SessionBackend(app, CliRequest(), directory, Status())
         await backend.initialize()
-        target = await backend.ensure_session()
-        await backend.new()
         current = await backend.ensure_session()
+        projects = (await app.current_configuration()).projects
         status = (backend.status.session_id, backend.status.agent, backend.status.context_tokens)
         monkeypatch.setattr(app, "context_usage", AsyncMock(side_effect=OSError("read failed")))
         with pytest.raises(OSError, match="read failed"):
@@ -1599,3 +1801,5 @@ async def test_resume_usage_read_failure_keeps_current_selection(
         assert backend.thread_id == current
         assert (backend.status.session_id, backend.status.agent, backend.status.context_tokens) == status
         assert backend.resumed_transcript is None
+        assert (await app.get_thread(target)).thread.configuration == before
+        assert (await app.current_configuration()).projects == projects

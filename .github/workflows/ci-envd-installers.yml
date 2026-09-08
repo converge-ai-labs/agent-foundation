@@ -1,0 +1,62 @@
+name: Envd installer CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "scripts/install-a13n-envd.*"
+      - "scripts/tests/test_install_envd*"
+      - ".github/workflows/ci-envd-installers.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/install-a13n-envd.*"
+      - "scripts/tests/test_install_envd*"
+      - ".github/workflows/ci-envd-installers.yml"
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  posix:
+    name: POSIX installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+      - name: Check prerequisites and syntax
+        run: |
+          command -v jq
+          sh -n scripts/install-a13n-envd.sh
+      - name: Test isolated installs with fixture releases
+        run: uv run --locked python -m pytest scripts/tests/test_install_envd.py
+
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Test Windows PowerShell 5.1
+        shell: powershell
+        run: ./scripts/tests/test_install_envd_windows.ps1
+      - name: Test PowerShell 7
+        shell: pwsh
+        run: ./scripts/tests/test_install_envd_windows.ps1

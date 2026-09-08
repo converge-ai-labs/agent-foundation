@@ -172,7 +172,8 @@ async def test_keyboard_search_preview_history_rename_and_cancel_preserve_draft(
 
 
 @pytest.mark.anyio
-async def test_pages_scope_inspection_and_successful_switch(monkeypatch) -> None:
+@pytest.mark.parametrize("project", ["project-other", "project-missing", None])
+async def test_pages_scope_inspection_and_successful_switch(monkeypatch, project: str | None) -> None:
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = backend = _backend()
@@ -191,21 +192,18 @@ async def test_pages_scope_inspection_and_successful_switch(monkeypatch) -> None
             pipe.send_text("\x1b[5~")
             await _until(lambda: not browser.loading and browser.page_index == 0)
             assert backend.resume_sessions.call_args.kwargs["cursor"] is None
-            backend.resume_sessions.return_value = ThreadPage(threads=(_thread(4, project="project-other"),), total=1)
+            backend.resume_sessions.return_value = ThreadPage(threads=(_thread(4, project=project),), total=1)
             pipe.send_text("\x01")
             await _until(lambda: not browser.loading and browser.all_directories)
             assert backend.resume_sessions.call_args.kwargs["all_directories"]
-            assert "/elsewhere" in browser.guidance(browser.selected)
-            pipe.send_text("\r")
-            await _until(lambda: "--resume thread-4" in browser.message)
+            assert "Enter resumes in /work" in browser.guidance(browser.selected)
             backend.resume.assert_not_called()
             pipe.send_text("\x14")
             await _until(lambda: shell.history_browser is not None and shell.history_browser.page is not None)
             pipe.send_text("q")
             await _until(lambda: shell.history_browser is None)
-            backend.resume_sessions.return_value = ThreadPage(threads=(_thread(3),), total=1)
-            pipe.send_text("\x01")
-            await _until(lambda: not browser.loading and not browser.all_directories)
+            assert backend.thread_id == "thread-current"
+            backend.resume.assert_not_called()
 
             async def resume(thread_id):
                 backend.thread_id = thread_id
@@ -215,7 +213,8 @@ async def test_pages_scope_inspection_and_successful_switch(monkeypatch) -> None
             backend.resume.side_effect = resume
             pipe.send_text("\r")
             await _until(lambda: shell.resume_browser is None and not shell.busy)
-            assert backend.thread_id == "thread-3"
+            assert backend.thread_id == "thread-4"
+            backend.resume.assert_awaited_once_with("thread-4")
             assert not shell.images
             assert "Retained answer" in _source(shell)
         finally:

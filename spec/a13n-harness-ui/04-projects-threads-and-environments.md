@@ -41,7 +41,7 @@ Changing Project roots affects later Runs of every Thread selecting the Project.
 
 ### Current-directory Resolution
 
-The full-terminal CLI uses [exact-first-root Project selection](07-interactive-cli.md#project-selection-and-resume): it reuses the Project whose first root equals the invocation directory, preserving all roots, or creates a single-root Project when none matches. It never silently adopts a containing ancestor. New conversations reject ambiguous exact matches; an explicit saved Thread can disambiguate its existing Project. Creation, resume listing, and explicit resume use the same App-owned matching rule. There is no CLI-specific Project type or separate Workspace resource.
+The full-terminal CLI uses [exact-first-root Project selection](07-interactive-cli.md#project-selection-and-resume): it reuses the Project whose first root equals the invocation directory, preserving all roots, or creates a single-root Project when none matches. It never silently adopts a containing ancestor. New conversations reject ambiguous exact matches; an explicit saved Thread can disambiguate its existing Project when that Project matches. Explicit CLI resume reassigns a root Thread from another, missing, or null Project to the invocation directory's Project through the ordinary expected-version configuration mutation. This changes later root Runs, not historical captures or existing child selections. Creation, resume listing, and explicit resume use the same App-owned matching rule. There is no CLI-specific Project type or separate Workspace resource.
 
 The containing-directory query below remains available to embedding adapters and is read-only. Its ancestor matching is an explicit adapter policy, not the CLI launch default.
 

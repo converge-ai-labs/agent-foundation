@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import shlex
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
@@ -133,17 +132,13 @@ class ResumeBrowser:
         return FormattedText(result)
 
     def guidance(self, item: ThreadSummary) -> str:
-        project = item.configuration.project_id
-        if project is None:
-            return "Projectless session · inspect only; select a Project before resuming here."
-        if project not in self.locations:
-            return "Unresolved Project · inspect only; restore its configuration before resuming."
-        directory = self.locations[project]
-        if project not in self.matching_projects:
-            return f"Open in {directory}: cd {shlex.quote(directory)} && a13n-harness-ui --resume {shlex.quote(item.thread_id)}"
         if item.root_activity.receipt_id is not None:
             return "Session is running · inspect only until it finishes."
-        return directory
+        project = item.configuration.project_id
+        if project in self.matching_projects:
+            return str(self.backend.directory)
+        previous = "Projectless session" if project is None else self.locations.get(project, "Unresolved Project")
+        return f"Enter resumes in {self.backend.directory} · previous: {previous}"
 
     def preview(self) -> str:
         item = self.selected
@@ -249,8 +244,6 @@ class ResumeBrowser:
                 self.saving = False
                 self.reload(page_index=self.page_index, keep=item.thread_id)
             else:
-                if item.configuration.project_id not in self.matching_projects:
-                    raise ValueError(self.guidance(item))
                 await self.resume(item.thread_id)
         except Exception as exc:
             self.message = f"{exc} · F5 refreshes"

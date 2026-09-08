@@ -94,7 +94,7 @@ defaults:
   environment_profile: environment-native
 ```
 
-An application-created conversation without a Project uses its own `thread-files/tmp/` working directory. It still has attachments, global Skills when enabled, and global guidance. The terminal continues to select a Project from its launch directory when you send a prompt. Existing conversations keep their previous Project selections.
+An application-created conversation without a Project uses its own `thread-files/tmp/` working directory. It still has attachments, global Skills when enabled, and global guidance. The terminal selects a Project from its launch directory on the first prompt or explicit resume. Resuming an existing conversation from another directory assigns it to the launch directory's Project without changing its history or other settings.
 
 The Agent can read and write the selected configuration directory through the file-only `configuration` mount. This defaults to `~/.a13n-harness-ui`; with `--config`, it is the chosen YAML file's parent directory. It is not a project workspace and does not grant shell execution through that mount. If an existing working mount already exposes the exact directory, its route is reused. Resource edits are validated before acceptance and affect later Runs; invalid edits leave the last accepted configuration active. Process settings require restart. The mount exposes the whole selected directory, so keep sensitive file contents out of messages and logs.
 

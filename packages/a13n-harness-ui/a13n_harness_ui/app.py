@@ -523,8 +523,8 @@ class HarnessUiApp:
     async def ensure_cwd_project(self, directory: Path) -> str:
         """Select or create an ordinary Project without retargeting saved Threads.
 
-        Resources remain internal configuration facts. This command is invoked
-        on first submission, never merely to paint an editable landing prompt.
+        Resources remain internal configuration facts. The CLI invokes this on
+        first submission or explicit resume, never merely to paint a landing prompt.
         """
         normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
         if not normalized.is_dir():
