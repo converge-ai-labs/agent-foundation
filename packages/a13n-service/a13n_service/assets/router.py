@@ -6,23 +6,24 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
+from .catalog import AssetCatalog, PreparedAssetContent
 from .domain import Asset, AssetCollection, AssetSourceKind
 from .errors import AssetError, asset_limit
-from .service import AssetService, PreparedAssetContent
+from .uploads import AssetUploadService
 
 router = APIRouter(prefix="/api/v1", tags=["asset-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
-IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
 
 
-def _assets(request: Request) -> AssetService:
+def _assets(request: Request) -> AssetCatalog:
     control = get_control_runtime(request)
     if control is None:
         raise AssetError(
@@ -33,6 +34,15 @@ def _assets(request: Request) -> AssetService:
     return control.assets
 
 
+def _uploads(request: Request) -> AssetUploadService:
+    control = get_control_runtime(request)
+    if control is None:
+        raise AssetError(
+            "asset_management_unavailable", "Asset Management is unavailable.", category=ErrorCategory.unavailable
+        )
+    return control.asset_uploads
+
+
 @router.post(
     "/workspaces/{workspace_id}/assets",
     response_model=Asset,
@@ -40,7 +50,6 @@ def _assets(request: Request) -> AssetService:
 )
 async def upload_asset(
     request: Request,
-    response: Response,
     actor: Actor,
     workspace_id: str,
     idempotency_key: IdempotencyKey,
@@ -48,7 +57,7 @@ async def upload_asset(
     media_type: Annotated[str | None, Query(max_length=255)] = None,
 ) -> Asset:
     _require_octet_stream(request)
-    result = await _assets(request).upload(
+    return await _uploads(request).upload(
         actor=actor,
         workspace_id=workspace_id,
         idempotency_key=idempotency_key,
@@ -57,8 +66,6 @@ async def upload_asset(
         body=request.stream(),
         content_length=_content_length(request),
     )
-    response.status_code = result.status_code
-    return result.asset
 
 
 @router.get("/workspaces/{workspace_id}/assets", response_model=AssetCollection)

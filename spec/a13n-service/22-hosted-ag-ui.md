@@ -153,7 +153,7 @@ The adapter projects each source `run.recovery` as this safe Run-level event:
 }
 ```
 
-`event_id` is the stable source recovery identity. `reason` follows the finite registry in [Recovery Event](24-lifecycle-and-stream-persistence.md#recovery-event): `lease_expired`, `retry_after_failure`, or `planned_handoff`. The value exposes no Worker, RunAttempt, internal Harness Run, fence, or lease credential.
+`event_id` is the stable source recovery identity. `reason` follows the finite registry in [Recovery Event](24-lifecycle-and-stream-persistence.md#recovery-event): `lease_expired`, `retry_after_failure`, `planned_handoff`, or `pending_input`. The value exposes no Worker, RunAttempt, internal Harness Run, fence, or lease credential.
 
 Recovery passes through the ordinary ordered source-to-Hosted delivery path, before every subsequent replacement observation, in both live delivery and replay. It is a required execution-boundary projection, independent of optional reasoning or diagnostic visibility. A separate notification, timer, or late lifecycle lookup cannot synthesize this boundary. The event preserves the external Run identity and emits no additional `RUN_STARTED`, `RUN_FINISHED`, or `RUN_ERROR`; it reports publisher replacement rather than completed execution recovery or a tool failure.
 

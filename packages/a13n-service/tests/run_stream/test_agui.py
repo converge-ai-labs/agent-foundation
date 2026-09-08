@@ -29,6 +29,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.usage import RunUsage
 from redis.asyncio import Redis
 from tests.interactions.test_attempt_executor import _context
+from tests.run_stream.support import activate_stream
 
 pytestmark = pytest.mark.anyio
 
@@ -46,10 +47,10 @@ class _BlockingRunStream(RedisRunStream):
         self.started = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def append(self, organization_id: str, event: RunStreamEvent) -> str:
+    async def append(self, organization_id: str, event: RunStreamEvent, *, attempt_number: int) -> str:
         self.started.set()
         await self.release.wait()
-        return await super().append(organization_id, event)
+        return await super().append(organization_id, event, attempt_number=attempt_number)
 
 
 def _harness_event(sequence: int, event: AgentStreamEvent) -> HarnessEvent:
@@ -64,12 +65,13 @@ def _harness_event(sequence: int, event: AgentStreamEvent) -> HarnessEvent:
 
 async def test_projects_agui_observations_with_stable_item_identity(redis_client: Redis) -> None:
     stream = RedisRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
 
     await projector.project(_harness_event(0, PartStartEvent(index=0, part=TextPart("hello"))))
     await projector.project(_harness_event(1, PartEndEvent(index=0, part=TextPart("hello"))))
     await projector.close()
-    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
 
     assert tuple(entry.event.event_type for entry in page.items) == (
         "agui.text_message_start",
@@ -99,6 +101,7 @@ async def test_projects_terminal_harness_result(
     failure: SafeFailure | None,
 ) -> None:
     stream = RedisRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
     result = HarnessRunResult(
         thread_id=THREAD_ID,
@@ -120,7 +123,7 @@ async def test_projects_terminal_harness_result(
         )
     )
     await projector.close()
-    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
 
     assert tuple(entry.event.event_type for entry in page.items) == (expected_type,)
     assert page.items[0].event.item_id is None
@@ -128,6 +131,7 @@ async def test_projects_terminal_harness_result(
 
 async def test_oversized_terminal_result_is_explicitly_omitted(redis_client: Redis) -> None:
     stream = RedisRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
     await projector.project(
         HarnessRunResultEvent(
@@ -147,7 +151,7 @@ async def test_oversized_terminal_result_is_explicitly_omitted(redis_client: Red
     )
 
     await projector.close()
-    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
 
     assert len(page.items) == 1
     assert page.items[0].event.payload["result"] is None
@@ -156,6 +160,7 @@ async def test_oversized_terminal_result_is_explicitly_omitted(redis_client: Red
 
 async def test_tool_item_closes_only_after_successful_result(redis_client: Redis) -> None:
     stream = RedisRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
 
     await projector.project(
@@ -180,7 +185,7 @@ async def test_tool_item_closes_only_after_successful_result(redis_client: Redis
         )
     )
     await projector.close()
-    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
 
     assert tuple(entry.event.event_type for entry in page.items[:3]) == (
         "agui.tool_call_start",
@@ -196,6 +201,7 @@ async def test_tool_item_closes_only_after_successful_result(redis_client: Redis
 
 async def test_failed_tool_result_emits_safe_item_failure(redis_client: Redis) -> None:
     stream = RedisRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
 
     await projector.project(
@@ -212,7 +218,7 @@ async def test_failed_tool_result_emits_safe_item_failure(redis_client: Redis) -
         )
     )
     await projector.close()
-    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
 
     assert tuple(entry.event.event_type for entry in page.items) == ("agui.custom", "item.failed")
     assert page.items[-1].event.payload["failure"] == {
@@ -224,6 +230,7 @@ async def test_failed_tool_result_emits_safe_item_failure(redis_client: Redis) -
 
 async def test_projection_timeout_marks_stream_incomplete(redis_client: Redis) -> None:
     stream = _BlockingRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     context = replace(_attempt_context(), reconciliation_timeout=timedelta(milliseconds=20))
     projector = AttemptRunStreamProjector(stream, context)
     with pytest.raises(TimeoutError):
@@ -235,21 +242,23 @@ async def test_projection_timeout_marks_stream_incomplete(redis_client: Redis) -
     await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
 
     with pytest.raises(RunStreamReplayGap):
-        await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+        await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
     with pytest.raises(RetainedReplayUnavailable, match="incomplete"):
         await stream.complete_source(ORGANIZATION_ID, RUN_ID)
 
 
 async def test_clean_attempt_records_projection_completion(redis_client: Redis) -> None:
     stream = RedisRunStream(redis_client)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
     await projector.project(_harness_event(0, PartStartEvent(index=0, part=TextPart(""))))
     await projector.close()
-    await stream.append(
+    await stream.append_lifecycle(
         ORGANIZATION_ID,
         RunStreamEvent(
             event_id=deterministic_run_stream_event_id("test", "attempt-running"),
             event_type="run_attempt.running",
+            lifecycle_event_id="evt_1234567890abcdef",
             run_id=RUN_ID,
             thread_id=THREAD_ID,
             run_attempt_id=ATTEMPT_ID,
@@ -261,7 +270,7 @@ async def test_clean_attempt_records_projection_completion(redis_client: Redis) 
     await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
 
     source = await stream.complete_source(ORGANIZATION_ID, RUN_ID)
-    assert tuple(entry.event.event_type for entry in source.entries) == (
+    assert tuple(entry.event.event_type for entry in source.entries[2:]) == (
         "agui.text_message_start",
         "run_attempt.running",
     )
@@ -269,6 +278,7 @@ async def test_clean_attempt_records_projection_completion(redis_client: Redis) 
 
 async def test_projects_environment_observation_with_attempt_correlation(redis_client: Redis) -> None:
     stream = RedisRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
     projector.project_environment(
         EnvironmentHookObservation(
@@ -286,7 +296,7 @@ async def test_projects_environment_observation_with_attempt_correlation(redis_c
     )
     await projector.close()
 
-    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
     assert tuple(entry.event.event_type for entry in page.items) == ("environment.preparation.ready",)
     assert page.items[0].event.run_attempt_id == ATTEMPT_ID
     assert page.items[0].event.harness_run_id == HARNESS_RUN_ID
@@ -294,7 +304,9 @@ async def test_projects_environment_observation_with_attempt_correlation(redis_c
 
 
 async def test_rejects_harness_correlation_change(redis_client: Redis) -> None:
-    projector = AttemptRunStreamProjector(RedisRunStream(redis_client), _attempt_context())
+    stream = RedisRunStream(redis_client)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    projector = AttemptRunStreamProjector(stream, _attempt_context())
     mismatched = HarnessEvent(
         thread_id="another-thread",
         run_id=HARNESS_RUN_ID,
@@ -314,6 +326,7 @@ def _attempt_context():
 
 async def test_parent_and_inline_children_keep_separate_tool_items(redis_client: Redis) -> None:
     stream = RedisRunStream(redis_client)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
     runs = ((THREAD_ID, HARNESS_RUN_ID), ("child-one", "child-run-one"), ("child-two", "child-run-two"))
     for thread_id, run_id in runs:
@@ -344,7 +357,7 @@ async def test_parent_and_inline_children_keep_separate_tool_items(redis_client:
             )
         )
     await projector.close()
-    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=100)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=100)
     retained = project_retained_items(page.items)
     assert len(retained) == 3
     assert sorted(item.state for item in retained) == ["completed", "completed", "failed"]
@@ -361,6 +374,7 @@ async def test_parent_and_inline_children_keep_separate_tool_items(redis_client:
 
 async def test_projection_applies_backpressure(redis_client: Redis) -> None:
     stream = _BlockingRunStream(redis_client)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     projector = AttemptRunStreamProjector(stream, _attempt_context())
     pending = asyncio.create_task(projector.project(_harness_event(0, PartStartEvent(index=0, part=TextPart("first")))))
     await stream.started.wait()
@@ -368,3 +382,24 @@ async def test_projection_applies_backpressure(redis_client: Redis) -> None:
     stream.release.set()
     await pending
     await projector.close()
+
+
+@pytest.mark.parametrize("reject_at_close", [False, True])
+async def test_stale_projection_closes_local_admission_without_harming_successor(redis_client, reject_at_close):
+    from a13n_service.interactions.attempts import AttemptAuthorityError
+
+    stream = RedisRunStream(redis_client)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    projector = AttemptRunStreamProjector(stream, _attempt_context())
+    await projector.project(_harness_event(0, PartStartEvent(index=0, part=TextPart("first"))))
+    boundary = await activate_stream(
+        stream, ORGANIZATION_ID, RUN_ID, THREAD_ID, attempt_id="rat_2222222222222222", number=2, reason="lease_expired"
+    )
+    with pytest.raises(AttemptAuthorityError):
+        if reject_at_close:
+            await projector.close()
+        else:
+            await projector.project(_harness_event(1, PartEndEvent(index=0, part=TextPart("first"))))
+    await projector.close()
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=boundary.recovery_stream_id, limit=10)
+    assert not page.closed and not page.items

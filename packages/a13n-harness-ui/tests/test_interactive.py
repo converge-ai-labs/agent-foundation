@@ -681,7 +681,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
                 "model": "model-codex",
                 "risk_threshold": "high",
                 "on_flagged": "approval_required",
-                "on_error": "approval_required",
+                "on_error": "skip",
             },
         }
     )
@@ -736,6 +736,68 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
             await app.get_thread_transcript(thread_id=backend.thread_id)
         ).model_dump_json()
         assert await backend.pending() == ""
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("disable_media", [False, True])
+async def test_setup_model_view_uses_declared_media_without_an_external_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disable_media: bool
+) -> None:
+    import a13n_harness.model_auth as runtime
+    import yaml
+    from pydantic_ai import BinaryContent
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+    from pydantic_ai.models.function import DeltaToolCall
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/codex.yaml"
+    document = yaml.safe_load(model_path.read_text(encoding="utf-8"))
+    assert document["model_characteristics"]["capabilities"] == ["image_understanding"]
+    if disable_media:
+        document["model_characteristics"]["capabilities"] = []
+        model_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    data = b"\x89PNG"
+    (tmp_path / "image.png").write_bytes(data)
+    observed = []
+    returns = []
+    monkeypatch.delenv("A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL", raising=False)
+
+    async def stream_model(messages, info):
+        observed.extend(messages)
+        returns.extend(
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        )
+        if returns:
+            yield "Image handled"
+        else:
+            yield {0: DeltaToolCall(name="view", tool_call_id="view-image", json_args='{"file_path":"image.png"}')}
+
+    monkeypatch.setattr(
+        runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
+    )
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.execute(StreamRenderer(backend.status), prompt="View image.png")
+    contents = [
+        item
+        for message in observed
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+        for item in part.content
+        if isinstance(item, BinaryContent)
+    ]
+    if disable_media:
+        assert not contents
+        assert any("media_understanding_unavailable" in str(part.content) for part in returns)
+    else:
+        assert any(item.data == data and item.media_type == "image/png" for item in contents)
 
 
 @pytest.mark.anyio

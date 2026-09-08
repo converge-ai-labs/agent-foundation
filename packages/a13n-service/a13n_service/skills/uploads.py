@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -55,7 +56,8 @@ class SkillUploadService:
         idempotency_key: str,
         archive: bytes,
     ) -> ReplayResult[SkillUploadReceipt]:
-        identity = await asyncio.to_thread(idempotency_identity, idempotency_key, archive)
+        archive_sha256 = await asyncio.to_thread(lambda: hashlib.sha256(archive).hexdigest())
+        identity = idempotency_identity(idempotency_key, {"archive_sha256": archive_sha256})
         replay, organization_id = await self._preauthorize_and_replay(
             actor=actor,
             workspace_id=workspace_id,
@@ -77,7 +79,7 @@ class SkillUploadService:
         receipt = SkillUploadReceipt(
             upload_id=upload_id,
             workspace_id=workspace_id,
-            archive_sha256=identity.request_digest,
+            archive_sha256=archive_sha256,
             manifest=package.manifest,
             expires_at=now + UPLOAD_LIFETIME,
             consumed_by_revision_id=None,

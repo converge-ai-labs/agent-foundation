@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from a13n_environment import EnvironmentProviderCatalog, EnvironmentProviderError
 from pydantic import ValidationError
@@ -19,6 +19,7 @@ from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import utc_now
 
 from .access import authorize_environment_resource, authorize_environment_workspace, environment_actor_scope
 from .cursors import decode_cursor, encode_cursor
@@ -99,7 +100,7 @@ class EnvironmentService:
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Provider type or configuration is invalid") from error
         credential = self._credential(request.type, request.credential)
-        now = datetime.now(UTC)
+        now = utc_now()
         async with transaction(self.sessions) as session:
             workspace = await authorize_environment_workspace(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_provider_manage
@@ -142,7 +143,7 @@ class EnvironmentService:
                 row.name = request.name
             if request.enabled is not None:
                 row.enabled = request.enabled
-            row.updated_at = datetime.now(UTC)
+            row.updated_at = utc_now()
             return row.to_resource()
 
     async def replace_credential(
@@ -152,7 +153,7 @@ class EnvironmentService:
             row = await self._provider(session, actor, provider_id, manage=True, lock=True)
             self._match(row.id, row.updated_at, if_match)
             row.replace_credential(self._credential(row.type, request.credential), self.protector)
-            row.updated_at = datetime.now(UTC)
+            row.updated_at = utc_now()
             return row.to_resource()
 
     async def create_template(
@@ -163,7 +164,7 @@ class EnvironmentService:
         request: CreateTemplateRequest,
         idempotency_key: str,
     ) -> EnvironmentTemplate:
-        now = datetime.now(UTC)
+        now = utc_now()
         identity = request_identity(idempotency_key, request)
         async with short_session(self.sessions) as session:
             owner = await authorize_environment_workspace(
@@ -225,7 +226,7 @@ class EnvironmentService:
                         operation="environment_template.create",
                         scope_id=owner.id,
                         identity=identity,
-                        now=datetime.now(UTC),
+                        now=utc_now(),
                     )
                     if replay is not None:
                         await self._template(session, actor, replay.result_ref)
@@ -291,7 +292,7 @@ class EnvironmentService:
                 return current.to_resource()
             row.version += 1
             row.current_revision_id = new_object_id("envrev")
-            row.updated_at = datetime.now(UTC)
+            row.updated_at = utc_now()
             revision = self._revision(row, recipe, row.updated_at)
             session.add(revision)
             return revision.to_resource()
@@ -307,8 +308,8 @@ class EnvironmentService:
             if "description" in request.model_fields_set:
                 row.description = request.description
             if request.archived is not None:
-                row.archived_at = datetime.now(UTC) if request.archived else None
-            row.updated_at = datetime.now(UTC)
+                row.archived_at = utc_now() if request.archived else None
+            row.updated_at = utc_now()
             return row.to_resource()
 
     async def allocate(
@@ -331,7 +332,7 @@ class EnvironmentService:
     async def create_environment(
         self, *, actor: AuthenticatedActor, workspace_id: str, request: CreateEnvironmentRequest, idempotency_key: str
     ) -> Environment:
-        now = datetime.now(UTC)
+        now = utc_now()
         identity = request_identity(idempotency_key, request)
         try:
             async with transaction(self.sessions) as session:
@@ -390,7 +391,7 @@ class EnvironmentService:
                         operation="environment.create",
                         scope_id=workspace_id,
                         identity=identity,
-                        now=datetime.now(UTC),
+                        now=utc_now(),
                     )
                     if replay is not None:
                         await self.require_environment(session, actor, replay.result_ref)
@@ -643,7 +644,7 @@ class EnvironmentService:
     ) -> EnvironmentCommand:
         from .retention import has_active_use
 
-        now = datetime.now(UTC)
+        now = utc_now()
         identity = request_identity(idempotency_key, request)
         async with transaction(self.sessions) as session:
             environment = await self.require_environment(session, actor, environment_id)

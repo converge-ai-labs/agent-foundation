@@ -351,7 +351,7 @@ def _print_text_result(operation: RootOperationView) -> None:
     failure = operation.failure or (None if outcome is None else outcome.execution.failure)
     if failure is not None:
         click.echo(f"Error [{failure.code}]: {failure.message}", err=True)
-        if failure.retry_hint:
+        if failure.retry_hint and failure.code != "model_recovery_exhausted":
             click.echo(f"Retry: {failure.retry_hint}", err=True)
     elif operation.status is RootOperationStatus.suspended:
         click.echo("Run suspended: deferred tool requests require attention.", err=True)

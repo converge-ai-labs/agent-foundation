@@ -25,9 +25,9 @@ class AssetRetention:
     async def scan(self) -> Sweep:
         now = utc_now()
         completed = 0
-        async with transaction(self._sessions) as database:
+        async with transaction(self._sessions) as session:
             records = tuple(
-                await database.scalars(
+                await session.scalars(
                     select(AssetRecord)
                     .where(
                         AssetRecord.deleted_at < now - self._age,
@@ -55,10 +55,14 @@ class AssetRetention:
                         cast(SecurityAuditRecord.details, String).contains(record.id),
                     ),
                 )
-                attempt = exists().where(RunAttemptRecord.id == record.source_run_attempt_id)
-                if await database.scalar(select(or_(pending, replay, audit, attempt))):
+                attempt = exists().where(
+                    RunAttemptRecord.id == record.source_run_attempt_id,
+                    RunAttemptRecord.status.in_(("leased", "running")),
+                    RunAttemptRecord.lease_expires_at > now,
+                )
+                if await session.scalar(select(or_(pending, replay, audit, attempt))):
                     continue
-                await database.delete(record)
+                await session.delete(record)
                 completed += 1
             self._after_id = records[-1].id if records else ""
             age = max(

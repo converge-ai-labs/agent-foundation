@@ -9,12 +9,14 @@ from typing import Annotated, Literal
 from a13n_harness import SafeFailure
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from a13n_service.iam.domain import ObjectId, ResourceRef
+from a13n_service.digests import Sha256Digest
+from a13n_service.iam.domain import ResourceRef
+from a13n_service.ids import ObjectId
 
 PLUGIN_ID_PREFIX = "plg"
 PLUGIN_VERSION_ID_PREFIX = "plgv"
-ContentDigest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-PluginKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")]
+PLUGIN_KEY_PATTERN = r"^[a-z][a-z0-9_.-]{1,127}$"
+PluginKey = Annotated[str, StringConstraints(pattern=PLUGIN_KEY_PATTERN)]
 PluginId = Annotated[str, StringConstraints(pattern=r"^plg_[a-z0-9]{16,64}$")]
 PluginVersionId = Annotated[str, StringConstraints(pattern=r"^plgv_[a-z0-9]{16,64}$")]
 
@@ -50,7 +52,7 @@ class PluginVersion(DomainModel):
     id: ObjectId
     plugin_id: ObjectId
     version: str = Field(min_length=1, max_length=256)
-    content_digest: ContentDigest
+    content_digest: Sha256Digest
     artifact_ref: str = Field(min_length=1, max_length=1024)
     requires_dist: tuple[str, ...] = Field(default=(), max_length=512)
     status: Literal["ready"] = "ready"
@@ -66,7 +68,7 @@ class BuiltinPluginRegistration(DomainModel):
     distribution_name: str = Field(min_length=1, max_length=256)
     top_level_package: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=256)
     version: str = Field(min_length=1, max_length=256)
-    content_digest: ContentDigest
+    content_digest: Sha256Digest
     required: bool = False
 
 

@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("source", sa.String(length=16), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("normalized_name", sa.String(length=128), nullable=False),
+        sa.Column("normalized_name", sa.String(length=384), nullable=False),
         sa.Column("description", sa.String(length=4096), nullable=True),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),

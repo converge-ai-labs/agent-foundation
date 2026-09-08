@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request, is_evidence_unique_race
+from a13n_service.digests import digest_request
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, is_evidence_unique_race
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.audit import security_audit_record
@@ -22,7 +23,7 @@ from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import Clock, utc_now
 
 from .artifact import InspectedPluginWheel, inspect_plugin_wheel
 from .commands import PluginRuntimeCommandDispatcher
@@ -86,7 +87,7 @@ class PluginService:
         max_expanded_bytes: int,
         max_archive_members: int,
         runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None,
-        clock=None,
+        clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self._objects = objects

@@ -93,7 +93,7 @@ type AttemptPreparationResult = AttemptPreparationAccepted | AttemptPreparationR
 
 
 class AttemptExecutionService:
-    """Apply lease-authorized execution transitions under fresh database row locks."""
+    """Apply lease-authorized execution transitions under fresh session row locks."""
 
     def __init__(
         self,
@@ -110,8 +110,8 @@ class AttemptExecutionService:
         """Revalidate current lease and fencing attempt number without mutating durable state."""
 
         now = assume_utc(self._clock())
-        async with short_session(self._sessions) as database:
-            run, attempt, _ = await read_attempt_authority(database, authority, now)
+        async with short_session(self._sessions) as session:
+            run, attempt, _ = await read_attempt_authority(session, authority, now)
             return _receipt(run, attempt)
 
     async def heartbeat(
@@ -123,8 +123,8 @@ class AttemptExecutionService:
         if lease_duration <= timedelta(0):
             raise ValueError("lease_duration must be positive")
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
-            run, attempt, _ = await lock_attempt_authority(database, authority, now)
+        async with transaction(self._sessions) as session:
+            run, attempt, _ = await lock_attempt_authority(session, authority, now)
             attempt.heartbeat_at = now
             attempt.lease_expires_at = now + lease_duration
             attempt.updated_at = now
@@ -135,8 +135,8 @@ class AttemptExecutionService:
         """Check the current handoff budget before stopping local execution."""
 
         now = assume_utc(self._clock())
-        async with short_session(self._sessions) as database:
-            run, _, _ = await read_attempt_authority(database, authority, now)
+        async with short_session(self._sessions) as session:
+            run, _, _ = await read_attempt_authority(session, authority, now)
             return run.handoffs_completed < run.max_handoffs
 
     async def enter_harness(
@@ -154,8 +154,8 @@ class AttemptExecutionService:
         ):
             raise AttemptMutationError("Harness entry requires the matching successful preparation decision")
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
-            run, attempt, _ = await lock_attempt_authority(database, authority, now)
+        async with transaction(self._sessions) as session:
+            run, attempt, _ = await lock_attempt_authority(session, authority, now)
             if attempt.status != RunAttemptStatus.leased.value:
                 raise AttemptMutationError("Harness entry requires a leased Attempt")
             attempt.status = RunAttemptStatus.running.value
@@ -168,7 +168,7 @@ class AttemptExecutionService:
             run.updated_at = now
             run.version += 1
             await self._lifecycle.append_run_attempt_lifecycle(
-                database,
+                session,
                 run,
                 attempt,
                 "run_attempt.running",
@@ -184,9 +184,9 @@ class AttemptExecutionService:
         """Commit the decision after exact state, dependency, and Principal preflight succeeds."""
 
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
+        async with transaction(self._sessions) as session:
             run, attempt, thread = await lock_attempt_authority(
-                database,
+                session,
                 authority,
                 now,
                 lock_inbox_origins=True,
@@ -201,7 +201,7 @@ class AttemptExecutionService:
             terminalize_attempt(attempt, RunAttemptStatus.failed, now, failure=failure)
             charge_attempt_usage(run, attempt)
             await finalize_failed_run(
-                database,
+                session,
                 run=run,
                 thread=thread,
                 failure=failure,
@@ -224,8 +224,8 @@ class AttemptExecutionService:
         delta: RunUsage,
     ) -> AttemptMutationReceipt:
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
-            run, attempt, _ = await lock_attempt_authority(database, authority, now)
+        async with transaction(self._sessions) as session:
+            run, attempt, _ = await lock_attempt_authority(session, authority, now)
             if attempt.status != RunAttemptStatus.running.value:
                 raise AttemptMutationError("usage can be recorded only after Harness entry")
             usage = attempt.to_resource().usage.plus(delta)
@@ -253,8 +253,8 @@ class AttemptExecutionService:
         """Validate relational authority, then replace state outside the DB session."""
 
         now = assume_utc(self._clock())
-        async with short_session(self._sessions) as database:
-            await read_attempt_authority(database, authority, now)
+        async with short_session(self._sessions) as session:
+            await read_attempt_authority(session, authority, now)
         return await states.replace(
             current,
             successor,
@@ -273,9 +273,9 @@ class AttemptExecutionService:
         if retry_after < timedelta(0):
             raise ValueError("retry_after must not be negative")
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
+        async with transaction(self._sessions) as session:
             run, attempt, thread = await lock_attempt_authority(
-                database,
+                session,
                 authority,
                 now,
                 lock_inbox_origins=True,
@@ -290,7 +290,7 @@ class AttemptExecutionService:
                 run.updated_at = now
                 run.version += 1
                 await self._lifecycle.append_run_attempt_lifecycle(
-                    database,
+                    session,
                     run,
                     attempt,
                     "run_attempt.failed",
@@ -299,7 +299,7 @@ class AttemptExecutionService:
                 )
             else:
                 await finalize_failed_run(
-                    database,
+                    session,
                     run=run,
                     thread=thread,
                     failure=failure,
@@ -317,8 +317,8 @@ class AttemptExecutionService:
         reason: RunAttemptYieldReason,
     ) -> AttemptMutationReceipt:
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
-            run, attempt, _ = await lock_attempt_authority(database, authority, now)
+        async with transaction(self._sessions) as session:
+            run, attempt, _ = await lock_attempt_authority(session, authority, now)
             if run.handoffs_completed >= run.max_handoffs:
                 raise AttemptMutationError("the Run handoff budget is exhausted")
             terminalize_attempt(attempt, RunAttemptStatus.yielded, now, yield_reason=reason)
@@ -329,7 +329,7 @@ class AttemptExecutionService:
             run.updated_at = now
             run.version += 1
             await self._lifecycle.append_run_attempt_lifecycle(
-                database,
+                session,
                 run,
                 attempt,
                 "run_attempt.yielded",
@@ -340,13 +340,13 @@ class AttemptExecutionService:
 
 
 async def lock_attempt_authority(
-    database: AsyncSession,
+    session: AsyncSession,
     authority: AttemptContext,
     now: datetime,
     *,
     lock_inbox_origins: bool = False,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
-    thread_id = await database.scalar(
+    thread_id = await session.scalar(
         select(RunRecord.thread_id).where(
             RunRecord.organization_id == authority.organization_id,
             RunRecord.id == authority.run_id,
@@ -354,14 +354,14 @@ async def lock_attempt_authority(
     )
     if thread_id is None:
         raise AttemptAuthorityError("Run authority was not found")
-    thread = await database.scalar(
+    thread = await session.scalar(
         select(ThreadRecord)
         .where(ThreadRecord.organization_id == authority.organization_id, ThreadRecord.id == thread_id)
         .with_for_update()
     )
     if lock_inbox_origins:
         locked_runs = await lock_inbox_related_runs(
-            database,
+            session,
             organization_id=authority.organization_id,
             thread_id=thread_id,
             required_run_ids=(authority.run_id,),
@@ -369,7 +369,7 @@ async def lock_attempt_authority(
     else:
         locked_runs = tuple(
             (
-                await database.scalars(
+                await session.scalars(
                     select(RunRecord)
                     .where(RunRecord.organization_id == authority.organization_id, RunRecord.id == authority.run_id)
                     .with_for_update()
@@ -377,7 +377,7 @@ async def lock_attempt_authority(
             ).all()
         )
     run = next((item for item in locked_runs if item.id == authority.run_id), None)
-    attempt = await database.scalar(
+    attempt = await session.scalar(
         select(RunAttemptRecord)
         .where(
             RunAttemptRecord.organization_id == authority.organization_id,
@@ -392,13 +392,13 @@ async def lock_attempt_authority(
 
 
 async def read_attempt_authority(
-    database: AsyncSession,
+    session: AsyncSession,
     authority: AttemptContext,
     now: datetime,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     """Validate read authority without treating a concurrent heartbeat as lease loss."""
 
-    result = await database.execute(
+    result = await session.execute(
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
             RunAttemptRecord,

@@ -58,6 +58,8 @@ class PluginVersion:
     status: Literal["ready"]
 ```
 
+Service Plugin keys match `^[a-z][a-z0-9_.-]{1,127}$`. Wheel entry-point admission and Agent Runner selection use this same rule.
+
 The first successful upload establishes the stable `plugin_key`, normalized distribution name, and top-level package and creates the first PluginVersion atomically. Later uploads target that Plugin. `PluginVersion.version` is the normalized PEP 440 version from Wheel metadata, and `(plugin_id, version)` is unique.
 
 `active_version_id` is meaningful only in `runner`; it remains null in `on_demand`, where Agents select exact PluginVersions without a global deployment head. Upload never changes it in either profile.

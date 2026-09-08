@@ -114,6 +114,119 @@ def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> N
     assert control.cursor_row == len(renderer.transcript.rows) - 1
 
 
+@pytest.mark.parametrize(
+    ("mode", "child", "visible"),
+    [("concise", False, True), ("detailed", False, True), ("concise", True, False), ("detailed", True, True)],
+)
+def test_retry_notice_respects_child_visibility(mode: str, child: bool, visible: bool) -> None:
+    renderer = StreamRenderer(Status(mode=mode))
+    renderer.ingest(
+        "CUSTOM",
+        {
+            "name": "a13n.harness.recovery",
+            "value": {
+                "event": {
+                    "kind": "recovery",
+                    "payload": {
+                        "type": "model_retry_scheduled",
+                        "attempt": 2,
+                        "max_attempts": 5,
+                        "delay_seconds": 0.5,
+                    },
+                }
+            },
+        },
+        child=child,
+        run_id="run-child" if child else "run-root",
+        execution_id="reviewer" if child else None,
+    )
+    text = "".join(block.source for block in renderer.transcript.blocks.values())
+    assert ("Retrying model request" in text) is visible
+    assert ("reviewer" in text) is (child and visible)
+    assert "delay_seconds" not in text
+    assert "max_attempts" not in text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("exhausted", [False, True])
+async def test_model_stream_retry_renders_only_a_system_notice_until_exhaustion(
+    exhausted: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    from collections.abc import AsyncIterator
+
+    import httpx2
+    from a13n_harness import HarnessBuilder, ModelRecoveryPolicy, RunBindings
+    from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
+    from a13n_stream_protocol import HarnessAguiObserver
+    from pydantic_ai.agent.spec import AgentSpec
+    from pydantic_ai.messages import ModelMessage
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    calls = 0
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        calls += 1
+        yield f"answer-{calls}"
+        if exhausted or calls == 1:
+            raise httpx2.ReadError("private provider error")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
+        ),
+    )
+    renderer = StreamRenderer(Status())
+    observer = HarnessAguiObserver()
+    errors = []
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run:
+        async for item in run:
+            for event in observer.observe(item):
+                payload = event.model_dump(mode="json", by_alias=True)
+                renderer.ingest(payload["type"], payload)
+                if payload["type"] == "RUN_ERROR":
+                    errors.append(payload)
+                    assert calls == 2
+    text = "".join(block.source for block in renderer.transcript.blocks.values())
+    assert calls == 2
+    assert text.count("[System] Retrying model request…") == 1
+    assert "private provider error" not in text
+    assert DEFAULT_RECOVERY_PROMPT not in text
+    assert "answer-1" in text and "answer-2" in text
+    if exhausted:
+        assert len(errors) == 1
+        assert "after 2 attempts" in text
+    else:
+        assert not errors
+        assert not [record for record in caplog.records if record.levelname in {"WARNING", "ERROR"}]
+
+
+def test_exhausted_text_result_omits_the_raw_retry_hint(capsys: pytest.CaptureFixture[str]) -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness_ui.cli_runtime import _print_text_result
+    from a13n_harness_ui.surfaces import FailureView, RootOperationStatus, RootOperationView, RootRunReceipt
+
+    operation = RootOperationView(
+        receipt=RootRunReceipt(receipt_id="receipt", thread_id="thread", submitted_at=datetime.now(UTC)),
+        status=RootOperationStatus.failed,
+        failure=FailureView(
+            code="model_recovery_exhausted",
+            message="Model execution could not recover after 5 attempts. Try continuing the conversation again.",
+            retry_hint="new_run",
+        ),
+    )
+    _print_text_result(operation)
+    text = capsys.readouterr().err
+    assert "Error [model_recovery_exhausted]" in text
+    assert "after 5 attempts" in text
+    assert "Retry:" not in text
+    assert operation.failure is not None and operation.failure.retry_hint == "new_run"
+
+
 def test_image_validation_does_not_infer_media_type_from_filename(tmp_path: Path) -> None:
     path = tmp_path / "renamed.jpg"
     path.write_bytes(_png())

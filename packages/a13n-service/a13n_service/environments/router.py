@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
+from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_control_runtime
@@ -32,7 +33,6 @@ from .service import EnvironmentService
 router = APIRouter(prefix="/api/v1", tags=["environments"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 IfMatch = Annotated[str, Header(alias="If-Match", max_length=256)]
-IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 
 

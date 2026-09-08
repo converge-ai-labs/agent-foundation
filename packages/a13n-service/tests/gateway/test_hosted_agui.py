@@ -7,8 +7,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_service.agents.domain import AgentConfig, canonical_digest
+from a13n_service.agents.domain import AgentConfig
 from a13n_service.agents.models import AgentRevisionRecord
+from a13n_service.digests import digest_request
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore, hosted_agui_replay_key
 from a13n_service.gateway.hosted_agui import (
     HostedAguiCancelRequest,
@@ -39,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.gateway.test_commands import _commands, _complete_run, _frozen, _Preparation, _wait_run
 from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import AGENT_ID, NOW, agent_config
+from tests.run_stream.support import activate_stream
 
 pytestmark = pytest.mark.anyio
 
@@ -145,7 +147,7 @@ def _frozen_resolver(protocol=None):
         config = frozen.effective_config.model_copy(update={"protocol": protocol})
         config = config.model_copy(
             update={
-                "content_digest": canonical_digest(
+                "content_digest": digest_request(
                     config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
                 )
             }
@@ -636,6 +638,9 @@ async def test_hosted_stream_projects_standard_events_and_resumes_with_hosted_cu
             request=_request(),
             last_event_id=None,
         )
+        await activate_stream(
+            stream, attachment.binding.organization_id, attachment.binding.run_id, "thread_1234567890abcdef"
+        )
         for sequence, (event_type, payload) in enumerate(
             (
                 (
@@ -659,6 +664,7 @@ async def test_hosted_stream_projects_standard_events_and_resumes_with_hosted_cu
                     occurred_at=NOW + timedelta(seconds=sequence),
                     payload=payload,
                 ),
+                attempt_number=1,
             )
         await stream.close(
             attachment.binding.organization_id,
@@ -699,6 +705,9 @@ async def test_sealed_hosted_replay_survives_native_stream_loss_and_bounds_curso
             request=_request(),
             last_event_id=None,
         )
+        await activate_stream(
+            stream, attachment.binding.organization_id, attachment.binding.run_id, "thread_1234567890abcdef"
+        )
         for sequence, (event_type, payload) in enumerate(
             (
                 (
@@ -722,6 +731,7 @@ async def test_sealed_hosted_replay_survives_native_stream_loss_and_bounds_curso
                     occurred_at=NOW + timedelta(seconds=sequence),
                     payload=payload,
                 ),
+                attempt_number=1,
             )
         await _complete_run(lifecycle_interaction_sessions, objects, run_id=attachment.binding.run_id)
         await stream.close(
@@ -801,6 +811,9 @@ async def test_hosted_cancel_resolves_binding_and_interrupts_service_run(
             request=_request(),
             last_event_id=None,
         )
+        await activate_stream(
+            stream, attachment.binding.organization_id, attachment.binding.run_id, "thread_1234567890abcdef"
+        )
         request = HostedAguiCancelRequest(threadId="external-thread-1", runId="external-run-1")
 
         first = await service.cancel(actor=_actor(), agent_id=AGENT_ID, request=request)
@@ -853,3 +866,83 @@ async def test_hosted_replay_gap_uses_service_namespace(
     assert len(frames) == 2
     assert b'"type":"RUN_STARTED"' in frames[0]
     assert b'"name":"a13n.service.replay_gap"' in frames[1]
+
+
+@pytest.mark.parametrize("reason", ["lease_expired", "retry_after_failure", "planned_handoff", "pending_input"])
+async def test_recovery_is_safe_ordered_and_identical_in_live_and_sealed_hosted_replay(
+    lifecycle_interaction_sessions,
+    tmp_path,
+    reason,
+):
+    import json
+
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    async with AsyncExitStack() as stack:
+        service, stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        attachment = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=_request(), last_event_id=None)
+        org, run = attachment.binding.organization_id, attachment.binding.run_id
+        await activate_stream(stream, org, run, "thread_1234567890abcdef")
+        await activate_stream(
+            stream,
+            org,
+            run,
+            "thread_1234567890abcdef",
+            attempt_id="rat_2222222222222222",
+            number=2,
+            reason=reason,
+        )
+        await stream.append(
+            org,
+            RunStreamEvent(
+                event_id=deterministic_run_stream_event_id("hosted-recovery-test", "message"),
+                event_type="agui.text_message_start",
+                run_id=run,
+                thread_id="thread_1234567890abcdef",
+                run_attempt_id="rat_2222222222222222",
+                occurred_at=NOW,
+                payload={"messageId": "new-message", "role": "assistant"},
+            ),
+            attempt_number=2,
+        )
+        await stream.close(org, run, closed_at=NOW + timedelta(seconds=10))
+        live = [frame async for frame in service.events(attachment)]
+        assert len(live) == 3
+        recovery = json.loads(live[1].split(b"data: ", 1)[1])
+        assert recovery["type"] == "CUSTOM" and recovery["name"] == "a13n.service.run_recovery"
+        assert recovery["value"] == {
+            "schema_version": "1",
+            "event_id": recovery["value"]["event_id"],
+            "runId": "external-run-1",
+            "reason": reason,
+        }
+        assert b'"type":"TEXT_MESSAGE_START"' in live[2]
+        assert all(
+            b"rat_" not in frame and b"attempt_number" not in frame and b"lease_token" not in frame for frame in live
+        )
+        recovery_cursor = live[1].split(b"\n", 1)[0].removeprefix(b"id: ").decode()
+        resumed = await service.accept(
+            actor=_actor(), agent_id=AGENT_ID, request=_request(), last_event_id=recovery_cursor
+        )
+        assert [frame async for frame in service.events(resumed)] == live[2:]
+        await _complete_run(lifecycle_interaction_sessions, objects, run_id=run)
+        async with short_session(lifecycle_interaction_sessions) as database:
+            terminal = await database.scalar(
+                select(LifecycleEventRecord).where(
+                    LifecycleEventRecord.run_id == run, LifecycleEventRecord.event_type == "run.completed"
+                )
+            )
+        source = await stream.complete_source(org, run)
+        await HostedAguiTerminalProjector(
+            lifecycle_interaction_sessions,
+            HostedAguiReplayStore(objects, max_events=1024, max_bytes=16 * 1024 * 1024),
+        ).project(terminal.to_resource(), source)
+        await stream._redis.flushdb()
+        retained = [frame async for frame in service.events(attachment)]
+        for original, replayed in zip(live, retained[:3], strict=True):
+            assert original.split(b"\n", 1)[0] == replayed.split(b"\n", 1)[0]
+            assert json.loads(original.split(b"data: ", 1)[1]) == json.loads(replayed.split(b"data: ", 1)[1])
+        assert b'"type":"RUN_FINISHED"' in retained[-1]
+        resumed = await service.accept(
+            actor=_actor(), agent_id=AGENT_ID, request=_request(), last_event_id=recovery_cursor
+        )
+        assert [frame async for frame in service.events(resumed)] == retained[2:]

@@ -3,31 +3,126 @@ models:
   anthropic:claude-fable-5-1:
     characteristics:
       context_window: 1000000
+      capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/models/fable-5-1/overview
   anthropic:claude-sonnet-5:
     characteristics:
       context_window: 1000000
+      capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   anthropic:claude-opus-5:
     characteristics:
       context_window: 1000000
+      capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
+  anthropic:claude-sonnet-4-6:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://platform.claude.com/docs/en/models/sonnet-4-6/overview
+  anthropic:claude-opus-4-6:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://platform.claude.com/docs/en/models/opus-4-6/overview
+  anthropic:claude-haiku-4-5:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://platform.claude.com/docs/en/about-claude/models/overview
+  anthropic:claude-sonnet-4-5:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://platform.claude.com/docs/en/models/sonnet-4-5/overview
+  openai:gpt-6-astra:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-6-astra
+  openai:gpt-5.6-sol:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+  openai:gpt-5.6-terra:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-5.6-terra
+  openai:gpt-5.6-luna:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-5.6-luna
   openai:gpt-5.5:
     characteristics:
       context_window: 1050000
+      capabilities: [image_understanding]
     source_url: https://developers.openai.com/api/docs/models/gpt-5.5
+  openai:gpt-5.4:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-5.4
+  openai:gpt-5.4-mini:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-5.4-mini
   google-gla:gemini-3.5-flash:
     characteristics:
       context_window: 1048576
+      capabilities: [image_understanding, audio_understanding, video_understanding]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash
   google-gla:gemini-3.6-flash:
     characteristics:
       context_window: 1048576
+      capabilities: [image_understanding, audio_understanding, video_understanding]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash
   google-gla:gemini-3.5-flash-lite:
     characteristics:
       context_window: 1048576
+      capabilities: [image_understanding, audio_understanding, video_understanding]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
+  google-gla:gemini-3.1-pro-preview:
+    characteristics:
+      capabilities: [image_understanding, audio_understanding, video_understanding]
+    source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview
+  google-gla:gemini-2.5-pro:
+    characteristics:
+      capabilities: [image_understanding, audio_understanding, video_understanding]
+    source_url: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro
+  google-gla:gemini-2.5-flash:
+    characteristics:
+      capabilities: [image_understanding, audio_understanding, video_understanding]
+    source_url: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
+  grok:grok-4.6:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://docs.x.ai/developers/models/grok-4.6
+  grok:grok-4.5:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://docs.x.ai/developers/models/grok-4.5
+  grok:grok-4.20-0309-reasoning:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://docs.x.ai/developers/models/grok-4.20-0309-reasoning
+  moonshotai:kimi-k2.6:
+    characteristics:
+      capabilities: [image_understanding, video_understanding]
+    source_url: https://platform.kimi.ai/docs/overview
+  moonshotai:kimi-k2.5:
+    characteristics:
+      capabilities: [image_understanding, video_understanding]
+    source_url: https://www.kimi.com/blog/kimi-k2-5.html
+  zai:glm-5.3:
+    characteristics:
+      capabilities: []
+    source_url: https://docs.z.ai/guides/llm/glm-5.3
+  zai:glm-5.2:
+    characteristics:
+      capabilities: []
+    source_url: https://docs.z.ai/guides/llm/glm-5.2
+  zai:glm-4.7:
+    characteristics:
+      capabilities: []
+    source_url: https://docs.z.ai/guides/llm/glm-4.7
+  zai:glm-4.5:
+    characteristics:
+      capabilities: []
+    source_url: https://docs.z.ai/guides/llm/glm-4.5
   deepseek:deepseek-v4-flash:
     characteristics:
       context_window: 1000000
@@ -36,3 +131,7 @@ models:
     characteristics:
       context_window: 1000000
     source_url: https://api-docs.deepseek.com/quick_start/pricing
+  deepseek:deepseek-v4-flash-vision-exp:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://api-docs.deepseek.com/guides/vision

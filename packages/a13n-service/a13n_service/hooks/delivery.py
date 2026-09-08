@@ -8,10 +8,10 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 import rfc8785
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from a13n_service.lifecycle.domain import MAX_LIFECYCLE_PAYLOAD_BYTES
-from a13n_service.temporal import require_aware_utc
+from a13n_service.temporal import UtcDateTime, require_aware_utc
 
 DELIVERY_ID_HEADER = "X-A13n-Delivery-Id"
 SIGNATURE_HEADER = "X-A13n-Webhook-Signature"
@@ -20,14 +20,6 @@ TIMESTAMP_HEADER = "X-A13n-Webhook-Timestamp"
 _MAX_CANONICAL_ENVELOPE_BYTES = MAX_LIFECYCLE_PAYLOAD_BYTES + 16 * 1024
 
 
-def _utc(value: datetime) -> datetime:
-    try:
-        return require_aware_utc(value)
-    except ValueError as error:
-        raise ValueError("timestamp must include a UTC offset") from error
-
-
-UtcDateTime = Annotated[datetime, AfterValidator(_utc)]
 BoundedId = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
@@ -75,7 +67,7 @@ def signed_request_headers(
 
     if not signing_secret:
         raise ValueError("Webhook signing Secret must not be empty")
-    timestamp = str(int(_utc(signed_at).timestamp()))
+    timestamp = str(int(require_aware_utc(signed_at).timestamp()))
     signature_input = timestamp.encode("ascii") + b"." + envelope.canonical_bytes()
     digest = hmac.new(signing_secret.encode("utf-8"), signature_input, hashlib.sha256).hexdigest()
     return {

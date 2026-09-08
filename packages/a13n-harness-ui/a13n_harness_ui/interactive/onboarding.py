@@ -360,7 +360,7 @@ async def run_setup(
                         question.key == "model"
                         or (question.key == "model_source" and wizard.existing_model_id is not None)
                     ):
-                        from a13n_harness_ui.model_presets import connection_display_name
+                        from a13n_harness_ui.resource_names import coding_agent_name, model_name
 
                         if wizard.existing_model_id is not None:
                             base = models[wizard.existing_model_id].name[:110]
@@ -373,9 +373,9 @@ async def run_setup(
                                 if provider == "grok"
                                 else provider
                             )
-                            base = connection_display_name(route, wizard.values["model"])
+                            base = model_name(route, wizard.values["model"])
                         if add_agent:
-                            base += " · Coding"
+                            base = coding_agent_name(base)
                         name, number = base, 2
                         names = {model.name for model in models.values()} if add_model else set(status.agents.values())
                         while name in names:

@@ -48,10 +48,10 @@ capabilities:
       model: model-codex-review
       risk_threshold: extra_high
       on_flagged: approval_required
-      on_error: approval_required
+      on_error: skip
 ```
 
-The reviewer is tool-free and uses the Harness-owned bounded review lifecycle. Review failure requires approval by default; it never silently authorizes a command. Shell review is not filesystem, process, or network isolation and remains useful in explicitly selected Full Control mode. Setup offers a reviewed lightweight subscription Model and lets the user opt out before publication.
+The reviewer is tool-free and uses the Harness-owned bounded review lifecycle. Harness UI starter Agents explicitly select `on_error: skip`, so non-timeout review failure adds no restriction; invocation-policy denial and approval requirements still apply. Review timeout always denies before execution, regardless of `on_error`. The Harness library default remains `approval_required` when the action is omitted. Shell review is not filesystem, process, or network isolation and remains useful in explicitly selected Full Control mode. Setup offers a reviewed lightweight subscription Model and lets the user opt out before publication.
 
 ## MCP Servers
 

@@ -505,6 +505,7 @@ async def _accept_child(
         RunStateStore(objects),
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     ).accept(prepared, authority)
     return states, running_parent, authority, accepted.child_run_id
 
@@ -552,6 +553,9 @@ async def _complete_object_backed_child(
         ),
     )
     stream = RedisRunStream(redis)
+    from a13n_service.run_stream.activation import PublicationActivator
+
+    await PublicationActivator(sessions, stream, clock=lambda: NOW + timedelta(seconds=3)).activate(_authority(claim))
     live_projector = AttemptRunStreamProjector(stream, _authority(claim))
     await live_projector.project(
         HarnessRunResultEvent(
@@ -619,6 +623,7 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
         states,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     ).accept(next_child, authority)
     await _fail_child(interaction_sessions, first_id)
     await _fail_child(interaction_sessions, next_child.run.id)

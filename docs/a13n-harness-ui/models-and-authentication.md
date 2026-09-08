@@ -20,6 +20,28 @@ For API access, choose **API key** in initial setup, `a13n-harness-ui add model`
 
 Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
 
+## Native media input
+
+Setup, `add model`, and `add agent` with a new connection automatically save known model input capabilities. The final summary shows the selected native media types; no separate capability question is required. Defaults come from a bundled, reviewed model catalog, not a network probe. They describe model capabilities, not account entitlement or continued model availability.
+
+For example, a known image-capable OpenAI, Claude, or Grok Model includes:
+
+```yaml
+model_characteristics:
+  capabilities: [image_understanding]
+  context_window: 350000
+  proactive_context_management_threshold: 0.65
+  compact_threshold: 0.90
+```
+
+Known Gemini Models on the native Google API can also include `audio_understanding` and `video_understanding`. Defaults respect the selected protocol: an image-capable compatible route does not automatically gain native audio/video input just because the upstream model supports it through another API.
+
+Capabilities are separate from an Agent's tools and from model output modalities. In particular, the file `view` tool uses these declarations to attach media directly to the active model. Without a matching capability, it requires an explicitly configured [media-understanding fallback](../a13n-harness/multimedia-understanding.md) or reports unavailability.
+
+Unknown model IDs are labeled unknown and do not automatically enable media. Exact known IDs still receive starter defaults behind a custom base URL; verify that your endpoint supports the declared input. You can edit `model_characteristics.capabilities` in the Model file. Direct setup API callers can explicitly supply capabilities, including `[]`, to override defaults without changing their context policy.
+
+Existing Model files are never backfilled automatically. If an older setup generated `capabilities: []` for an image-capable model, change only that field to `[image_understanding]` after checking the selected model and endpoint. Later Runs use the accepted configuration; active Runs and historical captures remain unchanged. Adding an Agent that reuses a Model preserves that Model exactly.
+
 ## Starter model choices
 
 Initial setup and new-Model creation offer these explicit subscription routes:
@@ -43,7 +65,7 @@ API setup recommends **350,000 tokens**, or the bundled catalog's model context 
 
 New API Models use the same native defaults as Codex: a summary reminder at **65%**, automatic compaction at **90%**, and the standard Harness summary prompts. At 350k the thresholds are **227,500** and **315,000** tokens. These settings are saved under `model_characteristics` and survive Run capture/reconstruction; reusing an existing Model does not change them. The catalog is bundled, so setup makes no model-discovery request.
 
-Generated names identify the connection, for example **OpenAI · GPT-5.6 Sol**, **Z.AI · GLM 5.3**, or **Moonshot AI · Kimi K2.6**. Default Agent names add **· Coding**. The add commands suggest readable, non-colliding names and let you override them; custom Agent names do not erase their new Model's descriptive connection name. Existing resources are not renamed.
+Generated names identify the connection using ordinary text, for example **OpenAI - GPT-5.6 Sol**, **Z.AI - GLM 5.3**, or **Moonshot AI - Kimi K2.6**. Default Agent names add **- Coding**. Suggestions and saved names use the same rule, independently of terminal labels, colors, or status indicators. The add commands suggest non-colliding names and let you override them; custom Agent names do not erase their new Model's descriptive connection name. Configuration stays UTF-8 and custom names can contain Unicode. Existing resources are not renamed.
 
 ## Codex reasoning and context
 
@@ -101,7 +123,7 @@ Save this as `models/codex.yaml` beside the root configuration.
 schema_version: "1"
 kind: model
 id: model-codex
-name: Codex · GPT-5.6 Sol
+name: Codex - GPT-5.6 Sol
 route: openai-codex:gpt-5.6-sol
 authentication:
   kind: codex_subscription
@@ -202,7 +224,7 @@ Streaming parsing, tool-result continuation, and serialized next-turn replay are
 
 Choose **Provider defaults** when the model does not support the proposed reasoning settings. Presets do not establish entitlement or raise provider token limits. “Returned thinking” means the provider's exposed content or summaries, not private internal reasoning. Existing resource files are never migrated to new preset defaults.
 
-After initial setup, `add model` saves only a reusable Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. First-use landing creates the initial Model and Agent together without an existing-Model question. New subscription Agents enable shell review with `risk_threshold: extra_high`; review errors still require approval. This risk threshold is independent of the review Model's low thinking effort.
+After initial setup, `add model` saves only a reusable Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. First-use landing creates the initial Model and Agent together without an existing-Model question. New subscription Agents enable shell review with `risk_threshold: extra_high`, `on_flagged: approval_required`, and `on_error: skip`. Flagged commands require approval; non-timeout review errors add no restriction beyond the effective tool policy. Review timeout always denies the command before execution. Existing Agents are not migrated. This risk threshold is independent of the review Model's low thinking effort.
 
 ## Supported request settings
 

@@ -8,9 +8,9 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 import rfc8785
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from a13n_service.temporal import require_aware_utc
+from a13n_service.temporal import UtcDateTime
 
 MAX_RUN_STREAM_PAYLOAD_BYTES = 256 * 1024
 
@@ -20,16 +20,6 @@ ResourceId = Annotated[str, StringConstraints(min_length=1, max_length=72)]
 RedisStreamId = Annotated[str, StringConstraints(pattern=r"^[0-9]+-[0-9]+$")]
 EventType = Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]+(?:\.[a-z0-9_]+)+$", max_length=128)]
 JsonObject = dict[str, JsonValue]
-
-
-def _utc(value: datetime) -> datetime:
-    try:
-        return require_aware_utc(value)
-    except ValueError as error:
-        raise ValueError("timestamp must include a UTC offset") from error
-
-
-UtcDateTime = Annotated[datetime, AfterValidator(_utc)]
 
 
 class _StrictModel(BaseModel):
@@ -53,6 +43,10 @@ class RunStreamEvent(_StrictModel):
     def validate_payload_bound(self) -> RunStreamEvent:
         if len(rfc8785.dumps(self.payload)) > MAX_RUN_STREAM_PAYLOAD_BYTES:
             raise ValueError("Run Stream payload exceeds the encoded size limit")
+        if self.event_type == "run.recovery":
+            RecoveryPayload.model_validate(self.payload)
+            if self.run_attempt_id is None or self.lifecycle_event_id is None:
+                raise ValueError("Recovery requires committed Attempt correlation")
         return self
 
 
@@ -125,6 +119,28 @@ class RunStreamError(RuntimeError):
 
 class RunStreamClosed(RunStreamError):
     """An append targeted a stream that already reached its terminal boundary."""
+
+
+class PublicationRejected(RunStreamError):
+    """The Attempt no longer owns the Run's activated publication generation."""
+
+
+class PublicationUnavailable(RunStreamError):
+    """Publication activation or Redis continuity cannot be established safely."""
+
+
+RecoveryReason = Literal["lease_expired", "retry_after_failure", "planned_handoff", "pending_input"]
+
+
+class RecoveryPayload(_StrictModel):
+    reason: RecoveryReason
+
+
+@dataclass(frozen=True, slots=True)
+class ActivationResult:
+    leased_stream_id: str
+    recovery_stream_id: str | None
+    active: bool
 
 
 class RunStreamReplayGap(RunStreamError):

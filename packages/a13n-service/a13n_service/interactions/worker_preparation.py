@@ -24,7 +24,7 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
-from a13n_service.assets.publication import AgentAssetPublisher, AssetCapability, AssetPublicationScope
+from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
@@ -75,15 +75,14 @@ class WorkerAttemptPreparer:
         model_resolver: LiveProviderResolver,
         model_factory: NativeModelFactory,
         skills: SkillRuntimePreparer,
+        asset_publication: AssetRuntime,
         async_results: AsyncSubagentResultMaterializer,
         environments: EnvironmentLifecycle,
         external_tools: ExternalToolRuntime,
         subagent_capability: Callable[[], SubagentCapability],
-        asset_publisher: AgentAssetPublisher | None = None,
         secrets: AgentSecretRuntime | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
-        self._asset_publisher = asset_publisher
         self._secrets = secrets
         self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
@@ -100,6 +99,7 @@ class WorkerAttemptPreparer:
         self._model_resolver = model_resolver
         self._model_factory = model_factory
         self._skills = skills
+        self._asset_publication = asset_publication
         self._async_results = async_results
         self._prepared_skills: dict[str, PreparedSkillRuntime] | None = None
 
@@ -164,6 +164,8 @@ class WorkerAttemptPreparer:
             config=config,
             current_context=lambda: self._control.current_context,
             skills=self._prepared_skills,
+            workspace_id=self._workspace_id,
+            asset_publication=self._asset_publication,
             external_tools=self._external_tools,
             stack=stack,
         )
@@ -173,18 +175,6 @@ class WorkerAttemptPreparer:
             protocol_context = self._control.current_state.envelope.protocol_context
             if context.is_root and protocol_context is not None:
                 selected = (*selected, ProtocolContextCapability(protocol_context))
-            if context.config.asset_publication is not None:
-                if self._asset_publisher is None:
-                    raise RuntimeError("Asset publication runtime is unavailable")
-                selected = (
-                    *selected,
-                    AssetCapability(
-                        self._asset_publisher,
-                        AssetPublicationScope(
-                            lambda: self._control.current_context, self._workspace_id, context.agent_id
-                        ),
-                    ),
-                )
             return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
         definition = AgentReconstructor(self._catalog, capability_provider=capabilities).reconstruct(

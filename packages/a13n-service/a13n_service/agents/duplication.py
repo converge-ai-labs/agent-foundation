@@ -36,13 +36,13 @@ from .errors import (
 from .invocation_resolution import AgentInvocationResolver, RootAgentStatePolicy
 from .models import AgentRecord
 from .persistence import (
+    agent_name_key,
     authorize_agent_scope,
     copy_revision,
     load_replay,
     lock_agent,
     lock_revision,
     new_agent_audit,
-    normalize_agent_name,
     request_identity,
     require_version,
 )
@@ -139,7 +139,7 @@ class AgentDuplication:
                     workspace_id=source.workspace_id,
                     source=AgentSource.custom.value,
                     name=request.name,
-                    normalized_name=normalize_agent_name(request.name),
+                    normalized_name=agent_name_key(request.name),
                     description=request.description,
                     version=1,
                     current_revision_id=new_revision_id,

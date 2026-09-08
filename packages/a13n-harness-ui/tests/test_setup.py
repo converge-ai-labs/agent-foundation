@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 from a13n_harness_ui.composition import AgentCompositionResolver
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.configuration.setup import SetupSelection, preview_setup, publish_setup
@@ -50,16 +51,25 @@ async def test_setup_preserves_edited_resources_and_root_fields(tmp_path: Path) 
         await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
     ).completed
     agent = tmp_path / "agents" / "codex.yaml"
-    original = agent.read_text().replace("Codex coding", "My edited agent")
-    agent.write_text(original)
-    path.write_text(path.read_text() + "process:\n  pricing_auto_update: false\n")
+    model = tmp_path / "models" / "codex.yaml"
+    agent_document = yaml.safe_load(agent.read_text(encoding="utf-8"))
+    agent_document["name"] = "My edited agent - 研究"
+    original = yaml.safe_dump(agent_document, allow_unicode=True).encode("utf-8")
+    agent.write_bytes(original)
+    model_document = yaml.safe_load(model.read_text(encoding="utf-8"))
+    model_document["name"] = "Existing · Model"
+    model_document["model_characteristics"]["capabilities"] = []
+    original_model = yaml.safe_dump(model_document, allow_unicode=True).encode("utf-8")
+    model.write_bytes(original_model)
+    path.write_text(path.read_text(encoding="utf-8") + "process:\n  pricing_auto_update: false\n", encoding="utf-8")
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     assert "agents/codex.yaml" not in preview.files
     assert (
         await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
     ).completed
-    assert agent.read_text() == original
-    assert "pricing_auto_update: false" in path.read_text()
+    assert agent.read_bytes() == original
+    assert model.read_bytes() == original_model
+    assert "pricing_auto_update: false" in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.anyio
@@ -320,7 +330,7 @@ def test_setup_recovery_syncs_replacement_before_unlinking_backup(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("review_outcome", ["flagged", "error"])
-async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
+async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     review_outcome: str,
@@ -330,6 +340,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
     import a13n_harness.model_auth as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
     # Both native Model factories are replaced, not the App composition or
@@ -338,16 +349,24 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
     (tmp_path / "codex").mkdir()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    marker = tmp_path / "must-not-exist"
+    marker = tmp_path / "executed-command"
     reviewed: list[str | bool | None] = []
     resolved: list[str] = []
 
     async def main_stream(messages, info):
         assert info.model_request_parameters.thinking == "high"
+        if any(
+            isinstance(part, ToolReturnPart)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ):
+            yield "done"
+            return
         yield {
             0: DeltaToolCall(
                 name="shell_exec",
-                json_args=json.dumps({"command": f"echo denied > {marker}"}),
+                json_args=json.dumps({"command": f'echo reviewed > "{marker}"'}),
                 tool_call_id="review-call",
             )
         }
@@ -382,13 +401,17 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
         thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Try a reviewed command")
         outcome = await app.wait_root_operation(receipt.receipt_id)
-        assert outcome.status.value == "suspended", (outcome.model_dump_json(), resolved, reviewed)
+        expected_status = "suspended" if review_outcome == "flagged" else "completed"
+        assert outcome.status.value == expected_status, (outcome.model_dump_json(), resolved, reviewed)
         batch = await app.thread_decisions(thread_id=thread.thread_id)
-        assert batch is not None and len(batch.requests) == 1
-        assert batch.requests[0].kind == "approval"
+        if review_outcome == "flagged":
+            assert batch is not None and len(batch.requests) == 1
+            assert batch.requests[0].kind == "approval"
+        else:
+            assert batch is None
     assert set(resolved) == {"gpt-5.6-luna", "gpt-5.6-sol"}
     assert reviewed == ["low"]
-    assert not marker.exists()
+    assert marker.exists() is (review_outcome == "error")
 
 
 @pytest.mark.anyio

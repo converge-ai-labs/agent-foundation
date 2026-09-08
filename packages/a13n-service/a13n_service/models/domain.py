@@ -18,12 +18,11 @@ from pydantic import (
 )
 
 from a13n_service.iam.domain import PrincipalRef
-from a13n_service.ids import new_object_id
+from a13n_service.ids import ObjectId, new_object_id
+from a13n_service.names import DisplayName
 
-BoundedName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 BoundedDescription = Annotated[str, StringConstraints(max_length=2048)]
 UpstreamModel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
-ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 ProviderType = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
 ModelApi = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$", max_length=96)]
 
@@ -82,7 +81,7 @@ class CreateModelProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: ProviderType
-    name: BoundedName
+    name: DisplayName
     configuration: dict[str, object] = Field(default_factory=dict)
     credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
     enabled: bool = True
@@ -91,7 +90,7 @@ class CreateModelProviderRequest(BaseModel):
 class UpdateModelProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: BoundedName | None = None
+    name: DisplayName | None = None
     configuration: dict[str, object] | None = None
     credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
     enabled: bool | None = None
@@ -135,7 +134,7 @@ class CreateModelRequest(BaseModel):
 
     key: ModelKey
     provider_id: ObjectId
-    name: BoundedName
+    name: DisplayName
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel
     model_api: ModelApi
@@ -146,7 +145,7 @@ class CreateModelRequest(BaseModel):
 class UpdateModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: BoundedName | None = None
+    name: DisplayName | None = None
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel | None = None
     model_api: ModelApi | None = None
@@ -248,7 +247,7 @@ class ModelCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     upstream_model: UpstreamModel
-    display_name: BoundedName | None = None
+    display_name: DisplayName | None = None
     suggested_model_api: str
     suggested_settings: dict[str, JsonValue] = Field(default_factory=dict)
     profile: ModelProfile = Field(default_factory=ModelProfile)

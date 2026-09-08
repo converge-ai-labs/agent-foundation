@@ -23,6 +23,7 @@ from a13n_service.interactions.domain import Run
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
 from a13n_service.interactions.environment_selection import RetainedRunEnvironment
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
+from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
@@ -78,6 +79,7 @@ class AsyncSubagentSuccessorReconciler:
         states: RunStateStore,
         replays: RunReplayStore,
         *,
+        lifecycle: LifecycleWriter,
         signals: ThreadControlSignalPublisher | None = None,
         run_id_factory: Callable[[str, str, str], str] | None = None,
         clock: Clock = utc_now,
@@ -87,6 +89,7 @@ class AsyncSubagentSuccessorReconciler:
         self._states = states
         self._replays = replays
         self._signals = signals
+        self._lifecycle = lifecycle
         self._run_id_factory = run_id_factory or _successor_run_id
         self._clock = clock
 
@@ -288,7 +291,7 @@ class AsyncSubagentSuccessorReconciler:
                     selected,
                     child_run_id=child_run_id,
                 )
-                await add_run_with_environment(
+                successor_record = await add_run_with_environment(
                     database,
                     run=prepared.run,
                     state=prepared.state,
@@ -296,6 +299,7 @@ class AsyncSubagentSuccessorReconciler:
                     intent=RetainedRunEnvironment(selected.selected_parent.id, selected.selected_parent.thread_id),
                 )
                 await database.flush()
+                await self._lifecycle.append_accepted_run_lifecycle(database, successor_record)
                 consume_async_result_for_successor(
                     selected.counter,
                     selected.entry,

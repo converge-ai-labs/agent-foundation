@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.background import PeriodicTask, Sweep
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request, is_evidence_unique_race
+from a13n_service.digests import digest_request
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, is_evidence_unique_race
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import (
     AuthenticatedActor,

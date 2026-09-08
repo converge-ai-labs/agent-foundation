@@ -10,10 +10,10 @@ from datetime import datetime
 from pydantic import BaseModel, JsonValue, SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyIdentity,
-    digest_request,
     load_evidence,
     new_evidence,
 )

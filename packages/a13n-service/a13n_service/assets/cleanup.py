@@ -11,7 +11,7 @@ from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.durable_operations.outbox import OutboxClaim, claim_outbox, complete_outbox, fail_outbox
 from a13n_service.durable_operations.publication import dispatch_outbox_batch
 from a13n_service.storage import transaction
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import Clock, utc_now
 
 from .errors import AssetError
 from .models import AssetRecord
@@ -27,7 +27,7 @@ class AssetCleanupReconciler:
         poll_interval_seconds: float = 5,
         lease_seconds: float = 30,
         max_attempts: int = 10,
-        clock=None,
+        clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self._objects = objects

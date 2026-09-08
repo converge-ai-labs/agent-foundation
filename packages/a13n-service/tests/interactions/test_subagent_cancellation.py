@@ -103,6 +103,7 @@ async def _cancel_parent_with_children(
         states,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     )
     requested = await acceptance.accept(
         _prepared_child(

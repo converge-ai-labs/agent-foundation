@@ -16,6 +16,12 @@ One-shot mode prints the final text or a structured operation object, then exits
 
 Help and version do not load provider or database modules. A lightweight startup view appears before execution dependencies load. Unused model-provider and memory SDKs are not imported merely to start the terminal. Startup shows runtime loading, local storage/configuration, and session preparation separately; phase timings are written to the data root’s `logs/terminal.log`. App initialization precedes chat, and startup, setup, and conversation keep the same alternate screen without a terminal reset; model construction, Environment acquisition, and selected MCP connections happen only when needed. The CLI and HTTP adapter share the reusable `HarnessUiApp` application boundary; the Hello World page does not call that API, and the CLI does not own a parallel execution engine.
 
+## Model connection interruptions
+
+Harness UI automatically continues eligible interrupted model requests from the available history, for up to five total attempts including the first. This applies to root Agents and subagents. The terminal shows a short `[System] Retrying model request…` notice rather than an error for each retry. If recovery succeeds, the same Run continues normally. If the budget is exhausted, a terminal error reports the attempt count and suggests continuing the conversation again.
+
+Recovery does not restart completed work or directly replay tool calls. Cancellation, usage limits, tool failures, and pending approvals do not trigger this mechanism. Before manually repeating a side-effecting action after an interruption, check whether it already completed. These in-process retries do not recover a crashed process.
+
 ## Browser UI
 
 The bundled page displays only **Hello World**. It does not authenticate, consume the URL's API-key fragment, open live streams, or provide conversation, setup, or management controls. The HTTP API and foreground server remain available independently.

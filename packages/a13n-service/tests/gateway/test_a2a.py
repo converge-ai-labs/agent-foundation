@@ -12,10 +12,11 @@ from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.api import install_api_conventions
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.assets.models import AssetRecord
 from a13n_service.assets.objects import AssetObjectStore
-from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
+from a13n_service.assets.uploads import AssetUploadService
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
@@ -32,6 +33,7 @@ from a13n_service.gateway.models import (
     A2APushConfigurationRecord,
     A2ATaskBindingRecord,
 )
+from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session, transaction
@@ -93,13 +95,14 @@ async def _service(
 ) -> tuple[A2AService, LocalObjectStore]:
     objects = await LocalObjectStore.create(tmp_path / "a2a-objects")
     staging = await AssetStaging.create(tmp_path / "a2a-files")
-    assets = AssetService(
+    uploads = AssetUploadService(
         sessions,
         AssetObjectStore(objects, staging),
         staging,
         max_size_bytes=1024 * 1024,
         clock=lambda: NOW,
     )
+    assets = AssetCatalog(sessions, AssetObjectStore(objects, staging), clock=lambda: NOW)
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]), assets=assets)
     return (
         A2AService(
@@ -108,7 +111,7 @@ async def _service(
             _protector(),
             EndpointPolicy(require_https=True),
             A2APartImporter(
-                assets,
+                uploads,
                 import_http_client,
                 EndpointPolicy(),
                 max_redirects=2,
@@ -256,6 +259,33 @@ async def test_raw_part_is_atomically_imported_as_asset_and_replayed_without_rep
         "source": {"type": "asset", "asset_id": assets[0].id},
         "delivery": "model_content",
     }
+
+
+async def test_asset_and_success_audit_rollback_with_failed_message_acceptance(
+    lifecycle_interaction_sessions, tmp_path, monkeypatch
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    persist = AssetUploadService.commit_protocol_imports_in_transaction
+
+    async def fail_after_assets(self, session, **kwargs):
+        await persist(self, session, **kwargs)
+        assert await session.scalar(select(AssetRecord.id)) is not None
+        raise RuntimeError("message acceptance failed after Asset flush")
+
+    monkeypatch.setattr(AssetUploadService, "commit_protocol_imports_in_transaction", fail_after_assets)
+    request = _request()
+    request.message.parts.append(a2a.Part(raw=b"candidate", filename="candidate.bin"))
+    with pytest.raises(RuntimeError, match="after Asset flush"):
+        await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+    async with short_session(lifecycle_interaction_sessions) as session:
+        assert await session.scalar(select(AssetRecord.id)) is None
+        assert await session.scalar(select(RunRecord.id)) is None
+        assert await session.scalar(select(A2AMessageBindingRecord.id)) is None
+        assert (
+            await session.scalar(select(SecurityAuditRecord.id).where(SecurityAuditRecord.action == "asset.create"))
+            is None
+        )
 
 
 async def test_url_part_follows_bounded_redirect_and_is_not_refetched_on_replay(

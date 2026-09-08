@@ -10,10 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_request,
     digest_visible_ascii_key,
 )
 from a13n_service.durable_operations.requests import ReplayReceipt, evidence_record
@@ -38,7 +38,6 @@ from .domain import (
     JsonObject,
     PluginRuntimeMode,
     ResolvedRevisionContent,
-    canonical_digest,
 )
 from .errors import (
     AgentError,
@@ -148,7 +147,7 @@ def new_builtin_agent(
         workspace_id=workspace_id,
         source=AgentSource.builtin.value,
         name=registration.name,
-        normalized_name=normalize_agent_name(registration.name),
+        normalized_name=agent_name_key(registration.name),
         description=registration.description,
         version=1,
         current_revision_id=revision_id,
@@ -179,7 +178,7 @@ def new_revision(
 ) -> AgentRevisionRecord:
     config_payload = config.model_dump(mode="json", by_alias=True)
     resolved_payload = resolved.model_dump(mode="json", by_alias=True)
-    content_digest = canonical_digest(
+    content_digest = digest_request(
         {
             "plugin_runtime_mode": mode.value,
             "config": config_payload,
@@ -194,7 +193,7 @@ def new_revision(
         version=version,
         plugin_runtime_mode=mode.value,
         config=config_payload,
-        config_digest=canonical_digest(config),
+        config_digest=digest_request(config),
         resolved_model=resolved.resolved_model.model_dump(mode="json"),
         resolved_plugin_versions=[item.model_dump(mode="json") for item in resolved.resolved_plugin_versions],
         runtime_lock_digest=resolved.runtime_lock_digest,
@@ -483,5 +482,5 @@ def new_agent_audit(
     )
 
 
-def normalize_agent_name(value: str) -> str:
+def agent_name_key(value: str) -> str:
     return value.casefold()

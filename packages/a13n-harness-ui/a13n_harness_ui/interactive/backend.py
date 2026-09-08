@@ -641,7 +641,9 @@ class SessionBackend:
         failure = operation.failure or (None if outcome is None else outcome.execution.failure)
         if failure is not None:
             return f"Error [{failure.code}]: {failure.message}" + (
-                f"\nRetry: {failure.retry_hint}" if failure.retry_hint else ""
+                f"\nRetry: {failure.retry_hint}"
+                if failure.retry_hint and failure.code != "model_recovery_exhausted"
+                else ""
             )
         if operation.status == RootOperationStatus.suspended:
             return await self.pending()

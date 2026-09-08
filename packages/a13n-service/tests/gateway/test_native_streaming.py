@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import RUN_ID, hook_actor, seed_hook_actor_access, seed_run_and_secret
 from tests.interactions.conftest import NOW, ORGANIZATION_ID, THREAD_ID
+from tests.run_stream.support import ATTEMPT_ID, activate_stream
 
 pytestmark = pytest.mark.anyio
 
@@ -54,6 +55,7 @@ def event(sequence: int) -> RunStreamEvent:
     return RunStreamEvent(
         event_id=deterministic_run_stream_event_id("gateway-test", str(sequence)),
         event_type="agui.custom",
+        run_attempt_id=ATTEMPT_ID,
         run_id=RUN_ID,
         thread_id=THREAD_ID,
         occurred_at=NOW + timedelta(seconds=sequence),
@@ -65,8 +67,9 @@ async def test_run_sse_replays_exclusively_after_cursor_and_closes(
     native_stream_service: tuple[NativeRunStreamService, RedisRunStream],
 ) -> None:
     service, stream = native_stream_service
-    first = await stream.append(ORGANIZATION_ID, event(1))
-    second = await stream.append(ORGANIZATION_ID, event(2))
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    first = await stream.append(ORGANIZATION_ID, event(1), attempt_number=1)
+    second = await stream.append(ORGANIZATION_ID, event(2), attempt_number=1)
     await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW + timedelta(seconds=3))
 
     attachment = await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=first)
@@ -138,3 +141,30 @@ async def test_live_replay_gap_emits_service_event_and_closes(
     assert len(frames) == 1
     assert frames[0].startswith(b"event: a13n.service.replay_gap\ndata: ")
     assert b'"event_type":"a13n.service.replay_gap"' in frames[0]
+
+
+async def test_native_recovery_uses_source_cursor_and_is_not_repeated_after_boundary(native_stream_service):
+    service, stream = native_stream_service
+    first = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    successor = await activate_stream(
+        stream,
+        ORGANIZATION_ID,
+        RUN_ID,
+        THREAD_ID,
+        attempt_id="rat_2222222222222222",
+        number=2,
+        reason="planned_handoff",
+    )
+    last = await stream.append(
+        ORGANIZATION_ID, event(2).model_copy(update={"run_attempt_id": "rat_2222222222222222"}), attempt_number=2
+    )
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW + timedelta(seconds=3))
+    attachment = await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=first.leased_stream_id)
+    frames = [frame async for frame in service.events(attachment)]
+    assert len(frames) == 3
+    assert frames[0].startswith(f"id: {successor.leased_stream_id}\nevent: run_attempt.leased\n".encode())
+    assert frames[1].startswith(f"id: {successor.recovery_stream_id}\nevent: run.recovery\n".encode())
+    assert b'"reason":"planned_handoff"' in frames[1]
+    resumed = await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=successor.recovery_stream_id)
+    assert [frame async for frame in service.events(resumed)] == frames[2:]
+    assert frames[2].startswith(f"id: {last}\nevent: agui.custom\n".encode())
