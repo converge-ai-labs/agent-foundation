@@ -7,42 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.ids import new_object_id
 
-from .auth_models import ApiKeyRecord
-from .authorization import (
-    AuthenticatedActor,
-    AuthorizationError,
+from ..auth.credentials import require_key_eligible
+from ..authorization import (
     WorkspaceAction,
     authorize_organization_admin,
     authorize_organization_admin_principal,
     authorize_persisted_workspace_principal_action,
     authorize_workspace,
 )
-from .domain import PrincipalRef, PrincipalType
-from .models import RoleBindingRecord, UserRecord, WorkspaceRecord
-from .schemas import Grant
-from .service_common import identity_error, not_found
+from ..domain import AuthenticatedActor, AuthorizationError, PrincipalRef, PrincipalType
+from ..models import ApiKeyRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
+from ..role_rules import validate_binding
+from ..schemas import Grant
+from ..service_common import identity_error, not_found
 
-ROLE_KEYS = {
-    ("organization", "user"): frozenset({"member", "admin"}),
-    ("workspace", "user"): frozenset({"viewer", "runner", "builder", "admin"}),
-    ("workspace", "service_account"): frozenset({"viewer", "runner", "builder"}),
-    ("agent", "user"): frozenset({"viewer", "runner", "builder"}),
-    ("agent", "service_account"): frozenset({"viewer", "runner", "builder"}),
-}
 _ROLE_ORDER = {"member": 0, "viewer": 1, "runner": 2, "builder": 3, "admin": 4}
-
-
-def validate_binding(binding: RoleBindingRecord) -> None:
-    if binding.role_key not in ROLE_KEYS.get((binding.resource_type, binding.principal_type), ()):
-        raise AuthorizationError("invalid_role_binding")
-    if binding.resource_type == "organization":
-        valid = binding.workspace_id is None and binding.resource_id == binding.organization_id
-    else:
-        valid = binding.workspace_id is not None and (
-            binding.resource_type == "agent" or binding.resource_id == binding.workspace_id
-        )
-    if not valid:
-        raise AuthorizationError("invalid_role_binding")
 
 
 async def authorize_grants(
@@ -192,8 +171,6 @@ async def remove_user_binding(session: AsyncSession, row: RoleBindingRecord, now
         await session.delete(row)
         await session.flush()
         # Direct Agent grants can still authorize a Personal key in this Workspace.
-        from .credentials import require_key_eligible
-
         for key in await session.scalars(
             select(ApiKeyRecord).where(
                 ApiKeyRecord.principal_type == "user",

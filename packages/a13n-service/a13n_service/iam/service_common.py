@@ -13,7 +13,7 @@ from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
 from .audit import AuthenticationAuditActor, SystemAuditActor, security_audit_record
-from .authorization import AuthenticatedActor
+from .domain import AuthenticatedActor
 from .models import OrganizationRecord
 
 

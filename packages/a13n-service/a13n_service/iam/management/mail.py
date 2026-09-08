@@ -7,7 +7,7 @@ from typing import Protocol
 
 import aiosmtplib
 
-from .configuration import IdentityConfiguration
+from ..configuration import IdentityConfiguration
 
 logger = logging.getLogger("a13n_service.iam.mail")
 

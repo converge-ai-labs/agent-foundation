@@ -13,14 +13,22 @@ from a13n_service.collection_cursors import (
 )
 from a13n_service.storage import short_session
 
-from .auth_models import ApiKeyRecord, AuthSessionRecord, InvitationGrantRecord, InvitationRecord
-from .authorization import AuthenticatedActor, WorkspaceAction, authorize_organization_admin, authorize_workspace
+from ..auth.sessions import require_user
+from ..authorization import WorkspaceAction, authorize_organization_admin, authorize_workspace
+from ..domain import AuthenticatedActor
+from ..models import (
+    ApiKeyRecord,
+    AuthSessionRecord,
+    InvitationGrantRecord,
+    InvitationRecord,
+    RoleBindingRecord,
+    ServiceAccountRecord,
+    UserRecord,
+)
+from ..schemas import ApiKey, AuthSession, Invitation, Page, RequestModel, Resource, RoleBinding, ServiceAccount, User
+from ..service_common import identity_error, not_found
 from .invitations import invitation_resources
-from .models import RoleBindingRecord, ServiceAccountRecord, UserRecord
-from .schemas import ApiKey, AuthSession, Invitation, Page, RequestModel, Resource, RoleBinding, ServiceAccount, User
 from .service_accounts import ServiceAccountService, account_resources
-from .service_common import identity_error, not_found
-from .sessions import require_user
 
 
 class PageRequest(RequestModel):

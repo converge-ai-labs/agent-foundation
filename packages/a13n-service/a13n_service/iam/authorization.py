@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
 
 from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .domain import PrincipalRef, PrincipalType
+from .auth.credentials import require_current_credential
+from .domain import AuthenticatedActor, AuthorizationError, PrincipalRef, PrincipalType
 from .models import OrganizationRecord, RoleBindingRecord, ServiceAccountRecord, UserRecord, WorkspaceRecord
+from .role_rules import validate_binding
 
 
 class WorkspaceAction(StrEnum):
@@ -248,33 +249,6 @@ _DIRECT_AGENT_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
 
 
 @dataclass(frozen=True, slots=True)
-class AuthenticatedActor:
-    principal: PrincipalRef
-    auth_method: str
-    credential_id: str
-    boundary_workspace_id: str | None
-    boundary_organization_id: str | None = None
-    request_id: str | None = None
-    # Host authenticators own their credential lifecycle. The built-in authenticator
-    # marks Service credentials so later stream authorization also rechecks revocation.
-    credential_source: Literal["host", "service"] = "host"
-
-    def __post_init__(self) -> None:
-        if (self.boundary_workspace_id is None) == (self.boundary_organization_id is None):
-            raise ValueError("exactly one credential boundary is required")
-        if self.boundary_organization_id is not None and (
-            self.principal.principal_type != PrincipalType.user or self.auth_method != "session"
-        ):
-            raise ValueError("Organization boundaries require a human session")
-
-    @property
-    def workspace_id(self) -> str:
-        if self.boundary_workspace_id is None:
-            raise AuthorizationError("workspace_boundary_required", concealed=True)
-        return self.boundary_workspace_id
-
-
-@dataclass(frozen=True, slots=True)
 class AuthorizedWorkspace:
     organization_id: str
     workspace_id: str
@@ -297,13 +271,6 @@ class _WorkspaceAuthorizationContext:
 class _PrincipalAuthorizationContext:
     workspace: WorkspaceRecord
     bindings: tuple[RoleBindingRecord, ...]
-
-
-class AuthorizationError(Exception):
-    def __init__(self, code: str, *, concealed: bool = False) -> None:
-        super().__init__(code)
-        self.code = code
-        self.concealed = concealed
 
 
 async def authorize_workspace(
@@ -462,8 +429,6 @@ async def _load_workspace_authorization(
     agent_id: str | None = None,
     include_agent_bindings: bool = False,
 ) -> _WorkspaceAuthorizationContext:
-    from .credentials import require_current_credential
-
     await require_current_credential(session, actor)
     if actor.boundary_workspace_id is not None and actor.boundary_workspace_id != workspace_id:
         raise AuthorizationError("credential_boundary_mismatch", concealed=True)
@@ -522,8 +487,6 @@ async def _load_principal_authorization(
             )
         ).all()
     )
-    from .bindings import validate_binding
-
     for binding in bindings:
         validate_binding(binding)
     if principal.principal_type is PrincipalType.user and not any(
@@ -623,8 +586,6 @@ def _binding_query(
 
 
 async def authorize_organization_admin(session: AsyncSession, *, actor: AuthenticatedActor) -> str:
-    from .credentials import require_current_credential
-
     await require_current_credential(session, actor)
     organization_id = actor.boundary_organization_id
     if organization_id is None:

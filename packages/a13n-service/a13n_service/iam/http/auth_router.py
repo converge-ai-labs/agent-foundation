@@ -1,38 +1,18 @@
 """Local login, session management, and single-use invitation acceptance."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, SecretStr
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.request_runtime import get_control_runtime
 
-from .authentication import authenticate_request
-from .authorization import AuthenticatedActor
-from .collections import PageRequest
-from .http_auth import SESSION_COOKIE, require_origin
-from .passwords import csrf_token
-from .runtime import IdentityRuntime
-from .schemas import AcceptInvitationRequest, AuthSession, LoginRequest, LoginResult, Page, PasswordRequest, User
-from .service_common import identity_error
-from .sessions import Login
-
-
-def private_response(response: Response) -> None:
-    response.headers["Cache-Control"] = "no-store"
-
+from ..auth.passwords import csrf_token
+from ..auth.sessions import Login
+from ..schemas import AcceptInvitationRequest, AuthSession, LoginRequest, LoginResult, Page, PasswordRequest, User
+from ..service_common import identity_error
+from .authentication import SESSION_COOKIE, require_origin
+from .dependencies import Actor, Pagination, identity, private_response
 
 router = APIRouter(prefix="/api/v1", tags=["identity"], dependencies=[Depends(private_response)])
-Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
-Pagination = Annotated[PageRequest, Query()]
-
-
-def identity(request: Request) -> IdentityRuntime:
-    control = get_control_runtime(request)
-    if control is None or control.identity is None:
-        raise identity_error("identity_unavailable", "Identity management is unavailable.", ErrorCategory.unavailable)
-    return control.identity
 
 
 def login_response(response: Response, result: Login) -> LoginResult:

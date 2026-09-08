@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from .authorization import AuthenticatedActor
+from .domain import AuthenticatedActor
 from .models import SecurityAuditRecord
 
 

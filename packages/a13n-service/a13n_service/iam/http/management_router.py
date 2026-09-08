@@ -6,8 +6,7 @@ from fastapi import APIRouter, Depends, Header, Request, Response
 
 from a13n_service.etags import resource_etag
 
-from .auth_router import Actor, Pagination, identity, private_response
-from .schemas import (
+from ..schemas import (
     ApiKey,
     CreatedKey,
     CreateInvitationRequest,
@@ -29,6 +28,7 @@ from .schemas import (
     User,
     Workspace,
 )
+from .dependencies import Actor, Pagination, identity, private_response
 
 router = APIRouter(prefix="/api/v1", tags=["identity-management"], dependencies=[Depends(private_response)])
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]

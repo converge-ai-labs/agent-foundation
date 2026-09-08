@@ -9,14 +9,14 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
-from .auth_models import ApiKeyRecord
-from .authorization import AuthenticatedActor, WorkspaceAction, authorize_workspace
-from .credentials import require_key_eligible
-from .models import ServiceAccountRecord
-from .passwords import new_token, token_hash
-from .schemas import ApiKey, CreatedKey, CreateKeyRequest
-from .service_common import audit, identity_error, identity_transaction, not_found
-from .sessions import require_user
+from ..auth.credentials import require_key_eligible
+from ..auth.passwords import new_token, token_hash
+from ..auth.sessions import require_user
+from ..authorization import WorkspaceAction, authorize_workspace
+from ..domain import AuthenticatedActor
+from ..models import ApiKeyRecord, ServiceAccountRecord, WorkspaceRecord
+from ..schemas import ApiKey, CreatedKey, CreateKeyRequest
+from ..service_common import audit, identity_error, identity_transaction, not_found
 
 
 async def authorize_key_management(session: AsyncSession, actor: AuthenticatedActor, key: ApiKeyRecord) -> None:
@@ -45,8 +45,6 @@ class ApiKeyService:
         service_account_id: str | None = None,
     ) -> CreatedKey:
         async with short_session(self._sessions) as session:
-            from .models import WorkspaceRecord
-
             workspace = await session.get(WorkspaceRecord, workspace_id)
             if workspace is None or workspace.deleted_at is not None:
                 raise not_found()

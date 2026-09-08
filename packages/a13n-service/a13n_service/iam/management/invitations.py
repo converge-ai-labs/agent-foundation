@@ -12,19 +12,26 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
 
-from .audit import AuthenticationAuditActor, SystemAuditActor
-from .auth_models import InvitationGrantRecord, InvitationRecord, PasswordCredentialRecord
-from .authentication import AuthenticationError
-from .authorization import AuthenticatedActor
+from ..audit import AuthenticationAuditActor, SystemAuditActor
+from ..auth.credentials import expired
+from ..auth.passwords import Passwords, matches_token, new_token, token_hash
+from ..auth.sessions import Login, create_session, require_user
+from ..authentication import AuthenticationError
+from ..configuration import IdentityConfiguration
+from ..domain import AuthenticatedActor
+from ..models import (
+    InvitationGrantRecord,
+    InvitationRecord,
+    OrganizationRecord,
+    PasswordCredentialRecord,
+    RoleBindingRecord,
+    UserRecord,
+    WorkspaceRecord,
+)
+from ..schemas import AcceptInvitationRequest, CreateInvitationRequest, Grant, Invitation, InvitationDelivery
+from ..service_common import audit, identity_error, identity_transaction, lock_bootstrap, not_found, require_version
 from .bindings import authorize_grants, authorize_inviter_grants, grant_role, validate_grants
-from .configuration import IdentityConfiguration
-from .credentials import expired
 from .mail import InvitationMailer
-from .models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from .passwords import Passwords, matches_token, new_token, token_hash
-from .schemas import AcceptInvitationRequest, CreateInvitationRequest, Grant, Invitation, InvitationDelivery
-from .service_common import audit, identity_error, identity_transaction, lock_bootstrap, not_found, require_version
-from .sessions import Login, create_session, require_user
 
 
 @dataclass(frozen=True, slots=True)

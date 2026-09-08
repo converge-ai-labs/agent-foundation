@@ -2,7 +2,7 @@
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 
-from .authorization import AuthenticatedActor
+from .domain import AuthenticatedActor
 
 
 def require_organization_boundary(actor: AuthenticatedActor, organization_id: str) -> None:

@@ -5,16 +5,16 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .api_keys import ApiKeyService
-from .collections import IdentityCollections
+from .auth.passwords import Passwords
+from .auth.sessions import SessionService
 from .configuration import IdentityConfiguration
-from .http_auth import DatabaseAuthenticator
-from .invitations import InvitationService
-from .mail import SmtpInvitationMailer
-from .membership import MembershipService
-from .passwords import Passwords
-from .service_accounts import ServiceAccountService
-from .sessions import SessionService
+from .http.authentication import DatabaseAuthenticator
+from .management.api_keys import ApiKeyService
+from .management.collections import IdentityCollections
+from .management.invitations import InvitationService
+from .management.mail import SmtpInvitationMailer
+from .management.membership import MembershipService
+from .management.service_accounts import ServiceAccountService
 
 logger = logging.getLogger("a13n_service.iam.runtime")
 

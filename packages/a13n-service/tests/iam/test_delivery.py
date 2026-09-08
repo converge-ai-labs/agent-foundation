@@ -1,7 +1,7 @@
 import aiosmtplib
 import pytest
 from a13n_service.iam.configuration import IdentityConfiguration
-from a13n_service.iam.mail import SmtpInvitationMailer
+from a13n_service.iam.management.mail import SmtpInvitationMailer
 
 
 @pytest.mark.anyio

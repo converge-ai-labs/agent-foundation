@@ -10,15 +10,14 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
-from .audit import AuthenticationAuditActor
-from .auth_models import AuthSessionRecord, PasswordCredentialRecord
-from .authentication import AuthenticationError
-from .authorization import AuthenticatedActor, AuthorizationError
+from ..audit import AuthenticationAuditActor
+from ..authentication import AuthenticationError
+from ..domain import AuthenticatedActor, AuthorizationError
+from ..models import AuthSessionRecord, PasswordCredentialRecord, UserRecord
+from ..schemas import AuthSession, User
+from ..service_common import audit, identity_transaction, not_found, singleton_organization
 from .credentials import require_current_credential
-from .models import UserRecord
 from .passwords import Passwords, new_token, token_hash
-from .schemas import AuthSession, User
-from .service_common import audit, identity_transaction, not_found, singleton_organization
 
 
 @dataclass(frozen=True, slots=True)

@@ -11,7 +11,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.iam.authentication import authenticate_mutation
+from a13n_service.iam.http.authentication import authenticate_mutation
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 

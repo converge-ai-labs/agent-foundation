@@ -6,13 +6,8 @@ from sqlalchemy import ColumnElement, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from .authorization import (
-    AuthenticatedActor,
-    AuthorizationError,
-    WorkspaceAction,
-    authorize_organization_admin,
-    authorize_workspace,
-)
+from .authorization import WorkspaceAction, authorize_organization_admin, authorize_workspace
+from .domain import AuthenticatedActor, AuthorizationError
 from .models import WorkspaceRecord
 
 

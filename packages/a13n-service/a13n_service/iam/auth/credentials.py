@@ -7,9 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.temporal import assume_utc, utc_now
 
-from .auth_models import ApiKeyRecord, AuthSessionRecord
-from .authorization import AuthenticatedActor, AuthorizationError
-from .models import RoleBindingRecord, ServiceAccountRecord, UserRecord, WorkspaceRecord
+from ..domain import AuthenticatedActor, AuthorizationError
+from ..models import (
+    ApiKeyRecord,
+    AuthSessionRecord,
+    RoleBindingRecord,
+    ServiceAccountRecord,
+    UserRecord,
+    WorkspaceRecord,
+)
+from ..role_rules import validate_binding
 
 
 def expired(expires_at: datetime | None) -> bool:
@@ -35,8 +42,6 @@ async def require_key_eligible(session: AsyncSession, key: ApiKeyRecord) -> None
                 )
             )
         ).all()
-        from .bindings import validate_binding
-
         for grant in grants:
             validate_binding(grant)
         member = any(g.resource_type == "organization" and g.resource_id == key.organization_id for g in grants)

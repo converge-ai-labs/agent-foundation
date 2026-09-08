@@ -7,10 +7,10 @@ from uuid import uuid4
 import pytest
 from a13n_service.api import install_api_conventions
 from a13n_service.database.metadata import service_metadata
-from a13n_service.iam.auth_router import router as auth_router
-from a13n_service.iam.browser import router as browser_router
 from a13n_service.iam.configuration import IdentityConfiguration
-from a13n_service.iam.router import router
+from a13n_service.iam.http.auth_router import router as auth_router
+from a13n_service.iam.http.browser import router as browser_router
+from a13n_service.iam.http.management_router import router
 from a13n_service.iam.runtime import build_identity_runtime
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
@@ -317,7 +317,7 @@ async def test_member_removal_revokes_key_and_pending_inviter_authority(identity
 async def test_expired_invitation_and_revoked_session_fail_closed(identity_http):
     from datetime import timedelta
 
-    from a13n_service.iam.auth_models import InvitationRecord
+    from a13n_service.iam.models import InvitationRecord
     from a13n_service.storage import transaction
     from a13n_service.temporal import utc_now
 

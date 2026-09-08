@@ -4,23 +4,23 @@ import hmac
 import logging
 
 from anyio import fail_after
+from fastapi import Request
 from fastapi.requests import HTTPConnection
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.request_runtime import get_process_runtime
 from a13n_service.storage import short_session, transaction
 
-from .audit import AuthenticationAuditActor
-from .auth_models import ApiKeyRecord, AuthSessionRecord
-from .authentication import AuthenticationError
-from .authorization import AuthenticatedActor, AuthorizationError
-from .configuration import IdentityConfiguration
-from .credentials import expired, require_key_eligible
-from .domain import PrincipalRef, PrincipalType
-from .models import UserRecord
-from .passwords import csrf_token, matches_token, token_hash
-from .service_common import audit, identity_error, singleton_organization
+from ..audit import AuthenticationAuditActor
+from ..auth.credentials import expired, require_key_eligible
+from ..auth.passwords import csrf_token, matches_token, token_hash
+from ..authentication import AuthenticationError
+from ..configuration import IdentityConfiguration
+from ..domain import AuthenticatedActor, AuthorizationError, PrincipalRef, PrincipalType
+from ..models import ApiKeyRecord, AuthSessionRecord, UserRecord
+from ..service_common import audit, identity_error, singleton_organization
 
 logger = logging.getLogger("a13n_service.iam.http_auth")
 
@@ -137,3 +137,30 @@ class DatabaseAuthenticator:
             request_id=getattr(request.state, "request_id", None),
             credential_source="service",
         )
+
+
+async def authenticate_request(request: Request) -> AuthenticatedActor:
+    runtime = get_process_runtime(request)
+    authenticator = runtime.request_authenticator if runtime is not None else None
+    if authenticator is None:
+        raise AuthenticationError("authentication is not configured")
+    try:
+        actor = await authenticator(request)
+    except AuthenticationError:
+        raise
+    except ApplicationError:
+        raise
+    except Exception as error:
+        raise AuthenticationError("authentication failed") from error
+    request.state.actor = actor
+    return actor
+
+
+async def authenticate_mutation(request: Request) -> AuthenticatedActor:
+    """Require browser proof even for protocol callbacks historically exposed as GET."""
+    actor = await authenticate_request(request)
+    if actor.credential_source == "service" and actor.auth_method == "session":
+        runtime = get_process_runtime(request)
+        assert runtime is not None
+        require_csrf(request, runtime.settings.identity_configuration())
+    return actor

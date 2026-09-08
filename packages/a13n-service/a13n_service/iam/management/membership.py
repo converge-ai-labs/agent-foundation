@@ -9,14 +9,15 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
-from .auth_models import ApiKeyRecord
-from .authorization import AuthenticatedActor, WorkspaceAction, authorize_organization_admin, authorize_workspace
-from .bindings import ROLE_KEYS, grant_role, remove_user_binding
+from ..auth.sessions import require_user
+from ..authorization import WorkspaceAction, authorize_organization_admin, authorize_workspace
+from ..domain import AuthenticatedActor
+from ..models import ApiKeyRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
+from ..role_rules import ROLE_KEYS
+from ..schemas import Organization, Page, RoleBinding, SetRoleRequest, Workspace
+from ..service_common import audit, identity_error, identity_transaction, not_found, singleton_organization
+from .bindings import grant_role, remove_user_binding
 from .collections import PageRequest, query_scope
-from .models import RoleBindingRecord, UserRecord, WorkspaceRecord
-from .schemas import Organization, Page, RoleBinding, SetRoleRequest, Workspace
-from .service_common import audit, identity_error, identity_transaction, not_found, singleton_organization
-from .sessions import require_user
 
 
 def require_etag(row: WorkspaceRecord | RoleBindingRecord, if_match: str) -> None:

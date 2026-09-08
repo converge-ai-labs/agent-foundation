@@ -9,13 +9,13 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
-from .auth_models import ApiKeyRecord
-from .authorization import AuthenticatedActor, WorkspaceAction, authorize_workspace
+from ..auth.sessions import require_user
+from ..authorization import WorkspaceAction, authorize_workspace
+from ..domain import AuthenticatedActor
+from ..models import ApiKeyRecord, RoleBindingRecord, ServiceAccountRecord
+from ..schemas import CreateServiceAccountRequest, ServiceAccount, UpdateServiceAccountRequest
+from ..service_common import audit, identity_error, identity_transaction, not_found, require_version
 from .bindings import grant_role
-from .models import RoleBindingRecord, ServiceAccountRecord
-from .schemas import CreateServiceAccountRequest, ServiceAccount, UpdateServiceAccountRequest
-from .service_common import audit, identity_error, identity_transaction, not_found, require_version
-from .sessions import require_user
 
 
 async def account_resources(session: AsyncSession, rows: Sequence[ServiceAccountRecord]) -> list[ServiceAccount]:
