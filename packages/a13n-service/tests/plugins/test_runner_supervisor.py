@@ -218,3 +218,29 @@ async def test_close_reaps_children_inside_a_cancelled_scope(monkeypatch):
         await supervisor.close()
     assert stopped == [runner]
     assert supervisor.runtime_lock_digests == ()
+
+
+@pytest.mark.parametrize("timeouts", [0, 1, 2])
+async def test_process_stop_waits_then_escalates_only_after_each_deadline(timeouts):
+    supervisor = PluginRunnerSupervisor(Mock())
+    process = Mock(returncode=None)
+    # Deterministic deadline expiry; real-process tests retain the production wait budget.
+    process.wait = AsyncMock(side_effect=[*[TimeoutError for _ in range(timeouts)], 0])
+
+    await supervisor._stop_process(process)
+
+    assert process.wait.await_count == timeouts + 1
+    assert process.terminate.call_count == (1 if timeouts >= 1 else 0)
+    assert process.kill.call_count == (1 if timeouts == 2 else 0)
+
+
+async def test_process_stop_does_not_signal_an_already_exited_child():
+    supervisor = PluginRunnerSupervisor(Mock())
+    process = Mock(returncode=0)
+    process.wait = AsyncMock()
+
+    await supervisor._stop_process(process)
+
+    process.wait.assert_not_awaited()
+    process.terminate.assert_not_called()
+    process.kill.assert_not_called()

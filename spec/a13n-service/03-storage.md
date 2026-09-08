@@ -107,6 +107,8 @@ The protocol supplies these operations:
 
 The network adapter targets S3-compatible object storage through an aiobotocore client owned by the application lifespan. Its supported service profile requires conditional `PutObject` and `DeleteObject`, range reads, head requests, and lexicographically ordered `ListObjectsV2` pagination. S3 directory buckets and compatible services that cannot preserve this profile are rejected during configuration.
 
+The S3 adapter stores every object in the current Service envelope, using a fresh publication identity so even a metadata-only replacement changes its opaque version token. Whole-object reads, range reads, metadata reads, and listing require the supported envelope encoding and valid physical length; whole-object reads also validate the envelope header. Logical sizes and byte ranges exclude the envelope. Unframed objects and unsupported encodings fail explicitly, with no legacy read fallback or automatic migration.
+
 The local adapter stores bodies and metadata beneath one configured root while preserving object semantics: keys remain opaque, publication uses an atomic same-filesystem replacement, conditional writes are serialized correctly within the process, and listing order and pagination are deterministic. Temporary upload data is not observable through `open`, `stat`, or `list` and is removed after failed or cancelled publication.
 
 The local object backend is a single-process backend. Separate processes do not share its conditional-write coordination even when configured with the same directory. Every distributed profile uses shared S3-compatible storage.

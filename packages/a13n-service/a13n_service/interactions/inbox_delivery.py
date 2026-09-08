@@ -11,7 +11,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, TextContent, UserCo
 
 from .state import ConsumedThreadInboxEntry
 
-_PROVENANCE_KEY = "a13n.foundation.inbox"
+_PROVENANCE_KEY = "a13n.service.inbox"
 _CONTENT = TypeAdapter(tuple[UserContent, ...])
 
 
@@ -30,7 +30,7 @@ class AdaptedThreadInboxEntry:
     def tagged_input(self, run_id: str) -> tuple[UserContent, ...]:
         content: list[UserContent] = list(deepcopy((self.input,) if isinstance(self.input, str) else self.input))
         if not content:
-            raise RunError("Thread inbox input is empty.", code="foundation_inbox_input_invalid")
+            raise RunError("Thread inbox input is empty.", code="service_inbox_input_invalid")
         # The adapter cannot manufacture another entry's trusted provenance.
         for index, item in enumerate(content):
             if isinstance(item, TextContent) and isinstance(item.metadata, dict):
@@ -75,7 +75,7 @@ def incorporated_receipts(
         if not isinstance(entry_id, str) or (entry := expected.get(entry_id)) is None:
             continue
         if provenance.get("kind") != entry.receipt.kind:
-            raise RunError("Thread inbox provenance kind conflicts.", code="foundation_inbox_receipt_invalid")
+            raise RunError("Thread inbox provenance kind conflicts.", code="service_inbox_receipt_invalid")
         # Native serialization narrows BinaryContent to media-specific types.
         if _CONTENT.dump_python(tuple(content), mode="json") == _CONTENT.dump_python(
             entry.tagged_input(run_id), mode="json"
@@ -122,5 +122,5 @@ def merge_receipts(
     for receipt in incorporated:
         existing = receipts.setdefault(receipt.inbox_entry_id, receipt)
         if existing.kind != receipt.kind:
-            raise RunError("Thread inbox receipt kind conflicts.", code="foundation_inbox_receipt_invalid")
+            raise RunError("Thread inbox receipt kind conflicts.", code="service_inbox_receipt_invalid")
     return tuple(receipts.values())

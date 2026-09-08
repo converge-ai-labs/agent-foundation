@@ -32,7 +32,7 @@ class ReplayGapEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: str = "1"
-    event_type: str = "a13n.foundation.replay_gap"
+    event_type: str = "a13n.service.replay_gap"
     run_id: str
     requested_cursor: str | None
     retained_floor: str | None

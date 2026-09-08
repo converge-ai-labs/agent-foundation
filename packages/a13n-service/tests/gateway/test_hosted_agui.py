@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_service.agents.models import AgentRevisionRecord
@@ -21,6 +22,7 @@ from a13n_service.run_stream import (
     RedisRunStream,
     RunReplayStore,
     RunStreamEvent,
+    RunStreamReplayGap,
     deterministic_run_stream_event_id,
 )
 from a13n_service.storage import ObjectNotFound, short_session, transaction
@@ -345,6 +347,10 @@ async def test_new_user_tail_defaults_active_waiting_run(
             objects,
             run_id=first.binding.run_id,
         )
+        frames = [frame async for frame in service.events(first)]
+        assert b'"name":"a13n.service.run_status"' in frames[-1]
+        assert b'"status":"waiting"' in frames[-1]
+
         request = RunAgentInput.model_validate(
             {
                 "threadId": "external-thread-1",
@@ -797,3 +803,29 @@ def _actor():
     from tests.gateway.test_commands import _actor as command_actor
 
     return command_actor()
+
+
+async def test_hosted_replay_gap_uses_service_namespace(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    async with AsyncExitStack() as stack:
+        service, stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        attachment = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=_request(),
+            last_event_id=None,
+        )
+        monkeypatch.setattr(
+            stream,
+            "read",
+            AsyncMock(side_effect=RunStreamReplayGap(retained_floor=None, high_watermark=None)),
+        )
+        frames = [frame async for frame in service.events(attachment)]
+
+    assert len(frames) == 2
+    assert b'"type":"RUN_STARTED"' in frames[0]
+    assert b'"name":"a13n.service.replay_gap"' in frames[1]

@@ -30,7 +30,7 @@ The executable selects a TOML file only through an explicit `--config PATH`. It 
 3. `A13N_SERVICE_*` environment variables;
 4. explicit `--role` and `--host` executable overrides.
 
-When no configuration path is supplied, no TOML file is loaded. The process does not search the working directory, user home, or image filesystem for `.env`, `foundation.toml`, or another implicit file. It does not merge several files or implement include, inheritance, or named profile semantics.
+When no configuration path is supplied, no TOML file is loaded. The process does not search the working directory, user home, or image filesystem for `.env`, `a13n-service.toml`, or another implicit file. It does not merge several files or implement include, inheritance, or named profile semantics.
 
 TOML groups settings by stable operational concern:
 
@@ -50,7 +50,7 @@ backend = "redis"
 backend = "s3"
 
 [filesystem]
-root = "/var/lib/foundation"
+root = "/var/lib/a13n-service"
 
 [control]
 

@@ -274,12 +274,7 @@ async def test_supervisor_stages_and_activates_fresh_runner_process(tmp_path: Pa
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(
-        materializer,
-        ready_timeout_seconds=10,
-        command_timeout_seconds=5,
-        shutdown_timeout_seconds=5,
-    ) as supervisor:
+    async with PluginRunnerSupervisor(materializer) as supervisor:
         token = await supervisor.stage_candidate(operation_id="op_stage1234567890", runtime_lock=runtime_lock)
         replay = await supervisor.stage_candidate(operation_id="op_stage1234567890", runtime_lock=runtime_lock)
 
@@ -317,12 +312,7 @@ async def test_supervisor_rejects_candidate_with_invalid_factory(tmp_path: Path)
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(
-        materializer,
-        ready_timeout_seconds=10,
-        command_timeout_seconds=5,
-        shutdown_timeout_seconds=5,
-    ) as supervisor:
+    async with PluginRunnerSupervisor(materializer) as supervisor:
         with pytest.raises(PluginRuntimeCommandFailure) as failed:
             await supervisor.stage_candidate(operation_id="op_failed123456789", runtime_lock=runtime_lock)
 
@@ -344,7 +334,7 @@ async def test_supervisor_aborts_uncommitted_candidate(tmp_path: Path) -> None:
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10) as supervisor:
+    async with PluginRunnerSupervisor(materializer) as supervisor:
         token = await supervisor.stage_candidate(operation_id="op_abort123456789", runtime_lock=runtime_lock)
 
         await supervisor.abort_candidate(
@@ -371,10 +361,10 @@ async def test_supervisor_recovers_committed_activation_after_restart(tmp_path: 
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10) as first:
+    async with PluginRunnerSupervisor(materializer) as first:
         token = await first.stage_candidate(operation_id="op_recover12345678", runtime_lock=runtime_lock)
 
-    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10) as restarted:
+    async with PluginRunnerSupervisor(materializer) as restarted:
         await restarted.activate_candidate(
             operation_id="op_recover12345678",
             runtime_lock=runtime_lock,
@@ -403,7 +393,7 @@ async def test_supervisor_rejects_candidate_when_process_capacity_is_exhausted(t
     await _put_wheel(objects, dependency_wheel)
     materializer = await _materializer(tmp_path, objects)
 
-    async with PluginRunnerSupervisor(materializer, ready_timeout_seconds=10, max_processes=1) as supervisor:
+    async with PluginRunnerSupervisor(materializer, max_processes=1) as supervisor:
         await supervisor.stage_candidate(operation_id="op_capacity1234567", runtime_lock=first_lock)
 
         with pytest.raises(PluginRuntimeCommandFailure) as failed:

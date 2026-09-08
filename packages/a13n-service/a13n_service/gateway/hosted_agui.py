@@ -513,7 +513,7 @@ class HostedAguiService:
         except HostedAguiReplayError:
             gap = {
                 "type": "CUSTOM",
-                "name": "a13n.foundation.replay_gap",
+                "name": "a13n.service.replay_gap",
                 "value": {"schema_version": "1", "run_id": binding.external_run_id},
             }
             if attachment.after_ordinal < 0:
@@ -561,7 +561,7 @@ class HostedAguiService:
                 if retained is None:
                     gap = {
                         "type": "CUSTOM",
-                        "name": "a13n.foundation.replay_gap",
+                        "name": "a13n.service.replay_gap",
                         "value": {"schema_version": "1", "run_id": binding.external_run_id},
                     }
                     if ordinal > attachment.after_ordinal:
@@ -1102,7 +1102,7 @@ def _binding(run: AguiRunBindingRecord, thread: AguiThreadBindingRecord) -> Host
 def _validate_replay_binding(binding: HostedAguiBinding, replay: HostedAguiReplaySnapshot) -> None:
     if (
         replay.binding_id != binding.run_binding_id
-        or replay.foundation_run_id != binding.run_id
+        or replay.run_id != binding.run_id
         or replay.external_thread_id != binding.external_thread_id
         or replay.external_run_id != binding.external_run_id
         or replay.agent_revision_id != binding.agent_revision_id
@@ -1131,7 +1131,7 @@ def _build_replay_snapshot(
     events.append(terminal)
     return HostedAguiReplaySnapshot(
         binding_id=binding.run_binding_id,
-        foundation_run_id=binding.run_id,
+        run_id=binding.run_id,
         external_thread_id=binding.external_thread_id,
         external_run_id=binding.external_run_id,
         agent_revision_id=binding.agent_revision_id,
@@ -1436,7 +1436,7 @@ def _terminal_event(binding: HostedAguiBinding, run: RunRecord) -> dict[str, Any
         return _standard_event(
             {
                 "type": "CUSTOM",
-                "name": "a13n.foundation.run_status",
+                "name": "a13n.service.run_status",
                 "value": {
                     "schema_version": "1",
                     "status": "waiting",

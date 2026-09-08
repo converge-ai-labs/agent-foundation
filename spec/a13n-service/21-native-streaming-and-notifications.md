@@ -53,7 +53,7 @@ The service sends SSE comments as heartbeats. A heartbeat carries no `id`, does 
 
 The attachment establishes one high watermark after authorization, returns the authorized retained or live entries through that watermark in order, and then subscribes after the same boundary. An entry is neither skipped nor delivered twice by the replay-to-live cutover. Duplicate delivery after a client loses an acknowledgement remains possible, so clients deduplicate by cursor or stable event identity.
 
-If `Last-Event-ID` is covered by the live Redis prefix or complete immutable snapshot, replay continues from that source. If the requested prefix is no longer available and no complete snapshot bridges it, the route returns `409 run_stream_replay_gap` before opening SSE when the gap is known during attachment. A gap discovered after the response starts emits one terminal `a13n.foundation.replay_gap` event without a replay-advancing `id` and closes the attachment. Its bounded data identifies the Run, requested cursor, available floor, and current high watermark; it contains no missing content.
+If `Last-Event-ID` is covered by the live Redis prefix or complete immutable snapshot, replay continues from that source. If the requested prefix is no longer available and no complete snapshot bridges it, the route returns `409 run_stream_replay_gap` before opening SSE when the gap is known during attachment. A gap discovered after the response starts emits one terminal `a13n.service.replay_gap` event without a replay-advancing `id` and closes the attachment. Its bounded data identifies the Run, requested cursor, available floor, and current high watermark; it contains no missing content.
 
 The client reconciles a gap through current Run, Item, and pending-action reads. It never treats the first surviving stream event as complete history.
 
@@ -113,10 +113,10 @@ If `after_resource_seq + 1 < retained_resource_seq_floor`, the requested next ev
 ```http
 GET /api/v1/notifications
 Upgrade: websocket
-Sec-WebSocket-Protocol: foundation.notifications.v1
+Sec-WebSocket-Protocol: a13n.service.notifications.v1
 ```
 
-The endpoint accepts exactly the `foundation.notifications.v1` subprotocol. Authentication completes before upgrade. A connection begins with no resource subscription and therefore receives no product notification until the client subscribes.
+The endpoint accepts exactly the `a13n.service.notifications.v1` subprotocol. Authentication completes before upgrade. A connection begins with no resource subscription and therefore receives no product notification until the client subscribes.
 
 Client and server data frames are UTF-8 JSON objects with a required `type`. Unknown frame types or fields are protocol errors.
 
@@ -210,7 +210,7 @@ Authentication failure known before upgrade returns the ordinary HTTP `401` and 
 
 ## Compatibility and Invariants
 
-SSE event schemas and Run Stream cursor compatibility belong to the Run Stream owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event owner. Resource lifecycle API compatibility includes the resource-sequence domain, contiguity, and explicit retention-gap response. `foundation.notifications.v1` versions the WebSocket frame contract; breaking frame or subscription changes require another subprotocol.
+SSE event schemas and Run Stream cursor compatibility belong to the Run Stream owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event owner. Resource lifecycle API compatibility includes the resource-sequence domain, contiguity, and explicit retention-gap response. `a13n.service.notifications.v1` versions the WebSocket frame contract; breaking frame or subscription changes require another subprotocol.
 
 1. Detailed Run observations use SSE only.
 2. Durable Workspace lifecycle replay uses a bounded JSON collection only.

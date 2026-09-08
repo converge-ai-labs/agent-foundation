@@ -43,6 +43,7 @@ async def runner_settings(pg_url, redis_url, runner_s3_endpoint, tmp_path, monke
     monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "runner-test-access")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "runner-test-secret")
+    # Keep the production Runner exit budget: interpreter GC follows the EXITING acknowledgement.
     settings = Settings(
         _env_file=None,
         plugin_runtime_mode="runner",
@@ -68,7 +69,6 @@ async def runner_settings(pg_url, redis_url, runner_s3_endpoint, tmp_path, monke
         worker_lease_seconds=12,
         worker_drain_seconds=0.5,
         worker_cleanup_seconds=2,
-        plugin_runner_shutdown_timeout_seconds=2,
     )
     try:
         await anyio.to_thread.run_sync(DatabaseMigrator(settings.database_config()).upgrade)

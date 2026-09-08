@@ -61,6 +61,36 @@ Reasoning choices are `low`, `medium`, `high`, and `xhigh`. `/thinking default` 
 
 Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The native subscription adapter strips unsupported settings such as `max_tokens`; `openai_store` is forced false.
 
+## Fast mode and service tiers
+
+Codex onboarding adds a **Fast / Standard** choice after the model, defaulting to **Fast**. Fast saves `settings.service_tier: priority`; Standard saves `settings.service_tier: default`. The choice also appears when creating a new Codex Model with `add model` or `add agent`. Reusing a Model or loading an existing configuration does not change its tier.
+
+### Temporary: use `/fast`
+
+In an idle TUI, these commands affect subsequent Runs without rewriting YAML or saved Thread configuration:
+
+| Command       | Requested setting                                       |
+| ------------- | ------------------------------------------------------- |
+| `/fast`       | Toggle effective priority on/off                        |
+| `/fast on`    | `service_tier: priority`                                |
+| `/fast off`   | `service_tier: default`                                 |
+| `/fast reset` | Remove the override and inherit the Model configuration |
+
+**Off is not reset:** if your Model is configured for priority, `/fast off` requests standard service, while `/fast reset` returns to Fast. The override lasts for this TUI process, including `/new` and `/resume`. Selecting a Model or Agent clears it; restarting does not restore a tier override from history. `/thinking` changes reasoning independently and preserves the tier.
+
+This is a generic Model setting, not a Codex-only command. It applies to the root Model and Markdown children that inherit it, not explicitly configured child or auxiliary Models. **Fast** in the status bar and the requested service tier in `/status` describe the effective request, not proof that the provider fulfilled priority. Provider/model/account support varies; priority may consume more quota or cost more, and speed is not guaranteed. Unsupported settings retain the native integration's behavior; Harness UI does not silently retry at another tier.
+
+### Permanent: edit the Model
+
+Use `/config` to locate the selected configuration directory. Add or update this field in its `models/<name>.yaml`, preserving the other settings:
+
+```yaml
+settings:
+  service_tier: priority
+```
+
+Set it to `default` for permanent standard service, or remove it to leave the choice to the provider. Native integrations also accept generic `auto` and `flex` where supported; Fast specifically means `priority`, not a different model or reasoning level. Validate with `a13n-harness-ui config validate` (pass the same `--config` when using a custom configuration). Use `/fast reset` to remove an active temporary override; future Runs load the Model's current file settings.
+
 ## Codex Model example
 
 Save this as `models/codex.yaml` beside the root configuration.

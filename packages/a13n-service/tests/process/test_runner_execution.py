@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from time import monotonic
 
 import httpx2
 import pytest
@@ -17,7 +18,7 @@ from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRe
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.models import PluginRuntimeLockRecord, PluginRuntimeStateRecord
 from a13n_service.plugins.objects import PluginObjectStore
-from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
+from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor, _RunnerProcess
 from a13n_service.plugins.runtime import (
     PluginRuntimeLock,
     PluginRuntimeLockStore,
@@ -199,7 +200,21 @@ async def test_runner_storage_passes_unmodified_production_probe(runner_settings
         pass
 
 
-async def test_discovery_starts_real_runner_and_seals_native_execution(runner_settings):
+async def test_discovery_starts_real_runner_and_seals_native_execution(runner_settings, monkeypatch):
+    phases = []
+    request = _RunnerProcess.request
+
+    async def observe_request(self, command, expected, **fields):
+        started = monotonic()
+        try:
+            response = await request(self, command, expected, **fields)
+        except Exception as error:
+            phases.append((command, type(error).__name__, monotonic() - started))
+            raise
+        phases.append((command, response["type"], monotonic() - started))
+        return response
+
+    monkeypatch.setattr(_RunnerProcess, "request", observe_request)
     async with _model_server() as (url, requests, _entered, _closed):
         app = create_app(runner_settings)
         async with app.router.lifespan_context(app):
@@ -224,7 +239,11 @@ async def test_discovery_starts_real_runner_and_seals_native_execution(runner_se
                 assert attempt.worker_build_id == runner_settings.build_version
                 assert attempt.runtime_lock_digest == run.runtime_lock_digest
                 assert attempt.harness_run_id is not None
-        assert child.process.returncode == 0
+        assert [(command, response) for command, response, _ in phases][-2:] == [
+            ("DRAIN", "DRAINED"),
+            ("SHUTDOWN", "EXITING"),
+        ], phases
+        assert child.process.returncode == 0, phases
 
 
 @pytest.mark.parametrize("stop", ["kill", "sigterm", "ipc_disconnect"])

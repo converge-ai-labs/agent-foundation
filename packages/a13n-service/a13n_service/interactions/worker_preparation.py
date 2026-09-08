@@ -198,7 +198,7 @@ class WorkerAttemptPreparer:
                     }
                 )
         instance = AgentInstanceContext(
-            identity=AgentIdentityRef(issuer="foundation", subject=run.authority_principal.principal_id),
+            identity=AgentIdentityRef(issuer="a13n.service", subject=run.authority_principal.principal_id),
             agent_instance_id=run.thread_id,
             actor=f"{run.authority_principal.principal_type}:{run.authority_principal.principal_id}",
             host_refs={"session_id": run.session_id, "thread_id": run.thread_id, "run_id": run.id},

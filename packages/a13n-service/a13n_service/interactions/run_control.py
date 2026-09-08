@@ -180,7 +180,7 @@ class RunAttemptControl:
     @property
     def harness_identity(self) -> HarnessRunIdentity:
         if self._gate.identity is None:
-            raise RunError("Harness Run has not entered execution.", code="foundation_control_identity_mismatch")
+            raise RunError("Harness Run has not entered execution.", code="service_control_identity_mismatch")
         return self._gate.identity
 
     @property
@@ -203,7 +203,7 @@ class RunAttemptControl:
         if self._driver is not None or self._cancel_executor is not None:
             raise RunError(
                 "Service run control is already bound to an executor.",
-                code="foundation_control_reused",
+                code="service_control_reused",
             )
         self._driver = driver
         self._cancel_executor = cancel_executor
@@ -221,12 +221,12 @@ class RunAttemptControl:
             if self._gate.identity is not None:
                 raise RunError(
                     "Service run control already has an active Harness Run.",
-                    code="foundation_control_reused",
+                    code="service_control_reused",
                 )
             if identity.thread_id != self.current_state.envelope.thread_id:
                 raise RunError(
                     "Harness Run identity does not match Service preparation.",
-                    code="foundation_control_identity_mismatch",
+                    code="service_control_identity_mismatch",
                 )
             self._gate.identity = identity
             try:
@@ -395,7 +395,7 @@ class RunAttemptControl:
             if self._gate.handoff_reason is not None and self._gate.handoff_reason is not reason:
                 raise RunError(
                     "Service run control already has another handoff request.",
-                    code="foundation_handoff_conflict",
+                    code="service_handoff_conflict",
                 )
             self._gate.handoff_reason = reason
 
@@ -477,7 +477,7 @@ class RunAttemptControl:
                 if result.status != "cancelled":
                     raise RunError(
                         "Harness produced a non-cancelled result after handoff quiescence.",
-                        code="foundation_handoff_result_invalid",
+                        code="service_handoff_result_invalid",
                     )
                 reason = self._gate.handoff_reason
                 if reason is None:  # pragma: no cover - maintained by the private gate
@@ -722,7 +722,7 @@ class RunAttemptControl:
             if entry_id not in represented:
                 missing_prefix = True
             elif missing_prefix:
-                raise RunError("Incorporated inbox input is not a FIFO prefix.", code="foundation_inbox_order_invalid")
+                raise RunError("Incorporated inbox input is not a FIFO prefix.", code="service_inbox_order_invalid")
         for receipt in found:
             if receipt.inbox_entry_id not in self._gate.incorporated:
                 self._gate.incorporated[receipt.inbox_entry_id] = receipt
@@ -750,7 +750,7 @@ class RunAttemptControl:
         if represented:
             prefix = tuple(entry.receipt for entry in entries[: len(represented)])
             if represented != prefix:
-                raise RunError("Checkpointed inbox input is not a FIFO prefix.", code="foundation_inbox_order_invalid")
+                raise RunError("Checkpointed inbox input is not a FIFO prefix.", code="service_inbox_order_invalid")
             self._gate.incorporated.update((receipt.inbox_entry_id, receipt) for receipt in represented)
             prior = self.current_state.envelope
             host = prior.host.model_copy(
@@ -776,14 +776,14 @@ class RunAttemptControl:
         ):
             raise RunError(
                 "Service run control received an incompatible Harness result.",
-                code="foundation_control_identity_mismatch",
+                code="service_control_identity_mismatch",
             )
 
     def _require_open(self) -> None:
         if self._gate.phase not in {_CoordinatorPhase.preparing, _CoordinatorPhase.active}:
             raise RunError(
                 "Service run control is terminally fenced.",
-                code="foundation_control_fenced",
+                code="service_control_fenced",
             )
 
     def _require_driver(self) -> HarnessControlDriver:
@@ -791,7 +791,7 @@ class RunAttemptControl:
         if driver is None:
             raise RunError(
                 "Service run control is not bound to its Harness driver.",
-                code="foundation_control_unbound",
+                code="service_control_unbound",
             )
         return driver
 
@@ -828,7 +828,7 @@ class RunAttemptControl:
         if cancel_executor is None:
             raise RunError(
                 "Service run control is not bound to its executor cancellation scope.",
-                code="foundation_control_unbound",
+                code="service_control_unbound",
             )
         try:
             await self._require_driver().cancel()
@@ -847,20 +847,20 @@ def _validate_delivery_batch(
     if len(entries) + len(state.host.consumed_inbox_entries) > 1024:
         raise RunError(
             "Thread inbox receipts exceed the Run state limit.",
-            code="foundation_inbox_capacity_exceeded",
+            code="service_inbox_capacity_exceeded",
         )
     sequences = tuple(entry.delivery_sequence for entry in entries)
     if sequences != tuple(sorted(sequences)) or len(sequences) != len(set(sequences)):
         raise RunError(
             "Thread inbox reconciliation returned a non-FIFO batch.",
-            code="foundation_inbox_order_invalid",
+            code="service_inbox_order_invalid",
         )
     receipt_ids = tuple(entry.receipt.inbox_entry_id for entry in entries)
     existing_ids = {receipt.inbox_entry_id for receipt in state.host.consumed_inbox_entries}
     if len(receipt_ids) != len(set(receipt_ids)) or existing_ids.intersection(receipt_ids):
         raise RunError(
             "Thread inbox reconciliation returned duplicate delivery receipts.",
-            code="foundation_inbox_receipt_invalid",
+            code="service_inbox_receipt_invalid",
         )
 
 

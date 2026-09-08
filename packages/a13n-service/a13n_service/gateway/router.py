@@ -69,7 +69,7 @@ from .queries import (
 )
 from .requests import ContinueRunRequest, ForkRunRequest, RetryRunRequest, StartRunRequest
 
-NOTIFICATION_SUBPROTOCOL = "foundation.notifications.v1"
+NOTIFICATION_SUBPROTOCOL = "a13n.service.notifications.v1"
 
 router = APIRouter(tags=["protocol-gateway"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
