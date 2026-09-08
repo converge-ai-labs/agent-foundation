@@ -273,6 +273,8 @@ With no state, Host-authorized `prepare()`:
 7. resolves only the authoritative loopback EIP route;
 8. opens a fresh EIP Session and completes initialization and readiness.
 
+Container `running` state and a published port do not establish HTTP or EIP readiness. The Provider bounds startup connection acquisition with one deadline and retries connection establishment failures or connection loss during initialization/readiness using fresh Session sources. Each failed source is closed before retrying. Authentication, protocol, identity, compatibility, and explicit not-ready failures are terminal; cancellation interrupts acquisition and releases local resources. This startup retry never repeats Agent operations or creates another container.
+
 With state, `prepare()` inspects and validates the exact container:
 
 - a compatible running container is re-entered without replacement;

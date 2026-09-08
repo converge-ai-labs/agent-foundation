@@ -19,6 +19,14 @@ class EIPTransportClosedError(EIPTransportError):
     """The transport closed while it could still have in-flight requests."""
 
 
+class EIPConnectionError(EIPTransportError):
+    """Connection establishment or exchange failed without an EIP response.
+
+    This does not establish whether a request was dispatched and is not blanket
+    permission to retry operations.
+    """
+
+
 class EIPRequestTimeoutError(EIPTransportError):
     """A local transport wait expired without claiming an operation outcome."""
 

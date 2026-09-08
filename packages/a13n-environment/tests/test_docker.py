@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from pathlib import Path
 from stat import S_IMODE
 
 import pytest
+from a13n_envd_client import EIPConnectionError, EIPProtocolError, EIPTransportError
 from a13n_environment import (
     DEFAULT_DOCKER_IMAGE,
     DirectoryDockerBootstrapStore,
@@ -30,6 +33,99 @@ from a13n_environment.docker import provider as provider_module
 pytestmark = pytest.mark.anyio
 
 _IMAGE_ID = f"sha256:{'1' * 64}"
+
+
+async def test_docker_retries_connection_failures_with_fresh_sources(monkeypatch) -> None:
+    attempts = []
+    closed = []
+    session = object()
+
+    class Source:
+        def __init__(self, *args, **kwargs):
+            attempts.append(self)
+
+        @asynccontextmanager
+        async def open_session(self, **kwargs):
+            try:
+                if len(attempts) < 3:
+                    raise EIPConnectionError("listener is starting")
+                yield session
+            finally:
+                closed.append(self)
+
+    monkeypatch.setattr(provider_module, "HttpEIPSessionSource", Source)
+    monkeypatch.setattr(provider_module, "_EIP_RETRY_INTERVAL", 0)
+    async with provider_module._open_docker_eip_session(
+        "http://127.0.0.1:8787", "test-token", expected_environment_id="environment-test"
+    ) as result:
+        assert result is session
+        assert len(attempts) == 3
+        assert closed == attempts[:2]
+    assert closed == attempts
+
+
+@pytest.mark.parametrize("failure", [EIPTransportError("HTTP status 401"), EIPProtocolError("wrong identity")])
+async def test_docker_does_not_retry_authentication_or_protocol_failures(monkeypatch, failure) -> None:
+    attempts = 0
+
+    class Source:
+        def __init__(self, *args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+
+        @asynccontextmanager
+        async def open_session(self, **kwargs):
+            raise failure
+            yield  # pragma: no cover
+
+    monkeypatch.setattr(provider_module, "HttpEIPSessionSource", Source)
+    with pytest.raises(type(failure)) as captured:
+        async with provider_module._open_docker_eip_session(
+            "http://127.0.0.1:8787", "test-token", expected_environment_id="environment-test"
+        ):
+            pytest.fail("failed initialization must not publish a session")
+    assert captured.value is failure
+    assert attempts == 1
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("connection_fails", [False, True])
+async def test_docker_startup_wait_is_bounded_and_cancellable(monkeypatch, cancel, connection_fails) -> None:
+    attempted = asyncio.Event()
+    cleaned = asyncio.Event()
+
+    class Source:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @asynccontextmanager
+        async def open_session(self, **kwargs):
+            try:
+                attempted.set()
+                if connection_fails:
+                    raise EIPConnectionError("listener is starting")
+                await asyncio.Future()
+                yield
+            finally:
+                cleaned.set()
+
+    monkeypatch.setattr(provider_module, "HttpEIPSessionSource", Source)
+    monkeypatch.setattr(provider_module, "_EIP_STARTUP_TIMEOUT", 10 if cancel else 0.05)
+    monkeypatch.setattr(provider_module, "_EIP_RETRY_INTERVAL", 0.001)
+
+    async def connect():
+        async with provider_module._open_docker_eip_session(
+            "http://127.0.0.1:8787", "test-token", expected_environment_id="environment-test"
+        ):
+            pytest.fail("unready session must not be published")
+
+    task = asyncio.create_task(connect())
+    await attempted.wait()
+    if cancel:
+        task.cancel()
+    with pytest.raises(asyncio.CancelledError if cancel else TimeoutError):
+        await asyncio.wait_for(task, 1)
+    assert cleaned.is_set()
 
 
 class _FakeDockerEngine(DockerEngine):

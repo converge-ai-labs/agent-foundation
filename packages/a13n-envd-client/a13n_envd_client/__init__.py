@@ -4,6 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .errors import (
     EIPClientError,
+    EIPConnectionError,
     EIPMethodError,
     EIPProtocolError,
     EIPRequestTimeoutError,
@@ -30,6 +31,7 @@ __all__ = [
     "AcceptedWebSocketTransport",
     "ControlFrame",
     "EIPClientError",
+    "EIPConnectionError",
     "EIPFileReader",
     "EIPFileWriter",
     "EIPMethodError",

@@ -58,6 +58,10 @@ asyncio.run(main())
 
 An `EIPMethodError` contains the generated typed `EIPError`. Carrier timeouts and cancellation never claim that an already sent operation failed or was absent; the client does not retry a possibly dispatched mutation automatically. Mutation callers reconcile by reusing the same operation ID and semantic request while evidence remains, querying its receipt, or observing native state before starting another operation.
 
+For control requests with `context.timeout_ms`, the coordinator bounds local admission separately, then waits for the operation budget plus `request_timeout` seconds of response allowance (30 seconds when the coordinator has no configured timeout). Without an explicit operation budget, the configured request timeout applies. HTTP control reads also allow the operation budget plus their configured transport timeout; connect, write, and pool timeouts remain unchanged. For example, a 60-second process wait with a 30-second response allowance has a 90-second client response deadline. Initialization and Session readiness still enforce their own enclosing deadlines.
+
+`EIPConnectionError` distinguishes connection failures from HTTP status or EIP protocol failures. It does not prove that an operation was never dispatched. Providers can retry startup initialization with a fresh source inside their startup deadline; applications must still reconcile possibly dispatched mutations.
+
 ## Versioning
 
 The Python package and daemon artifacts share one stable `X.Y.Z` or RC `X.Y.Z-rc.N` a13n-envd release identity. Python package metadata represents the RC as the equivalent PEP 440 version `X.Y.ZrcN`; Cargo, binary archives, and container tags retain the canonical SemVer spelling. The negotiated EIP major and minor version remains an independent wire-compatibility identity.
