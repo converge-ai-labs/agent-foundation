@@ -46,6 +46,7 @@ from a13n_harness.usage import (
 )
 from pydantic_ai import ToolApproved
 from pydantic_ai.capabilities import Capability
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -329,6 +330,46 @@ async def test_default_reviewer_preserves_usage_when_structured_output_fails() -
     assert measures["requests"] == 1
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ModelHTTPError(400, "review-model", {"error": "private-provider-body"}),
+        ValueError("private-provider-body"),
+    ],
+    ids=["http-400", "invalid-response"],
+)
+async def test_default_reviewer_logs_safe_failure_metadata(
+    failure: Exception, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def failed_review(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        raise failure
+        yield ""  # Keep the failing model on the streaming path.
+
+    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=failed_review))
+    with pytest.raises(ShellReviewError) as error:
+        await reviewer.review(
+            ShellReviewRequest(
+                tool_id="environment.shell_exec",
+                tool_call_id="review-failure-call",
+                command="echo private-command-value",
+            ),
+            context=cast(AgentContext, object()),
+        )
+
+    assert error.value.code == "shell_review_failed"
+    assert error.value.__cause__ is failure
+    records = [record for record in caplog.records if record.getMessage() == "shell_review_failed"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.__dict__["tool_call_id"] == "review-failure-call"
+    assert record.__dict__["error_type"] == type(failure).__name__
+    assert record.__dict__["status_code"] == (400 if isinstance(failure, ModelHTTPError) else None)
+    assert record.exc_info is None
+    assert "private-provider-body" not in str(record.__dict__)
+    assert "private-command-value" not in str(record.__dict__)
+
+
 async def test_policy_deny_skips_shell_review_and_dispatch() -> None:
     reviewer = _Reviewer([_result(ShellRiskLevel.LOW)])
     executed: list[dict[str, Any]] = []
@@ -424,6 +465,64 @@ async def test_review_error_uses_configured_fail_closed_action(error: Exception)
     )
 
     assert result.status == "completed"
+    assert executed == []
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        _result(ShellRiskLevel.EXTRA_HIGH),
+        ShellReviewError("shell_review_failed"),
+        ValueError("invalid assessment"),
+    ],
+    ids=["flagged", "failed", "invalid"],
+)
+@pytest.mark.parametrize("policy_action", ["allow", "approval_required", "deny"])
+async def test_skip_adds_no_restriction_and_preserves_invocation_policy(
+    outcome: ShellReviewResult | Exception, policy_action: str
+) -> None:
+    reviewer = _Reviewer([outcome])
+    executed: list[dict[str, Any]] = []
+    executable = _build(reviewer, executed, on_error=ShellReviewAction.SKIP, on_flagged=ShellReviewAction.SKIP)
+    decision = (
+        InvocationPolicyDecision.allow()
+        if policy_action == "allow"
+        else InvocationPolicyDecision.require_approval("confirm command", metadata={"policy_token": "p-1"})
+        if policy_action == "approval_required"
+        else InvocationPolicyDecision.deny("blocked")
+    )
+    policy = _Policy(decision)
+    result = await executable.run(
+        "go",
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+    )
+
+    assert policy.calls == 1
+    assert len(reviewer.requests) == (0 if policy_action == "deny" else 1)
+    assert len(executed) == (1 if policy_action == "allow" else 0)
+    if policy_action == "approval_required":
+        assert result.status == "suspended"
+        assert result.deferred is not None
+        metadata = result.deferred.metadata["shell-call-1"]
+        assert metadata["policy_token"] == "p-1"
+        assert "a13n.harness.shell-review" not in metadata
+    else:
+        assert result.status == "completed"
+        assert result.deferred is None
+
+
+async def test_skip_on_error_does_not_change_flagged_default() -> None:
+    reviewer = _Reviewer([_result(ShellRiskLevel.EXTRA_HIGH)])
+    executed: list[dict[str, Any]] = []
+    executable = _build(reviewer, executed, on_error=ShellReviewAction.SKIP)
+
+    result = await executable.run("go", bindings=RunBindings.embedded())
+
+    assert result.status == "suspended"
+    assert result.deferred is not None
+    metadata = result.deferred.metadata["shell-call-1"]["a13n.harness.shell-review"]
+    assert metadata["status"] == "flagged"
+    assert metadata["risk"] == "extra_high"
     assert executed == []
 
 
@@ -541,7 +640,10 @@ def test_shell_toolset_marks_only_command_launch_for_review() -> None:
 
 
 @pytest.mark.parametrize("on_error", list(ShellReviewAction))
-async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_usage(on_error) -> None:
+@pytest.mark.parametrize("policy_requires_approval", [False, True])
+async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_usage(
+    on_error, policy_requires_approval: bool
+) -> None:
     receipt = ProviderUsage(
         usage_id="review-timeout-usage",
         provider="review-provider",
@@ -558,7 +660,11 @@ async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_u
         bindings=RunBindings.embedded(
             capabilities=(
                 InvocationPolicyCapability(
-                    evaluator=_Policy(InvocationPolicyDecision.require_approval("confirm")),
+                    evaluator=_Policy(
+                        InvocationPolicyDecision.require_approval("confirm")
+                        if policy_requires_approval
+                        else InvocationPolicyDecision.allow()
+                    ),
                 ),
             )
         ),

@@ -106,6 +106,8 @@ CodeAct is disabled by default. Set `enable_codeact: true` to enable the Harness
 
 ### Approvals and questions
 
+New starter Agents use `on_flagged: approval_required` and `on_error: skip`: non-timeout review failures alone do not open an approval prompt, but other tool-policy approval requirements still apply. Existing Agent settings are preserved.
+
 Flagged shell commands and non-timeout review failures open a selectable prompt when the Agent's review policy requires approval. The panel puts risk and reason first, followed by the highlighted command and working directory. Detailed policy metadata stays behind **Inspect request details** or `/review request-id`, keeping the decision readable. Review the evidence before choosing **Approve once** or **Deny** in the selector below. No approval is preselected, and ordinary free text cannot approve a shell request. Truncated previews explicitly point to retained details.
 
 AI shell review defaults to a 120-second deadline. A timeout automatically denies the command before execution and displays a timeout notice; it does not open another approval prompt. Human approval itself has no countdown.

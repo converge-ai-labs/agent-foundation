@@ -681,7 +681,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
                 "model": "model-codex",
                 "risk_threshold": "high",
                 "on_flagged": "approval_required",
-                "on_error": "approval_required",
+                "on_error": "skip",
             },
         }
     )

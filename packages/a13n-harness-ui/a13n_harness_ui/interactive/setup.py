@@ -74,7 +74,10 @@ _QUESTIONS = (
     ),
     Question("thinking", "Reasoning effort", "high", ("low", "medium", "high", "xhigh")),
     Question(
-        "review", "Review shell commands; flagged commands and review errors require approval", "yes", ("yes", "no")
+        "review",
+        "Review shell commands; flagged commands require approval, timeouts deny, other review errors are skipped",
+        "yes",
+        ("yes", "no"),
     ),
     Question("instructions", "Additional Agent instructions (optional)", ""),
     Question(
