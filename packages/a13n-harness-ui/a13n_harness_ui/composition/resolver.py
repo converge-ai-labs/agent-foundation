@@ -411,7 +411,10 @@ class AgentCompositionResolver:
         tools = source.document.tools
         disabled = {
             name
-            for name, enabled in (("user_interaction", tools.enable_user_input), ("codeact", tools.enable_codeact))
+            for name, enabled in (
+                ("user_interaction", tools.enable_ask_user_question),
+                ("codeact", tools.enable_codeact),
+            )
             if not enabled
         }
         for item in agent.capabilities:

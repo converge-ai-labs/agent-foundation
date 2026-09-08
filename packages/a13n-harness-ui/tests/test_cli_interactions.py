@@ -74,7 +74,7 @@ def test_question_timeout_configuration_rejects_invalid_values(timeout: object) 
     from a13n_harness_ui.configuration.models import ToolsConfiguration
 
     with pytest.raises(ValueError):
-        ToolsConfiguration.model_validate({"user_input_timeout_seconds": timeout})
+        ToolsConfiguration.model_validate({"ask_user_question_timeout_seconds": timeout})
 
 
 def test_question_timeout_is_per_question_and_never_approves_other_requests() -> None:

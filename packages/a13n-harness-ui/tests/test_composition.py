@@ -315,16 +315,16 @@ async def test_global_guidance_and_default_file_context_are_captured_for_root_an
     assert refreshed.generation_digest != composition.generation_digest
 
 
-@pytest.mark.parametrize("enable_user_input", [False, True])
+@pytest.mark.parametrize("enable_ask_user_question", [False, True])
 @pytest.mark.parametrize("enable_codeact", [False, True])
 async def test_builtin_tool_switches_are_captured_and_reconstructed(
-    tmp_path: Path, enable_user_input: bool, enable_codeact: bool
+    tmp_path: Path, enable_ask_user_question: bool, enable_codeact: bool
 ) -> None:
     path = _write_source(tmp_path)
     path.write_text(
         path.read_text()
-        + f"\ntools:\n  enable_user_input: {str(enable_user_input).lower()}\n"
-        + f"  enable_codeact: {str(enable_codeact).lower()}\n  user_input_timeout_seconds: 30\n"
+        + f"\ntools:\n  enable_ask_user_question: {str(enable_ask_user_question).lower()}\n"
+        + f"  enable_codeact: {str(enable_codeact).lower()}\n  ask_user_question_timeout_seconds: 30\n"
     )
     agent = tmp_path / "agents/assistant.yaml"
     agent.write_text(
@@ -337,13 +337,13 @@ async def test_builtin_tool_switches_are_captured_and_reconstructed(
     source = await load_harness_ui_configuration(path)
     catalog = _catalog()
     composition = AgentCompositionResolver(catalog).resolve_run(source, _selection())
-    assert source.document.tools.user_input_timeout_seconds == 30
+    assert source.document.tools.ask_user_question_timeout_seconds == 30
     for node in (composition.root, *(child.definition for child in composition.root.children)):
         names = [item.capability for item in node.capabilities]
-        assert names.count("user_interaction") == int(enable_user_input)
+        assert names.count("user_interaction") == int(enable_ask_user_question)
         assert names.count("codeact") == int(enable_codeact)
     rebuilt = AgentReconstructor(catalog).reconstruct(composition, subagent_operator=_UnusedOperator())
-    assert ("a13n.user-interaction" in rebuilt.definition_capability_ids) is enable_user_input
+    assert ("a13n.user-interaction" in rebuilt.definition_capability_ids) is enable_ask_user_question
     assert ("a13n.codeact" in rebuilt.definition_capability_ids) is enable_codeact
     if enable_codeact:
         recipe = next(item for item in composition.root.capabilities if item.capability == "codeact")

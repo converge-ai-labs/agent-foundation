@@ -1040,7 +1040,7 @@ async def test_default_codeact_executes_and_disabled_questions_are_not_exposed(t
 
     path = await _seed(tmp_path, monkeypatch)
     root = yaml.safe_load(path.read_text())
-    root["tools"]["enable_user_input"] = False
+    root["tools"]["enable_ask_user_question"] = False
     path.write_text(yaml.safe_dump(root))
 
     async def stream(messages, info):
@@ -1083,7 +1083,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
 
     path = await _seed(tmp_path, monkeypatch)
     root = yaml.safe_load(path.read_text())
-    root["tools"]["user_input_timeout_seconds"] = 30
+    root["tools"]["ask_user_question_timeout_seconds"] = 30
     path.write_text(yaml.safe_dump(root))
 
     async def stream(messages, info):

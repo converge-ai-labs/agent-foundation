@@ -316,7 +316,7 @@ class SessionBackend:
         interaction = DecisionInteraction(batch)
         configuration = await self.app.current_configuration()
         if configuration is not None:
-            interaction.timeout_seconds = configuration.document.tools.user_input_timeout_seconds
+            interaction.timeout_seconds = configuration.document.tools.ask_user_question_timeout_seconds
         return interaction
 
     async def pending(self) -> str:

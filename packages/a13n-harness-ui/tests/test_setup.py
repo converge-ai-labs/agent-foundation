@@ -35,8 +35,8 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
     root = yaml.safe_load(preview.files[path.name])
     assert root["schema_version"] == "1"
     assert root["tools"] == {
-        "enable_user_input": True,
-        "user_input_timeout_seconds": 120,
+        "enable_ask_user_question": True,
+        "ask_user_question_timeout_seconds": 120,
         "enable_codeact": True,
     }
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
@@ -56,8 +56,8 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
     [
         {},
         {"enable_codeact": False},
-        {"enable_user_input": False, "user_input_timeout_seconds": 45},
-        {"enable_user_input": False, "user_input_timeout_seconds": 30, "enable_codeact": False},
+        {"enable_ask_user_question": False, "ask_user_question_timeout_seconds": 45},
+        {"enable_ask_user_question": False, "ask_user_question_timeout_seconds": 30, "enable_codeact": False},
     ],
 )
 async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_values(
@@ -66,8 +66,8 @@ async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_v
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"schema_version": "1", "tools": authored_tools}))
     expected = {
-        "enable_user_input": True,
-        "user_input_timeout_seconds": 120,
+        "enable_ask_user_question": True,
+        "ask_user_question_timeout_seconds": 120,
         "enable_codeact": True,
         **authored_tools,
     }

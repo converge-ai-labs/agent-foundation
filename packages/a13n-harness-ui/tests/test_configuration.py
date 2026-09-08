@@ -32,11 +32,19 @@ async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path:
     assert loaded.document == empty.document
     assert empty.document.schema_version == "1"
     assert empty.document.tools.model_dump() == {
-        "enable_user_input": True,
-        "user_input_timeout_seconds": 120,
+        "enable_ask_user_question": True,
+        "ask_user_question_timeout_seconds": 120,
         "enable_codeact": True,
     }
     assert empty.sources[0].content == 'schema_version: "1"'
+
+
+@pytest.mark.parametrize("setting", ["enable_user_input: false", "user_input_timeout_seconds: 30"])
+async def test_rejects_obsolete_question_tool_settings(tmp_path: Path, setting: str) -> None:
+    config = _write_source_tree(tmp_path, root=f'schema_version: "1"\ntools:\n  {setting}\n')
+    with pytest.raises(ConfigurationError) as invalid:
+        await load_harness_ui_configuration(config)
+    assert invalid.value.code == "settings_invalid"
 
 
 @pytest.mark.parametrize("version", ["2", "3"])

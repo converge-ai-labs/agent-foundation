@@ -45,8 +45,8 @@ process:
   log_format: pretty
 
 tools:
-  enable_user_input: true
-  user_input_timeout_seconds: 120
+  enable_ask_user_question: true
+  ask_user_question_timeout_seconds: 120
   enable_codeact: true
 
 subagents:
@@ -63,9 +63,9 @@ defaults:
 
 `subagents.include` is an ordered unique list of release-owned names: `code-reviewer`, `executor`, and `explorer`. Omitted or `[]` includes none. Normal setup includes all three; `setup --advanced` offers all or none; individual names remain editor-configurable. These selections extend the root Run roster, not every descendant roster. They are composition inputs, not sticky Thread selections. The package owns the definitions; no definition files are copied into the configuration tree. `a13n-harness-ui config subagents` lists available roles and current inclusion. [Composition](02-agent-composition-and-snapshots.md#built-in-subagents) owns expansion, identity, inheritance, and conflict handling.
 
-`tools.enable_user_input` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
+`tools.enable_ask_user_question` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
 
-`tools.user_input_timeout_seconds` is a positive finite number, default `120`. It controls the terminal's wait for each displayed structured question, not model execution or shell-approval timeouts. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
+`tools.ask_user_question_timeout_seconds` is a positive finite number, default `120`. It controls the terminal's wait for each displayed structured question, not model execution or shell-approval timeouts. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
 
 `process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
 
