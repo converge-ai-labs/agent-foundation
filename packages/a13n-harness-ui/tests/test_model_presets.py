@@ -167,13 +167,13 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
-        assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append), "\n".join(output)
         original = {p: p.read_bytes() for p in tmp_path.rglob("*.yaml")}
         for endpoint in ("https://example.net/v1", "https://example.org/v1"):
             answers.extend(
                 ["new", "api", "openai-responses", endpoint, "env:TEST_KEY", "gpt-5", "low", "128k", "Coding"]
             )
-            assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append, add_agent=True)
+            assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append, add_agent=True), "\n".join(output)
         source = await app.current_configuration()
         assert set(source.agents) == {"agent-api-key", "agent-coding", "agent-coding-2"}
         assert (

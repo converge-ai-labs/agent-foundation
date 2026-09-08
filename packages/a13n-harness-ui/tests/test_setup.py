@@ -67,6 +67,77 @@ async def test_setup_preserves_edited_resources_and_root_fields(tmp_path: Path) 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("reload_source", ["manual", "observer"])
+async def test_setup_publication_serializes_configuration_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_source: str
+) -> None:
+    from a13n_harness_ui import app as app_module
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from anyio import Event, create_task_group, fail_after, sleep_forever, wait_all_tasks_blocked
+
+    path = tmp_path / "config.yaml"
+    selection = _selection(tmp_path, providers=(), default_agent="agent-default")
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    entered = Event()
+    release = Event()
+    observer_tick = Event()
+    observer_scanned = Event()
+    publishing = False
+    overlaps = []
+    publish = app_module.publish_setup
+
+    async def blocked_publish(*args, **kwargs):
+        nonlocal publishing
+        publishing = True
+        entered.set()
+        await release.wait()
+        try:
+            return await publish(*args, **kwargs)
+        finally:
+            publishing = False
+
+    async def observe_once(_delay):
+        await observer_tick.wait()
+        if observer_scanned.is_set():
+            await sleep_forever()
+
+    async def fingerprint(*args, **kwargs):
+        observer_scanned.set()
+        return ((path.name, (0, 0, 1, 1)),)
+
+    monkeypatch.setattr(app_module, "publish_setup", blocked_publish)
+    monkeypatch.setattr(app_module, "sleep", observe_once)
+    monkeypatch.setattr(app_module, "configuration_tree_fingerprint", fingerprint)
+    async with app_module.open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+    ) as app:
+        reload = app._reload_configuration_from_path
+
+        async def tracked_reload():
+            overlaps.append(publishing)
+            await reload()
+
+        monkeypatch.setattr(app, "_reload_configuration_from_path", tracked_reload)
+        with fail_after(5):
+            async with create_task_group() as tasks:
+                tasks.start_soon(app.apply_setup, selection)
+                await entered.wait()
+                if reload_source == "manual":
+                    tasks.start_soon(app.reload_configuration)
+                else:
+                    observer_tick.set()
+                try:
+                    await wait_all_tasks_blocked()
+                    assert not overlaps
+                finally:
+                    release.set()
+            if reload_source == "observer":
+                await observer_scanned.wait()
+        assert not any(overlaps)
+        assert (await app.status()).candidate_error_code is None
+
+
+@pytest.mark.anyio
 async def test_setup_uses_current_configuration_after_preview(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     selection = _selection(tmp_path)
