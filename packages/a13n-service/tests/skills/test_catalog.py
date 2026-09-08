@@ -432,7 +432,6 @@ async def test_references_include_disabled_unarchived_current_agents_and_block_d
                 config={},
                 config_digest="1" * 64,
                 resolved_model={},
-                resolved_plugins=[],
                 resolved_skills=[
                     {
                         "skill_id": created.result.skill.id,

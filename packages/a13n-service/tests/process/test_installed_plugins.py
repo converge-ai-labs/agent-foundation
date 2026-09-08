@@ -36,7 +36,6 @@ async def test_installed_catalog_loads_once_off_loop_and_is_shared(local_setting
         runtime = app.state.runtime
         catalog = runtime.worker.execution_loop._catalog
         assert tuple(catalog) == ("test.audit",)
-        assert runtime.control.agents.commands._resolver._plugin_catalog is catalog
         assert runtime.status.startup_complete
     assert len(discovery_threads) == 1
     assert discovery_threads[0] != event_loop_thread
@@ -63,3 +62,26 @@ async def test_distribution_can_supply_explicit_installed_catalog(local_settings
     )
     async with app.router.lifespan_context(app):
         assert app.state.runtime.worker.execution_loop._catalog is catalog
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role", ["control", "connectivity"])
+async def test_nonexecuting_roles_start_without_discovering_business_plugins(
+    local_settings, tmp_path, monkeypatch, role
+):
+    def discover_forbidden():
+        raise AssertionError("Nonexecuting roles must not discover business plugins")
+
+    monkeypatch.setattr("a13n_harness.plugin_factories._entry_points", discover_forbidden)
+    app = create_app(
+        local_settings(
+            tmp_path,
+            role=role,
+            plugin_keys=("missing.factory",),
+            pricing_auto_update=False,
+            observability_tracing=False,
+        )
+    )
+    async with app.router.lifespan_context(app):
+        assert app.state.runtime.status.startup_complete
+        assert app.state.runtime.worker is None

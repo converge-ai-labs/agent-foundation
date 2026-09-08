@@ -12,7 +12,7 @@ from a13n_environment import (
 )
 from a13n_harness import EnvironmentAccess, EnvironmentMount
 from a13n_harness.tools.invocation import current_invocation_scope
-from a13n_service.agents.domain import AssetPublicationConfig, SecretRequirement
+from a13n_service.agents.domain import AssetPublicationConfig, PreparedAgentPlugins, SecretRequirement
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.agents.reconstruction import AgentReconstructor
 from a13n_service.assets.models import AssetRecord
@@ -167,7 +167,12 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         context = acceptance._authority(
             claim,
         )
-        initial = await states.read(ORGANIZATION_ID, run.id)
+        initial = await states.claim_writer(
+            await states.read(ORGANIZATION_ID, run.id), attempt_number=context.attempt_number
+        )
+        initial = await states.prepare_plugins(
+            initial, PreparedAgentPlugins(plugins=()), attempt_number=context.attempt_number
+        )
         await execution.publish_checkpoint(
             context,
             states,

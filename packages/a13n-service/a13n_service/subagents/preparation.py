@@ -103,6 +103,8 @@ def prepare_child_run(
     if (edge.child_agent_id, edge.child_agent_revision_id) != (child_agent_id, child_agent_revision_id):
         raise ValueError("prepared child Agent does not match the frozen subagent edge")
     _validate_child_definition_id(child_definition_id)
+    if parent_state.prepared_plugins is None:
+        raise ValueError("Child execution requires the parent plugin preparation")
     accepted_input = AcceptedAgentInput(
         schema_version="1",
         content=(TextContent(text=delegated_input),),
@@ -154,6 +156,7 @@ def prepare_child_run(
             agent_id=child_agent_id,
             agent_revision_id=child_agent_revision_id,
             effective_agent_config=child_effective_config,
+            prepared_plugins=parent_state.prepared_plugins.children[child_agent_revision_id],
             secret_bindings=accepted_input.secret_bindings,
             usage_limits=intersect_usage_limits(parent_state.usage_limits, edge.usage_limits, usage_limits),
         ),

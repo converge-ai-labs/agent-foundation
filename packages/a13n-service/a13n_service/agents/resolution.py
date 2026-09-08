@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,7 +17,6 @@ from a13n_service.storage import short_session
 from .connectivity_resolution import freeze_revision_connectivity, prepare_revision_connectivity
 from .domain import (
     AgentConfig,
-    PluginSelection,
     ResolvedAgentModel,
     ResolvedRevisionContent,
     ResolvedSkillBinding,
@@ -27,7 +25,6 @@ from .domain import (
 )
 from .errors import AgentError, agent_revision_create_failed
 from .models import AgentRecord, AgentRevisionRecord
-from .plugin_resolution import PluginSelectionError, validate_plugin_selections
 from .skill_resolution import (
     PreparedSkillBinding,
     SkillSelectionInvalid,
@@ -56,7 +53,6 @@ class PreparedRevisionResolution:
     agent_id: str
     config: AgentConfig
     model: PreparedModelExecution
-    plugins: tuple[PluginSelection, ...]
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
     connectivity: PreparedConnectivity
@@ -70,13 +66,11 @@ class AgentResolver:
         sessions: async_sessionmaker[AsyncSession],
         model_selector: AcceptedModelSelector,
         *,
-        plugin_catalog: HarnessPluginFactoryCatalog | None = None,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
-        self._plugin_catalog = plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(())
         self._connectivity_resolver = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
 
@@ -104,10 +98,6 @@ class AgentResolver:
                 agent_id=agent_id,
                 action=WorkspaceAction.agent_revision_create,
             )
-            try:
-                plugins = validate_plugin_selections(self._plugin_catalog, config.plugins)
-            except PluginSelectionError as error:
-                raise agent_revision_create_failed(error.reason, path=error.path) from error
             skills = await self._prepare_skills(
                 session,
                 actor=actor,
@@ -138,7 +128,6 @@ class AgentResolver:
             agent_id=agent_id,
             config=config,
             model=model,
-            plugins=plugins,
             skills=skills,
             subagents=subagents,
             connectivity=connectivity,
@@ -168,7 +157,6 @@ class AgentResolver:
                 settings=prepared.config.model.settings,
                 characteristics=prepared.config.model.characteristics,
             ),
-            resolved_plugins=prepared.plugins,
             resolved_skills=skills,
             connector_tools=prepared.config.connector_tools,
             mcp_tools=prepared.config.mcp_tools,

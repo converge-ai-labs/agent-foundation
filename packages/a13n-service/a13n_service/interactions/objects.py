@@ -9,6 +9,7 @@ from typing import Literal
 from a13n_logging import get_logger
 from pydantic import TypeAdapter
 
+from a13n_service.agents.domain import PreparedAgentPlugins
 from a13n_service.digests import digest_request
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectNotFound, ObjectStore, ObjectStoreUnavailable
 from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
@@ -113,22 +114,26 @@ class RunStateStore:
             raise StaleStateWriter("Attempt number is older than the state writer fence")
         if attempt_number == state.writer_fence:
             return state
-        try:
-            info = await self._put_state(
-                state.info.key,
-                state.body,
-                envelope=state.envelope,
-                digest=state.digest_sha256,
-                writer_fence=attempt_number,
-                if_match=state.info.version,
-            )
-        except ObjectConflict as error:
-            raise StaleStateWriter("Run state changed before writer admission") from error
-        _verify_info(info, key=state.info.key, body=state.body, content_type=RUN_STATE_CONTENT_TYPE)
-        _verify_state_metadata(info, envelope=state.envelope, digest=state.digest_sha256)
-        if info.metadata.get("writer-fence") != str(attempt_number):
-            raise StaleStateWriter("Run state writer admission returned a different writer fence")
-        return StoredRunState(state.envelope, info, state.digest_sha256, state.body, attempt_number)
+        return await self._replace_state(state, state.envelope, writer_fence=attempt_number)
+
+    async def prepare_plugins(
+        self,
+        state: StoredRunState,
+        prepared: PreparedAgentPlugins,
+        *,
+        attempt_number: int,
+    ) -> StoredRunState:
+        """Freeze plugin configuration without advancing Harness input or progress."""
+
+        if attempt_number < 1 or state.writer_fence != attempt_number:
+            raise StaleStateWriter("Plugin preparation requires the claimed state writer")
+        if state.envelope.prepared_plugins is not None:
+            raise ValueError("Plugin configuration has already been prepared")
+        if state.envelope.initial_input_applied:
+            raise ValueError("Plugin preparation must precede initial input application")
+        prepared.validate_for(state.envelope.effective_agent_config)
+        successor = state.envelope.model_copy(update={"prepared_plugins": prepared})
+        return await self._replace_state(state, successor, writer_fence=attempt_number)
 
     async def replace(
         self,
@@ -146,6 +151,15 @@ class RunStateStore:
             run_attempt_id=run_attempt_id,
             attempt_number=attempt_number,
         )
+        return await self._replace_state(state, successor, writer_fence=attempt_number)
+
+    async def _replace_state(
+        self,
+        state: StoredRunState,
+        successor: RunCheckpoint,
+        *,
+        writer_fence: int,
+    ) -> StoredRunState:
         body = canonical_model_bytes(successor)
         self._require_bounded(body)
         digest = hashlib.sha256(body).hexdigest()
@@ -155,14 +169,16 @@ class RunStateStore:
                 body,
                 envelope=successor,
                 digest=digest,
-                writer_fence=attempt_number,
+                writer_fence=writer_fence,
                 if_match=state.info.version,
             )
         except ObjectConflict as error:
-            raise StaleStateWriter("Run state changed before the checkpoint committed") from error
+            raise StaleStateWriter("Run state changed before the replacement committed") from error
         _verify_info(info, key=state.info.key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
-        _verify_state_metadata(info, envelope=successor, digest=digest)
-        return StoredRunState(successor, info, digest, body, attempt_number)
+        actual_fence = _verify_state_metadata(info, envelope=successor, digest=digest)
+        if actual_fence != writer_fence:
+            raise StaleStateWriter("Run state replacement returned a different writer fence")
+        return StoredRunState(successor, info, digest, body, writer_fence)
 
     async def _put_state(
         self,

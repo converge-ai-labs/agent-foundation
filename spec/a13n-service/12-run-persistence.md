@@ -441,6 +441,7 @@ class RunCheckpoint:
     agent_id: AgentId
     agent_revision_id: AgentRevisionId
     effective_agent_config: EffectiveAgentConfig
+    prepared_plugins: PreparedAgentPlugins | None
     usage_limits: UsageLimits | None
     harness_schema_version: str
     harness: HarnessState
@@ -466,13 +467,14 @@ The first checkpoint after the accepted Run input has crossed a complete Harness
 
 `RunCheckpoint` contains no Asset publication ledger, receipt, reference list, or Asset Capability namespace. When a successful `publish_asset` tool result has crossed a complete Harness checkpoint, its `AssetRef` can already appear in ordinary `harness` message history. The independent Asset row and selected content object remain publication authority whether or not that tool result was checkpointed.
 
-The envelope separates three state classes:
+The envelope separates four state classes:
 
-| State class                   | Contents                                                                                                                      | Restore rule                                                                                  |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Effective Agent configuration | Exact non-secret Model, Plugin, Skill, managed external-tool configuration, subagent, client-tool, output, and retry snapshot | Immutable for the Run; references and current authority are revalidated before reconstruction |
-| Harness portable state        | Thread ID, messages, Capability namespaces, and portable provider-defined Environment data                                    | Validated by Harness and owning codecs after fresh mounts are selected                        |
-| Host continuation state       | Optional complete native deferred-request values, effective client surface, and consumed inbox receipts                       | Validated and consumed by Service before or around Harness entry                              |
+| State class                   | Contents                                                                                                                      | Restore rule                                                                                   |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Effective Agent configuration | Exact non-secret Model, Plugin, Skill, managed external-tool configuration, subagent, client-tool, output, and retry snapshot | Immutable for the Run; references and current authority are revalidated before reconstruction  |
+| Prepared plugin configuration | Normalized selections for the complete accepted Agent graph                                                                   | Published once by Worker preparation; retained across Attempts and selected lineage operations |
+| Harness portable state        | Thread ID, messages, Capability namespaces, and portable provider-defined Environment data                                    | Validated by Harness and owning codecs after fresh mounts are selected                         |
+| Host continuation state       | Optional complete native deferred-request values, effective client surface, and consumed inbox receipts                       | Validated and consumed by Service before or around Harness entry                               |
 
 The envelope contains data and correlation only; current policy, credentials, live resources, and process-local objects are resolved afresh.
 
@@ -560,13 +562,21 @@ The content type is `application/vnd.converge.run-state+json`. Object metadata r
 
 Acceptance publishes the initial object create-only. A current attempt does not write until it has conditionally claimed the current object version for its monotonic Run fence. Every state replacement then supplies the exact object version returned by the claim or previous successful write. The replacement is visible as the complete new object or not visible at all.
 
-Writer claim preserves the complete canonical state body, including `checkpoint_seq`, `last_checkpoint_run_attempt_id`, and `last_checkpoint_fence`. It advances the object metadata's `writer-fence` to the new Attempt fence and produces a fresh opaque object version even when the logical body is unchanged. Claim transfers write ownership without recording new Agent progress. Only a subsequent checkpoint advances the checkpoint sequence and body provenance.
+Writer claim preserves the complete canonical state body, including `checkpoint_seq`, `last_checkpoint_run_attempt_id`, and `last_checkpoint_fence`. It advances the object metadata's `writer-fence` to the new Attempt fence and produces a fresh opaque object version even when the logical body is unchanged. Claim transfers write ownership without recording new Agent progress. Plugin preparation may subsequently fill the absent prepared configuration without recording Agent progress. Only a Harness checkpoint advances the checkpoint sequence and body provenance.
 
 Before each write, Service verifies that the Run remains unsealed and that the attempt ID, fence, lease, organization, and Run state version are current. It holds no database transaction across object I/O. Expected-version replacement serializes the object writes: after a newer attempt claims the key, an older attempt's known object version can no longer overwrite it. A conflict causes a fresh read of Run and object authority; it is never retried as an unconditional put.
 
 Relational takeover and object claim are separate commits. An old Attempt's previously authorized in-flight checkpoint can win its CAS after PostgreSQL selects a successor but before that successor claims the object. The successor then rereads and claims the complete newer checkpoint. Once the successor's claim succeeds, the old token cannot replace it. Claim success requires a subsequent PostgreSQL authority check before recovery proceeds; neither a storage success nor local cancellation proves current lease ownership. After relational sealing, the recorded outcome remains authoritative under the `sealed_state` rules even if a prepared object write arrives late.
 
 Service exposes no checkpoint object ID and never selects an older object version. A storage backend can retain physical versions internally, but those versions are backup or provider implementation details, not application-visible checkpoint objects. Logically, one Run has one key and one current state.
+
+### Plugin Configuration Preparation
+
+After writer claim, a Worker with no saved `prepared_plugins` validates and normalizes the complete accepted graph under [Installed Harness Plugins](36-installed-harness-plugins.md#configuration-and-recovery). It publishes that tree with the claimed object version and current writer fence, outside any database session. This one transition fills the previously absent preparation; it changes no accepted configuration, Harness state, Host continuation, checkpoint sequence, checkpoint kind, or checkpoint provenance. Subsequent semantic checkpoints preserve the preparation exactly. A Run with applied input cannot acquire missing preparation retroactively.
+
+The executor confirms relational Attempt authority before and after publication, then commits the ordinary fenced preparation decision before business execution. Publication uses the same complete-object conditional write and exact-response reconciliation as other state writes. Conflicts, failures, and unresolved outcomes stop execution; stale data is never rebased onto a newly read token. After a crash or takeover, the confirmed state claim supplies the saved tree when publication succeeded. No second preparation replaces it.
+
+New-Run initialization inherits preparation according to the plugin contract, separately from pending input and portable Harness state. Retry preserves the source Run's prepared configuration even though it discards that Run's execution progress. Asynchronous child admission copies the parent's corresponding prepared subtree. Preparation does not add a runtime table, code identifier, or independent object key.
 
 ### State Writer Claim Retries
 

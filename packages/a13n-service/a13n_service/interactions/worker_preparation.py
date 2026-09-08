@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
+from functools import partial
 from typing import Any
 
 from a13n_harness import (
@@ -18,11 +19,13 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from anyio import to_thread
 from pydantic import TypeAdapter
 from pydantic_ai import ToolDenied
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.plugin_preparation import prepare_agent_plugins
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
@@ -121,12 +124,21 @@ class WorkerAttemptPreparer:
                 current_attempt=lambda: self._control.current_context,
             )
             await self._bound_secrets.validate()
-        AgentReconstructor(self._catalog).validate(
-            agent_id=self._run.agent_id,
-            agent_revision_id=self._run.agent_revision_id,
-            effective_config=config,
-            subagent_capability=self._subagent_capability(),
+        prepared = self._control.current_state.envelope.prepared_plugins
+        if prepared is None:
+            prepared = await to_thread.run_sync(partial(prepare_agent_plugins, self._catalog, config))
+        await to_thread.run_sync(
+            partial(
+                AgentReconstructor(self._catalog).validate,
+                agent_id=self._run.agent_id,
+                agent_revision_id=self._run.agent_revision_id,
+                effective_config=config,
+                subagent_capability=self._subagent_capability(),
+                prepared_plugins=prepared,
+            )
         )
+        if self._control.current_state.envelope.prepared_plugins is None:
+            await self._control.prepare_plugins(prepared)
         self._prepared_skills = await validate_agent_resources(
             sessions=self._sessions,
             run=self._run,
@@ -177,10 +189,14 @@ class WorkerAttemptPreparer:
                 selected = (*selected, ProtocolContextCapability(protocol_context))
             return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
+        prepared_plugins = self._control.current_state.envelope.prepared_plugins
+        if prepared_plugins is None:
+            raise RuntimeError("Plugin configuration has not been durably prepared")
         definition = AgentReconstructor(self._catalog, capability_provider=capabilities).reconstruct(
             agent_id=run.agent_id,
             agent_revision_id=run.agent_revision_id,
             effective_config=config,
+            prepared_plugins=prepared_plugins,
             subagent_capability=self._subagent_capability(),
         )
         resume = None

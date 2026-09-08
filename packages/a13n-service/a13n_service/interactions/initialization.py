@@ -8,8 +8,9 @@ from a13n_harness import HarnessState
 from a13n_harness.usage import intersect_usage_limits
 from pydantic_ai.usage import UsageLimits
 
-from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
+from a13n_service.digests import digest_request
 from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.secrets.domain import AgentSecretBinding
 
@@ -23,6 +24,7 @@ class RunStateSeed(StrictModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     effective_agent_config: EffectiveAgentConfig
+    prepared_plugins: PreparedAgentPlugins | None = None
     usage_limits: UsageLimits | None = None
     protocol_context: ProtocolInputContext | None = None
     secret_bindings: tuple[AgentSecretBinding, ...] = ()
@@ -41,7 +43,9 @@ def initialize_completed_continuation_state(
     parent: RunCheckpoint,
 ) -> RunCheckpoint:
     _require_parent(parent, checkpoint_kind="completed")
-    return _initial_envelope(_retain_limits(seed, parent), _clone_harness(parent.harness), HostContinuationState())
+    return _initial_envelope(
+        _retain_state_configuration(seed, parent), _clone_harness(parent.harness), HostContinuationState()
+    )
 
 
 def initialize_waiting_continuation_state(
@@ -55,7 +59,7 @@ def initialize_waiting_continuation_state(
         deferred=parent.host.deferred.model_copy(deep=True),
         inbox_receipts=(),
     )
-    return _initial_envelope(_retain_limits(seed, parent), _clone_harness(parent.harness), host)
+    return _initial_envelope(_retain_state_configuration(seed, parent), _clone_harness(parent.harness), host)
 
 
 def initialize_fork_state(
@@ -66,7 +70,7 @@ def initialize_fork_state(
 ) -> RunCheckpoint:
     _require_parent(parent, checkpoint_kind="completed")
     return _initial_envelope(
-        _retain_limits(seed, parent), parent.harness.fork(thread_id=thread_id), HostContinuationState()
+        _retain_state_configuration(seed, parent), parent.harness.fork(thread_id=thread_id), HostContinuationState()
     )
 
 
@@ -87,7 +91,7 @@ def initialize_retry_state(
     if source_lineage_kind is RunLineageKind.fork:
         _require_parent(parent, checkpoint_kind="completed")
         harness = parent.harness.fork(thread_id=thread_id)
-        return _initial_envelope(_retain_limits(seed, parent), harness, HostContinuationState())
+        return _initial_envelope(_retain_state_configuration(seed, parent), harness, HostContinuationState())
     if source_input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
         state = initialize_waiting_continuation_state(seed, parent)
     else:
@@ -121,6 +125,7 @@ def _initial_envelope(
         agent_id=seed.agent_id,
         agent_revision_id=seed.agent_revision_id,
         effective_agent_config=seed.effective_agent_config,
+        prepared_plugins=seed.prepared_plugins,
         protocol_context=seed.protocol_context,
         secret_bindings=seed.secret_bindings,
         usage_limits=seed.usage_limits,
@@ -136,8 +141,27 @@ def _require_parent(parent: RunCheckpoint, *, checkpoint_kind: str) -> None:
         raise ValueError(f"Run state parent must be a sealed {checkpoint_kind} candidate")
 
 
-def _retain_limits(seed: RunStateSeed, parent: RunCheckpoint) -> RunStateSeed:
-    return seed.model_copy(update={"usage_limits": intersect_usage_limits(seed.usage_limits, parent.usage_limits)})
+def _retain_state_configuration(seed: RunStateSeed, parent: RunCheckpoint) -> RunStateSeed:
+    prepared = seed.prepared_plugins
+    if prepared is None and _same_plugin_graph(parent.effective_agent_config, seed.effective_agent_config):
+        prepared = parent.prepared_plugins
+    return seed.model_copy(
+        update={
+            "usage_limits": intersect_usage_limits(seed.usage_limits, parent.usage_limits),
+            "prepared_plugins": prepared.model_copy(deep=True) if prepared is not None else None,
+        }
+    )
+
+
+def _same_plugin_graph(previous: EffectiveAgentConfig, current: EffectiveAgentConfig) -> bool:
+    return (
+        tuple(map(digest_request, previous.plugins)) == tuple(map(digest_request, current.plugins))
+        and previous.child_configs.keys() == current.child_configs.keys()
+        and all(
+            _same_plugin_graph(child.effective_config, current.child_configs[revision_id].effective_config)
+            for revision_id, child in previous.child_configs.items()
+        )
+    )
 
 
 def _clone_harness(value: HarnessState) -> HarnessState:

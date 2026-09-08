@@ -174,3 +174,55 @@ def test_state_initialization_retains_and_narrows_usage_limits(operation: str) -
     assert restored.usage_limits == UsageLimits(request_limit=3, total_tokens_limit=500, tool_calls_limit=2)
     assert parent.usage_limits.tool_calls_limit is None
     assert seed.usage_limits.request_limit == 10
+
+
+@pytest.mark.parametrize("operation", ["continue", "waiting", "fork", "retry"])
+def test_lineage_retains_prepared_plugins_without_consuming_new_input(operation):
+    from a13n_service.agents.domain import PluginSelection, PreparedAgentPlugins
+
+    parent = _waiting_parent() if operation == "waiting" else _completed_parent()
+    selection = PluginSelection(instance_name="audit", plugin_key="test.audit", config={})
+    config = parent.effective_agent_config.model_copy(update={"plugins": (selection,)})
+    prepared = PreparedAgentPlugins(plugins=(selection.model_copy(update={"config": {"limit": 5}}),))
+    parent = parent.model_copy(update={"effective_agent_config": config, "prepared_plugins": prepared})
+    seed = _seed().model_copy(
+        update={"effective_agent_config": config.model_copy(update={"instructions": "New request"})}
+    )
+    if operation == "continue":
+        state = initialize_completed_continuation_state(seed, parent)
+    elif operation == "waiting":
+        state = initialize_waiting_continuation_state(seed, parent)
+    elif operation == "fork":
+        state = initialize_fork_state(seed, parent, thread_id="thread-fedcbafedcbafedcbafedcbafedcbafe")
+    else:
+        # Retry takes configuration from the failed source, not its state parent.
+        source_preparation = PreparedAgentPlugins(plugins=(selection.model_copy(update={"config": {"limit": 7}}),))
+        seed = seed.model_copy(update={"prepared_plugins": source_preparation})
+        state = initialize_retry_state(
+            seed,
+            thread_id=parent.thread_id,
+            source_lineage_kind=RunLineageKind.continue_,
+            source_input_kind=RunInputKind.agent_input,
+            parent=parent,
+        )
+        prepared = source_preparation
+    assert state.prepared_plugins == prepared
+    assert state.checkpoint_seq == 0
+    assert not state.initial_input_applied
+    assert state.effective_agent_config.instructions == "New request"
+
+
+def test_explicit_plugin_change_prepares_new_graph_and_preserves_parent():
+    from a13n_service.agents.domain import PluginSelection, PreparedAgentPlugins
+
+    parent = _completed_parent()
+    selection = PluginSelection(instance_name="audit", plugin_key="test.audit", config={"value": True})
+    config = parent.effective_agent_config.model_copy(update={"plugins": (selection,)})
+    prepared = PreparedAgentPlugins(plugins=(selection,))
+    parent = parent.model_copy(update={"effective_agent_config": config, "prepared_plugins": prepared})
+    changed = config.model_copy(update={"plugins": (selection.model_copy(update={"config": {"value": 1}}),)})
+    state = initialize_completed_continuation_state(
+        _seed().model_copy(update={"effective_agent_config": changed}), parent
+    )
+    assert state.prepared_plugins is None
+    assert parent.prepared_plugins.plugins[0].config["value"] is True

@@ -11,6 +11,8 @@ from a13n_logging import get_logger
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
 from anyio.abc import TaskStatus
 
+from a13n_service.agents.plugin_preparation import PluginSelectionError
+from a13n_service.agents.reconstruction import AgentDefinitionReconstructionError
 from a13n_service.run_stream.domain import PublicationUnavailable
 from a13n_service.skills.runtime import SkillRuntimeError
 from a13n_service.storage.object_store import ObjectStoreUnavailable
@@ -167,6 +169,8 @@ class RunAttemptExecutor[OutputT]:
                     )
                     if isinstance(error, SkillRuntimeError):
                         code = error.code
+                    elif isinstance(error, (PluginSelectionError, AgentDefinitionReconstructionError)):
+                        code = error.reason
                     elif isinstance(
                         error,
                         (ObjectStoreUnavailable, OSError, TimeoutError, StateClaimExhausted, PublicationUnavailable),

@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import (
     ConnectivitySelectionResolver,
 )
-from a13n_service.digests import digest_request
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -36,7 +34,6 @@ from ..errors import (
     map_model_error,
 )
 from ..invocation import merge_agent_run_override
-from ..plugin_resolution import PluginSelectionError, validate_plugin_selections
 from ..resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
 from ..validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
 from .contracts import (
@@ -67,13 +64,11 @@ class AgentInvocationPreparer:
         sessions: async_sessionmaker[AsyncSession],
         model_selector: AcceptedModelSelector,
         *,
-        plugin_catalog: HarnessPluginFactoryCatalog,
         connectivity_resolver: ConnectivitySelectionResolver,
         protocol_policy: AgentProtocolPolicy,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
-        self._plugin_catalog = plugin_catalog
         self._connectivity_resolver = connectivity_resolver
         self._protocol_policy = protocol_policy
 
@@ -152,17 +147,6 @@ class AgentInvocationPreparer:
                     selections=merged.skills,
                     retained=(revision.resolved_skills if merged.skills == revision.config.skills else None),
                 )
-                retained_plugins = tuple(map(digest_request, merged.plugins)) == tuple(
-                    map(digest_request, revision.config.plugins)
-                )
-                try:
-                    resolved_plugins = validate_plugin_selections(
-                        self._plugin_catalog,
-                        revision.resolved_plugins if retained_plugins else merged.plugins,
-                        retained=retained_plugins,
-                    )
-                except PluginSelectionError as error:
-                    raise agent_revision_not_executable(error.reason) from error
             async with short_session(self._sessions) as session:
                 subagents = await self._prepare_subagents(
                     session,
@@ -226,7 +210,6 @@ class AgentInvocationPreparer:
             merged=merged,
             model=model,
             skills=skills,
-            resolved_plugins=resolved_plugins,
             subagents=children,
             connectivity=connectivity,
         )

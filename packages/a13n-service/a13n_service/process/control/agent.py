@@ -19,7 +19,6 @@ def build_agent_management(
     resolver = components.agent_resolver or AgentResolver(
         shared.storage.sessions,
         resources.models,
-        plugin_catalog=resources.plugins,
         connectivity_resolver=resources.connectivity,
     )
     return AgentManagement(shared.storage.sessions, resolver, resources.invocations)

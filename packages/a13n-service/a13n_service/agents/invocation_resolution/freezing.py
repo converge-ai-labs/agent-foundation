@@ -138,7 +138,7 @@ class AgentInvocationFreezer:
                 ),
                 characteristics=prepared.merged.model.characteristics,
             ),
-            "resolved_plugins": prepared.resolved_plugins,
+            "plugins": prepared.merged.plugins,
             "skills": skills,
             "connector_tools": prepared.merged.connector_tools,
             "mcp_tools": prepared.merged.mcp_tools,

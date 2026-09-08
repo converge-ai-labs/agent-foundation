@@ -151,7 +151,7 @@ Every a13n Service build artifact carries one immutable `worker_build_id`. Offic
 
 The build ID comes only from trusted artifact metadata. It is not read from the database, Kubernetes API, organization input, or claim candidate, and cannot change while the process runs. A distributed `worker` or `all` process with missing, malformed, or placeholder production build identity never becomes ready. A local development artifact may use an explicit documented development identity that still remains immutable for that process.
 
-`worker_build_id` records the actual immutable Service artifact serving each Attempt. Compatible new builds may restore retained Runs after frozen configuration and state checks. A Run does not pin a historical plugin code version or dependency environment. Plugin code updates use the same image rolling deployment as other Service code; [Installed Harness Plugins](36-installed-harness-plugins.md) owns configuration compatibility and deployment ordering.
+`worker_build_id` records the actual immutable Service artifact serving each Attempt. Compatible new builds may restore retained Runs after frozen configuration and state checks. A Run does not pin a historical plugin code version or dependency environment. Plugin code updates roll out Worker images without redeploying Control or Connectivity; [Installed Harness Plugins](36-installed-harness-plugins.md) owns configuration compatibility and deployment ordering.
 
 ## Startup Lifecycle
 
@@ -179,7 +179,7 @@ Startup performs these ordered gates:
 03. configure process logging once;
 04. apply or verify the final relational schema;
 05. construct required storage and external clients;
-06. load and validate the deployment-selected installed Harness factory catalog;
+06. for `worker` or `all`, load and validate the selected installed Harness factory catalog; Control and Connectivity do not load business plugins;
 07. start the selected role components under one supervised lifespan;
 08. for a Worker role, register trusted outbound tool adapters and start Environment maintenance and the bounded Worker execution loop;
 09. for a Connectivity role, load the distribution's explicit inbound Ingress adapters and start event data-plane components; and
@@ -254,7 +254,7 @@ The `gateway.a2a_enabled` field is a common operational compatibility contract; 
 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
 
-`A13N_SERVICE_PLUGIN_KEYS` selects installed factory entry points for the process lifetime. Plugin code and dependencies update only through a new build and rolling deployment. Frozen configuration and state compatibility replace exact-code pinning under [Installed Harness Plugins](36-installed-harness-plugins.md).
+`A13N_SERVICE_PLUGIN_KEYS` selects installed factory entry points for the Worker process lifetime. Control and Connectivity do not consume the catalog. Plugin code and dependencies update only through a new build and rolling deployment. Frozen configuration and state compatibility replace exact-code pinning under [Installed Harness Plugins](36-installed-harness-plugins.md).
 
 ## Invariants
 

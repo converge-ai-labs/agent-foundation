@@ -823,6 +823,7 @@ class InteractionCommands:
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
+                prepared_plugins=source_state.envelope.prepared_plugins,
                 usage_limits=source_state.envelope.usage_limits,
                 protocol_context=source_state.envelope.protocol_context,
                 secret_bindings=source_state.envelope.secret_bindings,
@@ -1219,6 +1220,7 @@ class InteractionCommands:
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
+                prepared_plugins=source_state.envelope.prepared_plugins,
                 secret_bindings=source_state.envelope.secret_bindings,
                 protocol_context=protocol_context
                 if protocol_context is not None
@@ -1380,6 +1382,7 @@ class InteractionCommands:
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
+                prepared_plugins=source_state.envelope.prepared_plugins,
                 secret_bindings=accepted_input.secret_bindings,
                 protocol_context=request.protocol_context
                 if request.protocol_context is not None

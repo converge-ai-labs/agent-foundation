@@ -82,13 +82,8 @@ async def open_process_runtime(
                 ),
                 secret_protector=settings.secret_protector(),
             )
-            plugin_catalog = components.plugin_factory_catalog
-            if plugin_catalog is None:
-                plugin_catalog = await to_thread.run_sync(
-                    partial(build_harness_plugin_factory_catalog, plugin_keys=settings.plugin_keys)
-                )
             agent_resources = (
-                build_agent_resources(components, shared, model_provider_registry, plugin_catalog)
+                build_agent_resources(components, shared, model_provider_registry)
                 if owns_control(settings.role) or owns_connectivity_data(settings.role)
                 else None
             )
@@ -110,6 +105,11 @@ async def open_process_runtime(
             worker = None
             worker_background: tuple[BackgroundTask, ...] = ()
             if owns_worker(settings.role):
+                plugin_catalog = components.plugin_factory_catalog
+                if plugin_catalog is None:
+                    plugin_catalog = await to_thread.run_sync(
+                        partial(build_harness_plugin_factory_catalog, plugin_keys=settings.plugin_keys)
+                    )
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Worker execution resources were not constructed")
                 worker, worker_background = await build_worker_runtime(

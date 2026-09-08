@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
@@ -23,17 +22,14 @@ class AgentInvocationResolver:
         sessions: async_sessionmaker[AsyncSession],
         model_selector: AcceptedModelSelector,
         *,
-        plugin_catalog: HarnessPluginFactoryCatalog | None = None,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
-        plugins = plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(())
         policy = protocol_policy or AgentProtocolPolicy()
         connectivity = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self.preparation = AgentInvocationPreparer(
             sessions,
             model_selector,
-            plugin_catalog=plugins,
             connectivity_resolver=connectivity,
             protocol_policy=policy,
         )

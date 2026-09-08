@@ -10,7 +10,8 @@ from pydantic import Field, JsonValue, TypeAdapter, field_validator, model_seria
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import UsageLimits
 
-from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
+from a13n_service.digests import digest_request
 from a13n_service.secrets.domain import AgentSecretBinding
 
 from .domain import (
@@ -113,6 +114,7 @@ class RunCheckpoint(StrictModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     effective_agent_config: EffectiveAgentConfig
+    prepared_plugins: PreparedAgentPlugins | None = None
     protocol_context: ProtocolInputContext | None = Field(default=None, exclude_if=lambda value: value is None)
     secret_bindings: tuple[AgentSecretBinding, ...] = Field(
         default=(), max_length=128, exclude_if=lambda value: not value
@@ -129,6 +131,8 @@ class RunCheckpoint(StrictModel):
 
     @model_validator(mode="after")
     def checkpoint_is_coherent(self) -> RunCheckpoint:
+        if self.prepared_plugins is not None:
+            self.prepared_plugins.validate_for(self.effective_agent_config)
         if self.thread_id != self.harness.thread_id:
             raise ValueError("Run state and Harness Thread identities must match")
         if self.harness_schema_version != self.harness.schema_version:
@@ -239,6 +243,7 @@ def validate_state_successor(
         ("agent_revision_id", previous.agent_revision_id, successor.agent_revision_id),
         ("harness_schema_version", previous.harness_schema_version, successor.harness_schema_version),
         ("effective_agent_config", previous.effective_agent_config, successor.effective_agent_config),
+        ("prepared_plugins", digest_request(previous.prepared_plugins), digest_request(successor.prepared_plugins)),
         ("usage_limits", previous.usage_limits, successor.usage_limits),
     )
     changed = [name for name, old, new in immutable_pairs if old != new]

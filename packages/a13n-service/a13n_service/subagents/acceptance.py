@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
@@ -393,6 +394,9 @@ def _validate_new_child_parent(
     accepted = parent_state.effective_agent_config.child_configs.get(prepared.run.agent_revision_id)
     if accepted is None or (
         prepared.state.effective_agent_config != accepted.effective_config
+        or parent_state.prepared_plugins is None
+        or digest_request(prepared.state.prepared_plugins)
+        != digest_request(parent_state.prepared_plugins.children[prepared.run.agent_revision_id])
         or prepared.run.connector_connection_selections
         != tuple(item.model_dump(mode="json") for item in accepted.connector_connection_selections)
         or prepared.run.mcp_connection_selections
@@ -452,6 +456,7 @@ def _validate_locked_resume_source(
         prepared.run.agent_id != source.agent_id
         or prepared.run.agent_revision_id != source.agent_revision_id
         or prepared.state.effective_agent_config != source_state.envelope.effective_agent_config
+        or digest_request(prepared.state.prepared_plugins) != digest_request(source_state.envelope.prepared_plugins)
         or prepared.run.connector_connection_selections != source.connector_connection_selections
         or prepared.run.mcp_connection_selections != source.mcp_connection_selections
         or intersect_usage_limits(prepared.state.usage_limits, source_state.envelope.usage_limits)

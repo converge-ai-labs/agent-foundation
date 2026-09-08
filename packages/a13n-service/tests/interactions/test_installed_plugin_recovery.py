@@ -8,7 +8,7 @@ import pytest
 from a13n_harness import AgentContext, HarnessState
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
-from a13n_service.agents.domain import PluginSelection
+from a13n_service.agents.domain import PluginSelection, PreparedAgentPlugins
 from a13n_service.digests import digest_request
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.domain import RunAttemptYieldReason
@@ -52,7 +52,11 @@ class ResumingPlugin(InstalledPlugin):
 
 class ResumingFactory(InstalledFactory):
     def __init__(self, case):
-        super().__init__("build-b")
+        class NewConfiguration(Configuration):
+            limit: int = 60
+
+        super().__init__("build-b", NewConfiguration)
+        self.configurations = []
         self.case = case
         self.observed = []
         if case == "configuration":
@@ -63,6 +67,7 @@ class ResumingFactory(InstalledFactory):
             self.configuration_type = IncompatibleConfiguration
 
     def create_plugin(self, context):
+        self.configurations.append(dict(context.configuration))
         plugin = ResumingPlugin(context.plugin_id, "2" if self.case == "state" else "1", self.observed)
         self.created.append(plugin)
         return plugin
@@ -121,11 +126,7 @@ async def test_new_worker_uses_retained_configuration_and_validates_state(
 
     original_config = acceptance.effective_agent_config()
     config = original_config.model_copy(
-        update={
-            "resolved_plugins": (
-                PluginSelection(instance_name="audit", plugin_key="test.audit", config={"label": "audit", "limit": 5}),
-            )
-        }
+        update={"plugins": (PluginSelection(instance_name="audit", plugin_key="test.audit", config={}),)}
     )
     config = config.model_copy(
         update={
@@ -158,7 +159,17 @@ async def test_new_worker_uses_retained_configuration_and_validates_state(
             ),
         }
     )
-    await execution.publish_checkpoint(authority, states, await states.read(ORGANIZATION_ID, run.id), checkpoint)
+    claimed = await states.claim_writer(
+        await states.read(ORGANIZATION_ID, run.id), attempt_number=authority.attempt_number
+    )
+    prepared = PreparedAgentPlugins(
+        plugins=(
+            PluginSelection(instance_name="audit", plugin_key="test.audit", config={"label": "audit", "limit": 5}),
+        )
+    )
+    current = await states.prepare_plugins(claimed, prepared, attempt_number=authority.attempt_number)
+    checkpoint = checkpoint.model_copy(update={"prepared_plugins": prepared})
+    await execution.publish_checkpoint(authority, states, current, checkpoint)
     await execution.yield_attempt(authority, reason=RunAttemptYieldReason.service_drain)
 
     factory = ResumingFactory(case)
@@ -194,6 +205,12 @@ async def test_new_worker_uses_retained_configuration_and_validates_state(
                             assert current.status == ("completed" if case == "compatible" else "failed"), (
                                 current.failure_json
                             )
+                            if case in {"missing", "configuration"}:
+                                assert current.failure_json["code"] == (
+                                    "plugin_factory_missing"
+                                    if case == "missing"
+                                    else "plugin_factory_configuration_invalid"
+                                )
                             break
                     await sleep(0.01)
                 await loop.drain()
@@ -206,6 +223,8 @@ async def test_new_worker_uses_retained_configuration_and_validates_state(
     assert ambient_executions == []
     assert factory.observed == ([("build-b", 7)] if case == "compatible" else [])
     assert len(requests) == (1 if case == "compatible" else 0)
+    if case == "compatible":
+        assert factory.configurations == [{"label": "audit", "limit": 5}]
     async with short_session(interaction_sessions) as session:
         attempts = (
             await session.scalars(

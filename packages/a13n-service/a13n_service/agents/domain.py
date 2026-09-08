@@ -316,7 +316,6 @@ class ResolvedSubagentEdge(StrictModel):
 
 class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
     resolved_model: ResolvedModelT
-    resolved_plugins: tuple[PluginSelection, ...] = ()
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
@@ -335,6 +334,7 @@ class ChildAgentExecution(StrictModel):
 
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
+    plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     subagent_mode: Literal["inline", "async"] = "inline"
     child_configs: dict[ObjectId, ChildAgentExecution] = Field(default_factory=dict, max_length=128)
     schema_version: Literal["1"] = "1"
@@ -351,6 +351,21 @@ class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
 
 
 ChildAgentExecution.model_rebuild()
+
+
+class PreparedAgentPlugins(StrictModel):
+    plugins: tuple[PluginSelection, ...] = Field(max_length=128)
+    children: dict[ObjectId, PreparedAgentPlugins] = Field(default_factory=dict, max_length=128)
+
+    def validate_for(self, config: EffectiveAgentConfig) -> None:
+        """Require the complete accepted graph and ordered plugin identities."""
+
+        if self.children.keys() != config.child_configs.keys() or tuple(
+            (item.instance_name, item.plugin_key) for item in self.plugins
+        ) != tuple((item.instance_name, item.plugin_key) for item in config.plugins):
+            raise ValueError("Prepared plugins do not match the accepted Agent graph")
+        for revision_id, child in config.child_configs.items():
+            self.children[revision_id].validate_for(child.effective_config)
 
 
 class Agent(StrictModel):
@@ -382,7 +397,6 @@ class AgentRevision(StrictModel):
     config: AgentConfig
     config_digest: Sha256Digest
     resolved_model: ResolvedAgentModel
-    resolved_plugins: tuple[PluginSelection, ...]
     resolved_skills: tuple[ResolvedSkillBinding, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()

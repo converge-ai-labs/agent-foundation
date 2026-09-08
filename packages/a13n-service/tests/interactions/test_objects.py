@@ -55,7 +55,7 @@ async def test_object_version_and_fence_reject_stale_state_writers(
         run_attempt_id="rat_1234567890abcdef",
         attempt_number=1,
     )
-    with pytest.raises(StaleStateWriter, match="checkpoint committed"):
+    with pytest.raises(StaleStateWriter, match="replacement committed"):
         await store.replace(
             created,
             progress_state(initial),

@@ -12,9 +12,12 @@ from a13n_harness.plugin_factories import (
 )
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import AgentRunOverride, CreateAgentRequest, PluginSelection
-from a13n_service.agents.errors import AgentError
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
-from a13n_service.agents.plugin_resolution import PluginSelectionError, validate_plugin_selections
+from a13n_service.agents.plugin_preparation import (
+    PluginSelectionError,
+    prepare_agent_plugins,
+    validate_plugin_selections,
+)
 from a13n_service.agents.reconstruction import AgentReconstructor
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.models.providers import built_in_provider_registry
@@ -60,18 +63,18 @@ class InstalledFactory(HarnessPluginFactory):
         return plugin
 
 
-def _management(sessions, catalog):
+def _management(sessions):
     models = AcceptedModelSelector(sessions, built_in_provider_registry())
-    invocations = AgentInvocationResolver(sessions, models, plugin_catalog=catalog)
-    management = AgentManagement(sessions, AgentResolver(sessions, models, plugin_catalog=catalog), invocations)
+    invocations = AgentInvocationResolver(sessions, models)
+    management = AgentManagement(sessions, AgentResolver(sessions, models), invocations)
     return management, invocations
 
 
 @pytest.mark.anyio
-async def test_revision_normalization_and_invocation_survive_compatible_new_build(agent_sessions):
+async def test_control_preserves_authored_configuration_and_worker_prepares_it(agent_sessions):
     original_factory = InstalledFactory()
     original = build_harness_plugin_factory_catalog(explicit_factories=(original_factory,))
-    management, _ = _management(agent_sessions, original)
+    management, _ = _management(agent_sessions)
     created = await management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -82,20 +85,23 @@ async def test_revision_normalization_and_invocation_survive_compatible_new_buil
     )
     expected = PluginSelection(instance_name="audit", plugin_key="test.audit", config={"label": "audit", "limit": 5})
     assert created.revision.config.plugins[0].config == {}
-    assert created.revision.resolved_plugins == (expected,)
+    assert "resolved_plugins" not in created.revision.model_dump()
     assert original_factory.created == []
 
     replacement_factory = InstalledFactory("build-b")
     replacement = build_harness_plugin_factory_catalog(explicit_factories=(replacement_factory,))
-    _, invocations = _management(agent_sessions, replacement)
+    _, invocations = _management(agent_sessions)
     prepared = await invocations.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     async with transaction(agent_sessions) as session:
         frozen = await invocations.freezing.freeze_in_transaction(session, prepared=prepared)
-    assert frozen.effective_config.resolved_plugins == (expected,)
+    assert frozen.effective_config.plugins == created.revision.config.plugins
+    normalized = prepare_agent_plugins(original, frozen.effective_config)
+    assert normalized.plugins == (expected,)
     definition = AgentReconstructor(replacement).reconstruct(
         agent_id=frozen.agent_id,
         agent_revision_id=frozen.agent_revision_id,
         effective_config=frozen.effective_config,
+        prepared_plugins=normalized,
         subagent_capability=SubagentCapability(),
     )
     assert definition.plugins[0].code_release == "build-b"
@@ -127,28 +133,26 @@ def test_recovery_rejects_silent_configuration_field_loss():
 
 
 @pytest.mark.anyio
-async def test_missing_installed_key_rejects_agent_creation(agent_sessions):
-    management, _ = _management(agent_sessions, build_harness_plugin_factory_catalog())
-    with pytest.raises(AgentError):
-        await management.commands.create(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="missing-installed-plugin",
-            request=CreateAgentRequest(
-                name="Missing", config=agent_config(plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}])
+@pytest.mark.parametrize("configuration", [{}, {"limit": 0}, {"unknown": "value"}])
+async def test_control_accepts_plugin_selection_without_installed_code(agent_sessions, configuration):
+    management, invocations = _management(agent_sessions)
+    created = await management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="missing-installed-plugin",
+        request=CreateAgentRequest(
+            name="Missing",
+            config=agent_config(
+                plugins=[{"instance_name": "audit", "plugin_key": "missing.factory", "config": configuration}]
             ),
-        )
-    assert (
-        await management.queries.list(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            limit=20,
-            cursor=None,
-            enabled=None,
-            source=None,
-            include_archived=False,
-        )
-    ).items == ()
+        ),
+    )
+    prepared = await invocations.preparation.prepare(actor=actor(), agent_id=created.agent.id)
+    async with transaction(agent_sessions) as session:
+        frozen = await invocations.freezing.freeze_in_transaction(session, prepared=prepared)
+    assert frozen.effective_config.plugins == created.revision.config.plugins
+    with pytest.raises(PluginSelectionError, match="plugin_factory_missing"):
+        prepare_agent_plugins(build_harness_plugin_factory_catalog(), frozen.effective_config)
 
 
 def test_recovery_rejects_json_type_changes_even_when_python_values_compare_equal():
@@ -160,13 +164,7 @@ def test_recovery_rejects_json_type_changes_even_when_python_values_compare_equa
 
 @pytest.mark.anyio
 async def test_plugin_override_preserves_json_type_change(agent_sessions):
-    class ValueConfiguration(BaseModel):
-        value: JsonValue
-
-    catalog = build_harness_plugin_factory_catalog(
-        explicit_factories=(InstalledFactory(configuration_type=ValueConfiguration),)
-    )
-    management, invocations = _management(agent_sessions, catalog)
+    management, invocations = _management(agent_sessions)
     created = await management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -185,5 +183,5 @@ async def test_plugin_override_preserves_json_type_change(agent_sessions):
             plugins=(PluginSelection(instance_name="audit", plugin_key="test.audit", config={"value": 1}),)
         ),
     )
-    assert type(prepared.resolved_plugins[0].config["value"]) is int
-    assert created.revision.resolved_plugins[0].config["value"] is True
+    assert type(prepared.merged.plugins[0].config["value"]) is int
+    assert created.revision.config.plugins[0].config["value"] is True

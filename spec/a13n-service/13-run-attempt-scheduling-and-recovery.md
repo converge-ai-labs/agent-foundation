@@ -170,7 +170,7 @@ The `run_attempts` table follows the [Relational Schema Lifecycle](04-relational
 
 `Run.current_run_attempt_id` selects the sole `RunAttempt` whose lease may authorize work for a `running` Run. The selected attempt is the complete lease record: it owns the worker identity and generation, monotonic fence, lease proof, and lease expiry. A worker is authorized only while the Run still selects that non-terminal attempt and the caller matches its worker generation, fence, lease proof, and unexpired lease.
 
-Every `WorkerExecutionLoop` periodically scans bounded, deterministically ordered relational candidates. The winning Attempt validates frozen plugin configuration and restores state through the current build before Harness execution. It never downloads or selects historical plugin code. A candidate is exactly one of:
+Every `WorkerExecutionLoop` periodically scans bounded, deterministically ordered relational candidates. The winning Attempt durably prepares absent plugin configuration or validates saved preparation, then restores state through the current build before Harness execution. It never downloads or selects historical plugin code. A candidate is exactly one of:
 
 - an `accepted` Run with no current attempt and `available_at <= now`;
 - a `running` Run with no current attempt after a retryable failed generation or a succeeded generation with pending input, and `available_at <= now`;
@@ -214,6 +214,7 @@ sequenceDiagram
         Loop->>Executor: Immediately start one async task with context and slot
         Note over Executor,DB: Renew authority throughout preparation and execution
         Executor->>Executor: Claim final state and validate recovery admission
+        Executor->>Executor: Validate or durably prepare complete plugin configuration
         Executor->>DB: Commit fenced preparation decision
         alt Continue
             DB-->>Executor: Preparation accepted
@@ -372,7 +373,7 @@ After any new attempt owns the lease, its executor starts renewal supervision, v
 
 State writer admission retains the following sequence within that same Attempt. Renewal runs throughout reads, claim retries, and execution. Each of at most four claim cycles revalidates the selected Attempt, fence, and lease; reads the complete state, metadata, matching object version, and writer fence; validates identity, integrity, and required codecs; and conditionally claims the object while preserving its body and advancing the writer fence. Confirmed success returns a fresh version and ends the loop. A CAS conflict with valid authority uses bounded backoff before rereading in the next cycle. A lost or timed-out response is reconciled before another write: confirmed success ends the loop, otherwise the remaining retry budget applies. Unconfirmed claim after exhaustion, permanent failure, or authority loss stops admission and performs bounded cleanup; a classified preparation failure is committed only while authority can still be confirmed. The [State Writer Claim Retries contract](12-run-persistence.md#state-writer-claim-retries) supplies the complete storage policy.
 
-State-dependent preparation follows confirmed writer claim. Any speculative preparation performed earlier is reevaluated when a claim retry reads a different object: the selected Harness state, applied-input decision, deferred continuation, retained inbox evidence, outcome branch, and state-derived invocation arguments must all match the final confirmed state. Validated immutable artifacts may be reused when their exact identities and digests remain applicable; cached authorization and budget observations do not replace current admission checks. The executor never combines the body from one read with the token or continuation decisions from another.
+State-dependent preparation follows confirmed writer claim. Before the successful preparation decision, [plugin preparation](12-run-persistence.md#plugin-configuration-preparation) durably fills absent normalized configuration or validates the retained tree without changing the applied-input decision. Any speculative preparation performed earlier is reevaluated when a claim retry reads a different object: the selected Harness state, applied-input decision, deferred continuation, retained inbox evidence, outcome branch, and state-derived invocation arguments must all match the final confirmed state. Validated immutable artifacts may be reused when their exact identities and digests remain applicable; cached authorization and budget observations do not replace current admission checks. The executor never combines the body from one read with the token or continuation decisions from another.
 
 External tool preparation follows [Agent-Facing External Tools](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery): current schemas are discovered under the retained source selections, without a durable tool snapshot compatibility gate. This external I/O occurs outside the claim and preparation-decision transactions.
 
@@ -392,7 +393,8 @@ The resulting continuation has two branches. An `outcome_candidate` is verified 
 flowchart TD
     Claimed["Final complete state claim confirmed"] --> Authority["Revalidate PostgreSQL authority"]
     Authority --> Validate["Validate state, fixed dependencies, current grants, and budget"]
-    Validate --> Decision{"Fenced preparation decision"}
+    Validate --> Plugins["Validate saved plugin configuration or publish first preparation"]
+    Plugins --> Decision{"Fenced preparation decision"}
     Decision -->|retryable and in budget| Retry["Fail Attempt; keep Run running; set available_at"]
     Decision -->|permanent or exhausted| Fail["Fail Attempt and seal Run failed"]
     Decision -->|continue| Receipts["Reconcile retained inbox evidence before new delivery"]

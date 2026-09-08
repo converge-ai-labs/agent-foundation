@@ -359,7 +359,7 @@ MCP mutation responses preserve the accepted connection snapshot. Read the conne
 
 ## Installed Harness Plugins
 
-Package custom plugins and their dependencies into the Service image, then select their installed `a13n_harness.plugins` entry points with `A13N_SERVICE_PLUGIN_KEYS='["support.audit"]'`. Use the same selection across Control, Worker, and Connectivity roles. Startup loads and validates the catalog once; an invalid selection prevents readiness.
+Package custom plugins and their dependencies into the Worker image, then select their installed `a13n_harness.plugins` entry points with `A13N_SERVICE_PLUGIN_KEYS='["support.audit"]'`. Only `worker` and `all` load this catalog; an invalid selection prevents their readiness. Control and Connectivity need no business plugins and do not load the catalog.
 
 Agent configuration selects an instance, key, and credential-free configuration:
 
@@ -371,6 +371,6 @@ Agent configuration selects an instance, key, and credential-free configuration:
 }
 ```
 
-Update code by building and rolling out a new image. Deploy compatible Workers before accepting configuration that needs the new code. Existing Runs keep normalized configuration and checkpoint state, while each Attempt records the actual Worker build. Compatible new code may resume them; incompatible configuration or state requires migration or completion with compatible capacity before replacement. Service has no runtime Wheel upload, dependency installation, version activation, or plugin subprocess.
+Update code by building and rolling out a new Worker image; Control and Connectivity stay unchanged. Supply compatible Worker capacity before submitting configuration that needs the new code. Admission preserves authored JSON; missing factories and invalid business configuration fail during Worker preparation. The first Worker durably freezes normalized configuration before execution. Existing prepared Runs keep that configuration and checkpoint state, while each Attempt records the actual Worker build. Compatible new code may resume them; incompatible configuration or state requires migration or completion with compatible capacity before replacement. Service has no runtime Wheel upload, dependency installation, version activation, or plugin subprocess.
 
 See [Installed Harness Plugins](../../spec/a13n-service/36-installed-harness-plugins.md) for the compatibility and trust contract.

@@ -8,6 +8,7 @@ from a13n_service.agents.domain import (
     ChildAgentExecution,
     ChildEnvironmentPolicy,
     EffectiveAgentConfig,
+    PreparedAgentPlugins,
     ResolvedSubagentEdge,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
@@ -574,6 +575,13 @@ async def _accept_parent(
         effective_agent_config=config,
     )
     state = initialize_start_state(seed, thread_id=THREAD_ID)
+    state = state.model_copy(
+        update={
+            "prepared_plugins": PreparedAgentPlugins(
+                plugins=(), children={CHILD_REVISION_ID: PreparedAgentPlugins(plugins=())}
+            )
+        }
+    )
     run = _accepted_run(
         run_id=seed.run_id,
         thread_id=THREAD_ID,
@@ -707,7 +715,6 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
                 config={},
                 config_digest="2" * 64,
                 resolved_model={},
-                resolved_plugins=[],
                 resolved_skills=[],
                 connector_tools=[],
                 mcp_tools=[],

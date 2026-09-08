@@ -210,7 +210,6 @@ async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession])
                 config=agent_config().model_dump(mode="json", by_alias=True),
                 config_digest="b" * 64,
                 resolved_model={},
-                resolved_plugins=[],
                 resolved_skills=[],
                 connector_tools=[],
                 mcp_tools=[],

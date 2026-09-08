@@ -43,8 +43,9 @@ from .domain import (
     EffectiveAgentConfig,
     OutputSpec,
     PluginSelection,
+    PreparedAgentPlugins,
 )
-from .plugin_resolution import PluginSelectionError, validate_plugin_selections
+from .plugin_preparation import PluginSelectionError, validate_plugin_selections
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
 
 _CLIENT_TOOLSET_ID = "service"
@@ -102,6 +103,7 @@ class AgentReconstructor:
         agent_revision_id: str,
         effective_config: EffectiveAgentConfig,
         subagent_capability: SubagentCapability,
+        prepared_plugins: PreparedAgentPlugins,
     ) -> AgentDefinition[Any]:
         """Reconstruct the accepted root snapshot and its exact immutable child graph."""
 
@@ -110,6 +112,7 @@ class AgentReconstructor:
             agent_revision_id=agent_revision_id,
             effective_config=effective_config,
             subagent_capability=subagent_capability,
+            prepared_plugins=prepared_plugins,
         )
         root = AgentDefinitionReconstructionContext(
             agent_id=agent_id,
@@ -118,7 +121,7 @@ class AgentReconstructor:
             is_root=True,
             config=effective_config,
         )
-        return self._definition(root, subagent_capability=subagent_capability)
+        return self._definition(root, subagent_capability=subagent_capability, prepared_plugins=prepared_plugins)
 
     def validate(
         self,
@@ -127,17 +130,24 @@ class AgentReconstructor:
         agent_revision_id: str,
         effective_config: EffectiveAgentConfig,
         subagent_capability: SubagentCapability,
+        prepared_plugins: PreparedAgentPlugins,
     ) -> None:
         """Validate the frozen graph and factories without constructing live plugins."""
 
+        try:
+            prepared_plugins.validate_for(effective_config)
+        except ValueError as error:
+            raise AgentDefinitionReconstructionError("plugin_preparation_mismatch") from error
         if effective_config.resolved_subagents and subagent_capability.async_enabled != (
             effective_config.subagent_mode == "async"
         ):
             raise AgentDefinitionReconstructionError("subagent_mode_mismatch")
-        pending: list[tuple[str, EffectiveAgentConfig, tuple[str, ...]]] = [(agent_revision_id, effective_config, ())]
+        pending: list[tuple[str, EffectiveAgentConfig, PreparedAgentPlugins, tuple[str, ...]]] = [
+            (agent_revision_id, effective_config, prepared_plugins, ())
+        ]
         count = 0
         while pending:
-            revision_id, config, ancestors = pending.pop()
+            revision_id, config, plugins, ancestors = pending.pop()
             count += 1
             if len(ancestors) > MAX_SUBAGENT_DEPTH:
                 raise AgentDefinitionReconstructionError("subagent_graph_too_deep")
@@ -149,7 +159,7 @@ class AgentReconstructor:
             if set(config.child_configs) != {edge.child_agent_revision_id for edge in config.resolved_subagents}:
                 raise AgentDefinitionReconstructionError("subagent_snapshot_mismatch")
             try:
-                validate_plugin_selections(self._plugin_catalog, config.resolved_plugins, retained=True)
+                validate_plugin_selections(self._plugin_catalog, plugins.plugins, retained=True)
             except PluginSelectionError as error:
                 raise AgentDefinitionReconstructionError(error.reason, path=error.path) from error
             _output_type(config.output_spec)
@@ -157,13 +167,21 @@ class AgentReconstructor:
                 child = config.child_configs[edge.child_agent_revision_id]
                 if child.agent_id != edge.child_agent_id:
                     raise AgentDefinitionReconstructionError("subagent_agent_mismatch", path=f"subagents.{edge.name}")
-                pending.append((edge.child_agent_revision_id, child.effective_config, (*ancestors, revision_id)))
+                pending.append(
+                    (
+                        edge.child_agent_revision_id,
+                        child.effective_config,
+                        plugins.children[edge.child_agent_revision_id],
+                        (*ancestors, revision_id),
+                    )
+                )
 
     def _definition(
         self,
         node: AgentDefinitionReconstructionContext,
         *,
         subagent_capability: SubagentCapability,
+        prepared_plugins: PreparedAgentPlugins,
     ) -> AgentDefinition[Any]:
         config = node.config
         child_definitions: list[SubagentDefinition] = []
@@ -178,6 +196,7 @@ class AgentReconstructor:
                     config=child.effective_config,
                 ),
                 subagent_capability=SubagentCapability(),
+                prepared_plugins=prepared_plugins.children[edge.child_agent_revision_id],
             )
             child_definitions.append(
                 SubagentDefinition(
@@ -219,7 +238,7 @@ class AgentReconstructor:
             capabilities.append(subagent_capability)
 
         try:
-            plugins = tuple(self._create_plugin(selection) for selection in config.resolved_plugins)
+            plugins = tuple(self._create_plugin(selection) for selection in prepared_plugins.plugins)
             output_type = _output_type(config.output_spec)
             retries = (
                 None

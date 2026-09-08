@@ -23,6 +23,7 @@ from a13n_service.agents.domain import (
     EffectiveAgentModel,
     MCPConnectionToolSelection,
     PluginSelection,
+    PreparedAgentPlugins,
     ResolvedAgentModel,
     ResolvedRevisionContent,
     ResolvedSubagentEdge,
@@ -46,8 +47,6 @@ ROOT_AGENT_ID = "ap_1234567890abcdef"
 ROOT_REVISION_ID = "apr_1234567890abcdef"
 CHILD_AGENT_ID = "ap_child12345678901"
 CHILD_REVISION_ID = "apr_child12345678901"
-PLUGIN_ID = "plg_1234567890abcdef"
-PLUGIN_VERSION_ID = "plgv_1234567890abcdef"
 
 
 class _Configuration(RootModel[dict[str, JsonValue]]):
@@ -140,7 +139,7 @@ def _effective(
 ) -> EffectiveAgentConfig:
     candidate = EffectiveAgentConfig(
         resolved_model=_effective_model(config),
-        resolved_plugins=plugins,
+        plugins=plugins,
         skills=(),
         connector_tools=connector_tools,
         mcp_tools=mcp_tools,
@@ -169,10 +168,11 @@ def _revision(
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = (),
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
 ) -> AgentRevision:
-    selected_config = config or agent_config(instructions="Handle delegated work.")
+    selected_config = (config or agent_config(instructions="Handle delegated work.")).model_copy(
+        update={"plugins": plugins}
+    )
     resolved = ResolvedRevisionContent(
         resolved_model=_resolved_model(selected_config),
-        resolved_plugins=plugins,
         resolved_skills=(),
         connector_tools=connector_tools,
         mcp_tools=mcp_tools,
@@ -193,7 +193,6 @@ def _revision(
         config=selected_config,
         config_digest=digest_request(selected_config),
         resolved_model=resolved.resolved_model,
-        resolved_plugins=resolved.resolved_plugins,
         resolved_skills=resolved.resolved_skills,
         connector_tools=resolved.connector_tools,
         mcp_tools=resolved.mcp_tools,
@@ -232,7 +231,7 @@ def _with_children(effective: EffectiveAgentConfig, children: Mapping[str, Agent
             revision_content_digest=revision.content_digest,
             effective_config=_effective(
                 revision.config,
-                plugins=revision.resolved_plugins,
+                plugins=revision.config.plugins,
                 connector_tools=revision.connector_tools,
                 mcp_tools=revision.mcp_tools,
                 subagents=revision.resolved_subagents,
@@ -253,6 +252,13 @@ def _rehash(effective: EffectiveAgentConfig) -> EffectiveAgentConfig:
     )
 
 
+def _prepared(config: EffectiveAgentConfig) -> PreparedAgentPlugins:
+    return PreparedAgentPlugins(
+        plugins=config.plugins,
+        children={key: _prepared(child.effective_config) for key, child in config.child_configs.items()},
+    )
+
+
 def _reconstruct(
     effective: EffectiveAgentConfig,
     *,
@@ -270,6 +276,7 @@ def _reconstruct(
         agent_id=ROOT_AGENT_ID,
         agent_revision_id=ROOT_REVISION_ID,
         effective_config=effective,
+        prepared_plugins=_prepared(effective),
         subagent_capability=SubagentCapability(),
     )
 
@@ -530,6 +537,7 @@ def test_recovery_accepts_compatible_repackaged_factory_without_constructing_plu
         agent_id=ROOT_AGENT_ID,
         agent_revision_id=ROOT_REVISION_ID,
         effective_config=effective,
+        prepared_plugins=_prepared(effective),
         subagent_capability=SubagentCapability(),
     )
     reconstructor.validate(**arguments)

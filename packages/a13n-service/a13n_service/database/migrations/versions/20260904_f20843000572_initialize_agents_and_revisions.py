@@ -76,7 +76,6 @@ def upgrade() -> None:
         sa.Column("config", sa.JSON(), nullable=False),
         sa.Column("config_digest", sa.String(length=64), nullable=False),
         sa.Column("resolved_model", sa.JSON(), nullable=False),
-        sa.Column("resolved_plugins", sa.JSON(), nullable=False),
         sa.Column("resolved_skills", sa.JSON(), nullable=False),
         sa.Column("connector_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
         sa.Column("mcp_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),

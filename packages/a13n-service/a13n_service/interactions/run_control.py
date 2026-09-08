@@ -24,7 +24,7 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_graph import End
 
-from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
 from a13n_service.storage import ObjectStoreUnavailable
 
 from .attempts import (
@@ -165,6 +165,22 @@ class RunAttemptControl:
             validate_authority=self._validate_authority,
         )
         self._install_state(state)
+
+    async def prepare_plugins(self, prepared: PreparedAgentPlugins) -> None:
+        """Publish the complete configuration before opening any plugin runtime."""
+
+        async with self._gate.lock:
+            self._require_open()
+            if self._gate.phase is not _CoordinatorPhase.preparing:
+                raise RuntimeError("Plugin preparation requires a preparing Attempt")
+            await self._validate_authority()
+            state = await self._states.prepare_plugins(
+                self.current_state,
+                prepared,
+                attempt_number=self._context.attempt_number,
+            )
+            self._install_state(state)
+            await self._validate_authority()
 
     async def reconcile_recovery_state(self) -> None:
         """Confirm existing evidence before constructing or entering a new Harness."""
