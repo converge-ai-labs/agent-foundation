@@ -99,11 +99,17 @@ def run_script(
             },
         ),
         (
+            "a13n-logging",
+            {
+                Path("uv.lock"),
+                Path("packages/a13n-logging/pyproject.toml"),
+            },
+        ),
+        (
             "a13n-service",
             {
                 Path("pyproject.toml"),
                 Path("uv.lock"),
-                Path("packages/a13n-logging/pyproject.toml"),
                 Path("packages/a13n-service/pyproject.toml"),
             },
         ),
@@ -173,6 +179,7 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     for component in (
         "a13n-harness",
         "a13n-harness-ui",
+        "a13n-logging",
         "a13n-service",
         "a13n-envd",
         "a13n-python",
@@ -197,6 +204,7 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     assert '"a13n-environment==3.2.1rc4"' in ui_manifest
     assert '"a13n-harness==3.2.1rc4"' in ui_manifest
     assert '"a13n-stream-protocol==3.2.1rc4"' in ui_manifest
+    assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-logging/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()
     assert 'version = "9.8.7-rc.2"' in (tmp_path / "Cargo.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-envd-client/pyproject.toml").read_text()
@@ -204,6 +212,27 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     assert 'version = "9.8.7-rc.2"' in (tmp_path / "sdk/rust/Cargo.toml").read_text()
     assert 'version = "9.8.7-rc.2"' in (tmp_path / "sdk/rust/a13n-service-cli/Cargo.toml").read_text()
     assert json.loads((tmp_path / "sdk/typescript/package.json").read_text())["version"] == "9.8.7-rc.2"
+
+
+@pytest.mark.parametrize("logging_version", ["2.3.4", "2.3.4-rc.1"])
+def test_logging_and_service_release_independently(tmp_path: Path, logging_version: str) -> None:
+    copy_release_files(tmp_path)
+    for component, version in (("a13n-logging", logging_version), ("a13n-service", "9.8.7")):
+        result = run_script(PREPARER, tmp_path, component, version)
+        assert result.returncode == 0, result.stderr
+
+    for component, version in (("a13n-logging", logging_version), ("a13n-service", "9.8.7")):
+        result = run_script(CHECKER, tmp_path, component, version)
+        assert result.returncode == 0, result.stderr
+
+    result = run_script(PREPARER, tmp_path, "a13n-logging", "3.0.0")
+    assert result.returncode == 0, result.stderr
+    result = run_script(CHECKER, tmp_path, "a13n-service", "9.8.7")
+    assert result.returncode == 0, result.stderr
+    mismatch = run_script(CHECKER, tmp_path, "a13n-logging", logging_version)
+    assert mismatch.returncode != 0
+    assert "packages/a13n-logging/pyproject.toml: 3.0.0" in mismatch.stderr
+    assert "uv.lock package a13n-logging: 3.0.0" in mismatch.stderr
 
 
 def test_a13n_service_cli_and_rust_sdk_release_independently(tmp_path: Path) -> None:

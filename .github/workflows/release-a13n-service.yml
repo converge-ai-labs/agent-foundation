@@ -55,11 +55,9 @@ jobs:
         run: |
           python scripts/check-release-version.py a13n-service "$VERSION"
           python_version="${VERSION/-rc./rc}"
-          test -f "dist/a13n_logging-${python_version}-py3-none-any.whl"
-          test -f "dist/a13n_logging-${python_version}.tar.gz"
           test -f "dist/a13n_service-${python_version}-py3-none-any.whl"
           test -f "dist/a13n_service-${python_version}.tar.gz"
-          test "$(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 4
+          test "$(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 2
 
       - name: Upload Python distributions
         uses: actions/upload-artifact@v4

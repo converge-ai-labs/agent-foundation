@@ -12,6 +12,7 @@ from pathlib import Path
 COMPONENTS = (
     "a13n-harness",
     "a13n-harness-ui",
+    "a13n-logging",
     "a13n-service",
     "a13n-envd",
     "a13n-service-cli",
@@ -39,14 +40,14 @@ HARNESS_UI_MANIFEST = Path("packages/a13n-harness-ui/pyproject.toml")
 HARNESS_UI_PACKAGE = "a13n-harness-ui"
 HARNESS_UI_RELEASE_TOOL = "tool.a13n.harness-ui-release"
 HARNESS_UI_ENVD_RELEASE_MANIFEST = Path("packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-release.json")
+LOGGING_MANIFEST = Path("packages/a13n-logging/pyproject.toml")
+LOGGING_PACKAGE = "a13n-logging"
 A13N_SERVICE_MANIFESTS = (
     Path("pyproject.toml"),
-    Path("packages/a13n-logging/pyproject.toml"),
     Path("packages/a13n-service/pyproject.toml"),
 )
 A13N_SERVICE_PACKAGES = (
     "a13n-workspace",
-    "a13n-logging",
     "a13n-service",
 )
 ROOT_UV_LOCK = Path("uv.lock")
@@ -299,6 +300,15 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
                 HARNESS_UI_PACKAGE,
             ),
         }
+    if component == "a13n-logging":
+        return {
+            str(LOGGING_MANIFEST): _project_version(root, LOGGING_MANIFEST),
+            f"{ROOT_UV_LOCK} package {LOGGING_PACKAGE}": _lock_package_version(
+                root,
+                ROOT_UV_LOCK,
+                LOGGING_PACKAGE,
+            ),
+        }
     if component == "a13n-service":
         versions = {str(path): _project_version(root, path) for path in A13N_SERVICE_MANIFESTS}
         versions.update(
@@ -370,7 +380,7 @@ def _expected_component_versions(
     release_version: ReleaseVersion,
     labels: tuple[str, ...],
 ) -> dict[str, str]:
-    if component in {"a13n-harness", "a13n-harness-ui", "a13n-service", "a13n-python"}:
+    if component in {"a13n-harness", "a13n-harness-ui", "a13n-logging", "a13n-service", "a13n-python"}:
         return {label: release_version.python_package for label in labels}
     if component == "a13n-envd":
         python_labels = {
@@ -618,6 +628,19 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         planned[ROOT_UV_LOCK] = _replace_lock_package_version(
             _read_text(root, ROOT_UV_LOCK),
             HARNESS_UI_PACKAGE,
+            python_version,
+            ROOT_UV_LOCK,
+        )
+    elif component == "a13n-logging":
+        planned[LOGGING_MANIFEST] = _replace_table_version(
+            _read_text(root, LOGGING_MANIFEST),
+            "project",
+            python_version,
+            LOGGING_MANIFEST,
+        )
+        planned[ROOT_UV_LOCK] = _replace_lock_package_version(
+            _read_text(root, ROOT_UV_LOCK),
+            LOGGING_PACKAGE,
             python_version,
             ROOT_UV_LOCK,
         )

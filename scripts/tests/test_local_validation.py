@@ -119,3 +119,17 @@ def test_full_frontend_check_and_python_packaging_share_one_build() -> None:
     assert "npm --prefix apps/a13n-harness-ui run check:all" not in result.stdout
     assert "scripts/prepare-a13n-harness-ui-assets.py" in result.stdout
     assert "uv build --all-packages" in result.stdout
+
+
+@pytest.mark.parametrize("component", ["a13n-logging", "a13n-service"])
+def test_logging_and_service_build_targets_publish_only_their_own_package(component: str) -> None:
+    result = subprocess.run(
+        ["make", "--dry-run", f"{component}-python-build"],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    build_commands = [line for line in result.stdout.splitlines() if "uv build" in line]
+    assert build_commands == [f"uv build --package {component} --out-dir dist"]
