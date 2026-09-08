@@ -79,6 +79,7 @@ async def test_app_setup_fills_only_omitted_capabilities(tmp_path: Path, capabil
                     "model_characteristics": characteristics,
                     "model_configuration": {"base_url": "https://proxy.example/v1"},
                 },
+                "project": "project-local",
                 "project_path": str(tmp_path),
                 "default_agent": "agent-api-key",
                 "environment_profile": "environment-native",
@@ -108,6 +109,7 @@ async def test_programmatic_setup_without_characteristics_seeds_stable_media_lis
                 "authentication": {"kind": "api_key", "env": "TEST_KEY"},
             },
             "default_agent": "agent-api-key",
+            "project": "project-local",
             "project_path": str(tmp_path),
             "environment_profile": "environment-native",
         }

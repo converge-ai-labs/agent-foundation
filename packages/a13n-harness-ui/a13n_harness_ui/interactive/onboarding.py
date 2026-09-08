@@ -388,14 +388,6 @@ async def run_setup(
                     await _ensure_account(app, provider, ask_user, emit)
                     checked_provider = provider
                 selection = SetupSelection.model_validate(wizard.selection(str(directory)))
-                if not (add_agent or add_model):
-                    projects = await app.cwd_project_ids(directory)
-                    if len(projects) > 1:
-                        raise ValueError(
-                            "Multiple Projects use this default directory. Resolve their roots before setup."
-                        )
-                    if projects:
-                        selection = selection.model_copy(update={"project": projects[0]})
                 preview = await app.preview_setup(selection)
                 emit("Saving agent…" if add_agent else "Saving model…" if add_model else "Saving your configuration…")
                 if not (add_agent or add_model) and selection.environment_profile == "environment-sandbox":

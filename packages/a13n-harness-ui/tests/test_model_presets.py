@@ -594,7 +594,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
             ThreadCompositionSelection(
                 thread_id="thread-test",
                 version=1,
-                project_id="project-local",
+                project_id=None,
                 agent_source_kind="agent",
                 agent_source_id="agent-api-key",
                 environment_profile_id="environment-native",

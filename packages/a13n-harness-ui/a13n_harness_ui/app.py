@@ -758,7 +758,9 @@ class HarnessUiApp:
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
-                RootThreadDefaults(**defaults.model_dump()) if isinstance(defaults, NewThreadDefaults) else defaults
+                RootThreadDefaults(**defaults.model_dump(exclude_unset=True))
+                if isinstance(defaults, NewThreadDefaults)
+                else defaults
             )
             thread = await self._threads.create(defaults=selected, title=title)
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
@@ -1164,11 +1166,7 @@ class HarnessUiApp:
             defaults = None if current is None else current.document.defaults
             path = self._require_configuration_path()
             return SetupStatus(
-                needed=current is None
-                or not current.agents
-                or defaults is None
-                or defaults.agent is None
-                or defaults.project is None,
+                needed=current is None or not current.agents or defaults is None or defaults.agent is None,
                 configuration_path=str(path),
                 suggested_project_path=str(Path.cwd()),
                 providers=tuple(providers),
@@ -1187,12 +1185,15 @@ class HarnessUiApp:
 
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
         async with self._operation(), self._configuration_lock:
-            return await preview_setup(
+            preview = await preview_setup(
                 self._require_configuration_path(),
                 selection,
                 validate_candidate=self._configurations.validate,
                 content_plugin_root=self._content_plugin_root,
             )
+            if not selection.is_addition and selection.project is None:
+                preview = preview.model_copy(update={"project_paths": (str(self._store.layout.staging),)})
+            return preview
 
     async def apply_setup(self, selection: SetupSelection) -> SetupPublication:
         async with self._operation(), self._configuration_lock:
@@ -1200,10 +1201,14 @@ class HarnessUiApp:
             def validate_candidate(candidate: LoadedHarnessUiConfiguration) -> None:
                 self._configurations.validate(candidate)
                 if not selection.is_addition and selection.environment_profile == "environment-sandbox":
-                    roots = candidate.projects[selection.project].roots
-                    if any(Path(root.path).resolve() not in self._sandbox_ready_paths for root in roots):
+                    roots = (
+                        tuple(Path(root.path).resolve() for root in candidate.projects[selection.project].roots)
+                        if selection.project is not None
+                        else (self._store.layout.staging,)
+                    )
+                    if any(root not in self._sandbox_ready_paths for root in roots):
                         raise AppStateError(
-                            "Run Sandbox preflight for the selected project before applying setup, or explicitly choose Full Control.",
+                            "Run Sandbox preflight for the selected execution directory before applying setup, or explicitly choose Full Control.",
                             code="sandbox_preflight_required",
                         )
 
@@ -1540,7 +1545,14 @@ async def open_harness_ui_app(
             thread_files = ThreadFiles(store.layout.root, retention_seconds=settings.storage.scratch_retention_seconds)
             resources.push_async_callback(thread_files.close)
             await thread_files.prune()
-            environment_service = EnvironmentRunService(store, environment_reconstructor, thread_files=thread_files)
+            environment_service = EnvironmentRunService(
+                store,
+                environment_reconstructor,
+                thread_files=thread_files,
+                configuration_root=configuration_path.expanduser().resolve().parent
+                if configuration_path is not None
+                else None,
+            )
             agent_reconstructor = AgentReconstructor(
                 catalog,
                 api_keys=ApiKeyStore(store.layout.root / "auth.json"),

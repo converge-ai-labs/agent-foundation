@@ -58,7 +58,7 @@ class NewThreadDefaults(SurfaceModel):
 
 class ThreadConfigurationView(SurfaceModel):
     version: int = Field(ge=1)
-    project_id: str = Field(min_length=1, max_length=128)
+    project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_source: AgentSourceView
     environment_profile_id: str = Field(min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] = ()

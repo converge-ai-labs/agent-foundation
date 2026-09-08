@@ -65,7 +65,7 @@ _MAX_RESOLVED_DEPTH = 128
 class ThreadCompositionSelection:
     thread_id: str
     version: int
-    project_id: str
+    project_id: str | None
     agent_source_kind: Literal["agent", "markdown"]
     agent_source_id: str
     environment_profile_id: str
@@ -136,7 +136,7 @@ class AgentCompositionResolver:
         """Resolve one exact Thread head against one accepted source generation."""
 
         self._validate_selection(source, selection)
-        project = source.projects[selection.project_id]
+        project = source.projects[selection.project_id] if selection.project_id is not None else None
         plugin_catalog = self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values()))
         budget = [_MAX_RESOLVED_NODES]
         if selection.agent_source_kind == "agent":
@@ -192,8 +192,8 @@ class AgentCompositionResolver:
             generation_digest=source.source_digest,
             thread_id=selection.thread_id,
             thread_configuration_version=selection.version,
-            project_id=project.id,
-            project_roots=tuple(item.path for item in project.roots),
+            project_id=selection.project_id,
+            project_roots=tuple(item.path for item in project.roots) if project is not None else (),
             content_plugins=tuple(
                 ResolvedContentPlugin(
                     plugin_id=item.plugin_id,
@@ -215,7 +215,7 @@ class AgentCompositionResolver:
         source: LoadedHarnessUiConfiguration,
         selection: ThreadCompositionSelection,
     ) -> None:
-        if selection.project_id not in source.projects:
+        if selection.project_id is not None and selection.project_id not in source.projects:
             raise CompositionError("The Thread Project is unavailable.", code="project_missing")
         sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
         if selection.agent_source_id not in sources:

@@ -53,8 +53,8 @@ class SetupSelection(StrictModel):
     existing_model_id: ResourceId | None = None
     connect_default: bool = False
     default_agent: ResourceId = "agent-default"
-    project: ResourceId = "project-local"
-    project_path: str = Field(min_length=1, max_length=4096)
+    project: ResourceId | None = None
+    project_path: str | None = Field(default=None, min_length=1, max_length=4096)
     environment_profile: Literal["environment-native", "environment-sandbox"]
     shell_review: bool = True
     include_default_subagents: bool | None = None
@@ -74,6 +74,8 @@ class SetupSelection(StrictModel):
 
     @model_validator(mode="after")
     def _creation_target(self) -> Self:
+        if (self.project is None) != (self.project_path is None):
+            raise ValueError("An optional setup Project requires both project and project_path")
         if self.new_model_id is not None and (self.new_agent_id is not None or self.existing_model_id is not None):
             raise ValueError("Add Model cannot also create an Agent or select an existing Model")
         if self.existing_model_id is not None and (
@@ -288,7 +290,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
         for resource in resources.values():
             if resource["id"] == (selection.new_agent_id or selection.default_agent):
                 resource["instructions"] = selection.instructions
-    if not selection.is_addition:
+    if not selection.is_addition and selection.project is not None:
         resources[f"projects/{selection.project}.yaml"] = {
             "schema_version": "1",
             "kind": "project",
@@ -434,7 +436,7 @@ async def preview_setup(
         root["defaults"] = {
             **defaults,
             "agent": selection.default_agent,
-            "project": selection.project,
+            **({"project": selection.project} if selection.project is not None else {}),
             "environment_profile": selection.environment_profile,
         }
         if selection.include_default_subagents is not None:
@@ -453,7 +455,7 @@ async def preview_setup(
         files=files,
         preserved_paths=tuple(sorted(name for name in baseline if name not in files)),
         project_paths=()
-        if selection.is_addition
+        if selection.is_addition or selection.project is None
         else tuple(root.path for root in loaded.projects[selection.project].roots),
     )
 

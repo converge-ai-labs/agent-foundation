@@ -14,6 +14,7 @@ def _selection(tmp_path: Path, **changes: object) -> SetupSelection:
         {
             "providers": ("codex", "grok"),
             "default_agent": "agent-codex",
+            "project": "project-local",
             "project_path": str(tmp_path),
             "environment_profile": "environment-native",
             **changes,

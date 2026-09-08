@@ -145,6 +145,7 @@ async def test_webui_setup_preview_apply_and_account_retry(
         selection = {
             "providers": ["codex"],
             "default_agent": "agent-codex",
+            "project": "project-local",
             "project_path": str(tmp_path),
             "environment_profile": "environment-native",
         }

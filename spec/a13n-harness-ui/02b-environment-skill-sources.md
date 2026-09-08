@@ -55,6 +55,8 @@ For a Run whose root Agent selects `skills`, Harness UI constructs sources from 
 4. installed Content Plugin Skill roots, with lexicographically later plugin IDs winning over earlier IDs;
 5. the dedicated user Skill mount backed by `~/.agents/skills`.
 
+A Thread without a Project omits both Project source tiers. User, Content Plugin, and explicit Skill sources remain selected under the same rules; the configuration file mount does not automatically contribute Project Skills.
+
 Harness conflict policy is `prefer_later`; Harness UI supplies sources in the reverse order needed to realize that precedence. Plugin source IDs use `a13n-harness-ui:content-plugin:<plugin-id>` and do not depend on installation order or directory enumeration. Source IDs are deterministic from source kind and captured mount alias or explicit-list position. The same Skill `name` therefore resolves predictably while retained catalog items preserve their winning source ID and Environment path.
 
 For Full Control, Sandbox, and other Host-path-preserving adapters, automatic Project roots preserve the captured canonical Host paths:
@@ -95,7 +97,7 @@ When the root Agent for an independent Run selects `skills`, Harness UI resolves
 
 If a Host-path-preserving Project root is exactly the resolved user Skill root, Harness UI reuses that Project mount and does not create an equal `user-skills` route. The deterministic `a13n-harness-ui:user-skills` source remains present and targets the same aggregate root, while the Project source keeps its own identity and targets that root's `.agents/skills` child. This exception avoids ambiguous equal routes without weakening Project authority deliberately selected by the user.
 
-In either layout, Harness UI exposes no user path beyond the selected Project roots and the exact `~/.agents/skills` directory. It does not implicitly mount `~`, `~/.agents`, or sibling user files.
+This Skill binding adds only the exact `~/.agents/skills` directory, not `~`, `~/.agents`, or sibling user files. Separate Host bindings expose installed content, the selected configuration directory, and Thread files under their owning contracts.
 
 The dedicated mount uses the release-owned Direct Local Provider with file operations only. Its Provider permissions and Harness permission ceiling allow read and write file operations, as explicitly selected for this user-owned Skill directory, but no shell, process, port, output, or arbitrary Host-path operation. It is fresh and stateless for each independent Run, is not the default working mount, and does not participate in Project Environment-state publication.
 

@@ -176,7 +176,11 @@ class TerminalProjectionService:
 
         rows: list[ThreadActivityView] = []
         for thread in page.threads:
-            project = source.projects.get(thread.configuration.project_id)
+            project = (
+                source.projects.get(thread.configuration.project_id)
+                if thread.configuration.project_id is not None
+                else None
+            )
             agent = source.agents.get(thread.configuration.agent_source.id)
             profile = built_in_environment_profile(thread.configuration.environment_profile_id)
             custom_profile = source.environment_profiles.get(thread.configuration.environment_profile_id)
@@ -212,7 +216,9 @@ class TerminalProjectionService:
             rows.append(
                 ThreadActivityView(
                     thread=thread,
-                    project_name=project.name if project is not None else thread.configuration.project_id,
+                    project_name=project.name
+                    if project is not None
+                    else thread.configuration.project_id or "No project",
                     agent_name=agent.name if agent is not None else thread.configuration.agent_source.id,
                     environment_name=environment_name,
                     pending_decision=decision,
@@ -481,7 +487,9 @@ class TerminalProjectionService:
         context_kind: Literal["draft", "idle", "active"] = "draft"
         if thread_id is None:
             selected = defaults or NewThreadDefaults()
-            project_id = selected.project_id or source.document.defaults.project
+            project_id = (
+                selected.project_id if "project_id" in selected.model_fields_set else source.document.defaults.project
+            )
             agent_id = selected.agent_id or source.document.defaults.agent
         else:
             thread = await self._store.threads.get(thread_id)
@@ -499,8 +507,8 @@ class TerminalProjectionService:
                 if cached is not None:
                     self._active_skill_catalogs.move_to_end(receipt_id)
                     return cached.model_copy(deep=True)
-        if project_id is None or project_id not in source.projects:
-            raise ThreadError("A Skill catalog requires an available Project.", code="thread_project_missing")
+        if project_id is not None and project_id not in source.projects:
+            raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
         if agent_id is None or agent_id not in source.agents:
             raise ThreadError("A Skill catalog requires an available Agent.", code="thread_agent_missing")
         catalog = await to_thread.run_sync(
@@ -870,25 +878,26 @@ def _scan_project_paths(
 
 def _scan_skill_catalog(
     source: LoadedHarnessUiConfiguration,
-    project_id: str,
+    project_id: str | None,
     agent_id: str,
     context_kind: Literal["draft", "idle", "active"],
     thread_id: str | None,
     receipt_id: str | None,
 ) -> SkillCatalogView:
-    project = source.projects[project_id]
+    project = source.projects[project_id] if project_id is not None else None
     agent = source.agents[agent_id]
     capability = next((item for item in agent.capabilities if item.capability == "skills"), None)
     sources: list[tuple[str, Path, bool]] = []
     if capability is not None:
         user_root = (Path.home() / ".agents" / "skills").resolve(strict=False)
         sources.append(("a13n-harness-ui:user-skills", user_root, False))
-        roots = tuple(Path(item.path) for item in project.roots)
+        roots = tuple(Path(item.path) for item in project.roots) if project is not None else ()
         for index in range(len(roots), 1, -1):
             sources.append(
                 (f"a13n-harness-ui:project:workspace-{index}", roots[index - 1] / ".agents" / "skills", False)
             )
-        sources.append(("a13n-harness-ui:project:workspace", roots[0] / ".agents" / "skills", False))
+        if roots:
+            sources.append(("a13n-harness-ui:project:workspace", roots[0] / ".agents" / "skills", False))
         raw_roots = capability.configuration.get("roots", [])
         if isinstance(raw_roots, list):
             for index, value in enumerate(raw_roots, start=1):
@@ -898,7 +907,7 @@ def _scan_skill_catalog(
                     )
 
     selected: dict[str, SkillCatalogItemView] = {}
-    fingerprints: list[str] = [source.source_digest, project_id, agent_id]
+    fingerprints: list[str] = [source.source_digest, project_id or "", agent_id]
     for source_id, root, required in sources:
         if not root.exists():
             if required:
@@ -943,6 +952,8 @@ def _logical_to_host(value: str, roots: tuple[Path, ...], user_root: Path) -> Pa
     if value == "/environment/user-skills" or value.startswith("/environment/user-skills/"):
         return user_root / value.removeprefix("/environment/user-skills").lstrip("/")
     if value == "/workspace" or value.startswith("/workspace/"):
+        if not roots:
+            raise ThreadError("An explicit Skill root requires a Project.", code="skill_source_unavailable")
         return roots[0] / value.removeprefix("/workspace").lstrip("/")
     for index, root in enumerate(roots[1:], start=2):
         prefix = f"/environment/workspace-{index}"

@@ -449,7 +449,6 @@ class SetupWizard:
         result: dict[str, object] = {
             "providers": [provider] if provider in {"codex", "grok"} else [],
             "default_agent": f"agent-{provider if provider != 'api' else 'api-key'}",
-            "project_path": directory,
             "environment_profile": "environment-native"
             if self.values.get("environment", self.default_environment) == "full-control"
             else "environment-sandbox",

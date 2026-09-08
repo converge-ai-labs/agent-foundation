@@ -138,13 +138,19 @@ class ResolvedRunComposition(CompositionModel):
     generation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     thread_id: str = Field(min_length=1, max_length=80)
     thread_configuration_version: int = Field(ge=1)
-    project_id: str = Field(min_length=1, max_length=128)
-    project_roots: tuple[str, ...] = Field(min_length=1, max_length=64)
+    project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    project_roots: tuple[str, ...] = Field(default=(), max_length=64)
     content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
     root: ResolvedAgentNode
     environment_profile: ResolvedEnvironmentProfile
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
+
+    @model_validator(mode="after")
+    def _project_roots_match_selection(self) -> Self:
+        if (self.project_id is None) != (not self.project_roots):
+            raise ValueError("Project roots must be empty exactly when no Project is selected")
+        return self
 
 
 def _contains_tuple(annotation: object) -> bool:

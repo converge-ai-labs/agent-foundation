@@ -82,7 +82,7 @@ Each root or child Thread has one mutable configuration head:
 ```python
 class ThreadConfiguration(BaseModel):
     version: int
-    project_id: str
+    project_id: str | None
     agent_source: AgentSource
     environment_profile_id: str
     harness_plugin_ids: tuple[str, ...]
@@ -90,7 +90,7 @@ class ThreadConfiguration(BaseModel):
     mcp_server_ids: tuple[str, ...]
 ```
 
-`agent_source` is the discriminated Agent-resource or Markdown-subagent reference owned by [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration). The lists are exact ordered enabled selections. Omission belongs only to create or patch input; the stored head contains no inheritance marker. Every non-empty update compares the caller's required expected version, commits all changed axes, and increments `version` atomically. A no-op can retain the version.
+`agent_source` is the discriminated Agent-resource or Markdown-subagent reference owned by [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration). A null `project_id` records a Thread without a Project and is preserved across restart and child creation. The SQLite upgrade rebuilds the Thread configuration table with a nullable Project column while preserving existing rows and references; no existing Thread is reassigned. It uses the normal serialized migration transaction. Downgrade refuses before altering the table if projectless Threads exist; older binaries must not open this schema. The lists are exact ordered enabled selections. Omission belongs only to create or patch input; the stored head contains no inheritance marker. Every non-empty update compares the caller's required expected version, commits all changed axes, and increments `version` atomically. A no-op can retain the version.
 
 An admitted Run records the Thread configuration version and accepted generation it captured. A later update is valid and affects only later admissions.
 

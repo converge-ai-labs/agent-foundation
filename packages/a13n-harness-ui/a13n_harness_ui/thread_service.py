@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 
 from a13n_harness import HarnessState
 
@@ -23,9 +24,13 @@ from a13n_harness_ui.storage import (
 from a13n_harness_ui.surfaces import ThreadMetadataMutation
 
 
+class _ProjectDefault(Enum):
+    global_default = "global_default"
+
+
 @dataclass(frozen=True, slots=True)
 class RootThreadDefaults:
-    project_id: str | None = None
+    project_id: str | _ProjectDefault | None = _ProjectDefault.global_default
     agent_id: str | None = None
     environment_profile_id: str | None = None
     harness_plugin_ids: tuple[str, ...] | None = None
@@ -53,10 +58,14 @@ class ThreadService:
     ) -> Thread:
         source = await self._required_configuration()
         requested = defaults or RootThreadDefaults()
-        project_id = requested.project_id or source.document.defaults.project
+        project_id = (
+            source.document.defaults.project
+            if isinstance(requested.project_id, _ProjectDefault)
+            else requested.project_id
+        )
         agent_id = requested.agent_id or source.document.defaults.agent
-        if project_id is None or project_id not in source.projects:
-            raise ThreadError("A root Thread requires an available Project.", code="thread_project_missing")
+        if project_id is not None and project_id not in source.projects:
+            raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
         if agent_id is None or agent_id not in source.agents:
             raise ThreadError("A root Thread requires an available Agent.", code="thread_agent_missing")
         agent = source.agents[agent_id]
@@ -151,7 +160,7 @@ def _validate_configuration(
     *,
     root: bool,
 ) -> None:
-    if value.project_id not in source.projects:
+    if value.project_id is not None and value.project_id not in source.projects:
         raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
     if root and value.agent_source.kind != "agent":
         raise ThreadError("A root Thread cannot select a Markdown source.", code="thread_agent_invalid")

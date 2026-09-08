@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A Project is the only Harness UI concept for grouping local roots and organizing root Threads. It is a mutable named ordered root list modeled after Codex Project and is selected by each Thread. Harness UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
+A Project is the optional Harness UI concept for grouping local roots and organizing project-bound root Threads. It is a mutable named ordered root list modeled after Codex Project. Threads can run without selecting a Project. Harness UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
 
 A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
 
@@ -49,6 +49,12 @@ The App can resolve a normalized current working directory to a Project for a lo
 
 Resolution returns a configured Project or an unmatched or ambiguous outcome. It never creates a Project, adds or reorders roots, or makes the launch directory a surface-owned authority. The selected Project retains its configured first root as the default working directory represented by mount alias `workspace`, even when the current directory is a descendant. A surface that does not expose Project management can use this result as its new-Thread context and default Project filter.
 
+## Threads Without a Project
+
+When neither creation input nor an explicitly configured global Project default selects a Project, the App creates a Thread with `project_id: null`. An explicit null creation selection suppresses the global Project default; an omitted selection can use it. Collaboration-created Threads preserve their source Thread's optional Project, including null. No placeholder Project or Project roots are created. Its Run composition captures an empty Project root list and adds no `workspace` mount or Project Skill sources. Global guidance, global Skills when selected, installed content, and the selected configuration directory remain available under their ordinary contracts.
+
+The default working mount is `thread-files`, with `tmp/` as its working directory. This applies to relative file paths and omitted shell cwd; built-in modes retain their selected execution policy. A custom adapter's file-only Thread mount does not acquire shell support. Child Threads inherit the parent's optional Project selection and receive their own scratch area. Explicitly selected but missing Projects still fail; they never silently turn into projectless execution. Existing project-bound Threads and CLI exact-cwd selection remain unchanged.
+
 ## Thread Identity
 
 ```python
@@ -91,7 +97,7 @@ AgentSource = AgentResourceSource | MarkdownSubagentSource
 
 class ThreadConfiguration(BaseModel):
     version: int
-    project_id: ProjectId
+    project_id: ProjectId | None
     agent_source: AgentSource
     environment_profile_id: EnvironmentProfileId
     harness_plugin_ids: tuple[PluginId, ...]
@@ -99,7 +105,7 @@ class ThreadConfiguration(BaseModel):
     mcp_server_ids: tuple[McpServerId, ...]
 ```
 
-The stored value is exact. It contains no `inherit`, omitted, or globally enabled state.
+The stored value is exact. It contains no `inherit`, omitted, or globally enabled state. A null `project_id` means no Project, not an unresolved reference or a request to inherit a global default. A configuration patch can explicitly clear the Project with null; omission retains the current selection.
 
 A new root Thread resolves an explicit Agent resource or the root YAML Agent default into `AgentResourceSource`, then resolves the other creation defaults and stores the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
 
@@ -170,8 +176,9 @@ For each captured Project root, the App:
 3. asks the adapter to materialize root-specific validated Provider configuration;
 4. creates a fresh inert `Environment` operation object and performs Harness UI Host-authorized preparation before passing it to Harness;
 5. constructs the deterministic Harness Project mount set;
-6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Host-path-preserving Project mount already owns that root; and
-7. creates fresh selected Environment Run Extensions around that aggregate.
+6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Host-path-preserving Project mount already owns that root;
+7. adds the selected configuration directory and Thread file area under the contracts below; and
+8. creates fresh selected Environment Run Extensions around that aggregate.
 
 Full Control opts into Direct Local's complete Host-process environment inheritance for every native command, including commands on the Thread file mount. Per-command environment set/unset operations are unrestricted by a key allowlist and override that inherited baseline without changing the Host process. Values such as PATH, proxy settings, and exported credentials remain runtime-only and are not stored in Run compositions or Environment state. Existing Full Control selections receive this behavior without editing configuration. Sandbox and custom profiles retain their own environment policies; shell aliases, unexported variables, and interactive startup files are not part of process environment inheritance.
 
@@ -183,7 +190,7 @@ The Full Control and Sandbox adapters preserve Host paths. Harness UI assigns ea
 
 This shared spelling does not merge execution authority. Full Control translates the aggregate suffix to a Project-root-confined Direct Local file operation or initial command working directory; after a Host command starts, the ordinary Host shell and descendants remain unrestricted and can use `cd ..`, absolute paths, Host networking, and other ambient Host-user authority. Sandbox translates the same aggregate suffix to a Provider-local EIP path; Local Envd resolves it back to the exact Host workspace path only inside required native containment, so `pwd` reports the canonical Host path while parent or absolute traversal cannot escape the sandbox's granted paths and networking remains denied.
 
-An explicit shell `cwd` is an aggregate mount selector in both modes. It must resolve within an available route and cannot contain `..` traversal segments. Relative or omitted `cwd` starts from the selected mount's default Project root. This selector rule does not claim to confine a Full Control command after launch: a script such as `cd .. && pwd` runs with ordinary Host semantics. In Sandbox the same script remains subject to `a13n-envd` isolation.
+An explicit shell `cwd` is an aggregate mount selector in both modes. It must resolve within an available route and cannot contain `..` traversal segments. Relative or omitted `cwd` starts from the selected mount's working directory: the Project root for a Project mount, or `tmp/` for the Thread file mount. This selector rule does not claim to confine a Full Control command after launch: a script such as `cd .. && pwd` runs with ordinary Host semantics. In Sandbox the same script remains subject to `a13n-envd` isolation.
 
 An approved custom adapter that explicitly preserves Host paths receives the same aggregate layout. Other adapters omit `mount_path`, so Harness compatibility routing presents the first root at `/workspace` and later roots at `/environment/workspace-N`. A canonical-looking aggregate route is presentation and routing metadata, never proof of Provider authority.
 
@@ -191,9 +198,15 @@ The same adapter decision applies to the dedicated Direct Local user Skill mount
 
 Harness UI selects preparation under its own Host policy; Service Template preparation and retention settings are not Harness UI resources. Harness scope entry never performs a second provider connection.
 
+### Configuration File Mount
+
+When the App has a selected configuration path, every root or child Run exposes its parent directory through a `configuration` mount. This is the actual selected directory, normally `~/.a13n-harness-ui`, not a fixed home-directory guess; `--config` selects a different parent. It is a Host Direct Local read/write file-only mount with no shell, process, output, or port operations. It remains available without a Project and under Sandbox, without granting a Sandbox command access to it. Host-path-preserving profiles expose the canonical directory path; virtual profiles use `/environment/configuration`. An existing mount with that exact canonical path is reused instead of creating a conflicting route. No configuration mount is added for an embedding App without a selected configuration path.
+
+The directory is not a Project and does not contribute Project Skills or change the working directory. It has no Environment-state head. Agent file edits use the same stable-read, complete validation, and accepted-generation rules as human edits; invalid edits leave the accepted generation active, and active Runs retain their captured configuration. Process settings still require restart. This is explicit read/write access to the selected directory, not just its root YAML; it is not a promise to hide other files located there.
+
 ### Thread File Mount
 
-Each App-prepared root or child Run receives a `thread-files` mount for its own Thread file area. The [storage contract](03-local-storage-and-recovery.md#thread-files-and-automatic-scratch-cleanup) owns its persistence and cleanup. The mount contains `tmp/` for scratch work and `attachments/` for submitted inputs. Built-in Full Control and Sandbox modes bind this area as a separate root using the selected adapter and profile; model-facing paths follow the same canonical-host-path rule as Project roots. Scratch files are usable through real Environment file operations and explicit shell cwd selection, not merely through a path mentioned in a prompt.
+Each App-prepared root or child Run receives a `thread-files` mount for its own Thread file area. The [storage contract](03-local-storage-and-recovery.md#thread-files-and-automatic-scratch-cleanup) owns its persistence and cleanup. The mount contains `tmp/` for scratch work and `attachments/` for submitted inputs. Built-in Full Control and Sandbox modes bind this area as a separate root using the selected adapter and profile; model-facing paths follow the same canonical-host-path rule as Project roots. Scratch files are usable through real Environment file operations and shell cwd selection, not merely through a path mentioned in a prompt. This mount's default working directory is `tmp/`; it is the default mount when no Project is selected.
 
 A Sandbox command selected in a Project root does not gain access to the Thread file mount. To process an attachment with a shell, select a cwd under the Thread file root; that sandbox can access its own scratch and attachments, not arbitrary Project or Host paths. Custom adapters receive a Host Direct Local file-only mount rather than silently interpreting a Host directory as a remote Provider workspace. Availability and permission ceilings remain authoritative. Release-owned guidance tells the model to preserve attachments and to copy valuable results out of scratch.
 

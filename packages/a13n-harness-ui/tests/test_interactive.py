@@ -170,6 +170,7 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     selection = SetupSelection(
         providers=("codex",),
         default_agent="agent-codex",
+        project="project-local",
         project_path=str(tmp_path),
         environment_profile="environment-native",
         shell_review=False,
@@ -1205,6 +1206,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
         new_agent_id="agent-astra",
         new_agent_name="Astra",
         instructions="SECOND AGENT INSTRUCTIONS",
+        project="project-local",
         project_path=str(tmp_path),
         environment_profile="environment-native",
         shell_review=False,

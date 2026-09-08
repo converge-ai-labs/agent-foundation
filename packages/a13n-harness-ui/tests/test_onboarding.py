@@ -112,7 +112,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
         assert await run_setup(app, directory, ask_user=ask, emit=output.append)
         configuration = await app.current_configuration()
         assert set(configuration.projects) == {"project-custom"}
-        assert configuration.document.defaults.project == "project-custom"
+        assert configuration.document.defaults.project is None
         assert await app.ensure_cwd_project(directory) == "project-custom"
     assert project.read_bytes() == original
     assert not (project.parent / "project-local.yaml").exists()

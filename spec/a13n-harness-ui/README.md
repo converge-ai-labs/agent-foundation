@@ -67,8 +67,8 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 
 - Python-like schemas are conceptual unless explicitly described as serialized configuration.
 - A Thread is one continuation-backed conversation identity. A root Thread has no parent; an async child Thread records its parent and can contain several linked execution segments.
-- A Project is a file-defined mutable named ordered list of local roots and the only root-Thread organization used by Harness UI. Its first root anchors current-directory launch resolution and receives mount alias `workspace`; later roots are additional Run mounts with distinct aliases. Harness UI defines no Workspace resource.
-- A Thread configuration is a sticky selection of Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. It is not a Harness Run or immutable history.
+- A Project is an optional file-defined mutable named ordered list of local roots for organizing project-bound root Threads. Its first root anchors current-directory launch resolution and receives mount alias `workspace`; later roots are additional Run mounts with distinct aliases. Harness UI defines no Workspace resource.
+- A Thread configuration is a sticky selection of optional Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. It is not a Harness Run or immutable history.
 - A Run composition is the immutable resolved value captured at admission from one configuration generation and one Thread configuration version.
 - An Environment profile selects Provider and Host-adapter configuration for Project-root execution. Harness UI owns the fixed Full Control and Sandbox profiles; extension YAML can define advanced custom profiles under other IDs. A profile is distinct from a runtime `Environment` identity and does not own the roots.
 - Presentation values are strict detached projections. Only selected `HarnessState` checkpoints authorize continuation.

@@ -75,16 +75,28 @@ Use `--no-update-check` for a one-invocation override. See [updates and logs](au
 
 ### Default resource selections
 
-| Field                                 | Default | Meaning                                                                                        |
-| ------------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
-| `defaults.project`                    | `null`  | Default Project for application callers; terminal workspace matching uses the launch directory |
-| `defaults.agent`                      | `null`  | Default root Agent; setup sets this to its chosen Agent                                        |
-| `defaults.environment_profile`        | `null`  | Environment profile; absent selection ultimately uses `environment-native`                     |
-| `defaults.harness_plugins`            | `[]`    | Ordered exact Harness Plugin IDs                                                               |
-| `defaults.environment_run_extensions` | `[]`    | Ordered exact Environment Run Extension IDs                                                    |
-| `defaults.mcp_servers`                | `[]`    | Ordered exact MCP server IDs                                                                   |
+| Field                                 | Default | Meaning                                                                                               |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `defaults.project`                    | `null`  | Optional Project for application callers; omit for no project. The terminal uses its launch directory |
+| `defaults.agent`                      | `null`  | Default root Agent; setup sets this to its chosen Agent                                               |
+| `defaults.environment_profile`        | `null`  | Environment profile; absent selection ultimately uses `environment-native`                            |
+| `defaults.harness_plugins`            | `[]`    | Ordered exact Harness Plugin IDs                                                                      |
+| `defaults.environment_run_extensions` | `[]`    | Ordered exact Environment Run Extension IDs                                                           |
+| `defaults.mcp_servers`                | `[]`    | Ordered exact MCP server IDs                                                                          |
 
 Lists must be unique. Global defaults initialize new sessions; they do not silently rewrite existing sessions' sticky resource selections. Agent-level MCP and Harness Plugin selections override their corresponding defaults. A selected resource's valid file edits can still change its behavior on later Runs.
+
+Normal setup writes only the default Agent and Environment profile, not a `project-local` resource or `defaults.project`:
+
+```yaml
+defaults:
+  agent: agent-api-key
+  environment_profile: environment-native
+```
+
+An application-created conversation without a Project uses its own `thread-files/tmp/` working directory. It still has attachments, global Skills when enabled, and global guidance. The terminal continues to select a Project from its launch directory when you send a prompt. Existing conversations keep their previous Project selections.
+
+The Agent can read and write the selected configuration directory through the file-only `configuration` mount. This defaults to `~/.a13n-harness-ui`; with `--config`, it is the chosen YAML file's parent directory. It is not a project workspace and does not grant shell execution through that mount. If an existing working mount already exposes the exact directory, its route is reused. Resource edits are validated before acceptance and affect later Runs; invalid edits leave the last accepted configuration active. Process settings require restart. The mount exposes the whole selected directory, so keep sensitive file contents out of messages and logs.
 
 ### Display settings
 
