@@ -12,8 +12,9 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.assets.models import AssetRecord
+from a13n_service.assets.errors import AssetError
 from a13n_service.assets.objects import AssetObjectStore
+from a13n_service.assets.queries import require_active_asset
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_workspace_principal_action
 from a13n_service.storage import short_session
@@ -73,10 +74,15 @@ class WorkerInputSources:
                 workspace_id=self._workspace_id,
                 action=WorkspaceAction.asset_use,
             )
-            row = await session.get(AssetRecord, source.asset_id)
-            if row is None or row.workspace_id != self._workspace_id or row.deleted_at is not None:
-                raise AgentInputError("input_asset_unavailable", "The accepted Asset is unavailable")
-            asset = row.to_resource()
+            try:
+                asset = await require_active_asset(
+                    session,
+                    organization_id=self._run.organization_id,
+                    workspace_id=self._workspace_id,
+                    asset_id=source.asset_id,
+                )
+            except AssetError as error:
+                raise AgentInputError("input_asset_unavailable", "The accepted Asset is unavailable") from error
         if asset.size_bytes > max_bytes:
             raise AgentInputError("input_binary_too_large", "The Asset exceeds the accepted input limit")
 

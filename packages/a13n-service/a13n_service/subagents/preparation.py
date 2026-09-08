@@ -37,6 +37,7 @@ from a13n_service.interactions.initialization import (
 )
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.secrets.agent_inputs import select_child_secret_bindings
 
 from .domain import (
     ChildCancellationPolicy,
@@ -105,6 +106,7 @@ def prepare_child_run(
     accepted_input = AcceptedAgentInput(
         schema_version="1",
         content=(TextContent(text=delegated_input),),
+        secret_bindings=select_child_secret_bindings(parent_state.secret_bindings, child_effective_config),
     )
     relationship = _relationship(
         relationship_id=relationship_id,
@@ -152,6 +154,7 @@ def prepare_child_run(
             agent_id=child_agent_id,
             agent_revision_id=child_agent_revision_id,
             effective_agent_config=child_effective_config,
+            secret_bindings=accepted_input.secret_bindings,
             usage_limits=intersect_usage_limits(parent_state.usage_limits, edge.usage_limits, usage_limits),
         ),
         thread_id=child_thread_id,
@@ -230,6 +233,7 @@ def prepare_child_resume(
     accepted_input = AcceptedAgentInput(
         schema_version="1",
         content=(TextContent(text=delegated_input),),
+        secret_bindings=select_child_secret_bindings(parent_state.secret_bindings, child_effective_config),
     )
     relationship = _relationship(
         relationship_id=relationship_id,
@@ -265,6 +269,7 @@ def prepare_child_resume(
             agent_id=child_agent_id,
             agent_revision_id=child_agent_revision_id,
             effective_agent_config=child_effective_config,
+            secret_bindings=accepted_input.secret_bindings,
             usage_limits=intersect_usage_limits(parent_state.usage_limits, edge.usage_limits, usage_limits),
         ),
         source_state,

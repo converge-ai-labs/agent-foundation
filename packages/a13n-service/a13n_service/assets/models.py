@@ -23,9 +23,8 @@ class AssetRecord(Base):
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
-            ("organization_id", "source_run_attempt_id"),
-            ("run_attempts.organization_id", "run_attempts.id"),
-            ondelete="RESTRICT",
+            ("source_run_attempt_id", "organization_id"),
+            ("run_attempts.id", "run_attempts.organization_id"),
         ),
         CheckConstraint("length(filename) BETWEEN 1 AND 256", name="filename_bounded"),
         CheckConstraint("filename = trim(filename)", name="filename_trimmed"),

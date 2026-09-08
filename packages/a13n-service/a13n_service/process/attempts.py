@@ -35,6 +35,7 @@ from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
 from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
+from a13n_service.secrets.agent_runtime import AgentSecretRuntime
 from a13n_service.skills.runtime import SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
@@ -66,6 +67,7 @@ class WorkerAttempts:
         self._replay = replay
         self._assets = assets
         self._asset_publication = asset_publication
+        self._secrets = AgentSecretRuntime(shared.storage.sessions, shared.secret_protector)
         self._observability = observability
         self._execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)
         self._states = RunStateStore(shared.storage.objects)
@@ -168,6 +170,7 @@ class WorkerAttempts:
                 environments=self._environments,
                 external_tools=self._external_tools,
                 subagent_capability=subagent_capability,
+                secrets=self._secrets,
             )
             projector = AttemptRunStreamProjector(self._stream, context)
             driver = HarnessDriver(

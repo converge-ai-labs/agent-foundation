@@ -23,6 +23,7 @@ from a13n_service.durable_operations.idempotency import (
     load_evidence,
     new_evidence,
 )
+from a13n_service.environments.selection import Omitted
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.commands import (
     ContinueRunCommand,
@@ -155,7 +156,7 @@ class QueuedSubmissionService:
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
             hook_subscription=request.hook_subscription,
-            **({"environment": request.environment} if "environment" in request.model_fields_set else {}),
+            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
         )
         try:
             if admission is ThreadSubmissionAdmission.continuation:

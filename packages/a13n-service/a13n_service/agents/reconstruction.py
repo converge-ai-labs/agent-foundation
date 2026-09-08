@@ -17,6 +17,7 @@ from a13n_harness import (
     DelegationContextPolicy as HarnessDelegationContextPolicy,
 )
 from a13n_harness.capabilities import SubagentCapability
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.errors import HarnessError
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
@@ -198,7 +199,10 @@ class AgentReconstructor:
                 )
             )
 
-        capabilities = list(self._provided_capabilities(node))
+        capabilities = [
+            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+            *self._provided_capabilities(node),
+        ]
         if config.client_tools:
             capabilities.append(
                 ClientToolsCapability(

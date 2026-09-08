@@ -424,3 +424,63 @@ async def test_publication_capability_is_selected_independently_for_inline_child
     assert selected == ({AGENT_REVISION_ID} if root_enabled else set()) | (
         {child_revision_id} if child_enabled else set()
     )
+
+
+@pytest.mark.parametrize("failure", ["oversize", "media", "revoked"])
+async def test_stream_failure_never_commits_and_revocation_is_audited(publication, tmp_path, monkeypatch, failure):
+    from a13n_service.iam import AuthorizationError
+
+    async def contents(environment, route):
+        yield b"%PDF-1.7" if failure == "media" else b"first"
+        if failure == "revoked":
+            async with transaction(publication.sessions) as session:
+                user = await session.get(UserRecord, USER_ID)
+                user.status = "disabled"
+        yield b"x" * 65 if failure == "oversize" else b"tail"
+
+    monkeypatch.setattr("a13n_service.assets.runtime._file_contents", contents)
+    async with _files(tmp_path / "env") as environment:
+        with pytest.raises(AuthorizationError if failure == "revoked" else AssetError):
+            await publication.publish(environment, media_type="image/png" if failure == "media" else None)
+    async with short_session(publication.sessions) as session:
+        assert await session.scalar(select(AssetRecord)) is None
+        if failure == "revoked":
+            audit = await session.scalar(
+                select(SecurityAuditRecord).where(SecurityAuditRecord.action == "asset.create")
+            )
+            assert audit.outcome == "failure"
+            assert audit.details == {
+                "source_kind": "run_output",
+                "run_id": publication.authority.run_id,
+                "run_attempt_id": publication.authority.run_attempt_id,
+            }
+
+
+async def test_deleted_publication_replays_reference_and_retains_bounded_audit(publication, tmp_path):
+    async with _files(tmp_path / "env") as environment:
+        reference = await publication.publish(environment)
+        await publication.catalog.delete(actor=publication.actor, asset_id=reference.asset_id)
+        assert await publication.publish(environment) == reference
+    with pytest.raises(AssetError):
+        await publication.catalog.get(actor=publication.actor, asset_id=reference.asset_id)
+    async with short_session(publication.sessions) as session:
+        audit = await session.scalar(
+            select(SecurityAuditRecord).where(
+                SecurityAuditRecord.action == "asset.create", SecurityAuditRecord.resource_id == reference.asset_id
+            )
+        )
+        assert audit.outcome == "success"
+        assert audit.details == {
+            "source_kind": "run_output",
+            "run_id": publication.authority.run_id,
+            "run_attempt_id": publication.authority.run_attempt_id,
+        }
+
+
+async def test_publication_cannot_change_workspace(publication, tmp_path):
+    publication.selection = replace(publication.selection, workspace_id="ws_other1234567890")
+    async with _files(tmp_path / "env") as environment:
+        with pytest.raises(AssetError):
+            await publication.publish(environment)
+    async with short_session(publication.sessions) as session:
+        assert await session.scalar(select(AssetRecord)) is None

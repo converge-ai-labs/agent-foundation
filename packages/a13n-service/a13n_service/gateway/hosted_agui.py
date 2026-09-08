@@ -50,6 +50,7 @@ from a13n_service.interactions.control_domain import (
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.input import AgentInput
 from a13n_service.interactions.models import RunRecord, ThreadRecord
+from a13n_service.interactions.protocol_context import ProtocolInputContext
 from a13n_service.lifecycle import LifecycleEvent
 from a13n_service.run_stream import (
     CompleteRunStream,
@@ -136,6 +137,7 @@ class _MappedAguiInput:
     resolutions: tuple[SubmittedPendingResolution, ...] | None
     agent_revision_id: str
     config_override: AgentRunOverride | None
+    protocol_context: ProtocolInputContext
 
 
 class _A13nForwardedProps(BaseModel):
@@ -359,6 +361,7 @@ class HostedAguiService:
                     agent_revision_id=mapped.agent_revision_id,
                     config_override=mapped.config_override,
                     input=_require_agui_input(mapped),
+                    protocol_context=mapped.protocol_context,
                 ),
                 transaction_hook=bind,
             )
@@ -384,6 +387,7 @@ class HostedAguiService:
                     idempotency_key=idempotency_key,
                     request=ForkRunCommand(
                         input=_require_agui_input(mapped),
+                        protocol_context=mapped.protocol_context,
                         agent_id=agent_id,
                         agent_revision_id=mapped.agent_revision_id,
                         config_override=mapped.config_override,
@@ -408,6 +412,7 @@ class HostedAguiService:
                             resolutions=mapped.resolutions,
                         ),
                         transaction_hook=bind,
+                        protocol_context=mapped.protocol_context,
                     )
                 else:
                     await self._commands.continue_waiting(
@@ -418,6 +423,7 @@ class HostedAguiService:
                             expected_thread_version=service_thread.version,
                             sealed_state_digest_sha256=source.sealed_state_digest_sha256,
                             input=_require_agui_input(mapped),
+                            protocol_context=mapped.protocol_context,
                         ),
                         transaction_hook=bind,
                     )
@@ -435,6 +441,7 @@ class HostedAguiService:
                     request=ContinueRunCommand(
                         expected_thread_version=service_thread.version,
                         input=_require_agui_input(mapped),
+                        protocol_context=mapped.protocol_context,
                         agent_id=agent_id,
                         agent_revision_id=mapped.agent_revision_id,
                         config_override=mapped.config_override,
@@ -699,6 +706,7 @@ class HostedAguiService:
             name="state",
         )
         context = [item.model_dump(mode="json", by_alias=True, exclude_none=True) for item in request.context]
+        protocol_context = ProtocolInputContext.model_validate({"state": request.state, "context": context})
         _validate_protocol_value(
             context,
             schema=config.protocol.context_schema,
@@ -750,6 +758,7 @@ class HostedAguiService:
                 resolutions=resolutions,
                 agent_revision_id=revision_id,
                 config_override=config_override,
+                protocol_context=protocol_context,
             )
         if tool_resolution is not None:
             if thread is None or history is None:
@@ -771,6 +780,7 @@ class HostedAguiService:
                 resolutions=(tool_resolution,),
                 agent_revision_id=revision_id,
                 config_override=config_override,
+                protocol_context=protocol_context,
             )
         if not request.messages or not isinstance(request.messages[-1], UserMessage):
             raise HostedAguiError(
@@ -803,6 +813,7 @@ class HostedAguiService:
             resolutions=None,
             agent_revision_id=revision_id,
             config_override=config_override,
+            protocol_context=protocol_context,
         )
 
     async def _load_protocol_revision(

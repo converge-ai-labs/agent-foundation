@@ -32,7 +32,7 @@ from a13n_service.object_retention.persistence import require_object_publication
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .audit import asset_audit_record
+from .audit import asset_audit_record, record_publication_denied
 from .domain import Asset, AssetRef, RunOutputAssetSource
 from .errors import AssetError, asset_content_invalid, asset_idempotency_conflict
 from .models import AssetRecord
@@ -80,36 +80,43 @@ class AssetRuntime:
         if not 1 <= len(invocation_id) <= 128:
             raise asset_content_invalid()
         authority = current_context()
-        async with short_session(self._sessions) as session:
-            await self._authorize(session, authority, selection, lock=False)
-        route = await environment.resolve_files(path)
-        default = next(
-            (mount for mount in environment.snapshot.mounts if mount.name == environment.snapshot.default_mount), None
-        )
-        if (
-            default is None
-            or route.resolved_path.mount_id
-            != environment.select_files(default.mount_path or f"/environment/{default.name}").resolved_path.mount_id
-        ):
-            raise asset_content_invalid()
-        async with self._publisher.stage(
-            organization_id=authority.organization_id,
-            workspace_id=selection.workspace_id,
-            source=RunOutputAssetSource(run_id=authority.run_id),
-            filename=PurePosixPath(path).name if filename is None else filename,
-            media_type=media_type,
-            body=_file_contents(environment, route),
-            content_length=None,
-        ) as candidate:
-            try:
-                await self._publisher.publish(candidate)
-                current = current_context()
-                if current.run_attempt_id != authority.run_attempt_id:
-                    raise asset_content_invalid()
-                return await self._commit(candidate.asset, current, selection, invocation_id)
-            finally:
-                # Unknown commit outcomes are reconciled through relational ownership.
-                await self._discard_unowned(candidate.asset)
+        try:
+            async with short_session(self._sessions) as session:
+                await self._authorize(session, authority, selection, lock=False)
+            route = await environment.resolve_files(path)
+            default = next(
+                (mount for mount in environment.snapshot.mounts if mount.name == environment.snapshot.default_mount),
+                None,
+            )
+            if (
+                default is None
+                or route.resolved_path.mount_id
+                != environment.select_files(default.mount_path or f"/environment/{default.name}").resolved_path.mount_id
+            ):
+                raise asset_content_invalid()
+            async with self._publisher.stage(
+                organization_id=authority.organization_id,
+                workspace_id=selection.workspace_id,
+                source=RunOutputAssetSource(run_id=authority.run_id),
+                filename=PurePosixPath(path).name if filename is None else filename,
+                media_type=media_type,
+                body=_file_contents(environment, route),
+                content_length=None,
+            ) as candidate:
+                try:
+                    await self._publisher.publish(candidate)
+                    current = current_context()
+                    if current.run_attempt_id != authority.run_attempt_id:
+                        raise asset_content_invalid()
+                    return await self._commit(candidate.asset, current, selection, invocation_id)
+                finally:
+                    # Unknown commit outcomes are reconciled through relational ownership.
+                    await self._discard_unowned(candidate.asset)
+        except AuthorizationError:
+            await record_publication_denied(
+                self._sessions, authority=authority, workspace_id=selection.workspace_id, clock=self._clock
+            )
+            raise
 
     async def _commit(
         self, asset: Asset, authority: AttemptContext, selection: PublicationSelection, invocation_id: str
@@ -165,6 +172,8 @@ class AssetRuntime:
                     asset_id=asset.id,
                     action="asset.create",
                     source_kind="run_output",
+                    run_id=authority.run_id,
+                    run_attempt_id=authority.run_attempt_id,
                     now=now,
                 )
             )
