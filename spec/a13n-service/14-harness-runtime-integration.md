@@ -12,18 +12,19 @@ This contract owns the concrete integration profile. The generic public Harness 
 
 ## Boundaries
 
-| Concern                                                                                       | Owner                                 | Integration rule                                                                                |
-| --------------------------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Agent definition, Capability composition, Pydantic model/tool loop, and process-local cleanup | Harness                               | Service supplies trusted constructed values and does not inspect private graph state            |
-| Run, RunAttempt, lease, fence, recovery budget, and terminal lifecycle                        | Service                               | No Harness value creates, transfers, or proves durable authority                                |
-| Complete portable messages and Capability state                                               | Harness                               | Export is detached observation; Service attachment mounts publish no provider target state      |
-| Durable checkpoint selection and conditional publication                                      | Service                               | Only the current fenced Attempt may publish or select `state.json`                              |
-| Model, input, context, Environment, and policy collaborators                                  | Service through public Harness fields | Values are fresh for the logical Harness Run and never restored from `HarnessState`             |
-| Agent-loop lifecycle rendezvous                                                               | Pydantic Capability hooks             | Capability borrows context, obtains a driver-owned hook boundary, and awaits the control facade |
-| Outer semantic-input/event/result middleware                                                  | Harness plugins                       | Plugins remain separate from Service control and cannot replace its mandatory Capability        |
-| Harness stream and callback-context API adaptation                                            | Executor-owned `HarnessDriver`        | The driver is the sole stream owner and creates one ephemeral adapter for each awaited hook     |
-| Live events and terminal result                                                               | Harness stream through the driver     | Backpressured process-local observations; Service decides what becomes durable or public        |
-| Thread-control wakeup                                                                         | Service Redis contract                | Service-internal hint containing no business payload; not a Harness communication channel       |
+| Concern                                                                                       | Owner                                                                                        | Integration rule                                                                                                    |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Agent definition, Capability composition, Pydantic model/tool loop, and process-local cleanup | Harness                                                                                      | Service supplies trusted constructed values and does not inspect private graph state                                |
+| Run, RunAttempt, lease, fence, execution budget, and terminal lifecycle                       | Service                                                                                      | No Harness value creates, transfers, or proves durable authority                                                    |
+| Planned-handoff sequence, yield, renewal, and deadline                                        | [RunAttempt handoff](13-run-attempt-scheduling-and-recovery.md#graceful-handoff-transaction) | This integration supplies safe hooks and local quiescence/cleanup; local cancellation does not commit a Run outcome |
+| Complete portable messages and Capability state                                               | Harness                                                                                      | Export is detached observation; Service attachment mounts publish no provider target state                          |
+| Durable checkpoint selection and conditional publication                                      | Service                                                                                      | Only the current fenced Attempt may publish or select `state.json`                                                  |
+| Model, input, context, Environment, and policy collaborators                                  | Service through public Harness fields                                                        | Values are fresh for the logical Harness Run and never restored from `HarnessState`                                 |
+| Agent-loop lifecycle rendezvous                                                               | Pydantic Capability hooks                                                                    | Capability borrows context, obtains a driver-owned hook boundary, and awaits the control facade                     |
+| Outer semantic-input/event/result middleware                                                  | Harness plugins                                                                              | Plugins remain separate from Service control and cannot replace its mandatory Capability                            |
+| Harness stream and callback-context API adaptation                                            | Executor-owned `HarnessDriver`                                                               | The driver is the sole stream owner and creates one ephemeral adapter for each awaited hook                         |
+| Live events and terminal result                                                               | Harness stream through the driver                                                            | Backpressured process-local observations; Service decides what becomes durable or public                            |
+| Thread-control wakeup                                                                         | Service Redis contract                                                                       | Service-internal hint containing no business payload; not a Harness communication channel                           |
 
 ## Security Boundary
 
@@ -85,7 +86,9 @@ class ModelContextMiddleware(Protocol):
 
 ## RunAttempt Executor Lifetime
 
-`RunAttemptExecutor` is the process-local lifetime owner that converts one successful claim into at most one Harness Run. It is a conceptual component name, not a durable `Execution` resource, wire schema, or commitment to one exact Python class or task library. Its claim-derived `AttemptContext` carries immutable organization, Thread, Run, Attempt, Worker, build, Runtime-lock, fence, lease-proof, and fixed-policy correlation plus the current expected relational versions and lease deadline advanced from successful fenced operations. The context contains no open database session, credential, Harness object, or authority independent of PostgreSQL revalidation.
+`RunAttemptExecutor` is the process-local lifetime owner that converts one successful claim into at most one Harness Run. It is a conceptual component name, not a durable `Execution` resource, wire schema, or commitment to one exact Python class or task library. Its claim-derived `AttemptContext` carries immutable organization, Thread, Run, Attempt, Worker, build, Runtime-lock, fence, lease-proof, and fixed-policy correlation. Relational versions are not carried as Worker authority; each operation validates current rows under its required read or lock. The context contains no open database session, credential, Harness object, or authority independent of PostgreSQL revalidation.
+
+Preparation has explicit stages: claim the complete state writer, validate dependencies against that final state, commit the relational preparation decision, reconcile restored receipts, and either adopt an outcome or open fresh runtime collaborators. Input materialization is shared by initial and inbox delivery and receives the frozen Agent configuration explicitly; it does not depend on a later-created preparer. Outcome verification returns a typed verified value before the short relational commit. Ordinary finalization and recovery adoption use the same coordinator and return an Attempt outcome, including `continuing` when eligible pending input prevents completed sealing. No object I/O is hidden inside a database-lock callback.
 
 ```mermaid
 flowchart TB
@@ -180,9 +183,11 @@ After confirmed state claim, the fenced preparation decision, and recovery recei
 
 1. reconstructs the accepted Agent specification, exact managed plugin set, Skill and subagent composition, output contract, and model selection;
 2. uses the existing Attempt-scoped `RunAttemptControl` and its bound `HarnessDriver`; the facade retains the current `AttemptContext`, final recovery state, private gate, and executor cancellation binding without exposing them to Agent code;
-3. inserts one direct `RunControlCapability` with ID `a13n.foundation.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
+3. inserts one direct `RunControlCapability` with ID `a13n.service.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
 4. requires the Harness build to validate finalized Capability identity and ordering, rejecting a duplicate reserved ID or an incompatible outer wrapper; and
 5. calls `HarnessBuilder.build(definition)`.
+
+Service reconstruction includes one fresh `DynamicEnvironmentCapability(DynamicEnvironmentConfiguration())` in each root and inline child `AgentDefinition.capabilities`. An asynchronous child receives the same composition when its own Attempt reconstructs its root definition. This trusted Service composition exposes the standard Environment file and shell tools, Run-local process observations, and mount-change notices under the [Harness Environment contract](../a13n-harness/08-environment-integration.md#model-context-projection). Effective mount access and Provider descriptors determine the available tools: a missing Environment exposes none, file-only access exposes no shell, and shell requires the corresponding Provider action and accepted `full` access. Capability construction and tool discovery do not prepare a lazy Environment. The capability is definition behavior, not a managed Plugin, a selectable capability overlay entry, or a `RunBindings` attachment; it does not select an Environment or broaden Run authority.
 
 The control Capability contributes no instructions, model settings, Toolset, native tool, output type, or model-facing description. Its ordering is `CapabilityOrdering(position="outermost")`, and Service supplies it before plugin-contributed Capabilities at the same tier. It observes the effective downstream response or node result, returns those values unchanged, borrows each raw Harness context only to obtain a driver-owned callback boundary, and performs Service decisions through `RunAttemptControl`. Neither collaborator can outlive the executor or act as a service locator.
 
@@ -210,7 +215,7 @@ class RunControlCapability(
     control: RunAttemptControl
     driver: HarnessDriver
     binding: HarnessContextBinding | None = None
-    id: str = "a13n.foundation.run-control"
+    id: str = "a13n.service.run-control"
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
@@ -294,16 +299,20 @@ async def execute_attempt(ctx: AttemptContext, capacity_slot: CapacitySlot):
             await tasks.start(LeaseMonitor(ctx, control).run)
             await tasks.start(ControlWatcher(ctx, control).run)
             try:
-                state = await control.read_validate_and_claim_state()
+                state = await control.read_validate_and_claim_state_writer()
                 prepared = await validate_recovery_dependencies(ctx, state)
                 decision = await control.commit_preparation(prepared)
                 if decision.permits_continuation:
                     await control.reconcile_recovery_state()
+                    outcome = None
                     if control.current_state.outcome_candidate is not None:
-                        await control.recover_outcome()
-                    else:
+                        outcome = await control.recover_outcome()
+                    if outcome is None:  # No candidate, or pending input requires execution.
                         async with prepare_invocation_resources(ctx, control.current_state) as invocation:
-                            candidate = await driver.run(invocation, preparation=decision)
+                            try:
+                                candidate = await driver.run(invocation, preparation=decision)
+                            finally:
+                                await control.close_delivery()
                         await control.finalize(candidate)
             except AttemptAuthorityLost:
                 await control.authority_lost()
@@ -315,6 +324,8 @@ async def execute_attempt(ctx: AttemptContext, capacity_slot: CapacitySlot):
     finally:
         capacity_slot.release()
 ```
+
+Before runtime cleanup, the executor closes input delivery under the control gate, joining any in-flight offer. Receipt confirmation, lease renewal, and outcome commit remain available; pending input is handled by the completion race contract.
 
 The illustrated state/decision helpers are conceptual operations, not additional durable types or prescribed private APIs. Monitor startup establishes renewal supervision before the first state request. Classified failure handling revalidates authority and follows the preparation or execution failure contract; cancellation and unknown database outcomes never authorize an unfenced fallback write. The driver records fenced Harness entry before beginning model or tool execution. Fresh Environment preparation follows `on_run` or `on_use` only on the Harness continuation branch, while result adoption still verifies all dependencies required by its outcome contract.
 
@@ -586,21 +597,21 @@ Consequently, â€œacquire the run-control barrier and then call `export_state()`â
 | After a complete tool batch                                                        | `RunControlCapability.after_node_run()` with `CallToolsNode`                     | All results for that node are in the complete public boundary; a pending handoff can checkpoint and cancel before the next node  |
 | Waiting or completed terminal result                                               | `HarnessRunResultEvent` consumed by the driver and returned to the executor root | Service commits the ordinary outcome rather than converting it to `yielded`                                                      |
 
+A resumed completed candidate is not eligible for the direct stream-entry handoff boundary: its newly prepared continuation input is not yet incorporated into Harness history. Handoff waits for the first model-request hook to publish progress with the new input receipts, then follows ordinary checkpoint confirmation and yield.
+
 `after_model_request()` is not by itself a planned-handoff checkpoint hook. Although the provider response is complete, downstream tool handling, output validation, deferred classification, or terminal normalization may still be pending. It exists in this integration for the waiting-successor first-request gate. A handoff requested during a model response waits for the next `before_model_request()`, complete `CallToolsNode` boundary, or ordinary terminal result.
 
 Inside an awaited Capability hook, `RunAttemptControl` asks the current `HarnessHookBoundary` to export the complete public message sequence; the driver-owned boundary maps that call to callback-local `AgentContext.export_state(complete_messages)`. Outside the inner Pydantic callback, the facade asks `HarnessDriver` to use `HarnessRunStream.export_state()` while the stream is entered and the same quiescent condition holds. Neither method persists data. A callback never recursively calls a stream method whose completion depends on the callback returning; the explicit boundary selects the non-reentrant hook-local path without exposing raw context to the facade.
 
 ### Planned-Handoff Flow
 
-1. Drain or Runner rotation calls `RunAttemptControl.request_handoff(...)`; the facade records the request in its private gate. The Attempt continues heartbeat and lease renewal.
-2. If model, tool, inline-child, input, enqueue, or checkpoint work is active, Service waits. The request does not make that work safe and does not invoke state export concurrently.
-3. At the next eligible direct boundary, `before_model_request()`, or `after_node_run(CallToolsNode)`, the executor root or awaited Service Capability calls `RunAttemptControl`; the facade enters its critical section and revalidates current Attempt, lease, fence, handoff budget, and absence of a winning interrupt or terminal decision.
-4. The callback reconciles required inbox work, exports complete Harness and Host state, and conditionally publishes or confirms the matching `state.json`. A published checkpoint remains an ordinary recovery checkpoint and contains no handoff marker.
-5. After checkpoint confirmation, the facade terminally closes admission and asks `HarnessDriver` to call the public idempotent `HarnessRunStream.cancel()` path before releasing the boundary. This cancellation is process-local quiescence, not the durable `cancelled` Run outcome.
-6. The driver leaves the stream context; the executor root closes Runtime resources and asks the facade to attempt the short fenced `yielded` transaction while `LeaseMonitor` continues. It commits `yield_reason="service_drain"` or `"runner_rotation"` only when the same Attempt still owns the Run and no ordinary outcome, interrupt, or failure has won.
-7. Only a successful `yielded` commit stops renewal and makes the still-running Run eligible for a planned-handoff successor. A failed yield CAS does not free the Run; the executor reconciles the winning durable state.
+[Graceful Handoff Transaction](13-run-attempt-scheduling-and-recovery.md#graceful-handoff-transaction) owns the complete sequence, budget and authority checks, checkpoint confirmation, continued renewal, yield commit, deadline handling, and successor admission. This section owns the local request, safe-hook rendezvous, cancellation, and cleanup used by that sequence.
 
-If checkpoint publication cannot be confirmed, Service does not cancel the local run solely for handoff and does not commit `yielded`; it retains the lease and retries at a later safe boundary until the drain deadline. Recorded inbox incorporations remain available across this deferral and any compaction; no local record or unconfirmed write marks an inbox entry consumed. If the deadline arrives first, the executor fences local work, stops renewal, and exits. Another Worker may take over only after the recorded lease expires.
+1. Drain or Runner rotation calls `RunAttemptControl.request_handoff(...)`; the facade records the request in its private gate.
+2. While model, tool, inline-child, input, enqueue, or checkpoint work is active, the local path waits. The request creates no safe boundary and never invokes state export concurrently.
+3. At an eligible direct boundary, `before_model_request()`, or `after_node_run(CallToolsNode)`, the executor root or awaited Service Capability calls the facade. It enters its critical section and applies the owning handoff admission checks. Required inbox reconciliation and complete Harness/Host export occur within that boundary under the [active-control contract](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption); publication and confirmation follow the owning handoff sequence.
+4. Only after matching checkpoint confirmation does the facade terminally close admission and ask `HarnessDriver` to call the public idempotent `HarnessRunStream.cancel()` path before releasing the boundary. This is process-local quiescence, not a durable `cancelled` Run outcome. An unconfirmed checkpoint does not trigger cancellation solely for handoff; local incorporation records remain available while the owning flow defers handoff.
+5. The driver leaves the stream context and the executor root closes Runtime resources before asking the facade to attempt the owning yield transaction. `LeaseMonitor` continues under the renewal and deadline rules in that contract; local cleanup alone never releases durable Attempt authority.
 
 ## Compatibility
 

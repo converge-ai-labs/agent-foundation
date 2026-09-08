@@ -6,21 +6,35 @@ import posixpath
 from collections.abc import AsyncIterable, AsyncIterator
 
 import httpx2
-from a13n_harness import AgentContext
+from a13n_harness import AgentContext, RunInputValue
 from a13n_harness.environment.providers import BoundEnvironment
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.assets.models import AssetRecord
+from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.assets.errors import AssetError
 from a13n_service.assets.objects import AssetObjectStore
+from a13n_service.assets.queries import require_active_asset
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_workspace_principal_action
 from a13n_service.storage import short_session
+from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
 
-from .domain import Run
+from .control_domain import ThreadInboxEntry, ThreadInboxKind
+from .domain import Run, RunPayloadObjectRef
 from .harness_control import RunControlCapability
-from .input import AcquiredBinary, AgentInputError, BinaryContentSource, PathBinarySource, UrlBinarySource
+from .input import (
+    AcceptedAgentInput,
+    AcquiredBinary,
+    AgentInputError,
+    AgentInputMapper,
+    BinaryContentSource,
+    PathBinarySource,
+    UrlBinarySource,
+    native_input_adapter,
+)
+from .objects import RunPayloadStore
 
 
 class WorkerInputSources:
@@ -73,10 +87,15 @@ class WorkerInputSources:
                 workspace_id=self._workspace_id,
                 action=WorkspaceAction.asset_use,
             )
-            row = await session.get(AssetRecord, source.asset_id)
-            if row is None or row.workspace_id != self._workspace_id or row.deleted_at is not None:
-                raise AgentInputError("input_asset_unavailable", "The accepted Asset is unavailable")
-            asset = row.to_resource()
+            try:
+                asset = await require_active_asset(
+                    session,
+                    organization_id=self._run.organization_id,
+                    workspace_id=self._workspace_id,
+                    asset_id=source.asset_id,
+                )
+            except AssetError as error:
+                raise AgentInputError("input_asset_unavailable", "The accepted Asset is unavailable") from error
         if asset.size_bytes > max_bytes:
             raise AgentInputError("input_binary_too_large", "The Asset exceeds the accepted input limit")
 
@@ -109,7 +128,7 @@ class WorkerInputSources:
 class WorkerInputCapability(AbstractCapability[AgentContext]):
     """Bind only the current logical Run's entered input Environment."""
 
-    id = "a13n.foundation.input-environment"
+    id = "a13n.service.input-environment"
 
     def __init__(self, sources: WorkerInputSources) -> None:
         self._sources = sources
@@ -120,3 +139,47 @@ class WorkerInputCapability(AbstractCapability[AgentContext]):
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         self._sources.environment = ctx.deps.environment
         return self
+
+
+class WorkerInputMaterializer:
+    """Map initial and inbox inputs through the same fresh Worker resources."""
+
+    def __init__(
+        self,
+        sources: WorkerInputSources,
+        payloads: RunPayloadStore,
+        async_results: AsyncSubagentResultMaterializer,
+    ) -> None:
+        self._sources = sources
+        self._payloads = payloads
+        self._async_results = async_results
+
+    async def inbox(self, entry: ThreadInboxEntry, config: EffectiveAgentConfig) -> RunInputValue:
+        if entry.kind is ThreadInboxKind.async_subagent_result:
+            return await self._async_results(entry)
+        payload = entry.payload
+        if entry.payload_object is not None:
+            stored = await self._payloads.read(
+                entry.organization_id,
+                RunPayloadObjectRef.model_validate(entry.payload_object.model_dump()),
+            )
+            if stored.run_id != entry.accepted_against_run_id or stored.payload_kind != "input":
+                raise ValueError("Inbox payload object does not belong to its accepted Run")
+            payload = stored.payload
+        return await self.map(AcceptedAgentInput.model_validate(payload), entry.id, config)
+
+    async def map(self, accepted: AcceptedAgentInput, instance_id: str, config: EffectiveAgentConfig) -> RunInputValue:
+        mapper = AgentInputMapper(
+            self._sources,
+            {"native": native_input_adapter},
+            max_binary_bytes=config.protocol.limits.max_input_bytes,
+        )
+        value = await mapper.map(
+            accepted,
+            input_instance_id=instance_id,
+            adapter=config.input_adapter,
+            environment=self._sources if self._sources.environment is not None else None,
+        )
+        if value is None:
+            raise ValueError("Accepted input produced no semantic content")
+        return value

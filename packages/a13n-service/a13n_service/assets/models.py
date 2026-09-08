@@ -22,6 +22,10 @@ class AssetRecord(Base):
             ("workspaces.id", "workspaces.organization_id"),
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ("source_run_attempt_id", "organization_id"),
+            ("run_attempts.id", "run_attempts.organization_id"),
+        ),
         CheckConstraint("length(filename) BETWEEN 1 AND 256", name="filename_bounded"),
         CheckConstraint("filename = trim(filename)", name="filename_trimmed"),
         CheckConstraint("length(media_type) BETWEEN 3 AND 255", name="media_type_bounded"),

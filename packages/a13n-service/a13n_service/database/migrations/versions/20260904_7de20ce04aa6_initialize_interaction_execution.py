@@ -167,14 +167,13 @@ def upgrade() -> None:
         sa.Column("queue_name", sa.String(length=256), nullable=False),
         sa.Column("available_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("current_run_attempt_id", sa.String(length=72), nullable=True),
-        sa.Column("next_attempt_fence", sa.BigInteger(), nullable=False),
-        sa.Column("recovery_policy_version", sa.String(length=32), nullable=False),
-        sa.Column("max_recovery_attempts", sa.Integer(), nullable=False),
+        sa.Column("execution_policy_version", sa.String(length=32), nullable=False),
+        sa.Column("max_attempts", sa.Integer(), nullable=False),
         sa.Column("max_handoffs", sa.Integer(), nullable=False),
-        sa.Column("recovery_deadline_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("execution_deadline_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("max_usage_json", sa.JSON(none_as_null=True), nullable=True),
         sa.Column("attempts_started", sa.Integer(), nullable=False),
-        sa.Column("recovery_attempts_started", sa.Integer(), nullable=False),
+        sa.Column("attempts_charged", sa.Integer(), nullable=False),
         sa.Column("handoffs_completed", sa.Integer(), nullable=False),
         sa.Column("usage_charged_json", sa.JSON(), nullable=False),
         sa.Column("idempotency_key", sa.String(length=256), nullable=True),
@@ -281,13 +280,12 @@ def upgrade() -> None:
         sa.CheckConstraint("length(request_fingerprint) = 64", name=op.f("ck_runs_request_fingerprint_sha256")),
         sa.CheckConstraint("length(runtime_lock_digest) = 64", name=op.f("ck_runs_runtime_lock_digest_sha256")),
         sa.CheckConstraint(
-            "max_recovery_attempts >= 0 AND max_handoffs >= 0 AND attempts_started >= 0 AND recovery_attempts_started >= 0 AND handoffs_completed >= 0",
-            name=op.f("ck_runs_recovery_values_non_negative"),
+            "max_attempts >= 0 AND max_handoffs >= 0 AND attempts_started >= 0 AND attempts_charged >= 0 AND handoffs_completed >= 0",
+            name=op.f("ck_runs_execution_values_non_negative"),
         ),
-        sa.CheckConstraint("next_attempt_fence >= 1", name=op.f("ck_runs_next_attempt_fence_positive")),
         sa.CheckConstraint(
-            "recovery_attempts_started <= max_recovery_attempts AND handoffs_completed <= max_handoffs AND recovery_attempts_started <= attempts_started AND attempts_started <= recovery_attempts_started + handoffs_completed",
-            name=op.f("ck_runs_recovery_counts_valid"),
+            "attempts_charged <= max_attempts AND handoffs_completed <= max_handoffs AND attempts_charged <= attempts_started AND attempts_started <= attempts_charged + handoffs_completed",
+            name=op.f("ck_runs_execution_counts_valid"),
         ),
         sa.CheckConstraint("version >= 1", name=op.f("ck_runs_version_positive")),
         sa.ForeignKeyConstraint(["agent_id"], ["agents.id"], name=op.f("fk_runs_agent_id_agents"), ondelete="RESTRICT"),
@@ -398,13 +396,11 @@ def upgrade() -> None:
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("run_id", sa.String(length=72), nullable=False),
-        sa.Column("attempt_number", sa.Integer(), nullable=False),
-        sa.Column("fence", sa.BigInteger(), nullable=False),
+        sa.Column("attempt_number", sa.BigInteger(), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("replaces_run_attempt_id", sa.String(length=72), nullable=True),
-        sa.Column("recovery_reason", sa.String(length=256), nullable=True),
+        sa.Column("start_reason", sa.String(length=256), nullable=True),
         sa.Column("worker_id", sa.String(length=256), nullable=False),
-        sa.Column("worker_generation", sa.String(length=256), nullable=False),
         sa.Column("worker_build_id", sa.String(length=256), nullable=False),
         sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
         sa.Column("harness_run_id", sa.String(length=256), nullable=True),
@@ -416,7 +412,6 @@ def upgrade() -> None:
         sa.Column("yield_reason", sa.String(length=32), nullable=True),
         sa.Column("failure_json", sa.JSON(none_as_null=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -425,7 +420,7 @@ def upgrade() -> None:
             name=op.f("ck_run_attempts_failure_lifecycle_valid"),
         ),
         sa.CheckConstraint(
-            "(status = 'leased' AND harness_run_id IS NULL AND started_at IS NULL) OR (status IN ('running', 'succeeded') AND harness_run_id IS NOT NULL AND started_at IS NOT NULL) OR (status IN ('yielded', 'failed', 'cancelled') AND ((harness_run_id IS NULL AND started_at IS NULL) OR (harness_run_id IS NOT NULL AND started_at IS NOT NULL)))",
+            "(status = 'leased' AND harness_run_id IS NULL AND started_at IS NULL) OR (status = 'running' AND harness_run_id IS NOT NULL AND started_at IS NOT NULL) OR (status IN ('succeeded', 'yielded', 'failed', 'cancelled') AND ((harness_run_id IS NULL AND started_at IS NULL) OR (harness_run_id IS NOT NULL AND started_at IS NOT NULL)))",
             name=op.f("ck_run_attempts_harness_lifecycle_valid"),
         ),
         sa.CheckConstraint(
@@ -445,14 +440,10 @@ def upgrade() -> None:
             name=op.f("ck_run_attempts_yield_reason_valid"),
         ),
         sa.CheckConstraint("attempt_number >= 1", name=op.f("ck_run_attempts_attempt_number_positive")),
-        sa.CheckConstraint("fence >= 1", name=op.f("ck_run_attempts_fence_positive")),
         sa.CheckConstraint("length(lease_token_digest) = 64", name=op.f("ck_run_attempts_lease_token_digest_sha256")),
         sa.CheckConstraint("length(runtime_lock_digest) = 64", name=op.f("ck_run_attempts_runtime_lock_digest_sha256")),
         sa.CheckConstraint(
             "length(worker_build_id) BETWEEN 1 AND 256", name=op.f("ck_run_attempts_worker_build_id_bounded")
-        ),
-        sa.CheckConstraint(
-            "length(worker_generation) BETWEEN 1 AND 256", name=op.f("ck_run_attempts_worker_generation_bounded")
         ),
         sa.CheckConstraint("length(worker_id) BETWEEN 1 AND 256", name=op.f("ck_run_attempts_worker_id_bounded")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_run_attempts_version_positive")),
@@ -481,7 +472,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("status IN ('leased', 'running')"),
         sqlite_where=sa.text("status IN ('leased', 'running')"),
     )
-    op.create_index("uq_run_attempts_fence", "run_attempts", ["organization_id", "run_id", "fence"], unique=True)
     op.create_index(
         "uq_run_attempts_number", "run_attempts", ["organization_id", "run_id", "attempt_number"], unique=True
     )
@@ -551,7 +541,6 @@ def downgrade() -> None:
         op.drop_constraint("fk_threads_current_run_same_thread", "threads", type_="foreignkey")
     op.drop_index("uq_run_attempts_organization_id", table_name="run_attempts")
     op.drop_index("uq_run_attempts_number", table_name="run_attempts")
-    op.drop_index("uq_run_attempts_fence", table_name="run_attempts")
     op.drop_index(
         "ix_run_attempts_live_lease",
         table_name="run_attempts",

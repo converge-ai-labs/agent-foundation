@@ -56,14 +56,14 @@ class CompositionAcceptanceService:
             ResourceIndexEntry(
                 generation_digest=source.source_digest,
                 resource_kind=item.resource_kind,
-                resource_id=item.resource_id,
-                name=_resource_name(source, item.resource_kind, item.resource_id),
+                resource_id=resource_id,
+                name=_resource_name(source, item.resource_kind, resource_id),
                 relative_path=item.relative_path,
                 source_digest=item.source_digest,
-                normalized_digest=canonical_digest(_resource_value(source, item.resource_kind, item.resource_id)),
+                normalized_digest=canonical_digest(_resource_value(source, item.resource_kind, resource_id)),
             )
             for item in source.sources
-            if item.resource_id is not None
+            for resource_id in item.indexed_resource_ids
         )
         await self._store.configurations.accept(
             generation_digest=source.source_digest,

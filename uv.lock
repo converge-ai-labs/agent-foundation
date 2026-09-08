@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -174,6 +174,7 @@ dependencies = [
 
 [package.dev-dependencies]
 test = [
+    { name = "fastmcp" },
     { name = "pyright" },
     { name = "pytest" },
 ]
@@ -216,6 +217,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 test = [
+    { name = "fastmcp", specifier = ">=3.4,<4" },
     { name = "pyright", specifier = ">=1.1,<2" },
     { name = "pytest", specifier = ">=9,<10" },
 ]
@@ -359,6 +361,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "deptry" },
+    { name = "fastmcp" },
     { name = "grpcio-tools" },
     { name = "mdformat" },
     { name = "mdformat-footnote" },
@@ -384,6 +387,7 @@ docs = [
 [package.metadata.requires-dev]
 dev = [
     { name = "deptry", specifier = ">=0.25,<0.26" },
+    { name = "fastmcp", specifier = ">=3.4,<4" },
     { name = "grpcio-tools", specifier = ">=1.75,<2" },
     { name = "mdformat", specifier = "==1.0.0" },
     { name = "mdformat-footnote", specifier = "==0.1.3" },

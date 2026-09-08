@@ -220,7 +220,7 @@ class Settings(BaseSettings):
     gateway_notification_max_topics: int = Field(default=128, ge=1, le=4096)
     gateway_notification_poll_limit: int = Field(default=100, ge=1, le=1000)
     gateway_notification_maximum_lifetime_seconds: float = Field(default=3600, gt=0, le=86_400)
-    gateway_run_recovery_max_attempts: int = Field(default=3, ge=0, le=100)
+    gateway_run_execution_max_attempts: int = Field(default=3, ge=0, le=100)
     gateway_run_max_handoffs: int = Field(default=2, ge=0, le=100)
     gateway_run_queue_name: str = Field(default="default", pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")
     gateway_run_priority: int = Field(default=0, ge=-1_000_000, le=1_000_000)

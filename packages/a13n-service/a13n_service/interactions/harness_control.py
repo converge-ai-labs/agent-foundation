@@ -26,7 +26,7 @@ from pydantic_ai.models import ModelRequestContext
 from .attempts import AttemptContext, AttemptPreparationAccepted
 from .objects import StoredRunState
 
-RUN_CONTROL_CAPABILITY_ID = "a13n.foundation.run-control"
+RUN_CONTROL_CAPABILITY_ID = "a13n.service.run-control"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +77,7 @@ class HarnessControlDriver(Protocol):
 
     def validate_boundary(self, boundary: HarnessHookBoundary) -> None: ...
 
-    async def steer(self, input: RunInputValue) -> str: ...
+    async def steer(self, input: RunInputValue) -> str | None: ...
 
     async def cancel(self) -> None: ...
 
@@ -259,7 +259,7 @@ def validate_control_order(capabilities: Sequence[AbstractCapability[AgentContex
     controls = [cap for cap in capabilities if cap.id == RUN_CONTROL_CAPABILITY_ID]
     if len(controls) != 1 or type(controls[0]) is not RunControlCapability:
         raise DefinitionError(
-            "Service control Capability identity is invalid.", code="foundation_control_identity_mismatch"
+            "Service control Capability identity is invalid.", code="service_control_identity_mismatch"
         )
     # Harness validates the exact types and provenance behind these reserved IDs.
     infrastructure = {
@@ -281,7 +281,7 @@ def validate_control_order(capabilities: Sequence[AbstractCapability[AgentContex
         if any(getattr(type(cap), hook) is not getattr(AbstractCapability, hook) for hook in hooks):
             raise DefinitionError(
                 "A Capability wraps the mandatory Service control hooks.",
-                code="foundation_control_order_invalid",
+                code="service_control_order_invalid",
             )
 
 

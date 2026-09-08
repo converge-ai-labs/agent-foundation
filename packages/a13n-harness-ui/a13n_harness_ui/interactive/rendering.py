@@ -34,6 +34,7 @@ class Status:
     agent: str = "not configured"
     model: str = "not configured"
     thinking: str = "default"
+    service_tier: str | None = None
     environment: str = "not selected"
     directory: Path | None = None
     context_window: int | None = None
@@ -98,7 +99,7 @@ class Status:
         usage = self.usage
         cost = "unknown" if usage.cost is None else f"USD {usage.cost:.6f} (model estimate, not subscription billing)"
         return (
-            f"Observed root Thread: {self.requests} requests · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
+            f"Observed root Thread: {self.requests} requests · {self.total_tokens:,} total tokens · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
             f"Cache read {usage.cache_read_tokens:,} · cache write {usage.cache_write_tokens:,} (provider-reported counters)\n"
             f"Cache rate: {self.cache_rate_text} of input + output. "
             f"Cost: {cost}. Child and non-model usage excluded."
@@ -108,6 +109,14 @@ class Status:
     def cache_rate_text(self) -> str:
         return "--" if self.cache_rate is None else f"{self.cache_rate:.1f}%"
 
+    @property
+    def total_tokens(self) -> int | None:
+        return None if self.usage is None else self.usage.input_tokens + self.usage.output_tokens
+
+    @property
+    def service_tier_text(self) -> str:
+        return "Fast (priority)" if self.service_tier == "priority" else self.service_tier or "provider default"
+
     def line(self, width: int | None = None) -> str:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
         from prompt_toolkit.utils import get_cwidth
@@ -116,8 +125,24 @@ class Status:
         if self.context_tokens is not None and self.context_window:
             context += f" ({100 * self.context_tokens / self.context_window:.0f}%)"
         cost = "cost --" if self.usage is None or self.usage.cost is None else f"${self.usage.cost:.4f}"
+        compact = width is not None and width < 60
+        total = self.total_tokens
+        token_count = "--"
+        if total is not None:
+            token_count = (
+                f"{total / 1_000_000:.1f}M"
+                if total >= 1_000_000
+                else f"{total / 1_000:.1f}K"
+                if total >= 1000
+                else str(total)
+            )
+        state = self.state.capitalize()
+        if compact and self.service_tier == "priority":
+            state += " Fast"
         fields = [
-            self.state.capitalize(),
+            state,
+            *(("Fast",) if not compact and self.service_tier == "priority" else ()),
+            f"{'tok' if compact else 'tokens'} {token_count}",
             f"ctx {context}",
             f"cache {self.cache_rate_text}",
             cost,
@@ -289,6 +314,10 @@ class StreamRenderer:
         self.transcript.preview(block, terminal_text(brief), 1)
         self.append(brief + "\n", display=False)
 
+    @property
+    def note_count(self) -> int | None:
+        return None if self._notes is None else self._notes.total
+
     def restore_notes(self, page: NotePage, *, force: bool = False) -> None:
         previous = self._notes
         self._notes = page
@@ -304,7 +333,17 @@ class StreamRenderer:
             lines.append(
                 f"[{page.omitted} notes omitted: 256-note / 256 KiB display budget. Saved values are unchanged.]"
             )
-        self.append("\n".join(lines).rstrip() + "\n", kind="notes")
+        source = "\n".join(lines).rstrip() + "\n"
+        block = self.transcript.append(terminal_text(source), kind="notes")
+        if not force:
+            brief = lines[0]
+            if page.omitted:
+                brief += f" · {page.omitted} omitted"
+            brief += " · Ctrl+O details"
+            if page.notes:
+                brief += " · " + ", ".join(" ".join(note.key.split()) for note in page.notes)
+            self.transcript.preview(block, terminal_text(brief[:960]))
+        self.append(source, display=False)
 
     def local_input(self, source_id: str, text: str) -> None:
         self.finish()
@@ -514,6 +553,8 @@ class StreamRenderer:
                     shell_preview = None
                     if name.startswith("shell"):
                         shell_preview = shell_result_preview(text, summary)
+                    if name in {"note_write", "note_get", "note_delete"}:
+                        brief = header + (f" · {summary}" if summary else "")
                     if shell_preview is not None:
                         brief = f"{name} · {shell_preview}"
                         if child:

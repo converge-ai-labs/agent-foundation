@@ -32,8 +32,8 @@ from a13n_service.interactions.attempts import (
 from a13n_service.interactions.domain import RunAttemptYieldReason
 from a13n_service.interactions.environment_observation import EnvironmentHookObservation
 from a13n_service.interactions.harness_results import (
-    RunTerminalDisposition,
-    RunTerminalReceipt,
+    AttemptDisposition,
+    AttemptOutcome,
     StoredHarnessOutcomeAdapter,
 )
 from a13n_service.interactions.harness_runtime import (
@@ -44,13 +44,14 @@ from a13n_service.interactions.harness_runtime import (
 )
 from a13n_service.interactions.inbox_delivery import AdaptedThreadInboxEntry
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore, StoredRunState
+from a13n_service.interactions.outcomes import VerifiedRunOutcome
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.state import (
     CompletedOutcomeCandidate,
-    ConsumedThreadInboxEntry,
     DeferredContinuationState,
     HostContinuationState,
-    RunStateEnvelope,
+    InboxReceipt,
+    RunCheckpoint,
 )
 from a13n_service.storage import ObjectStore
 from anyio import Event, create_task_group, fail_after
@@ -103,7 +104,7 @@ class _RecordingAttemptExecution(AttemptExecutionService):
         harness_run_id: str,
     ) -> AttemptMutationReceipt:
         assert preparation.run_attempt_id == authority.run_attempt_id
-        assert preparation.fence == authority.fence
+        assert preparation.attempt_number == authority.attempt_number
         assert harness_run_id
         self.trace.append("attempt:enter")
         return _receipt(authority, run_delta=1, attempt_delta=1)
@@ -127,20 +128,21 @@ class _RecordingThreadInbox:
     trace: list[str]
     entries: tuple[AdaptedThreadInboxEntry, ...] = ()
 
-    async def confirm_checkpoint(
+    async def confirm_inbox_receipts(
         self,
         authority: AttemptContext,
         state: StoredRunState,
     ) -> AttemptMutationReceipt:
         assert state.envelope.run_id == authority.run_id
         self.trace.append("inbox:confirm")
-        consumed = set(state.envelope.host.consumed_inbox_entries)
+        consumed = set(state.envelope.host.inbox_receipts)
         self.entries = tuple(entry for entry in self.entries if entry.receipt not in consumed)
         return _receipt(authority)
 
     async def read_eligible(
         self,
         authority: AttemptContext,
+        config,
     ) -> Sequence[AdaptedThreadInboxEntry]:
         assert authority.run_id == RUN_ID
         self.trace.append("inbox:read")
@@ -167,35 +169,29 @@ class _RecordingTerminalCommitter:
     failures: list[SafeFailure] = field(default_factory=list)
     cancelled: int = 0
 
-    async def prepare_state_outcome(self, authority, state):
-        async def commit(current):
-            return await self.commit_state_outcome(current, state)
+    async def verify_state_outcome(self, authority, state):
+        return VerifiedRunOutcome(state, authority.organization_id, authority.run_id, self)
 
-        return commit
-
-    async def commit_state_outcome(
-        self,
-        authority: AttemptContext,
-        state: StoredRunState,
-    ) -> RunTerminalReceipt:
+    async def commit_verified_state_outcome(self, authority, verified):
+        state = verified.state
         self.states.append(state)
-        disposition = RunTerminalDisposition(state.envelope.checkpoint_kind)
+        disposition = AttemptDisposition(state.envelope.checkpoint_kind)
         return _terminal_receipt(authority, disposition)
 
     async def commit_failure(
         self,
         authority: AttemptContext,
         failure: SafeFailure,
-    ) -> RunTerminalReceipt:
+    ) -> AttemptOutcome:
         self.failures.append(failure)
-        return _terminal_receipt(authority, RunTerminalDisposition.failed)
+        return _terminal_receipt(authority, AttemptDisposition.failed)
 
     async def reconcile_cancelled(
         self,
         authority: AttemptContext,
-    ) -> RunTerminalReceipt:
+    ) -> AttemptOutcome:
         self.cancelled += 1
-        return _terminal_receipt(authority, RunTerminalDisposition.cancelled)
+        return _terminal_receipt(authority, AttemptDisposition.cancelled)
 
 
 def _context(thread_id: str) -> AttemptContext:
@@ -204,15 +200,11 @@ def _context(thread_id: str) -> AttemptContext:
         thread_id=thread_id,
         run_id=RUN_ID,
         run_attempt_id=ATTEMPT_ID,
-        fence=1,
+        attempt_number=1,
         lease_token="lease-token",
         worker_id="worker-1",
-        worker_generation="generation-1",
         worker_build_id="build-1",
         runtime_lock_digest="a" * 64,
-        expected_run_version=1,
-        expected_attempt_version=1,
-        lease_expires_at=NOW + timedelta(minutes=5),
         lease_duration=timedelta(seconds=30),
         renewal_interval=timedelta(seconds=10),
         renewal_timeout=timedelta(seconds=5),
@@ -228,8 +220,8 @@ def _receipt(
     attempt_delta: int = 0,
 ) -> AttemptMutationReceipt:
     return AttemptMutationReceipt(
-        run_version=authority.expected_run_version + run_delta,
-        attempt_version=authority.expected_attempt_version + attempt_delta,
+        run_version=1 + run_delta,
+        attempt_version=1 + attempt_delta,
         lease_expires_at=NOW + timedelta(minutes=5),
     )
 
@@ -237,27 +229,27 @@ def _receipt(
 def _preparation(authority: AttemptContext) -> AttemptPreparationAccepted:
     return AttemptPreparationAccepted(
         run_attempt_id=authority.run_attempt_id,
-        fence=authority.fence,
+        attempt_number=authority.attempt_number,
         mutation=_receipt(authority),
     )
 
 
 def _terminal_receipt(
     authority: AttemptContext,
-    disposition: RunTerminalDisposition,
-) -> RunTerminalReceipt:
-    return RunTerminalReceipt(
+    disposition: AttemptDisposition,
+) -> AttemptOutcome:
+    return AttemptOutcome(
         disposition=disposition,
-        run_version=authority.expected_run_version + 1,
-        attempt_version=authority.expected_attempt_version + 1,
-        thread_version=None if disposition is RunTerminalDisposition.retrying else 2,
+        run_version=1 + 1,
+        attempt_version=1 + 1,
+        thread_version=None if disposition is AttemptDisposition.retrying else 2,
     )
 
 
 def _inbox_entry() -> AdaptedThreadInboxEntry:
     return AdaptedThreadInboxEntry(
         delivery_sequence=1,
-        receipt=ConsumedThreadInboxEntry(
+        receipt=InboxReceipt(
             inbox_entry_id="inb_1234567890abcdef",
             kind="message",
         ),
@@ -265,7 +257,7 @@ def _inbox_entry() -> AdaptedThreadInboxEntry:
     )
 
 
-def _waiting_gate_state() -> RunStateEnvelope:
+def _waiting_gate_state() -> RunCheckpoint:
     state = initial_state()
     pending_call = ToolCallPart(
         tool_name="external_step",
@@ -295,7 +287,7 @@ def _waiting_gate_state() -> RunStateEnvelope:
     )
 
 
-async def _stored_state(objects: ObjectStore, envelope: RunStateEnvelope) -> tuple[RunStateStore, StoredRunState]:
+async def _stored_state(objects: ObjectStore, envelope: RunCheckpoint) -> tuple[RunStateStore, StoredRunState]:
     states = RunStateStore(objects)
     return states, await states.create(ORGANIZATION_ID, envelope)
 
@@ -382,7 +374,7 @@ async def _consume(
     terminal_committer: _RecordingTerminalCommitter,
     capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
     model_recovery: ModelRecoveryPolicy | None = None,
-) -> tuple[HarnessRunResult[str], RunTerminalReceipt | AttemptMutationReceipt]:
+) -> tuple[HarnessRunResult[str], AttemptOutcome | AttemptMutationReceipt]:
     result = await _run(
         control=control,
         bindings=bindings,
@@ -431,8 +423,8 @@ async def test_checkpoint_commits_inbox_receipt_only_after_native_delivery(
     assert _business_prompts(calls[0]) == ["accepted input", "new direction"]
     assert _business_prompts(calls[1]) == ["accepted input", "new direction"]
     assert trace.index("inbox:read") < trace.index("model:1")
-    assert coordinator.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
-    assert coordinator.current_state.envelope.input_disposition == "applied"
+    assert coordinator.current_state.envelope.host.inbox_receipts == (_inbox_entry().receipt,)
+    assert coordinator.current_state.envelope.initial_input_applied
 
 
 @pytest.mark.parametrize("scenario", ["compacted", "compaction_failed", "model_recovery"])
@@ -467,7 +459,7 @@ async def test_compaction_precedes_receipt_publication_without_losing_incorporat
             compact_calls += 1
             if compact_calls == 1:
                 assert "new direction" in _business_prompts(tuple(messages))
-                assert control.current_state.envelope.host.consumed_inbox_entries == ()
+                assert control.current_state.envelope.host.inbox_receipts == ()
             if compaction_fails:
                 raise RuntimeError("compaction failed")
             yield "The earlier work was summarized."
@@ -504,7 +496,7 @@ async def test_compaction_precedes_receipt_publication_without_losing_incorporat
     assert (
         "new direction" in _business_prompts(control.current_state.envelope.harness.message_history)
     ) is compaction_fails
-    assert control.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+    assert control.current_state.envelope.host.inbox_receipts == (_inbox_entry().receipt,)
 
 
 async def test_checkpoint_does_not_wait_for_driver_event_consumption(interaction_object_store, monkeypatch):
@@ -530,7 +522,7 @@ async def test_checkpoint_does_not_wait_for_driver_event_consumption(interaction
 
     async def publish(prior, successor, **kwargs):
         published = await replace_state(prior, successor, **kwargs)
-        if successor.host.consumed_inbox_entries:
+        if successor.host.inbox_receipts:
             assert not projector.events
             checkpointed.set()
         return published
@@ -541,7 +533,7 @@ async def test_checkpoint_does_not_wait_for_driver_event_consumption(interaction
             control=control, bindings=RunBindings.embedded(), state=stored, model=_model(trace, []), projector=projector
         )
     assert result.output_or_raise() == "turn-1"
-    assert control.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+    assert control.current_state.envelope.host.inbox_receipts == (_inbox_entry().receipt,)
     assert any(
         isinstance(event, HarnessEvent) and isinstance(event.event, EnqueuedMessagesEvent) for event in projector.events
     )
@@ -558,10 +550,10 @@ async def test_recovery_reconciles_known_inbox_identity_before_reoffering(intera
             "harness": HarnessState.new(
                 thread_id=initial.envelope.thread_id, message_history=[ModelRequest(parts=[UserPromptPart(content)])]
             ),
-            "host": HostContinuationState(consumed_inbox_entries=(entry.receipt,) if saved == "compacted" else ()),
+            "host": HostContinuationState(inbox_receipts=(entry.receipt,) if saved == "compacted" else ()),
         }
     )
-    stored = await states.replace(initial, envelope, run_attempt_id=ATTEMPT_ID, fence=1)
+    stored = await states.replace(initial, envelope, run_attempt_id=ATTEMPT_ID, attempt_number=1)
     inbox = _RecordingThreadInbox([], entries=(entry,))
     control = RunAttemptControl(
         context=_context(stored.envelope.thread_id),
@@ -574,7 +566,7 @@ async def test_recovery_reconciles_known_inbox_identity_before_reoffering(intera
     result = await _run(control=control, bindings=RunBindings.embedded(), state=stored, model=_model([], calls))
     assert result.output_or_raise() == "turn-1"
     assert _business_prompts(calls[0]).count("new direction") == {"raw": 1, "compacted": 0, "unmarked": 2}[saved]
-    assert control.current_state.envelope.host.consumed_inbox_entries == (entry.receipt,)
+    assert control.current_state.envelope.host.inbox_receipts == (entry.receipt,)
     assert inbox.entries == ()
 
 
@@ -606,7 +598,7 @@ async def test_uncertain_terminal_checkpoint_keeps_input_pending_until_recovery(
         capabilities=(Capability(id="test.step", tools=[Tool(step, name="_step")]),),
     )
     assert result.output_or_raise() == "done"
-    assert control.current_state.envelope.host.consumed_inbox_entries == ()
+    assert control.current_state.envelope.host.inbox_receipts == ()
     original_replace = states.replace
 
     async def lose_response(prior, successor, **kwargs):
@@ -620,7 +612,7 @@ async def test_uncertain_terminal_checkpoint_keeps_input_pending_until_recovery(
             result, adapter=_outcome_adapter(interaction_object_store), committer=_RecordingTerminalCommitter()
         )
     assert inbox.entries == (_inbox_entry(),)
-    assert control.current_state.envelope.host.consumed_inbox_entries == ()
+    assert control.current_state.envelope.host.inbox_receipts == ()
     monkeypatch.setattr(states, "replace", original_replace)
     restored = await states.read(ORGANIZATION_ID, RUN_ID)
     replacement = RunAttemptControl(
@@ -642,13 +634,13 @@ async def test_uncertain_terminal_checkpoint_keeps_input_pending_until_recovery(
         assert resumed.output_or_raise() == "turn-1"
         assert _business_prompts(calls[0]).count("new direction") == 1
         if "new direction" in _business_prompts(replacement.current_state.envelope.harness.message_history):
-            assert replacement.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+            assert replacement.current_state.envelope.host.inbox_receipts == (_inbox_entry().receipt,)
         await replacement.finalize(
             resumed,
             adapter=_outcome_adapter(interaction_object_store),
             committer=_RecordingTerminalCommitter(),
         )
-    assert replacement.current_state.envelope.host.consumed_inbox_entries == (_inbox_entry().receipt,)
+    assert replacement.current_state.envelope.host.inbox_receipts == (_inbox_entry().receipt,)
     assert inbox.entries == ()
 
 
@@ -775,14 +767,14 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     assert isinstance(mutation, AttemptMutationReceipt)
     assert calls == []
     assert coordinator.terminal_observation_allowed
-    assert coordinator.current_state.envelope.input_disposition == "applied"
+    assert coordinator.current_state.envelope.initial_input_applied
     assert terminal.states == []
     assert _business_prompts(coordinator.current_state.envelope.harness.message_history) == ["accepted input"]
     assert terminal.failures == []
     assert terminal.cancelled == 0
 
     assert execution.yielded is RunAttemptYieldReason.service_drain
-    assert mutation.run_version == coordinator.current_context.expected_run_version
+    assert mutation.run_version == 2
     assert trace.index("state:checkpoint") < trace.index("attempt:heartbeat") < trace.index("attempt:yield")
 
 
@@ -805,7 +797,7 @@ async def test_steer_during_tool_is_not_consumed_before_it_enters_checkpoint(int
         await coordinator.request_handoff(RunAttemptYieldReason.service_drain)
         return "stepped"
 
-    checkpoints: list[RunStateEnvelope] = []
+    checkpoints: list[RunCheckpoint] = []
     replace_state = states.replace
 
     async def record_checkpoint(*args, **kwargs):
@@ -822,7 +814,7 @@ async def test_steer_during_tool_is_not_consumed_before_it_enters_checkpoint(int
         capabilities=(Capability(id="test.step", tools=[Tool(step, name="_step")]),),
     )
     for checkpoint in checkpoints:
-        if _inbox_entry().receipt in checkpoint.host.consumed_inbox_entries:
+        if _inbox_entry().receipt in checkpoint.host.inbox_receipts:
             assert "new direction" in _business_prompts(checkpoint.harness.message_history)
     if result.status == "cancelled":
         assert "new direction" in _business_prompts(coordinator.current_state.envelope.harness.message_history)
@@ -840,7 +832,7 @@ async def test_handoff_reconciles_uncertain_checkpoint_before_later_boundary(
     calls: list[tuple[ModelMessage, ...]] = []
     states, stored = await _stored_state(interaction_object_store, initial_state())
     original_replace = states.replace
-    attempted: list[RunStateEnvelope] = []
+    attempted: list[RunCheckpoint] = []
 
     async def lose_first_response(prior, successor, **kwargs):
         attempted.append(successor)
@@ -947,8 +939,8 @@ async def test_driver_projects_events_and_control_commits_one_completed_result(
     )
 
     assert result.output_or_raise() == "turn-1"
-    assert isinstance(finalization, RunTerminalReceipt)
-    assert finalization.disposition is RunTerminalDisposition.completed
+    assert isinstance(finalization, AttemptOutcome)
+    assert finalization.disposition is AttemptDisposition.completed
     assert projector.events
     assert len(terminal.states) == 1
     candidate = terminal.states[0].envelope.outcome_candidate
@@ -1033,8 +1025,8 @@ async def test_control_commits_native_suspension_as_waiting(
     )
 
     assert result.status == "suspended"
-    assert isinstance(finalization, RunTerminalReceipt)
-    assert finalization.disposition is RunTerminalDisposition.waiting
+    assert isinstance(finalization, AttemptOutcome)
+    assert finalization.disposition is AttemptDisposition.waiting
     assert len(terminal.states) == 1
     candidate = terminal.states[0].envelope.outcome_candidate
     assert candidate is not None and candidate.outcome == "waiting"
@@ -1068,8 +1060,8 @@ async def test_control_delegates_safe_harness_failure(
     )
 
     assert result.status == "failed"
-    assert isinstance(finalization, RunTerminalReceipt)
-    assert finalization.disposition is RunTerminalDisposition.failed
+    assert isinstance(finalization, AttemptOutcome)
+    assert finalization.disposition is AttemptDisposition.failed
     assert len(terminal.failures) == 1
     assert terminal.states == []
 
@@ -1109,8 +1101,8 @@ async def test_control_reconciles_non_handoff_cancellation_candidate(
         committer=terminal,
     )
 
-    assert isinstance(finalization, RunTerminalReceipt)
-    assert finalization.disposition is RunTerminalDisposition.cancelled
+    assert isinstance(finalization, AttemptOutcome)
+    assert finalization.disposition is AttemptDisposition.cancelled
     assert terminal.cancelled == 1
     assert len(calls) == 1
 
@@ -1276,9 +1268,11 @@ async def test_slow_checkpoint_keeps_lease_live_and_fences_dispatch(
         async with create_task_group() as tasks:
             tasks.start_soon(execute)
             await writing.wait()
-            before = control.current_context.expected_attempt_version
+            context = control.current_context
+            async with short_session(interaction_sessions) as database:
+                before = (await database.get(RunAttemptRecord, claim.attempt.id)).version
             await control.renew_lease()
-            assert control.current_context.expected_attempt_version == before + 1
+            assert control.current_context is context
             await execution.validate(control.current_context)
             async with short_session(interaction_sessions) as database:
                 attempt = await database.get(RunAttemptRecord, claim.attempt.id)
@@ -1293,7 +1287,7 @@ async def test_slow_checkpoint_keeps_lease_live_and_fences_dispatch(
     else:
         assert len(calls) == 1
         assert results[0].status == "completed"
-        assert control.current_state.envelope.input_disposition == "applied"
+        assert control.current_state.envelope.initial_input_applied
         await execution.validate(control.current_context)
 
 
@@ -1311,7 +1305,7 @@ async def test_recovery_receipt_repair_preserves_terminal_candidate(interaction_
             "outcome_candidate": candidate,
         }
     )
-    stored = await states.replace(initial, envelope, run_attempt_id=ATTEMPT_ID, fence=1)
+    stored = await states.replace(initial, envelope, run_attempt_id=ATTEMPT_ID, attempt_number=1)
     inbox = _RecordingThreadInbox([], entries=(entry,))
     control = RunAttemptControl(
         context=_context(stored.envelope.thread_id),
@@ -1326,6 +1320,59 @@ async def test_recovery_receipt_repair_preserves_terminal_candidate(interaction_
     assert repaired.checkpoint_kind == "completed"
     assert repaired.outcome_candidate == candidate
     assert repaired.harness == envelope.harness
-    assert repaired.host.consumed_inbox_entries == (entry.receipt,)
+    assert repaired.host.inbox_receipts == (entry.receipt,)
     assert inbox.entries == ()
     await control.recover_outcome(_RecordingTerminalCommitter())
+
+
+@pytest.mark.parametrize("lost_confirmation", [False, True])
+async def test_receipt_confirmation_retries_uncertainty_and_skips_confirmed_checkpoint(
+    interaction_object_store, monkeypatch, lost_confirmation
+):
+    from unittest.mock import AsyncMock
+
+    trace = []
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    inbox = _RecordingThreadInbox(trace)
+    confirm = inbox.confirm_inbox_receipts
+    attempts = []
+
+    async def confirmation(authority, state):
+        attempts.append(state.info.version)
+        receipt = await confirm(authority, state)
+        if lost_confirmation and len(attempts) == 1:
+            raise TimeoutError("response lost after consumption commit")
+        return receipt
+
+    monkeypatch.setattr(inbox, "confirm_inbox_receipts", confirmation)
+    execution = _RecordingAttemptExecution(trace)
+    validate = AsyncMock(wraps=execution.validate)
+    monkeypatch.setattr(execution, "validate", validate)
+    context = _context(stored.envelope.thread_id)
+    control = RunAttemptControl(context=context, execution=execution, states=states, state=stored, inbox=inbox)
+    await control.commit_preparation()
+    if lost_confirmation:
+        with pytest.raises(TimeoutError):
+            await control.reconcile()
+    await control.reconcile()
+    count = len(attempts)
+    assert count == (2 if lost_confirmation else 1)
+    validations = validate.await_count
+    await control.reconcile()
+    assert len(attempts) == count
+    assert validate.await_count > validations
+
+    result = await _run(control=control, bindings=RunBindings.embedded(), state=stored, model=_model(trace, []))
+    assert result.status == "completed"
+    assert control.current_state.info.version != stored.info.version
+    assert control.current_state.info.version in attempts
+    count = len(attempts)
+    await control.reconcile()
+    assert len(attempts) == count
+
+    restored = RunAttemptControl(
+        context=context, execution=execution, states=states, state=control.current_state, inbox=inbox
+    )
+    await restored.commit_preparation()
+    await restored.reconcile()
+    assert len(attempts) == count + 1

@@ -17,8 +17,8 @@ from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloa
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
-from a13n_service.interactions.state import ConsumedThreadInboxEntry
-from a13n_service.interactions.terminal_committer import DatabaseRunTerminalCommitter
+from a13n_service.interactions.state import InboxReceipt
+from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
 from a13n_service.storage import ObjectAccessDenied, ObjectStoreUnavailable, short_session
 from anyio import Event, create_task_group, fail_after, sleep_forever
 from pydantic_ai.messages import ModelRequest, UserPromptPart
@@ -46,8 +46,8 @@ async def admission(interaction_sessions, interaction_object_store, monkeypatch)
     context = replace(acceptance._authority(claimed), renewal_interval=timedelta(milliseconds=5))
     materialize = AsyncMock(side_effect=AssertionError("Preparation must not materialize new inbox input"))
     inbox = DatabaseThreadInboxReconciler(interaction_sessions, materialize)
-    confirm = AsyncMock(wraps=inbox.confirm_checkpoint)
-    monkeypatch.setattr(inbox, "confirm_checkpoint", confirm)
+    confirm = AsyncMock(wraps=inbox.confirm_inbox_receipts)
+    monkeypatch.setattr(inbox, "confirm_inbox_receipts", confirm)
     control = RunAttemptControl(context=context, execution=execution, states=states, inbox=inbox)
     driver = Mock(cancel=AsyncMock(), run=AsyncMock(side_effect=AssertionError("Harness entry forbidden")))
     monkeypatch.setattr(state_admission, "CLAIM_BACKOFF_SECONDS", 0)
@@ -65,28 +65,30 @@ class _Wakeups:
 async def test_claim_conflict_recovers_the_complete_late_checkpoint(admission, monkeypatch):
     run, prior, states, _, control, driver, _ = admission
     initial = await states.read_run(run)
-    old = await states.claim_writer(initial, fence=prior.attempt.fence)
-    candidate = acceptance._completed_state(old.envelope, prior.attempt.id, prior.attempt.fence)
+    old = await states.claim_writer(initial, attempt_number=prior.attempt.attempt_number)
+    candidate = acceptance._completed_state(old.envelope, prior.attempt.id, prior.attempt.attempt_number)
     claim = states.claim_writer
     calls = []
 
-    async def race(state, *, fence):
+    async def race(state, *, attempt_number):
         calls.append(state)
         if len(calls) == 1:
-            await states.replace(old, candidate, run_attempt_id=prior.attempt.id, fence=prior.attempt.fence)
-        return await claim(state, fence=fence)
+            await states.replace(
+                old, candidate, run_attempt_id=prior.attempt.id, attempt_number=prior.attempt.attempt_number
+            )
+        return await claim(state, attempt_number=attempt_number)
 
     monkeypatch.setattr(states, "claim_writer", race)
     control.bind_executor(driver, lambda: None)
-    await control.claim_state(run)
+    await control.claim_state_writer(run)
 
     assert len(calls) == 2
     assert calls[0].envelope.checkpoint_kind == "initial"
     assert calls[1].envelope == candidate
     assert control.current_state.envelope == candidate
-    assert control.current_state.writer_fence == control.current_context.fence
+    assert control.current_state.writer_fence == control.current_context.attempt_number
     assert control.current_state.info.version != calls[1].info.version
-    assert control.current_state.envelope.last_checkpoint_fence == prior.attempt.fence
+    assert control.current_state.envelope.last_checkpoint_fence == prior.attempt.attempt_number
 
 
 async def test_lost_claim_response_is_reconciled_without_a_second_publication(admission, monkeypatch):
@@ -97,17 +99,17 @@ async def test_lost_claim_response_is_reconciled_without_a_second_publication(ad
     monkeypatch.setattr(states._objects, "put", writes)
     calls = 0
 
-    async def lose_response(state, *, fence):
+    async def lose_response(state, *, attempt_number):
         nonlocal calls
         calls += 1
-        result = await claim(state, fence=fence)
+        result = await claim(state, attempt_number=attempt_number)
         if calls == 1:
             raise TimeoutError("response lost after CAS commit")
         return result
 
     monkeypatch.setattr(states, "claim_writer", lose_response)
     control.bind_executor(driver, lambda: None)
-    await control.claim_state(run)
+    await control.claim_state_writer(run)
 
     assert calls == 2
     assert writes.await_count == 1
@@ -119,7 +121,7 @@ async def test_lost_claim_response_is_reconciled_without_a_second_publication(ad
 async def test_permanent_or_newer_authority_is_never_retried(admission, monkeypatch, failure):
     run, _, states, _, control, driver, _ = admission
     if failure == "higher_fence":
-        await states.claim_writer(await states.read_run(run), fence=control.current_context.fence + 1)
+        await states.claim_writer(await states.read_run(run), attempt_number=control.current_context.attempt_number + 1)
         read = AsyncMock(wraps=states.read_run)
         expected = AttemptAuthorityError
     else:
@@ -130,7 +132,7 @@ async def test_permanent_or_newer_authority_is_never_retried(admission, monkeypa
     monkeypatch.setattr(states, "claim_writer", write)
     control.bind_executor(driver, lambda: None)
     with pytest.raises(expected):
-        await control.claim_state(run)
+        await control.claim_state_writer(run)
     assert read.await_count == 1
     write.assert_not_awaited()
 
@@ -158,27 +160,30 @@ async def test_slow_initial_read_renews_without_confirming_provisional_inbox(adm
             control.bind_executor(driver, tasks.cancel_scope.cancel)
             await tasks.start(LeaseMonitor(control.current_context, control).run)
             await tasks.start(ControlWatcher(control.current_context, control, _Wakeups()).run)
-            await control.claim_state(run)
+            await control.claim_state_writer(run)
             confirm.assert_not_awaited()
             await control.commit_preparation()
             await control.reconcile_recovery_state()
             assert confirm.await_count >= 1
             tasks.cancel_scope.cancel()
     assert renewed.is_set()
-    assert control.current_context.expected_attempt_version > 1
+    await execution.validate(control.current_context)
 
 
 async def _executor(admission, sessions, objects):
     run, _, _, execution, control, driver, _ = admission
 
     class Preparer:
-        async def validate(self, context):
-            await control.claim_state(run)
+        async def claim_state_writer(self):
+            await control.claim_state_writer(run)
 
-        def prepare(self, context):
+        async def validate_dependencies(self, context):
+            pass
+
+        def open_runtime(self, context):
             raise AssertionError("Harness reconstruction forbidden")
 
-    committer = DatabaseRunTerminalCommitter(
+    committer = DatabaseAttemptCommitter(
         sessions,
         RunOutcomeService(sessions, RunPayloadStore(objects), lifecycle=test_lifecycle_writer()),
         execution,
@@ -284,12 +289,10 @@ async def test_repaired_outcome_is_adopted_under_current_fence_without_harness(
     await ThreadInboxStore(interaction_sessions).append_steer(
         organization_id=run.organization_id, run_id=run.id, input=payload, entry_id=entry_id
     )
-    entry = AdaptedThreadInboxEntry(
-        1, ConsumedThreadInboxEntry(inbox_entry_id=entry_id, kind="steer"), "already incorporated"
-    )
+    entry = AdaptedThreadInboxEntry(1, InboxReceipt(inbox_entry_id=entry_id, kind="steer"), "already incorporated")
     monkeypatch.setattr(control._inbox, "_materialize", AsyncMock(return_value="already incorporated"))
     initial = await states.read_run(run)
-    candidate = acceptance._completed_state(initial.envelope, prior.attempt.id, prior.attempt.fence)
+    candidate = acceptance._completed_state(initial.envelope, prior.attempt.id, prior.attempt.attempt_number)
     candidate = candidate.model_copy(
         update={
             "harness": HarnessState.new(
@@ -298,17 +301,46 @@ async def test_repaired_outcome_is_adopted_under_current_fence_without_harness(
             )
         }
     )
-    await states.replace(initial, candidate, run_attempt_id=prior.attempt.id, fence=prior.attempt.fence)
+    await states.replace(
+        initial, candidate, run_attempt_id=prior.attempt.id, attempt_number=prior.attempt.attempt_number
+    )
     executor, capacity = await _executor(admission, interaction_sessions, interaction_object_store)
     monkeypatch.setattr(control, "fail_execution", AsyncMock(side_effect=AssertionError("unexpected recovery failure")))
     receipt = await executor.run()
     assert receipt.disposition.value == "completed"
-    assert control.current_state.envelope.last_checkpoint_fence == control.current_context.fence
+    assert control.current_state.envelope.last_checkpoint_fence == control.current_context.attempt_number
     assert control.current_state.envelope.outcome_candidate == candidate.outcome_candidate
-    assert control.current_state.envelope.host.consumed_inbox_entries == (entry.receipt,)
+    assert control.current_state.envelope.host.inbox_receipts == (entry.receipt,)
     driver.run.assert_not_awaited()
     capacity.release.assert_called_once()
     async with short_session(interaction_sessions) as session:
         attempt = await session.get(RunAttemptRecord, control.current_context.run_attempt_id)
         assert attempt.status == "succeeded"
         assert attempt.harness_run_id is None
+
+
+async def test_state_claim_retries_use_renewed_lease_after_original_deadline(admission, monkeypatch):
+    run, _, states, execution, control, driver, _ = admission
+    original_now = state_admission.utc_now()
+    now = original_now
+    monkeypatch.setattr(execution, "_clock", lambda: now)
+    monkeypatch.setattr(state_admission, "utc_now", lambda: now)
+    read = states.read_run
+    reads = 0
+
+    async def interrupted_read(candidate):
+        nonlocal now, reads
+        reads += 1
+        if reads == 1:
+            now = original_now + timedelta(seconds=29)
+            await control.renew_lease()
+            now = original_now + timedelta(seconds=31)
+            raise ObjectStoreUnavailable("read interrupted after successful renewal")
+        return await read(candidate)
+
+    monkeypatch.setattr(states, "read_run", interrupted_read)
+    control.bind_executor(driver, lambda: None)
+    await control.claim_state_writer(run)
+    assert reads == 2
+    assert control.current_state.writer_fence == control.current_context.attempt_number
+    await execution.validate(control.current_context)

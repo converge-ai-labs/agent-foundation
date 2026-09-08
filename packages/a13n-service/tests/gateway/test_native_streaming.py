@@ -8,7 +8,13 @@ from unittest.mock import AsyncMock
 import pytest
 from a13n_service.gateway.native_streaming import NativeRunStreamService, NativeStreamError
 from a13n_service.http_errors import application_error_status
-from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEvent, deterministic_run_stream_event_id
+from a13n_service.run_stream import (
+    RedisRunStream,
+    RunReplayStore,
+    RunStreamEvent,
+    RunStreamReplayGap,
+    deterministic_run_stream_event_id,
+)
 from a13n_service.storage.config import RedisMemoryConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.redis import open_redis
@@ -113,3 +119,22 @@ async def test_terminal_run_without_retained_replay_reports_gap(
 
     assert captured.value.code == "run_stream_replay_gap"
     assert application_error_status(captured.value) == 409
+
+
+async def test_live_replay_gap_emits_service_event_and_closes(
+    native_stream_service: tuple[NativeRunStreamService, RedisRunStream],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, stream = native_stream_service
+    attachment = await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=None)
+    monkeypatch.setattr(
+        stream,
+        "read",
+        AsyncMock(side_effect=RunStreamReplayGap(retained_floor=None, high_watermark=None)),
+    )
+
+    frames = [frame async for frame in service.events(attachment)]
+
+    assert len(frames) == 1
+    assert frames[0].startswith(b"event: a13n.service.replay_gap\ndata: ")
+    assert b'"event_type":"a13n.service.replay_gap"' in frames[0]

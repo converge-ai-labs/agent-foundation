@@ -242,7 +242,7 @@ async def test_failure_before_first_attempt_expires_even_inactive_inline_heads(h
     await seed_run_and_secret(sessions)
     async with transaction(sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
-        run.recovery_deadline_at = NOW
+        run.execution_deadline_at = NOW
         head = await create_inline_hook_subscription(
             database,
             organization_id=ORGANIZATION_ID,
@@ -284,7 +284,7 @@ async def test_failed_sealing_transaction_rolls_back_inline_expiry(hook_interact
     await seed_run_and_secret(sessions)
     async with transaction(sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
-        run.recovery_deadline_at = NOW
+        run.execution_deadline_at = NOW
         head = await create_inline_hook_subscription(
             database,
             organization_id=ORGANIZATION_ID,

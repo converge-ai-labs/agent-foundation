@@ -57,7 +57,9 @@ async def test_enter_sends_unmatched_slash_input_unchanged_with_notice(
             shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("text, name", [("/ps", "ps"), ("/?", "help"), ("/mode detailed", "mode")])
+@pytest.mark.parametrize(
+    "text, name", [("/ps", "ps"), ("/?", "help"), ("/mode detailed", "mode"), ("/fast", "fast"), ("/fast off", "fast")]
+)
 @pytest.mark.anyio
 async def test_recognized_commands_get_one_acceptance_notice(
     text: str, name: str, monkeypatch: pytest.MonkeyPatch
@@ -74,7 +76,7 @@ async def test_recognized_commands_get_one_acceptance_notice(
         shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("text", ["/ps extra", "/mode invalid", '/attach "unclosed'])
+@pytest.mark.parametrize("text", ["/ps extra", "/mode invalid", '/attach "unclosed', "/fast invalid", "/fast on extra"])
 @pytest.mark.anyio
 async def test_known_command_errors_never_fall_back_to_model(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
@@ -149,3 +151,23 @@ def test_lookup_uses_complete_command_or_alias_not_prose_prefix() -> None:
     assert registry.lookup("/?").name == "help"
     assert registry.lookup("/ps-like text") is None
     assert registry.lookup("/ps\u7684\u65f6\u5019") is None
+
+
+@pytest.mark.anyio
+async def test_fast_during_active_work_preserves_draft_without_changing_tier() -> None:
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.ready = True
+        fast = AsyncMock()
+        shell.backend = SimpleNamespace(thread_id="thread-one", fast=fast)
+        shell.job_kind = "run"
+        shell.job = asyncio.create_task(asyncio.Event().wait())
+        try:
+            await shell.handle("/fast off")
+            fast.assert_not_called()
+            assert shell.composer.text == "/fast off"
+            assert "plain text" not in _notices(shell)
+        finally:
+            shell.job.cancel()
+            await asyncio.gather(shell.job, return_exceptions=True)
+            shell.renderer.transcript.close()

@@ -59,6 +59,7 @@ _QUESTIONS = (
     ),
     Question("model", "Choose a model", "gpt-5.6-sol", ("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra")),
     Question("preset", "Choose model settings (editable in the saved YAML)", ""),
+    Question("fast", "Codex service tier (saved with this Model)", "on", ("on", "off")),
     Question(
         "subagents",
         "Include the default subagents (code-reviewer, executor, explorer)?",
@@ -193,7 +194,12 @@ class SetupWizard:
                 "name" if self.add_agent or self.add_model else "environment",
             )
             if self.values.get("provider") == "api"
-            else ("provider", "model", "name" if self.add_agent or self.add_model else "environment")
+            else (
+                "provider",
+                "model",
+                *(("fast",) if self.values.get("provider", self.default_provider) == "codex" else ()),
+                "name" if self.add_agent or self.add_model else "environment",
+            )
         )
         if self.add_agent:
             keys = ("model_source", "name") if self.existing_model_id else ("model_source", *keys)
@@ -216,6 +222,9 @@ class SetupWizard:
                     hint += f"\n{self.values['provider']}:{self.values['model']}"
                     if self.values["provider"] == "codex":
                         hint += f" · Thinking: {self.values.get('thinking', 'high')} · Reasoning summary: detailed."
+                        hint += "\nService tier: " + (
+                            "Fast (priority)." if self.values.get("fast", "on") == "on" else "Standard (default)."
+                        )
                     if not self.add_model:
                         hint += (
                             " · Shell review threshold: extra high."
@@ -250,6 +259,18 @@ class SetupWizard:
         if question.key == "model" and self.values.get("provider") == "api":
             return Selection(
                 tuple(Choice(value, value) for value in question.choices),
+                cursor=question.choices.index(question.default),
+            )
+        if question.key == "fast":
+            return Selection(
+                (
+                    Choice(
+                        "on",
+                        "Fast (default)",
+                        "Request priority service; may use more quota or cost more. Speed is not guaranteed.",
+                    ),
+                    Choice("off", "Standard", "Request the default service tier; keep the same model and reasoning."),
+                ),
                 cursor=question.choices.index(question.default),
             )
         if question.key == "api_provider":
@@ -382,6 +403,7 @@ class SetupWizard:
                 "credential",
                 "model",
                 "preset",
+                "fast",
                 "context",
                 "thinking",
             }:
@@ -389,6 +411,8 @@ class SetupWizard:
             elif key == "subagents" and (self.add_agent or self.add_model):
                 self.index += 1
             elif self.add_model and key in {"review", "instructions"}:
+                self.index += 1
+            elif key == "fast" and provider != "codex":
                 self.index += 1
             elif key in {"api_provider", "base_url", "credential", "preset"} and provider != "api":
                 self.index += 1
@@ -449,6 +473,7 @@ class SetupWizard:
             result.update(
                 codex_model=self.values.get("model", "gpt-5.6-sol"),
                 codex_thinking=self.values.get("thinking", "high"),
+                codex_service_tier="priority" if self.values.get("fast", "on") == "on" else "default",
                 codex_context_window=next(
                     p.tokens for p in CONTEXT_PRESETS if p.name == self.values.get("context", "balanced")
                 ),

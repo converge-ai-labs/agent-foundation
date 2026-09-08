@@ -28,10 +28,8 @@ from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
+    ExecutionBudget,
     JsonObject,
-    RecoveryBudget,
-    RecoveryUsage,
-    RecoveryUsageLimit,
     Run,
     RunAttempt,
     RunAttemptStatus,
@@ -41,6 +39,8 @@ from .domain import (
     RunPayloadObjectRef,
     RunPendingSummary,
     RunStatus,
+    RunUsage,
+    RunUsageLimit,
     RunWaitReason,
     SealedRunState,
     Session,
@@ -50,8 +50,8 @@ from .domain import (
 )
 
 _MODEL_OBSERVATION_ADAPTER = TypeAdapter(ModelExecutionObservation)
-_RECOVERY_USAGE_ADAPTER = TypeAdapter(RecoveryUsage)
-_RECOVERY_LIMIT_ADAPTER = TypeAdapter(RecoveryUsageLimit | None)
+_RUN_USAGE_ADAPTER = TypeAdapter(RunUsage)
+_RUN_USAGE_LIMIT_ADAPTER = TypeAdapter(RunUsageLimit | None)
 _PENDING_ADAPTER = TypeAdapter(RunPendingSummary | None)
 _FAILURE_ADAPTER = TypeAdapter(SafeFailure | None)
 _JSON_OBJECTS_ADAPTER = TypeAdapter(tuple[JsonObject, ...])
@@ -254,18 +254,17 @@ class RunRecord(Base):
             "wait_reason IS NULL OR wait_reason IN ('approval', 'client_tool', 'user_input', 'multiple')",
             name="wait_reason_valid",
         ),
-        CheckConstraint("next_attempt_fence >= 1", name="next_attempt_fence_positive"),
         CheckConstraint(
-            "max_recovery_attempts >= 0 AND max_handoffs >= 0 AND attempts_started >= 0 "
-            "AND recovery_attempts_started >= 0 AND handoffs_completed >= 0",
-            name="recovery_values_non_negative",
+            "max_attempts >= 0 AND max_handoffs >= 0 AND attempts_started >= 0 "
+            "AND attempts_charged >= 0 AND handoffs_completed >= 0",
+            name="execution_values_non_negative",
         ),
         CheckConstraint(
-            "recovery_attempts_started <= max_recovery_attempts "
+            "attempts_charged <= max_attempts "
             "AND handoffs_completed <= max_handoffs "
-            "AND recovery_attempts_started <= attempts_started "
-            "AND attempts_started <= recovery_attempts_started + handoffs_completed",
-            name="recovery_counts_valid",
+            "AND attempts_charged <= attempts_started "
+            "AND attempts_started <= attempts_charged + handoffs_completed",
+            name="execution_counts_valid",
         ),
         CheckConstraint(
             "(input_object_key IS NULL AND input_object_digest_sha256 IS NULL AND input_object_size_bytes IS NULL "
@@ -434,14 +433,13 @@ class RunRecord(Base):
     queue_name: Mapped[str] = mapped_column(String(256), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     current_run_attempt_id: Mapped[str | None] = mapped_column(String(72))
-    next_attempt_fence: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    recovery_policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    max_recovery_attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    execution_policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False)
     max_handoffs: Mapped[int] = mapped_column(Integer, nullable=False)
-    recovery_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    execution_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     max_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     attempts_started: Mapped[int] = mapped_column(Integer, nullable=False)
-    recovery_attempts_started: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempts_charged: Mapped[int] = mapped_column(Integer, nullable=False)
     handoffs_completed: Mapped[int] = mapped_column(Integer, nullable=False)
     usage_charged_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(256))
@@ -518,18 +516,17 @@ class RunRecord(Base):
             "queue_name": self.queue_name,
             "available_at": assume_utc(self.available_at),
             "current_run_attempt_id": self.current_run_attempt_id,
-            "next_attempt_fence": self.next_attempt_fence,
-            "recovery_budget": RecoveryBudget(
-                policy_version=self.recovery_policy_version,
-                max_recovery_attempts=self.max_recovery_attempts,
+            "execution_budget": ExecutionBudget(
+                policy_version=self.execution_policy_version,
+                max_attempts=self.max_attempts,
                 max_handoffs=self.max_handoffs,
-                recovery_deadline_at=optional_assume_utc(self.recovery_deadline_at),
-                max_usage=_RECOVERY_LIMIT_ADAPTER.validate_python(self.max_usage_json),
+                execution_deadline_at=optional_assume_utc(self.execution_deadline_at),
+                max_usage=_RUN_USAGE_LIMIT_ADAPTER.validate_python(self.max_usage_json),
             ),
             "attempts_started": self.attempts_started,
-            "recovery_attempts_started": self.recovery_attempts_started,
+            "attempts_charged": self.attempts_charged,
             "handoffs_completed": self.handoffs_completed,
-            "usage_charged": _RECOVERY_USAGE_ADAPTER.validate_python(self.usage_charged_json),
+            "usage_charged": _RUN_USAGE_ADAPTER.validate_python(self.usage_charged_json),
             "idempotency_key": self.idempotency_key,
             "request_fingerprint": self.request_fingerprint,
             "status": RunStatus(self.status),
@@ -613,7 +610,6 @@ class RunAttemptRecord(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("attempt_number >= 1", name="attempt_number_positive"),
-        CheckConstraint("fence >= 1", name="fence_positive"),
         CheckConstraint(
             "status IN ('leased', 'running', 'succeeded', 'yielded', 'failed', 'cancelled')",
             name="status_valid",
@@ -625,7 +621,6 @@ class RunAttemptRecord(Base):
         CheckConstraint("length(runtime_lock_digest) = 64", name="runtime_lock_digest_sha256"),
         CheckConstraint("length(lease_token_digest) = 64", name="lease_token_digest_sha256"),
         CheckConstraint("length(worker_id) BETWEEN 1 AND 256", name="worker_id_bounded"),
-        CheckConstraint("length(worker_generation) BETWEEN 1 AND 256", name="worker_generation_bounded"),
         CheckConstraint("length(worker_build_id) BETWEEN 1 AND 256", name="worker_build_id_bounded"),
         CheckConstraint(
             "(status IN ('succeeded', 'yielded', 'failed', 'cancelled')) = (finished_at IS NOT NULL)",
@@ -657,11 +652,10 @@ class RunAttemptRecord(Base):
             "organization_id",
             "run_id",
             "id",
-            "fence",
+            "attempt_number",
             unique=True,
         ),
         Index("uq_run_attempts_number", "organization_id", "run_id", "attempt_number", unique=True),
-        Index("uq_run_attempts_fence", "organization_id", "run_id", "fence", unique=True),
         Index(
             "ix_run_attempts_live_lease",
             "organization_id",
@@ -677,13 +671,11 @@ class RunAttemptRecord(Base):
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     run_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    fence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     replaces_run_attempt_id: Mapped[str | None] = mapped_column(String(72))
-    recovery_reason: Mapped[str | None] = mapped_column(String(256))
+    start_reason: Mapped[str | None] = mapped_column(String(256))
     worker_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    worker_generation: Mapped[str] = mapped_column(String(256), nullable=False)
     worker_build_id: Mapped[str] = mapped_column(String(256), nullable=False)
     runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     harness_run_id: Mapped[str | None] = mapped_column(String(256))
@@ -695,7 +687,6 @@ class RunAttemptRecord(Base):
     yield_reason: Mapped[str | None] = mapped_column(String(32))
     failure_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -707,12 +698,10 @@ class RunAttemptRecord(Base):
             organization_id=self.organization_id,
             run_id=self.run_id,
             attempt_number=self.attempt_number,
-            fence=self.fence,
             status=RunAttemptStatus(self.status),
             replaces_run_attempt_id=self.replaces_run_attempt_id,
-            recovery_reason=self.recovery_reason,
+            start_reason=self.start_reason,
             worker_id=self.worker_id,
-            worker_generation=self.worker_generation,
             worker_build_id=self.worker_build_id,
             runtime_lock_digest=self.runtime_lock_digest,
             harness_run_id=self.harness_run_id,
@@ -722,11 +711,10 @@ class RunAttemptRecord(Base):
             lease_token_digest=self.lease_token_digest,
             lease_expires_at=assume_utc(self.lease_expires_at),
             heartbeat_at=assume_utc(self.heartbeat_at),
-            usage=_RECOVERY_USAGE_ADAPTER.validate_python(self.usage_json),
+            usage=_RUN_USAGE_ADAPTER.validate_python(self.usage_json),
             yield_reason=None if self.yield_reason is None else RunAttemptYieldReason(self.yield_reason),
             failure=_FAILURE_ADAPTER.validate_python(self.failure_json),
             created_at=assume_utc(self.created_at),
-            claimed_at=assume_utc(self.claimed_at),
             started_at=optional_assume_utc(self.started_at),
             finished_at=optional_assume_utc(self.finished_at),
             updated_at=assume_utc(self.updated_at),

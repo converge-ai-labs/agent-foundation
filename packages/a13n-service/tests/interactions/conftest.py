@@ -15,7 +15,7 @@ from a13n_service.agents.domain import (
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
-from a13n_service.interactions.state import HostContinuationState, RunStateEnvelope
+from a13n_service.interactions.state import HostContinuationState, RunCheckpoint
 from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
@@ -86,14 +86,13 @@ def effective_agent_config() -> EffectiveAgentConfig:
     return candidate.model_copy(update={"content_digest": canonical_digest(payload)})
 
 
-def initial_state() -> RunStateEnvelope:
+def initial_state() -> RunCheckpoint:
     harness = HarnessState.new(thread_id=THREAD_ID)
-    return RunStateEnvelope(
+    return RunCheckpoint(
         run_id=RUN_ID,
         thread_id=harness.thread_id,
         checkpoint_seq=0,
         checkpoint_kind="initial",
-        input_disposition="pending",
         last_checkpoint_run_attempt_id=None,
         last_checkpoint_fence=0,
         agent_id=AGENT_ID,
@@ -108,21 +107,20 @@ def initial_state() -> RunStateEnvelope:
 
 
 def progress_state(
-    previous: RunStateEnvelope,
+    previous: RunCheckpoint,
     *,
-    fence: int = 1,
+    attempt_number: int = 1,
     run_attempt_id: str = ATTEMPT_ID,
-) -> RunStateEnvelope:
+) -> RunCheckpoint:
     payload = previous.model_dump(mode="python", by_alias=True)
     payload.update(
         checkpoint_seq=previous.checkpoint_seq + 1,
         checkpoint_kind="progress",
-        input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
-        last_checkpoint_fence=fence,
+        last_checkpoint_fence=attempt_number,
         outcome_candidate=None,
     )
-    return RunStateEnvelope.model_validate(payload)
+    return RunCheckpoint.model_validate(payload)
 
 
 @pytest.fixture
@@ -158,6 +156,11 @@ async def postgres_interaction_sessions(
         async with engine.begin() as connection:
             await connection.run_sync(service_metadata().drop_all)
         await engine.dispose()
+
+
+@pytest.fixture(params=["interaction_sessions", "postgres_interaction_sessions"])
+def relational_interaction_sessions(request):
+    return request.getfixturevalue(request.param)
 
 
 async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession]) -> None:

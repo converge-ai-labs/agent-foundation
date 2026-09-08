@@ -141,7 +141,7 @@ The public Native SSE framing, `Last-Event-ID` behavior, and replay-to-live cuto
 
 ### Publication Activation and Fencing
 
-PostgreSQL owns Attempt selection, leases, and the monotonic fence defined by [Attempt authority](13-run-attempt-scheduling-and-recovery.md#current-attempt-authority). Redis reuses that fence only to gate presentation publication; it allocates no independent ownership counter and grants no execution or outcome authority.
+PostgreSQL owns Attempt selection, leases, and the monotonic `attempt_number` fence defined by [Attempt authority](13-run-attempt-scheduling-and-recovery.md#current-attempt-authority). Redis reuses that fence only to gate presentation publication; it allocates no independent ownership counter and grants no execution or outcome authority.
 
 After the claim commits and before publishing any Attempt-owned observation, including Environment preparation, the executor requests one Redis Lua activation with the claim-derived organization, Run, Attempt, fence, and exact committed `run_attempt.leased` fact. No database session or transaction spans this request or its retries. The operation:
 

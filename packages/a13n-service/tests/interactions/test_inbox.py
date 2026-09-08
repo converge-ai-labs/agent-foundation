@@ -26,7 +26,7 @@ from a13n_service.interactions.models import ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
-from a13n_service.interactions.state import HostContinuationState, RunStateEnvelope
+from a13n_service.interactions.state import HostContinuationState, RunCheckpoint
 from a13n_service.storage import ObjectStore, short_session
 from fakeredis.aioredis import FakeRedis
 from sqlalchemy import select
@@ -221,14 +221,14 @@ async def test_checkpoint_consumes_only_exact_fifo_prefix(
 
     reconciler = DatabaseThreadInboxReconciler(
         interaction_sessions,
-        lambda entry: _materialized(entry.payload),
+        lambda entry, config: _materialized(entry.payload),
         clock=lambda: NOW + timedelta(seconds=3),
     )
-    entries = tuple(await reconciler.read_eligible(authority))
+    entries = tuple(await reconciler.read_eligible(authority, effective_agent_config()))
     assert [entry.input for entry in entries] == ["first", "second"]
 
     with pytest.raises(ThreadInboxConflict, match="FIFO prefix"):
-        await reconciler.confirm_checkpoint(
+        await reconciler.confirm_inbox_receipts(
             authority,
             await _publish_receipts(
                 initial,
@@ -244,7 +244,7 @@ async def test_checkpoint_consumes_only_exact_fifo_prefix(
     stored = await AttemptExecutionService(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
-    await reconciler.confirm_checkpoint(authority, stored)
+    await reconciler.confirm_inbox_receipts(authority, stored)
 
     async with short_session(interaction_sessions) as database:
         rows = tuple(
@@ -323,15 +323,10 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="harness-waiting",
-    )
-    authority = _authority(
-        claimed,
-        run_version=entered.run_version,
-        attempt_version=entered.attempt_version,
     )
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
     steer = await store.append_steer(
@@ -340,7 +335,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         input=_input("after feedback"),
         entry_id="inb_6666666666666666",
     )
-    waiting = _waiting_state(initial, claimed.attempt.id, claimed.attempt.fence)
+    waiting = _waiting_state(initial, claimed.attempt.id, claimed.attempt.attempt_number)
     stored = await execution.publish_checkpoint(
         authority,
         states,
@@ -352,7 +347,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=4),
         lifecycle=test_lifecycle_writer(),
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    ).commit_state_outcome(authority, stored)
     assert outcome.run_status.value == "waiting"
     rolled = await store.get_steer(organization_id=ORGANIZATION_ID, run_id=source.id, steer_id=steer.steer_id)
     assert rolled.target_run_id is None
@@ -419,7 +414,7 @@ async def _materialized(payload) -> str:
 
 
 async def _publish_receipts(
-    initial: RunStateEnvelope,
+    initial: RunCheckpoint,
     states,
     authority,
     *,
@@ -433,15 +428,14 @@ async def _publish_receipts(
     ).publish_checkpoint(authority, states, current, successor)
 
 
-def _state_with_receipts(previous: RunStateEnvelope, authority, receipts) -> RunStateEnvelope:
+def _state_with_receipts(previous: RunCheckpoint, authority, receipts) -> RunCheckpoint:
     payload = previous.model_dump(mode="python", by_alias=True)
     payload.update(
         checkpoint_seq=previous.checkpoint_seq + 1,
         checkpoint_kind="progress",
-        input_disposition="applied",
         last_checkpoint_run_attempt_id=authority.run_attempt_id,
-        last_checkpoint_fence=authority.fence,
-        host=HostContinuationState(consumed_inbox_entries=receipts),
+        last_checkpoint_fence=authority.attempt_number,
+        host=HostContinuationState(inbox_receipts=receipts),
         outcome_candidate=None,
     )
-    return RunStateEnvelope.model_validate(payload)
+    return RunCheckpoint.model_validate(payload)

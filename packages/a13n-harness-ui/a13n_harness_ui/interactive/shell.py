@@ -80,6 +80,7 @@ class CliShell:
         self.renderer = StreamRenderer(self.status)
         self.backend: SessionBackend | None = None
         self._activity_thread: str | None = None
+        self._notes_thread: str | None = None
         self._subagent_total: int | None = 0
         self.pending_codex_reset: ResetRequest | None = None
         self.history_browser: HistoryBrowser | None = None
@@ -360,9 +361,12 @@ class CliShell:
             fragments.append(("", "\n"))
         return FormattedText(fragments)
 
-    def _activity_hint(self) -> str:
+    def _activity_hint(self, *, compact: bool = False) -> str:
         hints = []
         thread_id = self.backend.thread_id if self.backend is not None else None
+        count = self.renderer.note_count
+        if thread_id is not None and self._notes_thread == thread_id and count is not None:
+            hints.append(f"Notes {count} · /notes")
         if thread_id is not None and self._activity_thread == thread_id:
             if self._subagent_total is None:
                 hints.append("Subagents unavailable · /subagents")
@@ -370,10 +374,18 @@ class CliShell:
                 hints.append(f"Subagents {self._subagent_total} total · /subagents")
         if self.renderer.background_hint:
             hints.append(self.renderer.background_hint)
+        if compact:
+            hints = [hint.partition(" · ")[0] for hint in hints]
         return " · ".join(hints)
 
     def _activity_text(self) -> FormattedText:
-        return FormattedText([("", terminal_text(self._activity_hint()))])
+        width = max(1, self.app.output.get_size().columns)
+        text = terminal_text(self._activity_hint())
+        if get_cwidth(text) > width:
+            text = terminal_text(self._activity_hint(compact=True))
+        if get_cwidth(text) > width:
+            text = text[: max(0, width - 1)] + "…"
+        return FormattedText([("", text)])
 
     async def _refresh_activities(self) -> None:
         backend = self.backend
@@ -409,6 +421,10 @@ class CliShell:
         width = max(1, self.app.output.get_size().columns)
         title = f" {label} "
         suffix = f" {hint} " if width >= 60 else ""
+        if width < 60 and not (self.selection or self.interaction):
+            mode = "Scroll" if self.mouse else "Select"
+            if get_cwidth(title) + len(mode) + 2 <= width:
+                suffix = f" {mode} "
         return FormattedText(
             [
                 ("class:input-area.label", title),
@@ -436,10 +452,23 @@ class CliShell:
             # Submission semantics already live in the composer header. Keep history
             # first so it remains discoverable when secondary shortcuts cannot fit.
             action = "Ctrl+C cancel" if self.busy else "Ctrl+C twice exit"
-            hints = ["Ctrl+T history", "Ctrl+O details", "F2 tasks", "Esc select" if self.mouse else "Esc scroll"]
+            hints = [
+                "Ctrl+T history",
+                "Ctrl+O details",
+                "F2 tasks",
+                "/notes",
+                "Esc select" if self.mouse else "Esc scroll",
+            ]
             hints += ["Alt+Enter newline", action, "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest"]
             if size.columns < 60:
-                hints = ["Ctrl+T history", "/help", "Alt+Enter newline", action]
+                hints = [
+                    "Ctrl+T history",
+                    "/notes",
+                    "Esc select" if self.mouse else "Esc scroll",
+                    "/help",
+                    "Alt+Enter newline",
+                    action,
+                ]
 
         # Wrap between whole shortcuts, not inside key names. Recompute both text
         # and Window height on every layout pass, including after a resize.
@@ -482,7 +511,18 @@ class CliShell:
         if self.backend is None or self.backend.thread_id is None:
             self.emit("No saved notes in this session.")
             return
-        self.renderer.restore_notes(await self.backend.app.thread_notes(thread_id=self.backend.thread_id), force=True)
+        await self._load_notes(force=True)
+
+    async def _load_notes(self, *, force: bool = False) -> None:
+        backend = self.backend
+        if backend is None or backend.thread_id is None:
+            self._notes_thread = None
+            return
+        thread_id = backend.thread_id
+        page = await backend.app.thread_notes(thread_id=thread_id)
+        if self.backend is backend and backend.thread_id == thread_id:
+            self.renderer.restore_notes(page, force=force)
+            self._notes_thread = thread_id
 
     async def _activate_decisions(self) -> None:
         if self.backend is None or self.closing or self.menu_handler is not None:
@@ -903,7 +943,7 @@ class CliShell:
         self.registry.set_skills(await backend.skill_catalog())
         if backend.thread_id is not None:
             self.renderer.tasks.restore(await backend.app.thread_tasks(thread_id=backend.thread_id))
-            self.renderer.restore_notes(await backend.app.thread_notes(thread_id=backend.thread_id))
+            await self._load_notes()
         self.ready = True
         self.status.state = "waiting for you" if self.interaction is not None else "ready"
         self.app.invalidate()
@@ -1044,9 +1084,7 @@ class CliShell:
                             self.renderer.tasks.restore(
                                 await self.backend.app.thread_tasks(thread_id=self.backend.thread_id)
                             )
-                            self.renderer.restore_notes(
-                                await self.backend.app.thread_notes(thread_id=self.backend.thread_id)
-                            )
+                            await self._load_notes()
                         else:
                             self.renderer.tasks.tasks.clear()
                 except Exception as exc:
@@ -1404,7 +1442,8 @@ class CliShell:
                 + self.status.state.capitalize()
                 + "\n"
                 + f"Agent        {self.status.agent}\nModel        {self.status.model}\n"
-                + f"Reasoning    {self.status.thinking}\nContext      {tokens} / {window} tokens\n"
+                + f"Reasoning    {self.status.thinking}\nService tier {self.status.service_tier_text} (requested)\n"
+                + f"Context      {tokens} / {window} tokens\n"
                 + f"Environment  {self.status.environment}\nWorkspace    {self.directory}\n"
                 + f"Session      {self.status.session_id or '(new)'}\nDisplay      {self.status.mode}",
                 kind="info",
@@ -1463,6 +1502,8 @@ class CliShell:
             self.launch(self.backend.models(argument), failure_input=invocation.source)
         elif name == "thinking":
             self.launch(self.backend.thinking(argument), failure_input=invocation.source)
+        elif name == "fast":
+            self.launch(self.backend.fast(argument), failure_input=invocation.source)
         elif name == "environment":
             self.launch(self.backend.set_environment(argument), failure_input=invocation.source)
         elif name == "new":
@@ -1479,5 +1520,5 @@ class CliShell:
             self.open_history()
         elif name == "config":
             self.emit(
-                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent; /model temporarily overrides only its model in this TUI session; /thinking adjusts reasoning for subsequent turns.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
+                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent; /model temporarily overrides only its model in this TUI session; /thinking adjusts reasoning for subsequent turns; /fast temporarily selects priority service (/fast reset restores Model configuration).\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
             )

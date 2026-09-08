@@ -291,6 +291,11 @@ class Transcript:
                     label.append(" · ", style=colors["muted"])
                     label.append(source.rstrip("\n"), style=f"not bold {colors['muted']}")
                     value = label
+            elif kind == "notes" and folded:
+                colors = activity_colors(self.theme)
+                title, separator, detail = source.partition(" · Ctrl+O details")
+                value = Text(title, style=f"bold {colors['running']}", no_wrap=True, overflow="ellipsis")
+                value.append(separator + detail, style=f"not bold {colors['muted']}")
             elif kind == "command" and folded:
                 title, _, body = source.rstrip("\n").partition("\n")
                 value = Text(title, style="bold", no_wrap=True, overflow="ellipsis")
@@ -311,7 +316,9 @@ class Transcript:
                     content = TerminalMarkdown(body, code_theme=self.theme.syntax_theme, hyperlinks=False)
                 value = Panel(
                     content,
-                    title=Text(title, style="bold"),
+                    title=Text(
+                        title, style=f"bold {activity_colors(self.theme)['running']}" if kind == "notes" else "bold"
+                    ),
                     title_align="left",
                     border_style="bright_black",
                     box=box.ROUNDED,

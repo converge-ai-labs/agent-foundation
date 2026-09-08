@@ -34,6 +34,15 @@ SecretCredentialSource = Annotated[
 ]
 
 
+class AgentSecretBinding(BaseModel):
+    """Bind one declared requirement to a non-secret, owner-scoped lookup intent."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    key: SecretKey
+    credential: SecretCredentialSource
+
+
 class SecretOwnerType(StrEnum):
     """Durable owner kinds accepted by the shared Secret table."""
 

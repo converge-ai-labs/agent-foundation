@@ -97,6 +97,9 @@ def tool_preview(arguments: str, *, name: str = "", directory: PurePath | None =
     except ValueError:
         return arguments[:240]
     if isinstance(value, dict):
+        if name in {"note_write", "note_get", "note_delete"}:
+            key = value.get("key")
+            return " ".join(key.split())[:500] if isinstance(key, str) else "all notes" if name == "note_get" else ""
         for key in ("command", "file_path", "path", "query", "pattern", "subject", "process_id"):
             if isinstance(value.get(key), str):
                 summary = value[key]
@@ -137,6 +140,13 @@ def tool_result(name: str, text: str) -> str:
             state = "failed · no edit confirmed" if name in {"edit", "multi_edit"} else "failed"
         elif value.get("ok") is True and name in {"edit", "multi_edit"}:
             state = "completed"
+        elif value.get("ok") is True and name in {"note_write", "note_get", "note_delete"}:
+            action = value.get("action")
+            state = (
+                action.replace("_", " ")
+                if isinstance(action, str) and action in {"created", "updated", "deleted", "already_absent"}
+                else "completed"
+            )
         if name.startswith("shell") and isinstance(value.get("status"), dict):
             state = shell_outcome(value["status"]) or state
         text = json.dumps(value, ensure_ascii=False, indent=2)

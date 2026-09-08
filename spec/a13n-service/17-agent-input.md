@@ -28,6 +28,7 @@ class AgentInput:
     schema_version: Literal["1", "2"]
     content: tuple[ContentBlock, ...] = ()
     structured_content: JsonValue | None = None
+    secret_bindings: tuple[AgentSecretBinding, ...] = ()
 
 
 type ContentBlock = TextContent | BinaryContent
@@ -175,6 +176,14 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 ## Compatibility
 
 `AgentInput.schema_version` versions the complete wire and accepted-value contract; public type names have no version suffix. Version `2` adds `AssetBinarySource` without reinterpreting retained version `1` input. Accepted values retain their version, the pinned Runtime and adapter must support it, and Workers never upgrade stored input. A new block, discriminator, delivery, required field, canonicalization rule, or changed field meaning requires another version. Unknown versions and discriminators fail closed. SDK conveniences serialize the same protocol and default new submissions to version `2`.
+
+## Agent Secret Bindings
+
+Each optional `secret_bindings` entry binds one declared `SecretRequirement.key` to a `credential` using the [Secret credential source](27-secret-management.md#credential-references) union. At most 128 entries are accepted. Keys must be unique, declared by the frozen root or child graph, and cover every required declaration; optional requirements may be absent. Selection is authorized before Run acceptance without decrypting any value. Workspace selections require `secrets.bind`; invoking-User selection resolves only that User's active Secret in the Run Workspace.
+
+The accepted input and Run envelope retain only these references. Workers recheck owner eligibility and decrypt the latest active value for a bounded managed-tool credential lease. A node can acquire only audiences matching its own declared keys. Plaintext is never mapped into model input, Environment variables, Harness state, or protocol context. Async children inherit only bindings declared by their frozen subtree. Retry and feedback retain the source bindings; new continuation, fork, and queued inputs submit their own bindings. Steering cannot replace the active Run's selection.
+
+This optional field is supported by both existing input versions. Empty bindings are omitted from serialization, preserving existing accepted canonical bytes and idempotency identities. Ordinary content and binary-source version semantics are unchanged.
 
 ## Invariants
 

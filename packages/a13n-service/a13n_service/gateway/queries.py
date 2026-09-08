@@ -102,16 +102,14 @@ class RunAttemptResource(_Resource):
     version: int
     run_id: str
     attempt_number: int
-    fence: int
     status: str
     replaces_run_attempt_id: str | None
-    recovery_reason: str | None
+    start_reason: str | None
     worker_build_id: str
     harness_run_id: str | None
     yield_reason: str | None
     failure: JsonValue | None
     created_at: datetime
-    claimed_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
     updated_at: datetime
@@ -709,16 +707,14 @@ def _attempt(record: RunAttemptRecord) -> RunAttemptResource:
         version=record.version,
         run_id=record.run_id,
         attempt_number=record.attempt_number,
-        fence=record.fence,
         status=record.status,
         replaces_run_attempt_id=record.replaces_run_attempt_id,
-        recovery_reason=record.recovery_reason,
+        start_reason=record.start_reason,
         worker_build_id=record.worker_build_id,
         harness_run_id=record.harness_run_id,
         yield_reason=record.yield_reason,
         failure=record.failure_json,
         created_at=assume_utc(record.created_at),
-        claimed_at=assume_utc(record.claimed_at),
         started_at=optional_assume_utc(record.started_at),
         finished_at=optional_assume_utc(record.finished_at),
         updated_at=assume_utc(record.updated_at),

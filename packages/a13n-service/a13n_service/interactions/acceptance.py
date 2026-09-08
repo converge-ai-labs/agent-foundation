@@ -58,7 +58,7 @@ from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
 from .records import session_record, thread_record
-from .state import RunPayloadEnvelope, RunStateEnvelope
+from .state import RunCheckpoint, RunPayloadEnvelope
 
 
 class RunAcceptanceService:
@@ -85,7 +85,7 @@ class RunAcceptanceService:
         session: Session | None,
         thread: Thread,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         hook_subscription: InlineHookSubscriptionInput | None = None,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
@@ -146,7 +146,7 @@ class RunAcceptanceService:
         self,
         *,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         expected_thread_version: int,
         expected_current_run_id: str | None,
         expected_head_run_id: str | None,
@@ -272,7 +272,7 @@ class RunAcceptanceService:
         self,
         *,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         queued_submission_id: str,
         submission_digest_sha256: str,
         accepted_input: AcceptedAgentInput,
@@ -487,7 +487,7 @@ class RunAcceptanceService:
     async def _load_replay(
         self,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         *,
         accepted_thread_version: int,
     ) -> RunAcceptanceReceipt | None:
@@ -504,7 +504,7 @@ class RunAcceptanceService:
                 return None
             return await _validate_replay(database, record, run, accepted_thread_version=accepted_thread_version)
 
-    async def _publish_initial(self, run: Run, state: RunStateEnvelope) -> None:
+    async def _publish_initial(self, run: Run, state: RunCheckpoint) -> None:
         try:
             await self._states.create(run.organization_id, state)
         except StaleStateWriter:
@@ -555,7 +555,7 @@ class RunAcceptanceService:
     async def _reconcile_conflict(
         self,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         error: IntegrityError,
         *,
         accepted_thread_version: int,
@@ -605,7 +605,7 @@ class RunAcceptanceService:
             return queued
 
 
-def validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
+def validate_prepared_run(run: Run, state: RunCheckpoint) -> None:
     if run.status is not RunStatus.accepted or run.version != 1:
         raise ValueError("prepared acceptance requires a version-one accepted Run")
     if state.checkpoint_kind != "initial" or state.checkpoint_seq != 0:
@@ -613,7 +613,7 @@ def validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
     validate_run_state_selection(run, state)
 
 
-def validate_run_state_selection(run: Run, state: RunStateEnvelope) -> None:
+def validate_run_state_selection(run: Run, state: RunCheckpoint) -> None:
     """Validate immutable Run selection facts against any retained checkpoint."""
 
     if (state.run_id, state.thread_id) != (run.id, run.thread_id):

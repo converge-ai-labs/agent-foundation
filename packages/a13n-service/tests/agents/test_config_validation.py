@@ -185,3 +185,14 @@ async def test_run_override_cannot_remove_a_protocol_client_tool(
 
     assert rejected.value.code == "agent_revision_not_executable"
     assert rejected.value.details == {"reason": "protocol_client_tool_unavailable"}
+
+
+@pytest.mark.parametrize("name", ["run_status", "artifact", "replay_gap"])
+def test_service_event_visibility_uses_component_namespace(name: str) -> None:
+    config = _with_protocol(lambda protocol: protocol.update(event_visibility=[f"a13n.service.{name}"]))
+    validate_agent_config(config, protocol_policy=AgentProtocolPolicy())
+
+    legacy = _with_protocol(lambda protocol: protocol.update(event_visibility=[f"a13n.foundation.{name}"]))
+    with pytest.raises(AgentConfigValidationError) as rejected:
+        validate_agent_config(legacy, protocol_policy=AgentProtocolPolicy())
+    assert rejected.value.reason == "protocol_event_unsupported"

@@ -4,14 +4,14 @@ import pytest
 from a13n_harness import HarnessState
 from a13n_harness.errors import RunError
 from a13n_service.interactions.inbox_delivery import AdaptedThreadInboxEntry, incorporated_receipts, merge_receipts
-from a13n_service.interactions.state import ConsumedThreadInboxEntry
+from a13n_service.interactions.state import InboxReceipt
 from pydantic_ai.messages import BinaryContent, ModelRequest, TextContent, UserPromptPart
 
 from .conftest import RUN_ID
 
 
 def _entry(input="same input", *, entry_id="inb_1234567890abcdef"):
-    return AdaptedThreadInboxEntry(1, ConsumedThreadInboxEntry(inbox_entry_id=entry_id, kind="steer"), input)
+    return AdaptedThreadInboxEntry(1, InboxReceipt(inbox_entry_id=entry_id, kind="steer"), input)
 
 
 @pytest.mark.parametrize(

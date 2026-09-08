@@ -271,10 +271,23 @@ type ExtensionResource = Annotated[
 ]
 
 
+class McpFileValueSource(StrictModel):
+    """Internal locator for a string in an exact user-owned MCP source file."""
+
+    model_config = ConfigDict(str_strip_whitespace=False)
+
+    file: str = Field(pattern=r"^mcp/[^/\\\\]+\.(yaml|json)$")
+    source_digest: SourceDigest
+    path: tuple[str, ...] = Field(min_length=1, max_length=8)
+
+
+type McpValueSource = EnvironmentVariableSource | McpFileValueSource
+
+
 class McpCommandTransport(StrictModel):
     command: str = Field(min_length=1, max_length=1024)
     arguments: tuple[str, ...] = Field(default=(), max_length=256)
-    environment: dict[str, EnvironmentVariableSource] = Field(default_factory=dict)
+    environment: dict[str, McpValueSource] = Field(default_factory=dict)
 
     @field_validator("arguments")
     @classmethod
@@ -285,9 +298,7 @@ class McpCommandTransport(StrictModel):
 
     @field_validator("environment")
     @classmethod
-    def _valid_environment_keys(
-        cls, value: dict[str, EnvironmentVariableSource]
-    ) -> dict[str, EnvironmentVariableSource]:
+    def _valid_environment_keys(cls, value: dict[str, McpValueSource]) -> dict[str, McpValueSource]:
         if any(not _ENV_NAME.fullmatch(name) for name in value):
             raise ValueError("MCP environment keys must be valid environment variable names")
         return value
@@ -295,7 +306,7 @@ class McpCommandTransport(StrictModel):
 
 class McpRemoteTransport(StrictModel):
     url: str = Field(min_length=1, max_length=2048)
-    headers: dict[str, EnvironmentVariableSource] = Field(default_factory=dict)
+    headers: dict[str, McpValueSource] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _safe_remote(self) -> Self:
@@ -460,7 +471,12 @@ class SourceDocument(StrictModel):
     source_digest: SourceDigest
     resource_kind: str
     resource_id: ResourceId | None = None
+    resource_ids: tuple[ResourceId, ...] = Field(default=(), exclude_if=lambda value: not value)
     content: str = Field(max_length=1024 * 1024)
+
+    @property
+    def indexed_resource_ids(self) -> tuple[str, ...]:
+        return (self.resource_id,) if self.resource_id is not None else self.resource_ids
 
 
 class LoadedHarnessUiConfiguration(StrictModel):
