@@ -18,6 +18,28 @@ from fakeredis.aioredis import FakeRedis
 from tests.lifecycle_support import test_lifecycle_writer
 
 
+async def accepted_running_attempt(sessions, objects):
+    from a13n_service.interactions.attempts import AttemptExecutionService
+    from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
+
+    from tests.hooks.support import seed_hook_actor_access
+
+    from .conftest import NOW
+    from .test_attempt_execution import _accept_root, _authority, _worker
+
+    await seed_hook_actor_access(sessions)
+    _, run, _ = await _accept_root(sessions, objects)
+    claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
+    assert isinstance(claim, ClaimedAttempt)
+    execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
+    context = _authority(claim)
+    preparation = await execution.commit_preparation_success(context)
+    await execution.enter_harness(context, preparation=preparation, harness_run_id="integration-test")
+    return run, context
+
+
 @asynccontextmanager
 async def worker_runtime(sessions, objects, path, monkeypatch, *, settings, lock, model_factory, connectors=None):
     preflight = AsyncMock(return_value=PreparedOnDemandPluginRuntime(lock.digest, HarnessPluginFactoryCatalog(())))

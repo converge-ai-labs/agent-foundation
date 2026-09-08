@@ -87,6 +87,8 @@ An initial call does not import an arbitrary prior transcript. Historical import
 
 The adapter maps the accepted new user tail into one canonical `AgentInput`. Text and binary parts retain their order, media type, acquisition, and delivery semantics; structured AG-UI data maps to `structured_content` and follows the selected AgentRevision's optional `ProtocolConfig.input_data_schema`. The common Agent input contract validates the resulting value before the control operation accepts a Run. AG-UI protocol fields that express state, context, client tools, or feedback remain command options or correlated feedback and never enter `AgentInput` implicitly.
 
+Accepted `state` and `context` are retained together as optional `protocol_context` in the Service Run envelope, independently of ordinary `AgentInput`. Initialization validates them against the frozen Revision policy. Worker preparation projects them through Harness model-context middleware as explicitly untrusted client data in the root input preamble or tool-result request epilogue. Checkpoints and Retry retain the same context; correlated feedback retains it unless the accepted request supplies a replacement. A new Hosted invocation, continuation, or fork supplies its own context. It never becomes Harness execution state or an authorization source.
+
 Standard `state`, `context`, and `tools` plus Service extensions are bounded untrusted inputs:
 
 | Input                   | Accepted meaning                                                                                                     |
@@ -130,7 +132,7 @@ sequenceDiagram
 
 `RUN_STARTED` comes from durable Run acceptance. `RUN_FINISHED` and `RUN_ERROR` come only from the selected sealed Run outcome. An observer's Harness terminal event is suppressed as an external lifecycle authority and is replaced by the matching durable projection. Worker takeover creates a new Harness Run and fresh observer without changing external `runId` or producing another `RUN_STARTED`.
 
-A waiting Run emits the versioned custom `a13n.foundation.run_status` event with `status="waiting"` and a complete authorized pending contract, then closes the current delivery attachment. It does not emit a false success or error. A later new `runId` carrying valid `resume` accepts and observes the feedback Run; a later ordinary user tail explicitly defaults that pending set and observes the one composite waiting-Continue Run. Waiting-bound steer and async results are not projected into the composite first request and enter only when the Service-owned awaited delivery hook reaches its later safe boundary.
+A waiting Run emits the versioned custom `a13n.service.run_status` event with `status="waiting"` and a complete authorized pending contract, then closes the current delivery attachment. It does not emit a false success or error. A later new `runId` carrying valid `resume` accepts and observes the feedback Run; a later ordinary user tail explicitly defaults that pending set and observes the one composite waiting-Continue Run. Waiting-bound steer and async results are not projected into the composite first request and enter only when the Service-owned awaited delivery hook reaches its later safe boundary.
 
 Transport abort, HTTP cancellation, EOF, timeout, and SSE disconnect terminate delivery only. The Run continues according to durable state.
 
@@ -146,21 +148,23 @@ The selected Revision's ProtocolConfig can select supported state, message snaps
 
 `RAW`, raw `a13n.harness.*` fallback, RunAttempt, Worker, Redis, internal Harness Run, provider-native events, and unprocessed exceptions are never delivered. The stable Service custom registry initially contains only:
 
-| Name                         | Meaning                                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `a13n.foundation.run_status` | Accepted, running, waiting, cancellation, or other safe durable Run status projection                                                 |
-| `a13n.foundation.artifact`   | Stable authorized result projection; an explicitly published Asset carries its bounded `AssetRef` without an object key or bearer URL |
-| `a13n.foundation.replay_gap` | Hosted delivery history is unavailable and client reconciliation is required                                                          |
+| Name                      | Meaning                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n.service.run_status` | Accepted, running, waiting, cancellation, or other safe durable Run status projection                                                 |
+| `a13n.service.artifact`   | Stable authorized result projection; an explicitly published Asset carries its bounded `AssetRef` without an object key or bearer URL |
+| `a13n.service.replay_gap` | Hosted delivery history is unavailable and client reconciliation is required                                                          |
+
+Service-owned custom events use `a13n.service.*`, distinct from the direct Harness observer's `a13n.harness.*` events. The namespace identifies the owning component for both self-hosted and managed deployments.
 
 Each custom `value` contains its own `schema_version`. ProtocolConfig can select from this finite registry but cannot invent an event name or schema.
 
-When `a13n.foundation.artifact` projects an [Asset](32-asset-management.md), the hosted binding retains the exact `asset_id` and reauthorizes the current caller before metadata or content delivery. The custom event does not create another Asset identity, pin Asset retention, or make an AG-UI cursor a content credential. A deleted Asset remains unavailable even when the hosted event is still replayable.
+When `a13n.service.artifact` projects an [Asset](32-asset-management.md), the hosted binding retains the exact `asset_id` and reauthorizes the current caller before metadata or content delivery. The custom event does not create another Asset identity, pin Asset retention, or make an AG-UI cursor a content credential. A deleted Asset remains unavailable even when the hosted event is still replayable.
 
 ## Replay and Failure
 
 Service retains a Hosted AG-UI projection with stable event identities and a bounded cursor independently from `HarnessAguiObserver.snapshot()`. Reconnect replays that projection and crosses to live delivery without skipping an event. `HarnessAguiObserver.resume()` can reconstruct one fresh observer from exact source history for one Harness Run; it is never the client replay mechanism and never spans Worker-created Harness Runs.
 
-If the requested Hosted cursor is outside retained history, attachment fails before SSE with a bounded conflict when known. A gap discovered after streaming starts emits `a13n.foundation.replay_gap` and closes. The client reads current Service state or starts another supported reconciliation flow; it never continues from an arbitrary surviving event.
+If the requested Hosted cursor is outside retained history, attachment fails before SSE with a bounded conflict when known. A gap discovered after streaming starts emits `a13n.service.replay_gap` and closes. The client reads current Service state or starts another supported reconciliation flow; it never continues from an arbitrary surviving event.
 
 | Failure                                     | Observable outcome                        | Durable consequence                    |
 | ------------------------------------------- | ----------------------------------------- | -------------------------------------- |
@@ -174,6 +178,8 @@ If the requested Hosted cursor is outside retained history, attachment fails bef
 ## Compatibility and Invariants
 
 Service selects one published Harness release group, which pins the Harness, Agent Stream Protocol, Environment Provider, and compatible AG-UI Python schema. Service manifests and compatibility tests select exact package versions; this specification defines behavior and does not hard-code a release artifact version. Breaking changes to Service extensions require a new extension schema or Hosted route compatibility line.
+
+Service custom event names use only the `a13n.service.*` registry in publication, ProtocolConfig selection, and retained delivery boundaries. Retained snapshots identify the Service Run with `run_id` and the external AG-UI Run with `external_run_id`. Superseded event names and snapshot field names have no compatibility aliases or migration path.
 
 1. Hosted AG-UI uses `HarnessAguiObserver` as its only Harness event converter.
 2. One external AG-UI Run binds one Service Run; Worker recovery does not change either identity.

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-a13n Service provides an optional `foundation.interaction_read` Capability for reading authorized interaction history, including other Threads or Sessions. Service owns the policy, plugin, Capability, Toolset, authorization, internal reader, and storage adapters. It uses existing Harness extension points; Harness does not import Service code or define a Service-specific contract.
+a13n Service provides an optional `a13n.service.interaction_read` Capability for reading authorized interaction history, including other Threads or Sessions. Service owns the policy, plugin, Capability, Toolset, authorization, internal reader, and storage adapters. It uses existing Harness extension points; Harness does not import Service code or define a Service-specific contract.
 
 The Capability is read-only. Its tools call an asynchronous Service reader directly in process, not through the service's HTTP API or SDK. This contract adds no relational table, object type, lifecycle state, or public route.
 
@@ -18,7 +18,7 @@ The Capability is read-only. Its tools call an asynchronous Service reader direc
 
 ## Definition Policy and Run Grant
 
-The bounded configuration of the built-in `foundation.interaction_read` Plugin instance can contain this conceptual policy; AgentConfig does not define another top-level Capability field:
+The bounded configuration of the built-in `a13n.service.interaction_read` Plugin instance can contain this conceptual policy; AgentConfig does not define another top-level Capability field:
 
 ```python
 class InteractionReadPolicy:
@@ -87,7 +87,7 @@ bound_plugin = await agent_plugin.for_run(run_context)
 
 # During Pydantic run binding, the Capability resolves the bound plugin.
 plugin = ctx.deps.plugins.require(
-    "foundation.interaction_read",
+    "a13n.service.interaction_read",
     InteractionReadPlugin,
 )
 toolset = interaction_read_capability.build_toolset(plugin.reader)
@@ -169,7 +169,7 @@ Using existing Run text and replay objects avoids a new conversation index or It
 
 ## Invariants
 
-1. Service owns `foundation.interaction_read`; Harness only provides its existing extension and tool-execution contracts.
+1. Service owns `a13n.service.interaction_read`; Harness only provides its existing extension and tool-execution contracts.
 2. Definitions persist only policy. Agent construction adds the Capability, and each run binds a fresh grant and reader before tools are materialized.
 3. Every tool call crosses the Harness tool boundary and then calls the bound Service reader in process, never through HTTP, an SDK, or custom `RunBindings.capabilities`.
 4. The reader reauthorizes every operation and page. Model arguments, identifiers, metadata, object keys, and cursors grant no access.

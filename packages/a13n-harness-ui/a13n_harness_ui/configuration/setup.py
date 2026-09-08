@@ -68,6 +68,7 @@ class SetupSelection(StrictModel):
     grok_model: Literal["grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"] = "grok-4.6"
 
     codex_thinking: Literal["low", "medium", "high", "xhigh"] = "high"
+    codex_service_tier: Literal["priority", "default"] | None = None
     codex_context_window: int = Field(default=350000, ge=16000, le=872000)
     proactive_context_management_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
@@ -164,6 +165,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
                 "thinking": selection.codex_thinking,
                 "openai_reasoning_summary": "detailed",
                 "openai_store": False,
+                **({"service_tier": selection.codex_service_tier} if selection.codex_service_tier is not None else {}),
             }
             if codex
             else {},

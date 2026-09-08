@@ -306,7 +306,7 @@ def _plan(
     declaration = SubagentDefinition(name="researcher", description="Research", agent=child)
     return SubagentDelegationPlan(
         child=BuiltSubagent(declaration=declaration, definition=child, executable=executable),
-        child_identity=AgentIdentityRef(issuer="foundation", subject="child"),
+        child_identity=AgentIdentityRef(issuer="a13n.service", subject="child"),
         context=ResolvedDelegationContext(
             input=delegated_input,
             policy=DelegationContextPolicy(),

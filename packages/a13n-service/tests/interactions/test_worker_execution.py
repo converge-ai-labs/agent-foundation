@@ -1,33 +1,49 @@
+import json
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_service.agents.domain import canonical_digest
+from a13n_environment import (
+    DirectLocalEnvironmentProvider,
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness import EnvironmentAccess, EnvironmentMount
+from a13n_harness.tools.invocation import current_invocation_scope
+from a13n_service.agents.domain import AssetPublicationConfig, SecretRequirement, canonical_digest
+from a13n_service.agents.reconstruction import AgentReconstructor
+from a13n_service.assets.models import AssetRecord
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import RunAttemptYieldReason
+from a13n_service.interactions.harness_runtime import SingleHarnessEnvironment
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.interactions.outcomes import RunOutcomeService
+from a13n_service.interactions.protocol_context import ProtocolInputContext
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, WorkerClaim
+from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.plugins.models import PluginRuntimeLockRecord
 from a13n_service.plugins.runtime import PluginRuntimeLock, default_runtime_target, installed_harness_version
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
 from anyio import create_task_group, fail_after, sleep
-from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.messages import TextContent as NativeTextContent
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from sqlalchemy import select
 
 from tests.lifecycle_support import test_lifecycle_writer
 
 from . import test_attempt_execution as acceptance
 from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID, effective_agent_config
+from .test_agent_secrets import TEST_VALUE, _binding, _secret, _SecretTool
 from .worker_helpers import worker_runtime
 
 pytestmark = pytest.mark.anyio
@@ -55,12 +71,33 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     config = effective_agent_config().model_copy(update={"runtime_lock_digest": lock.digest})
     config = config.model_copy(
         update={
+            "asset_publication": AssetPublicationConfig(),
+            "secret_requirements": (SecretRequirement(key="storage"),),
+            "protocol": config.protocol.model_copy(
+                update={"state_schema": {"type": "object"}, "context_schema": {"type": "array"}}
+            ),
+        }
+    )
+    config = config.model_copy(
+        update={
             "content_digest": canonical_digest(
                 config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
             )
         }
     )
     monkeypatch.setattr(acceptance, "effective_agent_config", lambda: config)
+    protocol_context = ProtocolInputContext.model_validate(
+        {"state": {"locale": "zh-CN"}, "context": [{"description": "Customer tier", "value": "enterprise"}]}
+    )
+    initialize = acceptance.initialize_start_state
+
+    def initialize_with_context(seed, *, thread_id):
+        return initialize(
+            seed.model_copy(update={"protocol_context": protocol_context, "secret_bindings": (_binding(),)}),
+            thread_id=thread_id,
+        )
+
+    monkeypatch.setattr(acceptance, "initialize_start_state", initialize_with_context)
     states, run, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store)
     async with transaction(interaction_sessions) as session:
         session.add(
@@ -104,6 +141,19 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                     updated_at=NOW,
                 )
             )
+    await _secret(interaction_sessions)
+    consumed = []
+
+    def consume():
+        consumed.append(current_invocation_scope().credentials["storage"])
+        return "authenticated"
+
+    provided = AgentReconstructor._provided_capabilities
+    monkeypatch.setattr(
+        AgentReconstructor,
+        "_provided_capabilities",
+        lambda self, node: (*provided(self, node), _SecretTool(consume)),
+    )
     if recover_candidate:
         if not late_input:
             monkeypatch.setattr(
@@ -142,6 +192,28 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
             initial,
             acceptance._completed_state(initial.envelope, claim.attempt.id, claim.attempt.attempt_number),
         )
+    if not recover_candidate or late_input:
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        (workspace / "result.txt").write_text("worker-produced-asset")
+        original_prepare = WorkerAttemptPreparer.open_runtime
+
+        @asynccontextmanager
+        async def prepare_with_environment(self, context):
+            async with original_prepare(self, context) as invocation:
+                environment = DirectLocalEnvironmentProvider().create_environment(
+                    configuration=DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=workspace)),
+                    environment_id="worker-assets",
+                    state=None,
+                )
+                yield replace(
+                    invocation,
+                    environment=SingleHarnessEnvironment(
+                        EnvironmentMount(environment, access=EnvironmentAccess.READ_ONLY)
+                    ),
+                )
+
+        monkeypatch.setattr(WorkerAttemptPreparer, "open_runtime", prepare_with_environment)
     injected = False
     commit = RunOutcomeService.commit_verified_state_outcome
 
@@ -170,10 +242,30 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
 
     monkeypatch.setattr(RunAttemptControl, "after_stream_entry", handoff_continuation)
     requests = []
+    published = []
 
     async def model(messages, info):
         requests.append(messages)
-        yield "worker completed"
+        assert "zh-CN" in repr(messages) and "enterprise" in repr(messages)
+        assert "publish_asset" in {tool.name for tool in info.function_tools}
+        if len(requests) == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="publish_asset",
+                    json_args=json.dumps({"path": "/workspace/result.txt"}),
+                    tool_call_id="publish-file",
+                )
+            }
+        elif len(requests) == 2:
+            yield {0: DeltaToolCall(name="use_credential", json_args="{}", tool_call_id="use-secret")}
+        else:
+            published.extend(
+                part.content
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == "publish_asset"
+            )
+            yield "worker completed"
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=model)
@@ -223,7 +315,9 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         assert checkpoint.envelope.checkpoint_kind == "completed"
         assert checkpoint.envelope.initial_input_applied
         assert checkpoint.writer_fence == (3 if handoff else 2 if recover_candidate or late_input else 1)
-        assert len(requests) == (int(not recover_candidate) + int(late_input))
+        assert len(requests) == (
+            0 if recover_candidate and not late_input else 3 + int(late_input and not recover_candidate)
+        )
         if late_input:
             async with short_session(interaction_sessions) as session:
                 entry = await session.get(ThreadInboxRecord, "inb_9999999999999999")
@@ -256,6 +350,18 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
             ]
             assert prompts.count("new direction") == 1
             assert prompts.count("hello") == int(not recover_candidate)
+        assert checkpoint.envelope.protocol_context == protocol_context
+        assert consumed == ([] if recover_candidate and not late_input else [TEST_VALUE])
+        assert TEST_VALUE not in checkpoint.envelope.model_dump_json()
+        if not recover_candidate or late_input:
+            async with short_session(interaction_sessions) as session:
+                asset = await session.scalar(
+                    select(AssetRecord)
+                    .join(RunAttemptRecord, AssetRecord.source_run_attempt_id == RunAttemptRecord.id)
+                    .where(RunAttemptRecord.run_id == run.id)
+                )
+                assert asset is not None and asset.filename == "result.txt"
+            assert published and published[0].asset_id == asset.id
         assert preflight.await_count == (2 if late_input and not recover_candidate else 1) + int(handoff)
         assert all(call.args == (lock,) for call in preflight.await_args_list)
 

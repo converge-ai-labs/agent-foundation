@@ -183,9 +183,11 @@ After confirmed state claim, the fenced preparation decision, and recovery recei
 
 1. reconstructs the accepted Agent specification, exact managed plugin set, Skill and subagent composition, output contract, and model selection;
 2. uses the existing Attempt-scoped `RunAttemptControl` and its bound `HarnessDriver`; the facade retains the current `AttemptContext`, final recovery state, private gate, and executor cancellation binding without exposing them to Agent code;
-3. inserts one direct `RunControlCapability` with ID `a13n.foundation.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
+3. inserts one direct `RunControlCapability` with ID `a13n.service.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
 4. requires the Harness build to validate finalized Capability identity and ordering, rejecting a duplicate reserved ID or an incompatible outer wrapper; and
 5. calls `HarnessBuilder.build(definition)`.
+
+Service reconstruction includes one fresh `DynamicEnvironmentCapability(DynamicEnvironmentConfiguration())` in each root and inline child `AgentDefinition.capabilities`. An asynchronous child receives the same composition when its own Attempt reconstructs its root definition. This trusted Service composition exposes the standard Environment file and shell tools, Run-local process observations, and mount-change notices under the [Harness Environment contract](../a13n-harness/08-environment-integration.md#model-context-projection). Effective mount access and Provider descriptors determine the available tools: a missing Environment exposes none, file-only access exposes no shell, and shell requires the corresponding Provider action and accepted `full` access. Capability construction and tool discovery do not prepare a lazy Environment. The capability is definition behavior, not a managed Plugin, a selectable capability overlay entry, or a `RunBindings` attachment; it does not select an Environment or broaden Run authority.
 
 The control Capability contributes no instructions, model settings, Toolset, native tool, output type, or model-facing description. Its ordering is `CapabilityOrdering(position="outermost")`, and Service supplies it before plugin-contributed Capabilities at the same tier. It observes the effective downstream response or node result, returns those values unchanged, borrows each raw Harness context only to obtain a driver-owned callback boundary, and performs Service decisions through `RunAttemptControl`. Neither collaborator can outlive the executor or act as a service locator.
 
@@ -213,7 +215,7 @@ class RunControlCapability(
     control: RunAttemptControl
     driver: HarnessDriver
     binding: HarnessContextBinding | None = None
-    id: str = "a13n.foundation.run-control"
+    id: str = "a13n.service.run-control"
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")

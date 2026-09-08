@@ -12,6 +12,7 @@ from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from anyio import fail_after
 
 from a13n_service.assets.objects import AssetObjectStore
+from a13n_service.assets.publication import AgentAssetPublisher
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
@@ -33,6 +34,7 @@ from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
 from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
+from a13n_service.secrets.agent_runtime import AgentSecretRuntime
 from a13n_service.skills.runtime import SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
@@ -52,6 +54,7 @@ class WorkerAttempts:
         stream: RedisRunStream,
         replay: RunReplayStore,
         assets: AssetObjectStore,
+        asset_publisher: AgentAssetPublisher | None = None,
         observability: ObservabilityRuntime | None = None,
     ) -> None:
         self._shared = shared
@@ -62,6 +65,8 @@ class WorkerAttempts:
         self._stream = stream
         self._replay = replay
         self._assets = assets
+        self._asset_publisher = asset_publisher
+        self._secrets = AgentSecretRuntime(shared.storage.sessions, shared.secret_protector)
         self._observability = observability
         self._execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)
         self._states = RunStateStore(shared.storage.objects)
@@ -161,6 +166,8 @@ class WorkerAttempts:
                 environments=self._environments,
                 external_tools=self._external_tools,
                 subagent_capability=subagent_capability,
+                asset_publisher=self._asset_publisher,
+                secrets=self._secrets,
             )
             projector = AttemptRunStreamProjector(self._stream, context)
             driver = HarnessDriver(

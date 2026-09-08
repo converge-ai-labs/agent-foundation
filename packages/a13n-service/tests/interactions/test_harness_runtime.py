@@ -177,7 +177,7 @@ async def _stored_state(objects, envelope) -> StoredRunState:
 
 def _instance() -> AgentInstanceContext:
     return AgentInstanceContext(
-        identity=AgentIdentityRef(issuer="foundation", subject="test-user"),
+        identity=AgentIdentityRef(issuer="a13n.service", subject="test-user"),
         agent_instance_id="instance-1",
         actor="user:test-user",
         host_refs={"session_id": "session-1"},
@@ -310,7 +310,7 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     assert coordinator.boundaries
     with pytest.raises(RunError) as error:
         await coordinator.boundaries[0].enqueue("late input", priority="asap")
-    assert error.value.code == "foundation_control_identity_mismatch"
+    assert error.value.code == "service_control_identity_mismatch"
 
 
 async def test_recovery_omits_already_applied_input_factory(
@@ -414,7 +414,7 @@ async def test_pending_deferred_state_requires_native_resume(
             preparation=_preparation(),
         )
 
-    assert exc_info.value.code == "foundation_deferred_resume_required"
+    assert exc_info.value.code == "service_deferred_resume_required"
 
 
 async def test_runtime_passes_exact_native_deferred_resume(

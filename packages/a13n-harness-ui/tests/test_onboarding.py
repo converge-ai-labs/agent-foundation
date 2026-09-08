@@ -38,11 +38,14 @@ def _codex_login_file(expiry: datetime) -> Path:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("expired", [False, True])
-async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_path: Path, expired: bool) -> None:
+@pytest.mark.parametrize("fast", ["", "on", "off"])
+async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
+    tmp_path: Path, expired: bool, fast: str
+) -> None:
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=-1 if expired else 1))
     original = account.read_bytes()
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", fast, "full-control"])
     asked, output = [], []
 
     async def ask(question, selection):
@@ -59,7 +62,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_pa
         codex_refresh=unexpected,
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
-    assert asked == ["provider", "model", "environment"]
+    assert asked == ["provider", "model", "fast", "environment"]
     assert not answers
     assert "Using existing Codex login" in "\n".join(output)
     assert account.read_bytes() == original
@@ -67,6 +70,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(tmp_pa
     configuration = await load_harness_ui_configuration(path)
     model = configuration.models["model-codex"]
     assert model.settings["thinking"] == "high"
+    assert model.settings["service_tier"] == ("default" if fast == "off" else "priority")
     assert model.model_characteristics.context_window == 350000
     assert configuration.document.defaults.environment_profile == "environment-native"
 
@@ -97,7 +101,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
     )
     original = project.read_bytes()
     output = []
-    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
 
     async def ask(question, selection):
         return answers.popleft()
@@ -161,7 +165,7 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("cancel_at", ["provider", "model", "environment"])
+@pytest.mark.parametrize("cancel_at", ["provider", "model", "fast", "environment"])
 async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cancel_at: str) -> None:
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
@@ -185,7 +189,7 @@ async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cance
 @pytest.mark.anyio
 async def test_missing_account_requires_external_login_and_allows_retry(tmp_path: Path) -> None:
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
-    answers = deque(["codex", "later", "gpt-5.6-sol", "full-control"])
+    answers = deque(["codex", "later", "gpt-5.6-sol", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -241,7 +245,7 @@ def test_custom_settings_are_optional_and_connection_change_clears_stale_values(
     wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
     wizard.accept("gpt-6-astra")
-    for value in ("all", "extended", "low", "no", "be concise", "full-control"):
+    for value in ("on", "all", "extended", "low", "no", "be concise", "full-control"):
         wizard.accept(value)
     assert wizard.question is None
     assert wizard.selection("/tmp")["codex_context_window"] == 872000
@@ -410,7 +414,7 @@ async def test_landing_busy_cancellation_releases_terminal() -> None:
 async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaults(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -424,9 +428,9 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
         root = path.read_bytes()
         asked.clear()
-        answers.extend(["new", "codex", "gpt-6-astra", "Astra coding"])
+        answers.extend(["new", "codex", "gpt-6-astra", "", "Astra coding"])
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
-        assert asked == ["model_source", "provider", "model", "name"]
+        assert asked == ["model_source", "provider", "model", "fast", "name"]
         assert path.read_bytes() == root
         source = await app.current_configuration()
         assert source.models[source.agents["agent-astra-coding"].model].route == "openai-codex:gpt-6-astra"
@@ -438,7 +442,7 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
 async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, api: bool) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -466,13 +470,13 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
                     "Shared model",
                 ]
                 if api
-                else ["codex", "gpt-6-astra", "Shared model"]
+                else ["codex", "gpt-6-astra", "", "Shared model"]
             )
             assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_model=True)
             assert asked == (
                 ["provider", "api_provider", "base_url", "credential", "model", "preset", "context", "name"]
                 if api
-                else ["provider", "model", "name"]
+                else ["provider", "model", "fast", "name"]
             )
         source = await app.current_configuration()
         assert set(source.agents) == {"agent-codex"}
@@ -501,7 +505,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
 @pytest.mark.anyio
 async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
-    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
 
     async def ask(question, selection):
         value = answers.popleft()
@@ -514,7 +518,7 @@ async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path:
         configuration_path=tmp_path / "config.yaml",
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
-        answers.extend(["model-codex", SetupBack(), "new", "codex", "gpt-6-astra", "Independent"])
+        answers.extend(["model-codex", SetupBack(), "new", "codex", "gpt-6-astra", "", "Independent"])
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
         source = await app.current_configuration()
         assert source.agents["agent-independent"].model == "model-agent-independent"

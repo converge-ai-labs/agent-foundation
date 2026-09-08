@@ -256,10 +256,10 @@ class AgentCompositionResolver:
         if selected_model not in source.models:
             raise CompositionError("The selected model is unavailable.", code="model_missing")
         resource = source.models[selected_model]
-        if model_overrides is not None and model_overrides.thinking is not None:
-            resource = resource.model_copy(
-                update={"settings": {**resource.settings, "thinking": model_overrides.thinking}}
-            )
+        if model_overrides is not None:
+            settings = model_overrides.model_dump(include={"thinking", "service_tier"}, exclude_none=True)
+            if settings:
+                resource = resource.model_copy(update={"settings": {**resource.settings, **settings}})
         model = self._model_recipe(resource)
         capabilities = self._capability_recipes(source, agent, active_model=model)
         children: list[ResolvedSubagent] = []

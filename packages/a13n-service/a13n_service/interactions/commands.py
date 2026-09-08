@@ -95,8 +95,11 @@ from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRec
 from a13n_service.interactions.objects import RunObjectError, RunPayloadStore, RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
+from a13n_service.interactions.protocol_context import ProtocolInputContext
 from a13n_service.interactions.queue_validity import permanent_queue_failure
 from a13n_service.interactions.state import RunPayloadEnvelope
+from a13n_service.secrets.agent_inputs import graph_secret_requirements, require_secret, validate_secret_bindings
+from a13n_service.secrets.domain import AgentSecretBinding
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -236,6 +239,8 @@ class InteractionCommands:
                 agent_id=frozen.agent_id,
                 agent_revision_id=frozen.agent_revision_id,
                 effective_agent_config=frozen.effective_config,
+                protocol_context=request.protocol_context,
+                secret_bindings=accepted_input.secret_bindings,
             ),
             thread_id=thread_id,
         )
@@ -377,6 +382,8 @@ class InteractionCommands:
                 agent_id=frozen.agent_id,
                 agent_revision_id=frozen.agent_revision_id,
                 effective_agent_config=frozen.effective_config,
+                protocol_context=request.protocol_context,
+                secret_bindings=accepted_input.secret_bindings,
             ),
             source_state.envelope,
         )
@@ -516,6 +523,8 @@ class InteractionCommands:
                 agent_id=frozen.agent_id,
                 agent_revision_id=frozen.agent_revision_id,
                 effective_agent_config=frozen.effective_config,
+                protocol_context=request.protocol_context,
+                secret_bindings=accepted_input.secret_bindings,
             ),
             thread_id=thread.id,
         )
@@ -663,6 +672,8 @@ class InteractionCommands:
                 agent_id=frozen.agent_id,
                 agent_revision_id=frozen.agent_revision_id,
                 effective_agent_config=frozen.effective_config,
+                protocol_context=request.protocol_context,
+                secret_bindings=accepted_input.secret_bindings,
             ),
             source_state.envelope,
             thread_id=new_thread_id_value,
@@ -813,6 +824,8 @@ class InteractionCommands:
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
                 usage_limits=source_state.envelope.usage_limits,
+                protocol_context=source_state.envelope.protocol_context,
+                secret_bindings=source_state.envelope.secret_bindings,
             ),
             thread_id=source.thread_id,
             source_lineage_kind=source.lineage_kind,
@@ -1017,6 +1030,7 @@ class InteractionCommands:
             agent_id=frozen.agent_id,
             agent_revision_id=frozen.agent_revision_id,
             effective_agent_config=frozen.effective_config,
+            secret_bindings=accepted_input.secret_bindings,
         )
         if head is None:
             state = initialize_empty_thread_state(seed, thread_id=thread.id)
@@ -1136,6 +1150,7 @@ class InteractionCommands:
         idempotency_key: str,
         request: WaitingRunFeedbackRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        protocol_context: ProtocolInputContext | None = None,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         source, thread = await self._load_feedback_source(actor=actor, run_id=run_id)
@@ -1163,6 +1178,11 @@ class InteractionCommands:
             {
                 "expected_thread_version": request.expected_thread_version,
                 "feedback": normalized.model_dump(mode="json", by_alias=True),
+                **(
+                    {"protocol_context": protocol_context.model_dump(mode="json")}
+                    if protocol_context is not None
+                    else {}
+                ),
                 **request.model_dump(mode="json", include={"hook_subscription"}),
             }
         )
@@ -1200,6 +1220,10 @@ class InteractionCommands:
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
+                secret_bindings=source_state.envelope.secret_bindings,
+                protocol_context=protocol_context
+                if protocol_context is not None
+                else source_state.envelope.protocol_context,
             ),
             source_state.envelope,
         )
@@ -1358,6 +1382,10 @@ class InteractionCommands:
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
+                secret_bindings=accepted_input.secret_bindings,
+                protocol_context=request.protocol_context
+                if request.protocol_context is not None
+                else source_state.envelope.protocol_context,
             ),
             source_state.envelope,
         )
@@ -1583,6 +1611,7 @@ class InteractionCommands:
             submitted=input,
             effective=state.envelope.effective_agent_config,
             environment_access=source.environment_access,
+            retained_secret_bindings=state.envelope.secret_bindings,
         )
         now = assume_utc(self._clock())
 
@@ -1953,7 +1982,22 @@ class InteractionCommands:
         effective: EffectiveAgentConfig,
         environment_access: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
+        retained_secret_bindings: tuple[AgentSecretBinding, ...] | None = None,
     ):
+        if retained_secret_bindings is not None:
+            if submitted.secret_bindings and submitted.secret_bindings != retained_secret_bindings:
+                raise InteractionCommandError(
+                    "input_secret_bindings_frozen",
+                    "Steering cannot change the Run's Secret bindings.",
+                    category=ErrorCategory.invalid_request,
+                )
+        else:
+            validate_secret_bindings(submitted.secret_bindings, graph_secret_requirements(effective))
+        if submitted.secret_bindings and retained_secret_bindings is None:
+            async with short_session(self._sessions) as database:
+                for binding in submitted.secret_bindings:
+                    await require_secret(database, actor=actor, binding=binding, accepting=True)
+
         async def authorize_asset(asset_id: str):
             if prepared_assets is not None and (prepared := prepared_assets.get(asset_id)) is not None:
                 if (

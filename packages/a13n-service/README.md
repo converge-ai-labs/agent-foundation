@@ -107,7 +107,7 @@ The `control` and `all` roles publish sealed child results, request configured c
 
 ## Observability and Trace Query
 
-Service tracing is enabled by default with content set to `none`. The Service creates one parentless `foundation.run_attempt` trace root for each durable RunAttempt, admits only the a13n Service, Harness, and Pydantic AI instrumentation scopes, and passes the same `none`, `standard`, or `full` content value to Harness. The Worker execution domain supplies the durable correlation and owns the exact points at which the root and its `foundation.reconstruct`, `foundation.environment.attach`, and `foundation.persist` children start and finish.
+Service tracing is enabled by default with content set to `none`. The Service creates one parentless `a13n.service.run_attempt` trace root for each durable RunAttempt, admits only the a13n Service, Harness, and Pydantic AI instrumentation scopes, and passes the same `none`, `standard`, or `full` content value to Harness. The Worker execution domain supplies the durable correlation and owns the exact points at which the root and its `a13n.service.reconstruct`, `a13n.service.environment.prepare`, and `a13n.service.persist` children start and finish.
 
 Export uses standard OpenTelemetry configuration only. With no exporter, structural instrumentation remains active but sends no telemetry. A direct OTLP deployment can use, for example:
 

@@ -24,7 +24,7 @@ def root(*, trace_id: str = "trace-1") -> dict[str, object]:
         "parentObservationId": None,
         "isRootObservation": True,
         "type": "SPAN",
-        "name": "foundation.run_attempt",
+        "name": "a13n.service.run_attempt",
         "level": "DEFAULT",
         "input": '{"prompt":"hello"}',
         "output": '{"answer":"world"}',
@@ -38,7 +38,7 @@ def root(*, trace_id: str = "trace-1") -> dict[str, object]:
                 "a13n.observation.session.id": "session-1",
                 "session.id": "thread-1",
                 "a13n.thread.id": "thread-1",
-                "a13n.foundation.run.id": "run-1",
+                "a13n.service.run.id": "run-1",
                 "a13n.run_attempt.id": "attempt-1",
                 "a13n.agent.preset.id": "agent-1",
                 "input.mime_type": "application/json",
@@ -145,7 +145,7 @@ async def test_list_uses_v2_root_filters_and_normalizes_correlation() -> None:
     assert {(item.get("key"), item["value"]) for item in filters if item["column"] == "metadata"} == {
         ("attributes.a13n.organization.id", "org-1"),
         ("attributes.a13n.workspace.id", "ws-1"),
-        ("attributes.a13n.foundation.run.id", "run-1"),
+        ("attributes.a13n.service.run.id", "run-1"),
         ("attributes.a13n.run_attempt.id", "attempt-1"),
     }
 

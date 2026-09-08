@@ -26,7 +26,7 @@ from .domain import (
 from .errors import TraceQueryProviderError
 
 _OBSERVATIONS_PATH = "/api/public/v2/observations"
-_ROOT_NAME = "foundation.run_attempt"
+_ROOT_NAME = "a13n.service.run_attempt"
 _FIELD_GROUPS = "core,basic,io,metadata,model,usage,metrics,trace_context"
 _COMPACT_FIELD_GROUPS = "core,basic,metadata,model,usage,metrics,trace_context"
 _EXPANDED_METADATA_KEYS = "attributes,resourceAttributes,scope"
@@ -82,7 +82,7 @@ class LangfuseTraceQueryProvider:
         if query.thread_id is not None:
             filters.append(_filter("string", "sessionId", "=", query.thread_id))
         if query.run_id is not None:
-            filters.append(_metadata_filter("a13n.foundation.run.id", query.run_id))
+            filters.append(_metadata_filter("a13n.service.run.id", query.run_id))
         if query.run_attempt_id is not None:
             filters.append(_metadata_filter("a13n.run_attempt.id", query.run_attempt_id))
         if query.query is not None:
@@ -191,7 +191,7 @@ class LangfuseTraceQueryProvider:
             workspace_id=_attribute(attributes, "a13n.workspace.id"),
             session_id=_attribute(attributes, "a13n.observation.session.id"),
             thread_id=_attribute(attributes, "a13n.thread.id"),
-            run_id=_attribute(attributes, "a13n.foundation.run.id"),
+            run_id=_attribute(attributes, "a13n.service.run.id"),
             run_attempt_id=_attribute(attributes, "a13n.run_attempt.id"),
             agent_id=_attribute(attributes, "a13n.agent.preset.id"),
         )

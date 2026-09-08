@@ -44,7 +44,7 @@ class HostedAguiDeliveryEvent(_StrictModel):
 class HostedAguiReplaySnapshot(_StrictModel):
     schema_version: Literal["1"] = "1"
     binding_id: _ResourceId
-    foundation_run_id: _ResourceId
+    run_id: _ResourceId
     external_thread_id: _ExternalId
     external_run_id: _ExternalId
     agent_revision_id: _ResourceId
@@ -63,7 +63,7 @@ class HostedAguiReplaySnapshot(_StrictModel):
             raise ValueError("Hosted AG-UI replay must begin with RUN_STARTED")
         terminal = self.events[-1].event
         terminal_type = terminal.get("type")
-        waiting = terminal_type == "CUSTOM" and terminal.get("name") == "a13n.foundation.run_status"
+        waiting = terminal_type == "CUSTOM" and terminal.get("name") == "a13n.service.run_status"
         if terminal_type not in {"RUN_FINISHED", "RUN_ERROR"} and not waiting:
             raise ValueError("Hosted AG-UI replay must end at a sealed delivery boundary")
         return self
@@ -137,7 +137,7 @@ def _metadata(snapshot: HostedAguiReplaySnapshot, *, digest: str) -> dict[str, s
     return {
         "schema-version": "1",
         "binding-id": snapshot.binding_id,
-        "run-id": snapshot.foundation_run_id,
+        "run-id": snapshot.run_id,
         "digest-sha256": digest,
     }
 

@@ -62,6 +62,12 @@ type SecretCredentialSource = (
 
 The source records lookup intent rather than a Secret value or authorization grant. The consuming contract decides which variants it permits and where the source is stored. Every resolution still applies the current owner, organization, Principal, lifecycle, and use-eligibility rules from this contract.
 
+## Agent Runtime Resolution
+
+Agent input selects a bounded tuple of `AgentSecretBinding(key, credential)` references for the frozen graph's `secret_requirements`. Acceptance checks required and declared keys and current selection authorization without decrypting. The Run envelope retains references for recovery and async-child selection, never encrypted or plaintext values.
+
+The Worker supplies a fresh Harness `InvocationPolicyCapability` and credential broker. Managed tools name required credential audiences in trusted metadata; each audience must be a requirement declared by the executing node and bound in the accepted Run. Resolution rechecks the live Attempt lease/fence, root and executing Agent invocation authorization, Workspace eligibility, and exact Secret owner. Identical inline definitions share a Harness identity, so every matching Agent must remain eligible. The database read closes before decryption or tool execution. The broker decrypts the current active value, makes it available only in the managed invocation scope, and clears its lease on completion. Rotation takes effect on the next acquisition; deletion, owner revocation, missing optional credentials actually requested by a tool, and authentication failures deny use.
+
 ## Secret Resource
 
 The public resource uses the following wire representation:

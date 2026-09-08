@@ -93,7 +93,7 @@ async def test_completed_output_rejects_non_finite_numbers(
 async def test_suspended_result_preserves_native_requests_and_classifies_pending_calls(
     interaction_object_store: ObjectStore,
 ) -> None:
-    client_tool_surface = [{"toolset_id": "foundation", "tools": [{"name": "client_action"}]}]
+    client_tool_surface = [{"toolset_id": "service", "tools": [{"name": "client_action"}]}]
     deferred = DeferredToolRequests(
         calls=[
             ToolCallPart(

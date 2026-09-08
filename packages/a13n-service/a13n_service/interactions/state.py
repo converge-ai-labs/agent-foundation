@@ -11,6 +11,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.secrets.domain import AgentSecretBinding
 
 from .domain import (
     BoundedName,
@@ -24,6 +25,7 @@ from .domain import (
     StrictModel,
     ThreadId,
 )
+from .protocol_context import ProtocolInputContext
 
 _DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
 
@@ -111,6 +113,10 @@ class RunCheckpoint(StrictModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     effective_agent_config: EffectiveAgentConfig
+    protocol_context: ProtocolInputContext | None = Field(default=None, exclude_if=lambda value: value is None)
+    secret_bindings: tuple[AgentSecretBinding, ...] = Field(
+        default=(), max_length=128, exclude_if=lambda value: not value
+    )
     usage_limits: UsageLimits | None = None
     runtime_lock_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     harness_schema_version: SchemaVersion

@@ -377,7 +377,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         input=ImmediateHarnessInput("hello"),
         collaborators=HarnessCollaborators(
             instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="foundation", subject="test-user"),
+                identity=AgentIdentityRef(issuer="a13n.service", subject="test-user"),
                 agent_instance_id="instance-1",
                 actor="user:test-user",
                 host_refs={"session_id": "session-1"},
@@ -457,7 +457,7 @@ async def test_lease_monitor_fences_control_and_cancels_scope_on_authority_loss(
     assert cancellations == ["scope"]
     with pytest.raises(RunError) as error:
         await control.reconcile()
-    assert error.value.code == "foundation_control_fenced"
+    assert error.value.code == "service_control_fenced"
 
 
 async def test_control_watcher_acknowledges_only_after_each_durable_reconciliation(
@@ -537,7 +537,7 @@ async def test_handoff_closes_runtime_while_renewing_before_yield(
         input=ImmediateHarnessInput("accepted input"),
         collaborators=HarnessCollaborators(
             instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="foundation", subject="test-user"),
+                identity=AgentIdentityRef(issuer="a13n.service", subject="test-user"),
                 agent_instance_id="instance-1",
                 actor="user:test-user",
             )

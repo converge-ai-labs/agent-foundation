@@ -2,7 +2,7 @@
 
 ## Design Position
 
-a13n Service projects each bounded worker generation through one generic OpenTelemetry trace. One `RunAttempt` owns one parentless `foundation.run_attempt` root span; the existing `harness.run` span and its Pydantic AI descendants execute beneath that root through the same current OpenTelemetry context. A Thread Trace is a query view over all of a Thread's RunAttempt traces, not another durable resource and not one unbounded OpenTelemetry trace.
+a13n Service projects each bounded worker generation through one generic OpenTelemetry trace. One `RunAttempt` owns one parentless `a13n.service.run_attempt` root span; the existing `harness.run` span and its Pydantic AI descendants execute beneath that root through the same current OpenTelemetry context. A Thread Trace is a query view over all of a Thread's RunAttempt traces, not another durable resource and not one unbounded OpenTelemetry trace.
 
 Service owns the process tracer provider, resource, sampling, processors, scope filter, exporter lifecycle, correlation projection, and bounded shutdown. It exports through at most one OTLP destination. Langfuse is one optional backend reached through that generic OTLP path; Service installs no Langfuse SDK, vendor tracing profile, or Langfuse persistence dependency.
 
@@ -32,7 +32,7 @@ Service Session
   -> Thread                         Thread Trace query unit
     -> Run
       -> RunAttempt                one OpenTelemetry Trace
-        -> foundation.run_attempt  Service root span
+        -> a13n.service.run_attempt  Service root span
           -> harness.run
             -> Pydantic Agent/model/tool spans
 ```
@@ -108,7 +108,7 @@ The Service-owned processor projects only validated values from this closed corr
 | `a13n.observation.session.id`      | Service product Session                                      |
 | `session.id`                       | Service Thread used as the cross-trace observability session |
 | `a13n.thread.id`                   | Service Thread                                               |
-| `a13n.foundation.run.id`           | Accepted Service Run                                         |
+| `a13n.service.run.id`              | Accepted Service Run                                         |
 | `a13n.run_attempt.id`              | Current worker generation                                    |
 | `a13n.run_attempt.number`          | Positive generation number within the Run                    |
 | `a13n.run_attempt.replaces.id`     | Immediately replaced Attempt, when present                   |
@@ -126,7 +126,7 @@ Correlation values are never authorization evidence. The processor does not flat
 
 ### Root boundary
 
-The newly scheduled `RunAttemptExecutor` starts `foundation.run_attempt` immediately after the durable claim or takeover transaction commits the new `leased` RunAttempt. It starts a new trace with no parent even when an inbound or dispatch context remains available. The root stays current through preparation, Harness entry and cleanup, state publication, and the final Attempt/Run decision. It ends after that decision commits or after the local executor proves it can no longer publish authoritatively.
+The newly scheduled `RunAttemptExecutor` starts `a13n.service.run_attempt` immediately after the durable claim or takeover transaction commits the new `leased` RunAttempt. It starts a new trace with no parent even when an inbound or dispatch context remains available. The root stays current through preparation, Harness entry and cleanup, state publication, and the final Attempt/Run decision. It ends after that decision commits or after the local executor proves it can no longer publish authoritatively.
 
 If the process terminates abruptly, the root may remain incomplete in a backend. A replacement Worker does not finish, rewrite, or synthesize the old span. Its newly claimed Attempt starts another trace. The authoritative old Attempt becomes `failed` only through the existing takeover transaction.
 
@@ -136,15 +136,15 @@ The first Attempt has no recovery reason. A replacement caused by expired lease 
 
 Service owns exactly these stable direct children of the root when the corresponding phase starts:
 
-| Span                             | Boundary                                                                                                                                                                                                                                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundation.reconstruct`         | Reads and validates complete Run state, exact AgentRevision, `EffectiveAgentConfig`, Run-pinned Runtime lock, immutable Skill/Plugin artifacts, frozen dependencies, current authority, fresh credentials, and process-local Agent values; ends when reconstruction required for Harness entry is ready |
-| `foundation.environment.prepare` | Verifies fixed logical Environment selection, resolves Provider-owned credentials, coordinates use and creates/resumes/rebuilds or connects the target; runs before Harness for on_run or on first actual operation for on_use; records safe generation changes and failures                            |
-| `foundation.persist`             | Publishes the Harness outcome's complete state and result objects and performs the short fenced Attempt/Run decision; ends after commit or classified failure                                                                                                                                           |
+| Span                               | Boundary                                                                                                                                                                                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n.service.reconstruct`         | Reads and validates complete Run state, exact AgentRevision, `EffectiveAgentConfig`, Run-pinned Runtime lock, immutable Skill/Plugin artifacts, frozen dependencies, current authority, fresh credentials, and process-local Agent values; ends when reconstruction required for Harness entry is ready |
+| `a13n.service.environment.prepare` | Verifies fixed logical Environment selection, resolves Provider-owned credentials, coordinates use and creates/resumes/rebuilds or connects the target; runs before Harness for on_run or on first actual operation for on_use; records safe generation changes and failures                            |
+| `a13n.service.persist`             | Publishes the Harness outcome's complete state and result objects and performs the short fenced Attempt/Run decision; ends after commit or classified failure                                                                                                                                           |
 
 These spans provide phase duration, outcome, and bounded failure class. They do not duplicate database, object-store, HTTP, provider, or Environment spans and do not keep a database session or transaction open across their full duration. An operation that never starts creates no placeholder span.
 
-The existing `harness.run` span starts under the current root and retains the complete lifecycle defined by Harness. Native Pydantic AI spans remain its descendants. Service does not wrap or duplicate Agent attempts, model requests, tool execution, streaming, cancellation, usage, or inline children. Harness completion and Service persistence can therefore have different outcomes: `harness.run` can complete while `foundation.persist` and the RunAttempt root fail.
+The existing `harness.run` span starts under the current root and retains the complete lifecycle defined by Harness. Native Pydantic AI spans remain its descendants. Service does not wrap or duplicate Agent attempts, model requests, tool execution, streaming, cancellation, usage, or inline children. Harness completion and Service persistence can therefore have different outcomes: `harness.run` can complete while `a13n.service.persist` and the RunAttempt root fail.
 
 ### Links and propagation
 
@@ -264,7 +264,7 @@ One trace per RunAttempt makes retries and worker replacement honest, bounded, a
 ## Invariants
 
 01. A Thread Trace is a query view over bounded RunAttempt traces and is not a durable resource or one long-lived OTel trace.
-02. Every traced RunAttempt starts one parentless `foundation.run_attempt` root after durable claim.
+02. Every traced RunAttempt starts one parentless `a13n.service.run_attempt` root after durable claim.
 03. Existing `harness.run` and Pydantic AI spans retain one owner and become descendants through current OTel context.
 04. Durable and asynchronous predecessors use links when context remains available; Service persists no OTel context or live span object.
 05. `session.id` identifies the Service Thread, while `a13n.observation.session.id` identifies the broader Service Session.

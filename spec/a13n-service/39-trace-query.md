@@ -173,7 +173,7 @@ sequenceDiagram
     Control-->>Client: normalized bounded response
 ```
 
-No database session or transaction remains open during the backend call. The provider always constrains its request to `foundation.run_attempt` roots and the exact Organization and Workspace correlation. Service then validates every returned trace against authoritative RunAttempt ownership and the caller's current visibility. Both List and Get authorize `trace.read` from the IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry). Workspace Viewer authority can read Workspace-visible traces; a direct Agent Viewer sees only traces for associated authorized Runs even without Workspace-wide visibility. The action does not bypass the associated Run read predicate or create broader observability authority.
+No database session or transaction remains open during the backend call. The provider always constrains its request to `a13n.service.run_attempt` roots and the exact Organization and Workspace correlation. Service then validates every returned trace against authoritative RunAttempt ownership and the caller's current visibility. Both List and Get authorize `trace.read` from the IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry). Workspace Viewer authority can read Workspace-visible traces; a direct Agent Viewer sees only traces for associated authorized Runs even without Workspace-wide visibility. The action does not bypass the associated Run read predicate or create broader observability authority.
 
 The `a13n.*` attributes and provider project key are correlation, not authorization evidence. Uncorrelated, cross-organization, nonexistent, or currently unauthorized results are never returned. Exact reads conceal absent and unauthorized traces with the same `404 trace_not_found` result. List reads omit unrelated backend data and fail safely when a provider response cannot be bounded or interpreted.
 
@@ -181,7 +181,7 @@ Input, output, and metadata can contain sensitive business content admitted by t
 
 ## Langfuse v4 Provider
 
-The built-in provider supports Langfuse server v4 and uses the documented Observations v2 Public API. It does not call deprecated Trace or Observation APIs, private application endpoints, Langfuse ClickHouse tables, or Blob Storage Export. It identifies root observations by the `foundation.run_attempt` name and parentless topology, groups descendants by OTel trace ID, and maps the stable `a13n.*` correlation registry into the normalized models.
+The built-in provider supports Langfuse server v4 and uses the documented Observations v2 Public API. It does not call deprecated Trace or Observation APIs, private application endpoints, Langfuse ClickHouse tables, or Blob Storage Export. It identifies root observations by the `a13n.service.run_attempt` name and parentless topology, groups descendants by OTel trace ID, and maps the stable `a13n.*` correlation registry into the normalized models.
 
 Langfuse deployment, project creation, storage schema, user management, retention, and backup remain operator-owned. The query provider's API credentials can read only the operator-selected project. Service IAM still scopes the results inside that project.
 

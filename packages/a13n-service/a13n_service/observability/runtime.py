@@ -39,12 +39,12 @@ _ALLOWED_INSTRUMENTATION_SCOPES = frozenset(
         "pydantic-ai",
     }
 )
-_RUN_ATTEMPT_ROOT = "foundation.run_attempt"
+_RUN_ATTEMPT_ROOT = "a13n.service.run_attempt"
 _PHASE_NAMES = frozenset(
     {
-        "foundation.reconstruct",
-        "foundation.environment.attach",
-        "foundation.persist",
+        "a13n.service.reconstruct",
+        "a13n.service.environment.prepare",
+        "a13n.service.persist",
     }
 )
 _REGISTERED_SPAN_NAMES = _PHASE_NAMES | {_RUN_ATTEMPT_ROOT}
@@ -139,7 +139,7 @@ class RunAttemptCorrelation:
             "a13n.observation.session.id": self.session_id,
             "session.id": self.thread_id,
             "a13n.thread.id": self.thread_id,
-            "a13n.foundation.run.id": self.run_id,
+            "a13n.service.run.id": self.run_id,
             "a13n.run_attempt.id": self.run_attempt_id,
             "a13n.run_attempt.number": self.run_attempt_number,
             "a13n.agent.preset.id": self.agent_id,
