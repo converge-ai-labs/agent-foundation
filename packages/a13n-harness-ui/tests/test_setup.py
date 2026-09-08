@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 from a13n_harness_ui.composition import AgentCompositionResolver
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.configuration.setup import SetupSelection, preview_setup, publish_setup
@@ -50,16 +51,25 @@ async def test_setup_preserves_edited_resources_and_root_fields(tmp_path: Path) 
         await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
     ).completed
     agent = tmp_path / "agents" / "codex.yaml"
-    original = agent.read_text().replace("Codex coding", "My edited agent")
-    agent.write_text(original)
-    path.write_text(path.read_text() + "process:\n  pricing_auto_update: false\n")
+    model = tmp_path / "models" / "codex.yaml"
+    agent_document = yaml.safe_load(agent.read_text(encoding="utf-8"))
+    agent_document["name"] = "My edited agent - 研究"
+    original = yaml.safe_dump(agent_document, allow_unicode=True).encode("utf-8")
+    agent.write_bytes(original)
+    model_document = yaml.safe_load(model.read_text(encoding="utf-8"))
+    model_document["name"] = "Existing · Model"
+    model_document["model_characteristics"]["capabilities"] = []
+    original_model = yaml.safe_dump(model_document, allow_unicode=True).encode("utf-8")
+    model.write_bytes(original_model)
+    path.write_text(path.read_text(encoding="utf-8") + "process:\n  pricing_auto_update: false\n", encoding="utf-8")
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     assert "agents/codex.yaml" not in preview.files
     assert (
         await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
     ).completed
-    assert agent.read_text() == original
-    assert "pricing_auto_update: false" in path.read_text()
+    assert agent.read_bytes() == original
+    assert model.read_bytes() == original_model
+    assert "pricing_auto_update: false" in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.anyio

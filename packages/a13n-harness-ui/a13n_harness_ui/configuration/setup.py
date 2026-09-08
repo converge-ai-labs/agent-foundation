@@ -20,7 +20,8 @@ from anyio import to_thread
 from pydantic import ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
-from a13n_harness_ui.model_presets import connection_display_name, known_model_capabilities
+from a13n_harness_ui.model_presets import known_model_capabilities
+from a13n_harness_ui.resource_names import coding_agent_name, model_name
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _scan_directory, load_harness_ui_configuration
@@ -166,7 +167,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
     for provider in dict.fromkeys(providers):
         codex = provider == "codex"
         model = selection.codex_model if codex else selection.grok_model
-        display_name = connection_display_name("codex" if codex else "grok-subscription", model)
+        display_name = model_name("codex" if codex else "grok-subscription", model)
         resources[f"models/{provider}.yaml"] = {
             "schema_version": "1",
             "kind": "model",
@@ -217,7 +218,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "schema_version": "1",
             "kind": "agent",
             "id": f"agent-{provider}",
-            "name": f"{display_name} · Coding",
+            "name": coding_agent_name(display_name),
             "model": f"model-{provider}",
             "capabilities": capabilities,
         }
@@ -245,7 +246,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
         }
     if selection.api_key_model is not None:
         api_provider, _, api_model = selection.api_key_model.route.partition(":")
-        display_name = connection_display_name(api_provider, api_model)
+        display_name = model_name(api_provider, api_model)
         resources["models/api-key.yaml"] = {
             "schema_version": "1",
             "kind": "model",
@@ -263,7 +264,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "schema_version": "1",
             "kind": "agent",
             "id": "agent-api-key",
-            "name": f"{display_name} · Coding",
+            "name": coding_agent_name(display_name),
             "model": "model-api-key",
             "capabilities": [
                 {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},

@@ -65,7 +65,7 @@ API setup recommends **350,000 tokens**, or the bundled catalog's model context 
 
 New API Models use the same native defaults as Codex: a summary reminder at **65%**, automatic compaction at **90%**, and the standard Harness summary prompts. At 350k the thresholds are **227,500** and **315,000** tokens. These settings are saved under `model_characteristics` and survive Run capture/reconstruction; reusing an existing Model does not change them. The catalog is bundled, so setup makes no model-discovery request.
 
-Generated names identify the connection, for example **OpenAI · GPT-5.6 Sol**, **Z.AI · GLM 5.3**, or **Moonshot AI · Kimi K2.6**. Default Agent names add **· Coding**. The add commands suggest readable, non-colliding names and let you override them; custom Agent names do not erase their new Model's descriptive connection name. Existing resources are not renamed.
+Generated names identify the connection using ordinary text, for example **OpenAI - GPT-5.6 Sol**, **Z.AI - GLM 5.3**, or **Moonshot AI - Kimi K2.6**. Default Agent names add **- Coding**. Suggestions and saved names use the same rule, independently of terminal labels, colors, or status indicators. The add commands suggest non-colliding names and let you override them; custom Agent names do not erase their new Model's descriptive connection name. Configuration stays UTF-8 and custom names can contain Unicode. Existing resources are not renamed.
 
 ## Codex reasoning and context
 
@@ -123,7 +123,7 @@ Save this as `models/codex.yaml` beside the root configuration.
 schema_version: "1"
 kind: model
 id: model-codex
-name: Codex · GPT-5.6 Sol
+name: Codex - GPT-5.6 Sol
 route: openai-codex:gpt-5.6-sol
 authentication:
   kind: codex_subscription

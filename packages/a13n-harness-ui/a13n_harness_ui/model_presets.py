@@ -7,7 +7,6 @@ not interchangeable with an API key and a base URL.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
@@ -66,41 +65,6 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
     "fireworks": ("accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/gpt-oss-120b"),
     "grok": ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
 }
-
-
-def connection_display_name(provider: str, model_id: str) -> str:
-    """Readable resource title; custom model identifiers retain their exact spelling."""
-    labels = {
-        "codex": "Codex",
-        "grok-subscription": "Grok Subscription",
-        "grok": "xAI",
-        "openai-responses": "OpenAI",
-        "openai-chat": "OpenAI Chat",
-        "openai": "OpenAI",
-        "anthropic": "Anthropic",
-        "google": "Google",
-        "moonshotai": "Moonshot AI",
-        "zai": "Z.AI",
-    }
-    provider_name = labels.get(
-        provider, API_PROVIDER_BY_ROUTE[provider].label if provider in API_PROVIDER_BY_ROUTE else provider
-    )
-    title = model_id
-    families = {
-        "gpt-": "GPT-",
-        "claude-": "Claude ",
-        "gemini-": "Gemini ",
-        "deepseek-": "DeepSeek ",
-        "glm-": "GLM ",
-        "kimi-": "Kimi ",
-        "grok-": "Grok ",
-    }
-    for prefix, label in families.items():
-        if model_id.startswith(prefix):
-            suffix = re.sub(r"(?<=\d)-(?=\d)", ".", model_id[len(prefix) :])
-            title = label + suffix.replace("-", " ").title()
-            break
-    return (title if title.startswith(f"{provider_name} ") else f"{provider_name} · {title}")[:110]
 
 
 def known_context_window(provider: str, model_id: str, base_url: str) -> int | None:

@@ -751,11 +751,11 @@ async def test_setup_model_view_uses_declared_media_without_an_external_provider
 
     path = await _seed(tmp_path, monkeypatch)
     model_path = path.parent / "models/codex.yaml"
-    document = yaml.safe_load(model_path.read_text())
+    document = yaml.safe_load(model_path.read_text(encoding="utf-8"))
     assert document["model_characteristics"]["capabilities"] == ["image_understanding"]
     if disable_media:
         document["model_characteristics"]["capabilities"] = []
-        model_path.write_text(yaml.safe_dump(document))
+        model_path.write_text(yaml.safe_dump(document), encoding="utf-8")
     data = b"\x89PNG"
     (tmp_path / "image.png").write_bytes(data)
     observed = []

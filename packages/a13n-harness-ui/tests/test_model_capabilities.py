@@ -95,7 +95,7 @@ async def test_app_setup_fills_only_omitted_capabilities(tmp_path: Path, capabil
         path, selection, expected_generation=preview.generation, validate_candidate=validate
     )
     assert publication.completed
-    assert (tmp_path / "models/api-key.yaml").read_text() == preview.files["models/api-key.yaml"]
+    assert (tmp_path / "models/api-key.yaml").read_bytes() == preview.files["models/api-key.yaml"].encode("utf-8")
     assert (await load_harness_ui_configuration(path)).models[
         "model-api-key"
     ].model_characteristics.capabilities == frozenset(expected)
@@ -126,9 +126,14 @@ async def test_programmatic_setup_without_characteristics_seeds_stable_media_lis
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("mode", ["setup", "add_model", "add_agent"])
+@pytest.mark.parametrize(
+    "mode,chosen_name",
+    [("setup", ""), ("add_model", ""), ("add_agent", ""), ("add_model", "研究助手"), ("add_agent", "研究助手")],
+)
 @pytest.mark.parametrize("provider", ["api", "codex", "grok"])
-async def test_all_creation_flows_persist_known_native_image_support(tmp_path: Path, mode, provider) -> None:
+async def test_all_creation_flows_persist_known_native_image_support(
+    tmp_path: Path, mode, chosen_name, provider
+) -> None:
     connection = {
         "api": ["api", "anthropic", "", "env:TEST_KEY", "claude-sonnet-4-6", "", ""],
         "codex": ["codex", "later", "gpt-5.6-sol", ""],
@@ -139,6 +144,9 @@ async def test_all_creation_flows_persist_known_native_image_support(tmp_path: P
 
     async def ask(question, selection):
         assert answers, question
+        if question.key == "name":
+            assert question.default.isascii() and question.default.isprintable()
+            assert " - " in question.default
         return answers.popleft()
 
     path = tmp_path / "config.yaml"
@@ -149,7 +157,7 @@ async def test_all_creation_flows_persist_known_native_image_support(tmp_path: P
         assert not answers
         baseline = {p: p.read_bytes() for p in tmp_path.rglob("*.yaml")}
         if mode != "setup":
-            answers.extend([*(["new"] if mode == "add_agent" else []), *connection, "Image model"])
+            answers.extend([*(["new"] if mode == "add_agent" else []), *connection, chosen_name])
             assert await run_setup(
                 app,
                 tmp_path,
@@ -162,6 +170,12 @@ async def test_all_creation_flows_persist_known_native_image_support(tmp_path: P
             assert all(p.read_bytes() == content for p, content in baseline.items())
         source = await app.current_configuration()
         assert source.models
+        names = [
+            resource.name for resource in (*source.models.values(), *source.agents.values(), *source.projects.values())
+        ]
+        assert all(name.isascii() and name.isprintable() for name in names if name != chosen_name)
+        if chosen_name:
+            assert chosen_name in names
         # Includes generated subscription shell-review models, not just the coding model.
         assert all(model.model_characteristics.capabilities == IMAGE for model in source.models.values())
         assert any("Native media input: image." in notice for notice in notices)
