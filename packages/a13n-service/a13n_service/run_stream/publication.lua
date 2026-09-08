@@ -36,7 +36,6 @@ if metadata_type ~= 'none' then
     if field('publication_version') ~= '1' or field('server_id') ~= server_id then
         refuse('CONTINUITY')
     end
-    if pending and pending ~= request.digest then refuse('PENDING') end
     if not pending then
         local tail = redis.call('XREVRANGE', stream, '+', '-', 'COUNT', 1)
         local last_id = #tail == 0 and '' or tail[1][1]
@@ -121,6 +120,7 @@ end
 -- writing anything. Activation contains leased followed immediately by recovery.
 local events = request.events or {}
 local existing = {}
+local missing_receipt = false
 for _, event in ipairs(events) do
     if #event.body > request.max_event_bytes then refuse('SIZE') end
     local evidence = field('event:' .. event.id)
@@ -128,12 +128,23 @@ for _, event in ipairs(events) do
         local previous = cjson.decode(evidence)
         if previous.digest ~= event.digest then refuse('CONFLICT') end
         existing[event.id] = previous
+    else
+        missing_receipt = true
     end
 end
+-- Confirming an already committed historical fact performs no mutation. It may
+-- precede an unfinished close on retry without blocking recovery of that close.
+if operation == 'lifecycle' and #events == 1 and existing[events[1].id] and pending ~= request.digest then
+    return {existing[events[1].id].id}
+end
+if pending and pending ~= request.digest then refuse('PENDING') end
 -- A runtime failure can interrupt XADD before its deduplication receipt. Such
--- writes are still retained because trimming runs only after every receipt.
-if pending and #events > 0 then
-    local rows = redis.call('XRANGE', stream, '-', '+')
+-- writes follow the last committed tail and cannot have been trimmed: receipts
+-- commit before retention. Only this bounded batch can follow that tail.
+if pending and missing_receipt then
+    local last_id = field('last_id')
+    local rows = redis.call('XRANGE', stream, last_id == '' and '-' or '(' .. last_id,
+        '+', 'COUNT', #events)
     for _, row in ipairs(rows) do
         local values = {}
         for index = 1, #row[2], 2 do values[row[2][index]] = row[2][index + 1] end
@@ -168,10 +179,6 @@ elseif operation == 'close' then
     end
 end
 if closed and not (operation == 'incomplete' and not request.attempt_owned) and not pending then
-    -- Trusted lifecycle retries may find an event already present at closure.
-    if not request.attempt_owned and #events == 1 and existing[events[1].id] and not pending then
-        return {existing[events[1].id].id}
-    end
     refuse('CLOSED')
 end
 if (operation == 'append' or operation == 'activate' or operation == 'complete') and field('incomplete') == '1' then refuse('CONTINUITY') end
@@ -186,30 +193,34 @@ if metadata_type == 'none' then
 else
     redis.call('HSET', metadata, 'pending', request.digest)
 end
-local saved_ids = pending and field('pending_ids')
-local ids = saved_ids and cjson.decode(saved_ids) or {}
-if not saved_ids then
-    for _, event in ipairs(events) do
-        local previous = existing[event.id]
-        ids[#ids + 1] = previous and previous.id or
-            redis.call('XADD', stream, '*', 'event_id', event.id, 'body', event.body)
-        redis.call('HSET', metadata, 'event:' .. event.id, cjson.encode({id = ids[#ids], digest = event.digest}))
-    end
-    -- Save completed writes before trimming, so retries cannot duplicate them.
-    redis.call('HSET', metadata, 'pending_ids', cjson.encode(ids))
+local ids, updates = {}, {}
+for _, event in ipairs(events) do
+    local previous = existing[event.id]
+    ids[#ids + 1] = previous and previous.id or
+        redis.call('XADD', stream, '*', 'event_id', event.id, 'body', event.body)
+    updates[#updates + 1] = 'event:' .. event.id
+    updates[#updates + 1] = cjson.encode({id = ids[#ids], digest = event.digest})
+end
+local function update(name, value)
+    updates[#updates + 1] = name
+    updates[#updates + 1] = value
 end
 if operation == 'activate' then
-    redis.call('HSET', metadata, 'fence', request.fence, 'attempt_id', request.attempt_id,
-        receipt_key, cjson.encode({digest = request.digest, leased_id = ids[1], recovery_id = ids[2] or ''}))
+    update('fence', request.fence)
+    update('attempt_id', request.attempt_id)
+    update(receipt_key, cjson.encode({digest = request.digest, leased_id = ids[1], recovery_id = ids[2] or ''}))
 elseif operation == 'initialize' then
-    redis.call('HSET', metadata, 'initialization', cjson.encode({digest = request.digest, id = ids[1]}))
+    update('initialization', cjson.encode({digest = request.digest, id = ids[1]}))
 elseif operation == 'complete' then
-    redis.call('HSET', metadata, 'attempt_projection:' .. request.attempt_id, request.harness_run_id)
+    update('attempt_projection:' .. request.attempt_id, request.harness_run_id)
 elseif operation == 'incomplete' then
-    redis.call('HSET', metadata, 'incomplete', '1')
+    update('incomplete', '1')
 elseif operation == 'close' then
-    redis.call('HSET', metadata, 'closed_at', request.closed_at)
+    update('closed_at', request.closed_at)
 end
+-- Commit event receipts and publication state together before trimming. These
+-- same receipts recover every completed batch, including already trimmed events.
+redis.call('HSET', metadata, unpack(updates))
 local length = redis.call('XLEN', stream)
 if length > request.max_events then
     redis.call('HSET', metadata, 'trimmed', '1')

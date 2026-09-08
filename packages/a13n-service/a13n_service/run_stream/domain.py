@@ -129,6 +129,14 @@ class PublicationUnavailable(RunStreamError):
     """Publication activation or Redis continuity cannot be established safely."""
 
 
+class PublicationContinuityLost(PublicationUnavailable):
+    """This Run's publication history cannot be recovered by retrying a write."""
+
+
+class PublicationPending(PublicationUnavailable):
+    """A different unfinished publication must be resolved before this operation."""
+
+
 RecoveryReason = Literal["lease_expired", "retry_after_failure", "planned_handoff", "pending_input"]
 
 

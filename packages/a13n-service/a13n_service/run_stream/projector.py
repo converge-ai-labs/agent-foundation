@@ -9,24 +9,23 @@ from datetime import datetime, timedelta
 import anyio
 from a13n_harness import SafeFailure
 from anyio import create_task_group
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.lifecycle import (
     LifecycleEvent,
     LifecycleProjectionClaim,
-    LifecycleProjectionState,
     claim_lifecycle_projections,
     complete_lifecycle_projection,
     fail_lifecycle_projection,
 )
-from a13n_service.lifecycle.models import LifecycleEventRecord
+from a13n_service.lifecycle.persistence import has_abandoned_run_projection
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import require_aware_utc, utc_now
 
 from .activation import PublicationActivator
 from .domain import (
     CompleteRunStream,
+    PublicationPending,
     RetainedReplayUnavailable,
     RunStreamEvent,
     deterministic_run_stream_event_id,
@@ -37,6 +36,11 @@ from .replay import RunReplayStore, project_retained_items
 
 logger = logging.getLogger("a13n_service.run_stream.projector")
 _TERMINAL_RUN_EVENTS = frozenset({"run.completed", "run.failed", "run.cancelled"})
+_PROJECTION_FAILURE = SafeFailure(
+    code="run_stream_projection_failed",
+    message="Run presentation projection is temporarily unavailable.",
+    retry_hint="dependency_change",
+)
 
 
 class _ReplayPublicationFailed(RuntimeError):
@@ -111,6 +115,11 @@ class LifecycleRunStreamProjector:
         return len(claims)
 
     async def _project_claim(self, claim: LifecycleProjectionClaim) -> None:
+        if claim.event.event_type in _TERMINAL_RUN_EVENTS and claim.event.projection_attempts > self._max_attempts:
+            # Publication retries are exhausted. The same durable claim now owns
+            # only retirement, which must finish before this fact can be abandoned.
+            await self._settle_failure(claim, source_complete=False, failure=_PROJECTION_FAILURE)
+            return
         try:
             await self._project_event(claim.event)
         except _ReplayPublicationFailed:
@@ -133,11 +142,7 @@ class LifecycleRunStreamProjector:
             await self._settle_failure(
                 claim,
                 source_complete=False,
-                failure=SafeFailure(
-                    code="run_stream_projection_failed",
-                    message="Run presentation projection is temporarily unavailable.",
-                    retry_hint="dependency_change",
-                ),
+                failure=_PROJECTION_FAILURE,
             )
             return
         async with transaction(self._sessions) as database:
@@ -152,7 +157,7 @@ class LifecycleRunStreamProjector:
     ) -> None:
         abandon = claim.event.projection_attempts >= self._max_attempts
         if abandon and not source_complete:
-            await self._record_incomplete_projection(claim.event)
+            abandon = await self._prepare_abandonment(claim.event)
         async with transaction(self._sessions) as database:
             await fail_lifecycle_projection(
                 database,
@@ -163,17 +168,21 @@ class LifecycleRunStreamProjector:
                 failure=failure,
             )
 
-    async def _record_incomplete_projection(self, event: LifecycleEvent) -> bool:
+    async def _prepare_abandonment(self, event: LifecycleEvent) -> bool:
+        terminal = event.event_type in _TERMINAL_RUN_EVENTS
         try:
-            await self._stream.mark_lifecycle_incomplete(event.organization_id, event.run_id)
-            if event.event_type in _TERMINAL_RUN_EVENTS:
-                await self._stream.close(event.organization_id, event.run_id, closed_at=event.occurred_at)
+            if terminal:
+                await self._stream.retire(event.organization_id, event.run_id, closed_at=event.occurred_at)
+            else:
+                await self._stream.mark_lifecycle_incomplete(event.organization_id, event.run_id)
         except Exception:
             logger.exception(
                 "Run Stream incomplete boundary could not be recorded",
                 extra={"run_id": event.run_id, "lifecycle_event_id": event.id},
             )
-            return False
+            # Nonterminal abandonment is recorded in SQL so the eventual terminal
+            # fact can retire the Run. That terminal cleanup must itself keep retrying.
+            return not terminal
         return True
 
     async def _project_event(self, event: LifecycleEvent) -> None:
@@ -185,21 +194,14 @@ class LifecycleRunStreamProjector:
         if event.event_type == "run_attempt.leased":
             await self._activation.project_leased(event)
             return
-        await self._stream.append_lifecycle(event.organization_id, lifecycle_stream_event(event))
+        await self._append_lifecycle(event.organization_id, lifecycle_stream_event(event))
         if event.event_type not in _TERMINAL_RUN_EVENTS:
             return
         async with short_session(self._sessions) as database:
-            abandoned = await database.scalar(
-                select(LifecycleEventRecord.id)
-                .where(
-                    LifecycleEventRecord.organization_id == event.organization_id,
-                    LifecycleEventRecord.run_id == event.run_id,
-                    LifecycleEventRecord.projection_state == LifecycleProjectionState.abandoned.value,
-                )
-                .limit(1)
-            )
-        if abandoned is not None:
-            await self._stream.mark_lifecycle_incomplete(event.organization_id, event.run_id)
+            abandoned = await has_abandoned_run_projection(database, event.organization_id, event.run_id)
+        if abandoned:
+            await self._stream.retire(event.organization_id, event.run_id, closed_at=event.occurred_at)
+            return
         await self._interrupt_open_items(event)
         await self._stream.close(event.organization_id, event.run_id, closed_at=event.occurred_at)
         try:
@@ -255,7 +257,7 @@ class LifecycleRunStreamProjector:
             }
             if item.parent_item_id is not None:
                 payload["parent_item_id"] = item.parent_item_id
-            await self._stream.append_lifecycle(
+            await self._append_lifecycle(
                 event.organization_id,
                 RunStreamEvent(
                     event_id=deterministic_run_stream_event_id(
@@ -275,6 +277,15 @@ class LifecycleRunStreamProjector:
                     payload=payload,
                 ),
             )
+
+    async def _append_lifecycle(self, organization_id: str, event: RunStreamEvent) -> None:
+        try:
+            await self._stream.append_lifecycle(organization_id, event)
+        except PublicationPending:
+            # Worker activation can overtake older facts in SQL projection order.
+            # Resume that same current activation so the ordered projector can advance.
+            await self._activation.resume_current(organization_id, event.run_id)
+            await self._stream.append_lifecycle(organization_id, event)
 
 
 def _utc(value: datetime) -> datetime:

@@ -20,6 +20,8 @@ from a13n_service.temporal import require_aware_utc
 from .domain import (
     ActivationResult,
     CompleteRunStream,
+    PublicationContinuityLost,
+    PublicationPending,
     PublicationRejected,
     PublicationUnavailable,
     RecoveryPayload,
@@ -39,6 +41,7 @@ type _StreamRows = tuple[tuple[str, Mapping[bytes, bytes]], ...]
 _EVENT_ADAPTER = TypeAdapter(RunStreamEvent)
 _INITIAL_STREAM_ID = "0-0"
 _SCRIPT = files(__package__).joinpath("publication.lua").read_text()
+_RETIREMENT_SCRIPT = files(__package__).joinpath("retirement.lua").read_text()
 
 
 class RedisRunStream:
@@ -56,6 +59,7 @@ class RedisRunStream:
             raise ValueError("Run Stream bounds must be positive")
         self._redis = redis
         self._script = redis.register_script(_SCRIPT)
+        self._retirement_script = redis.register_script(_RETIREMENT_SCRIPT)
         self._memory_server_id = redis_memory_identity(redis)
         self._max_events = max_events
         self._max_event_bytes = max_event_bytes
@@ -164,6 +168,10 @@ class RedisRunStream:
         """Trusted terminal lifecycle projection closes a Run, never an Attempt writer."""
         await self._mutate(organization_id, run_id, "close", closed_at=_utc(closed_at).isoformat())
 
+    async def retire(self, organization_id: str, run_id: str, *, closed_at: datetime) -> None:
+        """A trusted terminal fact retires unavailable history without reopening it."""
+        await self._mutate(organization_id, run_id, "retire", closed_at=_utc(closed_at).isoformat())
+
     async def mark_incomplete(
         self,
         organization_id: str,
@@ -240,9 +248,10 @@ class RedisRunStream:
             "closed_ttl_seconds": self._closed_ttl_seconds,
         }
         try:
+            script = self._retirement_script if operation == "retire" else self._script
             return cast(
                 Sequence[object],
-                await self._script(keys=list(_keys(organization_id, run_id)), args=[rfc8785.dumps(request)]),
+                await script(keys=list(_keys(organization_id, run_id)), args=[rfc8785.dumps(request)]),
             )
         except ResponseError as error:
             message = str(error)
@@ -256,6 +265,12 @@ class RedisRunStream:
                 raise RunStreamError("RunAttempt live projection identity changed") from error
             if "RUN_STREAM_CLOSE_CONFLICT" in message:
                 raise RunStreamError("Run Stream terminal boundary changed") from error
+            if "RUN_STREAM_CONTINUITY" in message:
+                raise PublicationContinuityLost("Run Stream continuity is unavailable") from error
+            if "RUN_STREAM_PENDING" in message:
+                raise PublicationPending("Run Stream has an unfinished publication") from error
+            if "RUN_STREAM_IDENTITY" in message:
+                raise RunStreamError("Run Stream metadata belongs to another resource") from error
             raise PublicationUnavailable("Run Stream activation or continuity is unavailable") from error
         except RedisError as error:
             raise PublicationUnavailable("Run Stream publication outcome is unconfirmed") from error

@@ -14,11 +14,11 @@ from a13n_service.interactions.attempts import AttemptAuthorityError, AttemptCon
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.lifecycle import LifecycleEvent, LifecycleProjectionState
 from a13n_service.lifecycle.models import LifecycleEventRecord
-from a13n_service.lifecycle.persistence import complete_publication_boundary
+from a13n_service.lifecycle.persistence import complete_publication_boundary, has_abandoned_run_projection
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import assume_utc, utc_now
 
-from .domain import PublicationRejected, PublicationUnavailable, RecoveryReason
+from .domain import PublicationContinuityLost, PublicationRejected, PublicationUnavailable, RecoveryReason
 from .events import lifecycle_stream_event
 from .redis import RedisRunStream
 
@@ -42,17 +42,12 @@ class PublicationActivator:
     async def activate(self, context: AttemptContext) -> None:
         # The executor already supervises lease renewal throughout these retries.
         with fail_after(context.reconciliation_timeout.total_seconds()):
+            async with short_session(self._sessions) as database:
+                fact = await _fact(
+                    database, context.organization_id, context.run_id, "run_attempt.leased", context.run_attempt_id
+                )
             for retry in range(3):
                 try:
-                    async with short_session(self._sessions) as database:
-                        await read_attempt_authority(database, context, self._clock())
-                        fact = await _fact(
-                            database,
-                            context.organization_id,
-                            context.run_id,
-                            "run_attempt.leased",
-                            context.run_attempt_id,
-                        )
                     await self.project_leased(fact, context=context)
                     return
                 except PublicationRejected as error:
@@ -61,6 +56,10 @@ class PublicationActivator:
                         extra={"run_id": context.run_id, "attempt_number": context.attempt_number},
                     )
                     raise AttemptAuthorityError("Attempt publication authority was replaced") from error
+                except PublicationContinuityLost:
+                    # A restart, lost history, or abandonment cannot be repaired by
+                    # resending this activation. Leave authoritative failure to the executor.
+                    raise
                 except PublicationUnavailable:
                     logger.warning(
                         "run_stream_activation_retry",
@@ -82,6 +81,27 @@ class PublicationActivator:
         )
         await self._settle(accepted)
 
+    async def resume_current(self, organization_id: str, run_id: str) -> None:
+        """Repair an activation that blocks an earlier historical fact's projection."""
+        async with short_session(self._sessions) as database:
+            record = await database.scalar(
+                select(LifecycleEventRecord)
+                .join(RunRecord, RunRecord.current_run_attempt_id == LifecycleEventRecord.run_attempt_id)
+                .where(
+                    RunRecord.organization_id == organization_id,
+                    RunRecord.id == run_id,
+                    LifecycleEventRecord.organization_id == organization_id,
+                    LifecycleEventRecord.run_id == run_id,
+                    LifecycleEventRecord.event_type == "run_attempt.leased",
+                )
+            )
+            if record is None:
+                raise PublicationUnavailable("No current Attempt can reconcile the pending activation")
+            fact = record.to_resource()
+        # Redis accepts only the exact pending digest. This never completes an old
+        # activation or substitutes the current claim for another unfinished write.
+        await self.project_leased(fact)
+
     async def project_leased(self, fact: LifecycleEvent, *, context: AttemptContext | None = None) -> None:
         if fact.event_type != "run_attempt.leased" or fact.run_attempt_id is None:
             raise ValueError("Publication activation requires a leased lifecycle fact")
@@ -91,19 +111,13 @@ class PublicationActivator:
             accepted = await _fact(database, fact.organization_id, fact.run_id, "run.accepted")
             if context is not None:
                 await read_attempt_authority(database, context, self._clock())
-            current = await _is_current(database, fact, self._clock())
-            abandoned = await database.scalar(
-                select(LifecycleEventRecord.id)
-                .where(
-                    LifecycleEventRecord.organization_id == fact.organization_id,
-                    LifecycleEventRecord.run_id == fact.run_id,
-                    LifecycleEventRecord.projection_state == LifecycleProjectionState.abandoned.value,
-                )
-                .limit(1)
-            )
-            if abandoned is not None:
-                raise PublicationUnavailable("Run Stream history has an abandoned projection")
-        await self.initialize(accepted)
+            current = context is not None or await _is_current(database, fact, self._clock())
+            if await has_abandoned_run_projection(database, fact.organization_id, fact.run_id):
+                raise PublicationContinuityLost("Run Stream history has an abandoned projection")
+        # Activation is reached only after accepted has settled in SQL. Replaying
+        # initialization here would conflict with an unfinished activation's barrier.
+        if accepted.projection_state is not LifecycleProjectionState.projected:
+            await self.initialize(accepted)
         leased = lifecycle_stream_event(fact)
         number = fact.payload.get("attempt_number")
         if not isinstance(number, int) or isinstance(number, bool) or number < 1:
@@ -123,8 +137,6 @@ class PublicationActivator:
             # A superseded claim can settle a known receipt, or a known absence.
             # Missing metadata and partial activation are explicitly inconclusive.
             await self._stream.activation_result(fact.organization_id, leased, attempt_number=number, reason=reason)
-            if context is not None:
-                raise PublicationRejected("Attempt is no longer current")
         await self._settle(fact)
         logger.info(
             "run_stream_activation_settled", extra={"run_id": fact.run_id, "attempt_number": number, "active": current}
@@ -133,12 +145,12 @@ class PublicationActivator:
     async def _settle(self, fact: LifecycleEvent) -> None:
         async with transaction(self._sessions) as database:
             if not await complete_publication_boundary(database, fact, projected_at=self._clock()):
-                raise PublicationUnavailable("Publication boundary was abandoned or removed")
+                raise PublicationContinuityLost("Publication boundary was abandoned or removed")
 
 
 def _may_create(fact: LifecycleEvent) -> bool:
     if fact.projection_state is LifecycleProjectionState.abandoned:
-        raise PublicationUnavailable("Publication boundary was abandoned")
+        raise PublicationContinuityLost("Publication boundary was abandoned")
     return fact.projection_state is not LifecycleProjectionState.projected
 
 

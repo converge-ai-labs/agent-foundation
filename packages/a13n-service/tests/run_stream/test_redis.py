@@ -12,9 +12,9 @@ from a13n_service.run_stream import (
     RunStreamReplayGap,
     deterministic_run_stream_event_id,
 )
-from a13n_service.run_stream.domain import PublicationRejected, PublicationUnavailable
+from a13n_service.run_stream.domain import PublicationPending, PublicationRejected, PublicationUnavailable
 from redis.asyncio import Redis
-from tests.run_stream.support import activate_stream, opening_event
+from tests.run_stream.support import activate_stream, opening_event, publication_failure
 
 pytestmark = pytest.mark.anyio
 
@@ -224,7 +224,7 @@ async def test_trimmed_event_keeps_active_deduplication_evidence(redis_client: R
     assert not page.items and page.high_watermark == second
 
 
-@pytest.mark.parametrize("failure_point", ["after_xadd", "after_trim"])
+@pytest.mark.parametrize("failure_point", ["event", "receipts", "retention"])
 async def test_partial_activation_blocks_all_admission_until_exact_retry(
     redis_client: Redis,
     failure_point: str,
@@ -233,19 +233,22 @@ async def test_partial_activation_blocks_all_admission_until_exact_retry(
 
     stream = RedisRunStream(redis_client, max_events=1)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
-    marker = (
-        "        redis.call('HSET', metadata, 'event:'"
-        if failure_point == "after_xadd"
-        else "redis.call('HDEL', metadata, 'pending'"
-    )
-    broken = _SCRIPT.replace(marker, "error('injected runtime error')\n" + marker, 1)
+    broken = publication_failure("activate", after=failure_point)
     stream._script = redis_client.register_script(broken)
     leased = opening_event(RUN_ID, THREAD_ID, attempt_id="rat_2222222222222222", number=2)
     with pytest.raises(PublicationUnavailable):
         await stream.activate(ORGANIZATION_ID, leased, attempt_number=2, reason="lease_expired", allow_create=True)
     stream._script = redis_client.register_script(_SCRIPT)
-    with pytest.raises(PublicationUnavailable):
+    old_publisher_error = PublicationPending if failure_point == "event" else PublicationRejected
+    with pytest.raises(old_publisher_error):
         await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
+    new_publisher_error = PublicationRejected if failure_point == "event" else PublicationPending
+    with pytest.raises(new_publisher_error):
+        await stream.append(
+            ORGANIZATION_ID,
+            _event(2).model_copy(update={"run_attempt_id": leased.run_attempt_id}),
+            attempt_number=2,
+        )
     with pytest.raises(PublicationUnavailable):
         await stream.activation_result(ORGANIZATION_ID, leased, attempt_number=2, reason="lease_expired")
     with pytest.raises(RunStreamReplayGap):
@@ -314,3 +317,21 @@ async def test_bootstrap_refuses_primary_change_after_durable_authority_read(red
             ORGANIZATION_ID, opening_event(RUN_ID, THREAD_ID), allow_create=True, expected_server_id="previous-primary"
         )
     assert not await redis_client.keys("a13n:run-stream:*")
+
+
+async def test_retirement_rejects_foreign_metadata_without_mutating_keys(redis_client: Redis) -> None:
+    from a13n_service.run_stream.redis import _keys
+
+    stream = RedisRunStream(redis_client)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    events, metadata = _keys(ORGANIZATION_ID, RUN_ID)
+    await redis_client.hset(metadata, "organization_id", "org_2222222222222222")
+    before = await redis_client.hgetall(metadata)
+    rows = await redis_client.xrange(events)
+
+    with pytest.raises(RunStreamError, match="another resource"):
+        await stream.retire(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
+
+    assert await redis_client.hgetall(metadata) == before
+    assert await redis_client.xrange(events) == rows
+    assert await redis_client.ttl(events) == await redis_client.ttl(metadata) == -1

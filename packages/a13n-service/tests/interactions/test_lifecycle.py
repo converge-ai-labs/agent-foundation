@@ -47,7 +47,7 @@ from redis.asyncio import Redis
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.run_stream.support import opening_event
+from tests.run_stream.support import opening_event, publication_failure
 
 from .conftest import (
     AGENT_ID,
@@ -364,10 +364,12 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     assert projection_states == ("projected", "projected")
 
 
+@pytest.mark.parametrize("close_failure", ["before", "receipts", "retention"])
 async def test_terminal_projection_interrupts_open_items_before_stream_close(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
+    close_failure: str,
 ) -> None:
     await _seed_run(interaction_sessions)
     async with transaction(interaction_sessions) as database:
@@ -381,7 +383,7 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
                 payload={"status": "completed"},
             ),
         )
-    stream = _FailOnceCloseRunStream(redis_client)
+    stream = _FailOnceCloseRunStream(redis_client) if close_failure == "before" else RedisRunStream(redis_client)
     replay = RunReplayStore(interaction_object_store)
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
@@ -416,10 +418,18 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
         attempt_number=1,
     )
 
+    healthy = stream._script
+    if close_failure != "before":
+        stream._script = redis_client.register_script(publication_failure("close", after=close_failure))
     assert await projector.project_once() == 1
-    failed_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
-    assert not failed_page.closed
-    assert failed_page.items[-1].event.event_type == "item.interrupted"
+    stream._script = healthy
+    if close_failure != "before":
+        with pytest.raises(RunStreamReplayGap):
+            await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    else:
+        failed_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+        assert not failed_page.closed
+        assert failed_page.items[-1].event.event_type == "item.interrupted"
     assert await projector.project_once() == 1
 
     page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)

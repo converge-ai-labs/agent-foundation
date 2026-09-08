@@ -250,6 +250,21 @@ async def complete_publication_boundary(
     return True
 
 
+async def has_abandoned_run_projection(database: AsyncSession, organization_id: str, run_id: str) -> bool:
+    """An abandoned fact prevents activation and complete retained presentation."""
+    return bool(
+        await database.scalar(
+            select(
+                exists().where(
+                    LifecycleEventRecord.organization_id == organization_id,
+                    LifecycleEventRecord.run_id == run_id,
+                    LifecycleEventRecord.projection_state == LifecycleProjectionState.abandoned.value,
+                )
+            )
+        )
+    )
+
+
 async def fail_lifecycle_projection(
     database: AsyncSession,
     claim: LifecycleProjectionClaim,
