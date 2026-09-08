@@ -52,7 +52,8 @@ class _DirectLocalFilePolicy:
 @dataclass(frozen=True, slots=True)
 class _DirectLocalProcessPolicy:
     allowed_executables: frozenset[Path]
-    allowed_environment_keys: frozenset[str]
+    allowed_environment_keys: frozenset[str] | None
+    inherit_environment: bool
     max_concurrent_processes: int
     max_wall_time_seconds: float
     terminate_grace_seconds: float
@@ -175,7 +176,8 @@ class DirectLocalEnvironment(Environment):
         policy = self._configuration.model_dump(mode="json")
         policy["root"] = {"path": str(root), "read_only": self._configuration.root.read_only}
         for field in ("allowed_executables", "allowed_environment_keys", "allowed_ports"):
-            policy[field] = sorted(policy[field])
+            if policy[field] is not None:
+                policy[field] = sorted(policy[field])
         backing_identity = await asyncio.to_thread(
             local_backing_identity, provider_key=_PROVIDER_KEY, roots=(root,), policy=policy
         )
@@ -205,6 +207,7 @@ class DirectLocalEnvironment(Environment):
                 policy=_DirectLocalProcessPolicy(
                     allowed_executables=self._configuration.allowed_executables,
                     allowed_environment_keys=self._configuration.allowed_environment_keys,
+                    inherit_environment=self._configuration.inherit_environment,
                     max_concurrent_processes=self._configuration.max_concurrent_processes,
                     max_wall_time_seconds=self._configuration.max_wall_time_seconds,
                     terminate_grace_seconds=self._configuration.terminate_grace_seconds,

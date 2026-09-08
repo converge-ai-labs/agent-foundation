@@ -134,6 +134,9 @@ class AssetStaging:
         except (OSError, RuntimeError) as error:
             await _remove_failed(path, self._limiter)
             raise asset_content_unavailable() from error
+        except BaseException:
+            await _remove_failed(path, self._limiter)
+            raise
 
 
 def _detect_media_type(prefix: bytes) -> str | None:

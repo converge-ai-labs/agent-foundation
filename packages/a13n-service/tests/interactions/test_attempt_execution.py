@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
@@ -18,10 +17,9 @@ from a13n_service.interactions.attempts import (
     AttemptPreparationRejected,
 )
 from a13n_service.interactions.domain import (
+    ExecutionBudget,
     PendingCallKind,
     PendingCallSummary,
-    RecoveryBudget,
-    RecoveryUsage,
     Run,
     RunAttemptYieldReason,
     RunInputKind,
@@ -29,6 +27,7 @@ from a13n_service.interactions.domain import (
     RunPayloadObjectRef,
     RunPendingSummary,
     RunStatus,
+    RunUsage,
     RunWaitReason,
     Session,
     Thread,
@@ -44,8 +43,8 @@ from a13n_service.interactions.state import (
     CompletedOutcomeCandidate,
     DeferredContinuationState,
     HostContinuationState,
+    RunCheckpoint,
     RunPayloadEnvelope,
-    RunStateEnvelope,
 )
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.storage import ObjectStore, short_session
@@ -92,7 +91,6 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     assert isinstance(result, ClaimedAttempt)
     claim = result
     assert claim.attempt.attempt_number == 1
-    assert claim.attempt.fence == 1
     assert await scheduler.claim(run.id, worker) is None
 
     execution = AttemptExecutionService(
@@ -101,20 +99,13 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    renewed = await execution.heartbeat(authority, lease_duration=timedelta(seconds=30))
-    authority = _authority(
-        claim,
-        run_version=renewed.run_version,
-        attempt_version=renewed.attempt_version,
-    )
-    entered = await execution.enter_harness(
+    await execution.heartbeat(authority, lease_duration=timedelta(seconds=30))
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="harness-run-1",
     )
-    authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
-    accounted = await execution.increment_model_request(authority)
-    authority = _authority(claim, run_version=accounted.run_version, attempt_version=accounted.attempt_version)
+    await execution.increment_model_request(authority)
 
     payloads = RunPayloadStore(interaction_object_store)
     output_reference: RunPayloadObjectRef | None = None
@@ -131,7 +122,7 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     candidate = _completed_state(
         state,
         claim.attempt.id,
-        claim.attempt.fence,
+        claim.attempt.attempt_number,
         outcome=(CompletedOutcomeCandidate(output_object=output_reference) if output_reference is not None else None),
     )
     stored = await execution.publish_checkpoint(
@@ -139,7 +130,7 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     )
     outcome = await RunOutcomeService(
         interaction_sessions, payloads, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    ).commit_state_outcome(authority, stored)
 
     assert outcome.run_status is RunStatus.completed
     assert outcome.thread_version == 2
@@ -207,16 +198,15 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="harness-run-invalid-output",
     )
-    authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
     candidate = _completed_state(
         state,
         claim.attempt.id,
-        claim.attempt.fence,
+        claim.attempt.attempt_number,
         outcome=CompletedOutcomeCandidate(
             output_object=RunPayloadObjectRef(
                 object_key=(
@@ -242,7 +232,7 @@ async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
             RunPayloadStore(interaction_object_store),
             clock=lambda: NOW + timedelta(seconds=3),
             lifecycle=test_lifecycle_writer(),
-        ).commit_state_outcome(authority, stored, expected_thread_version=1)
+        ).commit_state_outcome(authority, stored)
 
     async with short_session(interaction_sessions) as database:
         current = await database.get(RunRecord, run.id)
@@ -274,12 +264,11 @@ async def test_expired_attempt_is_failed_charged_and_replaced_with_a_higher_fenc
     authority = _authority(first)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="harness-run-1",
     )
-    authority = _authority(first, run_version=entered.run_version, attempt_version=entered.attempt_version)
     await execution.increment_model_request(authority)
 
     takeover = AttemptScheduler(
@@ -292,8 +281,8 @@ async def test_expired_attempt_is_failed_charged_and_replaced_with_a_higher_fenc
     second = await takeover.claim(run.id, _worker(worker_id="worker-2"))
 
     assert isinstance(second, ClaimedAttempt)
-    assert (second.attempt.attempt_number, second.attempt.fence) == (2, 2)
-    assert second.attempt.recovery_reason == "lease_expired"
+    assert (second.attempt.attempt_number, second.attempt.attempt_number) == (2, 2)
+    assert second.attempt.start_reason == "lease_expired"
     async with short_session(interaction_sessions) as database:
         old = await database.get(RunAttemptRecord, first.attempt.id)
         current = await database.get(RunRecord, run.id)
@@ -301,7 +290,7 @@ async def test_expired_attempt_is_failed_charged_and_replaced_with_a_higher_fenc
         assert old.status == "failed"
         assert old.failure_json["code"] == "run_attempt_lease_expired"
         assert current.usage_charged_json["model_requests"] == 1
-        assert current.recovery_attempts_started == 2
+        assert current.attempts_charged == 2
 
 
 async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
@@ -344,8 +333,6 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
     assert renewed.lease_expires_at == NOW + timedelta(seconds=32)
     authority = _authority(
         claim,
-        run_version=renewed.run_version,
-        attempt_version=renewed.attempt_version,
     )
 
     failure = SafeFailure(code="dependency_unavailable", message="A dependency is temporarily unavailable.")
@@ -388,22 +375,22 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
     )
     replacement = await recovery.claim(run.id, _worker(worker_id="worker-2"))
     assert isinstance(replacement, ClaimedAttempt)
-    assert replacement.attempt.recovery_reason == "attempt_failed"
+    assert replacement.attempt.start_reason == "attempt_failed"
     assert replacement.attempt.replaces_run_attempt_id == claim.attempt.id
     async with short_session(interaction_sessions) as database:
         current = await database.get(RunRecord, run.id)
         assert current is not None
-        assert (current.attempts_started, current.recovery_attempts_started) == (2, 2)
+        assert (current.attempts_started, current.attempts_charged) == (2, 2)
 
 
-async def test_zero_recovery_budget_seals_without_creating_an_attempt(
+async def test_zero_execution_budget_seals_without_creating_an_attempt(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
     _, run, _ = await _accept_root(
         interaction_sessions,
         interaction_object_store,
-        max_recovery_attempts=0,
+        max_attempts=0,
     )
     scheduler = AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -418,7 +405,7 @@ async def test_zero_recovery_budget_seals_without_creating_an_attempt(
         attempts = (await database.scalars(select(RunAttemptRecord))).all()
         assert current is not None and thread is not None
         assert current.status == "failed"
-        assert current.failure_json["code"] == "recovery_attempts_exhausted"
+        assert current.failure_json["code"] == "execution_attempts_exhausted"
         assert thread.version == 2
         assert attempts == []
 
@@ -430,7 +417,7 @@ async def test_unknown_recovery_policy_fails_closed_before_attempt_creation(
     _, run, _ = await _accept_root(
         interaction_sessions,
         interaction_object_store,
-        recovery_policy_version="future-policy",
+        execution_policy_version="future-policy",
     )
 
     result = await AttemptScheduler(
@@ -438,7 +425,7 @@ async def test_unknown_recovery_policy_fails_closed_before_attempt_creation(
     ).claim(run.id, _worker())
 
     assert isinstance(result, SealedClaim)
-    assert result.failure.code == "recovery_policy_unsupported"
+    assert result.failure.code == "execution_policy_unsupported"
     async with short_session(interaction_sessions) as database:
         current = await database.get(RunRecord, run.id)
         attempts = (await database.scalars(select(RunAttemptRecord))).all()
@@ -454,7 +441,7 @@ async def test_preparation_rechecks_fixed_deadline_and_fails_closed(
     _, run, _ = await _accept_root(
         interaction_sessions,
         interaction_object_store,
-        recovery_deadline_at=NOW + timedelta(seconds=2),
+        execution_deadline_at=NOW + timedelta(seconds=2),
     )
     scheduler = AttemptScheduler(
         interaction_sessions,
@@ -471,7 +458,7 @@ async def test_preparation_rechecks_fixed_deadline_and_fails_closed(
     ).commit_preparation_success(_authority(claim))
 
     assert isinstance(preparation, AttemptPreparationRejected)
-    assert preparation.failure.code == "recovery_deadline_exhausted"
+    assert preparation.failure.code == "execution_deadline_exhausted"
     async with short_session(interaction_sessions) as database:
         current = await database.get(RunRecord, run.id)
         attempt = await database.get(RunAttemptRecord, claim.attempt.id)
@@ -513,7 +500,7 @@ async def test_cancel_seals_without_state_replacement(
         assert current.sealed_state_digest_sha256 is None
 
 
-async def test_yield_prefers_a_different_build_without_consuming_recovery_budget(
+async def test_yield_prefers_a_different_build_without_consuming_execution_budget(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
@@ -547,12 +534,12 @@ async def test_yield_prefers_a_different_build_without_consuming_recovery_budget
     )
     second = await new_build.claim(run.id, _worker(build_id="build-2"))
     assert isinstance(second, ClaimedAttempt)
-    assert second.attempt.recovery_reason == "planned_handoff"
+    assert second.attempt.start_reason == "planned_handoff"
     assert second.attempt.replaces_run_attempt_id is None
     async with short_session(interaction_sessions) as database:
         current = await database.get(RunRecord, run.id)
         assert current is not None
-        assert (current.attempts_started, current.recovery_attempts_started, current.handoffs_completed) == (2, 1, 1)
+        assert (current.attempts_started, current.attempts_charged, current.handoffs_completed) == (2, 1, 1)
         run_events = (
             await database.scalars(
                 select(LifecycleEventRecord)
@@ -583,13 +570,12 @@ async def _wait_for_approval(
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="harness-run-waiting",
     )
-    authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
-    waiting = _waiting_state(state, claim.attempt.id, claim.attempt.fence)
+    waiting = _waiting_state(state, claim.attempt.id, claim.attempt.attempt_number)
     stored = await execution.publish_checkpoint(authority, states, await states.read(ORGANIZATION_ID, run.id), waiting)
 
     receipt = await RunOutcomeService(
@@ -597,7 +583,7 @@ async def _wait_for_approval(
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=3),
         lifecycle=test_lifecycle_writer(),
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    ).commit_state_outcome(authority, stored)
 
     return run, receipt
 
@@ -656,10 +642,10 @@ async def _accept_root(
     sessions: async_sessionmaker[AsyncSession],
     objects: ObjectStore,
     *,
-    max_recovery_attempts: int = 3,
-    recovery_policy_version: str = "1",
-    recovery_deadline_at: datetime | None = None,
-) -> tuple[RunStateStore, Run, RunStateEnvelope]:
+    max_attempts: int = 3,
+    execution_policy_version: str = "1",
+    execution_deadline_at: datetime | None = None,
+) -> tuple[RunStateStore, Run, RunCheckpoint]:
     config = effective_agent_config()
     seed = RunStateSeed(
         run_id="run_5555555555555555",
@@ -685,17 +671,16 @@ async def _accept_root(
         priority=0,
         queue_name="default",
         available_at=NOW,
-        next_attempt_fence=1,
-        recovery_budget=RecoveryBudget(
-            policy_version=recovery_policy_version,
-            max_recovery_attempts=max_recovery_attempts,
+        execution_budget=ExecutionBudget(
+            policy_version=execution_policy_version,
+            max_attempts=max_attempts,
             max_handoffs=2,
-            recovery_deadline_at=recovery_deadline_at,
+            execution_deadline_at=execution_deadline_at,
         ),
         attempts_started=0,
-        recovery_attempts_started=0,
+        attempts_charged=0,
         handoffs_completed=0,
-        usage_charged=RecoveryUsage(),
+        usage_charged=RunUsage(),
         request_fingerprint="1" * 64,
         status=RunStatus.accepted,
         input_kind=RunInputKind.agent_input,
@@ -746,7 +731,6 @@ def _worker(
     return WorkerClaim(
         organization_id=ORGANIZATION_ID,
         worker_id=worker_id,
-        worker_generation=f"{worker_id}-generation",
         worker_build_id=build_id,
         runtime_lock_digest="a" * 64,
         lease_duration=timedelta(seconds=lease_seconds),
@@ -757,8 +741,6 @@ def _worker(
 def _authority(
     claim: ClaimedAttempt,
     *,
-    run_version: int | None = None,
-    attempt_version: int | None = None,
     lease_token: str | None = None,
 ) -> AttemptContext:
     lease_expires_at = claim.attempt.lease_expires_at
@@ -768,15 +750,11 @@ def _authority(
         thread_id=claim.thread_id,
         run_id=claim.attempt.run_id,
         run_attempt_id=claim.attempt.id,
-        fence=claim.attempt.fence,
+        attempt_number=claim.attempt.attempt_number,
         lease_token=claim.lease_token if lease_token is None else lease_token,
         worker_id=claim.attempt.worker_id,
-        worker_generation=claim.attempt.worker_generation,
         worker_build_id=claim.attempt.worker_build_id,
         runtime_lock_digest=claim.attempt.runtime_lock_digest,
-        expected_run_version=claim.run_version if run_version is None else run_version,
-        expected_attempt_version=claim.attempt.version if attempt_version is None else attempt_version,
-        lease_expires_at=lease_expires_at,
         lease_duration=lease_duration,
         renewal_interval=lease_duration / 3,
         renewal_timeout=lease_duration / 6,
@@ -786,32 +764,30 @@ def _authority(
 
 
 def _completed_state(
-    previous: RunStateEnvelope,
+    previous: RunCheckpoint,
     run_attempt_id: str,
-    fence: int,
+    attempt_number: int,
     *,
     outcome: CompletedOutcomeCandidate | None = None,
-) -> RunStateEnvelope:
+) -> RunCheckpoint:
     payload = previous.model_dump(mode="python", by_alias=True)
     payload.update(
         checkpoint_seq=1,
         checkpoint_kind="completed",
-        input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
-        last_checkpoint_fence=fence,
+        last_checkpoint_fence=attempt_number,
         outcome_candidate=outcome or CompletedOutcomeCandidate(output={"answer": 42}),
     )
     return type(previous).model_validate(payload)
 
 
-def _waiting_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) -> RunStateEnvelope:
+def _waiting_state(previous: RunCheckpoint, run_attempt_id: str, attempt_number: int) -> RunCheckpoint:
     payload = previous.model_dump(mode="python", by_alias=True)
     payload.update(
         checkpoint_seq=1,
         checkpoint_kind="waiting",
-        input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
-        last_checkpoint_fence=fence,
+        last_checkpoint_fence=attempt_number,
         host=HostContinuationState(
             deferred=DeferredContinuationState(
                 requests={
@@ -841,10 +817,10 @@ def _waiting_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) 
             ),
         },
     )
-    return RunStateEnvelope.model_validate(payload)
+    return RunCheckpoint.model_validate(payload)
 
 
-@pytest.mark.parametrize("revocation", ["lease_expired", "replaced", "cancelled", "iam_revoked"])
+@pytest.mark.parametrize("revocation", ["lease_expired", "replaced", "cancelled", "iam_revoked", "heartbeat"])
 async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     interaction_sessions,
     interaction_object_store,
@@ -919,26 +895,34 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     async with transaction(interaction_sessions) as database:
         attempt = await database.get(RunAttemptRecord, claim.attempt.id)
         if revocation == "lease_expired":
-            monkeypatch.setattr(execution, "utc_now", lambda: context.lease_expires_at)
+            monkeypatch.setattr(execution, "utc_now", lambda: claim.attempt.lease_expires_at)
         elif revocation == "replaced":
-            attempt.fence += 1
+            attempt.attempt_number += 1
         elif revocation == "iam_revoked":
             user = await database.get(UserRecord, USER_ID)
             user.status = "disabled"
     if revocation == "cancelled":
         async with short_session(interaction_sessions) as database:
             thread = await database.get(ThreadRecord, THREAD_ID)
+            current = await database.get(RunRecord, run.id)
         await RunOutcomeService(
             interaction_sessions, states, clock=lambda: NOW, lifecycle=test_lifecycle_writer()
         ).cancel(
             organization_id=ORGANIZATION_ID,
             run_id=run.id,
-            expected_run_version=context.expected_run_version,
+            expected_run_version=current.version,
             expected_thread_version=thread.version,
             failure=SafeFailure(code="cancelled", message="Cancelled by user."),
         )
-    with pytest.raises((AttemptAuthorityError, AuthorizationError)):
-        await runtime._scope(context)
+    if revocation == "heartbeat":
+        renewed = await AttemptExecutionService(
+            interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()
+        ).heartbeat(context, lease_duration=timedelta(seconds=30))
+        assert renewed.attempt_version == claim.attempt.version + 1
+        assert await runtime._scope(context) == scope
+    else:
+        with pytest.raises((AttemptAuthorityError, AuthorizationError)):
+            await runtime._scope(context)
 
 
 @pytest.mark.parametrize("lease_expires", [False, True])
@@ -955,17 +939,18 @@ async def test_output_verification_uses_fresh_lease_and_versions_before_sealing(
     authority = _authority(claim)
     prepared = await execution.commit_preparation_success(authority)
     assert isinstance(prepared, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(authority, preparation=prepared, harness_run_id="harness-output-check")
-    authority = replace(
-        authority, expected_run_version=entered.run_version, expected_attempt_version=entered.attempt_version
-    )
+    await execution.enter_harness(authority, preparation=prepared, harness_run_id="harness-output-check")
+
     payloads = RunPayloadStore(interaction_object_store)
     reference = await payloads.create(
         ORGANIZATION_ID,
         RunPayloadEnvelope(run_id=run.id, payload_kind="output", payload_schema_version="1", payload={"answer": 42}),
     )
     candidate = _completed_state(
-        envelope, claim.attempt.id, claim.attempt.fence, outcome=CompletedOutcomeCandidate(output_object=reference)
+        envelope,
+        claim.attempt.id,
+        claim.attempt.attempt_number,
+        outcome=CompletedOutcomeCandidate(output_object=reference),
     )
     stored = await execution.publish_checkpoint(
         authority, states, await states.read(ORGANIZATION_ID, run.id), candidate
@@ -993,29 +978,29 @@ async def test_output_verification_uses_fresh_lease_and_versions_before_sealing(
             tasks.start_soon(verify)
             await reading.wait()
             receipt = await execution.heartbeat(authority, lease_duration=timedelta(seconds=30))
-            refreshed = replace(
-                authority,
-                expected_run_version=receipt.run_version,
-                expected_attempt_version=receipt.attempt_version,
-                lease_expires_at=receipt.lease_expires_at,
-            )
             if lease_expires:
                 now = receipt.lease_expires_at
             release.set()
-    with pytest.raises(AttemptAuthorityError):
-        await outcomes.commit_verified_state_outcome(authority, verified[0], expected_thread_version=1)
     another_service = RunOutcomeService(
         interaction_sessions, payloads, clock=lambda: now, lifecycle=test_lifecycle_writer()
     )
     with pytest.raises(RunOutcomeError, match="Output verification"):
-        await another_service.commit_verified_state_outcome(refreshed, verified[0], expected_thread_version=1)
+        await another_service.commit_verified_state_outcome(authority, verified[0])
     if lease_expires:
         with pytest.raises(AttemptAuthorityError):
-            await outcomes.commit_verified_state_outcome(refreshed, verified[0], expected_thread_version=1)
+            await outcomes.commit_verified_state_outcome(authority, verified[0])
         async with short_session(interaction_sessions) as database:
             record = await database.get(RunRecord, run.id)
             assert record is not None and record.status == "running" and record.to_resource().sealed_state is None
     else:
-        result = await outcomes.commit_verified_state_outcome(refreshed, verified[0], expected_thread_version=1)
+        result = await outcomes.commit_verified_state_outcome(authority, verified[0])
         assert result.run_status is RunStatus.completed and result.thread_version == 2
     assert reads == 1
+
+
+async def test_postgresql_heartbeat_does_not_revoke_tool_authority(
+    postgres_interaction_sessions, interaction_object_store, monkeypatch
+):
+    await test_external_tool_scope_rechecks_durable_attempt_and_principal(
+        postgres_interaction_sessions, interaction_object_store, monkeypatch, "heartbeat"
+    )

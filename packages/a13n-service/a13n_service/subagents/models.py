@@ -37,7 +37,7 @@ class ChildRunRelationshipRecord(Base):
                 "run_attempts.organization_id",
                 "run_attempts.run_id",
                 "run_attempts.id",
-                "run_attempts.fence",
+                "run_attempts.attempt_number",
             ),
             name="fk_child_run_relationships_parent_attempt",
             ondelete="RESTRICT",

@@ -11,6 +11,7 @@ from a13n_harness import (
     AgentContext,
     AgentDefinition,
     AgentSpec,
+    ModelRecoveryPolicy,
     SubagentDefinition,
 )
 from a13n_harness import (
@@ -38,11 +39,12 @@ from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
 
+from a13n_service.digests import digest_request
+
 from .domain import (
     EffectiveAgentConfig,
     OutputSpec,
     ResolvedPluginVersion,
-    canonical_digest,
 )
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
 
@@ -242,6 +244,7 @@ class AgentReconstructor:
                 capabilities=tuple(capabilities),
                 plugins=plugins,
                 subagents=tuple(child_definitions),
+                model_recovery=ModelRecoveryPolicy(enabled=True),
             )
         except AgentDefinitionReconstructionError:
             raise
@@ -283,7 +286,7 @@ class AgentReconstructor:
     @staticmethod
     def _verify_effective_config(config: EffectiveAgentConfig) -> None:
         payload = config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-        if canonical_digest(payload) != config.content_digest:
+        if digest_request(payload) != config.content_digest:
             raise AgentDefinitionReconstructionError("effective_config_digest_mismatch")
 
 

@@ -11,13 +11,13 @@ from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRe
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceService
 from a13n_service.interactions.domain import (
-    RecoveryBudget,
-    RecoveryUsage,
+    ExecutionBudget,
     Run,
     RunInputKind,
     RunLineageKind,
     RunPayloadObjectRef,
     RunStatus,
+    RunUsage,
     Session,
     Thread,
     ThreadOriginKind,
@@ -88,16 +88,15 @@ def _accepted_run(
         priority=0,
         queue_name="default",
         available_at=NOW,
-        next_attempt_fence=1,
-        recovery_budget=RecoveryBudget(
+        execution_budget=ExecutionBudget(
             policy_version="1",
-            max_recovery_attempts=3,
+            max_attempts=3,
             max_handoffs=2,
         ),
         attempts_started=0,
-        recovery_attempts_started=0,
+        attempts_charged=0,
         handoffs_completed=0,
-        usage_charged=RecoveryUsage(),
+        usage_charged=RunUsage(),
         idempotency_key=idempotency_key,
         request_fingerprint=request_fingerprint,
         status=RunStatus.accepted,

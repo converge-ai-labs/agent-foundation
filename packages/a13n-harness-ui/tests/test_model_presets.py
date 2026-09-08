@@ -540,26 +540,26 @@ def test_bundled_context_catalog_and_programmatic_default_use_harness_owner() ->
 @pytest.mark.parametrize(
     "provider,model_id,title",
     [
-        ("codex", "gpt-5.6-sol", "Codex · GPT-5.6 Sol"),
+        ("codex", "gpt-5.6-sol", "Codex - GPT-5.6 Sol"),
         ("deepseek", "deepseek-v4-pro", "DeepSeek V4 Pro"),
-        ("anthropic", "claude-sonnet-4-6", "Anthropic · Claude Sonnet 4.6"),
-        ("moonshotai", "kimi-k2.6", "Moonshot AI · Kimi K2.6"),
-        ("zai", "glm-5.3", "Z.AI · GLM 5.3"),
-        ("openai-chat", "Qwen/CustomID", "OpenAI Chat · Qwen/CustomID"),
+        ("anthropic", "claude-sonnet-4-6", "Anthropic - Claude Sonnet 4.6"),
+        ("moonshotai", "kimi-k2.6", "Moonshot AI - Kimi K2.6"),
+        ("zai", "glm-5.3", "Z.AI - GLM 5.3"),
+        ("openai-chat", "Qwen/CustomID", "OpenAI Chat - Qwen/CustomID"),
     ],
 )
 def test_resource_display_names_preserve_identity(provider, model_id, title) -> None:
-    from a13n_harness_ui.model_presets import connection_display_name
+    from a13n_harness_ui.resource_names import model_name
 
-    assert connection_display_name(provider, model_id) == title
+    assert model_name(provider, model_id) == title
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "provider,model_id,window,title",
     [
-        ("moonshotai", "kimi-k2.5", 262144, "Moonshot AI · Kimi K2.5"),
-        ("openai-chat", "CustomModel", 350000, "OpenAI Chat · CustomModel"),
+        ("moonshotai", "kimi-k2.5", 262144, "Moonshot AI - Kimi K2.5"),
+        ("openai-chat", "CustomModel", 350000, "OpenAI Chat - CustomModel"),
     ],
 )
 async def test_setup_context_and_names_survive_publication_capture_and_reconstruction(
@@ -582,9 +582,13 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, advanced=True)
         source = await app.current_configuration()
         assert source.models["model-api-key"].name == title
-        assert source.agents["agent-api-key"].name == f"{title} · Coding"
+        assert source.agents["agent-api-key"].name == f"{title} - Coding"
+        assert f"name: {title}\n" in (tmp_path / "models/api-key.yaml").read_text(encoding="utf-8")
+        assert f"name: {title} - Coding\n" in (tmp_path / "agents/api-key.yaml").read_text(encoding="utf-8")
         characteristics = source.models["model-api-key"].model_characteristics
         assert characteristics.context_window == window
+        expected_capabilities = frozenset({"image_understanding"}) if model_id == "kimi-k2.5" else frozenset()
+        assert characteristics.capabilities == expected_capabilities
         composition = AgentCompositionResolver().resolve_run(
             source,
             ThreadCompositionSelection(

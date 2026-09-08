@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -72,6 +71,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         RunReplayStore(interaction_object_store),
         run_id_factory=lambda _organization, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted"
@@ -166,6 +166,7 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         replays,
         run_id_factory=lambda _organization, _entry, _parent: "run_2424242424242424",
         clock=lambda: NOW + timedelta(seconds=7),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted" and receipt.successor is not None
@@ -225,6 +226,7 @@ async def test_oldest_result_accepts_successor_and_later_result_binds_in_fifo_or
         RunReplayStore(interaction_object_store),
         run_id_factory=lambda _organization, _entry, _parent: "run_1414141414141414",
         clock=lambda: NOW + timedelta(seconds=7),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted" and receipt.successor is not None
@@ -281,6 +283,7 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
             RunReplayStore(interaction_object_store),
             run_id_factory=lambda _organization, _entry, _parent: "run_1818181818181818",
             clock=lambda: NOW + timedelta(seconds=6),
+            lifecycle=test_lifecycle_writer(),
         ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     async with short_session(interaction_sessions) as database:
@@ -317,6 +320,7 @@ async def test_concurrent_postgresql_successor_reconciliation_accepts_one_run(
         RunReplayStore(interaction_object_store),
         run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     )
 
     receipts = await asyncio.gather(
@@ -351,7 +355,7 @@ async def _accept_another_child(
         parent_run=parent,
         parent_state=parent_state.envelope,
         parent_run_attempt_id=authority.run_attempt_id,
-        parent_run_attempt_fence=authority.fence,
+        parent_run_attempt_fence=authority.attempt_number,
         parent_agent_instance_id="agent-parent",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"second"}',
@@ -364,7 +368,7 @@ async def _accept_another_child(
         child_thread_id="thread-12121212121212121212121212121212",
         child_run_id="run_1212121212121212",
         relationship_id="crr_1212121212121212",
-        recovery_budget=parent.recovery_budget,
+        execution_budget=parent.execution_budget,
         created_at=NOW + timedelta(seconds=2),
     )
     accepted = await ChildRunAcceptanceService(
@@ -372,6 +376,7 @@ async def _accept_another_child(
         states,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     ).accept(prepared, authority)
     return accepted.child_run_id
 
@@ -390,31 +395,23 @@ async def _seal_parent(
     )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    authority = replace(
-        authority,
-        expected_run_version=preparation.mutation.run_version,
-        expected_attempt_version=preparation.mutation.attempt_version,
-    )
-    entered = await execution.enter_harness(
+
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id=f"parent-{outcome}",
     )
-    authority = replace(
-        authority,
-        expected_run_version=entered.run_version,
-        expected_attempt_version=entered.attempt_version,
-    )
+
     current = await states.read(ORGANIZATION_ID, parent.id)
     candidate = (
-        _completed_state(current.envelope, authority.run_attempt_id, authority.fence)
+        _completed_state(current.envelope, authority.run_attempt_id, authority.attempt_number)
         if outcome == "completed"
-        else _waiting_state(current.envelope, authority.run_attempt_id, authority.fence)
+        else _waiting_state(current.envelope, authority.run_attempt_id, authority.attempt_number)
     )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
     receipt = await RunOutcomeService(
         sessions, RunPayloadStore(objects), clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    ).commit_state_outcome(authority, stored)
     assert receipt.run_status.value == outcome
     async with short_session(sessions) as database:
         row = await database.get(RunRecord, parent.id)
@@ -437,7 +434,11 @@ async def test_periodic_recovery_expires_bound_result_and_releases_capacity(
         assert entry.target_run_id == parent.id
         entry.expires_at = NOW + timedelta(seconds=6)
     reconciler = AsyncSubagentSuccessorReconciler(
-        interaction_sessions, states, replays, clock=lambda: NOW + timedelta(seconds=7)
+        interaction_sessions,
+        states,
+        replays,
+        clock=lambda: NOW + timedelta(seconds=7),
+        lifecycle=test_lifecycle_writer(),
     )
     assert (await reconciler.scan()).completed == 1
     assert (await reconciler.scan()).completed == 0

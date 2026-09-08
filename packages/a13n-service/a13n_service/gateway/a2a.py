@@ -19,7 +19,7 @@ from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
-from a13n_service.agents.domain import AgentConfig, canonical_digest
+from a13n_service.agents.domain import AgentConfig
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import (
@@ -28,6 +28,7 @@ from a13n_service.collection_cursors import (
     decode_collection_cursor,
     encode_collection_cursor,
 )
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
@@ -210,7 +211,7 @@ class A2AService:
         _validate_send_request(request)
         history_length = _send_history_length(request.configuration)
         request_json = MessageToDict(request, preserving_proto_field_name=False)
-        request_digest = canonical_digest(request_json)
+        request_digest = digest_request(request_json)
         replay = await self._message_replay(
             actor=actor,
             agent_id=agent_id,
@@ -1682,7 +1683,7 @@ def _task_cursor_scope(
 
 
 def _artifact_digest(artifact: a2a.Artifact) -> str:
-    return canonical_digest(MessageToDict(artifact, preserving_proto_field_name=False))
+    return digest_request(MessageToDict(artifact, preserving_proto_field_name=False))
 
 
 def _push_cursor_scope(*, actor: AuthenticatedActor, agent_id: str, task_id: str) -> dict[str, object]:

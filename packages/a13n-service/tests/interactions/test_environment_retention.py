@@ -102,10 +102,12 @@ async def test_last_user_outcome_starts_idle_clock_and_automatic_cleanup(
         authority = _authority(claim)
         preparation = await execution.commit_preparation_success(authority)
         assert isinstance(preparation, AttemptPreparationAccepted)
-        entered = await execution.enter_harness(authority, preparation=preparation, harness_run_id="retention-run")
-        authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
+        await execution.enter_harness(authority, preparation=preparation, harness_run_id="retention-run")
+        authority = _authority(
+            claim,
+        )
         candidate = (_completed_state if outcome == "completed" else _waiting_state)(
-            state, claim.attempt.id, claim.attempt.fence
+            state, claim.attempt.id, claim.attempt.attempt_number
         )
         stored = await execution.publish_checkpoint(
             authority, states, await states.read(run.organization_id, run.id), candidate
@@ -115,12 +117,12 @@ async def test_last_user_outcome_starts_idle_clock_and_automatic_cleanup(
             RunPayloadStore(interaction_object_store),
             clock=lambda: ended_at,
             lifecycle=test_lifecycle_writer(),
-        ).commit_state_outcome(authority, stored, expected_thread_version=1)
+        ).commit_state_outcome(authority, stored)
     elif outcome == "failed":
         await execution.fail(_authority(claim), SafeFailure(code="failed", message="Failed"), retryable=False)
     else:
         async with transaction(interaction_sessions) as session:
-            (await session.get(RunRecord, run.id)).recovery_deadline_at = ended_at
+            (await session.get(RunRecord, run.id)).execution_deadline_at = ended_at
         if outcome == "preparation_budget":
             await execution.commit_preparation_success(_authority(claim))
         else:

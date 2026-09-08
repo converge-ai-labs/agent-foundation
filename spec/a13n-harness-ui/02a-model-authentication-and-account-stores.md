@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Harness UI supports API-key Models and OAuth subscription-backed Models. The shared [Harness Model Authentication contract](../a13n-harness/16a-model-authentication.md) owns provider credential values, source protocols, OAuth exchange and refresh behavior, request injection, single-flight, replay, and native Model construction. Harness UI is the local Host: it selects authentication in Model resources and adapts Codex and Grok Build product stores to those SDK-first source protocols.
+Harness UI supports API-key Models and OAuth subscription-backed Models. The shared [Harness Model Authentication contract](../a13n-harness/16a-model-authentication.md) defines the boundary between the official Pydantic AI Codex provider, Harness supplemental Codex request/login behavior, and Harness-owned Grok authentication. Harness UI is the local Host: it selects authentication in Model resources and adapts Codex and Grok Build product stores to those SDK-first source protocols.
 
 Codex and Grok subscription authentication reuse the upstream products' account stores instead of creating another Harness UI token copy. A user who already authenticated with Codex or Grok Build should normally run the corresponding Model without another browser login. A login started by Harness UI writes through the same compatible product store so the upstream CLI can reuse it.
 
@@ -50,17 +50,17 @@ The Harness UI release-owned Model integration selected by the route declares wh
 
 ## Ownership
 
-| Concern                                                                                                          | Owner                        |
-| ---------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| Credential types and `load()` / `save()` protocols                                                               | Harness `model_auth`         |
-| OAuth browser/device exchange, refresh, expiry, process-local single-flight, request headers, and one 401 replay | Harness `model_auth`         |
-| Codex Responses subscription dialect and Grok native Model construction                                          | Harness `model_auth`         |
-| Effective local product-store policy and path                                                                    | Harness UI provider adapter  |
-| Product file parsing, schema preservation, advisory locking, and optimistic digest checks                        | Harness UI provider adapter  |
-| Local account inspection, login confirmation, and logout surfaces                                                | Harness UI                   |
-| Durable managed service storage and distributed coordination                                                     | a13n Service or another Host |
+| Concern                                                                                             | Owner                        |
+| --------------------------------------------------------------------------------------------------- | ---------------------------- |
+| Codex model credentials, source protocol, refresh, single-flight, 401 replay, and Responses dialect | Pydantic AI                  |
+| Codex browser PKCE and callback handling                                                            | Pydantic AI                  |
+| Codex request affinity, device login, and ID-token-preserving login exchange                        | Harness `model_auth`         |
+| Grok credential/source types, OAuth, refresh, and Model construction                                | Harness `model_auth`         |
+| Effective product-store policy/path and schema-preserving writes                                    | Harness UI provider adapter  |
+| Per-provider account binding, confirmed reset identity, and local account surfaces                  | Harness UI                   |
+| Durable managed storage and distributed coordination                                                | a13n Service or another Host |
 
-Harness UI does not wrap Harness authentication with another token callback or Model HTTP-auth layer. Its account stores directly implement the corresponding Harness credential-source protocol.
+Harness UI implements the official Codex source protocol directly, with a per-provider account-binding adapter around the selected source. It does not install another token manager. Grok uses the Harness source protocol.
 
 ## Compatible Product Stores
 
@@ -83,18 +83,18 @@ The Host rereads a referenced key when constructing a Model for a Run. Updating 
 
 ## Credential Source Behavior
 
-For every Harness `load()`, the adapter rereads the selected product store and returns one complete credential set. It does not retain a long-lived token snapshot. A missing, malformed, incompatible, or differently scoped store fails explicitly.
+For every provider `load()`, the adapter rereads the selected product store and returns one complete credential set. It does not retain a long-lived token snapshot. A missing, malformed, incompatible, or differently scoped store fails explicitly.
 
-For every Harness `save()`, the adapter:
+For every provider `save()`, the adapter:
 
 1. requires a matching account and provider scope;
 2. preserves unrelated supported document fields;
-3. retains provider fields not represented by the Harness credential value where compatibility requires them;
+3. retains provider fields not represented by the provider credential value where compatibility requires them;
 4. writes with the product-compatible permissions and atomic replacement behavior;
 5. verifies the observed content digest under a Harness UI advisory lock immediately before atomic replacement; and
 6. fails without overwrite when a change is visible at that verification point.
 
-The Harness reloads before refresh and adopts a changed same-account credential. Harness UI's source adds an optimistic local no-clobber check during `save()` without adding a storage-specific revision API to Harness. The product CLIs do not share an established lock protocol with Harness UI, so this check cannot provide strict compare-and-swap against a non-cooperating writer in the interval between verification and replacement. Strict multi-process coordination requires a Host-controlled store rather than a shared compatibility file.
+The provider reloads before refresh and adopts a changed same-account credential. Codex follows upstream lazy initial loading, cached access tokens, and install-before-save refresh semantics; a failed save surfaces but does not roll back provider memory. Account binding rejects a different stored or refreshed account when the source is consulted. A provider that encounters an account conflict must be reconstructed before reuse; file changes do not immediately invalidate cached tokens. Harness UI's source adds an optimistic local no-clobber check during `save()` without adding a storage-specific revision API to Harness. The product CLIs do not share an established lock protocol with Harness UI, so this check cannot provide strict compare-and-swap against a non-cooperating writer in the interval between verification and replacement. Strict multi-process coordination requires a Host-controlled store rather than a shared compatibility file.
 
 ## Reuse, Login, and Logout
 
@@ -107,7 +107,7 @@ Harness UI resolves local account use in this order:
 
 An expiring token with a refresh grant does not start another interactive login. Authentication rejection never starts browser login. Login is itself explicit reauthentication; it can replace the same account without another flag. Replacing a different shared account requires the caller's `allow_account_switch` confirmation and otherwise fails after authorization without changing the store.
 
-Host surfaces use the same typed operations to inspect compatible accounts, invoke a registered provider login, confirm account replacement, and log out. Harness UI natively registers Harness Codex and Grok login primitives for its executable surfaces; an embedding Host can replace these collaborators but a surface must not expose a login action when its App has no registered flow.
+Host surfaces use the same typed operations to inspect compatible accounts, invoke a registered provider login, confirm account replacement, and log out. Harness UI natively registers the Codex ID-token-preserving login adapter and Grok login primitives for its executable surfaces; an embedding Host can replace these collaborators but a surface must not expose a login action when its App has no registered flow.
 
 ### Grok Scope and First Login
 
@@ -125,7 +125,7 @@ This default creates only the matching in-memory adapter. No file entry exists u
 
 Interactive and one-shot CLI authentication default to device authorization for both providers. The Host presents a verification URL and user code; the user may open the URL in any browser. No browser is opened automatically and no local callback is needed. Grok uses RFC 8628; Codex uses its vendor-specific device-code/authorization-code exchange and registered device callback. Unsupported device authorization fails explicitly without fallback.
 
-The auth CLI offers explicit browser and device actions. Codex browser authorization retains `http://localhost:1455/auth/callback`; Grok discovery uses its compatible loopback callback. Neither callback is rewritten to a different application origin. Browser login requires the user's browser to reach the Host's loopback listener; otherwise the user selects device authorization. PKCE, state, nonce, and token validation remain Harness-owned.
+The auth CLI offers explicit browser and device actions. Codex browser authorization retains `http://localhost:1455/auth/callback`; Grok discovery uses its compatible loopback callback. Neither callback is rewritten to a different application origin. Browser login requires the user's browser to reach the Host's loopback listener; otherwise the user selects device authorization. Codex PKCE, state, and callback handling remain upstream-owned; its login exchange retains the real ID token required for native `auth.json`. Grok nonce and identity validation remain Harness-owned. Successful Codex login callbacks return `CodexLoginResult`, not a bare model credential. Fresh login and account switching publish its new ID token; same-account refresh preserves the stored ID token.
 
 Interactive sessions are process-local and bounded to fifteen minutes, with starting, waiting, succeeded, failed, cancelled, and expired states. One session can be active per App, with at most sixteen recent terminal results retained. Polling and cancellation do not block conversation operations. App shutdown cancels pending authorization. Cancellation before credential publication prevents the write; once publication starts, its write and resulting projection are shielded to report the actual outcome. Persistence errors may require inspecting account status before retrying. Session reads return only presentation information, never the device secret, authorization code, PKCE verifier, OAuth tokens, or raw claims. Terminal results discard the presentation URL and user code.
 
@@ -156,29 +156,29 @@ Resetting usage is a separate explicit mutation that consumes an eligible `codex
 
 The request uses the provider's `redeem_request_id` and `credit_id` body fields. An uncertain outcome is not reported as a confirmed failure or a restored quota; an explicit retry of the pending confirmation reuses the same identifiers. The terminal retains the pending request independently of its menu, including after cancellation, and `/usage reset` reopens that same-ID confirmation before allowing another redemption. `/status` only reports the pending identity and retry command. This recovery state is process-local; its identity is displayed so an unknown outcome is not lost silently. `reset`, `nothing_to_reset`, `no_credit`, and `already_redeemed` remain distinct outcomes. A confirmed redemption followed by failed status refresh remains a confirmed redemption. The UI never creates a replacement redemption automatically.
 
-Account requests reuse the Harness's request-fresh OAuth loading, refresh, save-before-use, and single 401 replay. Redirects are disabled, requests have finite time and response-size bounds, and provider error bodies and credentials are not exposed as status diagnostics. This integration does not introduce a second credential store or refresh implementation.
+Each account operation constructs a fresh official Codex provider over its dedicated HTTP client and Host credential source. It uses upstream refresh/persistence semantics and one 401 authentication replay, without the OpenAI SDK transport retry layer. Redirects are disabled, requests have finite time and response-size bounds, and provider error bodies and credentials are not exposed as status diagnostics. This integration does not introduce a second credential store or refresh implementation.
 
 ## Run Capture and Information Boundary
 
-An immutable Run composition records the Model route and authentication kind, never credential bytes. Every independent Run receives fresh Model collaborators built by `a13n_harness.model_auth`. The local store can rotate without changing the logical composition.
+An immutable Run composition records the Model route and authentication kind, never credential bytes. Every independent Run receives a fresh official Codex provider wrapped by `CodexRequestModel`, or a fresh Harness Grok Model. The local store can rotate without changing the logical composition.
 
 Authentication diagnostics expose only bounded provider, account-status, expiry-status, and required-action facts. Tokens, authorization codes, PKCE verifier values, raw identity claims, and complete account-store content never enter model context, SQLite, immutable objects, logs, telemetry, or UI error payloads.
 
 ## Failure Semantics
 
-| Failure                                                        | Outcome                                                                             |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Compatible account is absent                                   | Run fails with explicit authentication-required semantics                           |
-| Store is malformed or incompatible                             | Read or login fails without overwrite                                               |
-| Selected upstream backend cannot be shared safely              | Authentication is reported unsupported; no shadow credential is created             |
-| Concurrent process publishes a newer credential before refresh | Harness adopts it when the account identity matches                                 |
-| A source change is observed at the pre-replace digest check    | Harness UI fails the save without overwrite                                         |
-| Reloaded credential belongs to another account                 | The current operation fails without silently switching the Run account              |
-| Refresh or persistence fails                                   | The Model request fails; interactive login is not started                           |
-| Explicit login would replace a different shared account        | `--allow-account-switch` confirmation is required before the compatible write       |
-| Grok store has no existing OAuth scope                         | Native login uses the reviewed production profile and creates it only after success |
-| Grok store has multiple compatible OAuth scopes                | Startup or account use fails until an embedding Host selects one explicitly         |
-| Browser callback, OIDC validation, or device polling fails     | Login exits nonzero and leaves the previous compatible store unchanged              |
+| Failure                                                        | Outcome                                                                                                               |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Compatible account is absent                                   | Run fails with explicit authentication-required semantics                                                             |
+| Store is malformed or incompatible                             | Read or login fails without overwrite                                                                                 |
+| Selected upstream backend cannot be shared safely              | Authentication is reported unsupported; no shadow credential is created                                               |
+| Concurrent process publishes a newer credential before refresh | The provider adopts it when the Host account binding matches                                                          |
+| A source change is observed at the pre-replace digest check    | Harness UI fails the save without overwrite                                                                           |
+| Reloaded credential belongs to another account                 | Host binding rejects the new set; Codex proactive hints may retain the cached token                                   |
+| Refresh or persistence fails                                   | Upstream Codex hint/replay behavior applies; save failure surfaces with rotated memory retained; no interactive login |
+| Explicit login would replace a different shared account        | `--allow-account-switch` confirmation is required before the compatible write                                         |
+| Grok store has no existing OAuth scope                         | Native login uses the reviewed production profile and creates it only after success                                   |
+| Grok store has multiple compatible OAuth scopes                | Startup or account use fails until an embedding Host selects one explicitly                                           |
+| Browser callback, OIDC validation, or device polling fails     | Login exits nonzero and leaves the previous compatible store unchanged                                                |
 
 ## Compatibility
 
@@ -188,7 +188,7 @@ Provider file schemas, path policy, and login presentation may evolve with upstr
 
 ## Invariants
 
-01. Codex and Grok subscription Models use Harness `model_auth` and prefer an existing compatible product login.
+01. Codex uses the official Pydantic AI provider with Harness supplements; Grok uses Harness authentication. Both prefer an existing compatible product login.
 02. Harness UI account stores implement Harness credential sources; Harness UI owns no duplicate request-auth or refresh lifecycle.
 03. Harness UI-originated login writes the corresponding compatible product store.
 04. Effective provider policy selects one source; stores are never merged.

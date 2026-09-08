@@ -39,13 +39,13 @@ from .errors import (
 from .invocation_resolution import AgentInvocationResolver, PreparedAgentInvocation, RootAgentStatePolicy
 from .models import AgentRecord
 from .persistence import (
+    agent_name_key,
     apply_lifecycle_transition,
     authorize_agent_scope,
     load_replay,
     lock_agent,
     new_agent_audit,
     new_revision,
-    normalize_agent_name,
     payload_identity,
     request_identity,
     require_custom_mutable,
@@ -148,7 +148,7 @@ class AgentCommands:
                     source=AgentSource.custom.value,
                     default_environment_template_id=request.default_environment_template_id,
                     name=request.name,
-                    normalized_name=normalize_agent_name(request.name),
+                    normalized_name=agent_name_key(request.name),
                     description=request.description,
                     version=1,
                     current_revision_id=revision_id,
@@ -245,7 +245,7 @@ class AgentCommands:
                 if "name" in request.model_fields_set:
                     assert request.name is not None
                     record.name = request.name
-                    record.normalized_name = normalize_agent_name(request.name)
+                    record.normalized_name = agent_name_key(request.name)
                 if "description" in request.model_fields_set:
                     record.description = request.description
                 if "default_environment_template_id" in request.model_fields_set:

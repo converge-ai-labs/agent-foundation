@@ -18,9 +18,9 @@ from a13n_service.interactions.initialization import (
 )
 from a13n_service.interactions.state import (
     CompletedOutcomeCandidate,
-    ConsumedThreadInboxEntry,
     DeferredContinuationState,
     HostContinuationState,
+    InboxReceipt,
     WaitingOutcomeCandidate,
 )
 from pydantic_ai.usage import UsageLimits
@@ -56,7 +56,6 @@ def _completed_parent():
     payload.update(
         checkpoint_seq=1,
         checkpoint_kind="completed",
-        input_disposition="applied",
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
         harness=harness,
@@ -80,7 +79,6 @@ def _waiting_parent():
     payload.update(
         checkpoint_seq=1,
         checkpoint_kind="waiting",
-        input_disposition="applied",
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
         host=HostContinuationState(
@@ -97,8 +95,8 @@ def _waiting_parent():
                     "metadata": {},
                 }
             ),
-            consumed_inbox_entries=(
-                ConsumedThreadInboxEntry(
+            inbox_receipts=(
+                InboxReceipt(
                     inbox_entry_id="tin_1234567890abcdef",
                     kind="steer",
                 ),
@@ -131,7 +129,7 @@ def test_waiting_continue_preserves_deferred_values_but_not_parent_receipts() ->
 
     assert continued.thread_id == parent.thread_id
     assert continued.host.deferred == parent.host.deferred
-    assert continued.host.consumed_inbox_entries == ()
+    assert continued.host.inbox_receipts == ()
 
 
 def test_fork_and_fork_retry_clear_environment_and_use_the_correct_thread_identity() -> None:

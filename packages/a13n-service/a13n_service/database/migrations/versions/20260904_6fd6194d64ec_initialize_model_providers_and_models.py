@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("type", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("normalized_name", sa.String(length=128), nullable=False),
+        sa.Column("normalized_name", sa.String(length=384), nullable=False),
         sa.Column("configuration", sa.JSON(), nullable=False),
         sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("ciphertext", sa.LargeBinary(), nullable=True),

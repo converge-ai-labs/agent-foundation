@@ -33,9 +33,9 @@ from a13n_service.interactions.domain import RunAttemptYieldReason
 from a13n_service.interactions.environment_observation import EnvironmentHookObservation
 from a13n_service.interactions.harness_control import HarnessContextBinding, HarnessHookBoundary, HarnessRunIdentity
 from a13n_service.interactions.harness_results import (
+    AttemptDisposition,
+    AttemptOutcome,
     HarnessOutcomeProjection,
-    RunTerminalDisposition,
-    RunTerminalReceipt,
 )
 from a13n_service.interactions.harness_runtime import (
     HarnessCollaborators,
@@ -45,8 +45,9 @@ from a13n_service.interactions.harness_runtime import (
 )
 from a13n_service.interactions.inbox_delivery import AdaptedThreadInboxEntry
 from a13n_service.interactions.objects import RunStateStore, StoredRunState
+from a13n_service.interactions.outcomes import VerifiedRunOutcome
 from a13n_service.interactions.run_control import RunAttemptControl
-from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry, RunStateEnvelope
+from a13n_service.interactions.state import CompletedOutcomeCandidate, InboxReceipt, RunCheckpoint
 from a13n_service.storage import ObjectStore
 from anyio import Event, create_task_group, sleep, sleep_forever
 from pydantic_ai.messages import ModelMessage
@@ -89,7 +90,7 @@ class _Execution(AttemptExecutionService):
         if self.reject_preparation:
             return AttemptPreparationRejected(
                 run_attempt_id=context.run_attempt_id,
-                fence=context.fence,
+                attempt_number=context.attempt_number,
                 mutation=_receipt(context, run_delta=1, attempt_delta=1),
                 failure=SafeFailure(
                     code="preparation_rejected",
@@ -128,7 +129,7 @@ class _Inbox:
     entries: tuple[AdaptedThreadInboxEntry, ...] = ()
     _delivered: bool = field(default=False, init=False)
 
-    async def confirm_checkpoint(
+    async def confirm_inbox_receipts(
         self,
         context: AttemptContext,
         state: StoredRunState,
@@ -137,7 +138,7 @@ class _Inbox:
         self.trace.append("inbox:confirm")
         return _receipt(context)
 
-    async def read_eligible(self, context: AttemptContext) -> Sequence[AdaptedThreadInboxEntry]:
+    async def read_eligible(self, context: AttemptContext, config) -> Sequence[AdaptedThreadInboxEntry]:
         assert context.run_id == RUN_ID
         self.trace.append("inbox:read")
         if self._delivered:
@@ -194,14 +195,17 @@ class _Preparer:
     heartbeat_seen: Event
     trace: list[str]
 
-    async def validate(self, context: AttemptContext) -> None:
+    async def claim_state_writer(self):
+        self.trace.append("attempt:claim-state")
+
+    async def validate_dependencies(self, context: AttemptContext) -> None:
         assert context.run_attempt_id == self.context.run_attempt_id
         await self.wakeups.receiving.wait()
         await self.heartbeat_seen.wait()
         self.trace.append("attempt:validate-dependencies")
 
     @asynccontextmanager
-    async def prepare(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[str]]:
+    async def open_runtime(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[str]]:
         assert context.run_attempt_id == self.context.run_attempt_id
         self.trace.append("attempt:prepare")
         try:
@@ -225,18 +229,11 @@ class _Adapter:
 class _Committer:
     trace: list[str]
 
-    async def prepare_state_outcome(self, authority, state):
-        async def commit(current):
-            return await self.commit_state_outcome(current, state)
+    async def verify_state_outcome(self, authority, state):
+        return VerifiedRunOutcome(state, authority.organization_id, authority.run_id, self)
 
-        return commit
-
-    async def commit_state_outcome(
-        self,
-        context: AttemptContext,
-        state: StoredRunState,
-    ) -> RunTerminalReceipt:
-        assert state.envelope.checkpoint_kind == "completed"
+    async def commit_verified_state_outcome(self, context, verified):
+        assert verified.state.envelope.checkpoint_kind == "completed"
         self.trace.append("attempt:terminal")
         return _terminal_receipt(context)
 
@@ -289,7 +286,7 @@ async def _model(
 
 async def _stored_state(
     objects: ObjectStore,
-    envelope: RunStateEnvelope,
+    envelope: RunCheckpoint,
 ) -> tuple[RunStateStore, StoredRunState]:
     states = RunStateStore(objects)
     return states, await states.create(ORGANIZATION_ID, envelope)
@@ -301,15 +298,11 @@ def _context(thread_id: str, *, renewal_interval: timedelta = timedelta(millisec
         thread_id=thread_id,
         run_id=RUN_ID,
         run_attempt_id=ATTEMPT_ID,
-        fence=1,
+        attempt_number=1,
         lease_token="lease-token",
         worker_id="worker-1",
-        worker_generation="generation-1",
         worker_build_id="build-1",
         runtime_lock_digest="a" * 64,
-        expected_run_version=1,
-        expected_attempt_version=1,
-        lease_expires_at=NOW + timedelta(minutes=5),
         lease_duration=timedelta(seconds=30),
         renewal_interval=renewal_interval,
         renewal_timeout=timedelta(seconds=5),
@@ -325,8 +318,8 @@ def _receipt(
     attempt_delta: int = 0,
 ) -> AttemptMutationReceipt:
     return AttemptMutationReceipt(
-        run_version=context.expected_run_version + run_delta,
-        attempt_version=context.expected_attempt_version + attempt_delta,
+        run_version=1 + run_delta,
+        attempt_version=1 + attempt_delta,
         lease_expires_at=NOW + timedelta(minutes=5),
     )
 
@@ -334,16 +327,16 @@ def _receipt(
 def _preparation(context: AttemptContext) -> AttemptPreparationAccepted:
     return AttemptPreparationAccepted(
         run_attempt_id=context.run_attempt_id,
-        fence=context.fence,
+        attempt_number=context.attempt_number,
         mutation=_receipt(context),
     )
 
 
-def _terminal_receipt(context: AttemptContext) -> RunTerminalReceipt:
-    return RunTerminalReceipt(
-        disposition=RunTerminalDisposition.completed,
-        run_version=context.expected_run_version + 1,
-        attempt_version=context.expected_attempt_version + 1,
+def _terminal_receipt(context: AttemptContext) -> AttemptOutcome:
+    return AttemptOutcome(
+        disposition=AttemptDisposition.completed,
+        run_version=1 + 1,
+        attempt_version=1 + 1,
         thread_version=2,
     )
 
@@ -391,11 +384,23 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
             )
         ),
     )
+
+    class ClosingPreparer(_Preparer):
+        @asynccontextmanager
+        async def open_runtime(self, context):
+            async with super().open_runtime(context) as prepared:
+                yield prepared
+            read = AsyncMock(side_effect=AssertionError("Input cannot use closed runtime resources"))
+            monkeypatch.setattr(inbox, "read_eligible", read)
+            await control.reconcile()
+            read.assert_not_awaited()
+
     executor = RunAttemptExecutor(
+        activate_publication=AsyncMock(side_effect=lambda context: trace.append("publication:activate")),
         context=context,
         control=control,
         driver=driver,
-        preparer=_Preparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
+        preparer=ClosingPreparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
         wakeups=wakeups,
         adapter=_Adapter,
         committer=_Committer(trace),
@@ -412,9 +417,10 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         assert "attempt:enter" not in trace
         assert not projector.events
     else:
-        assert isinstance(receipt, RunTerminalReceipt)
-        assert receipt.disposition is RunTerminalDisposition.completed
+        assert isinstance(receipt, AttemptOutcome)
+        assert receipt.disposition is AttemptDisposition.completed
         assert projector.events
+    assert trace.index("publication:activate") < trace.index("attempt:claim-state")
     assert execution.heartbeat_seen.is_set()
     assert wakeups.acknowledged.is_set()
     if reject_preparation:
@@ -491,7 +497,7 @@ async def test_active_reconciliation_uses_driver_steer_without_consuming_receipt
     envelope = initial_state()
     states, stored = await _stored_state(interaction_object_store, envelope)
     context = _context(envelope.thread_id)
-    receipt = ConsumedThreadInboxEntry(inbox_entry_id="inbx_1234567890abcdef", kind="message")
+    receipt = InboxReceipt(inbox_entry_id="inbx_1234567890abcdef", kind="message")
     control = RunAttemptControl(
         context=context,
         execution=_Execution(trace),
@@ -510,7 +516,7 @@ async def test_active_reconciliation_uses_driver_steer_without_consuming_receipt
     await control.reconcile()
 
     assert driver.steered == [AdaptedThreadInboxEntry(1, receipt, "steer").tagged_input(context.run_id)]
-    assert control.current_state.envelope.host.consumed_inbox_entries == ()
+    assert control.current_state.envelope.host.inbox_receipts == ()
 
 
 @pytest.mark.parametrize("failure", [None, "cleanup", "yield"])
@@ -542,8 +548,8 @@ async def test_handoff_closes_runtime_while_renewing_before_yield(
 
     class ClosingPreparer(_Preparer):
         @asynccontextmanager
-        async def prepare(self, context):
-            async with super().prepare(context) as prepared:
+        async def open_runtime(self, context):
+            async with super().open_runtime(context) as prepared:
                 yield prepared
                 trace.append("cleanup:start")
                 await sleep(0.01)
@@ -555,6 +561,7 @@ async def test_handoff_closes_runtime_while_renewing_before_yield(
         monkeypatch.setattr(execution, "yield_attempt", AsyncMock(side_effect=RuntimeError("PG unavailable")))
     await control.request_handoff(RunAttemptYieldReason.service_drain)
     executor = RunAttemptExecutor(
+        activate_publication=AsyncMock(side_effect=lambda context: trace.append("publication:activate")),
         context=context,
         control=control,
         driver=driver,

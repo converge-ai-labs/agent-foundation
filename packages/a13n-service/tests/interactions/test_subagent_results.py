@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
+from unittest.mock import AsyncMock
 
 import pytest
+import rfc8785
 from a13n_harness import HarnessRunResult, HarnessRunResultEvent, HarnessState, SafeFailure
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
@@ -16,8 +18,9 @@ from a13n_service.interactions.inbox_persistence import ThreadInboxCapacityExcee
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
+from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler
-from a13n_service.interactions.state import CompletedOutcomeCandidate, RunPayloadEnvelope
+from a13n_service.interactions.state import CompletedOutcomeCandidate, InboxReceipt, RunPayloadEnvelope
 from a13n_service.run_stream import (
     LifecycleRunStreamProjector,
     RedisRunStream,
@@ -123,7 +126,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     with pytest.raises(AsyncSubagentResultError, match="sealed child outcome"):
         await result_materializer(forged_entry)
 
-    async def materialize(candidate: ThreadInboxEntry):
+    async def materialize(candidate: ThreadInboxEntry, config):
         if candidate.kind is ThreadInboxKind.steer:
             return "first steer"
         return await result_materializer(candidate)
@@ -133,7 +136,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
         materialize,
         clock=lambda: NOW + timedelta(seconds=5),
     )
-    eligible = await reconciler.read_eligible(authority)
+    eligible = await reconciler.read_eligible(authority, effective_agent_config())
 
     assert [item.delivery_sequence for item in eligible] == [1, 2]
     assert eligible[0].input == "first steer"
@@ -152,9 +155,9 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     stored = await AttemptExecutionService(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=6), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
-    await reconciler.confirm_checkpoint(authority, stored)
+    await reconciler.confirm_inbox_receipts(authority, stored)
 
-    assert await reconciler.read_eligible(authority) == ()
+    assert await reconciler.read_eligible(authority, effective_agent_config()) == ()
     async with short_session(interaction_sessions) as database:
         consumed = await database.get(ThreadInboxRecord, entry.id)
         assert consumed is not None
@@ -417,7 +420,7 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
         assert row is not None
         row.target_run_id = None
 
-    async def materialize(entry: ThreadInboxEntry) -> str:
+    async def materialize(entry: ThreadInboxEntry, config) -> str:
         return f"entry-{entry.delivery_sequence}"
 
     reconciler = DatabaseThreadInboxReconciler(
@@ -426,7 +429,7 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
         clock=lambda: NOW + timedelta(seconds=5),
     )
 
-    eligible = await reconciler.read_eligible(authority)
+    eligible = await reconciler.read_eligible(authority, effective_agent_config())
 
     assert [entry.delivery_sequence for entry in eligible] == [1]
 
@@ -493,7 +496,7 @@ async def _accept_child(
         running_parent,
         parent_state,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         child_config,
         suffix="c",
     )
@@ -502,6 +505,7 @@ async def _accept_child(
         RunStateStore(objects),
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     ).accept(prepared, authority)
     return states, running_parent, authority, accepted.child_run_id
 
@@ -549,6 +553,9 @@ async def _complete_object_backed_child(
         ),
     )
     stream = RedisRunStream(redis)
+    from a13n_service.run_stream.activation import PublicationActivator
+
+    await PublicationActivator(sessions, stream, clock=lambda: NOW + timedelta(seconds=3)).activate(_authority(claim))
     live_projector = AttemptRunStreamProjector(stream, _authority(claim))
     await live_projector.project(
         HarnessRunResultEvent(
@@ -607,7 +614,7 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
         parent,
         parent_state.envelope,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         effective_agent_config(),
         suffix="d",
     )
@@ -616,6 +623,7 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
         states,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     ).accept(next_child, authority)
     await _fail_child(interaction_sessions, first_id)
     await _fail_child(interaction_sessions, next_child.run.id)
@@ -640,3 +648,70 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
     assert await publisher.reconcile_once(limit=1) == 0
     assert await publisher.reconcile_once(limit=1) == 0
     assert attempted[-1] == first_id
+
+
+@pytest.mark.parametrize("prior_receipt", [False, True])
+async def test_expired_result_is_not_materialized_after_cached_receipt_confirmation(
+    relational_interaction_sessions, interaction_object_store, monkeypatch, prior_receipt
+):
+    sessions = relational_interaction_sessions
+    states, parent, authority, child_run_id = await _accept_child(sessions, interaction_object_store)
+    now = NOW + timedelta(seconds=4)
+    store = ThreadInboxStore(sessions, clock=lambda: now)
+    stored = await states.read(ORGANIZATION_ID, parent.id)
+    execution = AttemptExecutionService(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
+    if prior_receipt:
+        first = await store.append_steer(
+            organization_id=ORGANIZATION_ID,
+            run_id=parent.id,
+            input=AcceptedAgentInput(schema_version="1", content=(TextContent(text="already applied"),)),
+            entry_id="inb_1111111111111111",
+        )
+        stored = await execution.publish_checkpoint(
+            authority,
+            states,
+            stored,
+            _state_with_receipts(
+                stored.envelope, authority, (InboxReceipt(inbox_entry_id=first.steer_id, kind="steer"),)
+            ),
+        )
+    materialize = AsyncMock(return_value="next steer")
+    inbox = DatabaseThreadInboxReconciler(sessions, materialize, clock=lambda: now)
+    confirm = AsyncMock(wraps=inbox.confirm_inbox_receipts)
+    monkeypatch.setattr(inbox, "confirm_inbox_receipts", confirm)
+    control = RunAttemptControl(context=authority, execution=execution, states=states, state=stored, inbox=inbox)
+    await control.commit_preparation()
+    await control.reconcile()
+    assert confirm.await_count == 1
+
+    await _fail_child(sessions, child_run_id)
+    result = await AsyncSubagentResultPublisher(
+        sessions,
+        RunReplayStore(interaction_object_store),
+        clock=lambda: now,
+        entry_id_factory=lambda: "inb_2222222222222222",
+    ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
+    async with transaction(sessions) as database:
+        row = await database.get(ThreadInboxRecord, result.id)
+        row.expires_at = now + timedelta(seconds=1)
+    next_steer = await store.append_steer(
+        organization_id=ORGANIZATION_ID,
+        run_id=parent.id,
+        input=AcceptedAgentInput(schema_version="1", content=(TextContent(text="next steer"),)),
+        entry_id="inb_3333333333333333",
+    )
+    now += timedelta(seconds=2)
+    await control.reconcile()
+    assert confirm.await_count == 1
+    eligible = await inbox.read_eligible(authority, effective_agent_config())
+    assert [entry.receipt.inbox_entry_id for entry in eligible] == [next_steer.steer_id]
+    materialize.assert_awaited_once()
+    assert materialize.call_args.args[0].id == next_steer.steer_id
+    async with short_session(sessions) as database:
+        expired = await database.get(ThreadInboxRecord, result.id)
+        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        assert expired.status == "expired"
+        assert expired.target_run_id is None
+        assert counter.pending_count == 1
+        pending = await database.get(ThreadInboxRecord, next_steer.steer_id)
+        assert counter.pending_bytes == len(rfc8785.dumps(pending.payload_json))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal, Protocol
 
 from a13n_environment import (
@@ -16,6 +16,8 @@ from a13n_environment.management import EnvironmentScope
 from a13n_harness import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
 from a13n_logging import get_logger
 from pydantic import JsonValue, TypeAdapter
+
+from a13n_service.temporal import utc_now
 
 logger = get_logger(__name__)
 _JSON_LIST = TypeAdapter(list[JsonValue])
@@ -108,7 +110,7 @@ class EnvironmentObserver:
                     thread_id=thread_id,
                     harness_run_id=harness_run_id,
                     mount_id=mount_id,
-                    occurred_at=datetime.now(UTC),
+                    occurred_at=utc_now(),
                     payload=payload,
                 )
             )

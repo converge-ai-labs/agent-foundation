@@ -43,7 +43,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from .attempts import AttemptPreparationAccepted
+from .attempts import AttemptAuthorityError, AttemptPreparationAccepted
 from .environment_observation import EnvironmentHookObservation, observe_environment_entry
 from .harness_control import (
     HarnessContextBinding,
@@ -53,7 +53,7 @@ from .harness_control import (
     compose_run_control,
     validate_control_order,
 )
-from .state import RunStateEnvelope
+from .state import CompletedOutcomeCandidate, RunCheckpoint
 
 _DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
 logger = logging.getLogger("a13n_service.interactions.harness_runtime")
@@ -324,8 +324,17 @@ class HarnessDriver:
                 code="service_control_identity_mismatch",
             )
 
-    async def steer(self, input: RunInputValue) -> str:
-        return await self._require_stream().steer(input)
+    async def steer(self, input: RunInputValue) -> str | None:
+        """Leave input pending when the Harness has stopped accepting delivery."""
+        stream = self._stream
+        if stream is None:
+            return None
+        try:
+            return await stream.steer(input)
+        except RunError as error:
+            if error.code != "run_not_active":
+                raise
+            return None
 
     async def cancel(self) -> None:
         stream = self._stream
@@ -374,6 +383,8 @@ class HarnessDriver:
             projected = self._projector.project(item)
             if isawaitable(projected):
                 await projected
+        except AttemptAuthorityError:
+            raise
         except Exception:
             logger.exception(
                 "Harness live observation projection failed",
@@ -387,6 +398,8 @@ class HarnessDriver:
     async def _close_live_projection(self) -> None:
         try:
             await self._projector.close()
+        except AttemptAuthorityError:
+            raise
         except Exception:
             logger.exception(
                 "Harness live observation projector close failed",
@@ -486,15 +499,19 @@ class _DriverHookBoundary:
 
 def _select_attempt_input[OutputT](
     invocation: HarnessInvocation[OutputT],
-    state: RunStateEnvelope,
+    state: RunCheckpoint,
 ) -> tuple[HarnessInput, DeferredToolResume | None]:
-    if state.input_disposition == "applied":
+    if state.initial_input_applied:
         if state.host.deferred is not None:
             raise RunError(
                 "Applied Service state still contains a deferred continuation.",
                 code="service_run_state_invalid",
             )
-        return ImmediateHarnessInput(), None
+        return (
+            invocation.input
+            if isinstance(state.outcome_candidate, CompletedOutcomeCandidate)
+            else ImmediateHarnessInput()
+        ), None
 
     deferred = state.host.deferred
     resume = invocation.deferred_resume
@@ -531,7 +548,7 @@ def _create_stream[OutputT](
     input_source: HarnessInput,
     bindings: RunBindings,
     environment: ServiceHarnessEnvironment,
-    previous_state: RunStateEnvelope,
+    previous_state: RunCheckpoint,
     deferred_resume: DeferredToolResume | None,
     usage: RunUsage | None,
     usage_limits: UsageLimits | None,

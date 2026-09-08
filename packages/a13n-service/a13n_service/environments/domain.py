@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from a13n_environment import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from a13n_service.iam.domain import ObjectId
+from a13n_service.ids import ObjectId
 
 EnvironmentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 JsonObject = dict[str, JsonValue]

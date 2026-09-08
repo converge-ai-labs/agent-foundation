@@ -40,6 +40,9 @@ _MAX_RESPONSE_HEADERS = 256
 _MAX_RESPONSE_HEADER_BYTES = 256 * 1024
 _MAX_RESPONSE_URL_BYTES = 16 * 1024
 _CLOSE_GRACE_SECONDS = 0.05
+# Cancellation-resistant provider cleanup can outlive its caller. Keep both
+# drain and close tasks rooted until completion, then release them in the callback.
+_RESPONSE_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 
 WEB_SEARCH_MODE_ENV = "A13N_HARNESS_WEB_SEARCH_MODE"
 WEB_SEARCH_BACKEND_ENV = "A13N_HARNESS_WEB_SEARCH_BACKEND"
@@ -1106,6 +1109,7 @@ def _validate_response(response: WebResponse, *, request: WebRequest) -> None:
 
 
 def _consume_close_task(task: asyncio.Task[None]) -> None:
+    _RESPONSE_CLOSE_TASKS.discard(task)
     try:
         task.exception()
     except asyncio.CancelledError:
@@ -1115,24 +1119,20 @@ def _consume_close_task(task: asyncio.Task[None]) -> None:
 
 
 async def _drain_response_close(response: WebResponse) -> None:
-    close_task = asyncio.create_task(response.close())
+    close_task = asyncio.create_task(response.close(), name="web-response-close")
+    _RESPONSE_CLOSE_TASKS.add(close_task)
+    close_task.add_done_callback(_consume_close_task)
     done, _ = await asyncio.wait({close_task}, timeout=_CLOSE_GRACE_SECONDS)
     if close_task not in done:
         close_task.cancel()
-        done, _ = await asyncio.wait({close_task}, timeout=_CLOSE_GRACE_SECONDS)
-    if close_task in done:
-        _consume_close_task(close_task)
-    else:
-        close_task.add_done_callback(_consume_close_task)
+        await asyncio.wait({close_task}, timeout=_CLOSE_GRACE_SECONDS)
 
 
 async def _close_response(response: WebResponse) -> None:
-    drain_task = asyncio.create_task(_drain_response_close(response))
-    try:
-        await asyncio.shield(drain_task)
-    except asyncio.CancelledError:
-        drain_task.add_done_callback(_consume_close_task)
-        raise
+    drain_task = asyncio.create_task(_drain_response_close(response), name="web-response-close-drain")
+    _RESPONSE_CLOSE_TASKS.add(drain_task)
+    drain_task.add_done_callback(_consume_close_task)
+    await asyncio.shield(drain_task)
 
 
 def _header(headers: Mapping[str, str], name: str) -> str:

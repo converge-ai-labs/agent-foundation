@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic_ai.exceptions import ModelAPIError
+
+if TYPE_CHECKING:
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 
 
 class ModelAuthenticationError(ModelAPIError):
@@ -33,22 +36,15 @@ class CredentialPersistenceError(ModelAuthenticationError):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class CodexCredentials:
-    """One complete OpenAI Codex subscription credential set."""
+class CodexLoginResult:
+    """A completed login, including the identity token required by native Codex stores.
 
-    account_id: str
-    expires_at: datetime
-    access_token: str = field(repr=False)
-    refresh_token: str = field(repr=False)
-    id_token: str | None = field(default=None, repr=False)
+    Model requests use only the official credential value. The ID token is
+    retained solely for Host login publication, not another refresh lifecycle.
+    """
 
-
-class CodexCredentialSource(Protocol):
-    """Application-owned storage for Codex credentials."""
-
-    async def load(self) -> CodexCredentials: ...
-
-    async def save(self, credentials: CodexCredentials) -> None: ...
+    credentials: OpenAICodexCredentials
+    id_token: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -74,8 +70,7 @@ class GrokCredentialSource(Protocol):
 
 
 __all__ = [
-    "CodexCredentialSource",
-    "CodexCredentials",
+    "CodexLoginResult",
     "CredentialPersistenceError",
     "CredentialRefreshError",
     "DeviceAuthorizationError",

@@ -20,7 +20,8 @@ from anyio import to_thread
 from pydantic import ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
-from a13n_harness_ui.model_presets import connection_display_name
+from a13n_harness_ui.model_presets import known_model_capabilities
+from a13n_harness_ui.resource_names import coding_agent_name, model_name
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _scan_directory, load_harness_ui_configuration
@@ -142,6 +143,19 @@ async def setup_generation(path: Path) -> str:
     return _generation(await to_thread.run_sync(_capture, path))
 
 
+def _model_characteristics(route: str, authored: HarnessModelCharacteristics | None = None) -> dict[str, JsonValue]:
+    """Seed only omitted media capabilities; preserve every authored policy field."""
+    characteristics = authored if authored is not None else HarnessModelCharacteristics()
+    if "capabilities" not in characteristics.model_fields_set:
+        known = known_model_capabilities(route)
+        if known is not None:
+            characteristics = characteristics.model_copy(update={"capabilities": known})
+    document = characteristics.model_dump(mode="json")
+    # frozenset iteration differs between processes; previews must have stable bytes.
+    document["capabilities"] = sorted(capability.value for capability in characteristics.capabilities)
+    return document
+
+
 def _templates(selection: SetupSelection, *, existing_model: dict[str, object] | None = None) -> dict[str, str]:
     resources: dict[str, dict[str, object]] = {}
     providers = selection.providers
@@ -153,7 +167,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
     for provider in dict.fromkeys(providers):
         codex = provider == "codex"
         model = selection.codex_model if codex else selection.grok_model
-        display_name = connection_display_name("codex" if codex else "grok-subscription", model)
+        display_name = model_name("codex" if codex else "grok-subscription", model)
         resources[f"models/{provider}.yaml"] = {
             "schema_version": "1",
             "kind": "model",
@@ -169,16 +183,15 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             }
             if codex
             else {},
-            **(
-                {
-                    "model_characteristics": {
-                        "context_window": selection.codex_context_window,
-                        "proactive_context_management_threshold": selection.proactive_context_management_threshold,
-                        "compact_threshold": selection.compact_threshold,
-                    }
-                }
+            "model_characteristics": _model_characteristics(
+                f"{'openai-codex' if codex else 'grok'}:{model}",
+                HarnessModelCharacteristics(
+                    context_window=selection.codex_context_window,
+                    proactive_context_management_threshold=selection.proactive_context_management_threshold,
+                    compact_threshold=selection.compact_threshold,
+                )
                 if codex
-                else {}
+                else None,
             ),
         }
         capabilities: list[dict[str, object]] = [
@@ -197,7 +210,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
                         "model": reviewer,
                         "risk_threshold": "extra_high",
                         "on_flagged": "approval_required",
-                        "on_error": "approval_required",
+                        "on_error": "skip",
                     },
                 }
             )
@@ -205,7 +218,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "schema_version": "1",
             "kind": "agent",
             "id": f"agent-{provider}",
-            "name": f"{display_name} · Coding",
+            "name": coding_agent_name(display_name),
             "model": f"model-{provider}",
             "capabilities": capabilities,
         }
@@ -218,6 +231,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "route": "openai-codex:gpt-5.6-luna",
             "authentication": {"kind": "codex_subscription"},
             "settings": {"thinking": "low"},
+            "model_characteristics": _model_characteristics("openai-codex:gpt-5.6-luna"),
         }
     if shell_review and "grok" in providers and "codex" not in providers:
         resources["models/grok-shell-review.yaml"] = {
@@ -228,10 +242,11 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "route": "grok:grok-4.6",
             "authentication": {"kind": "grok_subscription"},
             "settings": {"thinking": "low"},
+            "model_characteristics": _model_characteristics("grok:grok-4.6"),
         }
     if selection.api_key_model is not None:
         api_provider, _, api_model = selection.api_key_model.route.partition(":")
-        display_name = connection_display_name(api_provider, api_model)
+        display_name = model_name(api_provider, api_model)
         resources["models/api-key.yaml"] = {
             "schema_version": "1",
             "kind": "model",
@@ -241,13 +256,15 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "authentication": selection.api_key_model.authentication.model_dump(mode="json"),
             "settings": selection.api_key_model.settings,
             "model_configuration": selection.api_key_model.model_configuration,
-            "model_characteristics": selection.api_key_model.model_characteristics.model_dump(mode="json"),
+            "model_characteristics": _model_characteristics(
+                selection.api_key_model.route, selection.api_key_model.model_characteristics
+            ),
         }
         resources["agents/api-key.yaml"] = {
             "schema_version": "1",
             "kind": "agent",
             "id": "agent-api-key",
-            "name": f"{display_name} · Coding",
+            "name": coding_agent_name(display_name),
             "model": "model-api-key",
             "capabilities": [
                 {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
@@ -309,7 +326,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "name": "Local project",
             "roots": [{"path": selection.project_path}],
         }
-    return {name: yaml.safe_dump(value, sort_keys=False) for name, value in resources.items()}
+    return {name: yaml.safe_dump(value, sort_keys=False, allow_unicode=True) for name, value in resources.items()}
 
 
 def _same_connection(actual: dict[str, object], desired: dict[str, object]) -> bool:
@@ -367,10 +384,12 @@ async def preview_setup(
                 connection_model = f"model-api-key-{suffix}"
                 desired["id"] = connection_model
                 del templates["models/api-key.yaml"]
-                templates[f"models/api-key-{suffix}.yaml"] = yaml.safe_dump(desired, sort_keys=False)
+                templates[f"models/api-key-{suffix}.yaml"] = yaml.safe_dump(
+                    desired, sort_keys=False, allow_unicode=True
+                )
                 starter = yaml.safe_load(templates["agents/api-key.yaml"])
                 starter["model"] = connection_model
-                templates["agents/api-key.yaml"] = yaml.safe_dump(starter, sort_keys=False)
+                templates["agents/api-key.yaml"] = yaml.safe_dump(starter, sort_keys=False, allow_unicode=True)
     elif selection.providers:
         provider = selection.default_agent.removeprefix("agent-")
         connection_model = f"model-{provider if provider in selection.providers else selection.providers[0]}"
@@ -388,13 +407,13 @@ async def preview_setup(
                 desired["id"] = connection_model
                 del templates[model_path]
                 templates[f"models/{connection_model.removeprefix('model-')}.yaml"] = yaml.safe_dump(
-                    desired, sort_keys=False
+                    desired, sort_keys=False, allow_unicode=True
                 )
                 for name, text in list(templates.items()):
                     resource = yaml.safe_load(text)
                     if resource.get("model") == previous_model:
                         resource["model"] = connection_model
-                        templates[name] = yaml.safe_dump(resource, sort_keys=False)
+                        templates[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
     if connection_model is not None and connection_model in existing:
         desired = next(
             yaml.safe_load(text) for text in templates.values() if yaml.safe_load(text)["id"] == connection_model
@@ -424,13 +443,13 @@ async def preview_setup(
             updated = {**resource, "model": connection_model}
             if selection.instructions.strip():
                 updated["instructions"] = selection.instructions
-            files[name] = yaml.safe_dump(updated, sort_keys=False)
+            files[name] = yaml.safe_dump(updated, sort_keys=False, allow_unicode=True)
         else:
             for name, text in list(files.items()):
                 resource = yaml.safe_load(text)
                 if resource["id"] == (selection.new_agent_id or selection.default_agent):
                     resource["model"] = connection_model
-                    files[name] = yaml.safe_dump(resource, sort_keys=False)
+                    files[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
     root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
     if not selection.is_addition:
         root.setdefault(
@@ -450,7 +469,7 @@ async def preview_setup(
         }
         if selection.include_default_subagents is not None:
             root["subagents"] = {"include": list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []}
-        files[path.name] = yaml.safe_dump(root, sort_keys=False)
+        files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     candidate = dict(baseline)
     candidate.update({name: text.encode() for name, text in files.items()})
     staging = Path(await to_thread.run_sync(tempfile.mkdtemp))

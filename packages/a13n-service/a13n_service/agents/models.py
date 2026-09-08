@@ -21,7 +21,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
-from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.iam.domain import ActorRef, PrincipalRef, PrincipalType, SystemActorRef
+from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
@@ -72,7 +73,7 @@ class AgentRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     source: Mapped[str] = mapped_column(String(16), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
     description: Mapped[str | None] = mapped_column(String(4096))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -186,9 +187,7 @@ class AgentRevisionRecord(Base):
         )
 
 
-def _principal(principal_type: str, principal_id: str) -> PrincipalRef:
+def _principal(principal_type: str, principal_id: str) -> ActorRef:
     if principal_type == "system":
-        # System-authored built-ins use a stable service-account-shaped public actor
-        # until the shared IAM domain exposes SystemActorRef.
-        return PrincipalRef(principal_type=PrincipalType.service_account, principal_id=principal_id)
+        return SystemActorRef(principal_id=principal_id)
     return PrincipalRef(principal_type=PrincipalType(principal_type), principal_id=principal_id)

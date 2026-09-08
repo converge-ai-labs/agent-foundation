@@ -12,6 +12,7 @@ from a13n_harness_ui.model_presets import (
     API_MODEL_SUGGESTIONS,
     API_PROVIDER_BY_ROUTE,
     API_PROVIDERS,
+    known_model_capabilities,
     settings_presets,
     validate_base_url,
 )
@@ -74,7 +75,10 @@ _QUESTIONS = (
     ),
     Question("thinking", "Reasoning effort", "high", ("low", "medium", "high", "xhigh")),
     Question(
-        "review", "Review shell commands; flagged commands and review errors require approval", "yes", ("yes", "no")
+        "review",
+        "Review shell commands; flagged commands require approval, timeouts deny, other review errors are skipped",
+        "yes",
+        ("yes", "no"),
     ),
     Question("instructions", "Additional Agent instructions (optional)", ""),
     Question(
@@ -231,6 +235,23 @@ class SetupWizard:
                             if self.values.get("review", "yes") == "yes"
                             else " · Shell review disabled."
                         )
+                if self.existing_model_id is None:
+                    provider = self.values["provider"]
+                    route_provider = (
+                        self.values["api_provider"]
+                        if provider == "api"
+                        else "openai-codex"
+                        if provider == "codex"
+                        else "grok"
+                    )
+                    known = known_model_capabilities(f"{route_provider}:{self.values['model']}")
+                    media = (
+                        ", ".join(sorted(capability.value.removesuffix("_understanding") for capability in known))
+                        or "none"
+                        if known is not None
+                        else "unknown; no native media enabled"
+                    )
+                    hint += f"\nNative media input: {media}. Editable in model_characteristics.capabilities."
                 if self.add_agent:
                     hint += "\nCreates a new agent; existing agents and defaults stay unchanged."
                 elif self.add_model:

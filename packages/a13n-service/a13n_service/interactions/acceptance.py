@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import canonical_digest
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.digests import digest_request
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -24,7 +24,7 @@ from a13n_service.interactions.environment_selection import (
     requested_environment,
 )
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import Clock, utc_now
 
 from .control_domain import (
     QueuedSubmissionConsumptionReceipt,
@@ -58,7 +58,7 @@ from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
 from .records import session_record, thread_record
-from .state import RunPayloadEnvelope, RunStateEnvelope
+from .state import RunCheckpoint, RunPayloadEnvelope
 
 
 class RunAcceptanceService:
@@ -70,7 +70,7 @@ class RunAcceptanceService:
         inline_hooks: InlineHookValidator,
         *,
         lifecycle: LifecycleWriter,
-        clock=None,
+        clock: Clock | None = None,
     ) -> None:
         self._lifecycle = lifecycle
         self._sessions = sessions
@@ -85,7 +85,7 @@ class RunAcceptanceService:
         session: Session | None,
         thread: Thread,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         hook_subscription: InlineHookSubscriptionInput | None = None,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
@@ -146,7 +146,7 @@ class RunAcceptanceService:
         self,
         *,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         expected_thread_version: int,
         expected_current_run_id: str | None,
         expected_head_run_id: str | None,
@@ -272,7 +272,7 @@ class RunAcceptanceService:
         self,
         *,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         queued_submission_id: str,
         submission_digest_sha256: str,
         accepted_input: AcceptedAgentInput,
@@ -487,7 +487,7 @@ class RunAcceptanceService:
     async def _load_replay(
         self,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         *,
         accepted_thread_version: int,
     ) -> RunAcceptanceReceipt | None:
@@ -504,7 +504,7 @@ class RunAcceptanceService:
                 return None
             return await _validate_replay(database, record, run, accepted_thread_version=accepted_thread_version)
 
-    async def _publish_initial(self, run: Run, state: RunStateEnvelope) -> None:
+    async def _publish_initial(self, run: Run, state: RunCheckpoint) -> None:
         try:
             await self._states.create(run.organization_id, state)
         except StaleStateWriter:
@@ -555,7 +555,7 @@ class RunAcceptanceService:
     async def _reconcile_conflict(
         self,
         run: Run,
-        state: RunStateEnvelope,
+        state: RunCheckpoint,
         error: IntegrityError,
         *,
         accepted_thread_version: int,
@@ -605,7 +605,7 @@ class RunAcceptanceService:
             return queued
 
 
-def validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
+def validate_prepared_run(run: Run, state: RunCheckpoint) -> None:
     if run.status is not RunStatus.accepted or run.version != 1:
         raise ValueError("prepared acceptance requires a version-one accepted Run")
     if state.checkpoint_kind != "initial" or state.checkpoint_seq != 0:
@@ -613,7 +613,7 @@ def validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
     validate_run_state_selection(run, state)
 
 
-def validate_run_state_selection(run: Run, state: RunStateEnvelope) -> None:
+def validate_run_state_selection(run: Run, state: RunCheckpoint) -> None:
     """Validate immutable Run selection facts against any retained checkpoint."""
 
     if (state.run_id, state.thread_id) != (run.id, run.thread_id):
@@ -622,7 +622,7 @@ def validate_run_state_selection(run: Run, state: RunStateEnvelope) -> None:
         raise ValueError("Run and state Agent selection do not match")
     effective = state.effective_agent_config
     effective_payload = effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-    if canonical_digest(effective_payload) != effective.content_digest:
+    if digest_request(effective_payload) != effective.content_digest:
         raise ValueError("Run effective configuration digest is invalid")
     if effective.content_digest != run.effective_agent_config_digest:
         raise ValueError("Run effective configuration digest does not match state")

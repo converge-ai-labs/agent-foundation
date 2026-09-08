@@ -58,8 +58,8 @@ class Agent:
     archived_at: datetime | None
     duplicated_from_agent_id: AgentId | None
     duplicated_from_revision_id: AgentRevisionId | None
-    created_by: PrincipalRef
-    updated_by: PrincipalRef
+    created_by: ActorRef
+    updated_by: ActorRef
     created_at: datetime
     updated_at: datetime
 ```
@@ -336,7 +336,7 @@ class AgentRevision:
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: str
     source_revision_id: AgentRevisionId | None
-    created_by: PrincipalRef
+    created_by: ActorRef
     created_at: datetime
 ```
 
@@ -408,6 +408,8 @@ For each outbound model request, the Worker or Runner rechecks the current Model
 `AgentConfig.plugins`, `AgentRunOverride.plugins`, `AgentRevision.plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` use the canonical [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) contract. That document exclusively owns Plugin and PluginVersion identity, selection variants, lifecycle, commands, Wheel and dependency artifacts, Runtime locks, loading, activation, and failure semantics. This document owns only where selections and immutable results are embedded in Agent configuration, Revision creation, Run overrides, and reconstruction.
 
 ## Persistence
+
+Creator and updater attribution use IAM `ActorRef`: human and Service Account Principals retain their actual kind, while builtin reconciliation records `system` with its stable system actor ID. System attribution never grants authentication or invocation authority.
 
 The `agents` table stores stable identity, organization ownership, name, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, normalized_name)` is unique.
 

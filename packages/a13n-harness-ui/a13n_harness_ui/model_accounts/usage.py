@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 import httpx2
-from a13n_harness.model_auth import CodexCredentials, CodexCredentialSource
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
+
+
+from .codex import BoundCodexCredentialSource
 
 _BASE_URL = "https://chatgpt.com/backend-api/wham"
 
@@ -69,27 +73,28 @@ class CodexUsageClient:
 
     def __init__(
         self,
-        source: CodexCredentialSource,
+        source: OpenAICodexCredentialSource,
         client: httpx2.AsyncClient,
         *,
         expected_account_id: str | None = None,
-        refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     ) -> None:
-        from a13n_harness.model_auth import build_codex_account_auth
+        from pydantic_ai.providers.openai_codex import OpenAICodexProvider
 
         self.client = client
         self.client.follow_redirects = False
         self.client.headers["User-Agent"] = "a13n-harness-ui"
-        self.client.auth = build_codex_account_auth(
-            credential_source=source,
+        # The official provider installs its host-scoped auth on this dedicated
+        # client. Account operations use HTTP directly, not the SDK retry layer.
+        self._provider = OpenAICodexProvider(
+            credential_source=BoundCodexCredentialSource(source, account_id=expected_account_id),
             http_client=client,
-            expected_account_id=expected_account_id,
-            refresh=refresh,
         )
 
     async def _request(
         self, method: str, path: str, *, body: dict[str, str] | None = None
     ) -> tuple[dict[str, object], str]:
+        from pydantic_ai.providers.openai_codex import CredentialsPersistenceError, CredentialsRefreshError
+
         try:
             async with self.client.stream(method, _BASE_URL + path, json=body, timeout=10) as response:
                 response.raise_for_status()
@@ -104,6 +109,12 @@ class CodexUsageClient:
                 if not isinstance(value, dict):
                     raise ValueError("Codex returned an unsupported usage response.")
                 return value, response.request.headers["ChatGPT-Account-Id"]
+        except (CredentialsRefreshError, CredentialsPersistenceError):
+            # Upstream token errors may include provider response text. Account
+            # diagnostics retain the outcome category, never that raw payload.
+            raise ValueError(
+                "Codex credentials could not be refreshed or saved. Check the shared account store before retrying."
+            ) from None
         except httpx2.HTTPStatusError as exc:
             raise ValueError(
                 f"Codex account API returned HTTP {exc.response.status_code}. "

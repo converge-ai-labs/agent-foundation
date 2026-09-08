@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from a13n_service.agents.domain import canonical_digest
+from a13n_service.digests import digest_request
 from a13n_service.interactions.control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
 from a13n_service.interactions.domain import (
     Run,
@@ -15,7 +15,7 @@ from a13n_service.interactions.domain import (
     accepted_run,
 )
 from a13n_service.interactions.initialization import RunStateSeed, initialize_completed_continuation_state
-from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.interactions.state import RunCheckpoint
 
 from .result_payload import parse_async_subagent_result_entry
 
@@ -26,13 +26,13 @@ class PreparedAsyncResultSuccessor:
 
     inbox_entry_id: str
     run: Run
-    state: RunStateEnvelope
+    state: RunCheckpoint
 
 
 def prepare_async_result_successor(
     *,
     selected_parent: Run,
-    selected_parent_state: RunStateEnvelope,
+    selected_parent_state: RunCheckpoint,
     origin_run: Run,
     inbox_entry: ThreadInboxEntry,
     successor_run_id: str,
@@ -60,7 +60,7 @@ def prepare_async_result_successor(
         ),
         selected_parent_state,
     )
-    request_fingerprint = canonical_digest(
+    request_fingerprint = digest_request(
         {
             "schema_version": "1",
             "inbox_entry_id": inbox_entry.id,
@@ -91,7 +91,7 @@ def prepare_async_result_successor(
         native_tool_contexts=selected_parent.native_tool_contexts,
         priority=selected_parent.priority,
         queue_name=selected_parent.queue_name,
-        recovery_budget=selected_parent.recovery_budget,
+        execution_budget=selected_parent.execution_budget,
         idempotency_key=f"async-result:{inbox_entry.id}",
         request_fingerprint=request_fingerprint,
         input_kind=RunInputKind.async_subagent_result,
@@ -107,7 +107,7 @@ def prepare_async_result_successor(
 def _validate_authority(
     *,
     selected_parent: Run,
-    selected_parent_state: RunStateEnvelope,
+    selected_parent_state: RunCheckpoint,
     origin_run: Run,
     inbox_entry: ThreadInboxEntry,
 ) -> None:

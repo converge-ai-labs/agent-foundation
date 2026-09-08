@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
@@ -11,6 +11,7 @@ from a13n_logging import get_logger
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
 from anyio.abc import TaskStatus
 
+from a13n_service.run_stream.domain import PublicationUnavailable
 from a13n_service.skills.runtime import SkillRuntimeError
 from a13n_service.storage.object_store import ObjectStoreUnavailable
 
@@ -21,7 +22,7 @@ from .attempts import (
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
 )
-from .harness_results import HarnessOutcomeAdapter, RunTerminalCommitter, RunTerminalReceipt
+from .harness_results import AttemptCommitter, AttemptOutcome, HarnessOutcomeAdapter
 from .harness_runtime import HarnessDriver, HarnessInvocation
 from .run_control import RunAttemptControl
 from .state_admission import StateClaimExhausted
@@ -32,9 +33,11 @@ logger = get_logger(__name__)
 class AttemptPreparer[OutputT](Protocol):
     """Perform non-authoritative dependency preflight and reconstruct one invocation."""
 
-    async def validate(self, context: AttemptContext) -> None: ...
+    async def claim_state_writer(self) -> None: ...
 
-    def prepare(self, context: AttemptContext) -> AbstractAsyncContextManager[HarnessInvocation[OutputT]]: ...
+    async def validate_dependencies(self, context: AttemptContext) -> None: ...
+
+    def open_runtime(self, context: AttemptContext) -> AbstractAsyncContextManager[HarnessInvocation[OutputT]]: ...
 
 
 class ControlWakeupSource(Protocol):
@@ -52,7 +55,7 @@ class CapacitySlot(Protocol):
 
 
 class LeaseMonitor:
-    """Renew the exact Attempt and directly fence control when authority is lost."""
+    """Renew the exact Attempt and fence local control when authority is lost."""
 
     def __init__(self, context: AttemptContext, control: RunAttemptControl) -> None:
         self._context = context
@@ -112,8 +115,9 @@ class RunAttemptExecutor[OutputT]:
         preparer: AttemptPreparer[OutputT],
         wakeups: ControlWakeupSource,
         adapter: Callable[[], HarnessOutcomeAdapter],
-        committer: RunTerminalCommitter,
+        committer: AttemptCommitter,
         capacity_slot: CapacitySlot,
+        activate_publication: Callable[[AttemptContext], Awaitable[None]],
     ) -> None:
         if control.current_context is not context:
             raise ValueError("executor, control, and monitor must share one Attempt context")
@@ -125,16 +129,19 @@ class RunAttemptExecutor[OutputT]:
         self._adapter = adapter
         self._committer = committer
         self._capacity_slot = capacity_slot
+        self._activate_publication = activate_publication
 
-    async def run(self) -> RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected:
-        finalization: RunTerminalReceipt | AttemptMutationReceipt | AttemptPreparationRejected | None = None
+    async def run(self) -> AttemptOutcome | AttemptMutationReceipt | AttemptPreparationRejected:
+        finalization: AttemptOutcome | AttemptMutationReceipt | AttemptPreparationRejected | None = None
         try:
             async with create_task_group() as tasks:
                 self._control.bind_executor(self._driver, tasks.cancel_scope.cancel)
                 try:
                     await tasks.start(LeaseMonitor(self._context, self._control).run)
                     await tasks.start(ControlWatcher(self._context, self._control, self._wakeups).run)
-                    await self._preparer.validate(self._control.current_context)
+                    await self._activate_publication(self._control.current_context)
+                    await self._preparer.claim_state_writer()
+                    await self._preparer.validate_dependencies(self._control.current_context)
                     decision = await self._control.commit_preparation()
                     if isinstance(decision, AttemptPreparationRejected):
                         finalization = decision
@@ -142,25 +149,27 @@ class RunAttemptExecutor[OutputT]:
                         await self._control.reconcile_recovery_state()
                         if self._control.current_state.envelope.outcome_candidate is not None:
                             finalization = await self._control.recover_outcome(self._committer)
-                        else:
+                        if finalization is None:
                             finalization = await self._execute(decision)
                 except AttemptAuthorityError:
+                    await self._control.authority_lost()
                     raise
                 except Exception as error:
-                    if self._control.handoff_ready:
+                    if self._control.handoff_ready or self._control.pre_execution_outcome is not None:
                         raise
                     logger.warning(
                         "run_attempt_execution_failed",
                         extra={
                             "run_id": self._context.run_id,
-                            "fence": self._context.fence,
+                            "attempt_number": self._context.attempt_number,
                             "error_type": type(error).__name__,
                         },
                     )
                     if isinstance(error, SkillRuntimeError):
                         code = error.code
                     elif isinstance(
-                        error, (ObjectStoreUnavailable, OSError, TimeoutError, StateClaimExhausted)
+                        error,
+                        (ObjectStoreUnavailable, OSError, TimeoutError, StateClaimExhausted, PublicationUnavailable),
                     ) and not isinstance(error, PermissionError):
                         code = "attempt_dependency_unavailable"
                     else:
@@ -175,14 +184,19 @@ class RunAttemptExecutor[OutputT]:
                         await self._control.close_admission()
                         tasks.cancel_scope.cancel()
             if finalization is None:
+                finalization = self._control.pre_execution_outcome
+            if finalization is None:
                 raise AttemptAuthorityError("Attempt executor stopped without an authoritative finalization")
             return finalization
         finally:
             self._capacity_slot.release()
 
-    async def _execute(self, decision: AttemptPreparationAccepted) -> RunTerminalReceipt | AttemptMutationReceipt:
-        async with self._preparer.prepare(self._control.current_context) as invocation:
-            candidate = await self._driver.run(invocation, preparation=decision)
+    async def _execute(self, decision: AttemptPreparationAccepted) -> AttemptOutcome | AttemptMutationReceipt:
+        async with self._preparer.open_runtime(self._control.current_context) as invocation:
+            try:
+                candidate = await self._driver.run(invocation, preparation=decision)
+            finally:
+                await self._control.close_delivery()
         return await self._control.finalize(candidate, adapter=self._adapter(), committer=self._committer)
 
 

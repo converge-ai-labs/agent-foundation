@@ -10,7 +10,7 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
 from .control_domain import PendingResolutionOutcome, WaitingRunFeedback
 from .domain import PendingCallKind
-from .state import RunStateEnvelope, WaitingOutcomeCandidate
+from .state import RunCheckpoint, WaitingOutcomeCandidate
 
 _REQUESTS = TypeAdapter(DeferredToolRequests)
 _NO_CLIENT_TOOL_RESPONSE = "The external client supplied no response."
@@ -23,7 +23,7 @@ class WaitingFeedbackMappingError(ValueError):
 
 def map_waiting_feedback(
     feedback: WaitingRunFeedback,
-    parent: RunStateEnvelope,
+    parent: RunCheckpoint,
 ) -> DeferredToolResume:
     """Construct one complete native result map in frozen pending order."""
 

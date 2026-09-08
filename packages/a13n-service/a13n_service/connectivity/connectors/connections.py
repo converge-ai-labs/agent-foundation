@@ -12,7 +12,8 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import fingerprint, record_command, replay_command
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request
+from a13n_service.digests import digest_request
+from a13n_service.durable_operations.idempotency import IdempotencyConflict
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.resource_scope import ResourceScope

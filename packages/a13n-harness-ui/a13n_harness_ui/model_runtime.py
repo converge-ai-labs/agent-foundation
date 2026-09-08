@@ -1,4 +1,4 @@
-"""Run-fresh native Model construction with request-fresh credentials."""
+"""Run-fresh native Model construction with Host-owned credential sources."""
 
 from __future__ import annotations
 
@@ -12,12 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from a13n_harness import AgentContext, infer_model
 from a13n_harness.errors import ModelResolutionError
-from a13n_harness.model_auth import (
-    CodexCredentials,
-    CodexCredentialSource,
-    GrokCredentials,
-    GrokCredentialSource,
-)
+from a13n_harness.model_auth import GrokCredentials, GrokCredentialSource
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.providers import Provider, infer_provider_class
 
@@ -30,6 +25,8 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_presets import API_PROVIDER_BY_ROUTE
 
 if TYPE_CHECKING:
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
+
     from a13n_harness_ui.composition.models import ResolvedModelRecipe
 
 _PROVIDER_ALIASES = {
@@ -44,10 +41,9 @@ _GROK_BASE_URL = "https://api.x.ai/v1"
 
 @dataclass(frozen=True, slots=True)
 class CodexSubscriptionSource:
-    """Host wiring for one Codex credential source and optional refresh override."""
+    """Host wiring for the official Codex provider credential source."""
 
-    source: CodexCredentialSource
-    refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None
+    source: OpenAICodexCredentialSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +58,7 @@ type SubscriptionSource = CodexSubscriptionSource | GrokSubscriptionSource
 
 
 class HarnessUiModelResolver:
-    """Resolve logical recipes while leaving OAuth lifecycle ownership in Harness."""
+    """Resolve logical recipes with provider-owned OAuth lifecycles."""
 
     def __init__(
         self,
@@ -99,17 +95,17 @@ class HarnessUiModelResolver:
         if isinstance(authentication, ApiKeyAuthentication):
             return await self._api_key_model(recipe, authentication)
         if isinstance(authentication, CodexSubscriptionAuthentication):
-            from a13n_harness.model_auth import build_codex_model
+            from a13n_harness.model_auth import CodexRequestModel
+
+            from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 
             source = self._required_subscription_source(
                 "codex_subscription",
                 CodexSubscriptionSource,
             )
-            return build_codex_model(
+            return CodexRequestModel(
                 _model_name(recipe),
-                credential_source=source.source,
-                refresh=source.refresh,
-                originator="a13n-harness-ui",
+                credential_source=BoundCodexCredentialSource(source.source),
             )
         if isinstance(authentication, GrokSubscriptionAuthentication):
             from a13n_harness.model_auth import build_grok_model

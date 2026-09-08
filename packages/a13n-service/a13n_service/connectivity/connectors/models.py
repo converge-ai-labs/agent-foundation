@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
 
 from .domain import (
@@ -69,7 +70,7 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
     type: Mapped[str] = mapped_column(String(64), nullable=False)
     configuration_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -146,7 +147,7 @@ class ConnectorConnectionRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     connector_provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
     connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
     external_user_correlation: Mapped[str | None] = mapped_column(String(128))
     external_ref: Mapped[str | None] = mapped_column(String(2048))

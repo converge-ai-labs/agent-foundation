@@ -216,7 +216,7 @@ Feedback-eligible pending kinds remain distinct:
 - `client_tool` asks an external client to perform a named effect and return its declared result;
 - `user_input` requests structured information without authorizing another effect.
 
-The exact native deferred requests live in `RunStateEnvelope.host.deferred`; the Run row stores only the matching bounded `RunPendingSummary` owned by [Durable Run State](12-run-persistence.md#run-state-object). The public route exposes those facts as read projections beneath the waiting Run and accepts one atomic feedback command:
+The exact native deferred requests live in `RunCheckpoint.host.deferred`; the Run row stores only the matching bounded `RunPendingSummary` owned by [Durable Run State](12-run-persistence.md#run-state-object). The public route exposes those facts as read projections beneath the waiting Run and accepts one atomic feedback command:
 
 ```http
 POST /api/v1/runs/{waiting_run_id}/feedback

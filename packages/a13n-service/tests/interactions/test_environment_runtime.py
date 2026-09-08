@@ -475,7 +475,7 @@ async def test_postgresql_shared_approval_wait_is_idle_only_after_last_active_us
         )
         shared = run_record(shared_run)
         shared.status = "running"
-        shared.attempts_started = shared.recovery_attempts_started = 1
+        shared.attempts_started = shared.attempts_charged = 1
         shared.environment_use_started_at = now
         session.add(shared)
         environment = await session.scalar(

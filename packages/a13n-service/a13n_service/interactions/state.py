@@ -14,7 +14,7 @@ from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.secrets.domain import AgentSecretBinding
 
 from .domain import (
-    BoundedName,
+    BoundedText,
     JsonObject,
     ObjectId,
     PendingCallKind,
@@ -43,19 +43,19 @@ class DeferredContinuationState(StrictModel):
         return self
 
 
-class ConsumedThreadInboxEntry(StrictModel):
+class InboxReceipt(StrictModel):
     inbox_entry_id: ObjectId
-    kind: BoundedName
+    kind: BoundedText
 
 
 class HostContinuationState(StrictModel):
     schema_version: Literal["1"] = "1"
     deferred: DeferredContinuationState | None = None
-    consumed_inbox_entries: tuple[ConsumedThreadInboxEntry, ...] = Field(default=(), max_length=1024)
+    inbox_receipts: tuple[InboxReceipt, ...] = Field(default=(), max_length=1024)
 
-    @field_validator("consumed_inbox_entries")
+    @field_validator("inbox_receipts")
     @classmethod
-    def receipts_are_unique(cls, value: tuple[ConsumedThreadInboxEntry, ...]) -> tuple[ConsumedThreadInboxEntry, ...]:
+    def receipts_are_unique(cls, value: tuple[InboxReceipt, ...]) -> tuple[InboxReceipt, ...]:
         identities = tuple(receipt.inbox_entry_id for receipt in value)
         if len(identities) != len(set(identities)):
             raise ValueError("consumed Thread inbox receipt IDs must be unique")
@@ -102,13 +102,12 @@ RunStateOutcomeCandidate = Annotated[
 ]
 
 
-class RunStateEnvelope(StrictModel):
+class RunCheckpoint(StrictModel):
     schema_version: Literal["1"] = "1"
     run_id: ObjectId
     thread_id: ThreadId
     checkpoint_seq: int = Field(ge=0)
     checkpoint_kind: Literal["initial", "progress", "waiting", "completed"]
-    input_disposition: Literal["pending", "applied"]
     last_checkpoint_run_attempt_id: ObjectId | None = None
     last_checkpoint_fence: int = Field(ge=0)
     agent_id: ObjectId
@@ -125,8 +124,12 @@ class RunStateEnvelope(StrictModel):
     host: HostContinuationState = Field(default_factory=HostContinuationState)
     outcome_candidate: RunStateOutcomeCandidate | None = None
 
+    @property
+    def initial_input_applied(self) -> bool:
+        return self.checkpoint_seq > 0
+
     @model_validator(mode="after")
-    def checkpoint_is_coherent(self) -> RunStateEnvelope:
+    def checkpoint_is_coherent(self) -> RunCheckpoint:
         if self.thread_id != self.harness.thread_id:
             raise ValueError("Run state and Harness Thread identities must match")
         if self.harness_schema_version != self.harness.schema_version:
@@ -135,17 +138,12 @@ class RunStateEnvelope(StrictModel):
             raise ValueError("Run state Runtime lock must match effective Agent configuration")
         attempt_present = self.last_checkpoint_run_attempt_id is not None
         if attempt_present != (self.last_checkpoint_fence > 0):
-            raise ValueError("checkpoint Attempt identity and positive fence must be present together")
+            raise ValueError("checkpoint Attempt identity and positive fencing number must be present together")
         if self.checkpoint_kind == "initial":
-            if (
-                self.checkpoint_seq != 0
-                or self.input_disposition != "pending"
-                or attempt_present
-                or self.outcome_candidate is not None
-            ):
+            if self.checkpoint_seq != 0 or attempt_present or self.outcome_candidate is not None:
                 raise ValueError("initial state requires sequence zero, pending input, and no Attempt or outcome")
         else:
-            if self.checkpoint_seq < 1 or self.input_disposition != "applied" or not attempt_present:
+            if self.checkpoint_seq < 1 or not attempt_present:
                 raise ValueError("non-initial state requires an applied input and fenced positive checkpoint")
         if self.checkpoint_kind == "progress":
             if self.outcome_candidate is not None:
@@ -213,31 +211,30 @@ class RunPayloadEnvelope(StrictModel):
 
 
 def validate_state_successor(
-    previous: RunStateEnvelope,
-    successor: RunStateEnvelope,
+    previous: RunCheckpoint,
+    successor: RunCheckpoint,
     *,
     run_attempt_id: str,
-    fence: int,
+    attempt_number: int,
 ) -> None:
     """Validate one same-Run semantic checkpoint replacement."""
 
     if previous.outcome_candidate is not None:
-        # A recovery receipt repair can publish under the replacement fence,
-        # but cannot change the candidate or any execution/deferred state.
-        unchanged = successor.model_copy(
+        added_input = set(previous.host.inbox_receipts) < set(successor.host.inbox_receipts)
+        continuing = (
+            isinstance(previous.outcome_candidate, CompletedOutcomeCandidate)
+            and successor.checkpoint_kind == "progress"
+        )
+        repaired = successor.model_copy(
             update={
                 "checkpoint_seq": previous.checkpoint_seq,
                 "last_checkpoint_run_attempt_id": previous.last_checkpoint_run_attempt_id,
                 "last_checkpoint_fence": previous.last_checkpoint_fence,
-                "host": successor.host.model_copy(
-                    update={"consumed_inbox_entries": previous.host.consumed_inbox_entries}
-                ),
+                "host": successor.host.model_copy(update={"inbox_receipts": previous.host.inbox_receipts}),
             }
         )
-        if unchanged != previous or not (
-            set(previous.host.consumed_inbox_entries) < set(successor.host.consumed_inbox_entries)
-        ):
-            raise ValueError("Run outcome candidate state permits only additive inbox receipt repair")
+        if not added_input or (not continuing and repaired != previous):
+            raise ValueError("Run outcome candidate permits receipt repair or completed-input continuation")
     immutable_pairs = (
         ("run_id", previous.run_id, successor.run_id),
         ("thread_id", previous.thread_id, successor.thread_id),
@@ -253,23 +250,23 @@ def validate_state_successor(
         raise ValueError(f"Run state immutable fields changed: {', '.join(changed)}")
     if successor.checkpoint_seq != previous.checkpoint_seq + 1:
         raise ValueError("Run checkpoint sequence must increase by exactly one")
-    if successor.last_checkpoint_run_attempt_id != run_attempt_id or successor.last_checkpoint_fence != fence:
-        raise ValueError("Run checkpoint must name the current Attempt and fence")
-    if fence < previous.last_checkpoint_fence:
+    if successor.last_checkpoint_run_attempt_id != run_attempt_id or successor.last_checkpoint_fence != attempt_number:
+        raise ValueError("Run checkpoint must name the current Attempt and fencing number")
+    if attempt_number < previous.last_checkpoint_fence:
         raise ValueError("Run checkpoint fence cannot move backwards")
-    previous_receipts = set(previous.host.consumed_inbox_entries)
-    successor_receipts = set(successor.host.consumed_inbox_entries)
+    previous_receipts = set(previous.host.inbox_receipts)
+    successor_receipts = set(successor.host.inbox_receipts)
     if not previous_receipts <= successor_receipts:
         raise ValueError("same-Run consumed inbox receipts cannot disappear")
 
 
 __all__ = [
     "CompletedOutcomeCandidate",
-    "ConsumedThreadInboxEntry",
     "DeferredContinuationState",
     "HostContinuationState",
+    "InboxReceipt",
+    "RunCheckpoint",
     "RunPayloadEnvelope",
-    "RunStateEnvelope",
     "RunStateOutcomeCandidate",
     "WaitingOutcomeCandidate",
     "validate_state_successor",

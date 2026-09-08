@@ -22,7 +22,7 @@ from a13n_service.connectivity.connectors.contracts import (
 )
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.durable_operations.idempotency import digest_request
+from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.iam.models import WorkspaceRecord

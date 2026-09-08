@@ -16,6 +16,12 @@ One-shot mode prints the final text or a structured operation object, then exits
 
 Help and version do not load provider or database modules. A lightweight startup view appears before execution dependencies load. Unused model-provider and memory SDKs are not imported merely to start the terminal. Startup shows runtime loading, local storage/configuration, and session preparation separately; phase timings are written to the data root’s `logs/terminal.log`. App initialization precedes chat, and startup, setup, and conversation keep the same alternate screen without a terminal reset; model construction, Environment acquisition, and selected MCP connections happen only when needed. The CLI and HTTP adapter share the reusable `HarnessUiApp` application boundary; the Hello World page does not call that API, and the CLI does not own a parallel execution engine.
 
+## Model connection interruptions
+
+Harness UI automatically continues eligible interrupted model requests from the available history, for up to five total attempts including the first. This applies to root Agents and subagents. The terminal shows a short `[System] Retrying model request…` notice rather than an error for each retry. If recovery succeeds, the same Run continues normally. If the budget is exhausted, a terminal error reports the attempt count and suggests continuing the conversation again.
+
+Recovery does not restart completed work or directly replay tool calls. Cancellation, usage limits, tool failures, and pending approvals do not trigger this mechanism. Before manually repeating a side-effecting action after an interruption, check whether it already completed. These in-process retries do not recover a crashed process.
+
 ## Browser UI
 
 The bundled page displays only **Hello World**. It does not authenticate, consume the URL's API-key fragment, open live streams, or provide conversation, setup, or management controls. The HTTP API and foreground server remain available independently.
@@ -38,6 +44,8 @@ After switching branches, run `make sync` (or launch with `make a13n-harness-ui`
 Interactive diagnostics go to `<data-root>/logs/terminal.log` (5 MiB, three rotated backups), not the conversation or normal-screen scrollback. Skipped plugins produce one actionable notice for each unchanged path/reason; use the log for details. No legacy plugin files are removed automatically.
 
 Model execution failures and unexpected errors also produce a private `a13n-harness-ui-error-*.json` report in the system temporary directory (`/tmp` on typical Linux installations). The failure notice links its path and the GitHub Issue form. The report collects exception chains, stack locations, component versions, and Thread/Run IDs without frame locals, source lines, or a transcript. Exception messages may still contain sensitive information: review the report before attaching it, and include reproduction steps. Nothing is uploaded automatically. Correlate the same Run ID with `terminal.log` if more context is needed; report creation never substitutes for saving conversation state.
+
+If asyncio reports `Task was destroyed but it is pending!` without an accompanying exception, the terminal shows a warning and stays open, preserving your draft. The report includes task identity, coroutine location, suspended stack locations, and creation stack locations when available. Keeping the terminal open does not recover the lost task or confirm that active work succeeded. Check `/status`, use `/cancel` if work stops progressing, and review the report before sharing it. No work is retried automatically. Other unhandled terminal event-loop failures still exit with recovery guidance.
 
 Startup order is **update confirmation → setup if needed → conversation**. The update prompt, setup, and conversation replace the view inside the same TUI rather than exiting and reopening it or appending notices to your terminal. Installed release builds check public PyPI metadata with a three-second timeout and a daily cache; offline failure silently continues startup. Both ordinary launch and `a13n-harness-ui setup` follow this order.
 

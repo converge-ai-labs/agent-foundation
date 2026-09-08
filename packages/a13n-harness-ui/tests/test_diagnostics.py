@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 from a13n_harness_ui.diagnostics import ISSUE_URL, exception_feedback
 
 
@@ -72,3 +73,79 @@ def test_report_respects_suppressed_private_causes(tmp_path: Path, monkeypatch) 
     content = next(tmp_path.glob("a13n-harness-ui-error-*.json")).read_text()
     assert "safe boundary failure" in content
     assert "suppressed credential data" not in content
+
+
+@pytest.mark.anyio
+async def test_event_loop_report_captures_only_task_locations(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+    import traceback
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    ready = asyncio.Event()
+
+    async def suspended():
+        local_secret = "task-local-secret"
+        ready.set()
+        await asyncio.Future()
+        return local_secret
+
+    task = asyncio.create_task(suspended(), name="diagnostic-task")
+    try:
+        await ready.wait()
+        exception_feedback(
+            RuntimeError("pending task"),
+            thread_id=None,
+            phase="terminal event loop",
+            loop_context={
+                "message": "pending task",
+                "task": task,
+                "source_traceback": traceback.StackSummary.from_list(
+                    [("origin.py", 42, "launch", "private source text")]
+                ),
+                "handle": "private callback payload",
+                "transport": "private transport data",
+            },
+        )
+        content = next(tmp_path.glob("a13n-harness-ui-error-*.json")).read_text()
+        details = json.loads(content)["event_loop"]
+        assert details["task_name"] == "diagnostic-task"
+        assert details["task_done"] is False
+        assert details["task_cancelled"] is False
+        assert details["coroutine"]["function"].endswith("suspended")
+        assert details["frames"][0]["function"] == "suspended"
+        assert details["creation_frames"] == [{"file": "origin.py", "line": 42, "function": "launch"}]
+        for secret in (
+            "task-local-secret",
+            "private source text",
+            "private callback payload",
+            "private transport data",
+        ):
+            assert secret not in content
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_event_loop_report_accepts_future_task_and_bounds_context(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+    import traceback
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    task = asyncio.create_task(asyncio.sleep(0), name="n" * 1000)
+    await task
+    exception_feedback(
+        RuntimeError("failed task"),
+        thread_id=None,
+        phase="test",
+        loop_context={
+            "message": "m" * 10000,
+            "future": task,
+            "source_traceback": traceback.StackSummary.from_list([("source.py", 1, "launch", "secret")] * 100),
+        },
+    )
+    details = json.loads(next(tmp_path.glob("a13n-harness-ui-error-*.json")).read_text())["event_loop"]
+    assert len(details["message"]) == 4096
+    assert len(details["task_name"]) == 256
+    assert len(details["creation_frames"]) == 32
+    assert details["task_done"] is True

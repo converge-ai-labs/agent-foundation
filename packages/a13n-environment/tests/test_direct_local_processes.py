@@ -32,7 +32,12 @@ OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=65536, 
 
 @asynccontextmanager
 async def _processes(
-    root: Path, *, powershell: bool = False, max_wall_time_seconds: float = 10
+    root: Path,
+    *,
+    powershell: bool = False,
+    max_wall_time_seconds: float = 10,
+    inherit_environment: bool = False,
+    allowed_environment_keys: tuple[str, ...] | None = ("SYSTEMROOT", "PATH"),
 ) -> AsyncIterator[LocalProcessManager]:
     provider = DirectLocalEnvironmentProvider()
     profiles = []
@@ -53,7 +58,10 @@ async def _processes(
         value={
             "root": {"path": str(root)},
             "allowed_executables": [str(Path(sys.executable).resolve())],
-            "allowed_environment_keys": ["SYSTEMROOT", "PATH"],
+            "inherit_environment": inherit_environment,
+            "allowed_environment_keys": list(allowed_environment_keys)
+            if allowed_environment_keys is not None
+            else None,
             "shell_profiles": profiles,
             "terminate_grace_seconds": 0.2,
             "max_wall_time_seconds": max_wall_time_seconds,
@@ -208,3 +216,63 @@ async def test_owned_worker_settles_before_repeated_cancellation_returns() -> No
     value, cancellation = await waiter
     assert value == "settled"
     assert isinstance(cancellation, asyncio.CancelledError)
+
+
+@pytest.mark.parametrize("inherit", [False, True])
+async def test_native_environment_inheritance_is_opt_in_and_command_local(tmp_path, monkeypatch, inherit) -> None:
+    import json
+
+    monkeypatch.setenv("A13N_TEST_INHERITED", "parent")
+    monkeypatch.setenv("A13N_TEST_REMOVED", "parent")
+    script = (
+        "import os,json; print(json.dumps([os.getenv(k) for k in "
+        "['A13N_TEST_INHERITED','A13N_TEST_REMOVED','A13N_TEST_NEW']]))"
+    )
+    async with _processes(tmp_path, inherit_environment=inherit, allowed_environment_keys=None) as processes:
+        baseline = _request(script)
+        first = await processes.exec(baseline)
+        assert json.loads(first.output.stdout.inline) == (["parent", "parent", None] if inherit else [None] * 3)
+        changed = baseline.model_copy(
+            update={
+                "environment": CommandEnvironment(
+                    set={**baseline.environment.set, "A13N_TEST_INHERITED": "override", "A13N_TEST_NEW": "new"},
+                    unset=("A13N_TEST_REMOVED",),
+                )
+            }
+        )
+        result = await processes.exec(changed)
+        assert json.loads(result.output.stdout.inline) == ["override", None, "new"]
+        monkeypatch.setenv("A13N_TEST_INHERITED", "updated")
+        again = await processes.exec(baseline)
+        assert json.loads(again.output.stdout.inline) == (["updated", "parent", None] if inherit else [None] * 3)
+    assert os.environ["A13N_TEST_REMOVED"] == "parent"
+    assert "A13N_TEST_NEW" not in os.environ
+
+
+@pytest.mark.parametrize("inherit", [False, True])
+async def test_native_environment_allowlist_still_gates_explicit_changes(tmp_path, inherit) -> None:
+    async with _processes(tmp_path, inherit_environment=inherit) as processes:
+        for environment in (
+            CommandEnvironment(set={"NOT_ALLOWED": "value"}),
+            CommandEnvironment(unset=("NOT_ALLOWED",)),
+        ):
+            request = _request("pass").model_copy(update={"environment": environment})
+            with pytest.raises(EnvironmentError, match="not allowed"):
+                await processes.exec(request)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows environment names are case-insensitive")
+async def test_native_windows_environment_overrides_and_unsets_ignore_case(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("A13N_TEST_MIXED", "parent")
+    async with _processes(
+        tmp_path, inherit_environment=True, allowed_environment_keys=("A13N_TEST_MIXED",)
+    ) as processes:
+        base = _request("import os; print(os.getenv('A13N_TEST_MIXED', 'absent'))")
+        changed = await processes.exec(
+            base.model_copy(update={"environment": CommandEnvironment(set={"a13n_test_mixed": "changed"})})
+        )
+        assert changed.output.stdout.inline.strip() == b"changed"
+        removed = await processes.exec(
+            base.model_copy(update={"environment": CommandEnvironment(unset=("a13n_test_mixed",))})
+        )
+        assert removed.output.stdout.inline.strip() == b"absent"

@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
-from a13n_service.connectivity.domain import AdapterKey, BoundedName, JsonObject
+from a13n_service.connectivity.domain import AdapterKey, DisplayName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
 from .contracts import ProviderAccess
@@ -41,7 +41,7 @@ class ConnectorProvider(StrictModel):
     id: str
     organization_id: str
     workspace_id: str | None
-    name: BoundedName
+    name: DisplayName
     type: AdapterKey
     configuration: JsonObject
     status: ConnectorProviderStatus
@@ -63,7 +63,7 @@ class ConnectorConnection(StrictModel):
     organization_id: str
     workspace_id: str
     connector_provider_id: str
-    name: BoundedName
+    name: DisplayName
     connector_key: ConnectorKey
     safe_metadata: JsonObject
     status: ConnectorConnectionStatus
@@ -86,7 +86,7 @@ class ConnectorConnectionCollection(StrictModel):
 
 
 class CreateConnectorProviderRequest(StrictModel):
-    name: BoundedName
+    name: DisplayName
     type: AdapterKey
     configuration: JsonObject
     credentials: dict[str, SecretStr] = Field(
@@ -99,7 +99,7 @@ class CreateConnectorProviderRequest(StrictModel):
 
 class UpdateConnectorProviderRequest(StrictModel):
     expected_version: int = Field(ge=1)
-    name: BoundedName | None = None
+    name: DisplayName | None = None
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateConnectorProviderRequest:
@@ -124,13 +124,13 @@ class ConnectorProviderCommandRequest(StrictModel):
 
 class CreateConnectorConnectionRequest(StrictModel):
     connector_provider_id: str = Field(min_length=1, max_length=72)
-    name: BoundedName
+    name: DisplayName
     connector_key: ConnectorKey
 
 
 class UpdateConnectorConnectionRequest(StrictModel):
     expected_version: int = Field(ge=1)
-    name: BoundedName | None = None
+    name: DisplayName | None = None
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateConnectorConnectionRequest:
@@ -171,7 +171,7 @@ class ConnectorProviderTestResult(StrictModel):
 class Connector(StrictModel):
     connector_provider_id: str
     key: ConnectorKey
-    name: BoundedName
+    name: DisplayName
     description: str | None = Field(default=None, max_length=16_384)
     setup_schema: JsonObject
     authentication_methods: tuple[str, ...] = Field(max_length=32)

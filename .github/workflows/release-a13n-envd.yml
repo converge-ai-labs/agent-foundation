@@ -237,7 +237,7 @@ jobs:
     name: Publish crate
     needs: [prepare, build-client, build-binaries]
     runs-on: ubuntu-latest
-    environment: a13n-envd-crates-io
+    environment: agent-envd-crates-io
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v6
@@ -302,7 +302,7 @@ jobs:
     name: Publish Python client
     needs: [prepare, build-client, build-binaries]
     runs-on: ubuntu-latest
-    environment: a13n-envd-client-pypi
+    environment: agent-envd-client-pypi
     steps:
       - name: Download Python client distributions
         uses: actions/download-artifact@v4

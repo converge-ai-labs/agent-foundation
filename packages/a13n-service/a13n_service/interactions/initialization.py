@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 from a13n_harness import HarnessState
 from a13n_harness.usage import intersect_usage_limits
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
+from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.secrets.domain import AgentSecretBinding
 
-from .domain import ObjectId, RunInputKind, RunLineageKind, StrictModel, ThreadId
+from .domain import JsonObject, ObjectId, RunInputKind, RunLineageKind, StrictModel, ThreadId
 from .protocol_context import ProtocolInputContext
-from .state import HostContinuationState, RunStateEnvelope
+from .state import HostContinuationState, RunCheckpoint
 
 
 class RunStateSeed(StrictModel):
@@ -24,42 +28,42 @@ class RunStateSeed(StrictModel):
     secret_bindings: tuple[AgentSecretBinding, ...] = ()
 
 
-def initialize_start_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunStateEnvelope:
+def initialize_start_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunCheckpoint:
     return _initial_envelope(seed, HarnessState.new(thread_id=thread_id), HostContinuationState())
 
 
-def initialize_empty_thread_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunStateEnvelope:
+def initialize_empty_thread_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunCheckpoint:
     return _initial_envelope(seed, HarnessState.new(thread_id=thread_id), HostContinuationState())
 
 
 def initialize_completed_continuation_state(
     seed: RunStateSeed,
-    parent: RunStateEnvelope,
-) -> RunStateEnvelope:
+    parent: RunCheckpoint,
+) -> RunCheckpoint:
     _require_parent(parent, checkpoint_kind="completed")
     return _initial_envelope(_retain_limits(seed, parent), _clone_harness(parent.harness), HostContinuationState())
 
 
 def initialize_waiting_continuation_state(
     seed: RunStateSeed,
-    parent: RunStateEnvelope,
-) -> RunStateEnvelope:
+    parent: RunCheckpoint,
+) -> RunCheckpoint:
     _require_parent(parent, checkpoint_kind="waiting")
     if parent.host.deferred is None:
         raise ValueError("waiting parent state must contain deferred continuation")
     host = HostContinuationState(
         deferred=parent.host.deferred.model_copy(deep=True),
-        consumed_inbox_entries=(),
+        inbox_receipts=(),
     )
     return _initial_envelope(_retain_limits(seed, parent), _clone_harness(parent.harness), host)
 
 
 def initialize_fork_state(
     seed: RunStateSeed,
-    parent: RunStateEnvelope,
+    parent: RunCheckpoint,
     *,
     thread_id: ThreadId,
-) -> RunStateEnvelope:
+) -> RunCheckpoint:
     _require_parent(parent, checkpoint_kind="completed")
     return _initial_envelope(
         _retain_limits(seed, parent), parent.harness.fork(thread_id=thread_id), HostContinuationState()
@@ -72,8 +76,8 @@ def initialize_retry_state(
     thread_id: str,
     source_lineage_kind: RunLineageKind,
     source_input_kind: RunInputKind,
-    parent: RunStateEnvelope | None,
-) -> RunStateEnvelope:
+    parent: RunCheckpoint | None,
+) -> RunCheckpoint:
     if source_lineage_kind is RunLineageKind.root:
         if parent is not None:
             raise ValueError("root retry cannot have parent state")
@@ -97,7 +101,7 @@ def _initial_envelope(
     seed: RunStateSeed,
     harness: HarnessState,
     host: HostContinuationState,
-) -> RunStateEnvelope:
+) -> RunCheckpoint:
     if seed.protocol_context is not None:
         seed.protocol_context.validate_policy(seed.effective_agent_config.protocol)
     harness = HarnessState(
@@ -107,12 +111,11 @@ def _initial_envelope(
         agent_context_state=harness.agent_context_state,
         environment_states={},
     )
-    return RunStateEnvelope(
+    return RunCheckpoint(
         run_id=seed.run_id,
         thread_id=harness.thread_id,
         checkpoint_seq=0,
         checkpoint_kind="initial",
-        input_disposition="pending",
         last_checkpoint_run_attempt_id=None,
         last_checkpoint_fence=0,
         agent_id=seed.agent_id,
@@ -129,12 +132,12 @@ def _initial_envelope(
     )
 
 
-def _require_parent(parent: RunStateEnvelope, *, checkpoint_kind: str) -> None:
+def _require_parent(parent: RunCheckpoint, *, checkpoint_kind: str) -> None:
     if parent.checkpoint_kind != checkpoint_kind or parent.outcome_candidate is None:
         raise ValueError(f"Run state parent must be a sealed {checkpoint_kind} candidate")
 
 
-def _retain_limits(seed: RunStateSeed, parent: RunStateEnvelope) -> RunStateSeed:
+def _retain_limits(seed: RunStateSeed, parent: RunCheckpoint) -> RunStateSeed:
     return seed.model_copy(update={"usage_limits": intersect_usage_limits(seed.usage_limits, parent.usage_limits)})
 
 
@@ -142,8 +145,35 @@ def _clone_harness(value: HarnessState) -> HarnessState:
     return HarnessState.model_validate(value.model_dump(mode="json", by_alias=True))
 
 
+class FrozenRunFields(TypedDict):
+    agent_id: str
+    agent_revision_id: str
+    effective_agent_config_digest: str
+    runtime_lock_digest: str
+    model_execution_observation: ModelExecutionObservation
+    connector_connection_selections: tuple[JsonObject, ...]
+    mcp_connection_selections: tuple[JsonObject, ...]
+
+
+def frozen_run_fields(invocation: FrozenAgentInvocation) -> FrozenRunFields:
+    """Project the same accepted configuration into every newly constructed Run."""
+    config = invocation.effective_config
+    return FrozenRunFields(
+        agent_id=invocation.agent_id,
+        agent_revision_id=invocation.agent_revision_id,
+        effective_agent_config_digest=config.content_digest,
+        runtime_lock_digest=config.runtime_lock_digest,
+        model_execution_observation=config.resolved_model.execution.observation(),
+        connector_connection_selections=tuple(
+            item.model_dump(mode="json") for item in invocation.connector_connection_selections
+        ),
+        mcp_connection_selections=tuple(item.model_dump(mode="json") for item in invocation.mcp_connection_selections),
+    )
+
+
 __all__ = [
     "RunStateSeed",
+    "frozen_run_fields",
     "initialize_completed_continuation_state",
     "initialize_empty_thread_state",
     "initialize_fork_state",

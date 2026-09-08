@@ -173,6 +173,8 @@ For each captured Project root, the App:
 6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Host-path-preserving Project mount already owns that root; and
 7. creates fresh selected Environment Run Extensions around that aggregate.
 
+Full Control opts into Direct Local's complete Host-process environment inheritance for every native command, including commands on the Thread file mount. Per-command environment set/unset operations are unrestricted by a key allowlist and override that inherited baseline without changing the Host process. Values such as PATH, proxy settings, and exported credentials remain runtime-only and are not stored in Run compositions or Environment state. Existing Full Control selections receive this behavior without editing configuration. Sandbox and custom profiles retain their own environment policies; shell aliases, unexported variables, and interactive startup files are not part of process environment inheritance.
+
 The Provider configuration and adapter do not own the Project root list. The adapter receives one root at a time, can reject roots it cannot represent, and explicitly declares whether aggregate paths preserve Host spelling. The user Skill root follows [Environment Skill Sources](02b-environment-skill-sources.md). It ordinarily uses a separate Host-owned Direct Local file-only route, but reuses an equal Host-path-preserving Project mount rather than creating a route conflict; neither form changes Project roots or adds separate Project Environment-state publication.
 
 ### Aggregate Path Layout

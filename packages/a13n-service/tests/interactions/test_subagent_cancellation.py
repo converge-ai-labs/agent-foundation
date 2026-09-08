@@ -103,13 +103,14 @@ async def _cancel_parent_with_children(
         states,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     )
     requested = await acceptance.accept(
         _prepared_child(
             running_parent,
             parent_state,
             authority.run_attempt_id,
-            authority.fence,
+            authority.attempt_number,
             child_config,
             suffix="a",
             cancellation_policy=ChildCancellationPolicy.request_child_cancel,
@@ -121,7 +122,7 @@ async def _cancel_parent_with_children(
             running_parent,
             parent_state,
             authority.run_attempt_id,
-            authority.fence,
+            authority.attempt_number,
             child_config,
             suffix="b",
         ),

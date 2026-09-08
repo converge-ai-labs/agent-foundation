@@ -62,6 +62,7 @@ async def test_unbound_result_rebinds_to_a_current_active_run_and_signals_it(
         RunReplayStore(interaction_object_store),
         signals=signals,
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "bound_active"
@@ -114,6 +115,7 @@ async def test_queued_submission_keeps_precedence_over_unbound_result(
         states,
         RunReplayStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "queue_precedence"
@@ -158,6 +160,7 @@ async def test_waiting_parent_retains_result_without_creating_successor(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
+        lifecycle=test_lifecycle_writer(),
     )
     assert await reconciler.reconcile_once() == 0
 
@@ -242,6 +245,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
         RunReplayStore(interaction_object_store),
         run_id_factory=lambda _organization, _entry, _parent: "run_1616161616161616",
         clock=lambda: NOW + timedelta(seconds=8),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted" and receipt.successor is not None
@@ -291,6 +295,7 @@ async def test_automatic_successor_reauthorizes_origin_principal_before_commit(
             RunReplayStore(interaction_object_store),
             run_id_factory=lambda _organization, _entry, _parent: "run_eeeeeeeeeeeeeeee",
             clock=lambda: NOW + timedelta(seconds=6),
+            lifecycle=test_lifecycle_writer(),
         ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     async with short_session(interaction_sessions) as database:
@@ -355,6 +360,7 @@ async def test_automatic_successor_reauthorizes_child_result_before_commit(
             RunReplayStore(interaction_object_store),
             run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
             clock=lambda: NOW + timedelta(seconds=6),
+            lifecycle=test_lifecycle_writer(),
         ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     async with short_session(interaction_sessions) as database:

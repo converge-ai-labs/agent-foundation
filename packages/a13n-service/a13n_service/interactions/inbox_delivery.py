@@ -9,7 +9,7 @@ from a13n_harness.errors import RunError
 from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelMessage, ModelRequest, TextContent, UserContent, UserPromptPart
 
-from .state import ConsumedThreadInboxEntry
+from .state import InboxReceipt
 
 _PROVENANCE_KEY = "a13n.service.inbox"
 _CONTENT = TypeAdapter(tuple[UserContent, ...])
@@ -20,7 +20,7 @@ class AdaptedThreadInboxEntry:
     """One authorized FIFO entry materialized for native Harness enqueue."""
 
     delivery_sequence: int
-    receipt: ConsumedThreadInboxEntry
+    receipt: InboxReceipt
     input: RunInputValue
 
     def __post_init__(self) -> None:
@@ -65,7 +65,7 @@ def incorporated_receipts(
     entries: Iterable[AdaptedThreadInboxEntry],
     *,
     run_id: str,
-) -> tuple[ConsumedThreadInboxEntry, ...]:
+) -> tuple[InboxReceipt, ...]:
     """Match complete native content and trusted identity, never text alone."""
 
     expected = {entry.receipt.inbox_entry_id: entry for entry in entries}
@@ -113,9 +113,9 @@ def _retained_provenance(
 
 
 def merge_receipts(
-    prior: Iterable[ConsumedThreadInboxEntry],
-    incorporated: Iterable[ConsumedThreadInboxEntry],
-) -> tuple[ConsumedThreadInboxEntry, ...]:
+    prior: Iterable[InboxReceipt],
+    incorporated: Iterable[InboxReceipt],
+) -> tuple[InboxReceipt, ...]:
     """Preserve FIFO order while merging each inbox identity exactly once."""
 
     receipts = {receipt.inbox_entry_id: receipt for receipt in prior}

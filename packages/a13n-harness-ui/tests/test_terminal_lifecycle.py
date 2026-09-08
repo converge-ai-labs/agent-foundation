@@ -144,3 +144,97 @@ def test_resume_hint_preserves_environment_data_root(
         resume_hint(CliRequest(), "thread_1", tmp_path),
         ["a13n-harness-ui", "--data-root", str(data_root), "--resume", "thread_1"],
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("scenario", ["gc", "gc-thread", "exception", "message", "missing-task", "task-exception"])
+async def test_terminal_loop_failures_preserve_only_pending_task_notifications(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str
+) -> None:
+    import gc
+
+    from a13n_harness_ui.interactive.shell import CliShell
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    async def empty():
+        return None
+
+    async def abandoned():
+        await asyncio.Future()
+
+    backend = SimpleNamespace(
+        thread_id=None, resumed_transcript=None, interaction=empty, skill_catalog=empty, cancel=empty
+    )
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    warning = scenario in {"gc", "gc-thread"}
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        notices: list[str] = []
+        emit = shell.emit
+
+        def capture(text, **kwargs):
+            assert asyncio.get_running_loop() is loop
+            notices.append(text)
+            emit(text, **kwargs)
+
+        monkeypatch.setattr(shell, "emit", capture)
+        chat = asyncio.create_task(shell.run(backend))
+        task = None
+        try:
+            async with asyncio.timeout(3):
+                while not shell.app.is_running:
+                    await asyncio.sleep(0.01)
+                shell.composer.text = "unsent draft"
+                if warning:
+                    task = asyncio.create_task(abandoned(), name="lost-test-task")
+                    await asyncio.sleep(0)
+                    del task
+                    task = None
+                    if scenario == "gc-thread":
+                        await asyncio.to_thread(gc.collect)
+                    else:
+                        gc.collect()
+                else:
+                    context: dict[str, object] = {"message": "Task was destroyed but it is pending!"}
+                    if scenario == "message":
+                        context["message"] = "unrecognized event loop failure"
+                    if scenario in {"exception", "task-exception"}:
+                        context["exception"] = RuntimeError("private exception detail")
+                    if scenario == "task-exception":
+                        task = asyncio.create_task(abandoned())
+                        context["task"] = task
+                    loop.call_exception_handler(context)
+                if warning:
+                    while not any("terminal remains open" in text for text in notices):
+                        await asyncio.sleep(0.01)
+                    assert not chat.done()
+                    assert shell.composer.text == "unsent draft"
+                    assert shell.status.state == "ready"
+                    assert shell.job is None
+                    assert "No work was retried" in notices[-1]
+                    shell.composer.text = ""
+                    pipe.send_text("/quit\r")
+                    await chat
+                else:
+                    with pytest.raises(RuntimeError, match="Unexpected RuntimeError"):
+                        await chat
+            data = json.loads(next(tmp_path.glob("a13n-harness-ui-error-*.json")).read_text())
+            assert data["phase"] == "terminal event loop"
+            assert "event_loop" in data
+            if warning:
+                assert data["event_loop"]["task_name"] == "lost-test-task"
+                assert data["event_loop"]["coroutine"]["function"].endswith("abandoned")
+            assert all("private exception detail" not in notice for notice in notices)
+        finally:
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            if not chat.done():
+                chat.cancel()
+            await asyncio.gather(chat, return_exceptions=True)
+    assert loop.get_exception_handler() is previous_handler

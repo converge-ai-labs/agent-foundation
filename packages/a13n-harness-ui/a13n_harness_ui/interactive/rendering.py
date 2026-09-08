@@ -627,6 +627,14 @@ class StreamRenderer:
                 if not isinstance(event, dict):
                     return
                 name = payload.get("name")
+                if name == "a13n.harness.recovery":
+                    recovery = event.get("payload")
+                    if isinstance(recovery, dict) and recovery.get("type") == "model_retry_scheduled":
+                        if not child or detailed:
+                            self.finish()
+                            label = f" · {identity}" if child else ""
+                            self.append(f"[System{label}] Retrying model request…\n", kind="notice")
+                    return
                 if name == "a13n.input.media":
                     media = event.get("content")
                     if isinstance(media, dict) and (not child or detailed):

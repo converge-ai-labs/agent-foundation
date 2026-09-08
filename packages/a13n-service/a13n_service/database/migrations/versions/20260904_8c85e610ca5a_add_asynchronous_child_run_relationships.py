@@ -22,7 +22,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_run_attempts_fence_identity",
         "run_attempts",
-        ["organization_id", "run_id", "id", "fence"],
+        ["organization_id", "run_id", "id", "attempt_number"],
         unique=True,
     )
     op.create_table(
@@ -68,7 +68,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "parent_run_id", "parent_run_attempt_id", "parent_run_attempt_fence"],
-            ["run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id", "run_attempts.fence"],
+            ["run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id", "run_attempts.attempt_number"],
             name="fk_child_run_relationships_parent_attempt",
             ondelete="RESTRICT",
         ),

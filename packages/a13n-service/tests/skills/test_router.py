@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import stat
 import zipfile
@@ -150,7 +151,9 @@ async def stage(client: httpx2.AsyncClient, *, key: str, content: bytes) -> dict
         headers={"Content-Type": "application/zip", "Idempotency-Key": key},
     )
     assert response.status_code == 201
-    return response.json()
+    receipt = response.json()
+    assert receipt["archive_sha256"] == hashlib.sha256(content).hexdigest()
+    return receipt
 
 
 @pytest.mark.anyio
@@ -170,6 +173,7 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     publication = created.json()
     skill = publication["skill"]
     revision = publication["revision"]
+    assert revision["imported_from"]["archive_sha256"] == upload["archive_sha256"]
     assert publication["outcome"] == "published"
     assert skill["key"] == "deploy-helper"
 

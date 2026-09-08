@@ -59,7 +59,6 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
         configuration_path=path,
         codex_login=unexpected,
-        codex_refresh=unexpected,
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
     assert asked == ["provider", "model", "fast", "environment"]
@@ -498,6 +497,8 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
         assert (review is None) is api
         if review is not None:
             assert review.configuration["risk_threshold"] == "extra_high"
+            assert review.configuration["on_flagged"] == "approval_required"
+            assert review.configuration["on_error"] == "skip"
         assert set((tmp_path / "models").glob("*.yaml")) == set(models)
         assert all(p.read_bytes() == content for p, content in {**baseline, **models}.items())
 

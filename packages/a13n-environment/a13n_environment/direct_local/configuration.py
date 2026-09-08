@@ -73,7 +73,8 @@ class DirectLocalProviderConfiguration(BaseModel):
     root: DirectLocalRootConfiguration
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
     allowed_executables: frozenset[Path] = frozenset()
-    allowed_environment_keys: frozenset[Annotated[str, Field(min_length=1, max_length=128)]] = frozenset()
+    inherit_environment: bool = False
+    allowed_environment_keys: frozenset[Annotated[str, Field(min_length=1, max_length=128)]] | None = frozenset()
     allowed_ports: frozenset[Annotated[int, Field(ge=1, le=65535)]] = frozenset()
     max_value_bytes: Annotated[int, Field(gt=0)] = 16 * _MIB
     max_concurrent_processes: Annotated[int, Field(gt=0)] = 128
@@ -90,7 +91,9 @@ class DirectLocalProviderConfiguration(BaseModel):
 
     @field_validator("allowed_environment_keys")
     @classmethod
-    def _trimmed_environment_keys(cls, value: frozenset[str]) -> frozenset[str]:
+    def _trimmed_environment_keys(cls, value: frozenset[str] | None) -> frozenset[str] | None:
+        if value is None:
+            return None
         if any(key != key.strip() for key in value):
             raise ValueError("allowed environment keys must not contain surrounding whitespace")
         if any("\x00" in key for key in value):

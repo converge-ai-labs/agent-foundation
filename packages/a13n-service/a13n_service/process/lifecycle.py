@@ -142,7 +142,7 @@ async def open_process_runtime(
                         settings,
                         shared,
                         agent_resources.invocations,
-                        assets.service,
+                        assets.catalog,
                         InlineHookValidator(EndpointPolicy()),
                     )
                 input_acceptor = IngressInputAcceptor(storage.sessions, commands)

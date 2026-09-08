@@ -263,6 +263,18 @@ await storage.redis.xadd(b"run-events", {b"payload": payload})
 
 Response decoding is disabled for binary safety. The fakeredis backend is process-local and non-durable; use a real Redis service for multiple processes, persistence, modules, or exact server failure behavior.
 
+### Run Stream publication and upgrades
+
+Workers confirm an atomic publication activation before Environment preparation or Harness output. Each Attempt uses its PostgreSQL `attempt_number` to fence observations and projection completion. A successor activation appends its committed `run_attempt.leased` event and then one `run.recovery` event before accepting its observations. Delayed historical lifecycle facts use a separate trusted projection path.
+
+Run Stream scripts require Redis Streams, Lua scripting, and `INFO server` permission. Use one writable primary with `maxmemory-policy=noeviction`; active Streams and their activation/deduplication metadata have no expiry. Provision memory for active-Run deduplication evidence as well as the bounded event history. Both keys use one Redis Cluster hash tag, but the Service client currently connects to a primary endpoint rather than discovering Cluster slots.
+
+Every script compares the Redis primary's process incarnation with the Run's recorded incarnation. A primary restart or failover, missing keys, or inconsistent stream boundaries stops publication and makes live replay unavailable. Existing Runs are not transparently reopened after that loss; durable Run outcomes and already published replay objects remain authoritative for their own purposes. A process-local memory backend has the same fail-closed behavior across process restarts. Do not restore, roll back, rename, or flush publication keys on a serving primary. Administrative restoration, split-brain routing, and same-process metadata rollback require stopping and fencing all writers first; they are not supported live recovery mechanisms.
+
+Drain every old Worker and lifecycle projector, revoke their Redis access, and replace them before enabling this version's publishers. A mixed rollout with an unfenced binary does not provide publication fencing. Legacy live Streams without activation metadata are unavailable to the new publisher; finish active Runs before the upgrade. Retained replay objects keep their existing format.
+
+Native clients receive `run.recovery` with the normal Run Stream cursor. Hosted AG-UI clients receive `CUSTOM` named `a13n.service.run_recovery`, with `schema_version`, a stable `event_id`, their external `runId`, and `reason`. Clients can stop unfinished text or tool-argument accumulation, preserve completed results, and retain, mark, or remove partial content according to product policy. Apply the boundary idempotently by event ID and cursor. Recovery does not prove that an external tool failed or is safe to retry. The event reports a publisher switch, not successful execution or a new Run. Reconnect and sealed replay preserve its original position; a cursor beyond it does not emit it again.
+
 ## Object Usage
 
 Object keys are opaque names rather than filesystem paths. `put` supports unconditional, create-only, and expected-version publication.

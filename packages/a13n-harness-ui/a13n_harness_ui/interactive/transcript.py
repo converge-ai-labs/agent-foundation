@@ -301,7 +301,11 @@ class Transcript:
                 value = Text(title, style="bold", no_wrap=True, overflow="ellipsis")
                 if body:
                     value.append("\n" + "\n".join("  " + line for line in body.splitlines()), style="not bold")
-            elif kind in {"command", "edit", "info", "summary", "compact", "notes"}:
+            elif kind == "approval":
+                from .approvals import approval_panel
+
+                value = approval_panel(source, self.theme)
+            elif kind in {"command", "edit", "info", "summary", "compact", "notes", "warning"}:
                 from rich import box
                 from rich.panel import Panel
 
@@ -320,7 +324,7 @@ class Transcript:
                         title, style=f"bold {activity_colors(self.theme)['running']}" if kind == "notes" else "bold"
                     ),
                     title_align="left",
-                    border_style="bright_black",
+                    border_style="yellow" if kind == "warning" else "bright_black",
                     box=box.ROUNDED,
                     padding=(0, 1),
                 )

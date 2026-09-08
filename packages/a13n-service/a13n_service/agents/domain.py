@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import unicodedata
 from datetime import datetime
 from enum import StrEnum
@@ -28,19 +26,16 @@ from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionToolSelection,
     MCPConnectionToolSelection,
 )
-from a13n_service.iam.domain import PrincipalRef
+from a13n_service.digests import Sha256Digest
+from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
+from a13n_service.plugins.domain import PluginKey
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
-Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
-PluginKey = Annotated[
-    str,
-    StringConstraints(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", min_length=3, max_length=128),
-]
 JsonObject = dict[str, JsonValue]
 
 
@@ -401,8 +396,8 @@ class Agent(StrictModel):
     archived_at: datetime | None
     duplicated_from_agent_id: ObjectId | None
     duplicated_from_revision_id: ObjectId | None
-    created_by: PrincipalRef
-    updated_by: PrincipalRef
+    created_by: ActorRef
+    updated_by: ActorRef
     created_at: datetime
     updated_at: datetime
 
@@ -425,7 +420,7 @@ class AgentRevision(StrictModel):
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: Sha256Digest
     source_revision_id: ObjectId | None
-    created_by: PrincipalRef
+    created_by: ActorRef
     created_at: datetime
 
 
@@ -499,14 +494,3 @@ class DuplicateAgentRequest(BaseModel):
 class AgentRevisionCreateResult(StrictModel):
     agent: Agent
     revision: AgentRevision
-
-
-def canonical_digest(value: BaseModel | JsonObject | tuple[object, ...]) -> str:
-    """Return the canonical SHA-256 digest for one finite JSON value."""
-
-    if isinstance(value, BaseModel):
-        payload: object = value.model_dump(mode="json", by_alias=True)
-    else:
-        payload = value
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    return hashlib.sha256(encoded).hexdigest()

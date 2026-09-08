@@ -14,9 +14,11 @@ from importlib.resources import files
 from typing import Protocol, cast, runtime_checkable
 from uuid import uuid4
 
+from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_ai import Agent, PromptedOutput, RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.settings import ModelSettings
@@ -29,6 +31,7 @@ from a13n_harness.usage import ProviderUsage, UsageMeasure
 SHELL_REVIEW_CAPABILITY_ID = "a13n.shell-review"
 SHELL_EXEC_TOOL_ID = "environment.shell_exec"
 MAX_SHELL_REVIEW_REASON_CHARS = 2_000
+_LOGGER = get_logger(__name__)
 
 
 class ShellRiskLevel(StrEnum):
@@ -41,10 +44,11 @@ class ShellRiskLevel(StrEnum):
 
 
 class ShellReviewAction(StrEnum):
-    """Restriction applied to a flagged or failed review."""
+    """Review response; skipping adds no restriction to the invocation policy."""
 
     APPROVAL_REQUIRED = "approval_required"
     DENY = "deny"
+    SKIP = "skip"
 
 
 _RISK_ORDER = {
@@ -143,7 +147,7 @@ class AgentShellCommandReviewer:
         model: Model,
         *,
         model_settings: ModelSettings | None = None,
-        timeout_seconds: float = 20.0,
+        timeout_seconds: float = 120.0,
     ) -> None:
         if not isinstance(model, Model):
             raise TypeError("model must be a Pydantic AI Model")
@@ -186,6 +190,16 @@ class AgentShellCommandReviewer:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            # Provider error messages/bodies can echo credentials or command input.
+            # Keep diagnostics useful without publishing the protected exception chain.
+            _LOGGER.warning(
+                "shell_review_failed",
+                extra={
+                    "tool_call_id": request.tool_call_id,
+                    "error_type": type(exc).__name__,
+                    "status_code": exc.status_code if isinstance(exc, ModelHTTPError) else None,
+                },
+            )
             raise ShellReviewError(
                 "shell_review_failed",
                 usage=_provider_usage_receipts(self._model, usage),
@@ -210,7 +224,7 @@ class ShellReviewCapability(AbstractCapability[AgentContext]):
         risk_threshold: ShellRiskLevel = ShellRiskLevel.HIGH,
         on_flagged: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
         on_error: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
-        timeout_seconds: float = 20.0,
+        timeout_seconds: float = 120.0,
         reviewer: ShellCommandReviewer | None = None,
     ) -> None:
         if not isinstance(model, str) or not model.strip() or len(model.strip()) > 1_024:
@@ -238,7 +252,7 @@ class ShellReviewCapability(AbstractCapability[AgentContext]):
         risk_threshold: ShellRiskLevel = ShellRiskLevel.HIGH,
         on_flagged: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
         on_error: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
-        timeout_seconds: float = 20.0,
+        timeout_seconds: float = 120.0,
     ) -> ShellReviewCapability:
         """Construct the serializable default-reviewer form."""
         return cls(
@@ -294,7 +308,16 @@ class ShellReviewCapability(AbstractCapability[AgentContext]):
         self._require_context(context)
         if self._reviewer is None:
             raise DefinitionError("Shell review is not bound to the current run.", code="capability_scope_invalid")
-        result = await self._reviewer.review(request, context=context)
+        if self._configured_reviewer is None:
+            # The built-in reviewer owns its deadline so it can retain usage
+            # proven before cancellation. Do not race it with a second timer.
+            result = await self._reviewer.review(request, context=context)
+        else:
+            try:
+                async with asyncio.timeout(self.timeout_seconds):
+                    result = await self._reviewer.review(request, context=context)
+            except TimeoutError as exc:
+                raise ShellReviewError("shell_review_timeout") from exc
         return ShellReviewResult.model_validate(result)
 
     def action_for(self, assessment: ShellReviewAssessment) -> ShellReviewAction | None:

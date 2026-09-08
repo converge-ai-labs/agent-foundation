@@ -6,7 +6,7 @@ from typing import Any, cast
 import pytest
 from a13n_harness import AgentContext
 from a13n_harness.errors import ModelResolutionError
-from a13n_harness.model_auth import CodexCredentials, GrokCredentials
+from a13n_harness.model_auth import GrokCredentials
 from a13n_harness_ui.composition.models import ResolvedModelRecipe
 from a13n_harness_ui.configuration import CodexSubscriptionAuthentication, GrokSubscriptionAuthentication
 from a13n_harness_ui.model_runtime import (
@@ -15,6 +15,7 @@ from a13n_harness_ui.model_runtime import (
     HarnessUiModelResolver,
 )
 from pydantic_ai.models import ModelResolutionContext
+from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 
 pytestmark = pytest.mark.anyio
 
@@ -23,10 +24,10 @@ _CONTEXT = cast(ModelResolutionContext[AgentContext], None)
 
 
 class _CodexSource:
-    async def load(self) -> CodexCredentials:
+    async def load(self) -> OpenAICodexCredentials:
         raise AssertionError("resolver construction must not load credentials")
 
-    async def save(self, credentials: CodexCredentials) -> None:
+    async def save(self, credentials: OpenAICodexCredentials) -> None:
         del credentials
         raise AssertionError("resolver construction must not save credentials")
 
@@ -49,40 +50,22 @@ def _recipe(authentication: CodexSubscriptionAuthentication | GrokSubscriptionAu
     )
 
 
-async def test_codex_subscription_resolution_delegates_to_harness_builder(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_codex_subscription_resolution_uses_official_provider_and_affinity() -> None:
+    from a13n_harness.model_auth import CodexRequestModel
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai_codex import OpenAICodexProvider
+
     recipe = _recipe(CodexSubscriptionAuthentication(kind="codex_subscription"))
-    source = _CodexSource()
-    built = object()
-    calls: list[dict[str, Any]] = []
-
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
-        return credentials
-
-    def build(model_name: str, **kwargs: Any) -> object:
-        calls.append({"model_name": model_name, **kwargs})
-        return built
-
-    monkeypatch.setattr("a13n_harness.model_auth.build_codex_model", build)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
-        subscription_sources={
-            "codex_subscription": CodexSubscriptionSource(source=source, refresh=refresh),
-        },
+        subscription_sources={"codex_subscription": CodexSubscriptionSource(source=_CodexSource())},
     )
-
     resolved = await resolver(_CONTEXT, recipe.model_id)
-
-    assert resolved is built
-    assert calls == [
-        {
-            "model_name": "model-name",
-            "credential_source": source,
-            "refresh": refresh,
-            "originator": "a13n-harness-ui",
-        }
-    ]
+    assert isinstance(resolved, CodexRequestModel)
+    assert isinstance(resolved.wrapped, OpenAIResponsesModel)
+    assert isinstance(resolved.provider, OpenAICodexProvider)
+    async with resolved:
+        assert resolved.model_name == "model-name"
 
 
 async def test_grok_subscription_resolution_delegates_to_harness_builder(
@@ -136,7 +119,7 @@ async def test_fresh_resolver_keeps_sources_without_touching_credentials(monkeyp
     source = _CodexSource()
     expected = object()
 
-    monkeypatch.setattr("a13n_harness.model_auth.build_codex_model", lambda *args, **kwargs: expected)
+    monkeypatch.setattr("a13n_harness.model_auth.CodexRequestModel", lambda *args, **kwargs: expected)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
         subscription_sources={"codex_subscription": CodexSubscriptionSource(source=source)},

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal
 
 from a13n_harness.capabilities import SkillManager, SkillsPolicy
 from pydantic import ValidationError
@@ -32,25 +32,6 @@ from .objects import SkillPackageStore, SkillPackageStoreError
 
 MAX_EFFECTIVE_SKILLS = 512
 _MATERIALIZATION_ROOT = "/environment/workspace/.a13n/skills/version-1"
-
-
-class ResolvedSkillLock(Protocol):
-    """Structural view of one exact lock from an EffectiveAgentConfig."""
-
-    @property
-    def skill_id(self) -> str: ...
-
-    @property
-    def skill_revision_id(self) -> str: ...
-
-    @property
-    def skill_key(self) -> str: ...
-
-    @property
-    def version(self) -> int: ...
-
-    @property
-    def content_digest(self) -> str: ...
 
 
 type SkillRuntimeErrorCode = Literal[
@@ -93,7 +74,7 @@ class SkillRuntimePreparer:
         *,
         organization_id: str,
         workspace_id: str,
-        locks: tuple[ResolvedSkillLock, ...],
+        locks: tuple[SkillRevisionLock, ...],
         fence: SkillAttemptFence | None = None,
     ) -> PreparedSkillRuntime:
         selected_locks = _validate_locks(locks)
@@ -219,7 +200,7 @@ def _catalog_digest(locks: tuple[SkillRevisionLock, ...]) -> str:
     return hashlib.sha256(b"a13n.service.skill-runtime.v1\n" + encoded).hexdigest()
 
 
-def _validate_locks(locks: tuple[ResolvedSkillLock, ...]) -> tuple[SkillRevisionLock, ...]:
+def _validate_locks(locks: tuple[SkillRevisionLock, ...]) -> tuple[SkillRevisionLock, ...]:
     if len(locks) > MAX_EFFECTIVE_SKILLS:
         raise _invalid()
     revision_ids = tuple(item.skill_revision_id for item in locks)

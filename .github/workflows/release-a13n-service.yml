@@ -73,7 +73,7 @@ jobs:
     name: Publish Python distributions
     needs: build-python
     runs-on: ubuntu-latest
-    environment: a13n-service-pypi
+    environment: foundation-pypi
     steps:
       - name: Download Python distributions
         uses: actions/download-artifact@v4

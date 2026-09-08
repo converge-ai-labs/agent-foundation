@@ -229,13 +229,12 @@ def test_feature_facades_export_documented_families() -> None:
 
 def test_model_auth_feature_facade_is_public_without_root_reexports() -> None:
     expected = {
-        "CodexCredentialSource",
-        "CodexCredentials",
         "CodexDeviceAuthorization",
         "CodexDeviceAuthorizationFlow",
         "DeviceAuthorizationError",
-        "CodexOAuthFlow",
-        "CodexSubscriptionModel",
+        "CodexRequestModel",
+        "CodexLoginFlow",
+        "CodexLoginResult",
         "CredentialPersistenceError",
         "CredentialRefreshError",
         "GrokCredentialSource",
@@ -245,10 +244,7 @@ def test_model_auth_feature_facade_is_public_without_root_reexports() -> None:
         "GrokOAuthFlow",
         "ModelAuthenticationError",
         "OAuthFlow",
-        "build_codex_account_auth",
-        "build_codex_model",
         "build_grok_model",
-        "refresh_codex_credentials",
         "refresh_grok_credentials",
     }
 

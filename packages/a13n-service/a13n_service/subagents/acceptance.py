@@ -23,6 +23,7 @@ from a13n_service.interactions.environment_selection import (
     RetainedRunEnvironment,
     child_environment_choice,
 )
+from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
@@ -32,7 +33,7 @@ from a13n_service.interactions.objects import (
     StoredRunState,
 )
 from a13n_service.interactions.records import thread_record
-from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -59,7 +60,7 @@ class ChildRunAcceptanceReceipt(StrictModel):
 
 
 class ChildRunAcceptanceService:
-    """Accept one prepared child under the spawning Attempt's live fence."""
+    """Accept one prepared child under the spawning Attempt's live attempt_number."""
 
     def __init__(
         self,
@@ -67,12 +68,14 @@ class ChildRunAcceptanceService:
         states: RunStateStore,
         payloads: RunPayloadStore,
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
         self._clock = clock
+        self._lifecycle = lifecycle
 
     async def accept(
         self,
@@ -144,13 +147,14 @@ class ChildRunAcceptanceService:
                     else prepared.run
                 )
                 database.add(thread_record(prepared.thread))
-                await add_run_with_environment(
+                child_record = await add_run_with_environment(
                     database,
                     run=child_run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
                     intent=ExplicitEnvironment(choice),
                 )
+                await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
                 )
@@ -292,13 +296,14 @@ class ChildRunAcceptanceService:
                     source_child=source_run.to_resource(),
                     workspace_id=session.workspace_id,
                 )
-                await add_run_with_environment(
+                child_record = await add_run_with_environment(
                     database,
                     run=prepared.run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
                     intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
                 )
+                await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
                 )
@@ -368,7 +373,7 @@ def _validate_new_child_parent(
     prepared: PreparedChildRunAcceptance,
     parent: Run,
     parent_thread: Thread,
-    parent_state: RunStateEnvelope,
+    parent_state: RunCheckpoint,
     authority: AttemptContext,
 ) -> None:
     if prepared.thread.origin_thread_id != parent.thread_id:
@@ -399,17 +404,17 @@ def _validate_new_child_parent(
 def _validate_parent_authority(
     *,
     run: Run,
-    child_state: RunStateEnvelope,
+    child_state: RunCheckpoint,
     relationship: ChildRunRelationship,
     parent: Run,
     parent_thread: Thread,
-    parent_state: RunStateEnvelope,
+    parent_state: RunCheckpoint,
     authority: AttemptContext,
 ) -> None:
     if (
         relationship.parent_run_id != parent.id
         or relationship.parent_run_attempt_id != authority.run_attempt_id
-        or relationship.parent_run_attempt_fence != authority.fence
+        or relationship.parent_run_attempt_fence != authority.attempt_number
         or parent_thread.id != parent.thread_id
         or run.session_id != parent.session_id
         or run.authority_principal != parent.authority_principal

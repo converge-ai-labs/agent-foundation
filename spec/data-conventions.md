@@ -96,6 +96,8 @@ Suffixes have stable domain meanings. `Revision` is an immutable member of a res
 
 The public boundary validates and normalizes input once. Internal code consumes the resulting typed meaning instead of repeatedly inferring whether a string is an object ID, symbolic selection, external identity, scoped reference, or secret. No universal field-suffix rule overrides clarity at either boundary.
 
+Service display names bounded to 128 Unicode scalar values may expand during casefolding. Their case-insensitive uniqueness columns accommodate up to 384 scalar values; the derived key is never truncated and the display-name limit does not change. A uniqueness key is distinct from the feature-owned display-name normalization.
+
 ## Ownership and Authority
 
 Every identifier, version, and reference has an explicit owner and scope. Foundation-owned IDs, external IDs, scoped references, and secrets are not interchangeable even when their serialized representation is a string.

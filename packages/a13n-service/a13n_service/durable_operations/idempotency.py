@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from pydantic import BaseModel, JsonValue
+from pydantic import JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service import digests
 from a13n_service.ids import new_object_id
 from a13n_service.temporal import assume_utc
 
@@ -62,15 +62,6 @@ def digest_visible_ascii_key(value: str) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def digest_request(value: object) -> str:
-    """Hash normalized ordinary HTTP input; domains own semantic normalization."""
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json", by_alias=True)
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    ).hexdigest()
-
-
 async def load_evidence(
     session: AsyncSession,
     *,
@@ -86,7 +77,7 @@ async def load_evidence(
     if session.get_bind().dialect.name == "postgresql":
         # Serialize a key even before its first row exists; expiry replacement
         # and the mutation use this same transaction and bounded DB timeouts.
-        material = digest_request(
+        material = digests.digest_request(
             (boundary_id, scope.actor_type, scope.actor_id, scope.operation, scope.scope_id, identity.key_digest)
         )
         lock_id = int.from_bytes(bytes.fromhex(material)[:8], signed=True)
@@ -182,7 +173,6 @@ __all__ = [
     "IdempotencyIdentity",
     "InvalidIdempotencyKey",
     "delete_expired_evidence",
-    "digest_request",
     "digest_visible_ascii_key",
     "is_evidence_unique_race",
     "load_evidence",

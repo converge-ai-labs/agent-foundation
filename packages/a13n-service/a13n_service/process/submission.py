@@ -1,7 +1,7 @@
 """Canonical input-command composition shared by Gateway and Connectivity roles."""
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
-from a13n_service.assets.service import AssetService
+from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService
@@ -17,7 +17,7 @@ def build_input_commands(
     settings: Settings,
     shared: SharedRuntime,
     invocations: AgentInvocationResolver,
-    assets: AssetService,
+    assets: AssetCatalog,
     inline_hooks: InlineHookValidator,
 ) -> InteractionCommands:
     states = RunStateStore(shared.storage.objects)
@@ -35,7 +35,7 @@ def build_input_commands(
         ),
         inbox=ThreadInboxStore(shared.storage.sessions, signals=signals),
         payloads=payloads,
-        recovery_max_attempts=settings.gateway_run_recovery_max_attempts,
+        execution_max_attempts=settings.gateway_run_execution_max_attempts,
         max_handoffs=settings.gateway_run_max_handoffs,
         queue_name=settings.gateway_run_queue_name,
         priority=settings.gateway_run_priority,

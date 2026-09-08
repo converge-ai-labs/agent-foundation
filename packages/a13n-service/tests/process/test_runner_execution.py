@@ -235,7 +235,7 @@ async def test_discovery_starts_real_runner_and_seals_native_execution(runner_se
                     await database.scalars(select(RunAttemptRecord).where(RunAttemptRecord.run_id == run.id))
                 ).one()
                 assert attempt.worker_id.startswith("wrk_")
-                assert attempt.worker_generation.startswith("wgen_")
+                assert attempt.attempt_number == 1
                 assert attempt.worker_build_id == runner_settings.build_version
                 assert attempt.runtime_lock_digest == run.runtime_lock_digest
                 assert attempt.harness_run_id is not None
@@ -292,7 +292,9 @@ async def test_runner_crash_reconstructs_same_lock_and_waits_for_lease_expiry(ru
                     )
                 ).all()
                 assert [attempt.status for attempt in attempts] == ["failed", "succeeded"]
-                assert attempts[1].claimed_at >= attempts[0].lease_expires_at
+                assert [attempt.attempt_number for attempt in attempts] == [1, 2]
+                assert attempts[1].worker_id != attempts[0].worker_id
+                assert attempts[1].created_at >= attempts[0].lease_expires_at
 
 
 async def test_staged_runner_cannot_claim_until_activation(runner_settings):

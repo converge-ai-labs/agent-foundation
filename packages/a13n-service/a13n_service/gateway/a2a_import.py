@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
 from a13n_service.assets.errors import AssetError
-from a13n_service.assets.service import AssetService, PreparedAssetPublication
+from a13n_service.assets.uploads import AssetUploadService, PreparedAssetPublication
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.interactions.input import AgentInput
@@ -45,7 +45,7 @@ class A2APartImporter:
 
     def __init__(
         self,
-        assets: AssetService,
+        assets: AssetUploadService,
         http_client: httpx2.AsyncClient | None,
         endpoint_policy: EndpointPolicy,
         *,
