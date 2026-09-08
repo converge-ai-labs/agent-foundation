@@ -67,3 +67,5 @@ node_modules/
 *.log
 *.tmp
 .anycap/
+
+/frontend/packages/*/dist/

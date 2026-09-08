@@ -1,1 +1,4 @@
-{ "welcome": "Welcome to a13n Console" }
+{
+  "welcome": "Welcome to a13n Console",
+  "language": "Language"
+}

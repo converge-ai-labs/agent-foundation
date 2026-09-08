@@ -1,0 +1,7 @@
+# Frontend Specifications
+
+The [repository model](../repository-model.md#frontend-workspace) owns workspace and release boundaries. Applications own product behavior; the shared UI package owns reusable visual primitives.
+
+| Contract                          | Ownership                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------ |
+| [Design system](design-system.md) | Shared tokens, component behavior, themes, localization boundary, and development showcase |

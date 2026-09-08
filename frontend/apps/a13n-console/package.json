@@ -25,6 +25,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "i18next": "^25.0.0",
-    "react-i18next": "^15.5.0"
+    "react-i18next": "^15.5.0",
+    "a13n-ui": "workspace:*"
   }
 }

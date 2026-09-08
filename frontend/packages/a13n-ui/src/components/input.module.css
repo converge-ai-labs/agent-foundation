@@ -1,0 +1,10 @@
+.input {
+  composes: control from "./control.module.css";
+  width: 100%;
+  height: var(--a13n-control-md);
+  padding: 0 var(--a13n-space-3);
+  min-width: 0;
+}
+.input::placeholder {
+  color: var(--a13n-muted);
+}

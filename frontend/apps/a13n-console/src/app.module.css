@@ -1,0 +1,10 @@
+.main {
+  max-width: 640px;
+  padding: var(--a13n-space-8);
+  margin: auto;
+}
+.main h1 {
+  font-size: var(--a13n-text-title);
+  font-weight: 600;
+  margin-bottom: var(--a13n-space-6);
+}

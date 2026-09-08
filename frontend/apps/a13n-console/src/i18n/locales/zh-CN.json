@@ -1,1 +1,4 @@
-{ "welcome": "欢迎使用 a13n Console" }
+{
+  "welcome": "欢迎使用 a13n Console",
+  "language": "语言"
+}

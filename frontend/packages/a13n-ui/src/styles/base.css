@@ -1,0 +1,9 @@
+/* Explicit opt-in: importing tokens does not reset an application's page. */
+.a13n-root {
+  font-family: var(--a13n-font);
+  font-size: var(--a13n-text-body);
+  line-height: var(--a13n-leading);
+  color: var(--a13n-text);
+  background: var(--a13n-canvas);
+  -webkit-font-smoothing: antialiased;
+}
