@@ -6,14 +6,17 @@ import os
 import tomllib
 from collections.abc import Awaitable, Mapping
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from a13n_harness.model_auth import CodexCredentials
+from a13n_harness.model_auth import CodexLoginResult
 from anyio import CancelScope, Lock, to_thread
 from anyio.lowlevel import checkpoint
+
+if TYPE_CHECKING:
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexCredentialSource
 
 from ._common import (
     JsonSnapshot,
@@ -50,13 +53,13 @@ class CodexLoginRequest:
 
 
 class CodexLoginCallback(Protocol):
-    def __call__(self, request: CodexLoginRequest) -> Awaitable[CodexCredentials]: ...
+    def __call__(self, request: CodexLoginRequest) -> Awaitable[CodexLoginResult]: ...
 
 
 @dataclass(frozen=True, slots=True)
 class _Loaded:
     snapshot: JsonSnapshot
-    credential: CodexCredentials | None
+    credential: OpenAICodexCredentials | None
 
 
 def _error(message: str, code: str) -> AccountStoreError:
@@ -78,10 +81,12 @@ def _optional_string(value: Any, field_name: str) -> str | None:
     return _nonempty_string(value, field_name)
 
 
-def _identity_from_tokens(tokens: Mapping[str, Any], id_token: str) -> str:
+def _identity_from_tokens(tokens: Mapping[str, Any], id_token: str | None) -> str:
     account_id = _optional_string(tokens.get("account_id"), "tokens.account_id")
     if account_id is not None:
         return account_id
+    if id_token is None:
+        raise _error("The Codex token set has no account identity.", "account_store_incompatible")
     claims = jwt_claims(id_token, provider=Provider.CODEX, field="id_token")
     auth_claims = claims.get("https://api.openai.com/auth")
     if isinstance(auth_claims, dict):
@@ -98,7 +103,9 @@ def _identity_from_tokens(tokens: Mapping[str, Any], id_token: str) -> str:
     )
 
 
-def _parse_document(document: dict[str, Any]) -> CodexCredentials:
+def _parse_document(document: dict[str, Any]) -> OpenAICodexCredentials:
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
+
     auth_mode = document.get("auth_mode")
     if auth_mode not in (None, "chatgpt"):
         raise _error(
@@ -127,52 +134,41 @@ def _parse_document(document: dict[str, Any]) -> CodexCredentials:
     access_token = _nonempty_string(tokens.get("access_token"), "tokens.access_token")
     refresh_token = _nonempty_string(tokens.get("refresh_token"), "tokens.refresh_token")
     account_id = _identity_from_tokens(tokens, id_token)
-    expires_at = jwt_expiry(access_token, provider=Provider.CODEX)
-    return CodexCredentials(
+    jwt_expiry(access_token, provider=Provider.CODEX)
+    return OpenAICodexCredentials(
         account_id=account_id,
-        expires_at=expires_at,
         access_token=access_token,
         refresh_token=refresh_token,
-        id_token=id_token,
     )
 
 
-def _validate_callback_credential(credential: object) -> CodexCredentials:
-    if not isinstance(credential, CodexCredentials):
+def _validate_callback_credential(credential: object) -> OpenAICodexCredentials:
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
+
+    if not isinstance(credential, OpenAICodexCredentials):
         raise _error("The Codex OAuth callback returned an invalid result.", "oauth_callback_invalid")
-    if credential.expires_at.tzinfo is None:
-        raise _error("The Codex OAuth callback returned an invalid result.", "oauth_callback_invalid")
-    document = {
-        "auth_mode": "chatgpt",
-        "tokens": {
-            "id_token": credential.id_token,
-            "access_token": credential.access_token,
-            "refresh_token": credential.refresh_token,
-            "account_id": credential.account_id,
-        },
-    }
-    parsed = _parse_document(document)
-    if parsed.account_id != credential.account_id or parsed.expires_at != credential.expires_at.astimezone(UTC):
-        raise _error("The Codex OAuth callback returned an inconsistent result.", "oauth_callback_invalid")
-    return parsed
+    _nonempty_string(credential.account_id, "account_id")
+    _nonempty_string(credential.access_token, "access_token")
+    _nonempty_string(credential.refresh_token, "refresh_token")
+    _expires_at(credential)
+    return credential
 
 
-def _newer(candidate: CodexCredentials, previous: CodexCredentials) -> bool:
-    rotated = (
-        candidate.access_token != previous.access_token
-        or candidate.refresh_token != previous.refresh_token
-        or candidate.id_token != previous.id_token
-    )
-    return rotated and candidate.expires_at >= previous.expires_at
+def _expires_at(credentials: OpenAICodexCredentials) -> datetime:
+    return jwt_expiry(credentials.access_token, provider=Provider.CODEX)
 
 
-def _merge_credential(document: dict[str, Any], credential: CodexCredentials, now: datetime) -> dict[str, Any]:
+def _newer(candidate: OpenAICodexCredentials, previous: OpenAICodexCredentials) -> bool:
+    rotated = candidate.access_token != previous.access_token or candidate.refresh_token != previous.refresh_token
+    return rotated and _expires_at(candidate) >= _expires_at(previous)
+
+
+def _merge_credential(document: dict[str, Any], credential: OpenAICodexCredentials, now: datetime) -> dict[str, Any]:
     merged = dict(document)
     existing_tokens = merged.get("tokens")
     tokens = dict(existing_tokens) if isinstance(existing_tokens, dict) else {}
     tokens.update(
         {
-            "id_token": credential.id_token,
             "access_token": credential.access_token,
             "refresh_token": credential.refresh_token,
             "account_id": credential.account_id,
@@ -310,19 +306,19 @@ class CodexAccountStore:
                 expiry=ExpiryStatus.NOT_APPLICABLE,
                 required_action=RequiredAction.LOGIN,
             )
-        expiry = expiry_status(loaded.credential.expires_at, ensure_aware(now), self._refresh_window)
+        expiry = expiry_status(_expires_at(loaded.credential), ensure_aware(now), self._refresh_window)
         return AccountProjection(
             provider=Provider.CODEX,
             availability=Availability.AVAILABLE,
             source=self.policy.kind,
             usable=expiry is ExpiryStatus.VALID,
             expiry=expiry,
-            expires_at=loaded.credential.expires_at,
+            expires_at=_expires_at(loaded.credential),
             required_action=RequiredAction.NONE if expiry is ExpiryStatus.VALID else RequiredAction.REFRESH,
         )
 
-    async def load(self) -> CodexCredentials:
-        """Load the current compatible credential set for Harness model authentication."""
+    async def load(self) -> OpenAICodexCredentials:
+        """Load the current compatible credential set for Pydantic AI model authentication."""
 
         loaded = await self._load()
         if loaded.credential is None:
@@ -330,17 +326,14 @@ class CodexAccountStore:
         self._save_snapshot.set(loaded)
         return loaded.credential
 
-    async def save(self, credentials: CodexCredentials) -> None:
-        """Persist a Harness refresh with an optimistic pre-replace digest check."""
+    async def save(self, credentials: OpenAICodexCredentials) -> None:
+        """Persist an upstream Codex refresh with an optimistic pre-replace digest check."""
 
-        if not isinstance(credentials, CodexCredentials) or credentials.expires_at.tzinfo is None:
-            raise _error("The Codex OAuth callback returned an invalid result.", "oauth_callback_invalid")
+        _validate_callback_credential(credentials)
         async with self._mutation_lock:
             expected = self._save_snapshot.get()
             if expected is None or expected.credential is None:
                 raise _error("Codex credentials must be loaded before they are saved.", "account_store_conflict")
-            if credentials.id_token is None:
-                credentials = replace(credentials, id_token=expected.credential.id_token)
             refreshed = _validate_callback_credential(credentials)
             self._require_same_account(expected.credential, refreshed)
             document = _merge_credential(
@@ -373,7 +366,12 @@ class CodexAccountStore:
             callback_result = None
         if callback_failed:
             raise _error("The Codex OAuth login failed.", "oauth_login_failed")
-        result = _validate_callback_credential(callback_result)
+        if not isinstance(callback_result, CodexLoginResult):
+            raise _error("Codex login requires credentials and an ID token.", "oauth_callback_invalid")
+        result = _validate_callback_credential(callback_result.credentials)
+        id_token = _nonempty_string(callback_result.id_token, "tokens.id_token")
+        # Native Codex deserializes this field as a JWT even with an explicit account ID.
+        jwt_claims(id_token, provider=Provider.CODEX, field="id_token")
         if (
             initial.credential is not None
             and initial.credential.account_id != result.account_id
@@ -407,6 +405,7 @@ class CodexAccountStore:
                     provider=Provider.CODEX,
                 )
         document = _merge_credential(dict(latest.snapshot.document or {}), result, current_time)
+        document["tokens"]["id_token"] = id_token
         # Cancellation before publication prevents the write. After this boundary,
         # complete persistence and its projection before reporting the outcome.
         await checkpoint()
@@ -432,7 +431,7 @@ class CodexAccountStore:
         return True
 
     @staticmethod
-    def _require_same_account(expected: CodexCredentials, actual: CodexCredentials) -> None:
+    def _require_same_account(expected: OpenAICodexCredentials, actual: OpenAICodexCredentials) -> None:
         if expected.account_id != actual.account_id:
             raise AccountStoreConflictError(
                 "The active shared Codex account changed during the operation.",
@@ -447,3 +446,30 @@ __all__ = [
     "CodexLoginRequest",
     "resolve_codex_policy",
 ]
+
+
+class BoundCodexCredentialSource:
+    """Bind one provider lifetime or confirmed account operation to one Host account."""
+
+    def __init__(self, source: OpenAICodexCredentialSource, *, account_id: str | None = None) -> None:
+        self._source = source
+        self._account_id = account_id
+
+    def _check(self, credentials: OpenAICodexCredentials) -> None:
+        if self._account_id is None:
+            self._account_id = credentials.account_id
+        elif credentials.account_id != self._account_id:
+            raise AccountStoreConflictError(
+                "The Codex account changed. Refresh usage or start a new Run before continuing.",
+                code="account_identity_changed",
+                provider=Provider.CODEX,
+            )
+
+    async def load(self) -> OpenAICodexCredentials:
+        credentials = await self._source.load()
+        self._check(credentials)
+        return credentials
+
+    async def save(self, credentials: OpenAICodexCredentials) -> None:
+        self._check(credentials)
+        await self._source.save(credentials)

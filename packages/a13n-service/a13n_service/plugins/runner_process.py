@@ -95,6 +95,14 @@ async def run_runner_process(runtime_root: Path, runtime_lock_digest: str) -> No
                     await worker_scope.aclose()
                     worker = None
                     await write_runner_message(writer, "DRAINED", generation=generation)
+                elif command_type == "RETIRE":
+                    retired = worker is None or (
+                        worker.execution_loop is not None and await worker.execution_loop.retire_if_idle()
+                    )
+                    if retired:
+                        await worker_scope.aclose()
+                        worker = None
+                    await write_runner_message(writer, "RETIRED", generation=generation, retired=retired)
                 elif command_type == "SHUTDOWN":
                     await write_runner_message(writer, "EXITING", generation=generation)
                     return

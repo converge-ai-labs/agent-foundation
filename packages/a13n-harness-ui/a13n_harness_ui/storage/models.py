@@ -93,7 +93,7 @@ class ThreadConfigurationRecord(Base):
         String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
-    project_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(String(_ID), nullable=True)
     agent_source_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     agent_source_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
     environment_profile_id: Mapped[str] = mapped_column(String(_ID), nullable=False)

@@ -76,7 +76,7 @@ jobs:
     name: Publish Harness distributions
     needs: build-python
     runs-on: ubuntu-latest
-    environment: a13n-harness-pypi
+    environment: harness-pypi
     steps:
       - name: Download Harness distributions
         uses: actions/download-artifact@v4

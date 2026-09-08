@@ -218,6 +218,53 @@ async def complete_lifecycle_projection(
     return True
 
 
+async def complete_publication_boundary(
+    database: AsyncSession,
+    event: LifecycleEvent,
+    *,
+    projected_at: datetime,
+) -> bool:
+    """Settle a confirmed Redis boundary shared by activation and projection repair."""
+    if event.event_type not in {"run.accepted", "run_attempt.leased"}:
+        raise ValueError("Only publication boundaries use activation settlement")
+    record = await database.scalar(
+        select(LifecycleEventRecord)
+        .where(
+            LifecycleEventRecord.organization_id == event.organization_id,
+            LifecycleEventRecord.id == event.id,
+            LifecycleEventRecord.event_type == event.event_type,
+        )
+        .with_for_update()
+    )
+    if record is None or record.projection_state == LifecycleProjectionState.abandoned.value:
+        return False
+    if record.projection_state == LifecycleProjectionState.projected.value:
+        return True
+    record.projection_state = LifecycleProjectionState.projected.value
+    record.projection_next_attempt_at = None
+    record.projection_lease_owner = None
+    record.projection_lease_expires_at = None
+    record.projected_at = projected_at
+    record.projection_error_json = None
+    await database.flush()
+    return True
+
+
+async def has_abandoned_run_projection(database: AsyncSession, organization_id: str, run_id: str) -> bool:
+    """An abandoned fact prevents activation and complete retained presentation."""
+    return bool(
+        await database.scalar(
+            select(
+                exists().where(
+                    LifecycleEventRecord.organization_id == organization_id,
+                    LifecycleEventRecord.run_id == run_id,
+                    LifecycleEventRecord.projection_state == LifecycleProjectionState.abandoned.value,
+                )
+            )
+        )
+    )
+
+
 async def fail_lifecycle_projection(
     database: AsyncSession,
     claim: LifecycleProjectionClaim,

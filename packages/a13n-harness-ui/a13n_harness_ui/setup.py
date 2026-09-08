@@ -34,7 +34,6 @@ class SetupStatus(StrictModel):
     needed: bool
     configuration_path: str
     suggested_project_path: str = "."
-    generation: str
     providers: tuple[SetupProvider, ...]
     agents: dict[str, str]
     projects: dict[str, str]

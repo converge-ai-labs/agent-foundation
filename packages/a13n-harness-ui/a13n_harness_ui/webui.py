@@ -73,7 +73,6 @@ class PromptRequest(SurfaceModel):
 
 class SetupApplyRequest(SurfaceModel):
     selection: SetupSelection
-    expected_generation: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class PreflightRequest(SurfaceModel):
@@ -303,7 +302,7 @@ def create_webui(
     @server.post("/api/setup/apply", response_model=SetupPublication, openapi_extra=_body(SetupApplyRequest))
     async def apply(request: Request) -> SetupPublication:
         document = await _document(request, SetupApplyRequest)
-        return await app().apply_setup(document.selection, expected_generation=document.expected_generation)
+        return await app().apply_setup(document.selection)
 
     @server.post(
         "/api/environments/preflight", response_model=EnvironmentReadiness, openapi_extra=_body(PreflightRequest)

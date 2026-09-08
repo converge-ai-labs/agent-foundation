@@ -362,8 +362,11 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     assert tuple(reconstructed.executable.subagents) == ("explorer", "agent-reviewer")
     assert reconstructed.executable.definition.agent.model.startswith("a13n-harness-ui:model-")
     assert "a13n.dynamic-environment" in reconstructed.definition_capability_ids
+    assert reconstructed.executable.definition.model_recovery.enabled
+    assert reconstructed.executable.definition.model_recovery.max_attempts == 5
     for child in reconstructed.executable.subagents.values():
         assert child.definition.definition_id != reconstructed.executable.definition.definition_id
+        assert child.definition.model_recovery == reconstructed.executable.definition.model_recovery
 
 
 async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: Path) -> None:

@@ -5,14 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx2
 import pytest
-from a13n_harness.model_auth import CodexCredentials
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.shell import CliShell
 from a13n_harness_ui.interactive.usage import choose_codex_reset, usage_text
@@ -20,14 +19,14 @@ from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, R
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
+from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 
 pytestmark = pytest.mark.anyio
 
 
 def _source():
-    credentials = CodexCredentials(
+    credentials = OpenAICodexCredentials(
         account_id="account-1",
-        expires_at=datetime.now(UTC) + timedelta(hours=2),
         access_token="fixture-access",
         refresh_token="fixture-refresh",
     )
@@ -103,10 +102,15 @@ async def test_reset_uses_exact_request_body_and_returns_known_outcomes(code: st
 async def test_401_refresh_replays_same_redemption_and_saves_credentials() -> None:
     source = _source()
     refreshed = replace(await source.load(), access_token="new-access")
-    refresh = AsyncMock(return_value=refreshed)
+    token_requests = []
     requests = []
 
     def handle(request):
+        if request.url.path == "/oauth/token":
+            token_requests.append(request)
+            return httpx2.Response(
+                200, json={"access_token": refreshed.access_token, "refresh_token": refreshed.refresh_token}
+            )
         requests.append(request)
         return (
             httpx2.Response(401)
@@ -115,10 +119,10 @@ async def test_401_refresh_replays_same_redemption_and_saves_credentials() -> No
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        api = CodexUsageClient(source, client=client, expected_account_id="account-1", refresh=refresh)
+        api = CodexUsageClient(source, client=client, expected_account_id="account-1")
         await api.redeem(ResetRequest(account_id="account-1", credit_id="one", redeem_request_id=uuid4()))
     assert len(requests) == 2 and requests[0].content == requests[1].content
-    refresh.assert_awaited_once()
+    assert len(token_requests) == 1
     source.save.assert_awaited_once_with(refreshed)
 
 
@@ -239,3 +243,20 @@ async def test_missing_windows_are_not_zero_remaining() -> None:
     )
     assert "Usage windows unavailable" in text
     assert "% remaining" not in text
+
+
+async def test_official_token_error_body_is_not_exposed_by_account_operations() -> None:
+    requests = []
+
+    def handle(request):
+        requests.append(request.url.path)
+        if request.url.path == "/oauth/token":
+            return httpx2.Response(400, json={"error": "invalid_grant", "error_description": "private-token"})
+        return httpx2.Response(401)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(ValueError, match="could not be refreshed or saved") as caught:
+            await CodexUsageClient(_source(), client=client).read()
+    assert "private-token" not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert requests == ["/backend-api/wham/usage", "/oauth/token"]

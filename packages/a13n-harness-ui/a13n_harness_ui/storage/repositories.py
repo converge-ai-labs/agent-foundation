@@ -352,7 +352,11 @@ class ThreadRepository:
                 .where(ThreadRecord.archived.is_(False))
                 .group_by(ThreadConfigurationRecord.project_id)
             )
-            return {project_id: updated_at for project_id, updated_at in rows if updated_at is not None}
+            return {
+                project_id: updated_at
+                for project_id, updated_at in rows
+                if project_id is not None and updated_at is not None
+            }
 
     async def select_continuation(
         self,

@@ -128,35 +128,33 @@ Acceptance is all-or-nothing. Publishing immutable content can leave harmless un
 
 The accepted generation contains normalized credential-free definitions and exact source digests. It contains no resolved credential value, native Capability, Plugin, MCP client, Provider, Environment adapter, active Thread, or Environment state.
 
-## File Mutation and Compare-and-Set
+## File Mutation and Last-Write-Wins
 
 Manual editing is always supported. A valid external save enters the next accepted generation; an invalid or incomplete save produces diagnostics while the previous generation remains active.
 
-App mutation operations use source-content preconditions. The CLI can locate, validate, and show configuration and can invoke separately defined explicit imports, but it exposes no generic create, update, or delete operation for desired resources.
+App configuration-file mutations use last-write-wins publication without source-content or generation preconditions. The CLI can locate, validate, and show configuration and can invoke separately defined explicit imports, but it exposes no generic create, update, or delete operation for desired resources.
 
 The App mutation request is:
 
 ```python
 class ResourceMutationRequest(BaseModel):
-    expected_source_digest: str | None
     content: str
 ```
 
 Rules:
 
-1. Creation requires `expected_source_digest=None` and uses a no-clobber destination operation. An existing destination or resource ID rejects the create.
-2. Update and deletion require the exact source digest returned by the latest read.
-3. Before publication the App performs a fresh stable read and rejects a missing, replaced, or differently digested source.
-4. New content is validated as part of a complete candidate generation before it is published to the source path.
-5. Publication uses a same-directory temporary file and atomic replacement; the App verifies the final bytes and generation afterward.
-6. A stale mutation returns the latest digest and does not intentionally overwrite the newer observed source.
-7. Direct editor writes do not need a Harness UI token or command. They participate through the same stable-read and generation-validation path.
+1. Creation and update submit replacement content for an approved source path. An existing destination is replaced; callers supply no expected digest. Resource-ID uniqueness and reference validation still apply to the candidate.
+2. Deletion removes the current non-root source without a digest precondition. An already absent source is a successful no-op.
+3. New content or removal is validated as part of a complete candidate generation before publication. Source paths, regular-file bounds, encoding, schema, and composition validation remain in force.
+4. Publication uses a same-directory temporary file, file sync, and atomic replacement, followed by directory sync. It does not compare the current source or generation to an earlier read, detach an existing file into a recovery directory, or compare written bytes to the subsequently loaded generation.
+5. A concurrent editor or App save is not a conflict: the last filesystem write to each selected path wins. Writes to unselected paths are not undone. Validation is not a transaction over concurrent edits; automatic reload accepts the latest valid generation and retains the prior accepted generation when current files are invalid.
+6. Direct editor writes do not need a Harness UI token or command. They participate through the same stable-read and generation-validation path.
 
-Filesystem editors do not participate in an application transaction, so Harness UI does not claim distributed linearizability against an uncooperative write racing the final filesystem replacement. Stable rereads, expected digests, atomic replacement, and post-publication verification provide local no-stale-write behavior without process lock files or a proprietary file format.
+A completed source write is not a promise that its bytes remain current after another writer saves. Source digests remain read/provenance facts for accepted generations and frozen Runs, not file-write preconditions. Internal SQLite head selection and immutable-object integrity follow [Local Storage](03-local-storage-and-recovery.md); last-write-wins file publication does not change Thread, continuation, or execution concurrency contracts.
 
 ## First-use Initialization
 
-[Setup and Environment Readiness](06-setup-and-environment-readiness.md) owns the explicit guided initialization shared by surfaces. It uses this same source tree, complete candidate validation, no-clobber creation, and exact-digest default publication. It creates no alternate settings store and never rewrites an existing installation merely because a new template is available.
+[Setup and Environment Readiness](06-setup-and-environment-readiness.md) owns the explicit guided initialization shared by surfaces. It uses this same source tree, complete candidate validation, and last-write-wins publication. It creates no alternate settings store and never rewrites an existing installation merely because a new template is available.
 
 ## Global Defaults
 
@@ -169,7 +167,7 @@ then root YAML global default
 then the release-owned Full Control Environment profile (`environment-native`)
 ```
 
-The resulting Thread stores exact resource IDs. Later global-default or file changes do not rewrite an existing Thread's selections. A Thread Run with no configuration patch therefore uses that Thread's previous sticky values.
+The resulting Thread stores exact resource IDs, with null for an unselected optional Project. `defaults.project` is optional and is not generated by normal setup. Without an explicit creation Project or global Project default, a new Thread runs using its own scratch directory under the [projectless Thread contract](04-projects-threads-and-environments.md#threads-without-a-project). Later global-default or file changes do not rewrite an existing Thread's selections. A Thread Run with no configuration patch therefore uses that Thread's previous sticky values.
 
 Collection defaults are ordered exact resource IDs. Empty means select none. A missing, wrong-kind, or duplicate default rejects the candidate generation.
 
@@ -207,14 +205,14 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 | Malformed, unstable, or duplicate resource source   | Candidate generation is rejected                                                   |
 | Unknown resource reference                          | Candidate generation is rejected with the owning source location                   |
 | Catalog key unavailable or ambiguous                | Candidate generation is rejected; no similarly named fallback is chosen            |
-| Stale App write                                     | Mutation is rejected with the current source digest                                |
+| Concurrent App or editor file write                 | The last write to each selected source path wins                                   |
 | Credential lookup failure                           | Current Run fails before the dependent external dispatch                           |
 | Atomic publication fails before source replacement  | Previous accepted source and generation remain authoritative                       |
 | Generation selection fails after source publication | Previous accepted generation remains selected; reload retries the published source |
 
 ## Compatibility
 
-The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. MCP `mcpServers` wrappers omit version/kind metadata and normalize to the same version-1 MCP resources. A format migration writes ordinary inspectable files through the same expected-digest/no-clobber boundary. Existing content is never reinterpreted under a new version.
+The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. MCP `mcpServers` wrappers omit version/kind metadata and normalize to the same version-1 MCP resources. A format migration writes ordinary inspectable files through the same validated last-write-wins boundary. Existing content is never reinterpreted under a new version.
 
 ## Invariants
 

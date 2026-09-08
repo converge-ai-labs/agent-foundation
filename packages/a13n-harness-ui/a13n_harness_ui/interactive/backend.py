@@ -439,7 +439,6 @@ class SessionBackend:
             await self.app.mutate_configuration(
                 relative_path=source.relative_path,
                 request=ResourceMutationRequest(
-                    expected_source_digest=source.source_digest,
                     content=yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
                 ),
             )
@@ -641,7 +640,9 @@ class SessionBackend:
         failure = operation.failure or (None if outcome is None else outcome.execution.failure)
         if failure is not None:
             return f"Error [{failure.code}]: {failure.message}" + (
-                f"\nRetry: {failure.retry_hint}" if failure.retry_hint else ""
+                f"\nRetry: {failure.retry_hint}"
+                if failure.retry_hint and failure.code != "model_recovery_exhausted"
+                else ""
             )
         if operation.status == RootOperationStatus.suspended:
             return await self.pending()

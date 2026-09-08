@@ -24,8 +24,6 @@ class EnvironmentPathLayout:
         user_skills_root: Path | None = None,
         content_plugins: tuple[tuple[str, str, str | None], ...] = (),
     ) -> EnvironmentPathLayout:
-        if not project_roots:
-            raise ValueError("project_roots must not be empty")
         if canonical_host_paths:
             project_mounts = tuple(Path(root).as_posix() for root in project_roots)
             skills_root = (user_skills_root or Path.home() / ".agents" / "skills").expanduser().resolve(strict=False)

@@ -33,6 +33,7 @@ from a13n_service.observability import ObservabilityRuntime, RunAttemptCorrelati
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
+from a13n_service.run_stream.activation import PublicationActivator
 from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
 from a13n_service.secrets.agent_runtime import AgentSecretRuntime
 from a13n_service.skills.runtime import SkillRuntimePreparer
@@ -82,6 +83,7 @@ class WorkerAttempts:
             self._payloads,
             ThreadInboxStore(shared.storage.sessions, signals=self._signals),
             outcomes,
+            lifecycle=shared.lifecycle,
         )
 
     async def run(
@@ -199,6 +201,7 @@ class WorkerAttempts:
                 adapter=outcome_adapter,
                 committer=self._committer,
                 capacity_slot=slot,
+                activate_publication=PublicationActivator(sessions, self._stream).activate,
             )
             await register(control)
             await executor.run()

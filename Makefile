@@ -326,12 +326,15 @@ a13n-harness-ui-release-build: ## Build and verify Harness UI from prepared asse
 	@uv build --package a13n-harness-ui --out-dir dist
 	@uv run --no-project python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel --require-exact-internal-version
 
-.PHONY: a13n-service-python-build
-a13n-service-python-build: sync ## Build only Service release-group Python distributions
+.PHONY: a13n-logging-python-build
+a13n-logging-python-build: ## Build only the logging Python distributions
 	@rm -rf dist
-	@for package in a13n-logging a13n-service; do \
-		uv build --package "$$package" --out-dir dist || exit $$?; \
-	done
+	@uv build --package a13n-logging --out-dir dist
+
+.PHONY: a13n-service-python-build
+a13n-service-python-build: sync ## Build only the Service Python distributions
+	@rm -rf dist
+	@uv build --package a13n-service --out-dir dist
 
 .PHONY: a13n-envd-client-build
 a13n-envd-client-build: sync ## Build the a13n-envd client Python distributions
@@ -557,7 +560,7 @@ db-history: sync ## Show a13n-service migration history
 	@uv run --locked a13n-service db history
 
 .PHONY: release-check
-release-check: ## Validate a component version (component=a13n-harness|a13n-harness-ui|a13n-service|a13n-envd|a13n-service-cli|a13n-<language> version=X.Y.Z or X.Y.Z-rc.N)
+release-check: ## Validate a component version (component=a13n-harness|a13n-harness-ui|a13n-logging|a13n-service|a13n-envd|a13n-service-cli|a13n-<language> version=X.Y.Z or X.Y.Z-rc.N)
 	@test -n "$(component)" || { echo "component is required"; exit 2; }
 	@test -n "$(version)" || { echo "version is required"; exit 2; }
 	@uv run --locked python scripts/check-release-version.py "$(component)" "$(version)"

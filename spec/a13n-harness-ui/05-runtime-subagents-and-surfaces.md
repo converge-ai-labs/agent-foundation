@@ -77,6 +77,8 @@ A source change triggers a stable complete-tree candidate load. Invalid intermed
 
 ## Root Run Coordination
 
+Trusted Agent reconstruction enables the existing [Harness model-attempt recovery](../a13n-harness/06-execution-context-and-lifecycle.md#model-attempt-recovery) for every root and child definition. The total budget is five attempts, including the first, with the default cancellation-aware full-jitter backoff. A recovery continues from normalized in-memory history inside the same logical Run; it does not resubmit the user operation, restart the Thread, or directly replay tools. Normal cancellation, tool failures, usage limits, deferred boundaries, and other Harness recovery exclusions remain unchanged. Exhaustion ends the operation with `model_recovery_exhausted`; Harness UI does not add another automatic retry loop.
+
 ### Process-local Operations
 
 Root prompt admission accepts native Harness `RunInputValue`: text or a sequence of Pydantic AI `UserContent`, including `BinaryContent`. This is a process-local input contract, not a serialized transport schema or permission to return native message objects in projections. The App normalizes and detaches mutable input before asynchronous admission. Image-only input is valid; empty or whitespace-only input is not. Native Harness messages and selected continuation checkpoints retain submitted content through the existing lifecycle. Provider capability failures are explicit; adapters do not silently discard content or substitute Models. The [CLI contract](07-interactive-cli.md#multimodal-drafts) owns terminal acquisition and recovery presentation. The App additionally accepts `ComposerInput` (expanded authored text, detached byte uploads, and optional input source ID), or native input with previously staged Thread-scoped attachment IDs. App stage/read operations return detached attachment metadata and bounded bytes rather than transport- or terminal-specific file objects. These are reusable process-local contracts; HTTP owns its serialized DTOs. All surfaces share the limits of eight attachments per input, 10 MiB per attachment, and 20 MiB in aggregate. Images undergo shared format/size validation and become native `BinaryContent`; ordinary files become descriptive `TextContent` with a relative `thread-files` mount reference. Attachment identity, original name, media type, size, and relative path travel in the `harness_ui` content metadata namespace and remain available in transcript projections. The App validates Thread existence and scopes every handle to that Thread.
@@ -212,7 +214,7 @@ class ConfigurationSourceView:
     diagnostics: tuple[FailureView, ...]
 ```
 
-This conceptual App projection can expose an invalid candidate's exact text and safe diagnostics so a surface can repair it. `relative_path` is an App-approved configuration-tree identity, not a caller-selected filesystem path. The view grants no directory traversal, arbitrary file read, immutable-object access, or write authority. Create, update, and delete still use the expected-digest mutation contract owned by [Configuration and Resource Catalog](01-configuration-and-resource-catalog.md#file-mutation-and-compare-and-set).
+This conceptual App projection can expose an invalid candidate's exact text and safe diagnostics so a surface can repair it. `relative_path` is an App-approved configuration-tree identity, not a caller-selected filesystem path. The view grants no directory traversal, arbitrary file read, immutable-object access, or write authority. Create, update, and delete use the validated last-write-wins contract owned by [Configuration and Resource Catalog](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins).
 
 Thread and transcript pages use opaque keyset cursors bound to the query shape and deterministic sort key. Root-Thread summary pages additionally bind the Project, archived, and search selectors. Thread ordering is descending `(updated_at, thread_id)`. Transcript entries always appear in ascending immutable message position within a page; a focused initial query returns the latest bounded page and a backward cursor pages older entries for prepend. A transcript cursor binds the Thread, selected continuation, direction, and boundary, so a changed continuation fails or resets rather than combining histories. A newer insertion does not shift unaffected entries across an existing page boundary. Updating a Thread can move it across that boundary, so summary invalidation prompts a fresh first-page query. Invalid, mismatched, or expired cursors fail explicitly. Project recency is aggregated over all associated non-archived Threads in storage rather than a bounded Thread page.
 
@@ -338,7 +340,7 @@ Every authenticated JSON, OpenAPI, and SSE response uses `Cache-Control: no-stor
 
 The [WebUI contract](webui/README.md) owns the Hello World page and its packaging boundary. No browser conversation, setup, Settings, navigation, diagnostics, or execution controls are implemented.
 
-Every editable API response includes its current source digest. A stale mutation conflicts instead of knowingly replacing a newer manual or API edit. HTTP clients receive no native filesystem capability or arbitrary Host path API; Project paths enter only through validated resource mutations.
+Source views expose current digests as read/provenance facts. Configuration-file saves and setup apply require no expected source or generation digest and use the [last-write-wins file boundary](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins), including when a manual or API edit intervenes. HTTP clients receive no native filesystem capability or arbitrary Host path API; Project paths enter only through validated resource mutations.
 
 Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/attachments?name=...` with a bounded raw byte body, and `GET /api/threads/{thread_id}/attachments/{attachment_id}` for a non-inline, no-store download. The stage response supplies the handle and metadata. The submit JSON accepts `prompt` and up to eight `attachment_ids`, including attachment-only submission. Failed validation is explicit and never silently drops an attachment. The transport does not expose Host paths or duplicate storage, image validation, input conversion, or pruning policy. These APIs do not imply a bundled browser composer.
 
@@ -347,7 +349,7 @@ Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/at
 | Condition                                    | Outcome                                                                                                        |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Invalid source candidate                     | Previous accepted generation remains active; diagnostics identify the source                                   |
-| Stale App or explicit-import source mutation | Mutation conflicts and returns the current source digest                                                       |
+| Concurrent App or explicit-import file write | Last write to the selected source path wins; no source-version conflict                                        |
 | Listener bind or access-option failure       | Web startup fails before accepting requests                                                                    |
 | Missing or incorrect Web API key             | Request or stream connection is rejected before invoking `HarnessUiApp`                                        |
 | Root composition or credential failure       | Run fails before model dispatch; prior continuation remains selected                                           |
@@ -360,7 +362,7 @@ Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/at
 ## Invariants
 
 01. `HarnessUiApp` is the only local application boundary.
-02. Direct editing, setup, internal workspace bootstrap, and explicit imports converge on one desired-resource generation through App-owned validation and source preconditions.
+02. Direct editing, setup, internal workspace bootstrap, and explicit imports converge on one desired-resource generation through App-owned validation and last-write-wins file publication.
 03. Surface values are detached and never expose native runtime or storage authority.
 04. Thread metadata and Thread configuration use independent compare-and-select heads; active Run compositions are immutable.
 05. Root receipts and controls are exact and process-local; they are not durable work acceptance.

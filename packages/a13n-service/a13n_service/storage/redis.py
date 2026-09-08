@@ -39,3 +39,11 @@ async def check_redis(client: Redis, *, timeout_seconds: float = 3) -> None:
     with fail_after(timeout_seconds):
         if not await client.ping():
             raise RuntimeError("Redis readiness check returned false")
+
+
+def redis_memory_identity(client: Redis) -> str:
+    """Identify an in-process server for scripts; real servers use INFO atomically."""
+    if isinstance(client, FakeRedis):
+        server = client.connection_pool.connection_kwargs.get("server")
+        return f"memory:{id(server) if server is not None else id(client)}"
+    return ""

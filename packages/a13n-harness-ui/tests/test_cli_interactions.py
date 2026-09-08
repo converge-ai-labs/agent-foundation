@@ -238,7 +238,6 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     assert wizard.question.key == "environment"
     assert wizard.back()
     assert wizard.question is not None and wizard.question.key == "instructions"
-    assert wizard.preview_generation is None
 
 
 @pytest.mark.anyio

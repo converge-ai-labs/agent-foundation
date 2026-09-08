@@ -545,11 +545,12 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         plan = await executor._environments.prepare(published.value)
         project_root = Path(published.value.project_roots[0]).as_posix()
 
-        assert tuple(plan.environments) == ("workspace", "user-skills", "thread-files")
+        assert tuple(plan.environments) == ("workspace", "user-skills", "configuration", "thread-files")
         assert isinstance(plan.environments["workspace"], LocalEnvdEnvironment)
         assert tuple(item.mount_path for item in plan._mounts) == (
             project_root,
             user_skills.resolve().as_posix(),
+            root.parent.resolve().as_posix(),
             (tmp_path / "state/threads" / published.value.thread_id).as_posix(),
         )
         local_envd = plan.environments["workspace"]
@@ -724,11 +725,12 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
         plan = await executor._environments.prepare(composition)
 
         expected_aliases = ("workspace", "content-plugin-1") + (("user-skills",) if skills_enabled else ())
-        assert tuple(plan.environments) == (*expected_aliases, "thread-files")
+        assert tuple(plan.environments) == (*expected_aliases, "configuration", "thread-files")
         assert tuple(item.mount_path for item in plan._mounts) == (
             (tmp_path / "workspace").resolve().as_posix(),
             plugin_skills.parent.resolve().as_posix(),
         ) + ((user_skills.resolve().as_posix(),) if skills_enabled else ()) + (
+            root.parent.resolve().as_posix(),
             (tmp_path / "state/threads" / composition.thread_id).as_posix(),
         )
         plugin_mount = plan._mounts[1]
@@ -752,7 +754,7 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
             await environment.files.write_text(subagent.resolve().as_posix(), "Edited subagent", mode="replace")
             with pytest.raises(EnvironmentError):
                 await environment.files.write_text(
-                    (plugin_skills.parent.parent / "outside.md").as_posix(),
+                    (tmp_path.parent / "outside.md").as_posix(),
                     "Not allowed",
                     mode="create",
                 )
@@ -794,7 +796,7 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
         published = await executor._compositions.publish(source, selection)
         plan = await executor._environments.prepare(published.value)
 
-        assert tuple(plan.environments) == ("workspace", "user-skills", "thread-files")
+        assert tuple(plan.environments) == ("workspace", "user-skills", "configuration", "thread-files")
         assert plan.default_environment == "workspace"
         assert user_skills.is_dir()
         async with plan.runtime.bind(
@@ -809,6 +811,7 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
             assert tuple(item.mount_path for item in environment.snapshot.mounts) == (
                 Path(published.value.project_roots[0]).as_posix(),
                 user_skills.resolve().as_posix(),
+                root.parent.resolve().as_posix(),
                 (tmp_path / "state/threads" / stored.thread_id).as_posix(),
             )
         finalization = await plan.finalize(timeout_seconds=1)
@@ -861,7 +864,7 @@ async def test_native_skills_reuse_a_project_mount_at_the_user_skill_root(
         plan = await executor._environments.prepare(composition)
 
         expected_aliases = ("workspace",) if project_position == "first" else ("workspace", "workspace-2")
-        assert tuple(plan.environments) == (*expected_aliases, "thread-files")
+        assert tuple(plan.environments) == (*expected_aliases, "configuration", "thread-files")
         reconstructed = AgentReconstructor(user_skills_root=user_skills).reconstruct(
             composition,
             subagent_operator=None,

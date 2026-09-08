@@ -444,6 +444,25 @@ class StreamRenderer:
         metadata = ContentMetadata.from_native(payload.get("metadata"))
         if not metadata.display:
             return
+        native_state = None
+        if event_type == "CUSTOM" and payload.get("name") == "a13n.pydantic_ai.function_tool_result":
+            value = payload.get("value")
+            event = value.get("event") if isinstance(value, dict) else None
+            part = event.get("part") if isinstance(event, dict) else None
+            fields = part if isinstance(part, dict) else {}
+            native_state = "returned"
+            if fields.get("part_kind") == "retry-prompt":
+                native_state = "retry"
+            elif fields.get("outcome") in ("failed", "denied"):
+                native_state = str(fields["outcome"])
+            # Native retries and unsuccessful returns have no TOOL_CALL_RESULT
+            # projection. Reuse its correlated block and detail retention here.
+            event_type = "TOOL_CALL_RESULT"
+            payload = {
+                "tool_call_id": fields.get("tool_call_id", "unknown"),
+                "tool_call_name": fields.get("tool_name") or "tool",
+                "content": json.dumps(part, ensure_ascii=False),
+            }
         detailed = self.status.mode == "detailed"
         delta = payload.get("delta") or payload.get("content") or ""
         text = delta if isinstance(delta, str) else json.dumps(delta, ensure_ascii=False)
@@ -510,13 +529,12 @@ class StreamRenderer:
                     self.status.state = preview.name
                 if (not child or detailed) and (preview.name != "ask_user_question" or detailed):
                     self.finish()
-                    header = f"{preview.name} · running" + (f" · {identity}" if child else "")
+                    header = f"{preview.name} | running" + (f" | {identity}" if child else "")
                     shell = preview.name.startswith("shell")
                     preview.block_id = self.transcript.append(
                         header + "\n", collapsed_lines=None if shell else 1, kind="command" if shell else "tool"
                     )
-                    if shell:
-                        self.transcript.preview(preview.block_id, header)
+                    self.transcript.preview(preview.block_id, header)
                     self.append(header + "\n", display=False)
             elif event_type.endswith(("ARGS", "CHUNK")):
                 if preview is None:
@@ -533,34 +551,38 @@ class StreamRenderer:
                 preview.size += min(len(text), available)
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
-                name = preview.name if preview else "tool"
+                name = preview.name if preview else str(payload.get("tool_call_name", "tool"))[:60]
                 if name.startswith("shell"):
                     command = self._shell_command(name, preview.arguments, run_id) if preview else ""
                     if preview and name in {"shell_exec", "shell_start", "shell_wait"}:
                         preview.summary = command
                     self._observe_shell_result(text, command if name in {"shell_exec", "shell_start"} else "", run_id)
-                if (not child or detailed) and (name != "ask_user_question" or detailed):
-                    elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
+                if (not child or detailed) and (name != "ask_user_question" or detailed or native_state is not None):
+                    elapsed = f" | {time.monotonic() - preview.started:.1f}s" if preview else ""
                     result = tool_result(name, text)
                     state, _, output = result.partition("\n")
-                    header = f"{name} · {state}{elapsed}" + (f" · {identity}" if child else "")
+                    if native_state is not None:
+                        state = native_state
+                        result = f"{state}\n{output}"
+                    header = f"{name} | {state}" + (f" | {identity}" if child else "")
                     summary = preview.summary if preview else ""
-                    brief = " · ".join(
-                        item
-                        for item in (header, " ".join(summary.split())[:100], output.split("\n", 1)[0][:100])
-                        if item
-                    )
+                    brief = header + (f" | {' '.join(summary.split())}" if summary else "") + elapsed
                     shell_preview = None
-                    if name.startswith("shell"):
+                    if name.startswith("shell") and native_state is None:
                         shell_preview = shell_result_preview(text, summary)
-                    if name in {"note_write", "note_get", "note_delete"}:
-                        brief = header + (f" · {summary}" if summary else "")
                     if shell_preview is not None:
-                        brief = f"{name} · {shell_preview}"
+                        brief = f"{name} | {shell_preview}"
                         if child:
-                            brief += f" · {identity}"
+                            brief += f" | {identity}"
                     arguments = preview.arguments if preview else ""
-                    body = header + "\n" + (f"Arguments · {label}\n{arguments}\n" if arguments else "") + result + "\n"
+                    body = (
+                        header
+                        + elapsed
+                        + "\n"
+                        + (f"Arguments | {label}\n{arguments}\n" if arguments else "")
+                        + result
+                        + "\n"
+                    )
                     block_id = preview.block_id if preview is not None else None
                     applied_retained = (
                         preview is not None
@@ -568,17 +590,21 @@ class StreamRenderer:
                         and block_id is not None
                         and self.transcript.extend(block_id, terminal_text(f"\nTool result · {label}\n{result}\n"))
                     )
-                    if applied_retained and block_id is not None and state.startswith("failed"):
+                    if (
+                        applied_retained
+                        and block_id is not None
+                        and (state.startswith("failed") or state in {"retry", "denied"})
+                    ):
                         block = self.transcript.blocks[block_id]
                         self.transcript.preview(
-                            block_id, (block.preview or "Edit applied") + "\nTool result · failed", 14
+                            block_id, (block.preview or "Edit applied") + f"\nTool result | {state}", 14
                         )
                     if not applied_retained:
-                        kind = "command" if shell_preview is not None else "tool"
+                        kind = "command" if name.startswith("shell") else "tool"
                         if block_id is None or not self.transcript.replace(block_id, terminal_text(body), kind=kind):
                             block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind=kind)
                         self.transcript.preview(block_id, terminal_text(brief), 1)
-                    self.append(header + "\n", display=False)
+                    self.append(header + elapsed + "\n", display=False)
                 self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
                     self.status.state = "working"
@@ -601,14 +627,14 @@ class StreamRenderer:
                             preview.arguments += "\n[Arguments exceed display budget; /history reads retained content]"
                     preview.size = len(preview.arguments)
                     if preview.block_id is not None and preview.arguments:
-                        header = f"{preview.name} · running" + (f" · {identity}" if child else "")
+                        header = f"{preview.name} | running" + (f" | {identity}" if child else "")
                         self.transcript.replace(preview.block_id, terminal_text(header + "\n" + preview.arguments))
-                        brief = header + " · " + preview.summary
+                        brief = header + (f" | {preview.summary}" if preview.summary else "")
                         if preview.name.startswith("shell"):
                             state = "waiting" if preview.name == "shell_wait" else "running"
-                            brief = f"{preview.name} · {state} · {preview.summary or 'command unavailable'}"
+                            brief = f"{preview.name} | {state} | {preview.summary or 'command unavailable'}"
                             if child:
-                                brief += f" · {identity}"
+                                brief += f" | {identity}"
                         self.transcript.preview(preview.block_id, terminal_text(brief), 1)
                 self.boundary = True
             # START-only and malformed streams obey the same bound as ARGS.
@@ -627,6 +653,14 @@ class StreamRenderer:
                 if not isinstance(event, dict):
                     return
                 name = payload.get("name")
+                if name == "a13n.harness.recovery":
+                    recovery = event.get("payload")
+                    if isinstance(recovery, dict) and recovery.get("type") == "model_retry_scheduled":
+                        if not child or detailed:
+                            self.finish()
+                            label = f" · {identity}" if child else ""
+                            self.append(f"[System{label}] Retrying model request…\n", kind="notice")
+                    return
                 if name == "a13n.input.media":
                     media = event.get("content")
                     if isinstance(media, dict) and (not child or detailed):
@@ -701,10 +735,3 @@ class StreamRenderer:
                     # ModelInputEvent owns applied input. Acceptance is a local
                     # notification; queue/delivery facts must not echo it again.
                     return
-                elif name == "a13n.pydantic_ai.function_tool_result":
-                    self.finish()
-                    self.append(
-                        "[Tool · native result/retry]\n"
-                        + json.dumps(event.get("part"), ensure_ascii=False, indent=2)
-                        + "\n"
-                    )

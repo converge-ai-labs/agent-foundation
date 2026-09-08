@@ -36,6 +36,31 @@ def bounded_text(text: str, limit: int) -> str:
     return _TRUNCATED + (encoded[-budget:].decode("utf-8", errors="ignore") if budget else "")
 
 
+def _tool_row(source: str, theme: ResolvedTheme) -> Text:
+    """Style the generated name/status fields, leaving the payload literal."""
+    colors = activity_colors(theme)
+    name, separator, remainder = source.partition(" | ")
+    value = Text(name, style=colors["muted"], no_wrap=True, overflow="ellipsis")
+    if not separator:
+        return value
+    state, separator, detail = remainder.partition(" | ")
+    if state.startswith(("failed", "denied", "timed out", "cancelled", "interrupted")):
+        tone = "failed"
+    elif state in {"completed", "created", "updated", "deleted", "already absent", "finished", "exit 0"}:
+        tone = "completed"
+    elif state == "running":
+        tone = "running"
+    elif state in {"waiting", "retry"}:
+        tone = "waiting"
+    else:
+        tone = "muted"
+    value.append(" | ", style=colors["muted"])
+    value.append(state, style=colors[tone])
+    value.append(separator, style=colors["muted"])
+    value.append(detail, style="default")
+    return value
+
+
 @dataclass(slots=True)
 class Block:
     id: int
@@ -296,11 +321,8 @@ class Transcript:
                 title, separator, detail = source.partition(" · Ctrl+O details")
                 value = Text(title, style=f"bold {colors['running']}", no_wrap=True, overflow="ellipsis")
                 value.append(separator + detail, style=f"not bold {colors['muted']}")
-            elif kind == "command" and folded:
-                title, _, body = source.rstrip("\n").partition("\n")
-                value = Text(title, style="bold", no_wrap=True, overflow="ellipsis")
-                if body:
-                    value.append("\n" + "\n".join("  " + line for line in body.splitlines()), style="not bold")
+            elif kind in {"tool", "command"} and folded:
+                value = _tool_row(source.rstrip("\n"), self.theme)
             elif kind == "approval":
                 from .approvals import approval_panel
 
@@ -321,7 +343,12 @@ class Transcript:
                 value = Panel(
                     content,
                     title=Text(
-                        title, style=f"bold {activity_colors(self.theme)['running']}" if kind == "notes" else "bold"
+                        title,
+                        style=f"bold {activity_colors(self.theme)['running']}"
+                        if kind == "notes"
+                        else ""
+                        if kind == "command"
+                        else "bold",
                     ),
                     title_align="left",
                     border_style="yellow" if kind == "warning" else "bright_black",
@@ -347,7 +374,7 @@ class Transcript:
                     accent = "fg:ansimagenta italic"
                 elif kind == "user":
                     accent = "fg:ansigreen"
-                elif kind == "tool":
+                elif kind == "tool" and not folded:
                     accent = "fg:ansibrightblack"
                 elif kind == "shell":
                     accent = "fg:ansicyan"

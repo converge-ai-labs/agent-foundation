@@ -385,16 +385,18 @@ class EnvironmentRunService:
         *,
         user_skills_root: Path | None = None,
         thread_files: ThreadFiles | None = None,
+        configuration_root: Path | None = None,
     ) -> None:
         self._store = store
         self._reconstructor = reconstructor
         self._user_skills_root = user_skills_root
-        self._thread_files = thread_files
+        self._thread_files = thread_files or ThreadFiles(store.layout.root)
+        self._configuration_root = configuration_root
 
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
         profile = composition.environment_profile
         reconstructed = self._reconstructor.reconstruct(profile)
-        roots = await normalize_project_roots(composition.project_roots)
+        roots = await normalize_project_roots(composition.project_roots) if composition.project_roots else ()
         canonical_host_paths = reconstructed.adapter.preserves_host_paths
         content_plugins = tuple((item.plugin_id, item.path, item.skills_path) for item in composition.content_plugins)
         path_layout = EnvironmentPathLayout.resolve(
@@ -432,7 +434,7 @@ class EnvironmentRunService:
                         mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
                     )
                 )
-            for index, ((plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
+            for index, ((_plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
                 zip(content_plugins, path_layout.content_plugin_roots, strict=True),
                 start=1,
             ):
@@ -442,8 +444,7 @@ class EnvironmentRunService:
                 if not await to_thread.run_sync(Path(root).exists):
                     continue
                 mounts.append(
-                    await self._prepare_content_plugin_mount(
-                        plugin_id=plugin_id,
+                    await self._prepare_host_files_mount(
                         root=Path(root),
                         alias=f"content-plugin-{index}",
                         mount_path=mount_path,
@@ -456,9 +457,22 @@ class EnvironmentRunService:
                             mount_path=(path_layout.user_skills if canonical_host_paths else None)
                         )
                     )
-            if self._thread_files is not None:
-                root = await self._thread_files.touch(composition.thread_id)
-                mounts.append(await self._prepare_thread_files_mount(reconstructed, root))
+            if self._configuration_root is not None:
+                root = self._configuration_root.expanduser().resolve()
+                if not (canonical_host_paths and any(mount.mount_path == root.as_posix() for mount in mounts)):
+                    mounts.append(
+                        await self._prepare_host_files_mount(
+                            root=root,
+                            alias="configuration",
+                            mount_path=root.as_posix() if canonical_host_paths else None,
+                        )
+                    )
+            root = await self._thread_files.touch(composition.thread_id)
+            thread_mount = await self._prepare_thread_files_mount(reconstructed, root)
+            if roots:
+                mounts.append(thread_mount)
+            else:
+                mounts.insert(0, thread_mount)
             for mount in mounts:
                 await mount.environment.prepare()
             extensions = await self._reconstructor.create_extensions(composition)
@@ -467,7 +481,7 @@ class EnvironmentRunService:
                     item.alias: EnvironmentRuntimeMount(
                         binding=_EnvironmentBinding(item.environment),
                         permission_ceiling=item.permission_ceiling,
-                        working_directory="/",
+                        working_directory="/tmp" if item.alias == "thread-files" else "/",
                         mount_path=item.mount_path,
                     )
                     for item in mounts
@@ -527,10 +541,9 @@ class EnvironmentRunService:
             mount_path=root.as_posix() if reconstructed.adapter.preserves_host_paths else None,
         )
 
-    async def _prepare_content_plugin_mount(
+    async def _prepare_host_files_mount(
         self,
         *,
-        plugin_id: str,
         root: Path,
         alias: str,
         mount_path: str | None,
@@ -556,9 +569,9 @@ class EnvironmentRunService:
             )
         except Exception as exc:
             raise EnvironmentLifecycleError(
-                "A captured Content Plugin directory could not be prepared.",
-                code="content_plugin_mount_failed",
-                details={"plugin_id": plugin_id, "root": os.fspath(root)},
+                "A Host file directory could not be prepared.",
+                code="host_files_mount_failed",
+                details={"mount": alias, "root": os.fspath(root)},
             ) from exc
         file_actions = frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
         return _PreparedMount(

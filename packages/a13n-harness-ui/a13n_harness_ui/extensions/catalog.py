@@ -499,8 +499,8 @@ def _construct_skills_capability(
     *,
     path_layout: EnvironmentPathLayout,
 ) -> SkillsCapability:
-    if not path_layout.project_mounts or len(path_layout.project_mounts) > 64:
-        raise ValueError("path_layout must contain between one and 64 Project mounts")
+    if len(path_layout.project_mounts) > 64:
+        raise ValueError("path_layout must contain at most 64 Project mounts")
     parsed = SkillsConfiguration.model_validate(configuration, strict=True)
     sources = [
         FileSkillSource(
@@ -526,13 +526,14 @@ def _construct_skills_capability(
                 required=False,
             )
         )
-    sources.append(
-        FileSkillSource(
-            "a13n-harness-ui:project:workspace",
-            (_join_mount_path(path_layout.project_mounts[0], ".agents/skills"),),
-            required=False,
+    if path_layout.project_mounts:
+        sources.append(
+            FileSkillSource(
+                "a13n-harness-ui:project:workspace",
+                (_join_mount_path(path_layout.project_mounts[0], ".agents/skills"),),
+                required=False,
+            )
         )
-    )
     sources.extend(
         FileSkillSource(
             f"a13n-harness-ui:explicit:{index}",

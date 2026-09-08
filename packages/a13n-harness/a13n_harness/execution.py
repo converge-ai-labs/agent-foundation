@@ -135,6 +135,7 @@ from a13n_harness.errors import (
     HarnessError,
     ModelResolutionError,
     PluginError,
+    RetryHint,
     RunCleanupError,
     RunError,
     StateError,
@@ -146,6 +147,7 @@ from a13n_harness.events import (
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     HarnessStreamEvent,
+    ModelRetryScheduledPayload,
     _ChildEventForwarder,
     _RunEventEmitter,
 )
@@ -243,7 +245,9 @@ _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
 _EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
 
 
-def _model_failure_details(error: BaseException, *, thread_id: str, run_id: str) -> dict[str, JsonValue]:
+def _model_failure_details(
+    error: BaseException, *, thread_id: str, run_id: str, retrying: bool = False
+) -> dict[str, JsonValue]:
     """Keep actionable structure without logging provider bodies or exception payloads."""
     details: dict[str, JsonValue] = {"exception_type": type(error).__name__}
     if isinstance(error, ModelHTTPError):
@@ -257,7 +261,9 @@ def _model_failure_details(error: BaseException, *, thread_id: str, run_id: str)
         for frame, line in list(walk_tb(current.__traceback__))[-32:]:
             locations.append(f"  {frame.f_code.co_filename}:{line} in {frame.f_code.co_name}")
         current = current.__cause__ or (None if current.__suppress_context__ else current.__context__)
-    get_logger(__name__).warning(
+    logger = get_logger(__name__)
+    log = logger.debug if retrying else logger.warning
+    log(
         "Model execution interrupted: thread_id=%s run_id=%s details=%s\n%s",
         thread_id,
         run_id,
@@ -1759,14 +1765,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if pending_cancellation is not None:
             raise pending_cancellation
 
-    async def _cancel_logical_source_tasks(self) -> None:
+    async def _cancel_response_next_task(self) -> None:
         task = self._response_next_task
         self._response_next_task = None
         if task is not None:
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        await self._stop_response_pump()
 
     def _public_event(self, item: Any) -> HarnessEvent:
         if isinstance(item, HarnessExtensionEvent):
@@ -2313,13 +2318,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             return
 
                         model_failure = is_recoverable_model_failure(error, messages)
+                        retryable = policy.enabled and model_failure
+                        retrying = retryable and next_attempt_index < max_attempts
                         failure_details = (
-                            _model_failure_details(error, thread_id=self.thread_id, run_id=self.run_id)
+                            _model_failure_details(
+                                error, thread_id=self.thread_id, run_id=self.run_id, retrying=retrying
+                            )
                             if model_failure or isinstance(error, AgentRunError)
                             else None
                         )
-                        retryable = policy.enabled and model_failure
-                        if retryable and next_attempt_index < max_attempts:
+                        if retrying:
                             retry_error = error
                         elif model_failure or isinstance(error, AgentRunError):
                             self._diagnostic_error = error
@@ -2327,11 +2335,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             yield await self._failed_candidate(
                                 code="model_recovery_exhausted" if exhausted else "agent_run_failed",
                                 message=(
-                                    "Model recovery attempts were exhausted."
+                                    f"Model execution could not recover after {max_attempts} attempts. "
+                                    "Try continuing the conversation again."
                                     if exhausted
                                     else f"Pydantic AI agent execution failed ({type(error).__name__})."
                                 ),
                                 details=failure_details,
+                                retry_hint="new_run" if exhausted else "dependency_change",
                                 refresh_messages=False,
                             )
                             return
@@ -2357,6 +2367,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
             assert retry_error is not None
             delay = policy.delay(next_attempt_index)
+            yield self._adapt_extension_event(
+                HarnessExtensionEvent(
+                    kind="recovery",
+                    payload=ModelRetryScheduledPayload(
+                        attempt=next_attempt_index + 1,
+                        max_attempts=max_attempts,
+                        delay_seconds=delay,
+                    ).model_dump(mode="json"),
+                )
+            )
             if delay > 0:
                 with observe_operation("recovery"):
                     try:
@@ -2390,6 +2410,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         code: str,
         message: str,
         details: dict[str, JsonValue] | None = None,
+        retry_hint: RetryHint = "dependency_change",
         refresh_messages: bool = True,
     ) -> HarnessRunResult[OutputT]:
         if refresh_messages:
@@ -2408,7 +2429,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         "code": code,
                         "message": message,
                         "details": details or {},
-                        "retry_hint": "dependency_change",
+                        "retry_hint": retry_hint,
                     }
                 ),
                 _messages=self._latest_messages,
@@ -2573,7 +2594,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 # Cleanup code may suppress or translate the injected CancelledError.
                 capture_pending_cancellation()
 
-        await finish_cleanup(self._cancel_logical_source_tasks())
+        # Repeated cancellation while draining the reader must not skip its producer.
+        await finish_cleanup(self._cancel_response_next_task())
+        await finish_cleanup(self._stop_response_pump())
         await finish_cleanup(self._close_registered_responses())
         outcome = outcome or self._last_valid_outcome
         with CancelScope(shield=True):

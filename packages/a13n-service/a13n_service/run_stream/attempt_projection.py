@@ -7,11 +7,11 @@ from typing import Any
 from a13n_harness import HarnessEvent, HarnessRunResultEvent
 from anyio import fail_after
 
-from a13n_service.interactions.attempts import AttemptContext
+from a13n_service.interactions.attempts import AttemptAuthorityError, AttemptContext
 from a13n_service.interactions.environment_observation import EnvironmentHookObservation
 
 from .agui import HarnessAguiRunStreamWriter
-from .domain import RunStreamEvent, deterministic_run_stream_event_id
+from .domain import PublicationRejected, RunStreamEvent, deterministic_run_stream_event_id
 from .redis import RedisRunStream
 
 
@@ -24,6 +24,7 @@ class AttemptRunStreamProjector:
         self._environment: list[EnvironmentHookObservation] = []
         self._incomplete = False
         self._closed = False
+        self._authority_lost = False
 
     def project_environment(self, observation: EnvironmentHookObservation) -> None:
         if self._closed:
@@ -34,6 +35,8 @@ class AttemptRunStreamProjector:
             self._environment.append(observation)
 
     async def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
+        if self._authority_lost:
+            raise AttemptAuthorityError("Run Stream publication authority was replaced")
         context = self._context
         if self._harness_run_id is None:
             if event.thread_id != context.thread_id:
@@ -47,6 +50,7 @@ class AttemptRunStreamProjector:
                 run_id=context.run_id,
                 thread_id=context.thread_id,
                 run_attempt_id=context.run_attempt_id,
+                attempt_number=context.attempt_number,
                 harness_run_id=event.run_id,
                 source_thread_id=event.thread_id,
             )
@@ -55,6 +59,9 @@ class AttemptRunStreamProjector:
             with fail_after(context.reconciliation_timeout.total_seconds()):
                 await self._flush_environment()
                 await writer.write(event)
+        except PublicationRejected as error:
+            self._authority_lost = True
+            raise AttemptAuthorityError("Run Stream publication authority was replaced") from error
         except BaseException:
             self._incomplete = True
             raise
@@ -63,19 +70,36 @@ class AttemptRunStreamProjector:
         if self._closed:
             return
         self._closed = True
+        if self._authority_lost:
+            return
+        try:
+            await self._complete()
+        except PublicationRejected as error:
+            self._authority_lost = True
+            raise AttemptAuthorityError("Run Stream publication authority was replaced") from error
+
+    async def _complete(self) -> None:
         context = self._context
         with fail_after(context.reconciliation_timeout.total_seconds()):
             try:
                 await self._flush_environment()
+            except PublicationRejected:
+                raise
             except Exception:
                 self._incomplete = True
             if self._incomplete:
-                await self._stream.mark_incomplete(context.organization_id, context.run_id)
+                await self._stream.mark_incomplete(
+                    context.organization_id,
+                    context.run_id,
+                    run_attempt_id=context.run_attempt_id,
+                    attempt_number=context.attempt_number,
+                )
             elif self._harness_run_id is not None:
                 await self._stream.complete_attempt_projection(
                     context.organization_id,
                     context.run_id,
                     run_attempt_id=context.run_attempt_id,
+                    attempt_number=context.attempt_number,
                     harness_run_id=self._harness_run_id,
                 )
 
@@ -103,4 +127,5 @@ class AttemptRunStreamProjector:
                     occurred_at=item.occurred_at,
                     payload=dict(item.payload),
                 ),
+                attempt_number=context.attempt_number,
             )

@@ -43,6 +43,10 @@ class RunStreamEvent(_StrictModel):
     def validate_payload_bound(self) -> RunStreamEvent:
         if len(rfc8785.dumps(self.payload)) > MAX_RUN_STREAM_PAYLOAD_BYTES:
             raise ValueError("Run Stream payload exceeds the encoded size limit")
+        if self.event_type == "run.recovery":
+            RecoveryPayload.model_validate(self.payload)
+            if self.run_attempt_id is None or self.lifecycle_event_id is None:
+                raise ValueError("Recovery requires committed Attempt correlation")
         return self
 
 
@@ -115,6 +119,36 @@ class RunStreamError(RuntimeError):
 
 class RunStreamClosed(RunStreamError):
     """An append targeted a stream that already reached its terminal boundary."""
+
+
+class PublicationRejected(RunStreamError):
+    """The Attempt no longer owns the Run's activated publication generation."""
+
+
+class PublicationUnavailable(RunStreamError):
+    """Publication activation or Redis continuity cannot be established safely."""
+
+
+class PublicationContinuityLost(PublicationUnavailable):
+    """This Run's publication history cannot be recovered by retrying a write."""
+
+
+class PublicationPending(PublicationUnavailable):
+    """A different unfinished publication must be resolved before this operation."""
+
+
+RecoveryReason = Literal["lease_expired", "retry_after_failure", "planned_handoff", "pending_input"]
+
+
+class RecoveryPayload(_StrictModel):
+    reason: RecoveryReason
+
+
+@dataclass(frozen=True, slots=True)
+class ActivationResult:
+    leased_stream_id: str
+    recovery_stream_id: str | None
+    active: bool
 
 
 class RunStreamReplayGap(RunStreamError):

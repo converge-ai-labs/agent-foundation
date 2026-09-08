@@ -12,6 +12,7 @@ from a13n_harness_ui.model_presets import (
     API_MODEL_SUGGESTIONS,
     API_PROVIDER_BY_ROUTE,
     API_PROVIDERS,
+    known_model_capabilities,
     settings_presets,
     validate_base_url,
 )
@@ -94,7 +95,6 @@ class SetupWizard:
     values: dict[str, str] = field(default_factory=dict)
     index: int = 0
     history: list[int] = field(default_factory=list)
-    preview_generation: str | None = None
     advanced: bool = False
     default_provider: str = "codex"
     default_environment: str = "full-control"
@@ -234,6 +234,23 @@ class SetupWizard:
                             if self.values.get("review", "yes") == "yes"
                             else " · Shell review disabled."
                         )
+                if self.existing_model_id is None:
+                    provider = self.values["provider"]
+                    route_provider = (
+                        self.values["api_provider"]
+                        if provider == "api"
+                        else "openai-codex"
+                        if provider == "codex"
+                        else "grok"
+                    )
+                    known = known_model_capabilities(f"{route_provider}:{self.values['model']}")
+                    media = (
+                        ", ".join(sorted(capability.value.removesuffix("_understanding") for capability in known))
+                        or "none"
+                        if known is not None
+                        else "unknown; no native media enabled"
+                    )
+                    hint += f"\nNative media input: {media}. Editable in model_characteristics.capabilities."
                 if self.add_agent:
                     hint += "\nCreates a new agent; existing agents and defaults stay unchanged."
                 elif self.add_model:
@@ -327,7 +344,6 @@ class SetupWizard:
     def back(self) -> bool:
         if not self.history:
             return False
-        self.preview_generation = None
         self.index = self.history.pop()
         return True
 
@@ -382,7 +398,6 @@ class SetupWizard:
         if question.key == "model" and self.values.get("model") != selected:
             self.values.pop("preset", None)
         self.values[question.key] = selected
-        self.preview_generation = None
         self.history.append(self.index)
         self.index += 1
         self._skip_irrelevant()
@@ -434,7 +449,6 @@ class SetupWizard:
         result: dict[str, object] = {
             "providers": [provider] if provider in {"codex", "grok"} else [],
             "default_agent": f"agent-{provider if provider != 'api' else 'api-key'}",
-            "project_path": directory,
             "environment_profile": "environment-native"
             if self.values.get("environment", self.default_environment) == "full-control"
             else "environment-sandbox",

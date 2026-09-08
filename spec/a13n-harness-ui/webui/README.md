@@ -10,7 +10,7 @@ Loading the page makes no application API requests, opens no SSE subscriptions, 
 
 The [HTTP adapter contract](../05-runtime-subagents-and-surfaces.md#http-adapter-contract) remains independent of the placeholder. `a13n-harness-ui webui` starts one foreground HTTP/SSE server owning one WebUI-mode `HarnessUiApp`; the page does not own that App or its lifetime. Browser disconnect does not stop the server or cancel App execution.
 
-[HTTP startup and access](../05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns listener binding, terminal key output, API authentication, Host/Origin checks, and static-asset security. The existing finite API, authenticated OpenAPI document, summary stream, focused stream, cursor/reset behavior, and App mutation preconditions remain server contracts. The absence of a browser application neither removes these APIs nor relaxes their access requirements.
+[HTTP startup and access](../05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns listener binding, terminal key output, API authentication, Host/Origin checks, and static-asset security. The existing finite API, authenticated OpenAPI document, summary stream, focused stream, cursor/reset behavior, and App mutation semantics remain server contracts. The absence of a browser application neither removes these APIs nor relaxes their access requirements.
 
 ## Build and Distribution
 

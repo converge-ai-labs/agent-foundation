@@ -18,10 +18,13 @@ An explicit --config selects a different root YAML and its sibling resource dire
 - a13n-harness-ui.yaml: Process settings, global defaults, display options, tool switches, and built-in subagent inclusion.
 - models/: YAML Model definitions with settings and credential references, never literal credentials.
 - agents/: YAML Agent definitions with instructions, capabilities, and child references.
+- projects/: Optional named project roots; a conversation can run without a Project.
 - extensions/: YAML Harness Plugin, Environment profile, and Environment Run Extension definitions.
 - mcp/: YAML or JSON MCP server definitions, including multi-server mcpServers objects. Environment/header values accept literals or environment references.
 - subagents/: User-authored Markdown child roles. Markdown children inherit the parent model; reference an Agent resource for independent model settings.
 - AGENTS.md: Optional global guidance from the selected configuration directory.
+
+The `configuration` Environment mount, when present, exposes the selected configuration directory for file reads and writes, not shell execution. If that directory is already a working mount, use its existing path instead. Configuration edits are validated before acceptance and do not rewrite the active Run's captured configuration. Preserve unrelated settings and keep credentials out of messages and resource files. Without a Project, use the Thread's `tmp/` directory as the working directory; do not infer a project from the configuration directory.
 
 The working directory's AGENTS.md provides project guidance. Reuse guidance already supplied in context and respect its scope. Skill sources use the selected Environment's paths, including project .agents/skills directories, installed Content Plugins, and ~/.agents/skills when the Skills capability is enabled.
 

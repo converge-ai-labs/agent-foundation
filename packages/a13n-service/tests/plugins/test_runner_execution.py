@@ -13,7 +13,8 @@ from a13n_service.settings import Settings
 pytestmark = pytest.mark.anyio
 
 
-async def test_runner_ready_is_warm_and_drain_acknowledges_joined_execution(monkeypatch, tmp_path):
+@pytest.mark.parametrize("stop", ["DRAIN", "RETIRE"])
+async def test_runner_ready_is_warm_and_drain_acknowledges_joined_execution(monkeypatch, tmp_path, stop):
     lock = PluginRuntimeLock(
         mode="runner",
         runtime_target=default_runtime_target(),
@@ -24,6 +25,7 @@ async def test_runner_ready_is_warm_and_drain_acknowledges_joined_execution(monk
     runtime = BootstrappedPluginRuntime(lock, HarnessPluginFactoryCatalog(()))
     worker = Mock()
     worker.execution_loop.drain = AsyncMock()
+    worker.execution_loop.retire_if_idle = AsyncMock(side_effect=[False, True])
     events = []
 
     @asynccontextmanager
@@ -48,7 +50,11 @@ async def test_runner_ready_is_warm_and_drain_acknowledges_joined_execution(monk
             {"type": "WELCOME", "generation": "gen"},
             {"type": "ACTIVATE", "runtime_version": 1},
             {"type": "ACTIVATE", "runtime_version": 1},
-            {"type": "DRAIN", "reason": "service_drain"},
+            *(
+                [{"type": "RETIRE"}, {"type": "RETIRE"}]
+                if stop == "RETIRE"
+                else [{"type": "DRAIN", "reason": "service_drain"}]
+            ),
             {"type": "SHUTDOWN"},
         ]
     )
@@ -62,13 +68,26 @@ async def test_runner_ready_is_warm_and_drain_acknowledges_joined_execution(monk
     async def write(writer, message_type, **fields):
         if message_type == "DRAINED":
             assert events[-1] == "worker_joined"
+        if message_type == "RETIRED":
+            assert (events[-1] == "worker_joined") is fields["retired"]
         events.append(message_type)
 
     monkeypatch.setattr(runner_process, "read_runner_message", read)
     monkeypatch.setattr(runner_process, "write_runner_message", write)
     await runner_process.run_runner_process(tmp_path, lock.digest)
-    assert events == ["HELLO", "READY", "worker_started", "ACTIVE", "ACTIVE", "worker_joined", "DRAINED", "EXITING"]
-    worker.execution_loop.drain.assert_awaited_once_with(RunAttemptYieldReason.service_drain)
+    assert events == [
+        "HELLO",
+        "READY",
+        "worker_started",
+        "ACTIVE",
+        "ACTIVE",
+        *(["RETIRED", "worker_joined", "RETIRED"] if stop == "RETIRE" else ["worker_joined", "DRAINED"]),
+        "EXITING",
+    ]
+    if stop == "DRAIN":
+        worker.execution_loop.drain.assert_awaited_once_with(RunAttemptYieldReason.service_drain)
+    else:
+        assert worker.execution_loop.retire_if_idle.await_count == 2
     writer.close.assert_called_once()
 
 

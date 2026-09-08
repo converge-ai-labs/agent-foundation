@@ -43,7 +43,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from .attempts import AttemptPreparationAccepted
+from .attempts import AttemptAuthorityError, AttemptPreparationAccepted
 from .environment_observation import EnvironmentHookObservation, observe_environment_entry
 from .harness_control import (
     HarnessContextBinding,
@@ -383,6 +383,8 @@ class HarnessDriver:
             projected = self._projector.project(item)
             if isawaitable(projected):
                 await projected
+        except AttemptAuthorityError:
+            raise
         except Exception:
             logger.exception(
                 "Harness live observation projection failed",
@@ -396,6 +398,8 @@ class HarnessDriver:
     async def _close_live_projection(self) -> None:
         try:
             await self._projector.close()
+        except AttemptAuthorityError:
+            raise
         except Exception:
             logger.exception(
                 "Harness live observation projector close failed",

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from a13n_harness import SafeFailure
+from anyio import CancelScope
 from packaging.utils import canonicalize_name
 from pydantic import SecretStr
 
@@ -52,6 +53,10 @@ class _RunnerProcess:
     def __post_init__(self) -> None:
         self.command_lock = asyncio.Lock()
 
+    @property
+    def available(self) -> bool:
+        return self.process.returncode is None and not self.reader.at_eof() and not self.writer.is_closing()
+
     async def request(
         self,
         command: str,
@@ -61,17 +66,22 @@ class _RunnerProcess:
         **fields: object,
     ) -> dict[str, object]:
         async with self.command_lock:
-            if self.process.returncode is not None:
-                raise PluginRunnerProtocolError("Runner process has exited")
-            await write_runner_message(self.writer, command, **fields)
             try:
+                if not self.available:
+                    raise PluginRunnerProtocolError("Runner control channel is unavailable")
                 async with asyncio.timeout(timeout_seconds):
+                    await write_runner_message(self.writer, command, **fields)
                     response = await read_runner_message(self.reader)
+                require_message_fields(response, message_type=expected_response, string_fields=("generation",))
+                if response["generation"] != self.generation:
+                    raise PluginRunnerProtocolError("Runner response generation changed")
             except TimeoutError as error:
+                self.writer.close()
                 raise PluginRunnerProtocolError("Runner response timed out") from error
-            require_message_fields(response, message_type=expected_response, string_fields=("generation",))
-            if response["generation"] != self.generation:
-                raise PluginRunnerProtocolError("Runner response generation changed")
+            except (PluginRunnerProtocolError, asyncio.CancelledError):
+                # A late reply cannot be distinguished from the next command's acknowledgement.
+                self.writer.close()
+                raise
             return response
 
 
@@ -128,10 +138,9 @@ class PluginRunnerSupervisor:
             self._require_open()
             runner = await self._ensure_runner(runtime_lock)
             if runner.active_runtime_version is None:
-                await runner.request(
-                    "ACTIVATE", "ACTIVE", timeout_seconds=self._command_timeout_seconds, runtime_version=0
-                )
-                runner.active_runtime_version = 0
+                if self._is_staged(runtime_lock.digest):
+                    return
+                await self._activate_runner(runner, runtime_version=0)
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
         del exc_type, exc, traceback
@@ -149,6 +158,7 @@ class PluginRunnerSupervisor:
             if staged is not None:
                 if staged.runtime_lock_digest != runtime_lock.digest:
                     raise _failure("plugin_runtime_changed", "The staged Plugin Runtime changed.")
+                await self._ensure_runner(runtime_lock)
                 return staged.staging_token
             await self._ensure_runner(runtime_lock)
             staging_token = secrets.token_urlsafe(32)
@@ -167,39 +177,15 @@ class PluginRunnerSupervisor:
             self._require_open()
             staged = self._operations.get(operation_id)
             if staged is None:
-                await self._ensure_runner(runtime_lock)
                 staged = _StagedOperation(runtime_lock.digest, staging_token)
                 self._operations[operation_id] = staged
             if staged.runtime_lock_digest != runtime_lock.digest or not hmac.compare_digest(
                 staged.staging_token, staging_token
             ):
                 raise _failure("plugin_runtime_staging_invalid", "The staged Plugin Runtime is invalid.")
-            runner = self._runners.get(runtime_lock.digest)
-            if runner is None:
-                raise _failure("plugin_runtime_staging_invalid", "The staged Plugin Runtime is unavailable.")
+            runner = await self._ensure_runner(runtime_lock)
             if runner.active_runtime_version != runtime_generation:
-                try:
-                    response = await runner.request(
-                        "ACTIVATE",
-                        "ACTIVE",
-                        timeout_seconds=self._command_timeout_seconds,
-                        runtime_version=runtime_generation,
-                    )
-                except PluginRunnerProtocolError as error:
-                    raise _failure(
-                        "plugin_runtime_staging_unavailable",
-                        "The staged Plugin Runtime did not acknowledge activation.",
-                        retryable=True,
-                    ) from error
-                if (
-                    response.get("runtime_lock_digest") != runtime_lock.digest
-                    or response.get("runtime_version") != runtime_generation
-                ):
-                    raise _failure(
-                        "plugin_runtime_staging_invalid",
-                        "The staged Plugin Runtime acknowledged different content.",
-                    )
-                runner.active_runtime_version = runtime_generation
+                await self._activate_runner(runner, runtime_version=runtime_generation)
             self._catalog_active_digest = runtime_lock.digest
             self._operations.pop(operation_id, None)
 
@@ -211,20 +197,25 @@ class PluginRunnerSupervisor:
         staging_token: str | None,
     ) -> None:
         async with self._lock:
-            staged = self._operations.pop(operation_id, None)
+            staged = self._operations.get(operation_id)
             if staged is None:
                 return
             if staged.runtime_lock_digest != runtime_lock.digest:
                 return
             if staging_token is not None and not hmac.compare_digest(staged.staging_token, staging_token):
                 return
+            self._operations.pop(operation_id)
             runner = self._runners.get(runtime_lock.digest)
-            if runner is None or runner.active_runtime_version is not None:
+            if runner is None or runner.active_runtime_version is not None or self._is_staged(runtime_lock.digest):
                 return
             self._runners.pop(runtime_lock.digest, None)
             await self._stop_runner(runner)
 
     async def close(self) -> None:
+        with CancelScope(shield=True):
+            await self._close()
+
+    async def _close(self) -> None:
         async with self._lock:
             if self._closed:
                 return
@@ -240,9 +231,48 @@ class PluginRunnerSupervisor:
         if self._closed:
             raise _failure("plugin_runtime_staging_unavailable", "The Plugin Runner Supervisor is closed.")
 
+    def _is_staged(self, digest: str) -> bool:
+        return any(staged.runtime_lock_digest == digest for staged in self._operations.values())
+
+    async def _activate_runner(self, runner: _RunnerProcess, *, runtime_version: int) -> None:
+        try:
+            response = await runner.request(
+                "ACTIVATE", "ACTIVE", timeout_seconds=self._command_timeout_seconds, runtime_version=runtime_version
+            )
+        except PluginRunnerProtocolError as error:
+            raise _failure(
+                "plugin_runtime_staging_unavailable",
+                "The Plugin Runtime did not acknowledge activation.",
+                retryable=True,
+            ) from error
+        if (
+            response.get("runtime_lock_digest") != runner.runtime_lock_digest
+            or response.get("runtime_version") != runtime_version
+        ):
+            runner.writer.close()
+            raise _failure("plugin_runtime_staging_invalid", "The Plugin Runtime acknowledged different content.")
+        runner.active_runtime_version = runtime_version
+
+    async def _retire_idle(self) -> None:
+        for digest, runner in tuple(self._runners.items()):
+            if digest == self._catalog_active_digest or self._is_staged(digest):
+                continue
+            if runner.available:
+                if runner.active_runtime_version is None:
+                    continue
+                try:
+                    response = await runner.request("RETIRE", "RETIRED", timeout_seconds=self._command_timeout_seconds)
+                except PluginRunnerProtocolError:
+                    continue
+                if response.get("retired") is not True:
+                    continue
+            self._runners.pop(digest)
+            await self._stop_runner(runner)
+            return
+
     async def _ensure_runner(self, runtime_lock: PluginRuntimeLock) -> _RunnerProcess:
         runner = self._runners.get(runtime_lock.digest)
-        if runner is not None and runner.process.returncode is None:
+        if runner is not None and runner.available:
             return runner
         if runner is not None:
             self._runners.pop(runtime_lock.digest, None)
@@ -250,6 +280,8 @@ class PluginRunnerSupervisor:
         return await self._start_runner(runtime_lock)
 
     async def _start_runner(self, runtime_lock: PluginRuntimeLock) -> _RunnerProcess:
+        if len(self._runners) >= self._max_processes:
+            await self._retire_idle()
         if len(self._runners) >= self._max_processes:
             raise _failure("plugin_runtime_capacity_exceeded", "Plugin Runner capacity is exhausted.")
         try:
@@ -365,56 +397,60 @@ class PluginRunnerSupervisor:
             started = True
             return runner
         except (OSError, PluginRunnerProtocolError, TimeoutError) as error:
-            if writer is not None:
-                await _close_writer(writer, timeout_seconds=self._shutdown_timeout_seconds)
-            if process is not None:
-                await self._stop_process(process)
             raise _failure("plugin_runtime_staging_failed", "The Plugin Runner failed readiness validation.") from error
         finally:
-            server.close()
-            for task in authentication_tasks:
-                task.cancel()
-            if authentication_tasks:
-                await asyncio.gather(*authentication_tasks, return_exceptions=True)
-            if not started:
-                try:
-                    async with asyncio.timeout(self._shutdown_timeout_seconds):
-                        await server.wait_closed()
-                except TimeoutError:
-                    pass
+            with CancelScope(shield=True):
+                server.close()
+                for task in authentication_tasks:
+                    task.cancel()
+                if authentication_tasks:
+                    await asyncio.gather(*authentication_tasks, return_exceptions=True)
+                if not started:
+                    if writer is None and connection.done() and not connection.cancelled():
+                        _, writer = connection.result()
+                    if writer is not None:
+                        await _close_writer(writer, timeout_seconds=self._shutdown_timeout_seconds)
+                    if process is not None:
+                        await self._stop_process(process)
+                    try:
+                        async with asyncio.timeout(self._shutdown_timeout_seconds):
+                            await server.wait_closed()
+                    except TimeoutError:
+                        pass
 
     async def _stop_runner(self, runner: _RunnerProcess) -> None:
-        try:
-            if runner.process.returncode is None:
-                if runner.active_runtime_version is not None:
-                    drain_timeout = self._shutdown_timeout_seconds
-                    if self._execution_settings is not None:
-                        drain_timeout += (
-                            self._execution_settings.worker_drain_seconds
-                            + self._execution_settings.worker_cleanup_seconds
-                            + self._execution_settings.environment_operation_timeout_seconds
+        with CancelScope(shield=True):
+            try:
+                if runner.process.returncode is None:
+                    if runner.active_runtime_version is not None:
+                        drain_timeout = self._shutdown_timeout_seconds
+                        if self._execution_settings is not None:
+                            drain_timeout += (
+                                self._execution_settings.worker_drain_seconds
+                                + self._execution_settings.worker_cleanup_seconds
+                                + self._execution_settings.environment_operation_timeout_seconds
+                            )
+                        await runner.request(
+                            "DRAIN",
+                            "DRAINED",
+                            timeout_seconds=drain_timeout,
+                            reason="service_drain" if self._closed else "runner_rotation",
                         )
                     await runner.request(
-                        "DRAIN",
-                        "DRAINED",
-                        timeout_seconds=drain_timeout,
-                        reason="service_drain" if self._closed else "runner_rotation",
+                        "SHUTDOWN",
+                        "EXITING",
+                        timeout_seconds=self._command_timeout_seconds,
                     )
-                await runner.request(
-                    "SHUTDOWN",
-                    "EXITING",
-                    timeout_seconds=self._command_timeout_seconds,
-                )
-        except PluginRunnerProtocolError:
-            pass
-        finally:
-            await _close_writer(runner.writer, timeout_seconds=self._shutdown_timeout_seconds)
-            try:
-                async with asyncio.timeout(self._shutdown_timeout_seconds):
-                    await runner.listener.wait_closed()
-            except TimeoutError:
+            except PluginRunnerProtocolError:
                 pass
-            await self._stop_process(runner.process)
+            finally:
+                await _close_writer(runner.writer, timeout_seconds=self._shutdown_timeout_seconds)
+                try:
+                    async with asyncio.timeout(self._shutdown_timeout_seconds):
+                        await runner.listener.wait_closed()
+                except TimeoutError:
+                    pass
+                await self._stop_process(runner.process)
 
     async def _stop_process(self, process: asyncio.subprocess.Process) -> None:
         if process.returncode is not None:

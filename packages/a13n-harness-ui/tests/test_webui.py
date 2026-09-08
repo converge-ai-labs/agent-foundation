@@ -145,6 +145,7 @@ async def test_webui_setup_preview_apply_and_account_retry(
         selection = {
             "providers": ["codex"],
             "default_agent": "agent-codex",
+            "project": "project-local",
             "project_path": str(tmp_path),
             "environment_profile": "environment-native",
         }
@@ -152,9 +153,7 @@ async def test_webui_setup_preview_apply_and_account_retry(
         assert preview.status_code == 200, preview.text
         assert not path.exists()
         assert "gpt-5.6-luna" in preview.json()["files"]["models/codex-review.yaml"]
-        result = await client.post(
-            "/api/setup/apply", json={"selection": selection, "expected_generation": preview.json()["generation"]}
-        )
+        result = await client.post("/api/setup/apply", json={"selection": selection})
         assert result.status_code == 200, result.text
         assert result.json()["completed"]
         assert not (await client.get("/api/setup")).json()["needed"]

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.ids import new_object_id
+from a13n_service.plugins.commands import PluginRuntimeCommandFailure
 from a13n_service.plugins.models import PluginRuntimeLockRecord
 from a13n_service.plugins.on_demand import OnDemandPluginRuntimeDeclined
 from a13n_service.plugins.runtime import PluginRuntimeLock
@@ -87,6 +88,7 @@ class WorkerExecutionLoop:
         self._drain_seconds = drain_seconds
         self._lock_digest = runtime_lock_digest
         self._capacity = Semaphore(concurrency)
+        self._concurrency = concurrency
         self._worker_id = new_object_id("wrk")
         self._draining = Event()
         self._stopped = Event()
@@ -99,6 +101,13 @@ class WorkerExecutionLoop:
 
     def is_draining(self) -> bool:
         return self._draining.is_set()
+
+    async def retire_if_idle(self) -> bool:
+        # Admission reserves capacity before claim, including while the database call is pending.
+        if self._capacity.value != self._concurrency:
+            return False
+        await self.drain(RunAttemptYieldReason.runner_rotation)
+        return True
 
     async def drain(self, reason: RunAttemptYieldReason = RunAttemptYieldReason.service_drain) -> None:
         if not self.is_draining():
@@ -145,6 +154,12 @@ class WorkerExecutionLoop:
                             except OnDemandPluginRuntimeDeclined:
                                 logger.info(
                                     "run_runtime_preflight_declined", extra={"runtime_lock_digest": lock.digest}
+                                )
+                                continue
+                            except PluginRuntimeCommandFailure as error:
+                                logger.info(
+                                    "run_runtime_preflight_unavailable",
+                                    extra={"runtime_lock_digest": lock.digest, "code": error.failure.code},
                                 )
                                 continue
                             if catalog is None:  # A Runner supervisor delegated scanning to its lock-scoped child.

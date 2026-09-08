@@ -7,7 +7,6 @@ from a13n_harness_ui.configuration import (
     apply_external_subagent_import,
     preview_external_subagent_import,
 )
-from a13n_harness_ui.errors import ConfigurationError
 
 pytestmark = pytest.mark.anyio
 
@@ -90,11 +89,11 @@ Review the change and cite exact paths.
     )
     assert unchanged.candidates[0].status == "unchanged"
     unchanged_result = await apply_external_subagent_import(configuration, unchanged.candidates[0])
-    assert unchanged_result.action == "unchanged"
+    assert unchanged_result.action == "updated"
     assert target.read_text() == candidate.canonical_content
 
 
-async def test_import_rejects_changed_source_and_racing_target_without_clobber(tmp_path: Path) -> None:
+async def test_import_publishes_captured_preview_over_racing_target(tmp_path: Path) -> None:
     configuration = tmp_path / "config/a13n-harness-ui.yaml"
     configuration.parent.mkdir()
     configuration.write_text('schema_version: "2"\n')
@@ -112,11 +111,10 @@ async def test_import_rejects_changed_source_and_racing_target_without_clobber(t
     candidate = preview.candidates[0]
     source.write_text("---\nname: explorer\ndescription: Changed.\n---\nInspect.\n")
 
-    with pytest.raises(ConfigurationError) as stale:
-        await apply_external_subagent_import(configuration, candidate)
-
-    assert stale.value.code == "external_subagent_source_conflict"
-    assert not (configuration.parent / "subagents/explorer.md").exists()
+    result = await apply_external_subagent_import(configuration, candidate)
+    target = configuration.parent / "subagents/explorer.md"
+    assert result.action == "created"
+    assert target.read_text() == candidate.canonical_content
 
     fresh = await preview_external_subagent_import(
         configuration,
@@ -125,15 +123,14 @@ async def test_import_rejects_changed_source_and_racing_target_without_clobber(t
         project_root=project,
     )
     target = configuration.parent / "subagents/explorer.md"
-    target.parent.mkdir()
     target_content = '---\nname: "explorer"\ndescription: "Other."\n---\n'
     target.write_text(target_content)
 
-    with pytest.raises(ConfigurationError) as conflict:
-        await apply_external_subagent_import(configuration, fresh.candidates[0])
-
-    assert conflict.value.code == "external_subagent_target_conflict"
-    assert target.read_text() == target_content
+    assert fresh.candidates[0].status == "ready"
+    result = await apply_external_subagent_import(configuration, fresh.candidates[0])
+    assert result.action == "updated"
+    assert target.read_text() == fresh.candidates[0].canonical_content
+    assert "Changed." in target.read_text()
 
 
 async def test_codex_registry_preview_reports_unrepresented_behavior(tmp_path: Path) -> None:

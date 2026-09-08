@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from a13n_harness.model_auth import CodexCredentials, DeviceAuthorizationError
+from a13n_harness.model_auth import CodexLoginResult, DeviceAuthorizationError
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_accounts.login import LoginRequest
 from anyio import Event, fail_after, sleep
+from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 
 from .test_app import _settings
 from .test_model_accounts import _jwt
@@ -36,11 +38,12 @@ async def test_login_session_persists_only_after_success_and_confirms_account_sw
         assert method == "device"
         present(verification_url="https://example.test/device", user_code="ABC-123")
         expires = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
-        return CodexCredentials(
-            account_id=identity,
-            expires_at=expires,
-            access_token=_jwt(expires_at=expires, account_id=identity),
-            refresh_token="secret-refresh",
+        return CodexLoginResult(
+            credentials=OpenAICodexCredentials(
+                account_id=identity,
+                access_token=_jwt(expires_at=expires, account_id=identity),
+                refresh_token="secret-refresh",
+            ),
             id_token=_jwt(expires_at=expires, account_id=identity),
         )
 
@@ -65,6 +68,10 @@ async def test_login_session_persists_only_after_success_and_confirms_account_sw
         assert status.error_code == "account_switch_confirmation_required"
         assert (isolated_accounts / "auth.json").read_bytes() == original
         assert (await login(True)).state == "succeeded"
+        published = json.loads((isolated_accounts / "auth.json").read_text())
+        assert published["tokens"]["account_id"] == "account-second"
+        assert published["tokens"]["id_token"] != json.loads(original)["tokens"]["id_token"]
+        assert len(published["tokens"]["id_token"].split(".")) == 3
         assert not (tmp_path / "state" / "auth.json").exists()
 
 
@@ -127,12 +134,13 @@ async def test_cancel_after_publication_begins_reports_success(
     async def authorize(request, method, present):
         expires = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
         token = _jwt(expires_at=expires, account_id="account-committed")
-        return CodexCredentials(
-            account_id="account-committed",
-            expires_at=expires,
-            access_token=token,
+        return CodexLoginResult(
+            credentials=OpenAICodexCredentials(
+                account_id="account-committed",
+                access_token=token,
+                refresh_token="private-refresh",
+            ),
             id_token=token,
-            refresh_token="private-refresh",
         )
 
     monkeypatch.setattr(codex_module, "write_json_if_unchanged", write)

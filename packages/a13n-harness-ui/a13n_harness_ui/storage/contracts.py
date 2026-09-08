@@ -35,7 +35,7 @@ type AgentSource = AgentResourceSource | MarkdownSubagentSource
 
 class ThreadConfiguration(StoredContract):
     version: int = Field(ge=1)
-    project_id: str = Field(min_length=1, max_length=128)
+    project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_source: AgentSource
     environment_profile_id: str = Field(min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] = ()
@@ -67,7 +67,7 @@ class ThreadConfigurationPatch(StoredContract):
     @model_validator(mode="after")
     def _set_fields_are_not_null(self) -> Self:
         for name in self.model_fields_set:
-            if getattr(self, name) is None:
+            if name != "project_id" and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null when supplied")
         return self
 

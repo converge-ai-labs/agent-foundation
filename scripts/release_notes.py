@@ -8,6 +8,7 @@ from release_version import COMPONENTS, parse_release_version, validate_version_
 TAG_PREFIXES = {
     "a13n-harness": "release/a13n-harness-v",
     "a13n-harness-ui": "release/a13n-harness-ui-v",
+    "a13n-logging": "release/a13n-logging-v",
     "a13n-service": "release/a13n-service-v",
     "a13n-envd": "release/a13n-envd-v",
     "a13n-service-cli": "release/a13n-service-cli-v",
@@ -19,6 +20,7 @@ TAG_PREFIXES = {
 INITIAL_NOTES = {
     "a13n-harness": "Initial release for a13n Harness libraries.",
     "a13n-harness-ui": "Initial release for a13n Harness UI.",
+    "a13n-logging": "Initial release for a13n Logging.",
     "a13n-service": "Initial release for a13n Service.",
     "a13n-envd": "Initial release for a13n-envd.",
     "a13n-service-cli": "Initial release for the a13n Service CLI.",

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_harness.model_auth import CodexCredentials, GrokCredentials
+from a13n_harness.model_auth import CodexLoginResult, GrokCredentials
 from a13n_harness_ui.model_accounts import (
     AccountProjection,
     AccountStoreConflictError,
@@ -25,6 +25,7 @@ from a13n_harness_ui.model_accounts import (
     resolve_grok_policy,
 )
 from a13n_harness_ui.model_accounts import codex as codex_module
+from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 
 pytestmark = pytest.mark.anyio
 
@@ -56,14 +57,12 @@ def _codex_tokens(*, account_id: str, expires_at: datetime, marker: str) -> dict
     }
 
 
-def _codex_credential(*, account_id: str, expires_at: datetime, marker: str) -> CodexCredentials:
+def _codex_credential(*, account_id: str, expires_at: datetime, marker: str) -> OpenAICodexCredentials:
     tokens = _codex_tokens(account_id=account_id, expires_at=expires_at, marker=marker)
-    return CodexCredentials(
+    return OpenAICodexCredentials(
         account_id=account_id,
-        expires_at=expires_at,
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
-        id_token=tokens["id_token"],
     )
 
 
@@ -149,8 +148,11 @@ async def test_codex_login_returns_only_safe_account_projection(tmp_path: Path) 
         marker="login-secret",
     )
 
-    async def login(_request: object) -> CodexCredentials:
-        return credentials
+    async def login(_request: object) -> CodexLoginResult:
+        return CodexLoginResult(
+            credentials=credentials,
+            id_token=_jwt(expires_at=_NOW + timedelta(hours=2), account_id=credentials.account_id),
+        )
 
     projection = await store.login(login, now=_NOW)
 
@@ -183,9 +185,8 @@ async def test_codex_save_preserves_document_and_existing_id_token(tmp_path: Pat
         expires_at=_NOW + timedelta(hours=2),
         marker="rotated",
     )
-    refreshed_without_id_token = CodexCredentials(
+    refreshed_without_id_token = OpenAICodexCredentials(
         account_id=refreshed.account_id,
-        expires_at=refreshed.expires_at,
         access_token=refreshed.access_token,
         refresh_token=refreshed.refresh_token,
     )
@@ -288,7 +289,7 @@ async def test_codex_invalid_schema_does_not_run_login_or_overwrite(tmp_path: Pa
     auth_path.write_bytes(original)
     store = CodexAccountStore(await resolve_codex_policy(environ={"CODEX_HOME": str(codex_home)}))
 
-    async def should_not_login(_request: object) -> CodexCredentials:
+    async def should_not_login(_request: object) -> OpenAICodexCredentials:
         raise AssertionError("login callback must not run")
 
     with pytest.raises(AccountStoreError) as invalid:
@@ -424,3 +425,31 @@ async def test_grok_unknown_active_schema_fails_without_touching_other_scopes(tm
     assert invalid.value.provider is Provider.GROK
     assert invalid.value.code == "account_kind_incompatible"
     assert auth_path.read_bytes() == original
+
+
+async def test_codex_login_without_identity_token_cannot_create_native_store(tmp_path: Path) -> None:
+    home = tmp_path / "codex"
+    home.mkdir()
+    store = CodexAccountStore(await resolve_codex_policy(environ={"CODEX_HOME": str(home)}))
+
+    async def incomplete_login(_request):
+        return _codex_credential(account_id="account-1", expires_at=_NOW + timedelta(hours=1), marker="incomplete")
+
+    with pytest.raises(AccountStoreError, match="requires credentials and an ID token"):
+        await store.login(incomplete_login, now=_NOW)
+    assert not (home / "auth.json").exists()
+
+
+async def test_codex_refresh_preserves_id_token_when_account_id_was_implicit(tmp_path: Path) -> None:
+    home = tmp_path / "codex"
+    home.mkdir()
+    tokens = _codex_tokens(account_id="account-1", expires_at=_NOW + timedelta(hours=1), marker="initial")
+    tokens.pop("account_id")
+    path = home / "auth.json"
+    path.write_text(json.dumps({"tokens": tokens}))
+    store = CodexAccountStore(await resolve_codex_policy(environ={"CODEX_HOME": str(home)}))
+    await store.load()
+    await store.save(
+        _codex_credential(account_id="account-1", expires_at=_NOW + timedelta(hours=2), marker="refreshed")
+    )
+    assert json.loads(path.read_text())["tokens"]["id_token"] == tokens["id_token"]

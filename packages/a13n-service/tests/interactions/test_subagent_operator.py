@@ -268,6 +268,7 @@ async def _operator(
         states,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     )
     authority_box = AuthorityBox(authority)
     operator = DurableSubagentOperator(

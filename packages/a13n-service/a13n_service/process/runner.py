@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 
-from anyio import create_task_group, move_on_after
+from anyio import CancelScope, create_task_group
 from pydantic_ai import prices
 
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -90,10 +90,8 @@ async def open_runner_worker(settings: Settings, runner: BootstrappedPluginRunti
             try:
                 yield worker
             finally:
-                if worker.execution_loop is not None:
-                    await worker.execution_loop.drain(RunAttemptYieldReason.runner_rotation)
-                    await worker.execution_loop.wait_stopped()
-                worker.environment_maintenance.drain()
-                with move_on_after(settings.environment_operation_timeout_seconds):
-                    await worker.environment_maintenance.wait_stopped()
+                with CancelScope(shield=True):
+                    if worker.execution_loop is not None:
+                        await worker.execution_loop.drain(RunAttemptYieldReason.runner_rotation)
+                        await worker.execution_loop.wait_stopped()
                 tasks.cancel_scope.cancel()

@@ -16,7 +16,7 @@ import httpx2
 from a13n_environment import EnvironmentProvider
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
-from a13n_harness.model_auth import CodexCredentials, GrokCredentials
+from a13n_harness.model_auth import GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,7 +52,6 @@ from a13n_harness_ui.configuration.setup import (
     SetupSelection,
     preview_setup,
     publish_setup,
-    setup_generation,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
@@ -231,7 +230,6 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
-        codex_refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -253,12 +251,11 @@ class HarnessUiApp:
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
         self._resolve_sandbox_executable = resolve_sandbox_executable
-        self._setup_lock = Lock()
+        self._configuration_lock = Lock()
         self._sandbox_ready_paths: set[Path] = set()
         self._grok_account = grok_account
         self._grok_account_error = grok_account_error
         self._codex_login = codex_login
-        self._codex_refresh = codex_refresh
         self._grok_login = grok_login
         self._candidate_error = candidate_error
         self._configuration_seen = configuration_path is not None and configuration_path.exists()
@@ -323,7 +320,7 @@ class HarnessUiApp:
     async def reload_configuration(self) -> LoadedHarnessUiConfiguration | None:
         """Load and accept one stable complete source tree, retaining the previous generation on failure."""
 
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             await self._reload_configuration_from_path()
             return await self._configurations.current()
 
@@ -370,24 +367,28 @@ class HarnessUiApp:
             await sleep(0.5)
             if self._state is not AppState.ready:
                 return
-            path = self._require_configuration_path()
-            if not self._configuration_seen and not path.exists():
-                continue
-            try:
-                fingerprint = await configuration_tree_fingerprint(
-                    path,
-                    content_plugin_root=self._content_plugin_root,
-                )
-            except HarnessUiError as exc:
-                diagnostic_changed = self._replace_candidate_error(exc)
-                self._configuration_fingerprint = None
-                if diagnostic_changed:
-                    await self._summary_hub.publish(kind="configuration")
-                continue
-            if fingerprint == self._configuration_fingerprint:
-                continue
-            self._configuration_fingerprint = fingerprint
-            await self._reload_configuration_from_path()
+            # App-owned publication and acceptance share one critical section.
+            # External editors remain last-write-wins; this only avoids racing
+            # our own SQLite head selection or observing our partial setup writes.
+            async with self._configuration_lock:
+                path = self._require_configuration_path()
+                if not self._configuration_seen and not path.exists():
+                    continue
+                try:
+                    fingerprint = await configuration_tree_fingerprint(
+                        path,
+                        content_plugin_root=self._content_plugin_root,
+                    )
+                except HarnessUiError as exc:
+                    diagnostic_changed = self._replace_candidate_error(exc)
+                    self._configuration_fingerprint = None
+                    if diagnostic_changed:
+                        await self._summary_hub.publish(kind="configuration")
+                    continue
+                if fingerprint == self._configuration_fingerprint:
+                    continue
+                self._configuration_fingerprint = fingerprint
+                await self._reload_configuration_from_path()
 
     async def mutate_configuration(
         self,
@@ -395,7 +396,7 @@ class HarnessUiApp:
         relative_path: str,
         request: ResourceMutationRequest,
     ) -> ConfigurationMutationResult:
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             path = self._require_configuration_path()
             result = await mutate_configuration_source(
                 path,
@@ -411,14 +412,12 @@ class HarnessUiApp:
         self,
         *,
         relative_path: str,
-        expected_source_digest: str,
     ) -> ConfigurationMutationResult:
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             path = self._require_configuration_path()
             result = await delete_configuration_source(
                 path,
                 relative_path,
-                expected_source_digest=expected_source_digest,
                 validate_candidate=self._configurations.validate,
                 content_plugin_root=self._content_plugin_root,
             )
@@ -449,7 +448,7 @@ class HarnessUiApp:
         self,
         candidate: ExternalSubagentImportCandidate,
     ) -> ConfigurationMutationResult:
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             result = await apply_external_subagent_import(
                 self._require_configuration_path(),
                 candidate,
@@ -532,42 +531,35 @@ class HarnessUiApp:
             raise AppStateError("Project root must be a directory.", code="project_root_invalid")
         root = str(normalized)
         project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
-        for attempt in range(2):
-            source = await self.current_configuration()
-            if source is None:
-                raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
-            exact = _cwd_project_ids(source, root)
-            if len(exact) > 1:
-                raise AppStateError(
-                    "Multiple Projects use this default directory. Resume a specific session or edit the Project roots.",
-                    code="project_ambiguous",
+        source = await self.current_configuration()
+        if source is None:
+            raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
+        exact = _cwd_project_ids(source, root)
+        if len(exact) > 1:
+            raise AppStateError(
+                "Multiple Projects use this default directory. Resume a specific session or edit the Project roots.",
+                code="project_ambiguous",
+            )
+        if exact:
+            return exact[0]
+        destination = f"projects/{project_id}.yaml"
+        if project_id in source.projects or any(item.relative_path == destination for item in source.sources):
+            raise AppStateError("Project identity conflicts with a configured resource.", code="project_conflict")
+        await self.mutate_configuration(
+            relative_path=destination,
+            request=ResourceMutationRequest(
+                content=json.dumps(
+                    {
+                        "schema_version": "1",
+                        "kind": "project",
+                        "id": project_id,
+                        "name": normalized.name or root,
+                        "roots": [{"path": root}],
+                    }
                 )
-            if exact:
-                return exact[0]
-            if project_id in source.projects:
-                raise AppStateError("Project identity conflicts with a configured resource.", code="project_conflict")
-            try:
-                await self.mutate_configuration(
-                    relative_path=f"projects/{project_id}.yaml",
-                    request=ResourceMutationRequest(
-                        content=json.dumps(
-                            {
-                                "schema_version": "1",
-                                "kind": "project",
-                                "id": project_id,
-                                "name": normalized.name or root,
-                                "roots": [{"path": root}],
-                            }
-                        )
-                    ),
-                )
-            except ConfigurationError as exc:
-                if attempt or exc.code != "configuration_source_conflict":
-                    raise
-                await self.reload_configuration()
-                continue
-            return project_id
-        raise AppStateError("Project changed during preparation; retry.", code="project_conflict")
+            ),
+        )
+        return project_id
 
     async def context_usage(self, thread_id: str) -> ContextUsageView:
         """Last reported root request footprint, not accumulated Run usage."""
@@ -766,7 +758,9 @@ class HarnessUiApp:
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
-                RootThreadDefaults(**defaults.model_dump()) if isinstance(defaults, NewThreadDefaults) else defaults
+                RootThreadDefaults(**defaults.model_dump(exclude_unset=True))
+                if isinstance(defaults, NewThreadDefaults)
+                else defaults
             )
             thread = await self._threads.create(defaults=selected, title=title)
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
@@ -1138,7 +1132,7 @@ class HarnessUiApp:
 
     async def setup_status(self, *, rediscover: bool = False) -> SetupStatus:
         """Discover compatible accounts without login, token refresh, or model calls."""
-        async with self._operation(), self._setup_lock:
+        async with self._operation(), self._configuration_lock:
             if rediscover:
                 self._codex_account, self._grok_account, errors = await self._rediscover_accounts()
                 self._codex_account_error = errors.get(Provider.CODEX)
@@ -1172,14 +1166,9 @@ class HarnessUiApp:
             defaults = None if current is None else current.document.defaults
             path = self._require_configuration_path()
             return SetupStatus(
-                needed=current is None
-                or not current.agents
-                or defaults is None
-                or defaults.agent is None
-                or defaults.project is None,
+                needed=current is None or not current.agents or defaults is None or defaults.agent is None,
                 configuration_path=str(path),
                 suggested_project_path=str(Path.cwd()),
-                generation=await setup_generation(path),
                 providers=tuple(providers),
                 agents={} if current is None else {key: value.name for key, value in current.agents.items()},
                 projects={} if current is None else {key: value.name for key, value in current.projects.items()},
@@ -1195,33 +1184,38 @@ class HarnessUiApp:
             )
 
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
-        async with self._operation():
-            return await preview_setup(
+        async with self._operation(), self._configuration_lock:
+            preview = await preview_setup(
                 self._require_configuration_path(),
                 selection,
                 validate_candidate=self._configurations.validate,
                 content_plugin_root=self._content_plugin_root,
             )
+            if not selection.is_addition and selection.project is None:
+                preview = preview.model_copy(update={"project_paths": (str(self._store.layout.staging),)})
+            return preview
 
-    async def apply_setup(self, selection: SetupSelection, *, expected_generation: str) -> SetupPublication:
-        async with self._operation(), self._setup_lock:
-            if selection.environment_profile == "environment-sandbox":
-                preview = await preview_setup(
-                    self._require_configuration_path(),
-                    selection,
-                    validate_candidate=self._configurations.validate,
-                    content_plugin_root=self._content_plugin_root,
-                )
-                if any(Path(root).resolve() not in self._sandbox_ready_paths for root in preview.project_paths):
-                    raise AppStateError(
-                        "Run Sandbox preflight for the selected project before applying setup, or explicitly choose Full Control.",
-                        code="sandbox_preflight_required",
+    async def apply_setup(self, selection: SetupSelection) -> SetupPublication:
+        async with self._operation(), self._configuration_lock:
+
+            def validate_candidate(candidate: LoadedHarnessUiConfiguration) -> None:
+                self._configurations.validate(candidate)
+                if not selection.is_addition and selection.environment_profile == "environment-sandbox":
+                    roots = (
+                        tuple(Path(root.path).resolve() for root in candidate.projects[selection.project].roots)
+                        if selection.project is not None
+                        else (self._store.layout.staging,)
                     )
+                    if any(root not in self._sandbox_ready_paths for root in roots):
+                        raise AppStateError(
+                            "Run Sandbox preflight for the selected execution directory before applying setup, or explicitly choose Full Control.",
+                            code="sandbox_preflight_required",
+                        )
+
             result = await publish_setup(
                 self._require_configuration_path(),
                 selection,
-                expected_generation=expected_generation,
-                validate_candidate=self._configurations.validate,
+                validate_candidate=validate_candidate,
                 content_plugin_root=self._content_plugin_root,
             )
             await self._reload_configuration_from_path()
@@ -1376,7 +1370,7 @@ class HarnessUiApp:
             account = self._account(Provider.CODEX)
             assert isinstance(account, CodexAccountStore)
             async with httpx2.AsyncClient() as client:
-                return await CodexUsageClient(account, client, refresh=self._codex_refresh).read()
+                return await CodexUsageClient(account, client).read()
 
     async def redeem_codex_reset(self, request: ResetRequest) -> ResetResult:
         """Consume the explicitly selected credit on the confirmed account only."""
@@ -1388,7 +1382,6 @@ class HarnessUiApp:
                     account,
                     client,
                     expected_account_id=request.account_id,
-                    refresh=self._codex_refresh,
                 ).redeem(request)
 
     def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore:
@@ -1491,7 +1484,6 @@ async def open_harness_ui_app(
     configuration_path: Path | None = None,
     host_mode: Literal["local", "webui"] = "local",
     configuration_error: ConfigurationError | None = None,
-    codex_refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     codex_login: CodexLoginCallback | None = None,
     grok_scope: str | None = None,
     grok_refresh: Callable[[GrokCredentials], Awaitable[GrokCredentials]] | None = None,
@@ -1553,7 +1545,14 @@ async def open_harness_ui_app(
             thread_files = ThreadFiles(store.layout.root, retention_seconds=settings.storage.scratch_retention_seconds)
             resources.push_async_callback(thread_files.close)
             await thread_files.prune()
-            environment_service = EnvironmentRunService(store, environment_reconstructor, thread_files=thread_files)
+            environment_service = EnvironmentRunService(
+                store,
+                environment_reconstructor,
+                thread_files=thread_files,
+                configuration_root=configuration_path.expanduser().resolve().parent
+                if configuration_path is not None
+                else None,
+            )
             agent_reconstructor = AgentReconstructor(
                 catalog,
                 api_keys=ApiKeyStore(store.layout.root / "auth.json"),
@@ -1583,9 +1582,7 @@ async def open_harness_ui_app(
                 grok_account_error = exc
             subscription_sources: dict[str, SubscriptionSource] = {}
             if codex_account is not None:
-                subscription_sources["codex_subscription"] = CodexSubscriptionSource(
-                    source=codex_account, refresh=codex_refresh
-                )
+                subscription_sources["codex_subscription"] = CodexSubscriptionSource(source=codex_account)
             if grok_account is not None:
                 subscription_sources["grok_subscription"] = GrokSubscriptionSource(
                     source=grok_account,
@@ -1644,9 +1641,7 @@ async def open_harness_ui_app(
                 discovered_grok: GrokAccountStore | None = None
                 try:
                     discovered_codex = CodexAccountStore(await resolve_codex_policy())
-                    sources["codex_subscription"] = CodexSubscriptionSource(
-                        source=discovered_codex, refresh=codex_refresh
-                    )
+                    sources["codex_subscription"] = CodexSubscriptionSource(source=discovered_codex)
                 except AccountStoreError as exc:
                     errors[Provider.CODEX] = exc
                 try:
@@ -1681,7 +1676,6 @@ async def open_harness_ui_app(
                 grok_account=grok_account,
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,
-                codex_refresh=codex_refresh,
                 grok_login=grok_login,
                 candidate_error=candidate_error,
             )

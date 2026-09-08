@@ -47,6 +47,8 @@ from redis.asyncio import Redis
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.run_stream.support import opening_event, publication_failure
+
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
@@ -77,12 +79,20 @@ class _FailOnceCloseRunStream(RedisRunStream):
 
 
 class _FailingAppendRunStream(RedisRunStream):
-    async def append(self, organization_id: str, event: RunStreamEvent) -> str:
+    async def initialize(
+        self, organization_id: str, accepted: RunStreamEvent, *, allow_create: bool, expected_server_id: str
+    ) -> str:
+        await super().initialize(
+            organization_id, accepted, allow_create=allow_create, expected_server_id=expected_server_id
+        )
+        raise RuntimeError("persistent append failure")
+
+    async def append_lifecycle(self, organization_id: str, event: RunStreamEvent) -> str:
         raise RuntimeError("persistent append failure")
 
 
 class _FailingAppendAndMarkerRunStream(_FailingAppendRunStream):
-    async def mark_incomplete(self, organization_id: str, run_id: str) -> None:
+    async def mark_lifecycle_incomplete(self, organization_id: str, run_id: str) -> None:
         raise RuntimeError("persistent marker failure")
 
 
@@ -354,10 +364,12 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     assert projection_states == ("projected", "projected")
 
 
+@pytest.mark.parametrize("close_failure", ["before", "receipts", "retention"])
 async def test_terminal_projection_interrupts_open_items_before_stream_close(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
+    close_failure: str,
 ) -> None:
     await _seed_run(interaction_sessions)
     async with transaction(interaction_sessions) as database:
@@ -371,7 +383,7 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
                 payload={"status": "completed"},
             ),
         )
-    stream = _FailOnceCloseRunStream(redis_client)
+    stream = _FailOnceCloseRunStream(redis_client) if close_failure == "before" else RedisRunStream(redis_client)
     replay = RunReplayStore(interaction_object_store)
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
@@ -383,6 +395,13 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
     )
     assert await projector.project_once() == 1
     item_id = deterministic_item_id(RUN_ID, "text_message", "message-1")
+    await stream.activate(
+        ORGANIZATION_ID,
+        opening_event(RUN_ID, THREAD_ID, attempt_id="rat_1234567890abcdef"),
+        attempt_number=1,
+        reason=None,
+        allow_create=True,
+    )
     first_item_stream_id = await stream.append(
         ORGANIZATION_ID,
         RunStreamEvent(
@@ -396,12 +415,21 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
             occurred_at=NOW,
             payload={"item_kind": "text_message"},
         ),
+        attempt_number=1,
     )
 
+    healthy = stream._script
+    if close_failure != "before":
+        stream._script = redis_client.register_script(publication_failure("close", after=close_failure))
     assert await projector.project_once() == 1
-    failed_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
-    assert not failed_page.closed
-    assert failed_page.items[-1].event.event_type == "item.interrupted"
+    stream._script = healthy
+    if close_failure != "before":
+        with pytest.raises(RunStreamReplayGap):
+            await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    else:
+        failed_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+        assert not failed_page.closed
+        assert failed_page.items[-1].event.event_type == "item.interrupted"
     assert await projector.project_once() == 1
 
     page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
@@ -410,6 +438,7 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
     assert page.closed
     assert tuple(entry.event.event_type for entry in page.items) == (
         "run.accepted",
+        "run_attempt.leased",
         "agui.text_message_start",
         "run.completed",
         "item.interrupted",
@@ -515,8 +544,7 @@ async def test_projection_failure_retries_then_abandons_without_mutating_fact(
     await _seed_run(interaction_sessions)
     async with transaction(interaction_sessions) as database:
         source = await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
-    stream = RedisRunStream(redis_client)
-    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
+    stream = _FailingAppendRunStream(redis_client)
     times = iter((NOW, NOW, NOW + timedelta(seconds=2), NOW + timedelta(seconds=2)))
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
@@ -599,7 +627,7 @@ async def test_abandoned_projection_prevents_complete_snapshot_from_later_termin
     assert states == ("abandoned", "projected")
 
 
-async def test_projection_remains_retryable_until_gap_marker_is_durable(
+async def test_projection_abandons_after_bounded_retries_when_gap_marker_is_unavailable(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
@@ -622,7 +650,7 @@ async def test_projection_remains_retryable_until_gap_marker_is_durable(
     async with short_session(interaction_sessions) as database:
         record = await database.get(LifecycleEventRecord, source.seq)
         assert record is not None
-        assert (record.projection_state, record.projection_attempts) == ("retry_wait", 1)
+        assert (record.projection_state, record.projection_attempts) == ("abandoned", 1)
 
 
 async def test_replay_publication_failure_preserves_complete_live_source(

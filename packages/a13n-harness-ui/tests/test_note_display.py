@@ -95,11 +95,11 @@ def test_note_tools_preview_keys_and_observed_outcomes(name, arguments, result, 
     renderer.ingest("TOOL_CALL_START", {"tool_call_id": "note-one", "tool_call_name": name})
     renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "note-one", "delta": json.dumps(arguments)})
     renderer.ingest("TOOL_CALL_END", {"tool_call_id": "note-one"})
-    assert f"running · {key}" in _visible(renderer)
+    assert f"running | {key}" in _visible(renderer)
     renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "note-one", "content": json.dumps(result)})
     visible = _visible(renderer)
     assert len(visible.splitlines()) == 1
-    assert f"{name} · {label}" in visible and key in visible
+    assert f"{name} | {label}" in visible and key in visible
     assert "{" not in visible and "saved body" not in visible
     source = next(iter(renderer.transcript.blocks.values())).source
     assert json.dumps(arguments, indent=2) in source
@@ -109,6 +109,6 @@ def test_note_tools_preview_keys_and_observed_outcomes(name, arguments, result, 
 
 
 def test_note_result_does_not_invent_success_from_unknown_or_failed_payloads() -> None:
-    assert tool_result("note_write", '{"action":"created"}').startswith("result\n")
+    assert tool_result("note_write", '{"action":"created"}').startswith("returned\n")
     assert tool_result("note_write", '{"ok":false,"action":"created"}').startswith("failed\n")
     assert tool_result("note_write", '{"ok":true,"action":{}}').startswith("completed\n")

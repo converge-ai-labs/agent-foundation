@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 from a13n_harness_ui.composition import AgentCompositionResolver
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.configuration.setup import SetupSelection, preview_setup, publish_setup
@@ -13,6 +14,7 @@ def _selection(tmp_path: Path, **changes: object) -> SetupSelection:
         {
             "providers": ("codex", "grok"),
             "default_agent": "agent-codex",
+            "project": "project-local",
             "project_path": str(tmp_path),
             "environment_profile": "environment-native",
             **changes,
@@ -31,9 +33,7 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     assert not path.parent.exists()
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
-    result = await publish_setup(
-        path, selection, expected_generation=preview.generation, validate_candidate=_validate()
-    )
+    result = await publish_setup(path, selection, validate_candidate=_validate())
     assert result.completed
     assert result.published_paths[-1] == path.name
     source = await load_harness_ui_configuration(path)
@@ -46,31 +46,108 @@ async def test_setup_preserves_edited_resources_and_root_fields(tmp_path: Path) 
     path = tmp_path / "config.yaml"
     selection = _selection(tmp_path)
     preview = await preview_setup(path, selection, validate_candidate=_validate())
-    assert (
-        await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     agent = tmp_path / "agents" / "codex.yaml"
-    original = agent.read_text().replace("Codex coding", "My edited agent")
-    agent.write_text(original)
-    path.write_text(path.read_text() + "process:\n  pricing_auto_update: false\n")
+    model = tmp_path / "models" / "codex.yaml"
+    agent_document = yaml.safe_load(agent.read_text(encoding="utf-8"))
+    agent_document["name"] = "My edited agent - 研究"
+    original = yaml.safe_dump(agent_document, allow_unicode=True).encode("utf-8")
+    agent.write_bytes(original)
+    model_document = yaml.safe_load(model.read_text(encoding="utf-8"))
+    model_document["name"] = "Existing · Model"
+    model_document["model_characteristics"]["capabilities"] = []
+    original_model = yaml.safe_dump(model_document, allow_unicode=True).encode("utf-8")
+    model.write_bytes(original_model)
+    path.write_text(path.read_text(encoding="utf-8") + "process:\n  pricing_auto_update: false\n", encoding="utf-8")
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     assert "agents/codex.yaml" not in preview.files
-    assert (
-        await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
-    assert agent.read_text() == original
-    assert "pricing_auto_update: false" in path.read_text()
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    assert agent.read_bytes() == original
+    assert model.read_bytes() == original_model
+    assert "pricing_auto_update: false" in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.anyio
-async def test_setup_rejects_stale_preview_without_writes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("reload_source", ["manual", "observer"])
+async def test_setup_publication_serializes_configuration_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_source: str
+) -> None:
+    from a13n_harness_ui import app as app_module
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from anyio import Event, create_task_group, fail_after, sleep_forever, wait_all_tasks_blocked
+
+    path = tmp_path / "config.yaml"
+    selection = _selection(tmp_path, providers=(), default_agent="agent-default")
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    entered = Event()
+    release = Event()
+    observer_tick = Event()
+    observer_scanned = Event()
+    publishing = False
+    overlaps = []
+    publish = app_module.publish_setup
+
+    async def blocked_publish(*args, **kwargs):
+        nonlocal publishing
+        publishing = True
+        entered.set()
+        await release.wait()
+        try:
+            return await publish(*args, **kwargs)
+        finally:
+            publishing = False
+
+    async def observe_once(_delay):
+        await observer_tick.wait()
+        if observer_scanned.is_set():
+            await sleep_forever()
+
+    async def fingerprint(*args, **kwargs):
+        observer_scanned.set()
+        return ((path.name, (0, 0, 1, 1)),)
+
+    monkeypatch.setattr(app_module, "publish_setup", blocked_publish)
+    monkeypatch.setattr(app_module, "sleep", observe_once)
+    monkeypatch.setattr(app_module, "configuration_tree_fingerprint", fingerprint)
+    async with app_module.open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+    ) as app:
+        reload = app._reload_configuration_from_path
+
+        async def tracked_reload():
+            overlaps.append(publishing)
+            await reload()
+
+        monkeypatch.setattr(app, "_reload_configuration_from_path", tracked_reload)
+        with fail_after(5):
+            async with create_task_group() as tasks:
+                tasks.start_soon(app.apply_setup, selection)
+                await entered.wait()
+                if reload_source == "manual":
+                    tasks.start_soon(app.reload_configuration)
+                else:
+                    observer_tick.set()
+                try:
+                    await wait_all_tasks_blocked()
+                    assert not overlaps
+                finally:
+                    release.set()
+            if reload_source == "observer":
+                await observer_scanned.wait()
+        assert not any(overlaps)
+        assert (await app.status()).candidate_error_code is None
+
+
+@pytest.mark.anyio
+async def test_setup_uses_current_configuration_after_preview(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     selection = _selection(tmp_path)
-    preview = await preview_setup(path, selection, validate_candidate=_validate())
-    path.write_text('schema_version: "2"\n')
-    with pytest.raises(ConfigurationError, match="stale"):
-        await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
-    assert not (tmp_path / "models").exists()
+    await preview_setup(path, selection, validate_candidate=_validate())
+    path.write_text('schema_version: "2"\nprocess: {log_level: DEBUG}\n')
+    result = await publish_setup(path, selection, validate_candidate=_validate())
+    assert result.completed
+    assert "DEBUG" in path.read_text()
+    assert (tmp_path / "models").exists()
 
 
 @pytest.mark.anyio
@@ -81,30 +158,26 @@ async def test_setup_partial_publication_is_retryable_without_clobber(
 
     path = tmp_path / "config.yaml"
     selection = _selection(tmp_path)
-    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    await preview_setup(path, selection, validate_candidate=_validate())
     publish = setup._publish_content
     calls = 0
 
-    def fail_second(path: Path, content: bytes, expected: str | None) -> None:
+    def fail_second(path: Path, content: bytes) -> None:
         nonlocal calls
         calls += 1
         if calls == 2:
             raise OSError("test failure")
-        publish(path, content, expected)
+        publish(path, content)
 
     monkeypatch.setattr(setup, "_publish_content", fail_second)
-    result = await publish_setup(
-        path, selection, expected_generation=preview.generation, validate_candidate=_validate()
-    )
+    result = await publish_setup(path, selection, validate_candidate=_validate())
     assert not result.completed
     assert len(result.published_paths) == 1
     assert not path.exists()
     retained = (tmp_path / result.published_paths[0]).read_bytes()
     monkeypatch.setattr(setup, "_publish_content", publish)
-    preview = await preview_setup(path, selection, validate_candidate=_validate())
-    assert (
-        await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    await preview_setup(path, selection, validate_candidate=_validate())
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     assert (tmp_path / result.published_paths[0]).read_bytes() == retained
 
 
@@ -121,86 +194,66 @@ async def test_setup_rejects_occupied_destination_for_another_resource(tmp_path:
 
 
 @pytest.mark.anyio
-async def test_setup_reports_final_generation_race(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from a13n_harness_ui.configuration import setup
-
-    path = tmp_path / "config.yaml"
-    selection = _selection(tmp_path)
-    preview = await preview_setup(path, selection, validate_candidate=_validate())
-    load = setup.load_harness_ui_configuration
-
-    async def concurrent_load(selected: Path, **kwargs):
-        if selected == path:
-            path.write_text(path.read_text().replace("agent-codex", "agent-grok"))
-        return await load(selected, **kwargs)
-
-    monkeypatch.setattr(setup, "load_harness_ui_configuration", concurrent_load)
-    result = await publish_setup(
-        path, selection, expected_generation=preview.generation, validate_candidate=_validate()
-    )
-    assert not result.completed
-    assert result.error_code == "configuration_mutation_conflict"
-    assert "agent-grok" in path.read_text()
-
-
-@pytest.mark.anyio
-async def test_setup_preserves_root_save_racing_with_detachment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("external_last", [False, True])
+async def test_setup_publication_is_last_write_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, external_last: bool
 ) -> None:
     from a13n_harness_ui.configuration import setup
 
     path = tmp_path / "config.yaml"
     path.write_text('schema_version: "2"\n')
     selection = _selection(tmp_path)
-    preview = await preview_setup(path, selection, validate_candidate=_validate())
-    rename = setup.os.rename
+    publish = setup._publish_content
     external = 'schema_version: "2"\nprocess: {log_level: DEBUG}\n'
 
-    def racing_rename(source, target):
-        if source == path:
+    def racing_publish(target: Path, content: bytes) -> None:
+        if target == path and not external_last:
             path.write_text(external)
-        rename(source, target)
+        publish(target, content)
+        if target == path and external_last:
+            path.write_text(external)
 
-    monkeypatch.setattr(setup.os, "rename", racing_rename)
-    result = await publish_setup(
-        path, selection, expected_generation=preview.generation, validate_candidate=_validate()
-    )
-    assert not result.completed
-    assert result.error_code == "configuration_mutation_conflict"
-    assert path.read_text() == external
+    monkeypatch.setattr(setup, "_publish_content", racing_publish)
+    result = await publish_setup(path, selection, validate_candidate=_validate())
+    assert result.completed
+    assert (path.read_text() == external) is external_last
+    if not external_last:
+        assert (await load_harness_ui_configuration(path)).document.defaults.agent == "agent-codex"
     assert not list(tmp_path.glob(".a13n-harness-ui-setup-recovery-*"))
 
 
 @pytest.mark.anyio
-async def test_setup_preserves_new_root_during_detached_publication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from a13n_harness_ui.configuration import setup
-
+@pytest.mark.parametrize("operation", ["setup", "add_model", "add_agent"])
+async def test_setup_with_global_guidance_saves_successfully(tmp_path: Path, operation: str) -> None:
     path = tmp_path / "config.yaml"
-    original = 'schema_version: "2"\n'
-    path.write_text(original)
-    selection = _selection(tmp_path)
-    preview = await preview_setup(path, selection, validate_candidate=_validate())
-    publish = setup._publish_content
-    external = 'schema_version: "2"\nprocess: {log_level: DEBUG}\n'
-
-    def racing_publish(target, content, expected):
-        if target == path:
-            path.write_text(external)
-        publish(target, content, expected)
-
-    monkeypatch.setattr(setup, "_publish_content", racing_publish)
-    result = await publish_setup(
-        path, selection, expected_generation=preview.generation, validate_candidate=_validate()
+    initial = _selection(tmp_path)
+    if operation != "setup":
+        assert (await publish_setup(path, initial, validate_candidate=_validate())).completed
+    guidance = tmp_path / "AGENTS.md"
+    content = "# Guidance\r\nPreserve authored instructions — 研究.\r\n".encode()
+    guidance.write_bytes(content)
+    selection = (
+        initial
+        if operation == "setup"
+        else _selection(
+            tmp_path,
+            providers=("codex",),
+            **(
+                {"new_model_id": "model-second", "new_model_name": "Second Model"}
+                if operation == "add_model"
+                else {"new_agent_id": "agent-second", "new_agent_name": "Second Agent"}
+            ),
+        )
     )
-    assert not result.completed
-    assert path.read_text() == external
-    retained = list(tmp_path.glob(".a13n-harness-ui-setup-recovery-*/config.yaml"))
-    assert len(retained) == 1
-    assert retained[0].read_text() == original
-    with pytest.raises(ConfigurationError, match="interrupted setup"):
-        await preview_setup(path, selection, validate_candidate=_validate())
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    assert "AGENTS.md" in preview.preserved_paths
+    result = await publish_setup(path, selection, validate_candidate=_validate())
+    assert result.completed, result.error_message
+    assert "AGENTS.md" not in result.published_paths
+    assert guidance.read_bytes() == content
+    if operation == "add_model":
+        assert result.published_paths == ("models/second.yaml",)
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
 
 
 @pytest.mark.anyio
@@ -227,6 +280,45 @@ async def test_app_setup_discovery_isolates_and_retries_invalid_codex_policy(
         assert status.providers[0].diagnostic is None
         assert not status.providers[0].available
         assert (await app.status()).candidate_error_code is None
+
+
+@pytest.mark.anyio
+async def test_sandbox_preflight_validates_the_actual_publication_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_harness_ui import app as app_module
+    from a13n_harness_ui.errors import AppStateError
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    path = tmp_path / "config.yaml"
+    initial = _selection(tmp_path, providers=(), default_agent="agent-default")
+    assert (await publish_setup(path, initial, validate_candidate=_validate())).completed
+    original = path.read_bytes()
+    unchecked = tmp_path / "unchecked"
+    unchecked.mkdir()
+    publish = app_module.publish_setup
+
+    async def change_project_then_publish(*args, **kwargs):
+        project = tmp_path / "projects" / "project-local.yaml"
+        document = yaml.safe_load(project.read_text())
+        document["roots"] = [{"path": str(unchecked)}]
+        project.write_text(yaml.safe_dump(document))
+        return await publish(*args, **kwargs)
+
+    async with app_module.open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
+    ) as app:
+        app._sandbox_ready_paths.add(tmp_path.resolve())
+        selection = initial.model_copy(update={"environment_profile": "environment-sandbox"})
+        await app.preview_setup(selection)
+        monkeypatch.setattr(app_module, "publish_setup", change_project_then_publish)
+        with pytest.raises(AppStateError) as error:
+            await app.apply_setup(selection)
+        assert error.value.code == "sandbox_preflight_required"
+        assert path.read_bytes() == original
+        app._sandbox_ready_paths.add(unchecked.resolve())
+        assert (await app.apply_setup(selection)).completed
+        assert (await app.current_configuration()).document.defaults.environment_profile == "environment-sandbox"
 
 
 @pytest.mark.anyio
@@ -291,33 +383,6 @@ async def test_sandbox_preflight_cancellation_propagates(tmp_path: Path, monkeyp
     assert cancelled.is_set()
 
 
-def test_setup_recovery_syncs_replacement_before_unlinking_backup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from a13n_harness_ui.configuration import setup
-
-    root = tmp_path / "config.yaml"
-    root.write_text('schema_version: "2"\n')
-    digest = setup._source_digest_or_none(root)
-    assert digest is not None
-    ordering: list[tuple[str, bool, bool]] = []
-
-    def sync(directory: Path) -> None:
-        retained = tuple(tmp_path.glob(".a13n-harness-ui-setup-recovery-*/config.yaml"))
-        ordering.append(("root" if directory == tmp_path else "recovery", root.exists(), bool(retained)))
-
-    def fail_publication(*args) -> None:
-        assert ordering[:2] == [("recovery", False, True), ("root", False, True)]
-        raise OSError("injected publication failure")
-
-    monkeypatch.setattr(setup, "_fsync_directory", sync)
-    monkeypatch.setattr(setup, "_publish_content", fail_publication)
-    with pytest.raises(OSError, match="injected"):
-        setup._publish_root_defaults(root, b"new root", digest)
-    assert ordering[2:4] == [("root", True, True), ("recovery", True, False)]
-    assert root.read_text() == 'schema_version: "2"\n'
-
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("review_outcome", ["flagged", "error"])
 async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actions(
@@ -378,13 +443,11 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
             else FunctionModel(stream_function=main_stream, profile={"supports_thinking": True})
         )
 
-    monkeypatch.setattr(runtime, "build_codex_model", build)
+    monkeypatch.setattr(runtime, "CodexRequestModel", build)
     path = tmp_path / "config" / "config.yaml"
     selection = _selection(tmp_path, providers=("codex",))
-    preview = await preview_setup(path, selection, validate_candidate=_validate())
-    assert (
-        await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    await preview_setup(path, selection, validate_candidate=_validate())
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
     ) as app:
@@ -459,7 +522,7 @@ async def test_not_now_finishes_setup_without_model_or_credentials(
         preview = await app.preview_setup(selection)
         assert not path.exists()
         assert not any(name.startswith("models/") for name in preview.files)
-        assert (await app.apply_setup(selection, expected_generation=preview.generation)).completed
+        assert (await app.apply_setup(selection)).completed
         assert not (await app.setup_status()).needed
         source = await load_harness_ui_configuration(path)
         assert source.agents["agent-default"].model is None
@@ -490,9 +553,7 @@ async def test_api_key_setup_publishes_only_reference_and_additional_instruction
     assert "MY_EXISTING_KEY" in preview.files["models/api-key.yaml"]
     assert "Answer briefly." in preview.files["agents/api-key.yaml"]
     assert "system_prompt" not in preview.files["agents/api-key.yaml"]
-    assert (
-        await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     source = await load_harness_ui_configuration(path)
     assert source.agents["agent-api-key"].model == "model-api-key"
     assert source.models["model-api-key"].authentication.env == "MY_EXISTING_KEY"
@@ -531,7 +592,7 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
     )
     path = tmp_path / "config" / "config.yaml"
@@ -539,8 +600,8 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
     ) as app:
         selection = _selection(tmp_path, providers=("codex",), instructions="Use short answers.", shell_review=False)
-        preview = await app.preview_setup(selection)
-        assert (await app.apply_setup(selection, expected_generation=preview.generation)).completed
+        await app.preview_setup(selection)
+        assert (await app.apply_setup(selection)).completed
         thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Hello")
         outcome = await app.wait_root_operation(receipt.receipt_id)
@@ -591,7 +652,7 @@ async def test_saved_key_connects_deferred_default_agent_and_first_native_conver
             tmp_path, providers=(), default_agent="agent-default", instructions="Keep my instructions."
         )
         preview = await app.preview_setup(deferred)
-        assert (await app.apply_setup(deferred, expected_generation=preview.generation)).completed
+        assert (await app.apply_setup(deferred)).completed
         await app.put_api_key(ApiKeyInput(credential_ref="key-test", key=SecretStr("first-secret")))
         selected = deferred.model_copy(update={"instructions": "", "connect_default": True})
         selected = SetupSelection.model_validate(
@@ -606,7 +667,7 @@ async def test_saved_key_connects_deferred_default_agent_and_first_native_conver
         preview = await app.preview_setup(selected)
         assert "first-secret" not in preview.model_dump_json()
         assert "agents/default.yaml" in preview.files
-        assert (await app.apply_setup(selected, expected_generation=preview.generation)).completed
+        assert (await app.apply_setup(selected)).completed
         thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Hello")
         assert (await app.wait_root_operation(receipt.receipt_id)).status.value == "completed"
@@ -637,9 +698,7 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
         api_key_model={"route": "openai:first", "authentication": {"kind": "api_key", "env": "MY_KEY"}},
     )
     preview = await preview_setup(path, first, validate_candidate=_validate())
-    assert (
-        await publish_setup(path, first, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    assert (await publish_setup(path, first, validate_candidate=_validate())).completed
     old_model = (tmp_path / "models" / "api-key.yaml").read_bytes()
     second = SetupSelection.model_validate(
         {
@@ -649,9 +708,7 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
     )
     preview = await preview_setup(path, second, validate_candidate=_validate())
     assert "models/api-key.yaml" not in preview.files
-    assert (
-        await publish_setup(path, second, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    assert (await publish_setup(path, second, validate_candidate=_validate())).completed
     assert (tmp_path / "models" / "api-key.yaml").read_bytes() == old_model
     loaded = await load_harness_ui_configuration(path)
     assert loaded.agents["agent-api-key"].model != "model-api-key"
@@ -706,9 +763,7 @@ async def test_add_agent_preserves_existing_files_defaults_and_retry_identity(
     path = tmp_path / "config.yaml"
     initial = _selection(tmp_path, providers=("codex",))
     preview = await preview_setup(path, initial, validate_candidate=_validate())
-    assert (
-        await publish_setup(path, initial, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    assert (await publish_setup(path, initial, validate_candidate=_validate())).completed
     baseline = {p: p.read_bytes() for p in tmp_path.rglob("*.yaml")}
     added = _selection(
         tmp_path,
@@ -721,9 +776,7 @@ async def test_add_agent_preserves_existing_files_defaults_and_retry_identity(
     assert preview.project_paths == ()
     assert path.name not in preview.files
     assert not any(name.startswith("projects/") for name in preview.files)
-    assert (
-        await publish_setup(path, added, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    assert (await publish_setup(path, added, validate_candidate=_validate())).completed
     source = await load_harness_ui_configuration(path)
     assert source.agents["agent-second"].model == "model-agent-second"
     assert source.models["model-agent-second"].route.endswith(":" + model)
@@ -740,16 +793,12 @@ async def test_add_agent_preserves_existing_files_defaults_and_retry_identity(
 async def test_setup_new_subscription_model_does_not_rewrite_shared_model(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     initial = _selection(tmp_path, providers=("codex",))
-    preview = await preview_setup(path, initial, validate_candidate=_validate())
-    assert (
-        await publish_setup(path, initial, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    await preview_setup(path, initial, validate_candidate=_validate())
+    assert (await publish_setup(path, initial, validate_candidate=_validate())).completed
     model = (tmp_path / "models/codex.yaml").read_bytes()
     changed = initial.model_copy(update={"codex_model": "gpt-6-astra", "connect_default": True})
-    preview = await preview_setup(path, changed, validate_candidate=_validate())
-    assert (
-        await publish_setup(path, changed, expected_generation=preview.generation, validate_candidate=_validate())
-    ).completed
+    await preview_setup(path, changed, validate_candidate=_validate())
+    assert (await publish_setup(path, changed, validate_candidate=_validate())).completed
     source = await load_harness_ui_configuration(path)
     assert source.models[source.agents["agent-codex"].model].route == "openai-codex:gpt-6-astra"
     assert (tmp_path / "models/codex.yaml").read_bytes() == model

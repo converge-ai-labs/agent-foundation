@@ -4,8 +4,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 from .models import (
-    CodexCredentials,
-    CodexCredentialSource,
+    CodexLoginResult,
     CredentialPersistenceError,
     CredentialRefreshError,
     DeviceAuthorizationError,
@@ -14,37 +13,41 @@ from .models import (
     ModelAuthenticationError,
 )
 from .oauth import (
-    CodexDeviceAuthorization,
-    CodexDeviceAuthorizationFlow,
-    CodexOAuthFlow,
     GrokDeviceAuthorization,
     GrokDeviceAuthorizationFlow,
     GrokOAuthFlow,
     OAuthFlow,
-    refresh_codex_credentials,
     refresh_grok_credentials,
 )
 
 if TYPE_CHECKING:
-    from .runtime import CodexSubscriptionModel, build_codex_account_auth, build_codex_model, build_grok_model
+    from .codex import CodexRequestModel
+    from .codex_login import CodexDeviceAuthorization, CodexDeviceAuthorizationFlow, CodexLoginFlow
+    from .runtime import build_grok_model
 
 
 def __getattr__(name: str) -> object:
     # Credential discovery does not need native provider Models or their SDKs.
-    if name in {"CodexSubscriptionModel", "build_codex_account_auth", "build_codex_model", "build_grok_model"}:
-        value = vars(import_module(".runtime", __name__))[name]
+    modules = {
+        "CodexRequestModel": ".codex",
+        "CodexLoginFlow": ".codex_login",
+        "CodexDeviceAuthorization": ".codex_login",
+        "CodexDeviceAuthorizationFlow": ".codex_login",
+        "build_grok_model": ".runtime",
+    }
+    if (module := modules.get(name)) is not None:
+        value = vars(import_module(module, __name__))[name]
         globals()[name] = value
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
-    "CodexCredentialSource",
-    "CodexCredentials",
     "CodexDeviceAuthorization",
     "CodexDeviceAuthorizationFlow",
-    "CodexOAuthFlow",
-    "CodexSubscriptionModel",
+    "CodexLoginFlow",
+    "CodexLoginResult",
+    "CodexRequestModel",
     "CredentialPersistenceError",
     "CredentialRefreshError",
     "DeviceAuthorizationError",
@@ -55,9 +58,6 @@ __all__ = [
     "GrokOAuthFlow",
     "ModelAuthenticationError",
     "OAuthFlow",
-    "build_codex_account_auth",
-    "build_codex_model",
     "build_grok_model",
-    "refresh_codex_credentials",
     "refresh_grok_credentials",
 ]

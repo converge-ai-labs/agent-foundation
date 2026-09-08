@@ -26,6 +26,7 @@ from release_notes import (  # noqa: E402
     [
         ("a13n-harness", "release/a13n-harness-v1.2.3"),
         ("a13n-harness-ui", "release/a13n-harness-ui-v1.2.3"),
+        ("a13n-logging", "release/a13n-logging-v1.2.3"),
         ("a13n-service", "release/a13n-service-v1.2.3"),
         ("a13n-envd", "release/a13n-envd-v1.2.3"),
         ("a13n-service-cli", "release/a13n-service-cli-v1.2.3"),
@@ -75,6 +76,24 @@ def test_a13n_service_and_service_cli_release_notes_are_independent() -> None:
 
     assert previous_release_tag("a13n-service", "1.2.4", tags) == "release/a13n-service-v1.2.3"
     assert previous_release_tag("a13n-service-cli", "9.8.8", tags) == "release/a13n-service-cli-v9.8.7"
+
+
+def test_logging_release_notes_do_not_follow_service_tags() -> None:
+    tags = ["release/a13n-service-v9.8.7"]
+    assert previous_release_tag("a13n-logging", "1.0.0", tags) is None
+    tags.extend(["release/a13n-logging-v1.0.0", "release/a13n-logging-v1.1.0-rc.1"])
+    assert previous_release_tag("a13n-logging", "1.1.0", tags) == "release/a13n-logging-v1.0.0"
+    assert previous_release_tag("a13n-logging", "1.1.0-rc.2", tags) == "release/a13n-logging-v1.1.0-rc.1"
+    command = build_release_command(
+        component="a13n-logging",
+        version="1.0.0-rc.1",
+        repository="converge-ai-labs/agent-foundation",
+        title="a13n Logging 1.0.0-rc.1",
+        assets=[],
+        previous_tag=None,
+    )
+    assert "--prerelease" in command
+    assert INITIAL_NOTES["a13n-logging"] in command
 
 
 def test_harness_and_harness_ui_release_notes_are_independent() -> None:

@@ -210,7 +210,7 @@ class StoredHarnessOutcomeAdapter:
         continuation = DeferredContinuationState(
             requests=serialized,
             effective_client_tool_surface=surface,
-            effective_surface_digest_sha256=self._client_tool_surface_digest,
+            effective_surface_digest_sha256=self._client_tool_surface_digest if needs_client_surface else None,
         )
         return continuation, WaitingOutcomeCandidate(
             wait_reason=wait_reason,

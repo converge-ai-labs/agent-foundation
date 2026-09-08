@@ -236,14 +236,14 @@ A Markdown child is therefore normalized into the same complete resolved child A
 
 ## External Subagent Import
 
-Harness UI provides one explicit quick-import operation for Claude Code, Cursor, and Codex subagent definitions. Import is a convenience boundary, not a live synchronization layer. An explicit `inherit_runtime` preview option omits external model and tool selections and reports that the imported child inherits the parent's effective model and visible tools. The default import preserves representable tool selections. All Markdown imports inherit the parent model; non-inherit external model fields are omitted with a diagnostic directing users to an Agent resource reference. Both modes preserve instructions and diagnose unsupported external settings. Importing a definition does not enroll it in an Agent roster. CLI onboarding previews and confirms import plus explicit roster enrollment; the definition writes and Agent source mutation remain separate compare-and-set publications. Partial success is reported without implying rollback.
+Harness UI provides one explicit quick-import operation for Claude Code, Cursor, and Codex subagent definitions. Import is a convenience boundary, not a live synchronization layer. An explicit `inherit_runtime` preview option omits external model and tool selections and reports that the imported child inherits the parent's effective model and visible tools. The default import preserves representable tool selections. All Markdown imports inherit the parent model; non-inherit external model fields are omitted with a diagnostic directing users to an Agent resource reference. Both modes preserve instructions and diagnose unsupported external settings. Importing a definition does not enroll it in an Agent roster. CLI onboarding previews and confirms import plus explicit roster enrollment; the definition writes and Agent source mutation remain separate last-write-wins publications. Partial success is reported without implying rollback.
 
 ```mermaid
 flowchart LR
     Source[Claude Code, Cursor, or Codex source]
     Detect[Detect and parse]
     Preview[Canonical preview and diagnostics]
-    Write[No-clobber Markdown write]
+    Write[Last-write-wins Markdown write]
     Reload[Accepted generation]
 
     Source --> Detect --> Preview --> Write --> Reload
@@ -256,10 +256,10 @@ The operation:
 3. maps name, description, instructions, and exact tool names when representable;
 4. reports unsupported permissions, hooks, Skills, MCP, provider, and product-specific behavior without applying it implicitly;
 5. renders canonical Harness UI Markdown deterministically;
-6. requires expected source and target facts before apply;
+6. validates and publishes the captured canonical preview without rechecking source or target versions;
 7. never overwrites, silently renames, modifies, or synchronizes the source files.
 
-Semantically identical imports are unchanged or deduplicated. A different existing target conflicts. Newly written Markdown enters behavior only after a successful configuration-generation reload. The concrete adapters and source precedence are implementation details as long as this observable boundary remains stable.
+The preview labels semantically identical imports as unchanged. Applying any valid preview writes its captured canonical content to the selected local target, replacing an existing file without a source-digest precondition. An existing local resource with the same ID keeps its path rather than receiving a duplicate. External source edits after preview do not alter the captured content; obtaining a new preview is explicit. Newly written Markdown enters behavior only after a successful configuration-generation reload. The concrete adapters and source precedence are implementation details as long as this observable boundary remains stable.
 
 ## Resolution
 
@@ -310,6 +310,6 @@ Every continuation bundle records the Run composition that produced it. This is 
 4. Every Run captures a complete immutable composition before native construction.
 5. A captured Agent definition never changes when configuration files or Thread selections change. Environment-routed plugin files remain live and can be edited or deleted; their paths do not pin content.
 6. Canonical Markdown remains small and broadly compatible rather than encoding a complete authorization system.
-7. Claude Code, Cursor, and Codex import is explicit, previewable, diagnostic, and no-clobber.
+7. Claude Code, Cursor, and Codex import is explicit, previewable, diagnostic, and last-write-wins for canonical target files; external source files remain untouched.
 8. `HarnessState` can continue across supported composition changes without silently discarding component state.
 9. Skill source configuration is captured in the Agent node, while each independent Run derives and freezes its own Environment-routed catalog.

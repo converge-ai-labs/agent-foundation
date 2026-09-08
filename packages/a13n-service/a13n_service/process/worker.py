@@ -212,8 +212,11 @@ async def build_worker_runtime(
         run_replay=run_replay,
         execution_loop=execution_loop,
     )
+    execution_task = BackgroundTask("RunAttempt execution", execution_loop.run, execution_loop.is_draining)
+    if runner is not None:
+        return runtime, (execution_task,)
     return runtime, (
-        BackgroundTask("RunAttempt execution", execution_loop.run, execution_loop.is_draining),
+        execution_task,
         BackgroundTask(
             name="environment_maintenance",
             run=environment_maintenance.run,
