@@ -76,8 +76,8 @@ async def initialize() -> None:
                 WorkspaceRecord(
                     id=config["workspace_id"],
                     organization_id=config["organization_id"],
-                    name="Live tests",
-                    normalized_name="live tests",
+                    name=f"Live tests {config['workspace_id']}",
+                    normalized_name=f"live tests {config['workspace_id']}",
                     created_at=now,
                     updated_at=now,
                     deleted_at=None,
@@ -88,8 +88,6 @@ async def initialize() -> None:
                 ("organization", config["organization_id"]),
                 ("workspace", config["workspace_id"]),
             ):
-                if kind == "organization" and config.get("workspace_only"):
-                    continue
                 session.add(
                     RoleBindingRecord(
                         id=new_object_id("rb"),
@@ -99,7 +97,7 @@ async def initialize() -> None:
                         principal_id=config["user_id"],
                         resource_type=kind,
                         resource_id=resource_id,
-                        role_key="admin",
+                        role_key="member" if kind == "organization" and config.get("workspace_only") else "admin",
                         created_by_user_id=config["user_id"],
                         created_at=now,
                         updated_at=now,
@@ -122,7 +120,7 @@ async def provision() -> None:
         client = LiveClient(config, http)
         base = f"/api/v1/workspaces/{config['workspace_id']}"
 
-        async def create_once(key: str, path: str, body: dict) -> str:
+        async def create_once(key: str, path: str, body: dict, *, response_key: str | None = None) -> str:
             if key not in config:
                 result = await client.request(
                     "POST",
@@ -131,7 +129,7 @@ async def provision() -> None:
                     json=body,
                     headers={"Idempotency-Key": "live-setup-" + config["workspace_id"] + "-" + key},
                 )
-                config[key] = result["id"]
+                config[key] = (result[response_key] if response_key else result)["id"]
                 save_config(config)
             return config[key]
 
@@ -175,7 +173,7 @@ async def provision() -> None:
                 "access": "full",
                 "configuration": {
                     "root": {"path": config["workspace_root"]},
-                    "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh", "fixed_arguments": ["-c"]}],
+                    "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],
                     "allowed_executables": [sys.executable],
                     "max_wall_time_seconds": 180,
                 },
@@ -187,7 +185,9 @@ async def provision() -> None:
             "input_adapter": {"adapter_key": "native", "config": {}},
             "protocol": {"schema_version": "1", "public_name": "Live test", "output_modes": ["text"], "limits": {}},
         }
-        await create_once("agent_id", base + "/agents", {"name": "Live test agent", "config": agent_config})
+        await create_once(
+            "agent_id", base + "/agents", {"name": "Live test agent", "config": agent_config}, response_key="agent"
+        )
         if "approval_plugin_version_id" not in config:
             filename, body = approval_wheel()
             version = await client.request(
@@ -217,6 +217,7 @@ async def provision() -> None:
                     ],
                 },
             },
+            response_key="agent",
         )
     print(f"Provisioned local Agent {config['agent_id']} and approval Agent {config['approval_agent_id']}.")
 

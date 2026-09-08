@@ -28,7 +28,9 @@ async def test_two_workers_respect_capacity_and_each_run_has_one_owner(round_two
     for receipt in receipts:
         await live.finish(receipt["run_id"])
     groups = await admitted()
-    assert all(len(items) == 1 and items[0]["status"] == "succeeded" and items[0]["fence"] == 1 for items in groups)
+    assert all(
+        len(items) == 1 and items[0]["status"] == "succeeded" and items[0]["attempt_number"] == 1 for items in groups
+    )
     assert len({items[0]["harness_run_id"] for items in groups}) == 4
     for case in cases:
         assert (await live.evidence(case))["model_requests"] == 1

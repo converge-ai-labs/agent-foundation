@@ -64,5 +64,5 @@ async def test_skill_version_materialization_and_workspace_isolation(management)
             "agent_id": current["agent"]["id"],
             "environment": None,
         },
-        expected=400,
+        expected=422,
     )

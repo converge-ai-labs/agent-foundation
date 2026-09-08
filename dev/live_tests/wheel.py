@@ -17,7 +17,7 @@ def fixture_wheel(kind: str) -> tuple[str, bytes]:
         raise ValueError("Unknown fixture plugin")
     source = Path(__file__).with_name(f"{kind}_plugin.py").read_bytes()
     # Changing fixture code produces another immutable version; restart the Worker after an update.
-    version = "0.0.0+" + hashlib.sha256(source).hexdigest()[:12]
+    version = "0.0.0.dev" + str(int(hashlib.sha256(source).hexdigest()[:12], 16))
     distribution = f"a13n_live_{kind}"
     metadata = f"{distribution}-{version}.dist-info"
     files = {

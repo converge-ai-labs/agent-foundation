@@ -1,7 +1,9 @@
 """Case 21: lifecycle recovery, backing generations and operation-specific inheritance."""
 
 import json
+from contextlib import closing
 
+import anyio
 import pytest
 
 from .management_support import client_tool, feedback_body, last_tool_result
@@ -9,9 +11,39 @@ from .management_support import client_tool, feedback_body, last_tool_result
 pytestmark = pytest.mark.anyio
 
 
-async def test_stopped_and_deleted_managed_environment_recovers(management):
+@pytest.fixture
+async def docker_environment(management):
+    environment, root = await management.environment(provider_type="a13n.docker")
+    try:
+        yield environment, root
+    finally:
+        # Stop the fixture's Workers before removing only its exact owned target.
+        # Control and the model remain available for the lab's Run cleanup.
+        for worker in management.lab.workers:
+            if worker.returncode is None:
+                await management.lab.stop(worker)
+
+        def remove_owned_target():
+            import docker
+
+            with closing(docker.from_env()) as client:
+                for container in client.containers.list(
+                    all=True,
+                    filters={
+                        "label": [
+                            "io.a13n.environment-provider=a13n.docker",
+                            "io.a13n.environment-id=" + environment["id"],
+                        ]
+                    },
+                ):
+                    container.remove(force=True)
+
+        await anyio.to_thread.run_sync(remove_owned_target)
+
+
+async def test_stopped_and_deleted_managed_environment_recovers(management, docker_environment):
     journey, live = management, management.live
-    environment, root = await journey.environment()
+    environment, root = docker_environment
     (root / "proof.txt").write_text("PERSISTENT_PROOF")
     selection = {"environment_id": environment["id"]}
 
@@ -102,9 +134,9 @@ async def test_continuation_updates_default_but_historical_fork_keeps_source(man
     assert (await live.thread(original["thread_id"]))["default_environment_id"] == second["id"]
 
 
-async def test_process_handle_cannot_cross_rebuilt_environment_generation(management):
+async def test_process_handle_cannot_cross_rebuilt_environment_generation(management, docker_environment):
     journey, live = management, management.live
-    environment, _ = await journey.environment()
+    environment, _ = docker_environment
     selection = {"environment_id": environment["id"]}
     case = await journey.case(
         steps=[

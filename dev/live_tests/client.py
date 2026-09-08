@@ -63,10 +63,18 @@ class LiveClient:
     async def release(self, case: dict) -> None:
         await self.request("POST", f"/__live__/cases/{case['case_id']}/release")
 
-    async def wait_evidence(self, case: dict, field: str) -> dict:
-        return await self.wait(
-            lambda: self.evidence(case), lambda value: bool(value.get(field)), f"{field}: {case['case_id']}"
-        )
+    async def wait_evidence(self, case: dict, field: str, *, run_id: str | None = None) -> dict:
+        async def fetch():
+            evidence = await self.evidence(case)
+            if run_id and not evidence.get(field):
+                run = await self.run(run_id)
+                if run["status"] not in ACTIVE:
+                    # The tool may have finished between the evidence and Run reads.
+                    evidence = await self.evidence(case)
+                    assert evidence.get(field), f"Run ended before {field}: {run_id}, {run['status']}, {run['failure']}"
+            return evidence
+
+        return await self.wait(fetch, lambda value: bool(value.get(field)), f"{field}: {case['case_id']}")
 
     async def start(self, case: dict, *, approval: bool = False, key: str | None = None) -> dict:
         body = self.start_body(case, approval=approval)

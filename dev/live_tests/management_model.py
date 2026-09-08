@@ -58,7 +58,7 @@ async def completion(case, path, body, request):
                 r'<skill name="' + re.escape(step["skill_key"]) + r'">.*?<path>(.*?)</path>', context, re.S
             )
             assert match, "The managed Skill is missing from the actual Harness catalog"
-            arguments["file_path"] = posixpath.join(posixpath.dirname(html.unescape(match[1])), step["skill_file"])
+            arguments["file_path"] = posixpath.join(html.unescape(match[1]), step["skill_file"])
         if step.get("materialized_input"):
             paths = re.findall(r'/workspace/\.a13n/inputs/[^\s"<>]+/content-[0-9]+', context)
             assert paths, "Harness did not receive the materialized Asset path"

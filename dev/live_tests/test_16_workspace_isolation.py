@@ -27,7 +27,7 @@ async def test_other_workspace_cannot_read_stream_or_control_run(round_two):
         follow_redirects=False,
     ) as outsider:
         # A successful own-Workspace query proves the denial is not just invalid authentication.
-        own = await outsider.get(f"/api/v1/workspaces/{other['workspace_id']}/runs")
+        own = await outsider.get(f"/api/v1/workspaces/{other['workspace_id']}/sessions")
         assert own.status_code == 200 and own.json()["items"] == []
         for path in (
             f"/api/v1/runs/{run_id}",

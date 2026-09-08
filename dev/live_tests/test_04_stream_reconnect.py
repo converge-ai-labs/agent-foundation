@@ -11,7 +11,7 @@ async def test_stream_disconnect_does_not_cancel_run(live):
     case = await live.case("stream")
     receipt = await live.start(case)
     run_id = receipt["run_id"]
-    await live.wait_evidence(case, "tool_started")
+    await live.wait_evidence(case, "tool_started", run_id=run_id)
     prefix = []
     async with live.stream(run_id) as stream:
         async for event in stream:

@@ -1,8 +1,8 @@
 """Own every process and network fault used by the second-round HTTP journeys.
 
-Each test gets new PostgreSQL/Redis containers and a unique S3 bucket. The S3
-server must be a configured compatible loopback service; only this bucket is
-created/deleted. Dependency cuts affect Worker connections, never server state.
+Each lab gets new PostgreSQL/Redis containers and a unique S3 bucket. S3 defaults
+to an owned RustFS container. Dependency cuts affect Worker connections, never
+server state. The core suite omits fault relays and the second identity.
 """
 
 from __future__ import annotations
@@ -25,13 +25,10 @@ import anyio
 import httpx2
 from a13n_service.ids import new_object_id
 from a13n_service.settings import Settings
-from a13n_service.storage.object_store import S3ObjectStore
-from aiobotocore.config import AioConfig
-from aiobotocore.httpxsession import HttpxSession
-from aiobotocore.session import get_session
 
 from .client import LiveClient
-from .config import STATE, local_origin
+from .config import STATE
+from .local_storage import open_object_storage
 from .round_two_resources import provision
 from .tcp_proxy import TCPProxy
 
@@ -110,6 +107,8 @@ class RoundTwoLab:
         self.workers.append(process)
         self.origins[process] = origin
         await self.ready(process, origin)
+        self.config["worker_url"] = origin
+        private_json(self.root / "config.json", self.config)
         return process
 
     def send(self, process, signum):
@@ -167,37 +166,21 @@ class RoundTwoLab:
 
 
 @asynccontextmanager
-async def open_lab(*, management=False):
-    settings = Settings()
-    assert settings.object_endpoint_url, "Round two requires a compatible loopback S3 endpoint in .env"
-    endpoint = local_origin(settings.object_endpoint_url)
-    root = STATE / "round-two" / uuid4().hex
+async def open_lab(*, suite="round-two"):
+    if suite not in {"core", "round-two", "management"}:
+        raise ValueError(f"Unknown live-test suite: {suite}")
+    management = suite == "management"
+    state = REPOSITORY / "dev" / "live_tests" / ".state" if suite == "core" else STATE
+    root = state / suite / uuid4().hex
     root.mkdir(parents=True, mode=0o700)
-    bucket = "a13n-live-" + uuid4().hex
     async with AsyncExitStack() as stack:
-        s3 = await stack.enter_async_context(
-            get_session().create_client(
-                "s3",
-                endpoint_url=endpoint,
-                region_name=settings.object_region,
-                config=AioConfig(
-                    connect_timeout=3,
-                    read_timeout=5,
-                    proxies={},
-                    retries={"total_max_attempts": 1},
-                    s3={"addressing_style": "path"},
-                    http_session_cls=HttpxSession,
-                ),
-            )
-        )
-        bucket_options = (
-            {}
-            if settings.object_region == "us-east-1"
-            else {"CreateBucketConfiguration": {"LocationConstraint": settings.object_region}}
-        )
-        await s3.create_bucket(Bucket=bucket, **bucket_options)
-        stack.push_async_callback(_delete_bucket, s3, bucket)
-        await S3ObjectStore(s3, bucket).check_compatibility()
+        print(f"Preparing {suite} lab; private logs: {root}", flush=True)
+        storage_options = {}
+        if suite != "core":
+            settings = Settings()
+            storage_options = {"endpoint_url": settings.object_endpoint_url, "region": settings.object_region}
+        object_environment = await stack.enter_async_context(open_object_storage(**storage_options))
+        endpoint = object_environment["A13N_SERVICE_OBJECT_ENDPOINT_URL"]
 
         from testcontainers.postgres import PostgresContainer
         from testcontainers.redis import RedisContainer
@@ -219,14 +202,18 @@ async def open_lab(*, management=False):
             "workspace_root": str(root / "workspace"),
             "timeout_seconds": 120,
             "encryption_key": base64.b64encode(secrets.token_bytes(32)).decode(),
-            "other_identity": identity(),
         }
         from .fixture_peer import certificate_context, create_certificate
 
         if management:
             config.update(peer_url=free_origin().replace("http:", "https:"), **create_certificate(root))
-        # Same Organization, a different Workspace and User; organization separation must not mask Workspace defects.
-        config["other_identity"].update(organization_id=config["organization_id"], workspace_only=True)
+        if suite != "core":
+            # Same Organization, a different Workspace/User; do not mask Workspace isolation defects.
+            config["other_identity"] = {
+                **identity(),
+                "organization_id": config["organization_id"],
+                "workspace_only": True,
+            }
         Path(config["workspace_root"]).mkdir(mode=0o700)
         config_path = root / "config.json"
         private_json(config_path, config)
@@ -234,20 +221,20 @@ async def open_lab(*, management=False):
             key: value
             for key, value in os.environ.items()
             if not key.startswith(("A13N_SERVICE_", "LIVE_TEST_", "PYTHONPATH", "OTEL_"))
-            and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR"}
+            and not ("AWS_ACCESS_KEY_ID" in object_environment and key.startswith("AWS_"))
+            and key.upper()
+            not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR"}
         }
         environment.update(
             {
                 "PYTHONPATH": str(REPOSITORY),
+                # urllib/httpx can discover macOS system proxies even with proxy env vars removed.
+                "NO_PROXY": "127.0.0.1,localhost,::1",
                 "OTEL_TRACES_EXPORTER": "none",
                 "LIVE_TEST_CONFIG": str(config_path),
                 "A13N_SERVICE_DATABASE_URL": database_url,
                 "A13N_SERVICE_REDIS_URL": redis_url,
-                "A13N_SERVICE_OBJECT_BACKEND": "s3",
-                "A13N_SERVICE_OBJECT_ENDPOINT_URL": endpoint,
-                "A13N_SERVICE_OBJECT_BUCKET": bucket,
-                "A13N_SERVICE_OBJECT_REGION": settings.object_region,
-                "A13N_SERVICE_OBJECT_FORCE_PATH_STYLE": "true",
+                **object_environment,
                 "A13N_SERVICE_WORKER_CONCURRENCY": "1",
                 "A13N_SERVICE_WORKER_LEASE_SECONDS": "12",
                 "A13N_SERVICE_WORKER_DRAIN_SECONDS": "5",
@@ -270,6 +257,8 @@ async def open_lab(*, management=False):
             ("redis", redis_url, "REDIS_URL"),
             ("objects", endpoint, "OBJECT_ENDPOINT_URL"),
         ):
+            if suite == "core":
+                break
             parts = urlsplit(url)
             proxy = await stack.enter_async_context(TCPProxy(parts.hostname, parts.port or 80).listen())
             lab.proxies[name] = proxy
@@ -282,11 +271,12 @@ async def open_lab(*, management=False):
             await lab.ready(peer, config["peer_url"], verify=certificate_context(config))
         await lab.command("a13n_service", "db", "upgrade")
         await lab.command("dev.live_tests.manage", "init")
-        other_path = root / "other.json"
-        private_json(other_path, {**config, **config["other_identity"]})
-        await lab.command(
-            "dev.live_tests.manage", "init", environment={**environment, "LIVE_TEST_CONFIG": str(other_path)}
-        )
+        if suite != "core":
+            other_path = root / "other.json"
+            private_json(other_path, {**config, **config["other_identity"]})
+            await lab.command(
+                "dev.live_tests.manage", "init", environment={**environment, "LIVE_TEST_CONFIG": str(other_path)}
+            )
         control = await lab.spawn("dev.live_tests.manage", "control")
         await lab.ready(control, config["control_url"])
         http = await stack.enter_async_context(
@@ -299,7 +289,11 @@ async def open_lab(*, management=False):
             )
         )
         lab.client = LiveClient(config, http)
-        await provision(lab.client)
+        if suite == "core":
+            await lab.command("dev.live_tests.manage", "setup")
+            config.update(json.loads(config_path.read_text()))
+        else:
+            await provision(lab.client)
         private_json(config_path, config)
         await lab.start_worker()
         try:
@@ -308,14 +302,3 @@ async def open_lab(*, management=False):
             for proxy in lab.proxies.values():
                 proxy.restore()
             await lab.client.cleanup()
-
-
-async def _delete_bucket(client, bucket):
-    # This bucket was allocated in open_lab(); no caller-provided bucket is ever deleted.
-    while True:
-        page = await client.list_objects_v2(Bucket=bucket, MaxKeys=1000)
-        for item in page.get("Contents", []):
-            await client.delete_object(Bucket=bucket, Key=item["Key"])
-        if not page.get("IsTruncated"):
-            break
-    await client.delete_bucket(Bucket=bucket)

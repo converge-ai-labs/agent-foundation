@@ -55,5 +55,5 @@ async def management(request):
     from .management_support import ManagementJourney
     from .round_two_lab import open_lab
 
-    async with open_lab(management=True) as lab:
+    async with open_lab(suite="management") as lab:
         yield ManagementJourney(lab)

@@ -43,7 +43,7 @@ async def test_dependency_outage_has_no_false_success_or_partial_seal(round_two,
         assert run["failure"]["code"] and run["failure"]["message"]
     attempts = await lab.attempts(run_id)
     assert all(attempt["status"] in {"succeeded", "failed", "yielded", "cancelled"} for attempt in attempts)
-    assert [item["fence"] for item in attempts] == sorted({item["fence"] for item in attempts})
+    assert [item["attempt_number"] for item in attempts] == sorted({item["attempt_number"] for item in attempts})
     # Redis delivery can explicitly report lost live history; other corruption must still fail.
     try:
         events = await live.events(run_id)

@@ -17,12 +17,16 @@ async def test_worker_sigterm_completes_or_hands_off_and_stops_claiming(round_tw
     queued = await live.start(queued_case)
     assert await lab.attempts(queued["run_id"]) == [], "Single Worker exceeded its one-slot capacity"
     owner = lab.workers[0]
-    lab.send(owner, signal.SIGTERM)
+    # Let the Worker drain its owned runner; signalling the whole group kills it prematurely.
+    owner.send_signal(signal.SIGTERM)
     await lab.wait_unready(owner)
     await live.release(case)
     async with asyncio.timeout(30):
         await owner.wait()
-    assert owner.returncode == 0, "Worker did not exit cleanly"
+    # Uvicorn re-raises SIGTERM after completing application shutdown.
+    assert owner.returncode in {0, -signal.SIGTERM}, "Worker did not exit cleanly"
+    log = lab.root / f"process-{lab.processes.index(owner)}.log"
+    assert "Application shutdown complete" in log.read_text(), "Worker did not finish application shutdown"
     assert await lab.attempts(queued["run_id"]) == [], "Draining Worker claimed another Run"
     old = (await lab.attempts(receipt["run_id"]))[0]
     assert old["status"] in {"yielded", "succeeded"}, old

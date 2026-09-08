@@ -1,6 +1,7 @@
 """HTTP resource helpers and private model observations for management journeys."""
 
 import json
+import os
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -59,14 +60,23 @@ class ManagementJourney:
     async def ready(self, case, run_id):
         return await self.lab.wait_evidence(case, "management_ready", run_id=run_id)
 
-    async def environment_template(self, *, preparation="on_run", access="full", name=None):
+    async def runs(self):
+        runs = []
+        for session in await self.live.collection(self.base + "/sessions"):
+            for thread in await self.live.collection(f"/api/v1/sessions/{session['id']}/threads"):
+                runs.extend(await self.live.collection(f"/api/v1/threads/{thread['id']}/runs"))
+        return sorted(runs, key=lambda run: run["id"])
+
+    async def environment_template(
+        self, *, preparation="on_run", access="full", name=None, provider_type="a13n.direct-local"
+    ):
         name = name or uuid4().hex
         root = self.lab.root / ("environment-" + name)
         root.mkdir(mode=0o700)
         provider = await self.post(
             self.base + "/environment-providers",
             {
-                "type": "a13n.direct-local",
+                "type": provider_type,
                 "name": name,
                 "configuration": {},
             },
@@ -78,9 +88,24 @@ class ManagementJourney:
             "retention": {"idle": {"stop_after": None, "delete_after": None}},
             "configuration": {
                 "root": {"path": str(root)},
-                "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh"}],
+                "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],
             },
         }
+        if provider_type == "a13n.docker":
+            # The sandbox user needs write access to this lab-owned bind directory.
+            root.chmod(0o777)
+            recipe["configuration"] = {
+                "image": os.environ.get("LIVE_TEST_SANDBOX_IMAGE", "a13n-sandbox:local"),
+                "pull_policy": "never",
+                "mounts": [
+                    {
+                        "mount_id": "workspace",
+                        "container_path": "/workspace",
+                        "source": {"kind": "bind", "path": str(root)},
+                    }
+                ],
+                "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh", "fixed_arguments": ["-c"]}],
+            }
         template = await self.post(self.base + "/environment-templates", {"name": name, **recipe})
         return template, recipe, root
 
@@ -109,7 +134,7 @@ class ManagementJourney:
             trust_env=False,
             follow_redirects=False,
         ) as http:
-            probe = await http.get(f"/api/v1/workspaces/{other['workspace_id']}/runs")
+            probe = await http.get(f"/api/v1/workspaces/{other['workspace_id']}/sessions")
             assert probe.status_code == 200
             yield http
 

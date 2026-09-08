@@ -41,7 +41,7 @@ async def test_revision_and_override_reach_harness_without_drifting(management):
     assert await live.run(frozen["id"]) == frozen
 
     # Stale management writes and non-overridable fields cannot create executions.
-    before = await live.collection(journey.base + "/runs")
+    before = await journey.runs()
     await journey.post(
         f"/api/v1/agents/{agent_id}/revisions",
         {"expected_version": first["agent"]["version"], "config": agent_config(instructions="STALE")},
@@ -56,4 +56,4 @@ async def test_revision_and_override_reach_harness_without_drifting(management):
         },
         expected=400,
     )
-    assert await live.collection(journey.base + "/runs") == before
+    assert await journey.runs() == before

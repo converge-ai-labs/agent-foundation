@@ -105,7 +105,7 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
     async def completion(request: Request):
         body = await request.json()
         texts = [_message_text(message) for message in body["messages"]]
-        matches = [match for text in texts for match in re.findall(r"LIVE_TEST (\{[^\n]+\})", text)]
+        matches = [match for text in texts for match in re.findall(r"^LIVE_TEST (\{[^\n]+\})$", text, re.MULTILINE)]
         if not matches:
             raise HTTPException(400, "Expected a LIVE_TEST scenario in the model context")
         case = Case.model_validate_json(matches[-1])
@@ -155,21 +155,32 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
             answer = "approval-resolved"
         if not body.get("stream"):
             raise HTTPException(400, "Live journeys require streamed model requests")
-        return StreamingResponse(_chunks(case, path, answer, tool), media_type="text/event-stream")
+        return StreamingResponse(_chunks(case, path, answer, tool, request=request), media_type="text/event-stream")
 
     return router
 
 
 def _message_text(message: dict) -> str:
     content = message.get("content")
-    if isinstance(content, str):
-        return content
     if isinstance(content, list):
-        return "\n".join(part.get("text", "") for part in content if isinstance(part, dict))
+        content = "\n".join(part.get("text", "") for part in content if isinstance(part, dict))
+    if isinstance(content, str):
+        if message.get("role") == "user":
+            try:
+                task = json.loads(content)
+            except ValueError:
+                task = None
+            if isinstance(task, dict) and isinstance(task.get("delegated_task"), str):
+                return "\n".join(
+                    task[key] for key in ("parent_task", "delegated_task") if isinstance(task.get(key), str)
+                )
+        return content
     return ""
 
 
-async def _chunks(case: Case, path: Path, answer: str, tool: dict | list[dict] | None):
+async def _chunks(
+    case: Case, path: Path, answer: str, tool: dict | list[dict] | None, *, request: Request | None = None
+):
     identifier, created = "chatcmpl_" + uuid4().hex, int(time.time())
 
     def frame(delta: dict, finish=None, *, usage=False):
@@ -185,7 +196,15 @@ async def _chunks(case: Case, path: Path, answer: str, tool: dict | list[dict] |
         try:
             with anyio.fail_after(150):
                 while not await anyio.Path(path / "release").exists():
-                    await anyio.sleep(0.05)
+                    # ASGI 2.4 detects disconnects on send; this gate deliberately sends no frames.
+                    if request is None:
+                        await anyio.sleep(0.05)
+                    else:
+                        # Middleware may checkpoint before delivering receive(); an already-cancelled
+                        # is_disconnected() poll cannot observe that message.
+                        with anyio.move_on_after(0.05):
+                            if (await request.receive())["type"] == "http.disconnect":
+                                return
         finally:
             with anyio.CancelScope(shield=True):
                 await anyio.Path(path / "model_closed").touch()

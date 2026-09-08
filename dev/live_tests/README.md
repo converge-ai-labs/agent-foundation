@@ -22,7 +22,36 @@ answers. This tests Foundation orchestration and real tool execution, not extern
 model quality or provider compatibility. The approval tool is uploaded as a real
 plugin wheel through the API.
 
-## Setup
+## Disposable local setup
+
+With Docker running, execute the first round without preparing `.env` or starting
+service processes manually:
+
+```sh
+make live-test-local
+# Run cases 3 and 4, in file order:
+make live-test-local LIVE_TEST_ARGS='-k "environment_tool or stream_disconnect"'
+```
+
+This entry point creates fresh PostgreSQL, Redis and RustFS containers, applies
+committed migrations, provisions the first-round resources through Control HTTP,
+and starts separate Control and Worker processes on new loopback ports. It does
+not use an existing installation's database, credentials or service listeners.
+Test subprocesses explicitly bypass proxies for loopback, including macOS system
+proxies, so interrupt checks observe the Worker's actual model connection.
+RustFS uses the digest pinned in `local_storage.py`; the first invocation may need
+to download images. Startup waits for the authenticated S3 API, then runs the
+Service's unchanged conditional-write/delete and concurrent-write probes.
+
+The Environment uses the `default` Shell profile expected by Harness, with
+`/bin/sh` and no extra `-c` argument. Only first-round resources are provisioned;
+fault relays and the second identity are omitted. On completion, failure or
+interruption, the runner cleans up its own services and containers. Private
+configuration, process/test logs, file evidence and `results.json` remain under
+ignored `.state/core/<random-id>/`. These configuration files describe disposable
+resources; rerun the command to create a new installation instead of reusing them.
+
+## Manual setup with existing dependencies
 
 Run commands from the repository root after the normal development setup. Configure
 `.env` with the actual PostgreSQL and Redis endpoints and apply committed migrations
@@ -125,14 +154,15 @@ first round. Neither default collection nor `make live-test-check` starts
 Foundation, containers, or dependency faults; support tests may open short-lived
 loopback echo sockets to validate the fault relay itself.
 
-Prerequisites are Docker and a **compatible loopback HTTP S3 server**, configured
-using `A13N_SERVICE_OBJECT_ENDPOINT_URL`, `A13N_SERVICE_OBJECT_REGION`, and the
-server's AWS credentials in `.env`. The server must support the service's
-conditional-write/delete probe; an arbitrary MinIO version is not sufficient.
-The test creates and deletes its own random bucket, and does not use the bucket
-named by `A13N_SERVICE_OBJECT_BUCKET`. Missing or incompatible S3 fails setup
-explicitly, rather than skipping enabled live cases. Run only one selection at a
-time; these journeys do not use pytest-xdist.
+Docker is required. Without `A13N_SERVICE_OBJECT_ENDPOINT_URL`, each lab starts
+the same pinned, compatible RustFS container used by `live-test-local`. To use an
+existing loopback S3 server, configure that endpoint, `A13N_SERVICE_OBJECT_REGION`
+and its AWS credentials in `.env`. The endpoint must pass the Service's storage
+compatibility probe; an arbitrary MinIO version is not sufficient. The test
+creates and deletes its own random bucket, never the bucket named by
+`A13N_SERVICE_OBJECT_BUCKET`. An explicitly configured but incompatible endpoint
+fails setup rather than silently switching storage or skipping enabled cases.
+Run only one selection at a time; these journeys do not use pytest-xdist.
 
 Each test owns new PostgreSQL and Redis containers, fresh migrated schemas,
 identities, loopback ports and service subprocesses. It never discovers or kills
@@ -159,7 +189,7 @@ Foundation passes the corresponding contract.
 This round adds 30 live variants in 11 independently selectable files. Cases 19,
 28, 29 and 30 are intentionally excluded. All management resources are created
 through public HTTP APIs, and each enabled test uses its own isolated lab with
-the same Docker and compatible loopback S3 prerequisites as round two.
+the same automatic RustFS setup and optional loopback S3 override as round two.
 
 | File                                 | Acceptance evidence                                                                                                                                                                                                                                          |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -176,16 +206,26 @@ the same Docker and compatible loopback S3 prerequisites as round two.
 | `test_31_observability.py`           | Actual OTLP/HTTP exports correlate Service Attempt, Harness, model and tool spans; durable Items, SSE and model usage agree; rejecting trace exports with HTTP 503 does not change the result or repeat the effect                                           |
 
 ```sh
+make image-sandbox
 make live-test-management
 make live-test-management LIVE_TEST_ARGS='-k revision'
 make live-test-management LIVE_TEST_ARGS='-k asset'
 make live-test-check
 ```
 
-Use `--live-management` only for this round. The existing two entry points retain
+The two backing-lifecycle cases in case 21 use the Docker Provider and require
+the locally built `a13n-sandbox:local` image. Set `LIVE_TEST_SANDBOX_IMAGE` to use
+another locally built image; these cases never pull an implicit remote image.
+Their workspace is a fixture-owned bind directory, so its proof file survives
+backing-container deletion. This does not assert recovery of deleted ephemeral
+container files. Cleanup stops the lab's Workers and removes only containers
+labelled with that test's exact Environment ID. Other management cases use
+Direct Local, which does not support backing stop or deletion.
+
+Use `--live-management` only for this round. The other entry points retain
 their own opt-ins. The lab also retains private model request observations,
 Composio/MCP dispatch evidence and OTLP exports beneath
-`.state/round-two/<random-id>/`. Ambient OpenTelemetry destinations are removed
+`.state/management/<random-id>/`. Ambient OpenTelemetry destinations are removed
 from lab subprocess environments; case 31 enables only its local receiver.
 Composio requires HTTPS, so the lab starts an owned TLS peer and appends its
 one-day certificate to a private CA bundle used only by lab subprocesses. It does
