@@ -13,7 +13,12 @@ from tempfile import TemporaryDirectory
 from threading import Lock
 from typing import Any, Literal
 
-from a13n_environment import DirectLocalProviderConfiguration, DirectLocalRootConfiguration
+from a13n_environment import (
+    DirectLocalEnvironmentProvider,
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+    Environment,
+)
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -30,7 +35,6 @@ from a13n_harness import (
     HarnessState,
     HarnessTraceContent,
     RunBindings,
-    RunInputValue,
     SubagentDefinition,
 )
 from a13n_harness.capabilities import (
@@ -38,22 +42,13 @@ from a13n_harness.capabilities import (
     CompactionPolicy,
     HandoffCapability,
     SubagentCapability,
-    SubagentManager,
 )
-from a13n_harness.context import BuiltSubagent
 from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
-    EnvironmentAction,
-    EnvironmentPermissionSet,
     FileMediaUnderstandingRunCapability,
 )
-from a13n_harness.environment.advanced import (
-    EmptyEnvironmentRuntime,
-    EnvironmentRuntimeMount,
-    create_environment_runtime,
-)
-from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from a13n_harness.pricing import (
     AbstractModelCostCapability,
     ModelCostInput,
@@ -330,7 +325,7 @@ def _subagent_parent_model() -> _UsageFunctionModel:
                     json_args=json.dumps(
                         {
                             "subagent": "reviewer",
-                            "task": "Review the bounded Observation identity and cost evidence.",
+                            "prompt": "Review the bounded Observation identity and cost evidence.",
                         }
                     ),
                     tool_call_id="delegate-reviewer-1",
@@ -389,22 +384,12 @@ def _main_identity(scenario: Scenario) -> AgentIdentityRef:
     )
 
 
-def _local_environment(root: Path):
-    provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="observation-demo-local",
-            root=DirectLocalRootConfiguration(path=root),
-        )
-    )
-    return create_environment_runtime(
-        mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=provider,
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                working_directory="/",
-            )
-        },
-        default_mount="local",
+def _local_environment(root: Path) -> Environment:
+    return DirectLocalEnvironmentProvider().create_environment(
+        environment_id="observation-demo-local",
+        configuration=DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=root)),
+        state=None,
+        runtime=None,
     )
 
 
@@ -473,31 +458,6 @@ def _build_standard_scenario(
 _SUBAGENT_PARENT_INSTANCE_ID = "observation-subagent-parent-instance"
 
 
-async def _bind_observation_subagent(
-    child: BuiltSubagent,
-    input: RunInputValue,
-    child_instance_id: str,
-    continuation: bool,
-    usage_limits: UsageLimits | None,
-) -> RunBindings:
-    del child, input, continuation, usage_limits
-    return RunBindings(
-        instance=AgentInstanceContext(
-            identity=AgentIdentityRef(
-                issuer="https://identity.observation.local",
-                subject="observation-demo:reviewer",
-                agent_id="observation-reviewer-agent",
-                user_id="observation-user-42",
-            ),
-            agent_instance_id=f"reviewer-{child_instance_id}",
-            parent_agent_instance_id=_SUBAGENT_PARENT_INSTANCE_ID,
-            delegation_id=child_instance_id,
-            actor="observation-demo-parent",
-        ),
-        environment=EmptyEnvironmentRuntime(),
-    )
-
-
 def _build_subagent_scenario(instrumentation: HarnessInstrumentation):
     child = AgentDefinition(
         agent=AgentSpec(name="reviewer-observation-demo"),
@@ -511,10 +471,7 @@ def _build_subagent_scenario(instrumentation: HarnessInstrumentation):
         definition_id="observation-parent-v1",
         model=_subagent_parent_model(),
         capabilities=(
-            SubagentCapability(
-                execution="inline",
-                operator=SubagentManager(_bind_observation_subagent),
-            ),
+            SubagentCapability(),
             _DemoCostCapability(),
         ),
         subagents=(
@@ -592,6 +549,7 @@ async def _run_scenario(
     context_events: list[str] = []
     terminal: HarnessRunResult[str] | None = None
     workspace: TemporaryDirectory[str] | None = None
+    environments: dict[str, Environment] | None = None
 
     if scenario == "subagent":
         executable = _build_subagent_scenario(instrumentation)
@@ -607,13 +565,13 @@ async def _run_scenario(
         root = Path(workspace.name)
         (root / "observation.png").write_bytes(_IMAGE_BYTES)
         executable = _build_standard_scenario("view", instrumentation)
+        environments = {"local": _local_environment(root)}
         bindings = RunBindings(
             instance=AgentInstanceContext(
                 identity=_main_identity("view"),
                 agent_instance_id="observation-view-instance",
                 actor="observation-demo-host",
             ),
-            environment=_local_environment(root),
             capabilities=(
                 InvocationPolicyCapability(evaluator=_AllowInvocations(), max_dispatch_retries=0),
                 FileMediaUnderstandingRunCapability(provider=_media_provider()),
@@ -637,6 +595,7 @@ async def _run_scenario(
             prompt,
             bindings=bindings,
             previous_state=previous_state,
+            environments=environments,
         ) as run:
             async for item in run:
                 if isinstance(item, HarnessEvent):

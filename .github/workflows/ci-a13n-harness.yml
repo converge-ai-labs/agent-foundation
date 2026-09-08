@@ -8,6 +8,7 @@ on:
       - ".github/workflows/release-a13n-harness.yml"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
+      - "dev/observation-demo/**"
       - "pyproject.toml"
       - "uv.lock"
   push:
@@ -17,6 +18,7 @@ on:
       - ".github/workflows/release-a13n-harness.yml"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
+      - "dev/observation-demo/**"
       - "pyproject.toml"
       - "uv.lock"
   workflow_dispatch:
