@@ -87,6 +87,8 @@ An initial call does not import an arbitrary prior transcript. Historical import
 
 The adapter maps the accepted new user tail into one canonical `AgentInput`. Text and binary parts retain their order, media type, acquisition, and delivery semantics; structured AG-UI data maps to `structured_content` and follows the selected AgentRevision's optional `ProtocolConfig.input_data_schema`. The common Agent input contract validates the resulting value before the control operation accepts a Run. AG-UI protocol fields that express state, context, client tools, or feedback remain command options or correlated feedback and never enter `AgentInput` implicitly.
 
+Accepted `state` and `context` are retained together as optional `protocol_context` in the Service Run envelope, independently of ordinary `AgentInput`. Initialization validates them against the frozen Revision policy. Worker preparation projects them through Harness model-context middleware as explicitly untrusted client data in the root input preamble or tool-result request epilogue. Checkpoints and Retry retain the same context; correlated feedback retains it unless the accepted request supplies a replacement. A new Hosted invocation, continuation, or fork supplies its own context. It never becomes Harness execution state or an authorization source.
+
 Standard `state`, `context`, and `tools` plus Service extensions are bounded untrusted inputs:
 
 | Input                   | Accepted meaning                                                                                                     |

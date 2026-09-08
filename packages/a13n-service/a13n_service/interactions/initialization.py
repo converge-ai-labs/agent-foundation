@@ -7,8 +7,10 @@ from a13n_harness.usage import intersect_usage_limits
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.secrets.domain import AgentSecretBinding
 
 from .domain import ObjectId, RunInputKind, RunLineageKind, StrictModel, ThreadId
+from .protocol_context import ProtocolInputContext
 from .state import HostContinuationState, RunStateEnvelope
 
 
@@ -18,6 +20,8 @@ class RunStateSeed(StrictModel):
     agent_revision_id: ObjectId
     effective_agent_config: EffectiveAgentConfig
     usage_limits: UsageLimits | None = None
+    protocol_context: ProtocolInputContext | None = None
+    secret_bindings: tuple[AgentSecretBinding, ...] = ()
 
 
 def initialize_start_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunStateEnvelope:
@@ -94,6 +98,8 @@ def _initial_envelope(
     harness: HarnessState,
     host: HostContinuationState,
 ) -> RunStateEnvelope:
+    if seed.protocol_context is not None:
+        seed.protocol_context.validate_policy(seed.effective_agent_config.protocol)
     harness = HarnessState(
         schema_version=harness.schema_version,
         thread_id=harness.thread_id,
@@ -112,6 +118,8 @@ def _initial_envelope(
         agent_id=seed.agent_id,
         agent_revision_id=seed.agent_revision_id,
         effective_agent_config=seed.effective_agent_config,
+        protocol_context=seed.protocol_context,
+        secret_bindings=seed.secret_bindings,
         usage_limits=seed.usage_limits,
         runtime_lock_digest=seed.effective_agent_config.runtime_lock_digest,
         harness_schema_version=harness.schema_version,

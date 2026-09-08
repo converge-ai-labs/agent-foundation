@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
 import pytest
+from a13n_service.agents.domain import AgentConfig, canonical_digest
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore, hosted_agui_replay_key
 from a13n_service.gateway.hosted_agui import (
@@ -16,6 +18,7 @@ from a13n_service.gateway.hosted_agui import (
 from a13n_service.gateway.models import AguiRunBindingRecord, AguiThreadBindingRecord
 from a13n_service.http_errors import application_error_status
 from a13n_service.interactions.models import RunRecord
+from a13n_service.interactions.objects import RunStateStore
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.run_stream import (
     RedisRunStream,
@@ -60,10 +63,13 @@ async def _service(
     objects = await LocalObjectStore.create(tmp_path / "objects")
     redis = await stack.enter_async_context(open_redis(RedisMemoryConfig()))
     stream = RedisRunStream(redis)
+    async with short_session(sessions) as database:
+        revision = await database.get(AgentRevisionRecord, "agtr_1234567890abcdef")
+        protocol = AgentConfig.model_validate(revision.config).protocol
     return (
         HostedAguiService(
             sessions,
-            _commands(sessions, objects, _Preparation(), _frozen_resolver()),
+            _commands(sessions, objects, _Preparation(), _frozen_resolver(protocol)),
             stream,
             RunReplayStore(objects),
             HostedAguiReplayStore(objects, max_events=1024, max_bytes=16 * 1024 * 1024),
@@ -129,10 +135,21 @@ def _surface_request(*, state: object, context: list[dict[str, str]], tools: lis
     )
 
 
-def _frozen_resolver():
+def _frozen_resolver(protocol=None):
     from tests.gateway.test_commands import _Freezing
 
-    return _Freezing([_frozen()])
+    frozen = _frozen()
+    if protocol is not None:
+        config = frozen.effective_config.model_copy(update={"protocol": protocol})
+        config = config.model_copy(
+            update={
+                "content_digest": canonical_digest(
+                    config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
+                )
+            }
+        )
+        frozen = replace(frozen, effective_config=config)
+    return _Freezing([frozen])
 
 
 async def test_protocol_state_context_and_client_tools_are_validated_and_frozen(
@@ -193,6 +210,13 @@ async def test_protocol_state_context_and_client_tools_are_validated_and_frozen(
     override = captured[0].config_override
     assert override is not None
     assert [tool.name for tool in override.client_tools or ()] == ["lookup_order"]
+    assert captured[0].protocol_context.state == {"locale": "zh-CN"}
+    assert captured[0].protocol_context.context[0].value == "enterprise"
+    assert "state" not in captured[0].input.model_dump()
+    async with short_session(lifecycle_interaction_sessions) as database:
+        run = (await database.get(RunRecord, attachment.binding.run_id)).to_resource()
+    frozen_state = await RunStateStore(_objects).read_run(run)
+    assert frozen_state.envelope.protocol_context == captured[0].protocol_context
 
 
 @pytest.mark.parametrize(

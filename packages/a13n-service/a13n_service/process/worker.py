@@ -11,6 +11,7 @@ from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.assets.objects import AssetObjectStore
+from a13n_service.assets.publication import AgentAssetPublisher
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
@@ -168,9 +169,13 @@ async def build_worker_runtime(
     )
 
     skills = SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store)
-    assets = AssetObjectStore(
-        shared.storage.objects,
-        await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter),
+    asset_staging = await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter)
+    assets = AssetObjectStore(shared.storage.objects, asset_staging)
+    asset_publisher = AgentAssetPublisher(
+        shared.storage.sessions,
+        assets,
+        asset_staging,
+        max_size_bytes=settings.asset_max_size_bytes,
     )
     execution_loop = WorkerExecutionLoop(
         shared.storage.sessions,
@@ -185,6 +190,7 @@ async def build_worker_runtime(
             stream=run_stream,
             replay=run_replay,
             assets=assets,
+            asset_publisher=asset_publisher,
             observability=observability,
         ),
         build_id=settings.build_version,

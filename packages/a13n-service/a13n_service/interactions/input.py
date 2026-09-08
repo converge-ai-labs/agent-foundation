@@ -30,6 +30,7 @@ from pydantic_ai.messages import UserContent
 from a13n_service.agents.domain import InputAdapterConfig
 from a13n_service.assets.domain import Asset, normalize_asset_filename, normalize_media_type
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.secrets.domain import AgentSecretBinding
 
 from .domain import BoundedKey, JsonObject, ObjectId, StrictModel
 
@@ -109,6 +110,9 @@ class AgentInput(StrictModel):
     schema_version: Literal["1", "2"]
     content: tuple[ContentBlock, ...] = Field(default=(), max_length=_MAX_CONTENT_BLOCKS)
     structured_content: JsonValue | None = None
+    secret_bindings: tuple[AgentSecretBinding, ...] = Field(
+        default=(), max_length=128, exclude_if=lambda value: not value
+    )
 
     @model_validator(mode="after")
     def source_union_matches_version(self) -> AgentInput:
@@ -148,6 +152,9 @@ class AcceptedAgentInput(StrictModel):
     schema_version: Literal["1", "2"]
     content: tuple[AcceptedContentBlock, ...] = Field(default=(), max_length=_MAX_CONTENT_BLOCKS)
     structured_content: JsonValue | None = None
+    secret_bindings: tuple[AgentSecretBinding, ...] = Field(
+        default=(), max_length=128, exclude_if=lambda value: not value
+    )
 
     @model_validator(mode="after")
     def source_union_matches_version(self) -> AcceptedAgentInput:
@@ -208,6 +215,7 @@ class AgentInputAcceptance:
             schema_version=submitted.schema_version,
             content=tuple(accepted),
             structured_content=submitted.structured_content,
+            secret_bindings=submitted.secret_bindings,
         )
         if len(result.canonical_bytes()) > context.max_input_bytes:
             raise AgentInputError("input_too_large", "Agent input exceeds the accepted input limit")
