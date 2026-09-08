@@ -291,7 +291,7 @@ async def test_materializer_stops_writes_when_attempt_fence_expires_mid_package(
     )
     fence = ExpiringFence(stale_on_call=6)
     materializer = EnvironmentSkillMaterializer(
-        "foundation-materializer-test",
+        "service-materializer-test",
         plan,
         runtime_fixture.packages,
         fence=fence,
@@ -357,7 +357,7 @@ async def test_runtime_rejects_tampered_lock_and_stale_fence(
         manifest=runtime_fixture.deploy.manifest,
     )
     source = MaterializedSkillSource(
-        "foundation-skills-test",
+        "service-skills-test",
         SkillMaterializationPlan(
             target_root="/skills",
             catalog_digest="a" * 64,

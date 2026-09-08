@@ -109,7 +109,7 @@ class WorkerInputSources:
 class WorkerInputCapability(AbstractCapability[AgentContext]):
     """Bind only the current logical Run's entered input Environment."""
 
-    id = "a13n.foundation.input-environment"
+    id = "a13n.service.input-environment"
 
     def __init__(self, sources: WorkerInputSources) -> None:
         self._sources = sources

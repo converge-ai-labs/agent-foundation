@@ -60,7 +60,7 @@ async def test_run_attempt_is_parentless_and_exports_only_approved_correlated_sc
 
     with incoming_tracer.start_as_current_span("incoming"):
         with observation.run_attempt(correlation(), input_value={"prompt": "hello"}) as attempt:
-            with attempt.phase("foundation.reconstruct"):
+            with attempt.phase("a13n.service.reconstruct"):
                 harness_tracer = provider.get_tracer("a13n-harness")
                 with harness_tracer.start_as_current_span("harness.run"):
                     provider.get_tracer("unapproved-plugin").start_span("plugin.secret").end()
@@ -68,9 +68,9 @@ async def test_run_attempt_is_parentless_and_exports_only_approved_correlated_sc
 
     assert provider.force_flush()
     spans = {span.name: span for span in exporter.get_finished_spans()}
-    assert spans.keys() == {"foundation.run_attempt", "foundation.reconstruct", "harness.run"}
-    root = spans["foundation.run_attempt"]
-    phase = spans["foundation.reconstruct"]
+    assert spans.keys() == {"a13n.service.run_attempt", "a13n.service.reconstruct", "harness.run"}
+    root = spans["a13n.service.run_attempt"]
+    phase = spans["a13n.service.reconstruct"]
     harness = spans["harness.run"]
     assert root.parent is None
     assert phase.parent is not None and phase.parent.span_id == root.context.span_id
@@ -83,7 +83,7 @@ async def test_run_attempt_is_parentless_and_exports_only_approved_correlated_sc
     for span in spans.values():
         assert span.attributes is not None
         assert span.attributes["a13n.run_attempt.id"] == "attempt_123"
-        assert span.attributes["a13n.foundation.run.id"] == "run_123"
+        assert span.attributes["a13n.service.run.id"] == "run_123"
         assert span.attributes["session.id"] == "thread_123"
         assert span.resource.attributes["service.name"] == "a13n-service"
         assert span.resource.attributes["service.version"] == "1.2.3"
@@ -116,7 +116,7 @@ async def test_real_harness_and_pydantic_spans_descend_from_the_attempt_root() -
     provider = observation.tracer_provider
     assert provider is not None and provider.force_flush()
     spans = exporter.get_finished_spans()
-    root = next(span for span in spans if span.name == "foundation.run_attempt")
+    root = next(span for span in spans if span.name == "a13n.service.run_attempt")
     harness = next(span for span in spans if span.name == "harness.run")
     pydantic_spans = [span for span in spans if span.instrumentation_scope.name == "pydantic-ai"]
     assert harness.parent is not None and harness.parent.span_id == root.context.span_id
@@ -167,7 +167,7 @@ async def test_none_content_and_failed_outcome_preserve_topology_without_payload
 
     assert provider.force_flush()
     root = exporter.get_finished_spans()[0]
-    assert root.name == "foundation.run_attempt"
+    assert root.name == "a13n.service.run_attempt"
     assert root.attributes is not None
     assert "input.value" not in root.attributes
     assert "output.value" not in root.attributes
@@ -200,20 +200,20 @@ async def test_service_phases_ignore_an_unrelated_current_span_for_parentage() -
 
     with observation.run_attempt(correlation()) as attempt:
         tracer = provider.get_tracer(INSTRUMENTATION_SCOPE)
-        with tracer.start_as_current_span("foundation.unregistered"):
-            with attempt.phase("foundation.reconstruct"):
+        with tracer.start_as_current_span("a13n.service.unregistered"):
+            with attempt.phase("a13n.service.reconstruct"):
                 pass
-            with attempt.phase("foundation.persist"):
+            with attempt.phase("a13n.service.persist"):
                 pass
 
     assert provider.force_flush()
     spans = {span.name: span for span in exporter.get_finished_spans()}
-    assert spans.keys() == {"foundation.run_attempt", "foundation.reconstruct", "foundation.persist"}
-    root = spans["foundation.run_attempt"]
-    assert spans["foundation.reconstruct"].parent is not None
-    assert spans["foundation.reconstruct"].parent.span_id == root.context.span_id
-    assert spans["foundation.persist"].parent is not None
-    assert spans["foundation.persist"].parent.span_id == root.context.span_id
+    assert spans.keys() == {"a13n.service.run_attempt", "a13n.service.reconstruct", "a13n.service.persist"}
+    root = spans["a13n.service.run_attempt"]
+    assert spans["a13n.service.reconstruct"].parent is not None
+    assert spans["a13n.service.reconstruct"].parent.span_id == root.context.span_id
+    assert spans["a13n.service.persist"].parent is not None
+    assert spans["a13n.service.persist"].parent.span_id == root.context.span_id
     await observation.aclose()
 
 

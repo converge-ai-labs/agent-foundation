@@ -113,10 +113,10 @@ If `after_resource_seq + 1 < retained_resource_seq_floor`, the requested next ev
 ```http
 GET /api/v1/notifications
 Upgrade: websocket
-Sec-WebSocket-Protocol: foundation.notifications.v1
+Sec-WebSocket-Protocol: a13n.service.notifications.v1
 ```
 
-The endpoint accepts exactly the `foundation.notifications.v1` subprotocol. Authentication completes before upgrade. A connection begins with no resource subscription and therefore receives no product notification until the client subscribes.
+The endpoint accepts exactly the `a13n.service.notifications.v1` subprotocol. Authentication completes before upgrade. A connection begins with no resource subscription and therefore receives no product notification until the client subscribes.
 
 Client and server data frames are UTF-8 JSON objects with a required `type`. Unknown frame types or fields are protocol errors.
 
@@ -210,7 +210,7 @@ Authentication failure known before upgrade returns the ordinary HTTP `401` and 
 
 ## Compatibility and Invariants
 
-SSE event schemas and Run Stream cursor compatibility belong to the Run Stream owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event owner. Resource lifecycle API compatibility includes the resource-sequence domain, contiguity, and explicit retention-gap response. `foundation.notifications.v1` versions the WebSocket frame contract; breaking frame or subscription changes require another subprotocol.
+SSE event schemas and Run Stream cursor compatibility belong to the Run Stream owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event owner. Resource lifecycle API compatibility includes the resource-sequence domain, contiguity, and explicit retention-gap response. `a13n.service.notifications.v1` versions the WebSocket frame contract; breaking frame or subscription changes require another subprotocol.
 
 1. Detailed Run observations use SSE only.
 2. Durable Workspace lifecycle replay uses a bounded JSON collection only.

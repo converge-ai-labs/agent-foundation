@@ -45,7 +45,7 @@ from .domain import (
 )
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
 
-_CLIENT_TOOLSET_ID = "foundation"
+_CLIENT_TOOLSET_ID = "service"
 _MAX_SCHEMA_REFERENCE_EXPANSIONS = 1024
 
 

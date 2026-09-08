@@ -35,7 +35,7 @@ def actor(*, principal_id: str = "user_0000000000000001") -> AuthenticatedActor:
 def summary(**updates: object) -> ProviderTraceSummary:
     values: dict[str, object] = {
         "id": "trace-1",
-        "name": "foundation.run_attempt",
+        "name": "a13n.service.run_attempt",
         "started_at": datetime(2026, 9, 1, 1, tzinfo=UTC),
         "ended_at": datetime(2026, 9, 1, 1, 0, 1, tzinfo=UTC),
         "duration_ms": 1000,

@@ -181,7 +181,7 @@ After confirmed state claim, the fenced preparation decision, and recovery recei
 
 1. reconstructs the accepted Agent specification, exact managed plugin set, Skill and subagent composition, output contract, and model selection;
 2. uses the existing Attempt-scoped `RunAttemptControl` and its bound `HarnessDriver`; the facade retains the current `AttemptContext`, final recovery state, private gate, and executor cancellation binding without exposing them to Agent code;
-3. inserts one direct `RunControlCapability` with ID `a13n.foundation.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
+3. inserts one direct `RunControlCapability` with ID `a13n.service.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
 4. requires the Harness build to validate finalized Capability identity and ordering, rejecting a duplicate reserved ID or an incompatible outer wrapper; and
 5. calls `HarnessBuilder.build(definition)`.
 
@@ -211,7 +211,7 @@ class RunControlCapability(
     control: RunAttemptControl
     driver: HarnessDriver
     binding: HarnessContextBinding | None = None
-    id: str = "a13n.foundation.run-control"
+    id: str = "a13n.service.run-control"
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
