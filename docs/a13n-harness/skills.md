@@ -51,6 +51,12 @@ The two APIs have exact, non-overlapping behavior:
 
 `required=False` is explicit source policy rather than fallback discovery. It can omit that exact missing, unroutable, or unsupported root, but it never substitutes another path.
 
+## Read Concurrency and Limits
+
+Built-in file discovery and final document validation use at most eight read workers per operation. Materializers, sources, and roots remain sequential; parallel reads do not change source precedence, skipped-entry diagnostic order, or the name-sorted model catalog. With unchanged source configuration and content, read completion order does not change the Skill instruction prefix. Cancellation joins the workers before releasing their file scopes.
+
+Existing size limits remain independent of concurrency: `FileSkillSource.max_entries_per_root` defaults to 256 listed directory entries, and `SkillsPolicy.max_skills` defaults to 512 entries per source and in the final resolved catalog. Oversized catalogs fail explicitly rather than silently selecting the first entries. Concurrency is internal; no new Host configuration or cross-run cache is required.
+
 ## Skill Package Layout
 
 A selected root can itself be a Skill package, and each immediate child directory can be one Skill package. Discovery does not recurse beyond that level.

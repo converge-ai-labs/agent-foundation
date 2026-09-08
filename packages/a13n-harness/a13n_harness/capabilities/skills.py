@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterable, AsyncIterator, Sequence
+import asyncio
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from html import escape
@@ -11,6 +12,7 @@ from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import yaml
 from a13n_logging import get_logger
+from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -43,6 +45,7 @@ from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_har
 SKILLS_CAPABILITY_ID = "a13n.skills"
 SKILL_SELECTION_RUN_CAPABILITY_ID = "a13n.skills.selection.run"
 _SKILL_FILE_NAME = "SKILL.md"
+_SKILL_READ_CONCURRENCY = 8
 _DEFAULT_ENVIRONMENT_SKILL_ROOT = "/workspace/.agents/skills"
 _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
     {"environment_not_found", "environment_selection_invalid", "environment_unsupported"}
@@ -221,31 +224,31 @@ class FileSkillSource:
                     code="skill_catalog_too_large",
                     details={"source_id": self.source_id, "root": root},
                 )
-            direct = _join_logical_path(root, _SKILL_FILE_NAME)
-            if await _is_file(files, direct):
-                await self._append_entry(files, root, discovered)
-            for entry in sorted(entries.entries, key=lambda item: item.path):
-                if entry.kind != "directory":
-                    continue
-                skill_file = _join_logical_path(entry.path, _SKILL_FILE_NAME)
-                if await _is_file(files, skill_file):
-                    await self._append_entry(files, entry.path, discovered)
+            candidates = [
+                root,
+                *(
+                    entry.path
+                    for entry in sorted(entries.entries, key=lambda item: item.path)
+                    if entry.kind == "directory"
+                ),
+            ]
+            results = await _map_ordered(candidates, lambda path: self._read_entry(files, path))
+            for path, result in zip(candidates, results, strict=True):
+                if isinstance(result, DefinitionError) and self._skip_invalid:
+                    _LOGGER.warning(
+                        "skill_catalog_entry_skipped",
+                        extra={"source_id": self.source_id, "path": path, "code": result.code},
+                    )
+                elif isinstance(result, Exception):
+                    raise result
+                elif result is not None:
+                    discovered.append(result)
         return tuple(discovered)
 
-    async def _append_entry(
-        self,
-        files: FileOperator,
-        path: str,
-        entries: list[SkillCatalogItem],
-    ) -> None:
-        try:
-            entries.append(await self._catalog_entry(files, path))
-        except DefinitionError as exc:
-            if not self._skip_invalid:
-                raise
-            _LOGGER.warning(
-                "skill_catalog_entry_skipped", extra={"source_id": self.source_id, "path": path, "code": exc.code}
-            )
+    async def _read_entry(self, files: FileOperator, path: str) -> SkillCatalogItem | None:
+        if not await _is_file(files, _join_logical_path(path, _SKILL_FILE_NAME)):
+            return None
+        return await self._catalog_entry(files, path)
 
     async def _catalog_entry(self, files: FileOperator, skill_dir: str) -> SkillCatalogItem:
         path = _join_logical_path(skill_dir, _SKILL_FILE_NAME)
@@ -594,10 +597,13 @@ class SkillManager:
         if len(selected) > self._policy.max_skills:
             raise DefinitionError("The selected skill catalog is too large.", code="skill_catalog_too_large")
         access_paths: dict[str, str] = {}
-        for item in selected.values():
-            skill_file = _join_logical_path(item.path, _SKILL_FILE_NAME)
+        items = tuple(selected.values())
+        results = await _map_ordered(items, lambda item: files.stat(_join_logical_path(item.path, _SKILL_FILE_NAME)))
+        for item, result in zip(items, results, strict=True):
             try:
-                metadata = await files.stat(skill_file)
+                if isinstance(result, Exception):
+                    raise result
+                metadata = result
             except EnvironmentError as exc:
                 raise DefinitionError(
                     "A selected skill document is unavailable.",
@@ -966,6 +972,38 @@ def _bind_skill_catalog(
             )
         )
     return BoundSkillCatalog(items=tuple(bound))
+
+
+async def _map_ordered[T, R](items: Sequence[T], read: Callable[[T], Awaitable[R]]) -> list[R | Exception]:
+    """Overlap bounded reads; callers apply results and ordinary errors in input order."""
+    pending = iter(enumerate(items))
+    results: dict[int, R | Exception] = {}
+
+    async def worker() -> None:
+        for index, item in pending:
+            try:
+                results[index] = await read(item)
+            except Exception as exc:
+                results[index] = exc
+
+    workers = [
+        asyncio.create_task(worker(), name="skill-catalog-read")
+        for _ in range(min(_SKILL_READ_CONCURRENCY, len(items)))
+    ]
+    joined = asyncio.gather(*workers)
+    try:
+        # Deliver cancellation ourselves once, rather than letting a level-triggered
+        # Host cancel scope repeatedly cancel workers through the gather future.
+        await asyncio.shield(joined)
+    finally:
+        for task in workers:
+            if not task.done():
+                task.cancel()
+        # A Host may cancel through an AnyIO scope; join reads before releasing
+        # their pinned file scopes, even while that outer scope remains cancelled.
+        with CancelScope(shield=True):
+            await asyncio.gather(joined, *workers, return_exceptions=True)
+    return [results[index] for index in range(len(items))]
 
 
 async def _is_file(files: FileOperator, path: str) -> bool:
