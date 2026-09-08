@@ -15,7 +15,7 @@ from a13n_harness_ui.interactive.pastes import PendingPastes
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput, ThreadFiles
-from anyio import to_thread
+from anyio import fail_after, sleep, to_thread
 from PIL import Image
 from pydantic_ai import BinaryContent
 from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
@@ -74,11 +74,22 @@ asyncio.run(main())
     files = ThreadFiles(tmp_path, retention_seconds=1)
     try:
         assert await to_thread.run_sync(child.stdout.readline) == "ready\n"
-        _expire(tmp_path / "threads/thread-active/tmp")
+        scratch = files.directory("thread-active") / "tmp"
+        _expire(scratch)
         assert await files.prune() == ()
+        assert scratch.is_dir()
         child.kill()
         await to_thread.run_sync(child.wait)
-        assert await files.prune() == ("thread-active",)
+        # Windows can finish process wait before releasing its file locks.
+        # Pruning is best effort: require eventual recovery, not a first-probe win.
+        with fail_after(5):
+            while True:
+                removed = await files.prune()
+                if removed:
+                    break
+                await sleep(0.05)
+        assert removed == ("thread-active",)
+        assert not scratch.exists()
     finally:
         if child.poll() is None:
             child.kill()
