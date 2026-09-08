@@ -294,7 +294,6 @@ async def execute_attempt(ctx: AttemptContext, capacity_slot: CapacitySlot):
             await tasks.start(LeaseMonitor(ctx, control).run)
             await tasks.start(ControlWatcher(ctx, control).run)
             try:
-                await confirm_run_stream_activation(ctx)
                 state = await control.read_validate_and_claim_state()
                 prepared = await validate_recovery_dependencies(ctx, state)
                 decision = await control.commit_preparation(prepared)
@@ -318,8 +317,6 @@ async def execute_attempt(ctx: AttemptContext, capacity_slot: CapacitySlot):
 ```
 
 The illustrated state/decision helpers are conceptual operations, not additional durable types or prescribed private APIs. Monitor startup establishes renewal supervision before the first state request. Classified failure handling revalidates authority and follows the preparation or execution failure contract; cancellation and unknown database outcomes never authorize an unfenced fallback write. The driver records fenced Harness entry before beginning model or tool execution. Fresh Environment preparation follows `on_run` or `on_use` only on the Harness continuation branch, while result adoption still verifies all dependencies required by its outcome contract.
-
-The conceptual activation operation follows [Run Stream publication fencing](24-lifecycle-and-stream-persistence.md#publication-activation-and-fencing) before any Attempt-owned observation, including Environment preparation. Lease supervision remains active during bounded activation retries. Only a confirmed complete activation opens publication, and every subsequent Attempt-owned mutation checks that exact active generation atomically. Unknown activation outcomes and missing metadata never permit an unfenced fallback; stale-publication rejection closes local admission and invokes authority-loss handling. Recovery can therefore be visible before Harness entry or adoption of an existing outcome, without claiming either succeeded.
 
 The executor root does not enter the private `RunControlGate` around `HarnessDriver.run()`, `async for event in stream`, or an equivalent `anext(stream)` await. Pydantic can invoke the Service Capability inside that call chain; holding the same gate across iteration would deadlock the callback. Every Service control path instead calls an explicit `RunAttemptControl` operation, and only that facade enters its gate for the bounded state transition or concrete safe-boundary operation.
 
@@ -379,7 +376,7 @@ terminal_candidate = await driver.run(
 )
 ```
 
-`HarnessDriver.run()` enters `agent.stream(...)`, registers itself with `RunAttemptControl`, iterates every event exactly once, and unregisters itself while leaving the stream context. Its narrow control port maps ordinary active offer, cancellation, and callback-external export to `HarnessRunStream.steer()`, `cancel()`, and `export_state()` without exposing the stream object. The same driver creates each `HarnessHookBoundary` and privately maps that boundary to the callback-local `RunContext.enqueue()` and `AgentContext.export_state()` APIs. The driver retains the stream for its entered lifetime but retains no callback context after the boundary closes. When `input_factory` is present, the example omits `input`. Service binds the Harness Run ID to the current Attempt after stream entry and before publishing the first Harness observation, as required by the Attempt contract; publication activation precedes both.
+`HarnessDriver.run()` enters `agent.stream(...)`, registers itself with `RunAttemptControl`, iterates every event exactly once, and unregisters itself while leaving the stream context. Its narrow control port maps ordinary active offer, cancellation, and callback-external export to `HarnessRunStream.steer()`, `cancel()`, and `export_state()` without exposing the stream object. The same driver creates each `HarnessHookBoundary` and privately maps that boundary to the callback-local `RunContext.enqueue()` and `AgentContext.export_state()` APIs. The driver retains the stream for its entered lifetime but retains no callback context after the boundary closes. When `input_factory` is present, the example omits `input`. Service binds the Harness Run ID to the current Attempt after stream entry and before publishing the first Harness observation, as required by the Attempt contract.
 
 ## Asynchronous Communication
 

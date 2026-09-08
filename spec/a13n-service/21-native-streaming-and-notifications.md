@@ -59,14 +59,6 @@ The client reconciles a gap through current Run, Item, and pending-action reads.
 
 A sealed Run stream closes after its final retained observation is delivered. The terminal stream observation reports a projection of the authoritative sealed Run outcome; closing the connection alone does not prove completion.
 
-### Recovery Observation and Client Guidance
-
-Run SSE delivers `run.recovery` in the existing envelope at the [atomic publication boundary](24-lifecycle-and-stream-persistence.md#publication-activation-and-fencing). Its schema and reasons belong to [Recovery Event](24-lifecycle-and-stream-persistence.md#recovery-event). It identifies the replacement Attempt within the same Run and can precede Harness entry; it does not claim recovery execution succeeded or change Run status.
-
-Live delivery, reconnect, and `RunReplaySnapshot.events` preserve its stable event identity and source position before replacement observations. Replay includes it when it follows the supplied cursor within available history. A cursor already past the boundary does not cause another recovery event; missing history follows the explicit gap rules above. Workspace and resource lifecycle collections do not gain a new PostgreSQL fact for this presentation event.
-
-The following client handling is informative best practice, not a required UI contract. An application can stop unfinished text or tool-argument accumulation and loading indicators for the affected Run, then retain, mark, or remove partial content according to its own policy. Completed messages and results can remain visible. Recovery does not prove an external tool failed, rolled back, or is safe to retry. Applying the event idempotently using its identity and delivery cursor avoids clearing replacement content on duplicate delivery; Run-scoped and execution-scoped presentation correlations help keep accumulators separate.
-
 ## Workspace Lifecycle Event Collection
 
 ```http
@@ -228,4 +220,3 @@ SSE event schemas and Run Stream cursor compatibility belong to the Run Stream o
 6. A new WebSocket connection has no subscriptions.
 7. Every subscription is explicitly authorized, bounded, and removed on disconnect.
 8. Disconnecting any Native transport never cancels or seals a Run.
-9. Recovery is ordered retained Run presentation; reconnect neither skips an available boundary nor synthesizes one already passed by the cursor.

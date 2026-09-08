@@ -155,7 +155,7 @@ The adapter projects each source `run.recovery` as this safe Run-level event:
 
 Recovery passes through the ordinary ordered source-to-Hosted delivery path, before every subsequent replacement observation, in both live delivery and replay. It is a required execution-boundary projection, independent of optional reasoning or diagnostic visibility. A separate notification, timer, or late lifecycle lookup cannot synthesize this boundary. The event preserves the external Run identity and emits no additional `RUN_STARTED`, `RUN_FINISHED`, or `RUN_ERROR`; it reports publisher replacement rather than completed execution recovery or a tool failure.
 
-For client handling, the [Native recovery guidance](21-native-streaming-and-notifications.md#recovery-observation-and-client-guidance) also applies to this custom projection. Those cleanup examples are informative best practices; the service supplies an ordered event and does not mandate an upstream client's UI policy.
+Client handling is informative best practice, not a required UI contract. Applications can stop unfinished text or tool-argument accumulation and loading indicators for the affected Run, preserve completed results, and retain, mark, or remove partial content according to product policy. Applying the boundary idempotently by event identity and cursor avoids clearing replacement content on duplicate delivery. Recovery does not prove an external tool failed, rolled back, or is safe to retry. The same guidance applies to Native consumers of the source event.
 
 ## Event Visibility
 

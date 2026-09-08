@@ -177,7 +177,7 @@ Version `1` has the serialized payload `{"reason": "lease_expired"}`, with this 
 | `retry_after_failure` | Retry after a known retryable Attempt failure                             |
 | `planned_handoff`     | Successor to a yielded Attempt                                            |
 
-The event is retained in source order and projected through [Hosted AG-UI recovery](22-hosted-ag-ui.md#recovery-projection). It carries no public fence or lease proof.
+Native live delivery, reconnect, and retained replay preserve the event's identity and source position before replacement observations. Replay includes it only when it follows the supplied cursor within available history; a cursor past the boundary never causes another recovery event. Missing history follows the existing explicit gap rules. [Hosted AG-UI recovery](22-hosted-ag-ui.md#recovery-projection) owns the safe custom projection and informative client guidance. The source event carries no public fence or lease proof.
 
 ### Publication Failure and Continuity
 

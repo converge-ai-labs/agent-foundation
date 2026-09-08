@@ -55,11 +55,9 @@ One observer belongs to one Harness Run. The current executor root runs one `Har
 
 Inline-child presentation IDs are scoped to their Harness Run before joining the parent Run Stream. Tool-call, message, parent-message, and retained Item correlations use that same scope, so repeated model tool-call IDs cannot merge parent or sibling content. Root tool-call IDs retain their native values for deferred-feedback correlation.
 
-Before any Attempt-owned observation, including Environment preparation, the executor confirms [publication activation](24-lifecycle-and-stream-persistence.md#publication-activation-and-fencing). Before its first Harness observation, it also durably binds the immutable Harness Run identity to the current RunAttempt. It then appends bounded messages under the exact active Attempt/fence to the one stable organization-scoped Redis Stream owned by the Run. Replacement RunAttempts create fresh Harness Runs but continue the same Run Stream. Events preserve their exact source provenance; activation and pre-Harness observations may have no Harness Run identity.
+Before publishing its first Harness observation, the executor durably binds the immutable Harness Run identity to the current RunAttempt. It appends bounded messages under the [Run Stream publication contract](24-lifecycle-and-stream-persistence.md#publication-activation-and-fencing). Replacement RunAttempts create fresh Harness Runs but continue the same Run Stream; each event preserves its source Attempt and Harness Run identities when present.
 
 Expected planned handoff is a Service Attempt transition, not a Harness Run outcome. Closing the old process-local stream for `run_attempt.yielded` emits no AG-UI `RUN_FINISHED`, `RUN_ERROR`, or synthetic cancelled result, does not close the Run Stream, and does not repeat `run.running`. The successor's fresh Harness Run continues observations in the same Run Stream under new Attempt and Run provenance.
-
-Activation atomically publishes the successor's leased projection and `run.recovery` before its observations. Native and Hosted delivery preserve this ordered boundary through live and retained projection; client cleanup remains informative guidance under their owning wire contracts. Recovery creates no per-recovery Item snapshot.
 
 Redis Stream entry IDs are bounded live replay cursors, not product authority. Stream possession and cursor knowledge grant no access. Control authenticates and authorizes the caller against current Service state before reading or subscribing, and it releases all database sessions before streaming.
 
@@ -72,8 +70,6 @@ Bounded queues and explicit overflow handling prevent a slow client from blockin
 Every authoritative Run and RunAttempt transition writes the bounded typed lifecycle event required by [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md). Waiting pending data remains owned by its sealed Run and state, while child relationships and Ingress, Route, ConnectorProvider, ConnectorConnection, or MCPConnection operations retain their owning domain records and outbox intents without extending the lifecycle entity registry implicitly. Event publication follows the atomicity, retry, and duplicate-delivery rules in [Durable Operations and Outbox](06-durable-operations-and-outbox.md).
 
 Each lifecycle resource has one contiguous `resource_seq`; the Workspace feed has a separate database-assigned cursor that is monotonic but not a causal order. Duplicate publication preserves one event identity. Event content references owning resources and retained Items rather than copying differently retained payloads. Redis presence, subscriber receipt, and telemetry never manufacture a lifecycle fact.
-
-The leased fact's Run Stream projection follows only [Lifecycle Projection at Activation](24-lifecycle-and-stream-persistence.md#lifecycle-projection-at-activation); generic asynchronous projection cannot publish it independently. Other committed lifecycle facts retain their historical provenance without advancing publication authority. The presentation-only `run.recovery` event creates no new lifecycle fact or durable external-delivery intent.
 
 External Webhook delivery specializes the shared Outbox. One lifecycle source creates one Outbox row for each matching HookSubscription version because each delivery completes independently from source commitment and from other subscriptions. A bounded destination policy can exhaust retries and dead-letter its own row without changing the source lifecycle event, Run Stream, retained snapshot, or Run outcome.
 
@@ -189,5 +185,5 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
 11. Live-only Run Stream entries and Items never create durable Hook-delivery intents; durable subscriptions select committed lifecycle events only.
 12. Native, Hosted AG-UI, and A2A delivery are independent projections over shared Service facts and never translate through one another.
 13. A Webhook envelope identifies its resource sequence and version, but the Webhook transport makes no ordering or exactly-once-processing guarantee.
-14. Planned handoff has an internal `run_attempt.yielded` lifecycle fact without closing the Run Stream or emitting an AG-UI Run terminal event; successor activation emits the ordered recovery boundary.
+14. Planned handoff has an internal `run_attempt.yielded` lifecycle fact without closing the Run Stream or emitting an AG-UI Run terminal event.
 15. Only explicit Asset publication creates independent binary identity; automatic large-content handling remains owned by its Run or Item.

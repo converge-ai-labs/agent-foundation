@@ -187,8 +187,6 @@ The Run row lock or equivalent compare-and-swap plus attempt-number and fence un
 
 Operational admission control, queue names, priority, and fairness may order or delay scans. They never form another ownership authority. Redis may carry domain-owned Run-stream data and Thread-control wakeups, but no Redis value discovers, creates, transfers, or completes a RunAttempt or consumes a Thread inbox entry.
 
-After claim, the executor confirms [Run Stream publication activation](24-lifecycle-and-stream-persistence.md#publication-activation-and-fencing) before any Attempt-owned observation, including preparation observations. Activation reuses the committed fence and atomically appends leased and, for a replacement, recovery before opening publication. Its Redis success is the presentation switch, distinct from the earlier PostgreSQL authority change. Until then old observations may still be accepted before the boundary; they never restore execution authority. An executor that cannot confirm activation publishes no observations and follows bounded retry and existing authority-loss or classified failure handling.
-
 ### Claim, Preparation, and Run Sequence
 
 ```mermaid
@@ -196,7 +194,6 @@ sequenceDiagram
     participant Claimant as WorkerExecutionLoop
     participant DB as PostgreSQL
     participant Executor as RunAttemptExecutor
-    participant Redis as Run Stream
     participant Objects as State and artifacts
     participant Harness
 
@@ -214,8 +211,6 @@ sequenceDiagram
         end
     end
     Note over Executor,DB: LeaseMonitor runs throughout state preparation and execution
-    Executor->>Redis: atomically activate fence, append leased and replacement recovery
-    Redis-->>Executor: confirmed complete activation, generation still active
     Executor->>Objects: read, validate, and claim complete state under bounded retries
     Executor->>DB: revalidate authority after confirmed object claim
     Executor->>Executor: validate dependencies, budget, and current Principal against final state
@@ -464,7 +459,7 @@ The Agent decides its next action through ordinary model output. A re-driven or 
 
 After claim succeeds, [Service–Harness Runtime Integration](14-harness-runtime-integration.md) owns the executor's structured async lifetime: the executor root task, its `LeaseMonitor` and `ControlWatcher` child tasks, one non-task `RunAttemptControl` facade with a private gate, one non-task `HarnessDriver` running in the root task, exact Agent reconstruction, fresh collaborators and Environment adapters, sole stream ownership and consumption, fenced publication, and finalization. [Agent Control: Active Execution](19-agent-control-active-execution.md) owns what the watcher reconciles from PostgreSQL and when a Redis signal may be acknowledged. [Environment Management](29-environment-management.md) owns fixed Run selection, current Environment state, eager/lazy preparation, backing generation changes and operation-object construction. This contract defines no second integration profile.
 
-RunAttempt authority imposes four constraints on that integration: only the current leased and fenced Attempt may enter execution, with presentation writes additionally subject to the Run Stream activation gate; exactly one executor owns that Attempt in the claiming process; the executor binds at most one `harness_run_id` before its first Harness observation; and no database session or lock spans reconstruction, provider calls, Harness work, streaming, waits, or cleanup. The executor's child activities cannot outlive its structured scope. A replacement Attempt receives fresh process-local values and never restores another Worker's task, socket, client, adapter, entered facade, `HarnessDriver`, `RunAttemptControl`, private gate, or subscriber. Active-control hooks follow their [owning FIFO and waiting-delivery contract](19-agent-control-active-execution.md), where Redis is only a wakeup optimization.
+RunAttempt authority imposes four constraints on that integration: only the current leased and fenced Attempt may enter execution, with presentation publication governed by [Run Stream fencing](24-lifecycle-and-stream-persistence.md#publication-activation-and-fencing); exactly one executor owns that Attempt in the claiming process; the executor binds at most one `harness_run_id` before its first Harness observation; and no database session or lock spans reconstruction, provider calls, Harness work, streaming, waits, or cleanup. The executor's child activities cannot outlive its structured scope. A replacement Attempt receives fresh process-local values and never restores another Worker's task, socket, client, adapter, entered facade, `HarnessDriver`, `RunAttemptControl`, private gate, or subscriber. Active-control hooks follow their [owning FIFO and waiting-delivery contract](19-agent-control-active-execution.md), where Redis is only a wakeup optimization.
 
 ## Retry Semantics
 
