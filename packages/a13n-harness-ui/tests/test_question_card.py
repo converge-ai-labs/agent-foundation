@@ -239,11 +239,13 @@ def test_single_question_heading_omits_progress():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("rows, columns", [(2, 20), (6, 24), (24, 100)])
-async def test_live_card_layout_keeps_scrollable_body_and_custom_editor(rows, columns):
+@pytest.mark.parametrize("redraw_interval", [1 / 15, 0.2])
+async def test_live_card_layout_keeps_scrollable_body_and_custom_editor(rows, columns, redraw_interval):
     output = Output()
     output.size = Size(rows=rows, columns=columns)
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
         shell = CliShell(CliRequest())
+        shell.app.min_redraw_interval = redraw_interval
         shell.interaction = interaction(description="Many wrapped details " * 50)
         shell.selection = shell.interaction.selection()
         shell._emit_decision()
@@ -258,6 +260,10 @@ async def test_live_card_layout_keeps_scrollable_body_and_custom_editor(rows, co
             await keys(pipe, "\x1b[6~")
             assert card.top > 0 and card.selection.cursor == -1
             await keys(pipe, "\ttext")
+            # Key dispatch can finish before the throttled renderer shows the editor.
+            async with asyncio.timeout(3):
+                while card.editor.window.render_info is None:
+                    await asyncio.sleep(0.01)
             assert card.editor.window.render_info.window_height >= 1
             assert card.window.render_info.window_height >= 1
             assert card.editor.text == "text"

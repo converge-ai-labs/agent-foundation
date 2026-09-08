@@ -1,6 +1,7 @@
 """Logical preview budgets must not become physical terminal-row truncation."""
 
 import json
+from functools import partial
 
 import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
@@ -43,7 +44,11 @@ def test_edit_diff_budget_counts_logical_body_lines(count):
         renderer.transcript.close()
 
 
-def test_fifty_long_diff_lines_wrap_past_sixty_four_rows_with_tail_and_failed_result():
+@pytest.mark.parametrize("legacy_windows", [False, True])
+def test_fifty_long_diff_lines_wrap_past_sixty_four_rows_with_tail_and_failed_result(legacy_windows, monkeypatch):
+    import a13n_harness_ui.interactive.transcript as module
+
+    monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
     renderer = StreamRenderer(Status())
     try:
         after = "".join(f"row-{index:02d} " + "wide content " * 15 + f" tail-{index:02d}\n" for index in range(50))
@@ -59,7 +64,8 @@ def test_fifty_long_diff_lines_wrap_past_sixty_four_rows_with_tail_and_failed_re
         assert "unique-file.py" in unwrapped
         assert "Tool result | failed" in concise
         assert "preview shortened" not in concise
-        assert concise.splitlines()[-1].startswith("╰")
+        bottom_left, bottom_right = ("└", "┘") if legacy_windows else ("╰", "╯")
+        assert concise.splitlines()[-1] == bottom_left + "─" * 28 + bottom_right
     finally:
         renderer.transcript.close()
 
