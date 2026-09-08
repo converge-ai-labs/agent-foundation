@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from pydantic import BaseModel, JsonValue
+from pydantic import JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.digests import digest_request
 from a13n_service.ids import new_object_id
 from a13n_service.temporal import assume_utc
 
@@ -60,15 +60,6 @@ def digest_visible_ascii_key(value: str) -> str:
     if not 1 <= len(encoded) <= IDEMPOTENCY_KEY_MAX_BYTES or any(byte < 0x21 or byte > 0x7E for byte in encoded):
         raise InvalidIdempotencyKey
     return hashlib.sha256(encoded).hexdigest()
-
-
-def digest_request(value: object) -> str:
-    """Hash normalized ordinary HTTP input; domains own semantic normalization."""
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json", by_alias=True)
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    ).hexdigest()
 
 
 async def load_evidence(

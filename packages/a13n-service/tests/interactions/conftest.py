@@ -10,10 +10,10 @@ from a13n_service.agents.domain import (
     AgentConfig,
     EffectiveAgentConfig,
     EffectiveAgentModel,
-    canonical_digest,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.database.metadata import service_metadata
+from a13n_service.digests import digest_request
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions.state import HostContinuationState, RunStateEnvelope
 from a13n_service.models.domain import ModelExecutionSnapshot
@@ -83,7 +83,7 @@ def effective_agent_config() -> EffectiveAgentConfig:
         content_digest="0" * 64,
     )
     payload = candidate.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-    return candidate.model_copy(update={"content_digest": canonical_digest(payload)})
+    return candidate.model_copy(update={"content_digest": digest_request(payload)})
 
 
 def initial_state() -> RunStateEnvelope:

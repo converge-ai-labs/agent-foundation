@@ -17,7 +17,8 @@ from pydantic import (
 )
 
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
-from a13n_service.iam.domain import ObjectId, PrincipalRef
+from a13n_service.iam.domain import PrincipalRef
+from a13n_service.ids import ObjectId
 from a13n_service.secrets.domain import SecretId
 from a13n_service.temporal import require_aware_utc
 

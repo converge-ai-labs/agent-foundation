@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
-from a13n_service.connectivity.domain import AdapterKey, BoundedName, ConfigVersion, JsonObject
+from a13n_service.connectivity.domain import AdapterKey, ConfigVersion, DisplayName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
 from .reception import InputBatchingPolicy, Reception
@@ -24,7 +24,7 @@ class Account(Reception):
     id: str
     organization_id: str
     workspace_id: str
-    name: BoundedName
+    name: DisplayName
     provider_key: AdapterKey
     provider_config_version: ConfigVersion
     provider_config: JsonObject
@@ -43,7 +43,7 @@ class AccountCollection(StrictModel):
 
 
 class CreateAccountRequest(Reception):
-    name: BoundedName
+    name: DisplayName
     provider_key: AdapterKey
     provider_config_version: ConfigVersion
     provider_config: JsonObject
@@ -54,7 +54,7 @@ class CreateAccountRequest(Reception):
 
 class UpdateAccountRequest(StrictModel):
     expected_version: int = Field(ge=1)
-    name: BoundedName | None = None
+    name: DisplayName | None = None
     provider_config: JsonObject | None = None
     receive_enabled: bool | None = None
     default_agent_id: str | None = None

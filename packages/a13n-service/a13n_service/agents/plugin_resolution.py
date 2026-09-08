@@ -28,6 +28,7 @@ from a13n_service.plugins.runtime import (
     installed_harness_version,
 )
 from a13n_service.plugins.runtime import installed_top_level_packages as installed_service_packages
+from a13n_service.temporal import Clock
 
 from .domain import (
     OnDemandPluginSelection,
@@ -107,7 +108,7 @@ class AgentPluginSelectionResolver:
         worker_release: str = "unknown",
         harness_version: str | None = None,
         runtime_target: RuntimeTarget | None = None,
-        runtime_lock_clock=None,
+        runtime_lock_clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self.runtime_mode = runtime_mode

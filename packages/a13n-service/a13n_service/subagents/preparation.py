@@ -12,12 +12,12 @@ from pydantic_ai.usage import UsageLimits
 from a13n_service.agents.domain import (
     EffectiveAgentConfig,
     ResolvedSubagentEdge,
-    canonical_digest,
 )
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
     MCPConnectionToolSelection,
 )
+from a13n_service.digests import digest_request
 from a13n_service.interactions.domain import (
     JsonObject,
     RecoveryBudget,
@@ -119,7 +119,7 @@ def prepare_child_run(
         created_at=created_at,
     )
     input_payload = accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)
-    request_fingerprint = canonical_digest(
+    request_fingerprint = digest_request(
         {
             "schema_version": "1",
             "parent_run_id": parent_run.id,
@@ -244,7 +244,7 @@ def prepare_child_resume(
         created_at=created_at,
     )
     input_payload = accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)
-    request_fingerprint = canonical_digest(
+    request_fingerprint = digest_request(
         {
             "schema_version": "1",
             "parent_run_id": parent_run.id,

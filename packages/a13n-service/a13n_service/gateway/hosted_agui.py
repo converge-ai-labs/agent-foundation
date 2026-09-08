@@ -27,9 +27,10 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import AgentConfig, AgentRunOverride, ClientToolDefinition, canonical_digest
+from a13n_service.agents.domain import AgentConfig, AgentRunOverride, ClientToolDefinition
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
@@ -243,7 +244,7 @@ class HostedAguiService:
             request.model_dump(mode="json", by_alias=True, exclude_none=True),
             strict=True,
         )
-        request_digest = canonical_digest(request_json)
+        request_digest = digest_request(request_json)
         existing = await self._load_run_binding(
             actor=actor,
             agent_id=agent_id,

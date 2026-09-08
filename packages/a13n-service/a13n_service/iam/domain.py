@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field
 
-ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
+from a13n_service.ids import ObjectId
 
 
 class PrincipalType(StrEnum):
@@ -21,6 +21,18 @@ class PrincipalRef(BaseModel):
 
     principal_type: PrincipalType
     principal_id: ObjectId
+
+
+class SystemActorRef(BaseModel):
+    """Historical system attribution; never an authenticatable Principal."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    principal_type: Literal["system"] = "system"
+    principal_id: ObjectId
+
+
+type ActorRef = PrincipalRef | SystemActorRef
 
 
 class ResourceRef(BaseModel):

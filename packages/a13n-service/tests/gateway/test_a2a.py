@@ -12,10 +12,11 @@ from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.api import install_api_conventions
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.assets.models import AssetRecord
 from a13n_service.assets.objects import AssetObjectStore
-from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
+from a13n_service.assets.uploads import AssetUploadService
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
@@ -93,13 +94,14 @@ async def _service(
 ) -> tuple[A2AService, LocalObjectStore]:
     objects = await LocalObjectStore.create(tmp_path / "a2a-objects")
     staging = await AssetStaging.create(tmp_path / "a2a-files")
-    assets = AssetService(
+    uploads = AssetUploadService(
         sessions,
         AssetObjectStore(objects, staging),
         staging,
         max_size_bytes=1024 * 1024,
         clock=lambda: NOW,
     )
+    assets = AssetCatalog(sessions, AssetObjectStore(objects, staging), clock=lambda: NOW)
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]), assets=assets)
     return (
         A2AService(
@@ -108,7 +110,7 @@ async def _service(
             _protector(),
             EndpointPolicy(require_https=True),
             A2APartImporter(
-                assets,
+                uploads,
                 import_http_client,
                 EndpointPolicy(),
                 max_redirects=2,

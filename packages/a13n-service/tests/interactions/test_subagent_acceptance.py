@@ -10,13 +10,13 @@ from a13n_service.agents.domain import (
     ChildEnvironmentPolicy,
     EffectiveAgentConfig,
     ResolvedSubagentEdge,
-    canonical_digest,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
     MCPConnectionToolSelection,
 )
+from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
@@ -137,7 +137,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
     altered_config = child_config.model_copy(update={"instructions": "Changed after parent acceptance"})
     altered_config = altered_config.model_copy(
         update={
-            "content_digest": canonical_digest(
+            "content_digest": digest_request(
                 altered_config.model_dump(mode="json", by_alias=True, exclude={"content_digest"}),
             )
         }
@@ -567,7 +567,7 @@ async def _accept_parent(
     )
     config = candidate.model_copy(
         update={
-            "content_digest": canonical_digest(
+            "content_digest": digest_request(
                 candidate.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
             )
         }

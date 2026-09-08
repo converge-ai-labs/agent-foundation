@@ -12,6 +12,7 @@ from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from anyio import fail_after
 
 from a13n_service.assets.objects import AssetObjectStore
+from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
@@ -53,6 +54,7 @@ class WorkerAttempts:
         stream: RedisRunStream,
         replay: RunReplayStore,
         assets: AssetObjectStore,
+        asset_publication: AssetRuntime,
         observability: ObservabilityRuntime | None = None,
     ) -> None:
         self._shared = shared
@@ -63,6 +65,7 @@ class WorkerAttempts:
         self._stream = stream
         self._replay = replay
         self._assets = assets
+        self._asset_publication = asset_publication
         self._observability = observability
         self._execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)
         self._states = RunStateStore(shared.storage.objects)
@@ -160,6 +163,7 @@ class WorkerAttempts:
                 model_resolver=self._resources.live_model_providers,
                 model_factory=self._resources.native_model_factory,
                 skills=self._skills,
+                asset_publication=self._asset_publication,
                 async_results=AsyncSubagentResultMaterializer(sessions, self._replay),
                 environments=self._environments,
                 external_tools=self._external_tools,

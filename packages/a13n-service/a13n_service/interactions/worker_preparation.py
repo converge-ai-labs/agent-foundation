@@ -24,6 +24,7 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
+from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
@@ -67,6 +68,7 @@ class WorkerAttemptPreparer:
         model_resolver: LiveProviderResolver,
         model_factory: NativeModelFactory,
         skills: SkillRuntimePreparer,
+        asset_publication: AssetRuntime,
         async_results: AsyncSubagentResultMaterializer,
         environments: EnvironmentLifecycle,
         external_tools: ExternalToolRuntime,
@@ -85,6 +87,7 @@ class WorkerAttemptPreparer:
         self._model_resolver = model_resolver
         self._model_factory = model_factory
         self._skills = skills
+        self._asset_publication = asset_publication
         self._async_results = async_results
         self._prepared_skills: dict[str, PreparedSkillRuntime] | None = None
 
@@ -135,6 +138,8 @@ class WorkerAttemptPreparer:
             config=config,
             current_context=lambda: self._control.current_context,
             skills=self._prepared_skills,
+            workspace_id=self._workspace_id,
+            asset_publication=self._asset_publication,
             external_tools=self._external_tools,
             stack=stack,
         )

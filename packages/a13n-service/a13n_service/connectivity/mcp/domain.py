@@ -8,8 +8,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
-from a13n_service.connectivity.domain import BoundedName, JsonObject
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.iam.domain import PrincipalRef
+from a13n_service.names import DisplayName
 
 MCP_PROTOCOL_REVISION = "2025-11-25"
 Endpoint = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
@@ -43,7 +44,7 @@ class MCPConnection(StrictModel):
     id: str
     organization_id: str
     workspace_id: str
-    name: BoundedName
+    name: DisplayName
     endpoint_url: Endpoint
     auth_mode: MCPAuthMode
     static_header_names: tuple[HeaderName, ...] = Field(max_length=16)
@@ -74,7 +75,7 @@ class MCPConnectionCollection(StrictModel):
 
 
 class CreateMCPConnectionRequest(StrictModel):
-    name: BoundedName
+    name: DisplayName
     endpoint_url: Endpoint
     auth_mode: MCPAuthMode
     static_header_names: tuple[HeaderName, ...] = Field(default=(), max_length=16)
@@ -82,7 +83,7 @@ class CreateMCPConnectionRequest(StrictModel):
 
 class UpdateMCPConnectionRequest(StrictModel):
     expected_version: int = Field(ge=1)
-    name: BoundedName
+    name: DisplayName
 
 
 class MCPConnectionCommandRequest(StrictModel):

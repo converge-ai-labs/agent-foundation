@@ -29,11 +29,11 @@ from .errors import (
 )
 from .models import AgentRecord, AgentRevisionRecord
 from .persistence import (
+    agent_name_key,
     lock_revision,
     new_agent_audit,
     new_builtin_agent,
     new_revision,
-    normalize_agent_name,
 )
 from .resolution import AgentResolver, resolution_error
 
@@ -158,7 +158,7 @@ class BuiltinAgents:
                 metadata_changed = (
                     record.name != registration.name
                     or record.description != registration.description
-                    or record.normalized_name != normalize_agent_name(registration.name)
+                    or record.normalized_name != agent_name_key(registration.name)
                 )
                 if not content_changed and not metadata_changed:
                     assert current_revision is not None
@@ -170,7 +170,7 @@ class BuiltinAgents:
                 if created:
                     session.add(record)
                 record.name = registration.name
-                record.normalized_name = normalize_agent_name(registration.name)
+                record.normalized_name = agent_name_key(registration.name)
                 record.description = registration.description
                 record.updated_by_type = "system"
                 record.updated_by_id = registration.system_actor_id

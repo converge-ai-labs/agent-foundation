@@ -2,7 +2,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_service.agents.domain import canonical_digest
+from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
@@ -44,9 +44,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     config = effective_agent_config().model_copy(update={"runtime_lock_digest": lock.digest})
     config = config.model_copy(
         update={
-            "content_digest": canonical_digest(
-                config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-            )
+            "content_digest": digest_request(config.model_dump(mode="json", by_alias=True, exclude={"content_digest"}))
         }
     )
     monkeypatch.setattr(acceptance, "effective_agent_config", lambda: config)

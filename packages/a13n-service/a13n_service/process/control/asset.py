@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.assets.cleanup import AssetCleanupReconciler
 from a13n_service.assets.objects import AssetObjectStore
-from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
+from a13n_service.assets.uploads import AssetUploadService
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.settings import Settings
@@ -15,7 +16,8 @@ from a13n_service.settings import Settings
 
 @dataclass(frozen=True, slots=True)
 class _AssetBundle:
-    service: AssetService
+    catalog: AssetCatalog
+    uploads: AssetUploadService
     cleanup_task: BackgroundTask
 
 
@@ -27,7 +29,7 @@ async def build_asset_bundle(
 
     staging = await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter)
     objects = AssetObjectStore(shared.storage.objects, staging)
-    service = AssetService(
+    uploads = AssetUploadService(
         shared.storage.sessions,
         objects,
         staging,
@@ -41,7 +43,8 @@ async def build_asset_bundle(
         max_attempts=settings.asset_cleanup_max_attempts,
     )
     return _AssetBundle(
-        service=service,
+        catalog=AssetCatalog(shared.storage.sessions, objects),
+        uploads=uploads,
         cleanup_task=BackgroundTask("asset cleanup reconciler", cleanup.run),
     )
 

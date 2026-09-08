@@ -9,7 +9,7 @@ from typing import Literal
 from a13n_logging import get_logger
 from pydantic import TypeAdapter
 
-from a13n_service.agents.domain import canonical_digest
+from a13n_service.digests import digest_request
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectNotFound, ObjectStore, ObjectStoreUnavailable
 from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
 
@@ -368,7 +368,7 @@ def validate_run_state_reference(run: Run, state: StoredRunState) -> None:
         or envelope.agent_revision_id != run.agent_revision_id
         or envelope.runtime_lock_digest != run.runtime_lock_digest
         or envelope.effective_agent_config.content_digest != run.effective_agent_config_digest
-        or canonical_digest(
+        or digest_request(
             envelope.effective_agent_config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
         )
         != run.effective_agent_config_digest

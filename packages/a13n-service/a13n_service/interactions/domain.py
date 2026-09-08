@@ -9,7 +9,6 @@ from typing import Annotated, Literal
 
 from a13n_harness import SafeFailure
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -19,12 +18,12 @@ from pydantic import (
     model_validator,
 )
 
+from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import PrincipalRef
-from a13n_service.ids import new_object_id
+from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionObservation
-from a13n_service.temporal import require_aware_utc
+from a13n_service.temporal import UtcDateTime
 
-ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 ThreadId = Annotated[
     str,
     StringConstraints(
@@ -32,21 +31,10 @@ ThreadId = Annotated[
         max_length=72,
     ),
 ]
-Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 SchemaVersion = Annotated[str, StringConstraints(min_length=1, max_length=32)]
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
-BoundedName = Annotated[str, StringConstraints(min_length=1, max_length=256)]
+BoundedText = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 JsonObject = dict[str, JsonValue]
-
-
-def _utc(value: datetime) -> datetime:
-    try:
-        return require_aware_utc(value)
-    except ValueError as error:
-        raise ValueError("timestamp must include a UTC offset") from error
-
-
-UtcDateTime = Annotated[datetime, AfterValidator(_utc)]
 
 
 class StrictModel(BaseModel):
@@ -122,10 +110,10 @@ class RunPayloadObjectRef(StrictModel):
 
 
 class PendingCallSummary(StrictModel):
-    call_id: BoundedName
+    call_id: BoundedText
     kind: PendingCallKind
-    tool_name: BoundedName | None = None
-    provider_type: BoundedName | None = None
+    tool_name: BoundedText | None = None
+    provider_type: BoundedText | None = None
     arguments_digest_sha256: Sha256Digest | None = None
     presentation: JsonObject | None = None
 
@@ -263,12 +251,12 @@ class Run(StrictModel):
     parent_run_id: ObjectId | None = None
     retry_of_run_id: ObjectId | None = None
     lineage_kind: RunLineageKind
-    trigger_type: BoundedName
-    trigger_entity_type: BoundedName | None = None
-    trigger_entity_id: BoundedName | None = None
-    parent_agent_instance_id: BoundedName | None = None
-    delegation_id: BoundedName | None = None
-    parent_tool_call_id: BoundedName | None = None
+    trigger_type: BoundedText
+    trigger_entity_type: BoundedText | None = None
+    trigger_entity_id: BoundedText | None = None
+    parent_agent_instance_id: BoundedText | None = None
+    delegation_id: BoundedText | None = None
+    parent_tool_call_id: BoundedText | None = None
     agent_id: ObjectId
     agent_revision_id: ObjectId
     environment_id: ObjectId | None = None
@@ -281,7 +269,7 @@ class Run(StrictModel):
     mcp_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     native_tool_contexts: tuple[JsonObject, ...] = Field(default=(), max_length=128, repr=False)
     priority: int
-    queue_name: BoundedName
+    queue_name: BoundedText
     available_at: UtcDateTime
     current_run_attempt_id: ObjectId | None = None
     next_attempt_fence: int = Field(ge=1)
@@ -290,7 +278,7 @@ class Run(StrictModel):
     recovery_attempts_started: int = Field(ge=0)
     handoffs_completed: int = Field(ge=0)
     usage_charged: RecoveryUsage
-    idempotency_key: BoundedName | None = None
+    idempotency_key: BoundedText | None = None
     request_fingerprint: Sha256Digest
     status: RunStatus
     wait_reason: RunWaitReason | None = None
@@ -381,12 +369,12 @@ class RunAttempt(StrictModel):
     fence: int = Field(ge=1)
     status: RunAttemptStatus
     replaces_run_attempt_id: ObjectId | None = None
-    recovery_reason: BoundedName | None = None
-    worker_id: BoundedName
-    worker_generation: BoundedName
-    worker_build_id: BoundedName
+    recovery_reason: BoundedText | None = None
+    worker_id: BoundedText
+    worker_generation: BoundedText
+    worker_build_id: BoundedText
     runtime_lock_digest: Sha256Digest
-    harness_run_id: BoundedName | None = None
+    harness_run_id: BoundedText | None = None
     model_execution_observation: ModelExecutionObservation
     lease_token_digest: Sha256Digest
     lease_expires_at: UtcDateTime
@@ -495,12 +483,12 @@ def accepted_run(
     parent_run_id: ObjectId | None = None,
     retry_of_run_id: ObjectId | None = None,
     lineage_kind: RunLineageKind,
-    trigger_type: BoundedName,
-    trigger_entity_type: BoundedName | None = None,
-    trigger_entity_id: BoundedName | None = None,
-    parent_agent_instance_id: BoundedName | None = None,
-    delegation_id: BoundedName | None = None,
-    parent_tool_call_id: BoundedName | None = None,
+    trigger_type: BoundedText,
+    trigger_entity_type: BoundedText | None = None,
+    trigger_entity_id: BoundedText | None = None,
+    parent_agent_instance_id: BoundedText | None = None,
+    delegation_id: BoundedText | None = None,
+    parent_tool_call_id: BoundedText | None = None,
     agent_id: ObjectId,
     agent_revision_id: ObjectId,
     environment_id: ObjectId | None = None,
@@ -512,9 +500,9 @@ def accepted_run(
     mcp_connection_selections: tuple[JsonObject, ...] = (),
     native_tool_contexts: tuple[JsonObject, ...] = (),
     priority: int,
-    queue_name: BoundedName,
+    queue_name: BoundedText,
     recovery_budget: RecoveryBudget,
-    idempotency_key: BoundedName | None = None,
+    idempotency_key: BoundedText | None = None,
     request_fingerprint: Sha256Digest,
     input_kind: RunInputKind,
     input: JsonValue | None = None,

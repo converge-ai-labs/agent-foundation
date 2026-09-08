@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.filesystem import prepare_root
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import Clock, utc_now
 
 from .artifact import inspect_distribution_wheel
 from .commands import (
@@ -477,7 +477,7 @@ class DurableRuntimeCandidateResolver:
         *,
         compatible_tags: Sequence[Tag] | None = None,
         python_version: Version | None = None,
-        clock=None,
+        clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self._runtime_locks = runtime_locks

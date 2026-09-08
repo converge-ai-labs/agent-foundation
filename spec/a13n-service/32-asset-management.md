@@ -70,7 +70,7 @@ class AssetRef:
 
 `AssetId` uses the allocated `ast` object-ID prefix. The ID is the identity of one exact publication; it is not derived from the content digest and is never reused. The lowercase SHA-256 digest verifies bytes but does not merge identities or grant read authority.
 
-`filename` is immutable bounded display metadata. It is NFC-normalized, contains 1 through 256 Unicode scalar values, has no leading or trailing whitespace, path separator, NUL, or control character, and never becomes a storage or Environment path. `media_type` is a lowercase MIME media-type essence without parameters or wildcards and defaults to `application/octet-stream`. It is a declared content hint, not proof that arbitrary bytes conform to that type. `size_bytes` is non-negative.
+`filename` is immutable bounded display metadata. It is NFC-normalized, contains 1 through 256 Unicode scalar values, has no leading or trailing whitespace, path separator, NUL, or control character, and never becomes a storage or Environment path. `media_type` is a lowercase MIME media-type essence of at most 255 ASCII characters without parameters or wildcards and defaults to `application/octet-stream`. It is a declared content hint, not proof that arbitrary bytes conform to that type. `size_bytes` is non-negative.
 
 `source` records creation provenance only. An upload records the authenticated Principal that accepted the binary create. A Run output records the exact fenced Attempt and trusted runtime invocation identity that published it. It does not enumerate Runs, Items, protocol Artifacts, or external deliveries that later reference the Asset.
 
@@ -162,7 +162,7 @@ GET /api/v1/assets/{asset_id}/content
 DELETE /api/v1/assets/{asset_id}
 ```
 
-The collection orders by `(created_at desc, id desc)` and can filter by `source_kind` or one currently readable `source_run_id`. Metadata reads return the immutable Asset projection. A Run-output source exposes its `run_id` only when the caller can also read that Run; Attempt and tool-invocation provenance remain internal operational correlation.
+The collection orders by `(created_at desc, id desc)` and can filter by `source_kind` or one currently readable `source_run_id`. Metadata reads return the immutable Asset projection. A Run-output source exposes its `run_id` only when the caller can also read that Run; Attempt and tool-invocation provenance remain internal operational correlation. If the caller cannot read the source Run, metadata remains readable under `asset.read` and its source projection is `{ "kind": "run_output", "run_id": null }`. Filtering by an absent or unreadable `source_run_id` returns the concealed not-found result.
 
 The content route authorizes the active Asset before opening object storage and streams `application/octet-stream`. It sets a safe `Content-Disposition` from the immutable filename and a strong representation `ETag` derived from the content digest. The ETag is content validation, not an Asset version or a mutation precondition. Service exposes no public object URL or storage key.
 
@@ -230,7 +230,7 @@ The deletion transaction marks `deleted_at`, records bounded security audit, and
 
 Cleanup deletes the derived object asynchronously and idempotently under deployment retention, legal-hold, and backup policy. Cleanup failure never makes the tombstoned Asset readable again. Minimal relational tombstone and audit evidence can outlive the bytes; public APIs expose no restore.
 
-[Control Background Tasks](07-control-background-tasks.md#task-catalogue) owns periodic delivery of the committed content-cleanup intent and separate collection of eligible tombstones or unowned upload objects. An orphan candidate is deleted only after ownership and concurrent-publication checks; content cleanup does not by itself release every tombstone or audit dependency.
+[Control Background Tasks](07-control-background-tasks.md#task-catalogue) owns periodic delivery of the committed content-cleanup intent and separate collection of eligible tombstones or unowned upload objects. An orphan candidate is deleted only after ownership and concurrent-publication checks; content cleanup does not by itself release every tombstone or audit dependency. A live source Attempt retains its publication tombstones for same-invocation reconciliation. Once that Attempt is terminal or its lease expires, it no longer pins the tombstone; other replay, audit, and retention requirements still apply. Retained Asset rows restrict deletion of their source Attempt, so the two collectors must not keep each other alive indefinitely.
 
 Asset deletion does not traverse Run JSON, Items, Hosted projections, or A2A bindings. A retained reference can therefore become unavailable. An already-authorized content stream or external delivery cannot be recalled after deletion.
 

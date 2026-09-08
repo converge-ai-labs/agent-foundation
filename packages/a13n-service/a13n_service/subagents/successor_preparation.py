@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from a13n_service.agents.domain import canonical_digest
+from a13n_service.digests import digest_request
 from a13n_service.interactions.control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
 from a13n_service.interactions.domain import (
     Run,
@@ -58,7 +58,7 @@ def prepare_async_result_successor(
         ),
         selected_parent_state,
     )
-    request_fingerprint = canonical_digest(
+    request_fingerprint = digest_request(
         {
             "schema_version": "1",
             "inbox_entry_id": inbox_entry.id,

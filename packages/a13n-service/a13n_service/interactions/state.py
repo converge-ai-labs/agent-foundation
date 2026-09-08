@@ -13,7 +13,7 @@ from pydantic_ai.usage import UsageLimits
 from a13n_service.agents.domain import EffectiveAgentConfig
 
 from .domain import (
-    BoundedName,
+    BoundedText,
     JsonObject,
     ObjectId,
     PendingCallKind,
@@ -43,7 +43,7 @@ class DeferredContinuationState(StrictModel):
 
 class ConsumedThreadInboxEntry(StrictModel):
     inbox_entry_id: ObjectId
-    kind: BoundedName
+    kind: BoundedText
 
 
 class HostContinuationState(StrictModel):

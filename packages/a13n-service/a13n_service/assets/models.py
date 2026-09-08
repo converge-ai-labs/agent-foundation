@@ -22,6 +22,11 @@ class AssetRecord(Base):
             ("workspaces.id", "workspaces.organization_id"),
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ("organization_id", "source_run_attempt_id"),
+            ("run_attempts.organization_id", "run_attempts.id"),
+            ondelete="RESTRICT",
+        ),
         CheckConstraint("length(filename) BETWEEN 1 AND 256", name="filename_bounded"),
         CheckConstraint("filename = trim(filename)", name="filename_trimmed"),
         CheckConstraint("length(media_type) BETWEEN 3 AND 255", name="media_type_bounded"),
@@ -93,7 +98,7 @@ class AssetRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72))
     workspace_id: Mapped[str] = mapped_column(String(72))
-    filename: Mapped[str] = mapped_column(String(1024))
+    filename: Mapped[str] = mapped_column(String(256))
     media_type: Mapped[str] = mapped_column(String(255))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     content_sha256: Mapped[str] = mapped_column(String(64))
@@ -116,8 +121,6 @@ class AssetRecord(Base):
                 )
             )
         else:
-            if source_run_id is None:
-                raise ValueError("run-output Asset projection requires its source Run ID")
             source = RunOutputAssetSource(run_id=source_run_id)
         return Asset(
             id=self.id,

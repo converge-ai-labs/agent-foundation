@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
 
 from .domain import Model, ModelProvider
@@ -62,7 +63,7 @@ class ModelProviderRecord(ResourceCredential[str | None], Base):
     workspace_id: Mapped[str | None] = mapped_column(String(72))
     type: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
-    normalized_name: Mapped[str] = mapped_column(String(128))
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH))
     configuration: Mapped[dict[str, object]] = mapped_column(JSON)
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_by_type: Mapped[str] = mapped_column(String(32))

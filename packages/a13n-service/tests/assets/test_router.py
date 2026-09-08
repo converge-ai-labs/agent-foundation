@@ -206,7 +206,7 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
     assert listed.status_code == 200
     assert {item["id"] for item in listed.json()["items"]} == {created["id"], duplicate.json()["id"]}
     run_filtered = await api.client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/assets?source_run_id=run_1234567890abcdef")
-    assert run_filtered.json() == {"items": [], "next_cursor": None}
+    assert run_filtered.status_code == 404
 
     assert (await api.client.get(f"/api/v1/assets/{created['id']}")).json() == created
     content = await api.client.get(f"/api/v1/assets/{created['id']}/content")
@@ -249,7 +249,7 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
 
 @pytest.mark.anyio
 async def test_protocol_import_object_becomes_authoritative_only_with_owning_transaction(api: Api) -> None:
-    service = api.app.state.runtime.control.assets
+    service = api.app.state.runtime.control.asset_uploads
     sessions = api.app.state.runtime.shared.storage.sessions
     actor = AuthenticatedActor(
         principal=PrincipalRef(principal_type="user", principal_id=BUILDER_ID),

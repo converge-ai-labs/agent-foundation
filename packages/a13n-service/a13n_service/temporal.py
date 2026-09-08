@@ -2,6 +2,9 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Annotated
+
+from pydantic import AfterValidator
 
 type Clock = Callable[[], datetime]
 
@@ -34,4 +37,6 @@ def optional_assume_utc(value: datetime | None) -> datetime | None:
     return None if value is None else assume_utc(value)
 
 
-__all__ = ["Clock", "assume_utc", "optional_assume_utc", "require_aware_utc", "utc_now"]
+UtcDateTime = Annotated[datetime, AfterValidator(require_aware_utc)]
+
+__all__ = ["Clock", "UtcDateTime", "assume_utc", "optional_assume_utc", "require_aware_utc", "utc_now"]

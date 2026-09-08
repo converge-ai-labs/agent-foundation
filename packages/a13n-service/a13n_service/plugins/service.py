@@ -22,7 +22,7 @@ from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import Clock, utc_now
 
 from .artifact import InspectedPluginWheel, inspect_plugin_wheel
 from .commands import PluginRuntimeCommandDispatcher
@@ -86,7 +86,7 @@ class PluginService:
         max_expanded_bytes: int,
         max_archive_members: int,
         runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None,
-        clock=None,
+        clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self._objects = objects

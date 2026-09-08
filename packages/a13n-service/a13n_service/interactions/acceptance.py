@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import canonical_digest
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.digests import digest_request
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -24,7 +24,7 @@ from a13n_service.interactions.environment_selection import (
     requested_environment,
 )
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import Clock, utc_now
 
 from .control_domain import (
     QueuedSubmissionConsumptionReceipt,
@@ -70,7 +70,7 @@ class RunAcceptanceService:
         inline_hooks: InlineHookValidator,
         *,
         lifecycle: LifecycleWriter,
-        clock=None,
+        clock: Clock | None = None,
     ) -> None:
         self._lifecycle = lifecycle
         self._sessions = sessions
@@ -622,7 +622,7 @@ def validate_run_state_selection(run: Run, state: RunStateEnvelope) -> None:
         raise ValueError("Run and state Agent selection do not match")
     effective = state.effective_agent_config
     effective_payload = effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-    if canonical_digest(effective_payload) != effective.content_digest:
+    if digest_request(effective_payload) != effective.content_digest:
         raise ValueError("Run effective configuration digest is invalid")
     if effective.content_digest != run.effective_agent_config_digest:
         raise ValueError("Run effective configuration digest does not match state")

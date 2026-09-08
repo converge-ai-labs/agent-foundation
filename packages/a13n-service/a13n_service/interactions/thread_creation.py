@@ -1,7 +1,5 @@
 """Empty root Thread allocation without executing an Agent or provisioning a target."""
 
-from datetime import UTC, datetime
-
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,6 +14,7 @@ from a13n_service.iam import AuthenticatedActor, authorize_agent
 from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import utc_now
 
 from .control_records import inbox_counter_record
 from .domain import Thread, ThreadOriginKind, ThreadRole, new_thread_id
@@ -32,7 +31,7 @@ async def allocate_thread(
     body: CreateThreadRequest,
     idempotency_key: str,
 ) -> Thread:
-    now = datetime.now(UTC)
+    now = utc_now()
     normalized = body.model_dump(mode="json")
     if "environment" not in body.model_fields_set:
         normalized.pop("environment")
@@ -147,7 +146,7 @@ async def allocate_thread(
                     operation="thread.create",
                     scope_id=workspace_id,
                     identity=identity,
-                    now=datetime.now(UTC),
+                    now=utc_now(),
                 )
                 if replay is not None:
                     row = await session.get(ThreadRecord, replay.result_ref)

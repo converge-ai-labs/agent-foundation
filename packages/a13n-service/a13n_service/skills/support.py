@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -13,12 +11,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_request,
     digest_visible_ascii_key,
     load_evidence,
     new_evidence,
@@ -55,15 +53,14 @@ class ReplayResult[Result: BaseModel]:
     created: bool
 
 
-def idempotency_identity(key: str, request: bytes | BaseModel) -> IdempotencyIdentity:
+def idempotency_identity(key: str, request: dict[str, str] | BaseModel) -> IdempotencyIdentity:
     try:
         key_digest = digest_visible_ascii_key(key)
     except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    normalized = {"archive_sha256": hashlib.sha256(request).hexdigest()} if isinstance(request, bytes) else request
     return IdempotencyIdentity(
         key_digest=key_digest,
-        request_digest=digest_request(normalized),
+        request_digest=digest_request(request),
     )
 
 
@@ -197,10 +194,6 @@ async def record_failed_skill_attempt(
                 details=details,
             )
         )
-
-
-def _canonical_json(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
 
 def _invalid_idempotency_key() -> SkillError:

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
 
 from .domain import MCPAuthMode, MCPConnection, MCPConnectionStatus, MCPConnectionStatusReason
@@ -59,7 +60,7 @@ class MCPConnectionRecord(ResourceCredential[str], Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
     endpoint_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     auth_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     static_header_names_json: Mapped[list[str]] = mapped_column(JSON, nullable=False)
