@@ -50,7 +50,7 @@ from a13n_service.interactions.harness_runtime import (
     SingleHarnessEnvironment,
 )
 from a13n_service.interactions.objects import RunStateStore, StoredRunState
-from a13n_service.interactions.state import DeferredContinuationState, HostContinuationState, RunStateEnvelope
+from a13n_service.interactions.state import DeferredContinuationState, HostContinuationState, RunCheckpoint
 from pydantic import TypeAdapter
 from pydantic_ai import Tool
 from pydantic_ai.capabilities import Capability, NodeResult
@@ -187,7 +187,7 @@ def _instance() -> AgentInstanceContext:
 def _preparation() -> AttemptPreparationAccepted:
     return AttemptPreparationAccepted(
         run_attempt_id=ATTEMPT_ID,
-        fence=1,
+        attempt_number=1,
         mutation=AttemptMutationReceipt(
             run_version=1,
             attempt_version=1,
@@ -468,7 +468,7 @@ async def test_runtime_passes_exact_native_deferred_resume(
     assert prior.deferred is not None
     deferred_value = TypeAdapter(DeferredToolRequests).dump_python(prior.deferred, mode="json")
     initial_envelope = initial_state()
-    pending = RunStateEnvelope.model_validate(
+    pending = RunCheckpoint.model_validate(
         {
             **initial_envelope.model_dump(mode="python"),
             "thread_id": prior.state.thread_id,

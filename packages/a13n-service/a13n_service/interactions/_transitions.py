@@ -6,7 +6,7 @@ from datetime import datetime
 
 from a13n_harness import SafeFailure
 
-from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
+from .domain import RunAttemptStatus, RunAttemptYieldReason, RunStatus, RunUsage
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 
 
@@ -43,8 +43,8 @@ def terminalize_attempt(
 
 
 def charge_attempt_usage(run: RunRecord, attempt: RunAttemptRecord) -> None:
-    charged = RecoveryUsage.model_validate(run.usage_charged_json)
-    usage = RecoveryUsage.model_validate(attempt.usage_json)
+    charged = RunUsage.model_validate(run.usage_charged_json)
+    usage = RunUsage.model_validate(attempt.usage_json)
     run.usage_charged_json = charged.plus(usage).model_dump(mode="json")
 
 

@@ -13,6 +13,7 @@ from redis.exceptions import ResponseError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -20,7 +21,6 @@ from .attempts import (
     AttemptContext,
     AttemptMutationReceipt,
     lock_attempt_authority,
-    read_attempt_lease,
 )
 from .control_domain import (
     SteerReceipt,
@@ -33,17 +33,22 @@ from .control_domain import (
 from .control_models import ThreadInboxRecord
 from .inbox_allocation import allocate_steer
 from .inbox_delivery import AdaptedThreadInboxEntry
-from .inbox_persistence import ThreadInboxConflict, reconcile_checkpoint
+from .inbox_persistence import (
+    ThreadInboxConflict,
+    finalize_ineligible_async_results,
+    lock_inbox_counter,
+    reconcile_checkpoint,
+)
 from .input import AcceptedAgentInput
 from .models import RunRecord, ThreadRecord
 from .objects import StoredRunState
-from .state import ConsumedThreadInboxEntry
+from .state import InboxReceipt
 
 logger = logging.getLogger("a13n_service.interactions.inbox")
 
 
 class InboxPayloadMaterializer(Protocol):
-    async def __call__(self, entry: ThreadInboxEntry) -> RunInputValue: ...
+    async def __call__(self, entry: ThreadInboxEntry, config: EffectiveAgentConfig) -> RunInputValue: ...
 
 
 class ThreadControlSignalPublisher(Protocol):
@@ -202,7 +207,7 @@ class DatabaseThreadInboxReconciler:
         self._materialize = materialize
         self._clock = clock
 
-    async def confirm_checkpoint(
+    async def confirm_inbox_receipts(
         self,
         authority: AttemptContext,
         state: StoredRunState,
@@ -225,10 +230,12 @@ class DatabaseThreadInboxReconciler:
     async def read_eligible(
         self,
         authority: AttemptContext,
+        config: EffectiveAgentConfig,
     ) -> Sequence[AdaptedThreadInboxEntry]:
         now = assume_utc(self._clock())
-        async with short_session(self._sessions) as database:
-            run, _, _ = await read_attempt_lease(database, authority, now)
+        async with transaction(self._sessions) as database:
+            run, _, _ = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
+            counter = await lock_inbox_counter(database, run.organization_id, run.thread_id)
             pending = tuple(
                 (
                     await database.scalars(
@@ -239,19 +246,25 @@ class DatabaseThreadInboxReconciler:
                             ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                         )
                         .order_by(ThreadInboxRecord.delivery_sequence, ThreadInboxRecord.id)
+                        .with_for_update()
                     )
                 ).all()
             )
-            rows = _contiguous_target_prefix(pending, run_id=run.id)
+            await finalize_ineligible_async_results(
+                database, organization_id=run.organization_id, rows=pending, now=now, locked_counter=counter
+            )
+            rows = _contiguous_target_prefix(
+                tuple(row for row in pending if row.status == ThreadInboxStatus.pending.value), run_id=run.id
+            )
             entries = tuple(row.to_resource() for row in rows)
 
         adapted: list[AdaptedThreadInboxEntry] = []
         for entry in entries:
-            value = await self._materialize(entry)
+            value = await self._materialize(entry, config)
             adapted.append(
                 AdaptedThreadInboxEntry(
                     delivery_sequence=entry.delivery_sequence,
-                    receipt=ConsumedThreadInboxEntry(
+                    receipt=InboxReceipt(
                         inbox_entry_id=entry.id,
                         kind=entry.kind.value,
                     ),

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -100,15 +99,10 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
     )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="harness-parent",
-    )
-    authority = _authority(
-        claim,
-        run_version=entered.run_version,
-        attempt_version=entered.attempt_version,
     )
     async with short_session(interaction_sessions) as database:
         parent_record = await database.get(RunRecord, parent.id)
@@ -121,7 +115,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         running_parent,
         parent_state,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         child_config,
         suffix="3",
         connector_connection_selections=(CONNECTOR_SELECTION,),
@@ -146,7 +140,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         running_parent,
         parent_state,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         altered_config,
         suffix="9",
         connector_connection_selections=(CONNECTOR_SELECTION,),
@@ -162,7 +156,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         running_parent,
         parent_state,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         child_config,
         suffix="4",
         connector_connection_selections=(CONNECTOR_SELECTION,),
@@ -183,7 +177,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         )
         relationship = await database.get(ChildRunRelationshipRecord, accepted.relationship.id)
         assert relationship is not None
-        assert relationship.parent_run_attempt_fence == authority.fence
+        assert relationship.parent_run_attempt_fence == authority.attempt_number
         assert relationship.to_resource() == accepted.relationship
         assert child is not None and child_thread is not None
         child_resource = child.to_resource()
@@ -231,7 +225,7 @@ async def test_child_acceptance_rejects_stale_fence_before_publishing_state(
         running_parent,
         parent_state,
         authority.run_attempt_id,
-        authority.fence + 1,
+        authority.attempt_number + 1,
         effective_agent_config(),
         suffix="6",
     )
@@ -272,7 +266,7 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
         running_parent,
         parent_state,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         effective_agent_config(),
         suffix="8",
     )
@@ -321,7 +315,7 @@ async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postg
             running_parent,
             parent_state,
             authority.run_attempt_id,
-            authority.fence,
+            authority.attempt_number,
             child_config,
             suffix=suffix,
         )
@@ -374,7 +368,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         running_parent,
         parent_state,
         parent_authority.run_attempt_id,
-        parent_authority.fence,
+        parent_authority.attempt_number,
         child_config,
         suffix="d",
         connector_connection_selections=(CONNECTOR_SELECTION,),
@@ -414,7 +408,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         parent_run=running_parent,
         parent_state=parent_state,
         parent_run_attempt_id=parent_authority.run_attempt_id,
-        parent_run_attempt_fence=parent_authority.fence,
+        parent_run_attempt_fence=parent_authority.attempt_number,
         parent_agent_instance_id="agent-parent",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"continue"}',
@@ -468,21 +462,17 @@ async def _complete_run(
     )
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="completed-child",
     )
-    authority = replace(
-        authority,
-        expected_run_version=entered.run_version,
-        expected_attempt_version=entered.attempt_version,
-    )
+
     current = await states.read(ORGANIZATION_ID, run.id)
     candidate = _completed_state(
         current.envelope,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         outcome=outcome,
     )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
@@ -491,7 +481,7 @@ async def _complete_run(
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=time_offset_seconds + 1),
         lifecycle=test_lifecycle_writer(),
-    ).commit_state_outcome(authority, stored, expected_thread_version=expected_thread_version)
+    ).commit_state_outcome(authority, stored)
     async with short_session(sessions) as database:
         row = await database.get(RunRecord, run.id)
         assert row is not None
@@ -502,7 +492,7 @@ def _prepared_child(
     parent: Run,
     parent_state,
     attempt_id: str,
-    fence: int,
+    attempt_number: int,
     child_config: EffectiveAgentConfig,
     *,
     suffix: str,
@@ -514,7 +504,7 @@ def _prepared_child(
         parent_run=parent,
         parent_state=parent_state,
         parent_run_attempt_id=attempt_id,
-        parent_run_attempt_fence=fence,
+        parent_run_attempt_fence=attempt_number,
         parent_agent_instance_id="agent-parent",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"research"}',
@@ -527,7 +517,7 @@ def _prepared_child(
         child_thread_id=f"thread-{suffix * 32}",
         child_run_id=f"run_{suffix * 16}",
         relationship_id=f"crr_{suffix * 16}",
-        recovery_budget=parent.recovery_budget,
+        execution_budget=parent.execution_budget,
         created_at=NOW + timedelta(seconds=2),
         cancellation_policy=cancellation_policy,
     )

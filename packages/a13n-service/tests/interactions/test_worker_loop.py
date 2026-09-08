@@ -117,3 +117,29 @@ async def test_drain_bounds_unfinished_preflight_without_claiming(monkeypatch):
             await loop.wait_stopped()
     scheduler.claim.assert_not_awaited()
     runner.run.assert_not_awaited()
+
+
+async def test_restarted_worker_gets_new_identity_and_cannot_inherit_authority(
+    interaction_sessions, interaction_object_store
+):
+    from dataclasses import replace
+
+    from a13n_service.interactions.attempts import AttemptAuthorityError, AttemptExecutionService
+
+    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
+    first = WorkerExecutionLoop(
+        interaction_sessions, scheduler, Mock(), Mock(), build_id="same-build", queue_name="default"
+    )
+    restarted = WorkerExecutionLoop(
+        interaction_sessions, scheduler, Mock(), Mock(), build_id="same-build", queue_name="default"
+    )
+    assert first._worker_id != restarted._worker_id
+    _, run, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store)
+    claim = await scheduler.claim(run.id, acceptance._worker(worker_id=first._worker_id))
+    assert isinstance(claim, ClaimedAttempt)
+    context = acceptance._authority(claim)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
+    await execution.validate(context)
+    with pytest.raises(AttemptAuthorityError):
+        await execution.validate(replace(context, worker_id=restarted._worker_id))
+    assert claim.attempt.worker_id == first._worker_id

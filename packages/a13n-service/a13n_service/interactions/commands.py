@@ -53,7 +53,7 @@ from a13n_service.interactions.control_domain import (
 )
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.domain import (
-    RecoveryBudget,
+    ExecutionBudget,
     Run,
     RunInputKind,
     RunLineageKind,
@@ -77,6 +77,7 @@ from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.initialization import (
     RunStateSeed,
+    frozen_run_fields,
     initialize_completed_continuation_state,
     initialize_empty_thread_state,
     initialize_fork_state,
@@ -141,7 +142,7 @@ class InteractionCommands:
         outcomes: RunOutcomeService | None = None,
         inbox: ThreadInboxStore | None = None,
         payloads: RunPayloadStore | None = None,
-        recovery_max_attempts: int = 3,
+        execution_max_attempts: int = 3,
         max_handoffs: int = 2,
         queue_name: str = "default",
         priority: int = 0,
@@ -156,7 +157,7 @@ class InteractionCommands:
         self._outcomes = outcomes
         self._inbox = inbox
         self._payloads = payloads
-        self._recovery_max_attempts = recovery_max_attempts
+        self._execution_max_attempts = execution_max_attempts
         self._max_handoffs = max_handoffs
         self._queue_name = queue_name
         self._priority = priority
@@ -255,20 +256,12 @@ class InteractionCommands:
             lineage_kind=RunLineageKind.root,
             trigger_type=origin.trigger_type,
             native_tool_contexts=origin.native_tool_contexts,
-            agent_id=frozen.agent_id,
-            agent_revision_id=frozen.agent_revision_id,
-            effective_agent_config_digest=frozen.effective_config.content_digest,
-            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
-            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
-            connector_connection_selections=tuple(
-                item.model_dump(mode="json") for item in frozen.connector_connection_selections
-            ),
-            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            **frozen_run_fields(frozen),
             priority=self._priority,
             queue_name=self._queue_name,
-            recovery_budget=RecoveryBudget(
+            execution_budget=ExecutionBudget(
                 policy_version="1",
-                max_recovery_attempts=self._recovery_max_attempts,
+                max_attempts=self._execution_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
             idempotency_key=None,
@@ -406,20 +399,12 @@ class InteractionCommands:
             lineage_kind=RunLineageKind.continue_,
             trigger_type=origin.trigger_type,
             native_tool_contexts=origin.native_tool_contexts,
-            agent_id=frozen.agent_id,
-            agent_revision_id=frozen.agent_revision_id,
-            effective_agent_config_digest=frozen.effective_config.content_digest,
-            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
-            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
-            connector_connection_selections=tuple(
-                item.model_dump(mode="json") for item in frozen.connector_connection_selections
-            ),
-            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            **frozen_run_fields(frozen),
             priority=self._priority,
             queue_name=self._queue_name,
-            recovery_budget=RecoveryBudget(
+            execution_budget=ExecutionBudget(
                 policy_version="1",
-                max_recovery_attempts=self._recovery_max_attempts,
+                max_attempts=self._execution_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
             idempotency_key=None,
@@ -556,20 +541,12 @@ class InteractionCommands:
             lineage_kind=RunLineageKind.root,
             trigger_type=origin.trigger_type,
             native_tool_contexts=origin.native_tool_contexts,
-            agent_id=frozen.agent_id,
-            agent_revision_id=frozen.agent_revision_id,
-            effective_agent_config_digest=frozen.effective_config.content_digest,
-            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
-            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
-            connector_connection_selections=tuple(
-                item.model_dump(mode="json") for item in frozen.connector_connection_selections
-            ),
-            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            **frozen_run_fields(frozen),
             priority=self._priority,
             queue_name=self._queue_name,
-            recovery_budget=RecoveryBudget(
+            execution_budget=ExecutionBudget(
                 policy_version="1",
-                max_recovery_attempts=self._recovery_max_attempts,
+                max_attempts=self._execution_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
             idempotency_key=None,
@@ -713,20 +690,12 @@ class InteractionCommands:
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.fork,
             trigger_type="user_input",
-            agent_id=frozen.agent_id,
-            agent_revision_id=frozen.agent_revision_id,
-            effective_agent_config_digest=frozen.effective_config.content_digest,
-            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
-            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
-            connector_connection_selections=tuple(
-                item.model_dump(mode="json") for item in frozen.connector_connection_selections
-            ),
-            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            **frozen_run_fields(frozen),
             priority=self._priority,
             queue_name=self._queue_name,
-            recovery_budget=RecoveryBudget(
+            execution_budget=ExecutionBudget(
                 policy_version="1",
-                max_recovery_attempts=self._recovery_max_attempts,
+                max_attempts=self._execution_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
             idempotency_key=None,
@@ -894,7 +863,7 @@ class InteractionCommands:
             native_tool_contexts=source.native_tool_contexts,
             priority=source.priority,
             queue_name=source.queue_name,
-            recovery_budget=source.recovery_budget,
+            execution_budget=source.execution_budget,
             input_kind=source.input_kind,
             input_text=source.input_text,
             input=source.input if source.input_object is None else None,
@@ -1087,20 +1056,12 @@ class InteractionCommands:
             retry_of_run_id=None,
             lineage_kind=lineage_kind,
             trigger_type="queued_submission",
-            agent_id=frozen.agent_id,
-            agent_revision_id=frozen.agent_revision_id,
-            effective_agent_config_digest=frozen.effective_config.content_digest,
-            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
-            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
-            connector_connection_selections=tuple(
-                item.model_dump(mode="json") for item in frozen.connector_connection_selections
-            ),
-            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            **frozen_run_fields(frozen),
             priority=self._priority,
             queue_name=self._queue_name,
-            recovery_budget=RecoveryBudget(
+            execution_budget=ExecutionBudget(
                 policy_version="1",
-                max_recovery_attempts=self._recovery_max_attempts,
+                max_attempts=self._execution_max_attempts,
                 max_handoffs=self._max_handoffs,
             ),
             idempotency_key=None,
@@ -1287,7 +1248,7 @@ class InteractionCommands:
             mcp_connection_selections=source.mcp_connection_selections,
             priority=source.priority,
             queue_name=source.queue_name,
-            recovery_budget=source.recovery_budget,
+            execution_budget=source.execution_budget,
             idempotency_key=None,
             request_fingerprint=request_fingerprint,
             input_kind=RunInputKind.waiting_feedback,
@@ -1449,7 +1410,7 @@ class InteractionCommands:
             mcp_connection_selections=source.mcp_connection_selections,
             priority=source.priority,
             queue_name=source.queue_name,
-            recovery_budget=source.recovery_budget,
+            execution_budget=source.execution_budget,
             idempotency_key=None,
             request_fingerprint=request_fingerprint,
             input_kind=RunInputKind.waiting_continue,

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from a13n_service.database.metadata import service_metadata
 from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
@@ -28,12 +29,12 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         assert INTERACTION_TABLES <= tables
         for table in INTERACTION_TABLES:
             columns = {column["name"] for column in inspector.get_columns(table)}
-            assert "organization_id" in columns, table
+            assert columns == set(service_metadata().tables[table].columns.keys()), table
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert {
             "connector_connection_selections_json",
             "current_run_attempt_id",
-            "recovery_policy_version",
+            "execution_policy_version",
             "sealed_state_digest_sha256",
         } <= run_columns
         assert "connection_selections_json" not in run_columns
@@ -59,7 +60,6 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         attempt_indexes = {index["name"] for index in inspector.get_indexes("run_attempts")}
         assert {
             "ix_run_attempts_live_lease",
-            "uq_run_attempts_fence",
             "uq_run_attempts_number",
             "uq_run_attempts_fence_identity",
         } <= attempt_indexes

@@ -132,7 +132,7 @@ class RunPendingSummary(StrictModel):
         return value
 
 
-class RecoveryUsage(StrictModel):
+class RunUsage(StrictModel):
     schema_version: Literal["1"] = "1"
     model_requests: int = Field(default=0, ge=0)
     input_tokens: int = Field(default=0, ge=0)
@@ -147,11 +147,11 @@ class RecoveryUsage(StrictModel):
             raise ValueError("billable units must be non-negative")
         return value
 
-    def plus(self, other: RecoveryUsage) -> RecoveryUsage:
+    def plus(self, other: RunUsage) -> RunUsage:
         units = dict(self.billable_units)
         for key, amount in other.billable_units.items():
             units[key] = units.get(key, 0) + amount
-        return RecoveryUsage(
+        return RunUsage(
             model_requests=self.model_requests + other.model_requests,
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
@@ -160,7 +160,7 @@ class RecoveryUsage(StrictModel):
         )
 
 
-class RecoveryUsageLimit(StrictModel):
+class RunUsageLimit(StrictModel):
     schema_version: Literal["1"] = "1"
     model_requests: int | None = Field(default=None, ge=0)
     input_tokens: int | None = Field(default=None, ge=0)
@@ -175,7 +175,7 @@ class RecoveryUsageLimit(StrictModel):
             raise ValueError("billable unit limits must be non-negative")
         return value
 
-    def permits(self, usage: RecoveryUsage) -> bool:
+    def permits(self, usage: RunUsage) -> bool:
         scalar_limits = (
             (self.model_requests, usage.model_requests),
             (self.input_tokens, usage.input_tokens),
@@ -187,12 +187,12 @@ class RecoveryUsageLimit(StrictModel):
         )
 
 
-class RecoveryBudget(StrictModel):
+class ExecutionBudget(StrictModel):
     policy_version: SchemaVersion
-    max_recovery_attempts: int = Field(ge=0)
+    max_attempts: int = Field(ge=0)
     max_handoffs: int = Field(ge=0)
-    recovery_deadline_at: UtcDateTime | None = None
-    max_usage: RecoveryUsageLimit | None = None
+    execution_deadline_at: UtcDateTime | None = None
+    max_usage: RunUsageLimit | None = None
 
 
 class SealedRunState(StrictModel):
@@ -272,12 +272,11 @@ class Run(StrictModel):
     queue_name: BoundedText
     available_at: UtcDateTime
     current_run_attempt_id: ObjectId | None = None
-    next_attempt_fence: int = Field(ge=1)
-    recovery_budget: RecoveryBudget
+    execution_budget: ExecutionBudget
     attempts_started: int = Field(ge=0)
-    recovery_attempts_started: int = Field(ge=0)
+    attempts_charged: int = Field(ge=0)
     handoffs_completed: int = Field(ge=0)
-    usage_charged: RecoveryUsage
+    usage_charged: RunUsage
     idempotency_key: BoundedText | None = None
     request_fingerprint: Sha256Digest
     status: RunStatus
@@ -309,13 +308,13 @@ class Run(StrictModel):
                 raise ValueError("root Run lineage cannot name a parent")
         elif self.parent_run_id is None:
             raise ValueError("continue and fork Run lineage require a parent")
-        if self.recovery_attempts_started > self.recovery_budget.max_recovery_attempts:
+        if self.attempts_charged > self.execution_budget.max_attempts:
             raise ValueError("recovery attempt count exceeds the accepted budget")
-        if self.handoffs_completed > self.recovery_budget.max_handoffs:
+        if self.handoffs_completed > self.execution_budget.max_handoffs:
             raise ValueError("handoff count exceeds the accepted budget")
-        if not self.recovery_attempts_started <= self.attempts_started:
+        if not self.attempts_charged <= self.attempts_started:
             raise ValueError("total Attempt count cannot be smaller than recovery generations")
-        if self.attempts_started > self.recovery_attempts_started + self.handoffs_completed:
+        if self.attempts_started > self.attempts_charged + self.handoffs_completed:
             raise ValueError("Attempt count exceeds recovery and planned-handoff authority")
         sealed = self.status in {RunStatus.waiting, RunStatus.completed, RunStatus.failed, RunStatus.cancelled}
         if sealed != (self.sealed_at is not None):
@@ -366,12 +365,10 @@ class RunAttempt(StrictModel):
     organization_id: ObjectId
     run_id: ObjectId
     attempt_number: int = Field(ge=1)
-    fence: int = Field(ge=1)
     status: RunAttemptStatus
     replaces_run_attempt_id: ObjectId | None = None
-    recovery_reason: BoundedText | None = None
+    start_reason: BoundedText | None = None
     worker_id: BoundedText
-    worker_generation: BoundedText
     worker_build_id: BoundedText
     runtime_lock_digest: Sha256Digest
     harness_run_id: BoundedText | None = None
@@ -379,11 +376,10 @@ class RunAttempt(StrictModel):
     lease_token_digest: Sha256Digest
     lease_expires_at: UtcDateTime
     heartbeat_at: UtcDateTime
-    usage: RecoveryUsage
+    usage: RunUsage
     yield_reason: RunAttemptYieldReason | None = None
     failure: SafeFailure | None = None
     created_at: UtcDateTime
-    claimed_at: UtcDateTime
     started_at: UtcDateTime | None = None
     finished_at: UtcDateTime | None = None
     updated_at: UtcDateTime
@@ -439,13 +435,11 @@ def new_run_attempt_id() -> str:
 
 __all__ = [
     "BoundedKey",
+    "ExecutionBudget",
     "JsonObject",
     "ObjectId",
     "PendingCallKind",
     "PendingCallSummary",
-    "RecoveryBudget",
-    "RecoveryUsage",
-    "RecoveryUsageLimit",
     "Run",
     "RunAttempt",
     "RunAttemptStatus",
@@ -455,6 +449,8 @@ __all__ = [
     "RunPayloadObjectRef",
     "RunPendingSummary",
     "RunStatus",
+    "RunUsage",
+    "RunUsageLimit",
     "RunWaitReason",
     "SealedRunState",
     "Session",
@@ -501,7 +497,7 @@ def accepted_run(
     native_tool_contexts: tuple[JsonObject, ...] = (),
     priority: int,
     queue_name: BoundedText,
-    recovery_budget: RecoveryBudget,
+    execution_budget: ExecutionBudget,
     idempotency_key: BoundedText | None = None,
     request_fingerprint: Sha256Digest,
     input_kind: RunInputKind,
@@ -537,18 +533,17 @@ def accepted_run(
         native_tool_contexts=native_tool_contexts,
         priority=priority,
         queue_name=queue_name,
-        recovery_budget=recovery_budget,
+        execution_budget=execution_budget,
         idempotency_key=idempotency_key,
         request_fingerprint=request_fingerprint,
         input_kind=input_kind,
         input_text=input_text,
         version=1,
         available_at=now,
-        next_attempt_fence=1,
         attempts_started=0,
-        recovery_attempts_started=0,
+        attempts_charged=0,
         handoffs_completed=0,
-        usage_charged=RecoveryUsage(),
+        usage_charged=RunUsage(),
         status=RunStatus.accepted,
         created_at=now,
         updated_at=now,

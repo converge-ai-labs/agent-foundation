@@ -20,7 +20,6 @@ from a13n_service.interactions.control_domain import (
     ThreadRunSubmissionIntent,
 )
 from a13n_service.interactions.domain import RunLineageKind, RunStatus
-from a13n_service.interactions.handoff import CompletionQueueHandoffService
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.initialization import (
@@ -37,6 +36,7 @@ from a13n_service.interactions.queue import (
     ThreadSubmissionAdmission,
     classify_thread_submission,
 )
+from a13n_service.interactions.queue_handoff import CompletionQueueHandoffService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import ObjectStore, short_session, transaction
@@ -660,17 +660,12 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="combined-handoff",
     )
-    authority = _authority(
-        claimed,
-        run_version=entered.run_version,
-        attempt_version=entered.attempt_version,
-    )
-    completed = _completed_state(initial, claimed.attempt.id, claimed.attempt.fence)
+    completed = _completed_state(initial, claimed.attempt.id, claimed.attempt.attempt_number)
     stored = await execution.publish_checkpoint(
         authority,
         states,
@@ -796,17 +791,12 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="failed-combined-handoff",
     )
-    authority = _authority(
-        claimed,
-        run_version=entered.run_version,
-        attempt_version=entered.attempt_version,
-    )
-    completed = _completed_state(initial, claimed.attempt.id, claimed.attempt.fence)
+    completed = _completed_state(initial, claimed.attempt.id, claimed.attempt.attempt_number)
     stored = await execution.publish_checkpoint(
         authority,
         states,
@@ -901,17 +891,12 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
     authority = _authority(claimed)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
-    entered = await execution.enter_harness(
+    await execution.enter_harness(
         authority,
         preparation=preparation,
         harness_run_id="blocked-combined-handoff",
     )
-    authority = _authority(
-        claimed,
-        run_version=entered.run_version,
-        attempt_version=entered.attempt_version,
-    )
-    completed = _completed_state(initial, claimed.attempt.id, claimed.attempt.fence)
+    completed = _completed_state(initial, claimed.attempt.id, claimed.attempt.attempt_number)
     stored = await execution.publish_checkpoint(
         authority,
         states,
@@ -961,7 +946,7 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
         }
     )
 
-    with pytest.raises(ThreadInboxConflict, match="pending inbox delivery"):
+    with pytest.raises(ThreadInboxConflict, match="must process pending input"):
         await CompletionQueueHandoffService(
             interaction_sessions,
             states,

@@ -108,8 +108,7 @@ async def _fixture(sessions, objects, tmp_path):
     authority = _authority(claim)
     execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
     preparation = await execution.commit_preparation_success(authority)
-    entered = await execution.enter_harness(authority, preparation=preparation, harness_run_id="asset-harness")
-    authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
+    await execution.enter_harness(authority, preparation=preparation, harness_run_id="asset-harness")
     staging = await AssetStaging.create(tmp_path)
     asset_objects = AssetObjectStore(objects, staging)
     publisher = AssetPublisher(asset_objects, staging, max_size_bytes=64, clock=lambda: NOW)
@@ -212,7 +211,7 @@ async def test_live_attempt_pins_tombstone_but_expired_attempt_does_not(publicat
 @pytest.mark.parametrize("change", ["fence", "lease", "selection"])
 async def test_stale_or_unselected_publication_creates_no_asset(publication, tmp_path, change):
     if change == "fence":
-        publication.authority = replace(publication.authority, fence=publication.authority.fence + 1)
+        publication.authority = replace(publication.authority, attempt_number=publication.authority.attempt_number + 1)
     elif change == "lease":
         async with transaction(publication.sessions) as session:
             attempt = await session.get(RunAttemptRecord, publication.authority.run_attempt_id)
@@ -356,7 +355,7 @@ async def test_skill_materialization_guard_uses_the_live_attempt(publication):
 
     fence = CurrentSkillAttempt(publication.sessions, lambda: publication.authority, clock=lambda: NOW)
     await fence.require_current()
-    publication.authority = replace(publication.authority, fence=publication.authority.fence + 1)
+    publication.authority = replace(publication.authority, attempt_number=publication.authority.attempt_number + 1)
     with pytest.raises(SkillMaterializationStale):
         await fence.require_current()
 

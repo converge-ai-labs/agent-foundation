@@ -19,8 +19,8 @@ from a13n_service.connectivity.selection_domain import (
 )
 from a13n_service.digests import digest_request
 from a13n_service.interactions.domain import (
+    ExecutionBudget,
     JsonObject,
-    RecoveryBudget,
     Run,
     RunInputKind,
     RunLineageKind,
@@ -36,7 +36,7 @@ from a13n_service.interactions.initialization import (
     initialize_start_state,
 )
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
-from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.secrets.agent_inputs import select_child_secret_bindings
 
 from .domain import (
@@ -53,7 +53,7 @@ class PreparedChildRunAcceptance:
 
     thread: Thread
     run: Run
-    state: RunStateEnvelope
+    state: RunCheckpoint
     relationship: ChildRunRelationship
     child_definition_id: str
 
@@ -63,20 +63,20 @@ class PreparedChildRunResume:
     """Complete state-first linked child-continuation candidate."""
 
     run: Run
-    state: RunStateEnvelope
+    state: RunCheckpoint
     relationship: ChildRunRelationship
     child_definition_id: str
     resumed_from_relationship_id: str
     resumed_from_child_run_id: str
     source_parent_run_id: str
     source_thread_version: int
-    source_state: RunStateEnvelope
+    source_state: RunCheckpoint
 
 
 def prepare_child_run(
     *,
     parent_run: Run,
-    parent_state: RunStateEnvelope,
+    parent_state: RunCheckpoint,
     parent_run_attempt_id: str,
     parent_run_attempt_fence: int,
     parent_agent_instance_id: str,
@@ -91,7 +91,7 @@ def prepare_child_run(
     child_thread_id: str,
     child_run_id: str,
     relationship_id: str,
-    recovery_budget: RecoveryBudget,
+    execution_budget: ExecutionBudget,
     created_at: datetime,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread,
@@ -177,7 +177,7 @@ def prepare_child_run(
         mcp_connection_selections=tuple(
             item.model_dump(mode="json", by_alias=True) for item in mcp_connection_selections
         ),
-        recovery_budget=recovery_budget,
+        execution_budget=execution_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
         delegated_input=delegated_input,
@@ -195,7 +195,7 @@ def prepare_child_run(
 def prepare_child_resume(
     *,
     parent_run: Run,
-    parent_state: RunStateEnvelope,
+    parent_state: RunCheckpoint,
     parent_run_attempt_id: str,
     parent_run_attempt_fence: int,
     parent_agent_instance_id: str,
@@ -206,7 +206,7 @@ def prepare_child_resume(
     source_parent_run: Run,
     source_thread: Thread,
     source_run: Run,
-    source_state: RunStateEnvelope,
+    source_state: RunCheckpoint,
     child_run_id: str,
     relationship_id: str,
     created_at: datetime,
@@ -288,7 +288,7 @@ def prepare_child_resume(
         child_effective_config=child_effective_config,
         connector_connection_selections=source_run.connector_connection_selections,
         mcp_connection_selections=source_run.mcp_connection_selections,
-        recovery_budget=parent_run.recovery_budget,
+        execution_budget=parent_run.execution_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
         delegated_input=delegated_input,
@@ -354,7 +354,7 @@ def _child_run(
     child_effective_config: EffectiveAgentConfig,
     connector_connection_selections: tuple[JsonObject, ...],
     mcp_connection_selections: tuple[JsonObject, ...],
-    recovery_budget: RecoveryBudget,
+    execution_budget: ExecutionBudget,
     request_fingerprint: str,
     input_payload: JsonValue,
     delegated_input: str,
@@ -383,7 +383,7 @@ def _child_run(
         mcp_connection_selections=mcp_connection_selections,
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
-        recovery_budget=recovery_budget,
+        execution_budget=execution_budget,
         request_fingerprint=request_fingerprint,
         input_kind=RunInputKind.agent_input,
         input=input_payload,
@@ -399,7 +399,7 @@ def _validate_resume_source(
     source_parent_run: Run,
     source_thread: Thread,
     source_run: Run,
-    source_state: RunStateEnvelope,
+    source_state: RunCheckpoint,
 ) -> None:
     if (
         source_relationship.subagent_name != subagent_name
@@ -433,7 +433,7 @@ def _validate_resume_source(
 
 def require_frozen_subagent_edge(
     parent_run: Run,
-    parent_state: RunStateEnvelope,
+    parent_state: RunCheckpoint,
     subagent_name: str,
 ) -> ResolvedSubagentEdge:
     if (

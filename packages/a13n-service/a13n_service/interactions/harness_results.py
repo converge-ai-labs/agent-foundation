@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -18,6 +17,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 from .attempts import AttemptContext
 from .domain import JsonObject, PendingCallKind, PendingCallSummary, RunPendingSummary, RunWaitReason
 from .objects import RunPayloadStore, StoredRunState
+from .outcomes import VerifiedRunOutcome
 from .state import (
     CompletedOutcomeCandidate,
     DeferredContinuationState,
@@ -51,53 +51,52 @@ class HarnessOutcomeAdapter(Protocol):
     async def project[OutputT](self, result: HarnessRunResult[OutputT]) -> HarnessOutcomeProjection: ...
 
 
-class RunTerminalDisposition(StrEnum):
+class AttemptDisposition(StrEnum):
     waiting = "waiting"
     completed = "completed"
     retrying = "retrying"
+    continuing = "continuing"
     failed = "failed"
     cancelled = "cancelled"
 
 
 @dataclass(frozen=True, slots=True)
-class RunTerminalReceipt:
-    disposition: RunTerminalDisposition
+class AttemptOutcome:
+    disposition: AttemptDisposition
     run_version: int
     attempt_version: int
     thread_version: int | None
 
     def __post_init__(self) -> None:
         if self.run_version < 1:
-            raise ValueError("terminal receipt Run version must be positive")
+            raise ValueError("Attempt outcome Run version must be positive")
         if self.attempt_version < 1:
-            raise ValueError("terminal receipt Attempt version must be positive")
+            raise ValueError("Attempt outcome Attempt version must be positive")
         if self.thread_version is not None and self.thread_version < 1:
-            raise ValueError("terminal receipt Thread version must be positive")
-        if (self.disposition is RunTerminalDisposition.retrying) != (self.thread_version is None):
-            raise ValueError("only a retrying terminal decision omits the Thread version")
+            raise ValueError("Attempt outcome Thread version must be positive")
+        if (self.disposition is AttemptDisposition.retrying) != (self.thread_version is None):
+            raise ValueError("only a retrying Attempt outcome omits the Thread version")
 
 
-class RunTerminalCommitter(Protocol):
+class AttemptCommitter(Protocol):
     """Own the final fenced outcome and active-control race transactions."""
 
-    async def prepare_state_outcome(
-        self,
-        authority: AttemptContext,
-        state: StoredRunState,
-    ) -> Callable[[AttemptContext], Awaitable[RunTerminalReceipt]]:
-        """Verify object references, then return a DB-only commit using fresh authority."""
-        ...
+    async def verify_state_outcome(self, authority: AttemptContext, state: StoredRunState) -> VerifiedRunOutcome: ...
+
+    async def commit_verified_state_outcome(
+        self, authority: AttemptContext, verified: VerifiedRunOutcome
+    ) -> AttemptOutcome: ...
 
     async def commit_failure(
         self,
         authority: AttemptContext,
         failure: SafeFailure,
-    ) -> RunTerminalReceipt: ...
+    ) -> AttemptOutcome: ...
 
     async def reconcile_cancelled(
         self,
         authority: AttemptContext,
-    ) -> RunTerminalReceipt: ...
+    ) -> AttemptOutcome: ...
 
 
 class StoredHarnessOutcomeAdapter:
@@ -241,11 +240,11 @@ def _serialize_deferred(requests: DeferredToolRequests) -> JsonObject:
 
 
 __all__ = [
+    "AttemptCommitter",
+    "AttemptDisposition",
+    "AttemptOutcome",
     "HarnessOutcomeAdapter",
     "HarnessOutcomeProjection",
     "HarnessOutcomeProjectionError",
-    "RunTerminalCommitter",
-    "RunTerminalDisposition",
-    "RunTerminalReceipt",
     "StoredHarnessOutcomeAdapter",
 ]

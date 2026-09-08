@@ -24,8 +24,8 @@ from a13n_service.iam.domain import AuthorizationError, PrincipalType
 from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
-    lock_attempt_lease,
-    read_attempt_lease,
+    lock_attempt_authority,
+    read_attempt_authority,
 )
 from a13n_service.interactions.models import SessionRecord
 from a13n_service.object_retention.persistence import require_object_publications
@@ -183,7 +183,9 @@ class AssetRuntime:
     async def _authorize(
         self, session: AsyncSession, authority: AttemptContext, selection: PublicationSelection, *, lock: bool
     ) -> AuthenticatedActor:
-        run, attempt, _ = await (lock_attempt_lease if lock else read_attempt_lease)(session, authority, self._clock())
+        run, attempt, _ = await (lock_attempt_authority if lock else read_attempt_authority)(
+            session, authority, self._clock()
+        )
         owner = await session.get(SessionRecord, run.session_id)
         revision = await session.get(AgentRevisionRecord, selection.agent_revision_id)
         if (

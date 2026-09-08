@@ -11,7 +11,7 @@ from a13n_service.interactions.objects import (
     StaleStateWriter,
     validate_run_payload_reference,
 )
-from a13n_service.interactions.state import CompletedOutcomeCandidate, RunPayloadEnvelope, RunStateEnvelope
+from a13n_service.interactions.state import CompletedOutcomeCandidate, RunCheckpoint, RunPayloadEnvelope
 from a13n_service.storage import ObjectStore, ObjectStoreUnavailable
 from a13n_service.storage.codec import DurableObjectCodecError, decode_canonical_model
 from pydantic import TypeAdapter
@@ -33,7 +33,7 @@ async def test_state_create_claim_checkpoint_and_read_round_trip(
         created,
         progress_state(initial),
         run_attempt_id="rat_1234567890abcdef",
-        fence=1,
+        attempt_number=1,
     )
     restored = await store.read(ORGANIZATION_ID, initial.run_id, expected_thread_id=initial.thread_id)
 
@@ -53,22 +53,22 @@ async def test_object_version_and_fence_reject_stale_state_writers(
         created,
         progress_state(initial),
         run_attempt_id="rat_1234567890abcdef",
-        fence=1,
+        attempt_number=1,
     )
     with pytest.raises(StaleStateWriter, match="checkpoint committed"):
         await store.replace(
             created,
             progress_state(initial),
             run_attempt_id="rat_1234567890abcdef",
-            fence=1,
+            attempt_number=1,
         )
 
     second_attempt_id = "rat_abcdef1234567890"
     second_checkpoint = await store.replace(
         first_checkpoint,
-        progress_state(first_checkpoint.envelope, fence=2, run_attempt_id=second_attempt_id),
+        progress_state(first_checkpoint.envelope, attempt_number=2, run_attempt_id=second_attempt_id),
         run_attempt_id=second_attempt_id,
-        fence=2,
+        attempt_number=2,
     )
     assert second_checkpoint.writer_fence == 2
 
@@ -79,7 +79,7 @@ async def test_state_read_rejects_metadata_fence_older_than_envelope(
     store = RunStateStore(interaction_object_store)
     created = await store.create(ORGANIZATION_ID, initial_state())
     created = await store.replace(
-        created, progress_state(created.envelope), run_attempt_id="rat_1234567890abcdef", fence=1
+        created, progress_state(created.envelope), run_attempt_id="rat_1234567890abcdef", attempt_number=1
     )
     metadata = dict(created.info.metadata)
     metadata["writer-fence"] = "0"
@@ -160,7 +160,7 @@ async def test_state_checkpoint_cas_is_portable_across_object_backends(
         created,
         progress_state(initial),
         run_attempt_id="rat_1234567890abcdef",
-        fence=1,
+        attempt_number=1,
     )
 
     assert checkpoint.info.version != created.info.version
@@ -169,12 +169,12 @@ async def test_state_checkpoint_cas_is_portable_across_object_backends(
             created,
             progress_state(initial),
             run_attempt_id="rat_1234567890abcdef",
-            fence=1,
+            attempt_number=1,
         )
 
 
 def test_codec_rejects_noncanonical_and_duplicate_json() -> None:
-    adapter = TypeAdapter(RunStateEnvelope)
+    adapter = TypeAdapter(RunCheckpoint)
     with pytest.raises(DurableObjectCodecError, match="canonical"):
         decode_canonical_model(b'{"b":1,"a":2}', adapter)
     with pytest.raises(DurableObjectCodecError, match="strict UTF-8 JSON"):
@@ -187,7 +187,7 @@ def test_codec_rejects_noncanonical_and_duplicate_json() -> None:
         ("digest_sha256", "f" * 64),
         ("size_bytes", 1),
         ("content_type", "application/json"),
-        ("envelope_schema_version", "2"),
+        ("envelope_schema_version", "3"),
         ("harness_schema_version", "unknown"),
         ("checkpoint_seq", 99),
     ],
@@ -204,7 +204,7 @@ async def test_run_state_read_verifies_every_selected_seal_field(
         initial,
         envelope,
         run_attempt_id=envelope.last_checkpoint_run_attempt_id,
-        fence=1,
+        attempt_number=1,
     )
     run = _accepted_run(
         run_id=envelope.run_id, thread_id=envelope.thread_id, idempotency_key="sealed", request_fingerprint="a" * 64
@@ -250,7 +250,9 @@ async def test_state_write_lost_response_recovers_exact_committed_receipt(
         result = await store.create(ORGANIZATION_ID, initial)
     else:
         assert state is not None
-        result = await store.replace(state, progress_state(initial), run_attempt_id="rat_1234567890abcdef", fence=1)
+        result = await store.replace(
+            state, progress_state(initial), run_attempt_id="rat_1234567890abcdef", attempt_number=1
+        )
     assert len(committed) == 1
     assert result.info == committed[0]
     assert await store.read(ORGANIZATION_ID, initial.run_id) == result
@@ -265,7 +267,9 @@ async def test_uncommitted_write_failure_preserves_original_token(object_store: 
 
     monkeypatch.setattr(object_store, "put", fail_before_commit)
     with pytest.raises(ObjectStoreUnavailable, match="not committed"):
-        await store.replace(original, progress_state(original.envelope), run_attempt_id="rat_1234567890abcdef", fence=1)
+        await store.replace(
+            original, progress_state(original.envelope), run_attempt_id="rat_1234567890abcdef", attempt_number=1
+        )
     assert await store.read(ORGANIZATION_ID, original.envelope.run_id) == original
 
 
@@ -283,7 +287,10 @@ async def test_uncertain_write_never_adopts_another_writer_or_corrupt_metadata(
             monkeypatch.setattr(object_store, "put", put)
             current = await store.read(ORGANIZATION_ID, original.envelope.run_id)
             await store.replace(
-                current, progress_state(current.envelope, fence=2), run_attempt_id="rat_1234567890abcdef", fence=2
+                current,
+                progress_state(current.envelope, attempt_number=2),
+                run_attempt_id="rat_1234567890abcdef",
+                attempt_number=2,
             )
         else:
             await put(
@@ -297,19 +304,23 @@ async def test_uncertain_write_never_adopts_another_writer_or_corrupt_metadata(
 
     monkeypatch.setattr(object_store, "put", change_after_commit)
     with pytest.raises(StaleStateWriter):
-        await store.replace(original, progress_state(original.envelope), run_attempt_id="rat_1234567890abcdef", fence=1)
+        await store.replace(
+            original, progress_state(original.envelope), run_attempt_id="rat_1234567890abcdef", attempt_number=1
+        )
 
 
 async def test_writer_claim_preserves_pending_input_and_fences_prior_versions(interaction_object_store):
     store = RunStateStore(interaction_object_store)
     initial = await store.create(ORGANIZATION_ID, initial_state())
-    claimed = await store.claim_writer(initial, fence=2)
+    claimed = await store.claim_writer(initial, attempt_number=2)
     restored = await store.read(ORGANIZATION_ID, initial.envelope.run_id)
     assert restored == claimed
     assert restored.body == initial.body
-    assert restored.envelope.input_disposition == "pending"
+    assert not restored.envelope.initial_input_applied
     assert restored.envelope.checkpoint_seq == 0
     assert restored.writer_fence == 2
     assert restored.info.version != initial.info.version
     with pytest.raises(StaleStateWriter):
-        await store.replace(initial, progress_state(initial.envelope), run_attempt_id="rat_1234567890abcdef", fence=1)
+        await store.replace(
+            initial, progress_state(initial.envelope), run_attempt_id="rat_1234567890abcdef", attempt_number=1
+        )

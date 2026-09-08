@@ -36,8 +36,7 @@ async def accepted_running_attempt(sessions, objects):
     execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
     context = _authority(claim)
     preparation = await execution.commit_preparation_success(context)
-    entered = await execution.enter_harness(context, preparation=preparation, harness_run_id="integration-test")
-    context = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
+    await execution.enter_harness(context, preparation=preparation, harness_run_id="integration-test")
     return run, context
 
 
