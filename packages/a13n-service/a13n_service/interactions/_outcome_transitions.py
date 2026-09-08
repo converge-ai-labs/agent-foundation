@@ -24,12 +24,12 @@ def validate_outcome_candidate(state: StoredRunState, authority: AttemptContext)
     envelope = state.envelope
     if (
         envelope.run_id != authority.run_id
-        or envelope.last_checkpoint_fence > authority.fence
+        or envelope.last_checkpoint_fence > authority.attempt_number
         or (
-            envelope.last_checkpoint_fence == authority.fence
+            envelope.last_checkpoint_fence == authority.attempt_number
             and envelope.last_checkpoint_run_attempt_id != authority.run_attempt_id
         )
-        or state.writer_fence != authority.fence
+        or state.writer_fence != authority.attempt_number
         or state.info.content_type != RUN_STATE_CONTENT_TYPE
         or envelope.checkpoint_seq < 1
     ):

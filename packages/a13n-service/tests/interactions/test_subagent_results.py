@@ -123,7 +123,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     with pytest.raises(AsyncSubagentResultError, match="sealed child outcome"):
         await result_materializer(forged_entry)
 
-    async def materialize(candidate: ThreadInboxEntry):
+    async def materialize(candidate: ThreadInboxEntry, config):
         if candidate.kind is ThreadInboxKind.steer:
             return "first steer"
         return await result_materializer(candidate)
@@ -133,7 +133,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
         materialize,
         clock=lambda: NOW + timedelta(seconds=5),
     )
-    eligible = await reconciler.read_eligible(authority)
+    eligible = await reconciler.read_eligible(authority, effective_agent_config())
 
     assert [item.delivery_sequence for item in eligible] == [1, 2]
     assert eligible[0].input == "first steer"
@@ -152,9 +152,9 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     stored = await AttemptExecutionService(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=6), lifecycle=test_lifecycle_writer()
     ).publish_checkpoint(authority, states, current, successor)
-    await reconciler.confirm_checkpoint(authority, stored)
+    await reconciler.confirm_inbox_receipts(authority, stored)
 
-    assert await reconciler.read_eligible(authority) == ()
+    assert await reconciler.read_eligible(authority, effective_agent_config()) == ()
     async with short_session(interaction_sessions) as database:
         consumed = await database.get(ThreadInboxRecord, entry.id)
         assert consumed is not None
@@ -417,7 +417,7 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
         assert row is not None
         row.target_run_id = None
 
-    async def materialize(entry: ThreadInboxEntry) -> str:
+    async def materialize(entry: ThreadInboxEntry, config) -> str:
         return f"entry-{entry.delivery_sequence}"
 
     reconciler = DatabaseThreadInboxReconciler(
@@ -426,7 +426,7 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
         clock=lambda: NOW + timedelta(seconds=5),
     )
 
-    eligible = await reconciler.read_eligible(authority)
+    eligible = await reconciler.read_eligible(authority, effective_agent_config())
 
     assert [entry.delivery_sequence for entry in eligible] == [1]
 
@@ -493,7 +493,7 @@ async def _accept_child(
         running_parent,
         parent_state,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         child_config,
         suffix="c",
     )
@@ -607,7 +607,7 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
         parent,
         parent_state.envelope,
         authority.run_attempt_id,
-        authority.fence,
+        authority.attempt_number,
         effective_agent_config(),
         suffix="d",
     )

@@ -33,7 +33,7 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         assert {
             "connector_connection_selections_json",
             "current_run_attempt_id",
-            "recovery_policy_version",
+            "execution_policy_version",
             "sealed_state_digest_sha256",
         } <= run_columns
         assert "connection_selections_json" not in run_columns
@@ -59,7 +59,6 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         attempt_indexes = {index["name"] for index in inspector.get_indexes("run_attempts")}
         assert {
             "ix_run_attempts_live_lease",
-            "uq_run_attempts_fence",
             "uq_run_attempts_number",
             "uq_run_attempts_fence_identity",
         } <= attempt_indexes

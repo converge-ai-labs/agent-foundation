@@ -5,7 +5,11 @@ import pytest
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
+from a13n_service.interactions.control_models import ThreadInboxRecord
+from a13n_service.interactions.inbox import ThreadInboxStore
+from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
+from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, WorkerClaim
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.plugins.models import PluginRuntimeLockRecord
@@ -13,6 +17,8 @@ from a13n_service.plugins.runtime import PluginRuntimeLock, default_runtime_targ
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
 from anyio import create_task_group, fail_after, sleep
+from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import TextContent as NativeTextContent
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import select
 
@@ -26,12 +32,14 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("recover_candidate", [False, True])
+@pytest.mark.parametrize("late_input", [False, True])
 async def test_worker_claims_and_executes_an_accepted_run_in_process(
     interaction_sessions,
     interaction_object_store,
     tmp_path,
     monkeypatch,
     recover_candidate,
+    late_input,
 ):
     lock = PluginRuntimeLock(
         mode="on_demand",
@@ -94,14 +102,15 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 )
             )
     if recover_candidate:
-        monkeypatch.setattr(
-            "a13n_service.interactions.worker_preparation.WorkerAttemptPreparer.prepare",
-            AsyncMock(side_effect=AssertionError("Outcome adoption must not reconstruct a Harness invocation")),
-        )
-        monkeypatch.setattr(
-            "a13n_service.interactions.worker_preparation.prepare_run_environment",
-            AsyncMock(side_effect=AssertionError("Outcome adoption must not prepare Environment use")),
-        )
+        if not late_input:
+            monkeypatch.setattr(
+                "a13n_service.interactions.worker_preparation.WorkerAttemptPreparer.open_runtime",
+                AsyncMock(side_effect=AssertionError("Outcome adoption must not reconstruct a Harness invocation")),
+            )
+            monkeypatch.setattr(
+                "a13n_service.interactions.worker_preparation.prepare_run_environment",
+                AsyncMock(side_effect=AssertionError("Outcome adoption must not prepare Environment use")),
+            )
         claim = await AttemptScheduler(
             interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()
         ).claim(
@@ -109,7 +118,6 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
             WorkerClaim(
                 organization_id=ORGANIZATION_ID,
                 worker_id="prior",
-                worker_generation="prior-generation",
                 worker_build_id="test",
                 runtime_lock_digest=lock.digest,
                 lease_duration=timedelta(seconds=30),
@@ -120,15 +128,33 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         context = acceptance._authority(claim)
         execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
         decision = await execution.commit_preparation_success(context)
-        entered = await execution.enter_harness(context, preparation=decision, harness_run_id="prior-harness-run")
-        context = acceptance._authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
+        await execution.enter_harness(context, preparation=decision, harness_run_id="prior-harness-run")
+        context = acceptance._authority(
+            claim,
+        )
         initial = await states.read(ORGANIZATION_ID, run.id)
         await execution.publish_checkpoint(
             context,
             states,
             initial,
-            acceptance._completed_state(initial.envelope, claim.attempt.id, claim.attempt.fence),
+            acceptance._completed_state(initial.envelope, claim.attempt.id, claim.attempt.attempt_number),
         )
+    injected = False
+    commit = RunOutcomeService.commit_verified_state_outcome
+
+    async def commit_with_late_input(service, authority, verified, **kwargs):
+        nonlocal injected
+        if late_input and not injected:
+            injected = True
+            await ThreadInboxStore(interaction_sessions).append_steer(
+                organization_id=run.organization_id,
+                run_id=run.id,
+                input=AcceptedAgentInput(schema_version="1", content=(TextContent(text="new direction"),)),
+                entry_id="inb_9999999999999999",
+            )
+        return await commit(service, authority, verified, **kwargs)
+
+    monkeypatch.setattr(RunOutcomeService, "commit_verified_state_outcome", commit_with_late_input)
     requests = []
 
     async def model(messages, info):
@@ -158,7 +184,9 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                         assert row is not None
                         if row.status in {"completed", "failed"}:
                             assert row.status == "completed", row.failure_json
-                            assert row.output_json == ({"answer": 42} if recover_candidate else "worker completed")
+                            assert row.output_json == (
+                                {"answer": 42} if recover_candidate and not late_input else "worker completed"
+                            )
                             break
                     await sleep(0.02)
                 await loop.drain()
@@ -167,13 +195,49 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
             attempt = await session.scalar(
                 select(RunAttemptRecord)
                 .where(RunAttemptRecord.run_id == run.id)
-                .order_by(RunAttemptRecord.fence.desc())
+                .order_by(RunAttemptRecord.attempt_number.desc())
             )
             assert attempt.status == "succeeded"
-            assert (attempt.harness_run_id is None) is recover_candidate
+            assert (attempt.harness_run_id is None) is (recover_candidate and not late_input)
         checkpoint = await states.read(ORGANIZATION_ID, run.id)
         assert checkpoint.envelope.checkpoint_kind == "completed"
-        assert checkpoint.envelope.input_disposition == "applied"
-        assert checkpoint.writer_fence == (2 if recover_candidate else 1)
-        assert len(requests) == (0 if recover_candidate else 1)
-        preflight.assert_awaited_once_with(lock)
+        assert checkpoint.envelope.initial_input_applied
+        assert checkpoint.writer_fence == (2 if recover_candidate or late_input else 1)
+        assert len(requests) == (int(not recover_candidate) + int(late_input))
+        if late_input:
+            async with short_session(interaction_sessions) as session:
+                entry = await session.get(ThreadInboxRecord, "inb_9999999999999999")
+                assert entry.status == "consumed"
+                attempts = tuple(
+                    (
+                        await session.scalars(
+                            select(RunAttemptRecord)
+                            .where(RunAttemptRecord.run_id == run.id)
+                            .order_by(RunAttemptRecord.attempt_number)
+                        )
+                    ).all()
+                )
+                assert attempts[-1].start_reason == ("lease_expired" if recover_candidate else "pending_input")
+                assert len(attempts) == 2
+            assert [r.inbox_entry_id for r in checkpoint.envelope.host.inbox_receipts] == [entry.id]
+            prompts = [
+                item.content if isinstance(item, NativeTextContent) else item
+                for message in requests[-1]
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+                for item in ((part.content,) if isinstance(part.content, str) else part.content)
+            ]
+            assert prompts.count("new direction") == 1
+            assert prompts.count("hello") == int(not recover_candidate)
+        assert preflight.await_count == (2 if late_input and not recover_candidate else 1)
+        assert all(call.args == (lock,) for call in preflight.await_args_list)
+
+
+@pytest.mark.parametrize("recover_candidate", [False, True])
+async def test_postgresql_worker_continues_late_input_in_same_run(
+    postgres_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate
+):
+    await test_worker_claims_and_executes_an_accepted_run_in_process(
+        postgres_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate, True
+    )

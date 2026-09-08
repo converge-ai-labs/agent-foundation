@@ -15,7 +15,7 @@ from a13n_service.interactions.feedback import map_waiting_feedback
 from a13n_service.interactions.state import (
     DeferredContinuationState,
     HostContinuationState,
-    RunStateEnvelope,
+    RunCheckpoint,
     WaitingOutcomeCandidate,
 )
 from pydantic import TypeAdapter
@@ -69,7 +69,7 @@ def test_waiting_feedback_no_response_is_an_explicit_failed_or_empty_result() ->
     }
 
 
-def _waiting_parent() -> tuple[RunStateEnvelope, RunPendingSummary]:
+def _waiting_parent() -> tuple[RunCheckpoint, RunPendingSummary]:
     requests = DeferredToolRequests(
         calls=[
             ToolCallPart(tool_name="client_action", args={}, tool_call_id="client-1"),
@@ -104,7 +104,6 @@ def _waiting_parent() -> tuple[RunStateEnvelope, RunPendingSummary]:
     payload.update(
         checkpoint_seq=1,
         checkpoint_kind="waiting",
-        input_disposition="applied",
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
         host=HostContinuationState(
@@ -119,4 +118,4 @@ def _waiting_parent() -> tuple[RunStateEnvelope, RunPendingSummary]:
             pending=pending,
         ),
     )
-    return RunStateEnvelope.model_validate(payload), pending
+    return RunCheckpoint.model_validate(payload), pending

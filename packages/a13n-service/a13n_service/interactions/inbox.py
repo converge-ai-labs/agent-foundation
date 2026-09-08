@@ -13,6 +13,7 @@ from redis.exceptions import ResponseError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -20,7 +21,7 @@ from .attempts import (
     AttemptContext,
     AttemptMutationReceipt,
     lock_attempt_authority,
-    read_attempt_lease,
+    read_attempt_authority,
 )
 from .control_domain import (
     SteerReceipt,
@@ -37,13 +38,13 @@ from .inbox_persistence import ThreadInboxConflict, reconcile_checkpoint
 from .input import AcceptedAgentInput
 from .models import RunRecord, ThreadRecord
 from .objects import StoredRunState
-from .state import ConsumedThreadInboxEntry
+from .state import InboxReceipt
 
 logger = logging.getLogger("a13n_service.interactions.inbox")
 
 
 class InboxPayloadMaterializer(Protocol):
-    async def __call__(self, entry: ThreadInboxEntry) -> RunInputValue: ...
+    async def __call__(self, entry: ThreadInboxEntry, config: EffectiveAgentConfig) -> RunInputValue: ...
 
 
 class ThreadControlSignalPublisher(Protocol):
@@ -202,7 +203,7 @@ class DatabaseThreadInboxReconciler:
         self._materialize = materialize
         self._clock = clock
 
-    async def confirm_checkpoint(
+    async def confirm_inbox_receipts(
         self,
         authority: AttemptContext,
         state: StoredRunState,
@@ -225,10 +226,11 @@ class DatabaseThreadInboxReconciler:
     async def read_eligible(
         self,
         authority: AttemptContext,
+        config: EffectiveAgentConfig,
     ) -> Sequence[AdaptedThreadInboxEntry]:
         now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
-            run, _, _ = await read_attempt_lease(database, authority, now)
+            run, _, _ = await read_attempt_authority(database, authority, now)
             pending = tuple(
                 (
                     await database.scalars(
@@ -247,11 +249,11 @@ class DatabaseThreadInboxReconciler:
 
         adapted: list[AdaptedThreadInboxEntry] = []
         for entry in entries:
-            value = await self._materialize(entry)
+            value = await self._materialize(entry, config)
             adapted.append(
                 AdaptedThreadInboxEntry(
                     delivery_sequence=entry.delivery_sequence,
-                    receipt=ConsumedThreadInboxEntry(
+                    receipt=InboxReceipt(
                         inbox_entry_id=entry.id,
                         kind=entry.kind.value,
                     ),

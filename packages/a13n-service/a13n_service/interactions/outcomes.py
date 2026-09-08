@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.environments.usage import refresh_run_retention
+from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -27,7 +28,7 @@ from .attempts import (
     AttemptContext,
     AttemptMutationError,
     lock_attempt_authority,
-    read_attempt_lease,
+    read_attempt_authority,
 )
 from .domain import RunAttemptStatus, RunStatus
 from .inbox import ThreadControlSignalPublisher
@@ -81,22 +82,16 @@ class RunOutcomeService:
         self,
         authority: AttemptContext,
         state: StoredRunState,
-        *,
-        expected_thread_version: int,
     ) -> RunOutcomeReceipt:
         """Adopt an already-published waiting or completed state candidate."""
 
         verified = await self.verify_state_outcome(authority, state)
-        return await self.commit_verified_state_outcome(
-            authority, verified, expected_thread_version=expected_thread_version
-        )
+        return await self.commit_verified_state_outcome(authority, verified)
 
     async def commit_verified_state_outcome(
         self,
         authority: AttemptContext,
         verified: VerifiedRunOutcome,
-        *,
-        expected_thread_version: int,
     ) -> RunOutcomeReceipt:
         """Revalidate current authority and commit without holding a lease gate over object I/O."""
 
@@ -116,16 +111,40 @@ class RunOutcomeService:
                 now,
                 lock_inbox_origins=True,
             )
-            if thread.version != expected_thread_version:
-                raise RunOutcomeError("Thread outcome precondition changed")
             validate_outcome_candidate_scope(state, run, thread)
             # Recovery can repair Host receipts while preserving an existing
-            # candidate. That checkpoint carries the current fence even though
+            # candidate. That checkpoint carries the current attempt_number even though
             # this Attempt has not (and need not) entered Harness.
             if attempt.status not in {RunAttemptStatus.running.value, RunAttemptStatus.leased.value}:
                 raise AttemptMutationError("a successful outcome requires an active Attempt")
             envelope = state.envelope
             candidate = envelope.outcome_candidate
+            can_seal = await apply_run_outcome(
+                database,
+                run=run,
+                outcome="waiting" if isinstance(candidate, WaitingOutcomeCandidate) else "completed",
+                state=state,
+                now=now,
+            )
+            if not can_seal:
+                # An unentered recovery Attempt can process the input itself. An
+                # already-finished Harness needs a new Attempt in this same Run.
+                if attempt.status == RunAttemptStatus.running.value:
+                    terminalize_attempt(attempt, RunAttemptStatus.succeeded, now)
+                    charge_attempt_usage(run, attempt)
+                    run.current_run_attempt_id = None
+                    run.available_at = now
+                    run.updated_at = now
+                    run.version += 1
+                    await self._lifecycle.append_run_attempt_lifecycle(
+                        database,
+                        run,
+                        attempt,
+                        "run_attempt.succeeded",
+                        mutation_id=new_mutation_id(),
+                        occurred_at=now,
+                    )
+                return RunOutcomeReceipt(RunStatus.running, run.version, attempt.version, thread.version)
             if isinstance(candidate, WaitingOutcomeCandidate):
                 apply_waiting_outcome(run, candidate, now)
                 status = RunStatus.waiting
@@ -145,7 +164,6 @@ class RunOutcomeService:
             thread.version += 1
             thread.updated_at = now
             await refresh_run_retention(database, run=run, now=now)
-            await apply_run_outcome(database, run=run, outcome=status.value, state=state, now=now)
             await self._lifecycle.append_run_with_attempt_lifecycle(
                 database,
                 run,
@@ -270,7 +288,7 @@ class RunOutcomeService:
 
         validate_outcome_candidate(state, authority)
         async with short_session(self._sessions) as database:
-            run, _, thread = await read_attempt_lease(database, authority, self._clock())
+            run, _, thread = await read_attempt_authority(database, authority, self._clock())
             validate_outcome_candidate_scope(state, run, thread)
         candidate = state.envelope.outcome_candidate
         if isinstance(candidate, CompletedOutcomeCandidate) and candidate.output_object is not None:

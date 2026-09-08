@@ -15,14 +15,14 @@ from sqlalchemy.orm import aliased
 
 from a13n_service.environments.identity import local_backend_eligible
 from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentRecord
-from a13n_service.environments.usage import refresh_run_retention
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
-from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
-from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
+from ._transitions import charge_attempt_usage, terminalize_attempt
+from .domain import RunAttempt, RunAttemptStatus, RunStatus, RunUsage, new_run_attempt_id
+from .failure import finalize_failed_run
+from .inbox_persistence import lock_inbox_related_runs
 from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .records import run_attempt_record
@@ -36,7 +36,6 @@ class AttemptSchedulingError(RuntimeError):
 class WorkerClaim:
     organization_id: str
     worker_id: str
-    worker_generation: str
     worker_build_id: str
     runtime_lock_digest: str
     lease_duration: timedelta
@@ -116,7 +115,10 @@ class AttemptScheduler:
                 RunRecord.status == RunStatus.running.value,
                 RunRecord.current_run_attempt_id.is_(None),
                 RunRecord.available_at <= now,
-                or_(predecessor.status == RunAttemptStatus.failed.value, yielded_ready),
+                or_(
+                    predecessor.status.in_((RunAttemptStatus.failed.value, RunAttemptStatus.succeeded.value)),
+                    yielded_ready,
+                ),
             ),
             and_(
                 RunRecord.status == RunStatus.running.value,
@@ -214,32 +216,17 @@ class AttemptScheduler:
 
             budget_failure = _claim_budget_failure(run, classification, now)
             if budget_failure is not None:
-                seal_failed_run(run, thread, budget_failure, now)
-                await refresh_run_retention(database, run=run, now=now)
-                await apply_run_outcome(database, run=run, outcome="failed", now=now)
-                if classification == "lease_expired":
-                    assert predecessor is not None
-                    await self._lifecycle.append_run_with_attempt_lifecycle(
-                        database,
-                        run,
-                        "run.failed",
-                        attempt=predecessor,
-                        attempt_event_type="run_attempt.failed",
-                        mutation_id=mutation_id,
-                        occurred_at=now,
-                        actor_type="worker",
-                        actor_id=claim.worker_id,
-                    )
-                else:
-                    await self._lifecycle.append_run_lifecycle(
-                        database,
-                        run,
-                        "run.failed",
-                        mutation_id=mutation_id,
-                        occurred_at=now,
-                        actor_type="worker",
-                        actor_id=claim.worker_id,
-                    )
+                await finalize_failed_run(
+                    database,
+                    run=run,
+                    thread=thread,
+                    failure=budget_failure,
+                    now=now,
+                    lifecycle=self._lifecycle,
+                    actor_id=claim.worker_id,
+                    mutation_id=mutation_id,
+                    failed_attempt=predecessor if classification == "lease_expired" else None,
+                )
                 return SealedClaim(budget_failure)
 
             token = self._token_factory()
@@ -251,25 +238,22 @@ class AttemptScheduler:
                 organization_id=run.organization_id,
                 run_id=run.id,
                 attempt_number=run.attempts_started + 1,
-                fence=run.next_attempt_fence,
                 status=RunAttemptStatus.leased,
                 replaces_run_attempt_id=(
                     predecessor.id
                     if predecessor is not None and classification in {"attempt_failed", "lease_expired"}
                     else None
                 ),
-                recovery_reason=None if classification == "initial" else classification,
+                start_reason=None if classification == "initial" else classification,
                 worker_id=claim.worker_id,
-                worker_generation=claim.worker_generation,
                 worker_build_id=claim.worker_build_id,
                 runtime_lock_digest=claim.runtime_lock_digest,
                 model_execution_observation=run.to_resource().model_execution_observation,
                 lease_token_digest=_token_digest(token),
                 lease_expires_at=now + claim.lease_duration,
                 heartbeat_at=now,
-                usage=RecoveryUsage(),
+                usage=RunUsage(),
                 created_at=now,
-                claimed_at=now,
                 updated_at=now,
             )
             attempt_record_value = run_attempt_record(attempt)
@@ -278,8 +262,7 @@ class AttemptScheduler:
             run.current_run_attempt_id = attempt.id
             run.attempts_started += 1
             if classification != "planned_handoff":
-                run.recovery_attempts_started += 1
-            run.next_attempt_fence += 1
+                run.attempts_charged += 1
             run.version += 1
             run.updated_at = now
             await database.flush()
@@ -373,6 +356,8 @@ def _classify_candidate(
         return "lease_expired"
     if assume_utc(run.available_at) > now:
         return None
+    if predecessor.status == RunAttemptStatus.succeeded.value:
+        return "pending_input"
     if predecessor.status == RunAttemptStatus.failed.value:
         return "attempt_failed"
     if predecessor.status != RunAttemptStatus.yielded.value or predecessor.finished_at is None:
@@ -385,17 +370,17 @@ def _classify_candidate(
 
 
 def _claim_budget_failure(run: RunRecord, classification: str, now: datetime) -> SafeFailure | None:
-    if run.recovery_policy_version != "1":
-        return _failure("recovery_policy_unsupported", "The Run recovery policy version is unsupported.")
-    if run.recovery_deadline_at is not None and now >= assume_utc(run.recovery_deadline_at):
-        return _failure("recovery_deadline_exhausted", "The Run recovery deadline was exhausted.")
+    if run.execution_policy_version != "1":
+        return _failure("execution_policy_unsupported", "The Run execution policy version is unsupported.")
+    if run.execution_deadline_at is not None and now >= assume_utc(run.execution_deadline_at):
+        return _failure("execution_deadline_exhausted", "The Run execution deadline was exhausted.")
     resource = run.to_resource()
-    if resource.recovery_budget.max_usage is not None and not resource.recovery_budget.max_usage.permits(
+    if resource.execution_budget.max_usage is not None and not resource.execution_budget.max_usage.permits(
         resource.usage_charged
     ):
-        return _failure("recovery_usage_exhausted", "The Run recovery usage budget was exhausted.")
-    if classification != "planned_handoff" and run.recovery_attempts_started >= run.max_recovery_attempts:
-        return _failure("recovery_attempts_exhausted", "The Run recovery attempt budget was exhausted.")
+        return _failure("execution_usage_exhausted", "The Run execution usage budget was exhausted.")
+    if classification != "planned_handoff" and run.attempts_charged >= run.max_attempts:
+        return _failure("execution_attempts_exhausted", "The Run execution attempt budget was exhausted.")
     return None
 
 

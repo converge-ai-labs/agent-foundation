@@ -39,7 +39,7 @@ from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authori
 from .control_domain import QueuedSubmission, QueuedSubmissionFailure, QueuedSubmissionState
 from .domain import Run, RunAttemptStatus, RunInputKind, RunLineageKind
 from .errors import RunAcceptanceError
-from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
+from .inbox_persistence import ThreadInboxConflict, apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
 from .inline_hooks import InlineHookAcceptance
 from .input import AcceptedAgentInput
@@ -47,7 +47,7 @@ from .lifecycle import LifecycleWriter
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter, StoredRunState
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
-from .state import CompletedOutcomeCandidate, RunPayloadEnvelope, RunStateEnvelope
+from .state import CompletedOutcomeCandidate, RunCheckpoint, RunPayloadEnvelope
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +95,7 @@ class CompletionQueueHandoffService:
         authority: AttemptContext,
         source_state: StoredRunState,
         successor_run: Run,
-        successor_state: RunStateEnvelope,
+        successor_state: RunCheckpoint,
         queued_submission_id: str,
         submission_digest_sha256: str,
         accepted_input: AcceptedAgentInput,
@@ -310,7 +310,7 @@ class CompletionQueueHandoffService:
         authority: AttemptContext,
         source_state: StoredRunState,
         successor_run: Run,
-        successor_state: RunStateEnvelope,
+        successor_state: RunCheckpoint,
         accepted_input: AcceptedAgentInput,
     ) -> tuple[CompletedOutcomeCandidate, RunPayloadEnvelope | None]:
         candidate = await self._verify_source(authority=authority, source_state=source_state)
@@ -344,7 +344,7 @@ class CompletionQueueHandoffService:
             return None
         return await self._payloads.verify_reference(run.organization_id, run.id, "input", run.input_object)
 
-    async def _publish_initial(self, run: Run, state: RunStateEnvelope) -> None:
+    async def _publish_initial(self, run: Run, state: RunCheckpoint) -> None:
         try:
             await self._states.create(run.organization_id, state)
         except StaleStateWriter:
@@ -360,7 +360,7 @@ def _validate_combined_successor(
     authority: AttemptContext,
     source_state: StoredRunState,
     run: Run,
-    state: RunStateEnvelope,
+    state: RunCheckpoint,
 ) -> None:
     if (
         run.organization_id != authority.organization_id
@@ -456,7 +456,8 @@ async def _seal_completed_source(
     source.updated_at = now
     source.version += 1
     await refresh_run_retention(database, run=source, now=now)
-    await apply_run_outcome(database, run=source, outcome="completed", state=source_state, now=now)
+    if not await apply_run_outcome(database, run=source, outcome="completed", state=source_state, now=now):
+        raise ThreadInboxConflict("Run completion must process pending input before queue handoff")
 
 
 async def _consume_queue_head(

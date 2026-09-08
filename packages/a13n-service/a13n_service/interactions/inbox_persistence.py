@@ -16,7 +16,7 @@ from .control_domain import ThreadInboxKind, ThreadInboxStatus
 from .control_models import ThreadInboxCounterRecord, ThreadInboxRecord
 from .models import RunRecord
 from .objects import StoredRunState
-from .state import ConsumedThreadInboxEntry
+from .state import InboxReceipt
 
 
 class ThreadInboxConflict(RuntimeError):
@@ -176,7 +176,7 @@ async def reconcile_checkpoint(
     envelope = state.envelope
     if envelope.run_id != run.id or envelope.thread_id != run.thread_id:
         raise ThreadInboxConflict("checkpoint scope does not match the selected Run")
-    receipts = envelope.host.consumed_inbox_entries
+    receipts = envelope.host.inbox_receipts
     if not receipts:
         return
 
@@ -260,8 +260,8 @@ async def apply_run_outcome(
     outcome: Literal["waiting", "completed", "failed", "cancelled"],
     now: datetime,
     state: StoredRunState | None = None,
-) -> None:
-    """Apply the inbox half of a Run seal under already-held Thread/Run locks."""
+) -> bool:
+    """Reconcile a seal under Thread/Run locks; return False when completion must continue."""
 
     if state is not None:
         await reconcile_checkpoint(database, run=run, state=state, now=now)
@@ -281,15 +281,14 @@ async def apply_run_outcome(
     )
     remaining = tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
     if outcome == "completed":
-        if remaining:
-            raise ThreadInboxConflict("completed Run still has eligible pending inbox delivery")
-        return
+        return not remaining
     if outcome == "waiting":
         for row in remaining:
             row.target_run_id = None
             row.source_waiting_run_id = run.id
-        return
+        return True
     await _finalize_rows(database, remaining, fallback=ThreadInboxStatus.superseded, now=now)
+    return True
 
 
 async def _lock_pending_scope(
@@ -483,7 +482,7 @@ def _payload_size(row: ThreadInboxRecord) -> int:
 
 
 def _validate_receipt_kinds(
-    receipts: Sequence[ConsumedThreadInboxEntry],
+    receipts: Sequence[InboxReceipt],
     rows: dict[str, ThreadInboxRecord],
 ) -> None:
     for receipt in receipts:

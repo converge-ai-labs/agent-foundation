@@ -15,8 +15,7 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
-from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, read_attempt_lease
-from a13n_service.interactions.control_domain import ThreadInboxEntry
+from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, read_attempt_authority
 from a13n_service.interactions.control_wakeups import AttemptControlWakeups
 from a13n_service.interactions.harness_results import StoredHarnessOutcomeAdapter
 from a13n_service.interactions.harness_runtime import HarnessDriver
@@ -25,9 +24,9 @@ from a13n_service.interactions.models import RunAttemptRecord, SessionRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.run_control import RunAttemptControl
-from a13n_service.interactions.terminal_committer import DatabaseRunTerminalCommitter
+from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
 from a13n_service.interactions.worker import WorkerCapacitySlot
-from a13n_service.interactions.worker_input import WorkerInputSources
+from a13n_service.interactions.worker_input import WorkerInputMaterializer, WorkerInputSources
 from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
 from a13n_service.observability import ObservabilityRuntime, RunAttemptCorrelation, RunAttemptOutcome
 from a13n_service.process.resources import ExecutionResources
@@ -71,7 +70,7 @@ class WorkerAttempts:
         outcomes = RunOutcomeService(
             shared.storage.sessions, self._payloads, lifecycle=shared.lifecycle, control_signals=self._signals
         )
-        self._committer = DatabaseRunTerminalCommitter(shared.storage.sessions, outcomes, self._execution)
+        self._committer = DatabaseAttemptCommitter(shared.storage.sessions, outcomes, self._execution)
         self._subagents = ServiceSubagents(
             shared.storage.sessions,
             self._states,
@@ -92,7 +91,7 @@ class WorkerAttempts:
         # lease monitor before any dependency preparation or Harness construction.
         with fail_after(context.renewal_timeout.total_seconds()):
             async with short_session(sessions) as session:
-                row, attempt_row, _ = await read_attempt_lease(session, context, utc_now())
+                row, attempt_row, _ = await read_attempt_authority(session, context, utc_now())
                 run = row.to_resource()
                 attempt = attempt_row.to_resource()
                 owner = await session.get(SessionRecord, run.session_id)
@@ -119,19 +118,6 @@ class WorkerAttempts:
             else self._observability.run_attempt(correlation, input_value=run.input)
         )
         with trace_scope as trace:
-            preparer: WorkerAttemptPreparer | None = None
-
-            async def materialize(entry: ThreadInboxEntry):
-                if preparer is None:
-                    raise RuntimeError("Attempt preparation is not constructed")
-                return await preparer.materialize_inbox(entry)
-
-            control = RunAttemptControl(
-                context=context,
-                execution=self._execution,
-                states=self._states,
-                inbox=DatabaseThreadInboxReconciler(sessions, materialize),
-            )
             sources = WorkerInputSources(
                 sessions,
                 self._assets,
@@ -139,6 +125,15 @@ class WorkerAttempts:
                 self._resources.model_endpoint_policy,
                 run,
                 workspace_id,
+            )
+
+            async_results = AsyncSubagentResultMaterializer(sessions, self._replay)
+            inputs = WorkerInputMaterializer(sources, self._payloads, async_results)
+            control = RunAttemptControl(
+                context=context,
+                execution=self._execution,
+                states=self._states,
+                inbox=DatabaseThreadInboxReconciler(sessions, inputs.inbox),
             )
 
             def subagent_capability() -> SubagentCapability:
@@ -157,10 +152,11 @@ class WorkerAttempts:
                 control=control,
                 payloads=self._payloads,
                 sources=sources,
+                inputs=inputs,
                 model_resolver=self._resources.live_model_providers,
                 model_factory=self._resources.native_model_factory,
                 skills=self._skills,
-                async_results=AsyncSubagentResultMaterializer(sessions, self._replay),
+                async_results=async_results,
                 environments=self._environments,
                 external_tools=self._external_tools,
                 subagent_capability=subagent_capability,

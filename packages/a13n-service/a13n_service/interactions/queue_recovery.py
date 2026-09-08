@@ -19,7 +19,7 @@ from .control_models import QueuedSubmissionRecord
 from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunObjectError
 
-logger = logging.getLogger("a13n_service.interactions.recovery")
+logger = logging.getLogger("a13n_service.interactions.queue_recovery")
 
 
 class QueueRecovery:

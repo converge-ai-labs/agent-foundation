@@ -261,17 +261,15 @@ def _attempt_payload(
     payload: dict[str, JsonValue] = {
         "status": resource.status.value,
         "attempt_number": resource.attempt_number,
-        "fence": resource.fence,
         "worker_id": resource.worker_id,
-        "worker_generation": resource.worker_generation,
         "worker_build_id": resource.worker_build_id,
         "replaces_run_attempt_id": resource.replaces_run_attempt_id,
-        "recovery_reason": resource.recovery_reason,
+        "start_reason": resource.start_reason,
     }
     if event_type == "run_attempt.leased":
         payload.update(
             lease_expires_at=resource.lease_expires_at.isoformat(),
-            claimed_at=resource.claimed_at.isoformat(),
+            created_at=resource.created_at.isoformat(),
         )
     elif event_type == "run_attempt.running":
         payload.update(

@@ -4,12 +4,12 @@ from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import (
-    RecoveryBudget,
-    RecoveryUsage,
+    ExecutionBudget,
     Run,
     RunInputKind,
     RunLineageKind,
     RunStatus,
+    RunUsage,
     Session,
     Thread,
     ThreadOriginKind,
@@ -164,16 +164,15 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
                     priority=0,
                     queue_name="default",
                     available_at=NOW,
-                    next_attempt_fence=1,
-                    recovery_budget=RecoveryBudget(
+                    execution_budget=ExecutionBudget(
                         policy_version="1",
-                        max_recovery_attempts=1,
+                        max_attempts=1,
                         max_handoffs=1,
                     ),
                     attempts_started=0,
-                    recovery_attempts_started=0,
+                    attempts_charged=0,
                     handoffs_completed=0,
-                    usage_charged=RecoveryUsage(),
+                    usage_charged=RunUsage(),
                     request_fingerprint="f" * 64,
                     status=RunStatus.accepted,
                     input_kind=RunInputKind.agent_input,
