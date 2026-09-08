@@ -223,16 +223,28 @@ async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, historical_project: str
 ) -> None:
     import a13n_harness.model_auth as runtime
+    import yaml
     from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/codex.yaml"
+    document = yaml.safe_load(model_path.read_text())
+    native_settings = {
+        "openai_service_tier": "priority",
+        "stop_sequences": ["  END  "],
+        "extra_body": {"properties": {"password": {"description": "  keep spacing  "}}},
+    }
+    document["settings"].update(native_settings)
+    model_path.write_text(yaml.safe_dump(document))
     directory = tmp_path / "new-work"
     directory.mkdir()
     (directory / "AGENTS.md").write_text("NEW DIRECTORY GUIDANCE")
     calls = []
 
     async def stream(messages, info):
+        for key, value in native_settings.items():
+            assert info.model_settings[key] == value
         calls.append(messages)
         if len(calls) % 2:
             yield {
@@ -266,8 +278,6 @@ async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
                 ),
             )
         elif historical_project == "missing":
-            import yaml
-
             project = next(
                 candidate
                 for candidate in (path.parent / "projects").glob("*.yaml")
@@ -1627,20 +1637,24 @@ async def test_default_notes_are_injected_and_survive_resume_with_full_projectio
 
 
 @pytest.mark.anyio
-async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("tier_key", ["service_tier", "openai_service_tier"])
+async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
+    tmp_path: Path, monkeypatch, tier_key: str
+) -> None:
     import a13n_harness.model_auth as runtime
     import yaml
 
     path = await _seed(tmp_path, monkeypatch)
     model_path = path.parent / "models/codex.yaml"
     document = yaml.safe_load(model_path.read_text())
-    document["settings"]["service_tier"] = "priority"
+    document["settings"]["service_tier"] = "default"
+    document["settings"][tier_key] = "priority"
     model_path.write_text(yaml.safe_dump(document))
     original = {item: item.read_bytes() for item in path.parent.rglob("*.yaml")}
     observed = []
 
     async def stream(messages, info):
-        observed.append(info.model_settings.get("service_tier"))
+        observed.append(info.model_settings.get("openai_service_tier") or info.model_settings.get("service_tier"))
         yield "Reply."
 
     monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))

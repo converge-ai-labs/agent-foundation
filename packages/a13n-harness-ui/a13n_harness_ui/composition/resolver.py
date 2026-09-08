@@ -36,7 +36,7 @@ from a13n_harness_ui.environment_profiles import (
 )
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog, SelectedCapability
-from a13n_harness_ui.model_adapters import PydanticAiModelAdapter
+from a13n_harness_ui.model_adapters import PydanticAiModelAdapter, service_tier_setting
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
 from a13n_harness_ui.surfaces import RunModelOverrides
 
@@ -259,7 +259,11 @@ class AgentCompositionResolver:
         if model_overrides is not None:
             settings = model_overrides.model_dump(include={"thinking", "service_tier"}, exclude_none=True)
             if settings:
-                resource = resource.model_copy(update={"settings": {**resource.settings, **settings}})
+                effective = dict(resource.settings)
+                if model_overrides.service_tier is not None:
+                    # Native provider tiers otherwise take precedence over the generic override.
+                    effective.pop(service_tier_setting(resource.route), None)
+                resource = resource.model_copy(update={"settings": {**effective, **settings}})
         model = self._model_recipe(resource)
         capabilities = self._capability_recipes(source, agent, active_model=model)
         children: list[ResolvedSubagent] = []

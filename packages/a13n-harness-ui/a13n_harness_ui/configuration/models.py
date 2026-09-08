@@ -54,7 +54,7 @@ type SourceDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 class StrictModel(BaseModel):
     """Immutable strict behavior shared by serialized contracts."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, str_strip_whitespace=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, allow_inf_nan=False)
 
     @model_validator(mode="before")
     @classmethod
@@ -209,8 +209,6 @@ class ModelResource(StrictModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "model-")
-        _validate_json_mapping(self.settings)
-        _validate_json_mapping(self.model_configuration)
         return self
 
 
@@ -225,7 +223,6 @@ class HarnessPluginResource(StrictModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "plugin-")
-        _validate_json_mapping(self.configuration)
         return self
 
 
@@ -245,8 +242,6 @@ class EnvironmentProfileResource(StrictModel):
         _require_id_prefix(self.id, "environment-")
         if built_in_environment_profile(self.id) is not None:
             raise ValueError("release-owned Environment profile IDs cannot be redefined")
-        _validate_json_mapping(self.provider_configuration)
-        _validate_json_mapping(self.adapter_configuration)
         return self
 
 
@@ -261,7 +256,6 @@ class EnvironmentRunExtensionResource(StrictModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "extension-")
-        _validate_json_mapping(self.configuration)
         return self
 
 
@@ -273,8 +267,6 @@ type ExtensionResource = Annotated[
 
 class McpFileValueSource(StrictModel):
     """Internal locator for a string in an exact user-owned MCP source file."""
-
-    model_config = ConfigDict(str_strip_whitespace=False)
 
     file: str = Field(pattern=r"^mcp/[^/\\\\]+\.(yaml|json)$")
     source_digest: SourceDigest
@@ -341,11 +333,6 @@ class McpServerResource(StrictModel):
 class CapabilitySelection(StrictModel):
     capability: CatalogKey
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _valid_configuration(self) -> Self:
-        _validate_json_mapping(self.configuration)
-        return self
 
 
 class MarkdownSubagentSelection(StrictModel):
@@ -593,23 +580,6 @@ def _require_id_prefix(value: str, prefix: str) -> None:
 def _require_reference(value: str | None, resources: Mapping[str, object], field: str) -> None:
     if value is not None and value not in resources:
         raise ValueError(f"{field} selects unknown resource {value}")
-
-
-def _validate_json_mapping(value: dict[str, JsonValue]) -> None:
-    _validate_json_value(value)
-
-
-def _validate_json_value(value: JsonValue, *, field_name: str | None = None) -> None:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key.casefold() in _SECRET_FIELD_NAMES:
-                raise ValueError(f"literal credential field {key!r} is forbidden")
-            _validate_json_value(item, field_name=key)
-    elif isinstance(value, list):
-        for item in value:
-            _validate_json_value(item, field_name=field_name)
-    elif isinstance(value, float) and not (-float("inf") < value < float("inf")):
-        raise ValueError("non-finite JSON values are forbidden")
 
 
 def _reject_agent_cycles(agents: dict[str, AgentResource]) -> None:

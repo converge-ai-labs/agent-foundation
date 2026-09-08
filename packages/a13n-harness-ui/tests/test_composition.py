@@ -786,24 +786,45 @@ async def test_explicit_notes_opt_out_overrides_the_enabled_default(tmp_path: Pa
 
 
 @pytest.mark.parametrize("tier", [None, "auto", "default", "flex", "priority"])
-async def test_generic_service_tier_override_only_changes_root_and_inherited_children(tmp_path: Path, tier) -> None:
+@pytest.mark.parametrize(
+    "route,tier_key,configured",
+    [
+        ("openai:gpt-5", "service_tier", "default"),
+        ("openai:gpt-5", "openai_service_tier", "priority"),
+        ("anthropic:claude-sonnet-4-6", "anthropic_service_tier", "standard_only"),
+        ("google:gemini-2.5-pro", "google_cloud_service_tier", "priority_only"),
+        ("deepseek:deepseek-chat", "openai_service_tier", "flex"),
+    ],
+)
+async def test_generic_service_tier_override_only_changes_root_and_inherited_children(
+    tmp_path: Path, tier, route: str, tier_key: str, configured: str
+) -> None:
     from a13n_harness_ui.surfaces import RunModelOverrides
 
     path = _write_source(tmp_path)
     model = tmp_path / "models/primary.yaml"
-    model.write_text(model.read_text().replace("settings: {temperature: 0}", "settings: {service_tier: default}"))
+    model.write_text(
+        model.read_text()
+        .replace("route: openai:gpt-5", f"route: {route}")
+        .replace("settings: {temperature: 0}", f"settings: {{{tier_key}: {configured}}}")
+    )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     original = resolver.resolve_run(source, _selection())
     composition = resolver.resolve_run(
         source, _selection(), model_overrides=RunModelOverrides(service_tier=tier, thinking="low")
     )
-    assert composition.root.model.route == "openai:gpt-5"  # Not a Codex-only path.
-    assert composition.root.model.settings["service_tier"] == (tier or "default")
+    assert composition.root.model.route == route
+    if tier is None:
+        assert composition.root.model.settings[tier_key] == configured
+    else:
+        assert composition.root.model.settings["service_tier"] == tier
+        if tier_key != "service_tier":
+            assert tier_key not in composition.root.model.settings
     assert composition.root.model.settings["thinking"] == "low"
     assert composition.root.children[0].definition.model == composition.root.model
     assert composition.root.children[1].definition.model == original.root.children[1].definition.model
-    assert source.models["model-primary"].settings == {"service_tier": "default"}
+    assert source.models["model-primary"].settings == {tier_key: configured}
     assert resolver.resolve_run(source, _selection()).root == original.root
 
 

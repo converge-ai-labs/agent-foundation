@@ -116,17 +116,23 @@ def test_base_url_rejects_credentials_and_invalid_endpoints(url) -> None:
         PydanticAiModelAdapter().validate(route="anthropic:claude", settings={}, model_cfg={"base_url": url})
 
 
-def test_provider_specific_settings_cannot_leak_to_another_provider() -> None:
-    with pytest.raises(CompositionError, match="settings"):
-        PydanticAiModelAdapter().validate(
-            route="openai-responses:gpt-5", settings={"anthropic_thinking": {"type": "adaptive"}}, model_cfg={}
-        )
-    with pytest.raises(CompositionError, match="settings"):
-        PydanticAiModelAdapter().validate(
-            route="anthropic:claude",
-            settings={"max_tokens": 1024, "anthropic_thinking": {"type": "enabled", "budget_tokens": 1024}},
-            model_cfg={},
-        )
+@pytest.mark.parametrize("route", ["openai-responses:gpt-5", "anthropic:claude", "openai-codex:gpt-5.6"])
+def test_model_settings_pass_through_without_host_semantic_validation(route) -> None:
+    settings = {
+        "openai_service_tier": "priority",
+        "timeout": {"connect": 5, "read": 120},
+        "stop_sequences": ["  END  ", "\n"],
+        "extra_headers": {"X-Test": "header"},
+        "extra_body": {"schema": {"properties": {"password": {"type": "string"}}}},
+        "future_provider_setting": {"items": [None, 1, False, "  exact  "]},
+        "temperature": 123,
+        "max_tokens": -1,
+        "seed": None,
+    }
+    normalized = PydanticAiModelAdapter().validate(route=route, settings=settings, model_cfg={})
+    assert normalized.settings == settings
+    normalized.settings["extra_body"]["new"] = True
+    assert "new" not in settings["extra_body"]
 
 
 def test_api_wizard_backtracking_drops_incompatible_settings_and_endpoints() -> None:
@@ -284,11 +290,20 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
         monkeypatch.setattr(model_runtime, "infer_provider_class", infer)
         monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
         preset = settings_presets(provider, model_id)[0]
+        settings = {
+            **preset.settings,
+            "extra_headers": {"X-Passthrough": "native"},
+            "extra_body": {"fixture_payload": {"password": "  schema-value  ", "nullable": None}},
+        }
+        if provider == "openai-responses":
+            settings["openai_service_tier"] = "priority"
+            settings["openai_prompt_cache_key"] = "fixture-cache"
+        normalized = PydanticAiModelAdapter().validate(route=f"{provider}:{model_id}", settings=settings, model_cfg={})
         recipe = ResolvedModelRecipe(
             model_id="model-test",
             route=f"{provider}:{model_id}",
             authentication=ApiKeyAuthentication(kind="api_key", env="TEST_PROVIDER_KEY"),
-            settings=preset.settings,
+            settings=normalized.settings,
             model_configuration={"base_url": "https://provider.invalid/api"},
         )
         model = await HarnessUiModelResolver({recipe.model_id: recipe})(
@@ -304,7 +319,11 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
     assert len(requests) == 1
     assert str(requests[0].url).startswith("https://provider.invalid/api/")
     payload = json.loads(requests[0].content)
+    assert requests[0].headers["X-Passthrough"] == "native"
+    assert payload["fixture_payload"] == {"password": "  schema-value  ", "nullable": None}
     if provider == "openai-responses":
+        assert payload["service_tier"] == "priority"
+        assert payload["prompt_cache_key"] == "fixture-cache"
         if model_id == "gpt-4.1":
             assert "reasoning" not in payload
         else:
@@ -466,10 +485,10 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
 def test_native_vendor_defaults_do_not_offer_fake_disable_or_generic_summary() -> None:
     for provider, model_id in (("deepseek", "deepseek-chat"), ("moonshotai", "moonshot-v1-8k"), ("zai", "glm-4")):
         assert settings_presets(provider, model_id)[0].settings == {}
-    with pytest.raises(CompositionError):
-        PydanticAiModelAdapter().validate(
-            route="deepseek:deepseek-reasoner", settings={"zai_clear_thinking": False}, model_cfg={}
-        )
+    normalized = PydanticAiModelAdapter().validate(
+        route="deepseek:deepseek-reasoner", settings={"zai_clear_thinking": False}, model_cfg={}
+    )
+    assert normalized.settings == {"zai_clear_thinking": False}
 
 
 @pytest.mark.parametrize("provider", API_PROVIDERS, ids=lambda provider: provider.route)

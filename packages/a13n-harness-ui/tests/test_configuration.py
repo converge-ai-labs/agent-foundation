@@ -26,6 +26,77 @@ def _write_source_tree(
     return config
 
 
+async def test_native_configuration_payloads_preserve_keys_values_and_whitespace(tmp_path: Path) -> None:
+    payload = {
+        "future_option": {"items": [1, True, None, "  keep  "]},
+        "schema": {"properties": {"password": {"type": "string"}, "api_key": {"type": "string"}}},
+        "stop_sequences": ["\n", "  END  "],
+    }
+    resources = {
+        "models/native.yaml": {
+            "kind": "model",
+            "id": "model-native",
+            "name": "Native",
+            "route": "openai:gpt-5",
+            "authentication": {"kind": "api_key", "env": "TEST_KEY"},
+            "settings": payload,
+        },
+        "agents/native.yaml": {
+            "kind": "agent",
+            "id": "agent-native",
+            "name": "Native",
+            "model": "model-native",
+            "instructions": "  exact instruction\n",
+            "capabilities": [{"capability": "Example", "configuration": payload}],
+        },
+        "extensions/plugin.yaml": {
+            "kind": "harness_plugin",
+            "id": "plugin-native",
+            "name": "Native",
+            "plugin_key": "example.plugin",
+            "configuration": payload,
+        },
+        "extensions/environment.yaml": {
+            "kind": "environment_profile",
+            "id": "environment-custom",
+            "name": "Native",
+            "provider_key": "example.provider",
+            "provider_schema_version": "1",
+            "provider_configuration": payload,
+            "adapter_key": "example.adapter",
+            "adapter_configuration": payload,
+        },
+        "extensions/run.yaml": {
+            "kind": "environment_run_extension",
+            "id": "extension-native",
+            "name": "Native",
+            "extension_key": "example.extension",
+            "configuration": payload,
+        },
+        "mcp/native.yaml": {
+            "kind": "mcp_server",
+            "id": "mcp-native",
+            "name": "Native",
+            "transport": {"command": "example", "arguments": ["  exact argument  "]},
+        },
+    }
+    path = _write_source_tree(
+        tmp_path, resources={key: json.dumps({"schema_version": "1", **value}) for key, value in resources.items()}
+    )
+    loaded = await load_harness_ui_configuration(path)
+    assert loaded.models["model-native"].settings == payload
+    assert loaded.agents["agent-native"].capabilities[0].configuration == payload
+    assert loaded.agents["agent-native"].instructions == "  exact instruction\n"
+    assert loaded.harness_plugins["plugin-native"].configuration == payload
+    assert loaded.environment_profiles["environment-custom"].provider_configuration == payload
+    assert loaded.environment_profiles["environment-custom"].adapter_configuration == payload
+    assert loaded.environment_run_extensions["extension-native"].configuration == payload
+    assert loaded.mcp_servers["mcp-native"].transport.arguments == ("  exact argument  ",)
+    # Saved generations must retain the same payload, not just the first parse.
+    restored = type(loaded).model_validate_json(loaded.model_dump_json())
+    assert restored == loaded
+
+
 async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path: Path) -> None:
     loaded = await load_harness_ui_configuration(_write_source_tree(tmp_path))
     empty = configuration_loader.empty_harness_ui_configuration()
@@ -36,7 +107,7 @@ async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path:
         "ask_user_question_timeout_seconds": 120,
         "enable_codeact": True,
     }
-    assert empty.sources[0].content == 'schema_version: "1"'
+    assert empty.sources[0].content == 'schema_version: "1"\n'
 
 
 @pytest.mark.parametrize("setting", ["enable_user_input: false", "user_input_timeout_seconds: 30"])
@@ -205,9 +276,8 @@ kind: model
 id: model-primary
 name: Primary
 route: openai:gpt-5
-authentication: {kind: api_key, env: OPENAI_API_KEY}
-settings:
-  api_key: literal-secret
+authentication: {kind: api_key, api_key: literal-secret}
+settings: {}
 """
             },
             "configuration_resource_invalid",

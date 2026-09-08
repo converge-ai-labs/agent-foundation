@@ -127,14 +127,15 @@ def test_catalog_projection_returns_detached_models() -> None:
         ("_AliasedSettingsCapability", {"request_settings": {}, "extra_option": True}),
     ],
 )
-def test_catalog_uses_pydantic_allow_extra_constructor_behavior(key, configuration) -> None:
-    selected = _settings_catalog().capabilities(((key, configuration),))
-    assert len(selected) == 1
-    assert selected[0].key == key
+def test_catalog_reports_native_unexpected_constructor_arguments(key, configuration) -> None:
+    with pytest.raises(CompositionError) as error:
+        _settings_catalog().capabilities(((key, configuration),))
+    assert error.value.code == "capability_configuration_invalid"
+    assert isinstance(error.value.__cause__, TypeError)
 
 
 @pytest.mark.parametrize("key", ["ShellReviewCapability", "_ProviderSettingsCapability"])
-def test_catalog_preserves_provider_settings_and_validates_known_types(key: str) -> None:
+def test_catalog_preserves_settings_without_adding_native_type_validation(key: str) -> None:
     settings: dict[str, Any] = {"temperature": 0.5, "openai_store": False, "anthropic_effort": "low"}
     configuration = (
         {"model": "logical:review", "model_settings": settings}
@@ -147,26 +148,29 @@ def test_catalog_preserves_provider_settings_and_validates_known_types(key: str)
     assert actual == settings
 
     settings["temperature"] = "not-a-number"
-    with pytest.raises(CompositionError) as error:
-        _settings_catalog().capabilities(((key, configuration),))
-    assert error.value.code == "capability_configuration_invalid"
+    selected = _settings_catalog().capabilities(((key, configuration),))[0]
+    capability = cast(Any, selected.capability)
+    actual = capability.model_settings if key == "ShellReviewCapability" else capability.settings
+    assert actual == settings  # The native Model, not UI constructor wrapping, owns request validation.
 
 
-def test_catalog_preserves_aliased_provider_settings() -> None:
+def test_catalog_uses_actual_native_constructor_names_not_validation_aliases() -> None:
     settings = {"openai_store": False, "temperature": 0.5}
     capability = (
-        _settings_catalog()
-        .capabilities((("_AliasedSettingsCapability", {"request_settings": settings}),))[0]
-        .capability
+        _settings_catalog().capabilities((("_AliasedSettingsCapability", {"settings": settings}),))[0].capability
     )
     assert isinstance(capability, _AliasedSettingsCapability)
     assert capability.settings == settings
 
 
-def test_catalog_keeps_constructor_scalar_validation_strict() -> None:
-    with pytest.raises(CompositionError) as error:
-        _settings_catalog().capabilities((("_ProviderSettingsCapability", {"settings": {}, "count": "2"}),))
-    assert error.value.code == "capability_configuration_invalid"
+def test_catalog_does_not_coerce_or_validate_native_constructor_scalar_arguments() -> None:
+    capability = (
+        _settings_catalog()
+        .capabilities((("_ProviderSettingsCapability", {"settings": {}, "count": "2"}),))[0]
+        .capability
+    )
+    assert isinstance(capability, _ProviderSettingsCapability)
+    assert capability.count == "2"
 
 
 def test_catalog_preserves_explicit_keyword_metadata() -> None:

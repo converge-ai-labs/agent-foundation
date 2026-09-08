@@ -126,7 +126,7 @@ The loader captures configuration directory membership and each file's identity,
 
 Acceptance is all-or-nothing. Publishing immutable content can leave harmless unreferenced objects, but SQLite selects a generation only after every selected resource, catalog key, graph, credential reference, and default validates. A failed candidate never removes or partially updates the previous accepted generation.
 
-The accepted generation contains normalized credential-free definitions and exact source digests. It contains no resolved credential value, native Capability, Plugin, MCP client, Provider, Environment adapter, active Thread, or Environment state.
+The accepted generation contains normalized definitions and exact source digests. Native settings and extension configuration dictionaries remain opaque JSON-compatible values: keys, nulls, nesting, and string whitespace are preserved. Harness UI does not reject arbitrary payload keys because their names resemble credentials. Installed Harness/Pydantic AI and extension implementations own their argument semantics; UI-owned resource envelopes, references, authentication, and wiring retain their own validation. It contains no Host-resolved credential value, native Capability, Plugin, MCP client, Provider, Environment adapter, active Thread, or Environment state. Opaque payload values are persisted unchanged and are not a secret-scrubbing boundary.
 
 ## File Mutation and Last-Write-Wins
 
@@ -222,5 +222,5 @@ The root `schema_version` governs tree layout and global fields. Canonical resou
 4. Invalid intermediate edits never partially replace the accepted generation.
 5. Managed writes require expected source content and never knowingly clobber a newer observed revision; the CLI exposes no generic desired-resource write.
 6. Global defaults initialize new Threads and never live-update existing Threads.
-7. Normalized generations and compositions contain only credential references until fresh Run construction; user-owned MCP sources may hold literal credentials.
+7. Host-managed authentication and MCP credentials remain references until fresh Run construction; user-owned MCP sources may hold literal credentials. Opaque native payloads are copied verbatim, so users must not rely on automatic credential detection or removal there.
 8. Installed runtime-package or Content Plugin availability never grants selection.

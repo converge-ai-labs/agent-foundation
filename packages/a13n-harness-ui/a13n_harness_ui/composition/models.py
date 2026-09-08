@@ -1,4 +1,4 @@
-"""Immutable credential-free values captured for one admitted Harness UI Run."""
+"""Immutable recipes captured before Host credential resolution for one UI Run."""
 
 from __future__ import annotations
 

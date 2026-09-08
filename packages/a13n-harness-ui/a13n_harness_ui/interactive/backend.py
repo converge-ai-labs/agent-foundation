@@ -26,6 +26,7 @@ from a13n_harness_ui.environment_profiles import (
 )
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
+from a13n_harness_ui.model_adapters import service_tier_setting
 from a13n_harness_ui.storage import AgentResourceSource, ThreadConfigurationMutation, ThreadConfigurationPatch
 from a13n_harness_ui.surfaces import (
     NewThreadDefaults,
@@ -119,7 +120,11 @@ class SessionBackend:
             self.status.context_window = None
             return False
         self.status.model = model.route
-        tier = self.overrides.service_tier or model.settings.get("service_tier")
+        tier = (
+            self.overrides.service_tier
+            or model.settings.get(service_tier_setting(model.route))
+            or model.settings.get("service_tier")
+        )
         self.status.service_tier = tier if isinstance(tier, str) else None
         self.status.thinking = str(
             self.overrides.thinking

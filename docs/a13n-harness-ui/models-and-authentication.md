@@ -145,7 +145,7 @@ Each file uses `schema_version: "1"`, `kind: model`, a unique `model-` `id`, and
 | ----------------------- | -------- | ---------------------------------------------------------------------------------------------- |
 | `route`                 | Required | Supported provider/model route, such as `openai-responses:gpt-5` or `openai-codex:gpt-5.6-sol` |
 | `authentication`        | Required | One explicit authentication form below                                                         |
-| `settings`              | `{}`     | Provider request settings, validated by the route's adapter                                    |
+| `settings`              | `{}`     | Native request settings passed through to Harness/Pydantic AI                                  |
 | `model_configuration`   | `{}`     | Optional `base_url` for supported HTTP/API-key providers; empty for subscriptions              |
 | `model_characteristics` | `null`   | Optional native Harness context/capability policy                                              |
 
@@ -226,31 +226,22 @@ Choose **Provider defaults** when the model does not support the proposed reason
 
 After initial setup, `add model` saves only a reusable Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. First-use landing creates the initial Model and Agent together without an existing-Model question. New subscription Agents enable shell review with `risk_threshold: extra_high`, `on_flagged: approval_required`, and `on_error: skip`. Flagged commands require approval; non-timeout review errors add no restriction beyond the effective tool policy. Review timeout always denies the command before execution. Existing Agents are not migrated. This risk threshold is independent of the review Model's low thinking effort.
 
-## Supported request settings
+## Native request settings
 
-All entries in `settings` are optional; omitted or `null` values leave provider/native defaults. This is the complete Harness UI adapter surface, not an unrestricted pass-through of every upstream provider option. A syntactically accepted option may still be unsupported by a particular model or subscription.
+`settings` is a JSON-compatible object passed through to Harness/Pydantic AI, not a Harness UI parameter allowlist. Native provider-specific and future options, nested objects, explicit `null`, and string whitespace are preserved in saved compositions and fresh Agent construction. The installed native Model and provider own parameter meaning, precedence, supported values, and errors at use time. Loading configuration or creating a Project does not validate a provider's request parameters or make a model request.
 
-| Setting                                 | Accepted value                                                                                                                                                                       |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `max_tokens`                            | Integer at least 1; Codex subscription removes unsupported output caps                                                                                                               |
-| `temperature`                           | Finite number                                                                                                                                                                        |
-| `top_p`                                 | Number from 0 to 1                                                                                                                                                                   |
-| `top_k`                                 | Integer at least 1                                                                                                                                                                   |
-| `timeout`                               | Positive finite seconds                                                                                                                                                              |
-| `parallel_tool_calls`                   | Boolean                                                                                                                                                                              |
-| `tool_choice`                           | `none`, `required`, `auto`                                                                                                                                                           |
-| `seed`                                  | Integer                                                                                                                                                                              |
-| `presence_penalty`, `frequency_penalty` | Finite number from -2 to 2                                                                                                                                                           |
-| `logit_bias`                            | Mapping of token-string keys to integers; at most 256 entries, keys at most 256 characters                                                                                           |
-| `stop_sequences`                        | Up to 32 unique nonempty strings, at most 4096 characters each                                                                                                                       |
-| `thinking`                              | Boolean, or `minimal`, `low`, `medium`, `high`, `xhigh`                                                                                                                              |
-| `openai_reasoning_summary`              | `auto`, `concise`, `detailed`                                                                                                                                                        |
-| `openai_store`                          | Boolean; forced false for Codex subscription                                                                                                                                         |
-| `service_tier`                          | `auto`, `default`, `flex`, `priority`                                                                                                                                                |
-| `anthropic_thinking`                    | `type: adaptive`, `enabled`, or `disabled`; enabled requires `budget_tokens >= 1024` and smaller than explicit `max_tokens`; optional `display: summarized`, `omitted`, or `updates` |
-| `anthropic_effort`                      | `low`, `medium`, `high`, `max`                                                                                                                                                       |
-| `anthropic_betas`                       | Up to 32 beta names, including `interleaved-thinking-2025-05-14`                                                                                                                     |
-| `google_thinking_config`                | Optional `include_thoughts` boolean, `thinking_budget >= -1`, and `thinking_level: minimal`, `low`, `medium`, or `high`; overrides unified thinking                                  |
-| `openrouter_reasoning`                  | Optional `effort: none`, `minimal`, `low`, `medium`, `high`, or `xhigh`, and `enabled` / `exclude` booleans                                                                          |
+Use the documentation for your installed Pydantic AI/provider version. Examples include:
 
-Do not use `openai_reasoning_effort`; use the supported `thinking` field. `model_configuration` accepts only an optional `base_url` for the HTTP/API-key providers offered by setup (and the legacy `openai` alias). Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. Unknown construction fields and unsupported routes fail validation rather than silently reaching a provider.
+| Setting                                                                               | Purpose                                                                                    |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `max_tokens`, `temperature`, `stop_sequences`                                         | Native generation controls; whitespace in stop sequences is significant                    |
+| `thinking`, `openai_reasoning_effort`, `anthropic_thinking`, `google_thinking_config` | Generic or provider-specific reasoning; native precedence applies                          |
+| `service_tier`, `openai_service_tier`                                                 | Generic or OpenAI service tier; a configured OpenAI-specific value takes native precedence |
+| `extra_headers`, `extra_body`                                                         | Native request extensions, including nested JSON values                                    |
+| `openai_prompt_cache_key`, `openai_store`                                             | OpenAI request options; Codex still applies its native subscription behavior               |
+
+For example, an existing `settings.openai_service_tier: priority` works without renaming the field. The terminal shows the configured native tier; an explicit `/fast on` or `/fast off` overrides the applicable native tier for subsequent Runs only, and `/fast reset` restores the file selection. The source file is not rewritten.
+
+Opaque settings are retained verbatim, not secret-scrubbed by guessing field names. Use the dedicated authentication and MCP credential sources for secrets; do not place credentials in settings or extension configuration unless you intend those values to be persisted in local configuration captures. Diagnostics and settings display should be reviewed before sharing.
+
+`model_configuration` is separate Host wiring, not request settings: it accepts an optional `base_url` for the HTTP/API-key providers offered by setup (and the legacy `openai` alias). Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. Unknown Host constructor fields and unsupported routes still fail rather than being silently ignored.

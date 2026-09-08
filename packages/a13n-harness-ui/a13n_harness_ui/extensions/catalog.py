@@ -46,7 +46,7 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator, validate_call
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability
 
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
@@ -448,26 +448,24 @@ def _construct_capability(
         arguments: dict[str, Any] = dict(configuration)
         return CodeActCapability(CodeActConfig(**arguments))
     if capability_type is WorkingStateCapability:
-        return WorkingStateCapability(WorkingStateConfiguration.model_validate(configuration, strict=True))
+        return WorkingStateCapability(WorkingStateConfiguration.model_validate(configuration))
     if capability_type is CompactionCapability:
-        return CompactionCapability(
-            CompactionPolicy.model_validate(configuration, strict=True) if configuration else None
-        )
+        return CompactionCapability(CompactionPolicy.model_validate(configuration) if configuration else None)
     if capability_type is FileContextCapability:
         file_configuration: dict[str, Any] = dict(configuration)
         if isinstance(file_configuration.get("paths"), list):
             file_configuration["paths"] = tuple(file_configuration["paths"])
-        return FileContextCapability(FileContextConfiguration.model_validate(file_configuration, strict=True))
+        return FileContextCapability(FileContextConfiguration.model_validate(file_configuration))
     if capability_type is HandoffCapability:
-        return HandoffCapability(HandoffConfiguration.model_validate(configuration, strict=True))
+        return HandoffCapability(HandoffConfiguration.model_validate(configuration))
     if capability_type is RuntimeContextCapability:
-        return RuntimeContextCapability(RuntimeContextConfiguration.model_validate(configuration, strict=True))
+        return RuntimeContextCapability(RuntimeContextConfiguration.model_validate(configuration))
     if capability_type is DynamicEnvironmentCapability:
-        return DynamicEnvironmentCapability(DynamicEnvironmentConfiguration.model_validate(configuration, strict=True))
+        return DynamicEnvironmentCapability(DynamicEnvironmentConfiguration.model_validate(configuration))
     if capability_type is DocumentsCapability:
-        return DocumentsCapability(DocumentsConfiguration.model_validate(configuration, strict=True))
+        return DocumentsCapability(DocumentsConfiguration.model_validate(configuration))
     if capability_type is WebCapability:
-        return WebCapability(WebConfiguration.model_validate(configuration, strict=True))
+        return WebCapability(WebConfiguration.model_validate(configuration))
     if capability_type is SkillsCapability:
         return _construct_skills_capability(
             configuration,
@@ -480,20 +478,13 @@ def _construct_capability(
 
     arguments = dict(configuration)
     if capability_type is ShellReviewCapability:
-        # JSON source uses enum values; keep strict validation for all other parameters.
+        # JSON source carries enum values; the native constructor owns the remaining arguments.
         if "risk_threshold" in arguments:
             arguments["risk_threshold"] = ShellRiskLevel(arguments["risk_threshold"])
         for name in ("on_flagged", "on_error"):
             if name in arguments:
                 arguments[name] = ShellReviewAction(arguments[name])
-    # Preserve open TypedDict extensions, notably provider-specific ModelSettings,
-    # using Pydantic's extra handling rather than a Host-owned parameter allowlist.
-    initializer: Any = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True, extra="allow"))(
-        capability_type.__init__
-    )
-    capability = capability_type.__new__(capability_type)
-    initializer(capability, **arguments)
-    return capability
+    return capability_type(**arguments)
 
 
 def _construct_skills_capability(
