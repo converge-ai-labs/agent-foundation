@@ -1,5 +1,7 @@
 """Real Worker execution resumes a retained checkpoint using a replacement build."""
 
+import json
+from importlib.metadata import EntryPoint
 from unittest.mock import Mock
 
 import pytest
@@ -66,11 +68,57 @@ class ResumingFactory(InstalledFactory):
         return plugin
 
 
+class AmbientFactory(InstalledFactory):
+    @classmethod
+    def plugin_key(cls) -> str:
+        return "test.ambient"
+
+
 @pytest.mark.anyio
-@pytest.mark.parametrize("case", ["compatible", "configuration", "state", "missing"])
+@pytest.mark.parametrize(
+    ("case", "ambient"),
+    [(case, None) for case in ("compatible", "configuration", "state", "missing")]
+    + [("compatible", ambient) for ambient in ("json", "file", "invalid-json", "invalid-file", "invalid-enabled")],
+)
 async def test_new_worker_uses_retained_configuration_and_validates_state(
-    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, case
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, case, ambient
 ):
+    ambient_executions = []
+    if ambient is not None:
+
+        class AmbientPlugin(InstalledPlugin):
+            async def for_run(self, context):
+                ambient_executions.append(self.plugin_id)
+                return self
+
+        monkeypatch.setattr(
+            AmbientFactory, "create_plugin", lambda self, context: AmbientPlugin(context.plugin_id, "ambient")
+        )
+        monkeypatch.setattr(
+            "a13n_harness.plugin_factories._entry_points",
+            lambda: (
+                EntryPoint(name="test.ambient", value=f"{__name__}:AmbientFactory", group="a13n_harness.plugins"),
+            ),
+        )
+        monkeypatch.setenv("A13N_HARNESS_PLUGIN_CONFIG_ENABLED", "invalid" if ambient == "invalid-enabled" else "true")
+        monkeypatch.delenv("A13N_HARNESS_PLUGIN_CONFIG_JSON", raising=False)
+        monkeypatch.delenv("A13N_HARNESS_PLUGIN_CONFIG_FILE", raising=False)
+        document = json.dumps(
+            {
+                "schema_version": "1",
+                "plugins": [
+                    {"plugin_id": "ambient", "plugin_key": "test.ambient", "enabled": True, "configuration": {}}
+                ],
+            }
+        )
+        if ambient in ("file", "invalid-file"):
+            config_path = tmp_path / "ambient.json"
+            if ambient == "file":
+                config_path.write_text(document)
+            monkeypatch.setenv("A13N_HARNESS_PLUGIN_CONFIG_FILE", str(config_path))
+        else:
+            monkeypatch.setenv("A13N_HARNESS_PLUGIN_CONFIG_JSON", "not-json" if ambient == "invalid-json" else document)
+
     original_config = acceptance.effective_agent_config()
     config = original_config.model_copy(
         update={
@@ -155,6 +203,7 @@ async def test_new_worker_uses_retained_configuration_and_validates_state(
     assert current_state.harness.agent_context_state.entries["audit"].data == {
         "value": 8 if case == "compatible" else 7
     }
+    assert ambient_executions == []
     assert factory.observed == ([("build-b", 7)] if case == "compatible" else [])
     assert len(requests) == (1 if case == "compatible" else 0)
     async with short_session(interaction_sessions) as session:

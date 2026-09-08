@@ -12,7 +12,7 @@ A distribution packages plugins and their jointly compatible dependencies in the
 
 `A13N_SERVICE_PLUGIN_KEYS` selects installed `a13n_harness.plugins` entry-point keys for the deployment. Its default is an empty tuple. Every role loads the selected catalog once during startup, off the async event loop. Missing keys, duplicate keys, invalid factories, and import failures prevent startup and readiness. A trusted distribution can instead supply an explicit immutable `HarnessPluginFactoryCatalog` through its component composition.
 
-Control and Connectivity use that catalog to validate Agent configuration. Worker uses the same catalog contract to reconstruct Agents. An all-in-one process shares one catalog across its role contributions. The catalog and Python module bindings remain fixed until process exit.
+Control and Connectivity use that catalog to validate Agent configuration. Worker uses the same catalog contract to reconstruct Agents. An all-in-one process shares one catalog across its role contributions. The catalog and Python module bindings remain fixed until process exit. Service disables HarnessBuilder configured-plugin loading explicitly; `A13N_HARNESS_PLUGIN_CONFIG_*` cannot append plugins or affect Run execution or recovery.
 
 One Worker process owns one bounded `WorkerExecutionLoop`. Each successful claim starts one executor async task using that process's catalog. There is no plugin subprocess, Supervisor, IPC protocol, per-version process cache, runtime materializer, or per-plugin execution pool. Environment maintenance retains its separately bounded Worker-owned loop.
 

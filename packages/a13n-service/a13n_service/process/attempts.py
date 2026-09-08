@@ -174,7 +174,10 @@ class WorkerAttempts:
             projector = AttemptRunStreamProjector(self._stream, context)
             driver = HarnessDriver(
                 HarnessBuilder(
-                    instrumentation=None if self._observability is None else self._observability.harness_instrumentation
+                    configured_plugins_enabled=False,
+                    instrumentation=None
+                    if self._observability is None
+                    else self._observability.harness_instrumentation,
                 ),
                 control=control,
                 projector=projector,
