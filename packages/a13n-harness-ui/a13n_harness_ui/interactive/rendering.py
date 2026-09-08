@@ -304,7 +304,17 @@ class StreamRenderer:
             lines.append(
                 f"[{page.omitted} notes omitted: 256-note / 256 KiB display budget. Saved values are unchanged.]"
             )
-        self.append("\n".join(lines).rstrip() + "\n", kind="notes")
+        source = "\n".join(lines).rstrip() + "\n"
+        block = self.transcript.append(terminal_text(source), kind="notes")
+        if not force:
+            brief = lines[0]
+            if page.omitted:
+                brief += f" · {page.omitted} omitted"
+            brief += " · Ctrl+O details"
+            if page.notes:
+                brief += " · " + ", ".join(" ".join(note.key.split()) for note in page.notes)
+            self.transcript.preview(block, terminal_text(brief[:960]))
+        self.append(source, display=False)
 
     def local_input(self, source_id: str, text: str) -> None:
         self.finish()
@@ -514,6 +524,8 @@ class StreamRenderer:
                     shell_preview = None
                     if name.startswith("shell"):
                         shell_preview = shell_result_preview(text, summary)
+                    if name in {"note_write", "note_get", "note_delete"}:
+                        brief = header + (f" · {summary}" if summary else "")
                     if shell_preview is not None:
                         brief = f"{name} · {shell_preview}"
                         if child:
