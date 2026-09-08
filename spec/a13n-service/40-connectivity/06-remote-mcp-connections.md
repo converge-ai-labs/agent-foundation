@@ -133,6 +133,8 @@ No plaintext credential enters Agent configuration, Run state, discovered tool d
 
 Tool discovery is authorization-dependent: two MCPConnections for the same endpoint can expose different tools. Management discovery is advisory and isolated by exact connection and current authorization. Run acceptance checks the configured resource and policy without remote discovery or a mandatory durable catalog. The executing Worker constructs a fresh Harness MCP client for each selected MCPConnection and discovers current tools directly from that endpoint.
 
+`POST /api/v1/mcp-connections/{connection_id}/discover` accepts `expected_version` and returns `items` containing the current tool names, descriptions, input and output schemas, and annotations. It requires current MCPConnection management authority before remote I/O and rechecks authority and the exact management version before returning. Discovery runs outside database sessions, uses the same bounded client and credential path as setup, and invokes no tool. Its result is advisory rather than a durable command receipt or frozen Run catalog; an explicit later discovery can return different tools.
+
 The conceptual accepted selection is:
 
 ```python

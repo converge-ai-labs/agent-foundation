@@ -245,6 +245,75 @@
         "title": "AccountCommandRequest",
         "type": "object"
       },
+      "AccountProviderDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "config_version": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Config Version",
+            "type": "string"
+          },
+          "configuration_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Configuration Schema",
+            "type": "object"
+          },
+          "credential_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Credential Schema",
+            "type": "object"
+          },
+          "provider_key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Provider Key",
+            "type": "string"
+          },
+          "reception_policy_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Reception Policy Schema",
+            "type": "object"
+          },
+          "target_kinds": {
+            "items": {
+              "enum": ["conversation", "repository"],
+              "type": "string"
+            },
+            "title": "Target Kinds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider_key",
+          "config_version",
+          "configuration_schema",
+          "credential_schema",
+          "reception_policy_schema",
+          "target_kinds"
+        ],
+        "title": "AccountProviderDefinition",
+        "type": "object"
+      },
+      "AccountProviderDefinitionCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AccountProviderDefinition"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "AccountProviderDefinitionCollection",
+        "type": "object"
+      },
       "AccountStatus": {
         "enum": ["active", "disabled"],
         "title": "AccountStatus",
@@ -6057,6 +6126,66 @@
         "title": "MCPConnectionToolSelection",
         "type": "object"
       },
+      "MCPTool": {
+        "additionalProperties": false,
+        "properties": {
+          "annotations": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Annotations",
+            "type": "object"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "output_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Schema"
+          }
+        },
+        "required": ["name", "input_schema"],
+        "title": "MCPTool",
+        "type": "object"
+      },
+      "MCPToolCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MCPTool"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "MCPToolCollection",
+        "type": "object"
+      },
       "Model": {
         "additionalProperties": false,
         "properties": {
@@ -6973,6 +7102,18 @@
         "title": "Organization",
         "type": "object"
       },
+      "OrganizationPermissions": {
+        "additionalProperties": false,
+        "properties": {
+          "organization_admin": {
+            "title": "Organization Admin",
+            "type": "boolean"
+          }
+        },
+        "required": ["organization_admin"],
+        "title": "OrganizationPermissions",
+        "type": "object"
+      },
       "OutputSpec": {
         "additionalProperties": false,
         "properties": {
@@ -7438,7 +7579,7 @@
             "type": "boolean"
           }
         },
-        "required": ["actions", "organization_admin"],
+        "required": ["organization_admin", "actions"],
         "title": "Permissions",
         "type": "object"
       },
@@ -16678,6 +16819,56 @@
         "tags": ["connectivity-management"]
       }
     },
+    "/api/v1/mcp-connections/{connection_id}/discover": {
+      "post": {
+        "operationId": "discover_mcp_tools_api_v1_mcp_connections__connection_id__discover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPConnectionCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Mcp Tools",
+        "tags": ["connectivity-management"]
+      }
+    },
     "/api/v1/mcp-connections/{connection_id}/reconnect": {
       "post": {
         "operationId": "reconnect_mcp_connection_api_v1_mcp_connections__connection_id__reconnect_post",
@@ -18465,6 +18656,46 @@
         },
         "summary": "Organization Test Model",
         "tags": ["model-management"]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/permissions": {
+      "get": {
+        "operationId": "organization_permissions_api_v1_organizations__organization_id__permissions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPermissions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Organization Permissions",
+        "tags": ["identity-settings"]
       }
     },
     "/api/v1/organizations/{organization_id}/role-bindings": {
@@ -22026,6 +22257,46 @@
         },
         "summary": "Workspace Member Keys",
         "tags": ["identity-settings"]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/application-account-provider-types": {
+      "get": {
+        "operationId": "account_provider_types_api_v1_workspaces__workspace_id__application_account_provider_types_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountProviderDefinitionCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Account Provider Types",
+        "tags": ["connectivity-management"]
       }
     },
     "/api/v1/workspaces/{workspace_id}/application-accounts": {

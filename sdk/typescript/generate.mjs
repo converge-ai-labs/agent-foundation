@@ -6,6 +6,7 @@ import prettier from "prettier";
 const source = new URL("./openapi.json", import.meta.url);
 const target = new URL("./src/schema.ts", import.meta.url);
 const ast = await openapiTS(source, {
+  defaultNonNullable: false,
   transform(schema) {
     if (schema.format === "binary")
       return ts.factory.createTypeReferenceNode("Binary");

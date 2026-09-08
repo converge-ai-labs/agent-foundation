@@ -596,6 +596,12 @@ async def authorize_organization_admin_principal(
     session: AsyncSession, *, principal: PrincipalRef, organization_id: str
 ) -> None:
     """Check current Organization authority for a durable User, without inventing a credential."""
+    if await organization_role(session, principal=principal, organization_id=organization_id) != "admin":
+        raise AuthorizationError("permission_denied", concealed=True)
+
+
+async def organization_role(session: AsyncSession, *, principal: PrincipalRef, organization_id: str) -> str:
+    """Read current Organization membership for an active User."""
     if principal.principal_type is not PrincipalType.user:
         raise AuthorizationError("permission_denied", concealed=True)
     await _require_active_user(session, principal.principal_id)
@@ -610,8 +616,9 @@ async def authorize_organization_admin_principal(
             RoleBindingRecord.principal_id == principal.principal_id,
         )
     )
-    if organization is None or role != "admin":
+    if organization is None or role is None:
         raise AuthorizationError("permission_denied", concealed=True)
+    return role
 
 
 async def workspace_permissions(

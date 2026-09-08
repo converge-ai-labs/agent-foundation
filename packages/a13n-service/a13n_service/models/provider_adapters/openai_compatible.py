@@ -2,10 +2,10 @@
 
 from collections.abc import Mapping
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Self, override
 
 import httpx2
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, Omit
 from pydantic import StringConstraints, model_validator
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -54,6 +54,14 @@ class Config(ProviderConfiguration):
         return self
 
 
+class _CompatibleOpenAI(AsyncOpenAI):
+    @override
+    def _validate_headers(self, headers: Mapping[str, str | Omit], custom_headers: Mapping[str, str | Omit]) -> None:
+        # This adapter validates its selected authentication mode before construction.
+        # OpenAI's bearer-only request check rejects no-auth and custom-header servers.
+        return None
+
+
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
@@ -61,12 +69,14 @@ def _build_provider(
 ) -> OpenAIProvider:
     configuration = provider.configuration
     credential = provider.credential or ""
-    default_headers = None
+    default_headers: dict[str, str] = {}
     if configuration["auth_mode"] == "api_key_header":
-        default_headers = {str(configuration["api_key_header_name"]): credential}
-    client = AsyncOpenAI(
+        header_name = str(configuration["api_key_header_name"])
+        default_headers["Authorization" if header_name.lower() == "authorization" else header_name] = credential
+    client = _CompatibleOpenAI(
         max_retries=0,
-        api_key=credential,
+        api_key=credential if configuration["auth_mode"] == "bearer" else "",
+        admin_api_key="",
         base_url=str(configuration["base_url"]),
         default_headers=default_headers,
         http_client=http_client,

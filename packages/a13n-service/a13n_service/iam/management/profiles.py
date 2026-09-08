@@ -7,10 +7,16 @@ from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
 from ..auth.sessions import require_user
-from ..authorization import WorkspaceAction, authorize_organization_admin, authorize_workspace, workspace_permissions
+from ..authorization import (
+    WorkspaceAction,
+    authorize_organization_admin,
+    authorize_workspace,
+    organization_role,
+    workspace_permissions,
+)
 from ..domain import AuthenticatedActor
 from ..models import ApiKeyRecord, OrganizationRecord, RoleBindingRecord, SecurityAuditRecord, UserRecord
-from ..profile_schemas import Permissions, SecurityEvent
+from ..profile_schemas import OrganizationPermissions, Permissions, SecurityEvent
 from ..schemas import ApiKey, Organization, Page, User
 from ..service_common import audit, identity_transaction, not_found, require_etag, singleton_organization
 from .collections import PageRequest, query_scope
@@ -61,6 +67,16 @@ class ProfileService:
         async with short_session(self._sessions) as session:
             actions, admin = await workspace_permissions(session, actor=actor, workspace_id=workspace_id)
             return Permissions(actions=sorted(actions), organization_admin=admin)
+
+    async def organization_permissions(
+        self, actor: AuthenticatedActor, organization_id: str
+    ) -> OrganizationPermissions:
+        async with short_session(self._sessions) as session:
+            await require_user(session, actor, browser=True)
+            if actor.boundary_organization_id != organization_id:
+                raise not_found()
+            role = await organization_role(session, principal=actor.principal, organization_id=organization_id)
+            return OrganizationPermissions(organization_admin=role == "admin")
 
     async def members(self, actor: AuthenticatedActor, workspace_id: str, page: PageRequest) -> Page[User]:
         scope = query_scope(actor, "workspace_members", workspace_id)

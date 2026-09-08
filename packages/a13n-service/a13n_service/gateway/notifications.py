@@ -164,7 +164,6 @@ class NotificationService:
         actor: AuthenticatedActor,
         subscription: NotificationSubscription,
     ) -> AuthorizedNotificationSubscription:
-        workspace_id = actor.workspace_id
         if subscription.scope == "thread" and "session.updated" in subscription.topics:
             raise NotificationError(
                 "invalid_subscription_topic",
@@ -173,8 +172,7 @@ class NotificationService:
             )
         try:
             if subscription.scope == "workspace":
-                if subscription.resource_id != workspace_id:
-                    raise AuthorizationError("credential_boundary_mismatch", concealed=True)
+                workspace_id = subscription.resource_id
                 notification_scope = await authorize_agent_scoped_collection(
                     database,
                     actor=actor,
@@ -191,22 +189,27 @@ class NotificationService:
                 organization_id = notification_scope.workspace.organization_id
                 visible_agent_ids = notification_scope.visible_agent_ids
             else:
-                thread = await database.scalar(
-                    select(ThreadRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == ThreadRecord.organization_id,
-                            SessionRecord.id == ThreadRecord.session_id,
-                        ),
+                row = (
+                    await database.execute(
+                        select(ThreadRecord, SessionRecord.workspace_id)
+                        .join(
+                            SessionRecord,
+                            and_(
+                                SessionRecord.organization_id == ThreadRecord.organization_id,
+                                SessionRecord.id == ThreadRecord.session_id,
+                            ),
+                        )
+                        .where(
+                            ThreadRecord.id == subscription.resource_id,
+                            SessionRecord.workspace_id == actor.boundary_workspace_id
+                            if actor.boundary_workspace_id is not None
+                            else SessionRecord.organization_id == actor.boundary_organization_id,
+                        )
                     )
-                    .where(
-                        ThreadRecord.id == subscription.resource_id,
-                        SessionRecord.workspace_id == workspace_id,
-                    )
-                )
-                if thread is None:
+                ).one_or_none()
+                if row is None:
                     raise AuthorizationError("thread_not_found", concealed=True)
+                thread, workspace_id = row
                 run = await database.scalar(
                     select(RunRecord).where(
                         RunRecord.organization_id == thread.organization_id,

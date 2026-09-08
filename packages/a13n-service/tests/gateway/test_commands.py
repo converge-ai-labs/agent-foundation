@@ -661,11 +661,37 @@ async def test_fork_creates_child_thread_and_replays(
     tmp_path,
 ) -> None:
     interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    preparation = _Preparation()
+    source_config = _frozen()
+    source_config = FrozenAgentInvocation(
+        agent_id=source_config.agent_id,
+        agent_revision_id=source_config.agent_revision_id,
+        selector_kind=source_config.selector_kind,
+        effective_config=source_config.effective_config.model_copy(update={"instructions": "Run-only instructions"}),
+        connector_connection_selections=(),
+        mcp_connection_selections=(),
+    )
+    config = source_config.effective_config
+    config = config.model_copy(
+        update={
+            "content_digest": hashlib.sha256(
+                rfc8785.dumps(config.model_dump(mode="json", by_alias=True, exclude={"content_digest"}))
+            ).hexdigest()
+        }
+    )
+    source_config = FrozenAgentInvocation(
+        agent_id=source_config.agent_id,
+        agent_revision_id=source_config.agent_revision_id,
+        selector_kind=source_config.selector_kind,
+        effective_config=config,
+        connector_connection_selections=(),
+        mcp_connection_selections=(),
+    )
     commands = _commands(
         lifecycle_interaction_sessions,
         interaction_object_store,
-        _Preparation(),
-        _Freezing([_frozen()]),
+        preparation,
+        _Freezing([source_config]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     source = await commands.start(
@@ -694,6 +720,16 @@ async def test_fork_creates_child_thread_and_replays(
         request=request,
     )
 
+    assert preparation.calls == 1
+    async with short_session(lifecycle_interaction_sessions) as database:
+        source_record = await database.get(RunRecord, source.run_id)
+        fork_record = await database.get(RunRecord, first.run_id)
+        assert source_record is not None and fork_record is not None
+        source_resource, fork_resource = source_record.to_resource(), fork_record.to_resource()
+    source_state = await RunStateStore(interaction_object_store).read_run(source_resource)
+    fork_state = await RunStateStore(interaction_object_store).read_run(fork_resource)
+    assert fork_state.envelope.effective_agent_config == source_state.envelope.effective_agent_config
+    assert fork_state.envelope.effective_agent_config.instructions == "Run-only instructions"
     assert repeated == first
     assert first.session_id == source.session_id
     assert first.thread_id != source.thread_id

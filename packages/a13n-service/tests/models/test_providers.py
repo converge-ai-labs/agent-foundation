@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import httpx2
 import pytest
+from a13n_service.models.provider_adapters.openai_compatible import INTEGRATION
+from a13n_service.models.provider_adapters.types import RuntimeProvider
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service_common import ModelError
 
@@ -45,3 +48,39 @@ def test_openai_compatible_auth_mode_controls_credential_requirement() -> None:
             {"base_url": "https://models.example/v1", "auth_mode": "bearer"},
             credential_configured=False,
         )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("mode", "credential", "expected_headers"),
+    [
+        ("none", None, {}),
+        ("bearer", "secret", {"authorization": "Bearer secret"}),
+        ("api_key_header", "secret", {"x-api-key": "secret"}),
+    ],
+)
+async def test_openai_compatible_runtime_sends_only_selected_auth(
+    mode: str,
+    credential: str | None,
+    expected_headers: dict[str, str],
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json={"data": [], "object": "list"})
+
+    configuration: dict[str, object] = {"base_url": "https://models.example/v1", "auth_mode": mode}
+    if mode == "api_key_header":
+        configuration["api_key_header_name"] = "x-api-key"
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        provider = INTEGRATION.build_provider(
+            RuntimeProvider("openai_compatible", configuration, "https://models.example/v1", credential),
+            http,
+            "openai.chat_completions",
+        )
+        await provider.client.models.list()
+    assert len(requests) == 1
+    assert {
+        key: requests[0].headers[key] for key in ("authorization", "x-api-key") if key in requests[0].headers
+    } == expected_headers

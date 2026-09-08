@@ -32,9 +32,12 @@ class AuthConfiguration(RequestModel):
     email_delivery: bool
 
 
-class Permissions(RequestModel):
-    actions: list[str]
+class OrganizationPermissions(RequestModel):
     organization_admin: bool
+
+
+class Permissions(OrganizationPermissions):
+    actions: list[str]
 
 
 class SecurityEvent(Resource):

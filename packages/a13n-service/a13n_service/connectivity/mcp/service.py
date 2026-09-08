@@ -42,6 +42,7 @@ from .domain import (
     MCPConnectionCollection,
     MCPConnectionStatus,
     MCPTool,
+    MCPToolCollection,
     ReplaceMCPCredentialsRequest,
     UpdateMCPConnectionRequest,
 )
@@ -242,6 +243,20 @@ class MCPConnectionService:
             record = await require_connection(session, connection_id)
             await authorize_connection(session, actor, record, mode="read")
             return record.to_resource()
+
+    async def discover_tools(
+        self, *, actor: AuthenticatedActor, connection_id: str, expected_version: int
+    ) -> MCPToolCollection:
+        async with transaction(self._sessions) as session:
+            record = await require_connection(session, connection_id)
+            await authorize_connection(session, actor, record, mode="manage")
+            require_version(record.version, expected_version)
+        tools = await self._discovery.discover(connection_id)
+        async with transaction(self._sessions) as session:
+            record = await require_connection(session, connection_id)
+            await authorize_connection(session, actor, record, mode="manage")
+            require_version(record.version, expected_version)
+        return MCPToolCollection(items=tools)
 
     async def update(
         self,

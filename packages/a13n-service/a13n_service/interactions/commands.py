@@ -14,10 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import EffectiveAgentConfig
-from a13n_service.agents.invocation_resolution import AgentInvocationResolver, FrozenAgentInvocation
+from a13n_service.agents.invocation_resolution import AgentInvocationResolver, AgentSelectorKind, FrozenAgentInvocation
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.assets import Asset, UploadedAssetSource
 from a13n_service.assets.catalog import AssetCatalog
+from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
@@ -638,25 +639,35 @@ class InteractionCommands:
             and request.expected_current_revision_id is None
             and request.config_override is None
         )
-        prepared = await self._invocations.preparation.prepare(
-            actor=actor,
-            agent_id=request.agent_id or source.agent_id,
-            agent_revision_id=(
-                source.agent_revision_id
-                if request.agent_id is None and request.agent_revision_id is None
-                else request.agent_revision_id
-            ),
-            expected_current_revision_id=request.expected_current_revision_id,
-            config_override=request.config_override,
-        )
-        async with transaction(self._sessions) as database:
-            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        if reuse_exact_source and frozen.effective_config != source_state.envelope.effective_agent_config:
-            raise InteractionCommandError(
-                "run_fork_source_changed",
-                "The source Run's exact executable configuration is no longer available.",
-                category=ErrorCategory.conflict,
+        prepared = None
+        if reuse_exact_source:
+            frozen = FrozenAgentInvocation(
+                agent_id=source.agent_id,
+                agent_revision_id=source.agent_revision_id,
+                selector_kind=AgentSelectorKind.exact,
+                effective_config=source_state.envelope.effective_agent_config,
+                connector_connection_selections=tuple(
+                    ConnectorConnectionRunSelection.model_validate(item)
+                    for item in source.connector_connection_selections
+                ),
+                mcp_connection_selections=tuple(
+                    MCPConnectionToolSelection.model_validate(item) for item in source.mcp_connection_selections
+                ),
             )
+        else:
+            prepared = await self._invocations.preparation.prepare(
+                actor=actor,
+                agent_id=request.agent_id or source.agent_id,
+                agent_revision_id=(
+                    source.agent_revision_id
+                    if request.agent_id is None and request.agent_revision_id is None
+                    else request.agent_revision_id
+                ),
+                expected_current_revision_id=request.expected_current_revision_id,
+                config_override=request.config_override,
+            )
+            async with transaction(self._sessions) as database:
+                frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
         accepted_input = await self._accept_input_value(
             actor=actor,
             workspace_id=actor.workspace_id,
@@ -729,6 +740,15 @@ class InteractionCommands:
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_fork,
                 )
+                if prepared is None:
+                    await authorize_agent(
+                        database,
+                        actor=actor,
+                        workspace_id=actor.workspace_id,
+                        agent_id=source.agent_id,
+                        action=WorkspaceAction.agent_invoke,
+                    )
+                    return
             except AuthorizationError as error:
                 raise _not_found() from error
             final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)

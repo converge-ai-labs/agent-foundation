@@ -12,12 +12,14 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./openapi.json": "./openapi.json"
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "openapi.json"
   ],
   "engines": {
     "node": ">=22.14"

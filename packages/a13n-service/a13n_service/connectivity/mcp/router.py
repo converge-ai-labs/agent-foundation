@@ -21,6 +21,7 @@ from .domain import (
     MCPConnection,
     MCPConnectionCollection,
     MCPConnectionCommandRequest,
+    MCPToolCollection,
     ReplaceMCPCredentialsRequest,
     UpdateMCPConnectionRequest,
 )
@@ -122,6 +123,15 @@ async def get_mcp_connection(
     resource = await _connections(request).get(actor=actor, connection_id=connection_id)
     _etag(response, resource)
     return resource
+
+
+@router.post("/api/v1/mcp-connections/{connection_id}/discover", response_model=MCPToolCollection)
+async def discover_mcp_tools(
+    request: Request, actor: Actor, connection_id: str, body: MCPConnectionCommandRequest
+) -> MCPToolCollection:
+    return await _connections(request).discover_tools(
+        actor=actor, connection_id=connection_id, expected_version=body.expected_version
+    )
 
 
 @router.patch("/api/v1/mcp-connections/{connection_id}", response_model=MCPConnection)

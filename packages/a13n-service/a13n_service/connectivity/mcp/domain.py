@@ -116,6 +116,10 @@ class MCPTool(StrictModel):
     annotations: JsonObject = Field(default_factory=dict)
 
 
+class MCPToolCollection(StrictModel):
+    items: tuple[MCPTool, ...]
+
+
 class MCPClientMetadata(StrictModel):
     client_id: str
     client_name: str

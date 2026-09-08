@@ -467,6 +467,8 @@ async def test_console_profiles_are_versioned_and_permissions_are_current(identi
     permissions = await client.get(f"/api/v1/workspaces/{workspace}/permissions")
     assert permissions.json()["organization_admin"] is True
     assert "agent.create" in permissions.json()["actions"]
+    org_permissions = await client.get(f"/api/v1/organizations/{organization}/permissions")
+    assert org_permissions.json() == {"organization_admin": True}
     events = await client.get("/api/v1/users/me/security-activity")
     assert "user_profile.update" in {event["action"] for event in events.json()["items"]}
     assert (await client.get(f"/api/v1/workspaces/{workspace}/api-keys")).status_code == 200
@@ -572,6 +574,8 @@ async def test_workspace_viewer_cannot_change_profiles_or_read_admin_projections
     assert permissions["organization_admin"] is False
     assert "agent.read" in permissions["actions"]
     assert "agent.create" not in permissions["actions"]
+    org_permissions = await client.get(f"/api/v1/organizations/{organization}/permissions")
+    assert org_permissions.json() == {"organization_admin": False}
     for path in [
         f"/api/v1/workspaces/{workspace}/members",
         f"/api/v1/workspaces/{workspace}/api-keys",

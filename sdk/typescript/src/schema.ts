@@ -934,6 +934,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/mcp-connections/{connection_id}/discover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Mcp Tools */
+    post: operations["discover_mcp_tools_api_v1_mcp_connections__connection_id__discover_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/mcp-connections/{connection_id}/reconnect": {
     parameters: {
       query?: never;
@@ -1295,6 +1312,23 @@ export interface paths {
     put?: never;
     /** Organization Test Model */
     post: operations["organization_test_model_api_v1_organizations__organization_id__models__model_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization_id}/permissions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Organization Permissions */
+    get: operations["organization_permissions_api_v1_organizations__organization_id__permissions_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2136,6 +2170,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace_id}/application-account-provider-types": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Account Provider Types */
+    get: operations["account_provider_types_api_v1_workspaces__workspace_id__application_account_provider_types_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace_id}/application-accounts": {
     parameters: {
       query?: never;
@@ -2801,7 +2852,7 @@ export interface components {
        * Receive Enabled
        * @default false
        */
-      receive_enabled: boolean;
+      receive_enabled?: boolean;
       status: components["schemas"]["AccountStatus"];
       /**
        * Updated At
@@ -2824,6 +2875,32 @@ export interface components {
     AccountCommandRequest: {
       /** Expected Version */
       expected_version: number;
+    };
+    /** AccountProviderDefinition */
+    AccountProviderDefinition: {
+      /** Config Version */
+      config_version: string;
+      /** Configuration Schema */
+      configuration_schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Credential Schema */
+      credential_schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Provider Key */
+      provider_key: string;
+      /** Reception Policy Schema */
+      reception_policy_schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Target Kinds */
+      target_kinds: ("conversation" | "repository")[];
+    };
+    /** AccountProviderDefinitionCollection */
+    AccountProviderDefinitionCollection: {
+      /** Items */
+      items: components["schemas"]["AccountProviderDefinition"][];
     };
     /**
      * AccountStatus
@@ -2858,7 +2935,7 @@ export interface components {
        * Receive Enabled
        * @default true
        */
-      receive_enabled: boolean;
+      receive_enabled?: boolean;
       /**
        * Target Kind
        * @enum {string}
@@ -2953,48 +3030,48 @@ export interface components {
        * Client Tools
        * @default []
        */
-      client_tools: components["schemas"]["ClientToolDefinition"][];
+      client_tools?: components["schemas"]["ClientToolDefinition"][];
       /**
        * Connector Tools
        * @default []
        */
-      connector_tools: components["schemas"]["ConnectorConnectionToolSelection"][];
+      connector_tools?: components["schemas"]["ConnectorConnectionToolSelection"][];
       input_adapter: components["schemas"]["InputAdapterConfig"];
       /**
        * Instructions
        * @default
        */
-      instructions: string;
+      instructions?: string;
       /**
        * Mcp Tools
        * @default []
        */
-      mcp_tools: components["schemas"]["MCPConnectionToolSelection"][];
+      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][];
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
        * Plugins
        * @default []
        */
-      plugins: components["schemas"]["PluginSelection"][];
+      plugins?: components["schemas"]["PluginSelection"][];
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
       /**
        * Secret Requirements
        * @default []
        */
-      secret_requirements: components["schemas"]["SecretRequirement"][];
+      secret_requirements?: components["schemas"]["SecretRequirement"][];
       /**
        * Skills
        * @default []
        */
-      skills: components["schemas"]["SkillSelection"][];
+      skills?: components["schemas"]["SkillSelection"][];
       /**
        * Subagent Mode
        * @default inline
        * @enum {string}
        */
-      subagent_mode: "inline" | "async";
+      subagent_mode?: "inline" | "async";
       /** Subagents */
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Input"];
@@ -3008,48 +3085,48 @@ export interface components {
        * Client Tools
        * @default []
        */
-      client_tools: components["schemas"]["ClientToolDefinition"][];
+      client_tools?: components["schemas"]["ClientToolDefinition"][];
       /**
        * Connector Tools
        * @default []
        */
-      connector_tools: components["schemas"]["ConnectorConnectionToolSelection"][];
+      connector_tools?: components["schemas"]["ConnectorConnectionToolSelection"][];
       input_adapter: components["schemas"]["InputAdapterConfig"];
       /**
        * Instructions
        * @default
        */
-      instructions: string;
+      instructions?: string;
       /**
        * Mcp Tools
        * @default []
        */
-      mcp_tools: components["schemas"]["MCPConnectionToolSelection"][];
+      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][];
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
        * Plugins
        * @default []
        */
-      plugins: components["schemas"]["PluginSelection"][];
+      plugins?: components["schemas"]["PluginSelection"][];
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
       /**
        * Secret Requirements
        * @default []
        */
-      secret_requirements: components["schemas"]["SecretRequirement"][];
+      secret_requirements?: components["schemas"]["SecretRequirement"][];
       /**
        * Skills
        * @default []
        */
-      skills: components["schemas"]["SkillSelection"][];
+      skills?: components["schemas"]["SkillSelection"][];
       /**
        * Subagent Mode
        * @default inline
        * @enum {string}
        */
-      subagent_mode: "inline" | "async";
+      subagent_mode?: "inline" | "async";
       /** Subagents */
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Output"];
@@ -3064,7 +3141,7 @@ export interface components {
        * Content
        * @default []
        */
-      content: (
+      content?: (
         | components["schemas"]["TextContent"]
         | components["schemas"]["BinaryContent"]
       )[];
@@ -3077,7 +3154,7 @@ export interface components {
        * Secret Bindings
        * @default []
        */
-      secret_bindings: components["schemas"]["AgentSecretBinding"][];
+      secret_bindings?: components["schemas"]["AgentSecretBinding"][];
       structured_content?: components["schemas"]["JsonValue"] | null;
     };
     /** AgentModel */
@@ -3101,7 +3178,7 @@ export interface components {
        * Connector Tools
        * @default []
        */
-      connector_tools: components["schemas"]["ConnectorConnectionToolSelection"][];
+      connector_tools?: components["schemas"]["ConnectorConnectionToolSelection"][];
       /** Content Digest */
       content_digest: string;
       /**
@@ -3116,7 +3193,7 @@ export interface components {
        * Mcp Tools
        * @default []
        */
-      mcp_tools: components["schemas"]["MCPConnectionToolSelection"][];
+      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][];
       /** Organization Id */
       organization_id: string;
       resolved_model: components["schemas"]["ResolvedAgentModel"];
@@ -3302,7 +3379,7 @@ export interface components {
        * @default true
        * @constant
        */
-      enabled: true;
+      enabled?: true;
     };
     /**
      * AssetSourceKind
@@ -3378,7 +3455,7 @@ export interface components {
     /** BinaryContent */
     BinaryContent: {
       /** @default auto */
-      delivery: components["schemas"]["BinaryContentDelivery"];
+      delivery?: components["schemas"]["BinaryContentDelivery"];
       /** Filename */
       filename?: string | null;
       /** Media Type */
@@ -3451,7 +3528,7 @@ export interface components {
        * @default none
        * @enum {string}
        */
-      mode: "none" | "shared" | "dedicated";
+      mode?: "none" | "shared" | "dedicated";
       /** Template Revision Id */
       template_revision_id?: string | null;
     };
@@ -3483,7 +3560,7 @@ export interface components {
        * Required
        * @default false
        */
-      required: boolean;
+      required?: boolean;
     };
     /** Collection[EnvironmentProvider] */
     Collection_EnvironmentProvider_: {
@@ -3660,7 +3737,7 @@ export interface components {
        * Defer Loading
        * @default false
        */
-      defer_loading: boolean;
+      defer_loading?: boolean;
       /** Tools */
       tools?: string[] | null;
     };
@@ -3749,7 +3826,7 @@ export interface components {
        * @default succeeded
        * @constant
        */
-      status: "succeeded";
+      status?: "succeeded";
       /**
        * Tested At
        * Format: date-time
@@ -3870,7 +3947,7 @@ export interface components {
        * Receive Enabled
        * @default false
        */
-      receive_enabled: boolean;
+      receive_enabled?: boolean;
     };
     /** CreateAgentRequest */
     CreateAgentRequest: {
@@ -3952,7 +4029,7 @@ export interface components {
        * Static Header Names
        * @default []
        */
-      static_header_names: string[];
+      static_header_names?: string[];
     };
     /** CreateModelProviderRequest */
     CreateModelProviderRequest: {
@@ -3966,7 +4043,7 @@ export interface components {
        * Enabled
        * @default true
        */
-      enabled: boolean;
+      enabled?: boolean;
       /** Name */
       name: string;
       /** Type */
@@ -3980,7 +4057,7 @@ export interface components {
        * Enabled
        * @default true
        */
-      enabled: boolean;
+      enabled?: boolean;
       /** Key */
       key: string;
       /** Model Api */
@@ -4044,7 +4121,7 @@ export interface components {
     /** CreateTemplateRequest */
     CreateTemplateRequest: {
       /** @default full */
-      access: components["schemas"]["EnvironmentAccess"];
+      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -4053,7 +4130,7 @@ export interface components {
        * Configuration Schema Version
        * @default 1
        */
-      configuration_schema_version: string;
+      configuration_schema_version?: string;
       /** Description */
       description?: string | null;
       /** Name */
@@ -4063,7 +4140,7 @@ export interface components {
        * @default on_run
        * @enum {string}
        */
-      preparation: "on_run" | "on_use";
+      preparation?: "on_run" | "on_use";
       /** Provider Id */
       provider_id: string;
       retention: components["schemas"]["RetentionPolicy"];
@@ -4071,7 +4148,7 @@ export interface components {
     /** CreateTemplateRevisionRequest */
     CreateTemplateRevisionRequest: {
       /** @default full */
-      access: components["schemas"]["EnvironmentAccess"];
+      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -4080,7 +4157,7 @@ export interface components {
        * Configuration Schema Version
        * @default 1
        */
-      configuration_schema_version: string;
+      configuration_schema_version?: string;
       /** Expected Version */
       expected_version: number;
       /**
@@ -4088,7 +4165,7 @@ export interface components {
        * @default on_run
        * @enum {string}
        */
-      preparation: "on_run" | "on_use";
+      preparation?: "on_run" | "on_use";
       /** Provider Id */
       provider_id: string;
       retention: components["schemas"]["RetentionPolicy"];
@@ -4119,18 +4196,18 @@ export interface components {
        * @default none
        * @enum {string}
        */
-      history: "none" | "summary" | "selected";
+      history?: "none" | "summary" | "selected";
       /**
        * Include Task
        * @default true
        */
-      include_task: boolean;
+      include_task?: boolean;
       /**
        * Task State
        * @default shared
        * @enum {string}
        */
-      task_state: "shared" | "isolated";
+      task_state?: "shared" | "isolated";
     };
     /** DeleteQueuedSubmissionRequest */
     DeleteQueuedSubmissionRequest: {
@@ -4360,7 +4437,7 @@ export interface components {
     /** EnvironmentTemplateRevision */
     EnvironmentTemplateRevision: {
       /** @default full */
-      access: components["schemas"]["EnvironmentAccess"];
+      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -4369,7 +4446,7 @@ export interface components {
        * Configuration Schema Version
        * @default 1
        */
-      configuration_schema_version: string;
+      configuration_schema_version?: string;
       /**
        * Created At
        * Format: date-time
@@ -4384,7 +4461,7 @@ export interface components {
        * @default on_run
        * @enum {string}
        */
-      preparation: "on_run" | "on_use";
+      preparation?: "on_run" | "on_use";
       /** Provider Id */
       provider_id: string;
       retention: components["schemas"]["RetentionPolicy"];
@@ -4411,7 +4488,7 @@ export interface components {
        * Enabled
        * @default false
        */
-      enabled: boolean;
+      enabled?: boolean;
     };
     /** ForkRunRequest */
     ForkRunRequest: {
@@ -4458,7 +4535,7 @@ export interface components {
        * Subdirectory
        * @default
        */
-      subdirectory: string;
+      subdirectory?: string;
     };
     /** GitHubSkillImportProvenance */
     GitHubSkillImportProvenance: {
@@ -4507,14 +4584,14 @@ export interface components {
        * Compact Threshold
        * @default 0.9
        */
-      compact_threshold: number;
+      compact_threshold?: number;
       /** Context Window */
       context_window?: number | null;
       /**
        * Proactive Context Management Threshold
        * @default 0.65
        */
-      proactive_context_management_threshold: number | null;
+      proactive_context_management_threshold?: number | null;
     };
     /** HookSubscription */
     HookSubscription: {
@@ -4588,13 +4665,13 @@ export interface components {
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /**
        * Status
        * @default cancelled
        * @constant
        */
-      status: "cancelled";
+      status?: "cancelled";
       /** Threadid */
       threadId: string;
     };
@@ -4705,13 +4782,13 @@ export interface components {
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /**
        * Status
        * @default cancelled
        * @constant
        */
-      status: "cancelled";
+      status?: "cancelled";
     };
     /** InterruptRequest */
     InterruptRequest: {
@@ -4926,7 +5003,7 @@ export interface components {
        * @default pending
        * @constant
        */
-      status: "pending";
+      status?: "pending";
     };
     /** MCPClientMetadata */
     MCPClientMetadata: {
@@ -4940,7 +5017,7 @@ export interface components {
        *       "authorization_code"
        *     ]
        */
-      grant_types: string[];
+      grant_types?: string[];
       /** Redirect Uris */
       redirect_uris: string[];
       /**
@@ -4949,12 +5026,12 @@ export interface components {
        *       "code"
        *     ]
        */
-      response_types: string[];
+      response_types?: string[];
       /**
        * Token Endpoint Auth Method
        * @default none
        */
-      token_endpoint_auth_method: string;
+      token_endpoint_auth_method?: string;
     };
     /** MCPConnection */
     MCPConnection: {
@@ -5019,11 +5096,38 @@ export interface components {
        * Defer Loading
        * @default false
        */
-      defer_loading: boolean;
+      defer_loading?: boolean;
       /** Mcp Connection Id */
       mcp_connection_id: string;
       /** Tools */
       tools?: string[] | null;
+    };
+    /** MCPTool */
+    MCPTool: {
+      /** Annotations */
+      annotations?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
+      /** Input Schema */
+      input_schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Name */
+      name: string;
+      /** Output Schema */
+      output_schema?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+    };
+    /** MCPToolCollection */
+    MCPToolCollection: {
+      /** Items */
+      items: components["schemas"]["MCPTool"][];
     };
     /** Model */
     Model: {
@@ -5108,7 +5212,7 @@ export interface components {
        * @default true
        * @constant
        */
-      may_consume_quota_or_incur_cost: true;
+      may_consume_quota_or_incur_cost?: true;
       /** Message */
       message: string;
       /** Success */
@@ -5348,6 +5452,11 @@ export interface components {
        */
       updated_at: string;
     };
+    /** OrganizationPermissions */
+    OrganizationPermissions: {
+      /** Organization Admin */
+      organization_admin: boolean;
+    };
     /** OutputSpec */
     OutputSpec: {
       /** Description */
@@ -5519,12 +5628,12 @@ export interface components {
        * A2A Skills
        * @default []
        */
-      a2a_skills: components["schemas"]["A2ASkillProjection"][];
+      a2a_skills?: components["schemas"]["A2ASkillProjection"][];
       /**
        * Client Tools
        * @default []
        */
-      client_tools: components["schemas"]["ClientToolPolicy"][];
+      client_tools?: components["schemas"]["ClientToolPolicy"][];
       /** Context Schema */
       context_schema?: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -5533,7 +5642,7 @@ export interface components {
        * Event Visibility
        * @default []
        */
-      event_visibility: string[];
+      event_visibility?: string[];
       extended_agent_card?:
         components["schemas"]["ExtendedAgentCardPolicy"] | null;
       /** Input Data Schema */
@@ -5547,7 +5656,7 @@ export interface components {
        *       "text"
        *     ]
        */
-      output_modes: string[];
+      output_modes?: string[];
       /** Public Description */
       public_description?: string | null;
       /** Public Name */
@@ -5557,7 +5666,7 @@ export interface components {
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /** State Schema */
       state_schema?: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -5569,17 +5678,17 @@ export interface components {
        * Max Event Bytes
        * @default 1048576
        */
-      max_event_bytes: number;
+      max_event_bytes?: number;
       /**
        * Max Input Bytes
        * @default 1048576
        */
-      max_input_bytes: number;
+      max_input_bytes?: number;
       /**
        * Max Output Bytes
        * @default 16777216
        */
-      max_output_bytes: number;
+      max_output_bytes?: number;
     };
     /** QueuedSubmission */
     QueuedSubmission: {
@@ -5682,7 +5791,7 @@ export interface components {
     /** RegisterEnvironmentRequest */
     RegisterEnvironmentRequest: {
       /** @default full */
-      access: components["schemas"]["EnvironmentAccess"];
+      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -5691,7 +5800,7 @@ export interface components {
        * Configuration Schema Version
        * @default 1
        */
-      configuration_schema_version: string;
+      configuration_schema_version?: string;
       /** Provider Id */
       provider_id: string;
       state?: components["schemas"]["EnvironmentState"] | null;
@@ -5767,7 +5876,7 @@ export interface components {
        * Receive Enabled
        * @default true
        */
-      receive_enabled: boolean;
+      receive_enabled?: boolean;
       /**
        * Target Kind
        * @enum {string}
@@ -5877,12 +5986,12 @@ export interface components {
        * Output
        * @default 0
        */
-      output: number;
+      output?: number;
       /**
        * Tools
        * @default 0
        */
-      tools: number;
+      tools?: number;
     };
     /** RetryOverride */
     RetryOverride: {
@@ -5940,7 +6049,7 @@ export interface components {
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /** Session Id */
       session_id: string;
       /**
@@ -5948,7 +6057,7 @@ export interface components {
        * @default accepted
        * @constant
        */
-      status: "accepted";
+      status?: "accepted";
       /** Thread Id */
       thread_id: string;
       /** Thread Version */
@@ -6159,17 +6268,17 @@ export interface components {
        * Harness Run Id
        * @default null
        */
-      harness_run_id: string | null;
+      harness_run_id?: string | null;
       /**
        * Item Id
        * @default null
        */
-      item_id: string | null;
+      item_id?: string | null;
       /**
        * Lifecycle Event Id
        * @default null
        */
-      lifecycle_event_id: string | null;
+      lifecycle_event_id?: string | null;
       /**
        * Occurred At
        * Format: date-time
@@ -6183,7 +6292,7 @@ export interface components {
        * Run Attempt Id
        * @default null
        */
-      run_attempt_id: string | null;
+      run_attempt_id?: string | null;
       /** Run Id */
       run_id: string;
       /**
@@ -6191,7 +6300,7 @@ export interface components {
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /** Thread Id */
       thread_id: string;
     };
@@ -6216,7 +6325,7 @@ export interface components {
        * @default none
        * @enum {string}
        */
-      retry_hint: "none" | "new_run" | "dependency_change";
+      retry_hint?: "none" | "new_run" | "dependency_change";
     };
     /**
      * SearchIn
@@ -6233,7 +6342,7 @@ export interface components {
        * Required
        * @default true
        */
-      required: boolean;
+      required?: boolean;
     };
     /** SecurityEvent */
     SecurityEvent: {
@@ -6404,13 +6513,13 @@ export interface components {
        * @default 1
        * @constant
        */
-      harness_skill_contract: "1";
+      harness_skill_contract?: "1";
       /**
        * Schema Version
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /** Skill Name */
       skill_name: string;
       /** Total Size Bytes */
@@ -6524,7 +6633,7 @@ export interface components {
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /** Session Id */
       session_id: string;
       /** Steer Id */
@@ -6556,7 +6665,7 @@ export interface components {
        * @default 1
        * @constant
        */
-      schema_version: "1";
+      schema_version?: "1";
       /** Session Id */
       session_id: string;
       /** Source Waiting Run Id */
@@ -6633,7 +6742,7 @@ export interface components {
        * @default system
        * @constant
        */
-      principal_type: "system";
+      principal_type?: "system";
     };
     /**
      * SystemMessage
@@ -6679,7 +6788,7 @@ export interface components {
        * Receive Enabled
        * @default true
        */
-      receive_enabled: boolean;
+      receive_enabled?: boolean;
       /**
        * Target Kind
        * @enum {string}
@@ -6892,7 +7001,7 @@ export interface components {
        * @default function
        * @constant
        */
-      type: "function";
+      type?: "function";
     } & {
       [key: string]: unknown;
     };
@@ -7170,7 +7279,7 @@ export interface components {
        * Count Tokens Before Request
        * @default false
        */
-      count_tokens_before_request: boolean;
+      count_tokens_before_request?: boolean;
       /** Input Tokens Limit */
       input_tokens_limit?: number | null;
       /** Output Tokens Limit */
@@ -7181,7 +7290,7 @@ export interface components {
        * Request Limit
        * @default 50
        */
-      request_limit: number | null;
+      request_limit?: number | null;
       /** Tool Calls Limit */
       tool_calls_limit?: number | null;
       /** Total Tokens Limit */
@@ -7203,7 +7312,7 @@ export interface components {
        * Count Tokens Before Request
        * @default false
        */
-      count_tokens_before_request: boolean;
+      count_tokens_before_request?: boolean;
       /** Input Tokens Limit */
       input_tokens_limit?: number | null;
       /** Output Tokens Limit */
@@ -7214,7 +7323,7 @@ export interface components {
        * Request Limit
        * @default 50
        */
-      request_limit: number | null;
+      request_limit?: number | null;
       /** Tool Calls Limit */
       tool_calls_limit?: number | null;
       /** Total Tokens Limit */
@@ -7314,7 +7423,7 @@ export interface components {
        * @default defaults
        * @constant
        */
-      mode: "defaults";
+      mode?: "defaults";
       /** Sealed State Digest Sha256 */
       sealed_state_digest_sha256: string;
     };
@@ -7328,7 +7437,7 @@ export interface components {
        * Resolutions
        * @default []
        */
-      resolutions: (
+      resolutions?: (
         | components["schemas"]["ApprovePendingResolution"]
         | components["schemas"]["RejectPendingResolution"]
         | components["schemas"]["CompletePendingResolution"]
@@ -7346,7 +7455,7 @@ export interface components {
        * @default hmac_sha256_v1
        * @constant
        */
-      signature_profile: "hmac_sha256_v1";
+      signature_profile?: "hmac_sha256_v1";
       /** Signing Secret Id */
       signing_secret_id: string;
     };
@@ -9765,6 +9874,41 @@ export interface operations {
       };
     };
   };
+  discover_mcp_tools_api_v1_mcp_connections__connection_id__discover_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MCPToolCollection"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   reconnect_mcp_connection_api_v1_mcp_connections__connection_id__reconnect_post: {
     parameters: {
       query?: never;
@@ -10790,6 +10934,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelConnectionTestResult"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  organization_permissions_api_v1_organizations__organization_id__permissions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrganizationPermissions"];
         };
       };
       /** @description Validation Error */
@@ -13032,6 +13207,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Page_ApiKey_"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  account_provider_types_api_v1_workspaces__workspace_id__application_account_provider_types_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AccountProviderDefinitionCollection"];
         };
       };
       /** @description Validation Error */

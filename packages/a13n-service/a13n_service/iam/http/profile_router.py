@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, Request, Response
 
 from a13n_service.etags import resource_etag
 
-from ..profile_schemas import Permissions, SecurityEvent, UpdateProfileRequest
+from ..profile_schemas import OrganizationPermissions, Permissions, SecurityEvent, UpdateProfileRequest
 from ..schemas import ApiKey, Organization, Page, RoleBinding, SetRoleRequest, User
 from ..service_common import not_found
 from .dependencies import Actor, Pagination, identity, private_response
@@ -50,6 +50,11 @@ async def update_organization(
 @router.get("/workspaces/{workspace_id}/permissions", response_model=Permissions)
 async def workspace_permissions(request: Request, actor: Actor, workspace_id: str) -> Permissions:
     return await identity(request).profiles.permissions(actor, workspace_id)
+
+
+@router.get("/organizations/{organization_id}/permissions", response_model=OrganizationPermissions)
+async def organization_permissions(request: Request, actor: Actor, organization_id: str) -> OrganizationPermissions:
+    return await identity(request).profiles.organization_permissions(actor, organization_id)
 
 
 @router.get("/workspaces/{workspace_id}/members", response_model=Page[User])
