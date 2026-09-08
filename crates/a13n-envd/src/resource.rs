@@ -78,6 +78,10 @@ struct PageCollector<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ResourceError {
     Invalid,
+    InvalidPattern {
+        field: &'static str,
+        reason: &'static str,
+    },
     Denied,
     NotFound,
     Conflict,
@@ -210,10 +214,10 @@ impl ResourceRegistry {
         mounts: &MountRegistry,
         params: &FileFindParams,
     ) -> Result<FileFindResult, ResourceError> {
-        if params.pattern.len() > MAX_PATTERN_BYTES || params.max_results == 0 {
+        if params.max_results == 0 {
             return Err(ResourceError::Limit);
         }
-        let matcher = PathMatcher::new(&params.pattern)?;
+        let matcher = PathMatcher::new(&params.pattern, "pattern")?;
         let mount = read_mount(mounts, &params.root, "find")?;
         let mut page = PageCollector::new(
             params.offset,
@@ -259,10 +263,7 @@ impl ResourceRegistry {
         mounts: &MountRegistry,
         params: &FileSearchParams,
     ) -> Result<FileSearchResult, ResourceError> {
-        if params.query.is_empty()
-            || params.query.len() > MAX_PATTERN_BYTES
-            || params.include_pattern.len() > MAX_PATTERN_BYTES
-            || params.max_results == 0
+        if params.max_results == 0
             || params.max_line_length == 0
             || params.max_file_bytes == 0
             || params.context_lines > 20
@@ -272,7 +273,7 @@ impl ResourceRegistry {
             return Err(ResourceError::Invalid);
         }
         let content = ContentMatcher::new(params.mode, &params.query, params.case_sensitive)?;
-        let include = PathMatcher::new(&params.include_pattern)?;
+        let include = PathMatcher::new(&params.include_pattern, "include_pattern")?;
         let mount = read_mount(mounts, &params.root, "search")?;
         let mut page = PageCollector::new(
             params.offset,
@@ -1357,32 +1358,41 @@ impl<T: Serialize> PageCollector<T> {
 }
 
 struct PathMatcher {
-    matcher: globset::GlobMatcher,
-    basename: bool,
+    alternatives: Vec<(globset::GlobMatcher, bool)>,
 }
 
 impl PathMatcher {
-    fn new(pattern: &str) -> Result<Self, ResourceError> {
-        validate_glob_pattern(pattern)?;
-        let anchored = pattern.starts_with('/');
-        let normalized = pattern.strip_prefix('/').unwrap_or(pattern);
-        GlobBuilder::new(normalized)
-            .literal_separator(true)
-            .build()
-            .map_err(|_| ResourceError::Invalid)
-            .map(|glob| Self {
-                matcher: glob.compile_matcher(),
-                basename: !anchored && !normalized.contains('/'),
+    fn new(pattern: &str, field: &'static str) -> Result<Self, ResourceError> {
+        let alternatives = expand_glob(pattern, field)?
+            .iter()
+            .map(|pattern| {
+                let normalized = pattern.strip_prefix('/').unwrap_or(pattern);
+                GlobBuilder::new(normalized)
+                    .literal_separator(true)
+                    .build()
+                    .map_err(|_| ResourceError::InvalidPattern {
+                        field,
+                        reason: "invalid_glob",
+                    })
+                    .map(|glob| {
+                        (
+                            glob.compile_matcher(),
+                            !pattern.starts_with('/') && !pattern.contains('/'),
+                        )
+                    })
             })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { alternatives })
     }
 
     fn matches(&self, path: &str) -> bool {
-        let candidate = if self.basename {
-            path.rsplit('/').next().unwrap_or(path)
-        } else {
-            path
-        };
-        self.matcher.is_match(candidate)
+        self.alternatives.iter().any(|(matcher, basename)| {
+            matcher.is_match(if *basename {
+                path.rsplit('/').next().unwrap_or(path)
+            } else {
+                path
+            })
+        })
     }
 }
 
@@ -1390,16 +1400,78 @@ fn is_hidden_path(path: &str) -> bool {
     path.split('/').any(|component| component.starts_with('.'))
 }
 
-fn validate_glob_pattern(pattern: &str) -> Result<(), ResourceError> {
+fn expand_glob(pattern: &str, field: &'static str) -> Result<Vec<String>, ResourceError> {
+    let invalid = || ResourceError::InvalidPattern {
+        field,
+        reason: "invalid_glob",
+    };
     if pattern.strip_prefix('/').unwrap_or(pattern).is_empty()
-        || pattern.contains(['{', '}', '\\'])
-        || pattern
+        || pattern.len() > 16 * 1024
+        || pattern.contains('\\')
+    {
+        return Err(invalid());
+    }
+    let mut expanded = vec![String::new()];
+    let mut rest = pattern;
+    while !rest.is_empty() {
+        let end = rest.find(['{', '}', '[']).unwrap_or(rest.len());
+        let prefix = &rest[..end];
+        for value in &mut expanded {
+            value.push_str(prefix);
+        }
+        rest = &rest[end..];
+        if rest.is_empty() {
+            break;
+        }
+        if rest.starts_with('[') {
+            let mut start = 1;
+            if rest[start..].starts_with(['!', '^']) {
+                start += 1;
+            }
+            if rest[start..].starts_with(']') {
+                start += 1;
+            }
+            let end = start + rest[start..].find(']').ok_or_else(invalid)?;
+            if rest[..end].contains('/') {
+                return Err(invalid());
+            }
+            for value in &mut expanded {
+                value.push_str(&rest[..=end]);
+            }
+            rest = &rest[end + 1..];
+            continue;
+        }
+        if rest.starts_with('}') {
+            return Err(invalid());
+        }
+        let end = rest.find('}').ok_or_else(invalid)?;
+        let body = &rest[1..end];
+        let choices: Vec<_> = body.split(',').collect();
+        if body.contains('{')
+            || choices.len() < 2
+            || choices.iter().any(|v| v.is_empty())
+            || expanded.len() * choices.len() > 256
+        {
+            return Err(invalid());
+        }
+        expanded = expanded
+            .iter()
+            .flat_map(|prefix| {
+                choices
+                    .iter()
+                    .map(move |choice| format!("{prefix}{choice}"))
+            })
+            .collect();
+        rest = &rest[end + 1..];
+    }
+    if expanded.iter().any(|pattern| {
+        pattern
             .split('/')
             .any(|segment| segment.contains("**") && segment != "**")
-    {
-        return Err(ResourceError::Invalid);
+    }) {
+        return Err(invalid());
     }
-    Ok(())
+    Ok(expanded)
 }
 
 enum ContentMatcher {
@@ -1409,11 +1481,26 @@ enum ContentMatcher {
 
 impl ContentMatcher {
     fn new(mode: SearchMode, query: &str, case_sensitive: bool) -> Result<Self, ResourceError> {
+        if query.is_empty() {
+            return Err(ResourceError::InvalidPattern {
+                field: "query",
+                reason: "empty_pattern",
+            });
+        }
+        if query.len() > MAX_PATTERN_BYTES {
+            return Err(ResourceError::InvalidPattern {
+                field: "query",
+                reason: "pattern_too_large",
+            });
+        }
         match mode {
             SearchMode::Literal if case_sensitive => Ok(Self::Literal(query.to_owned())),
             SearchMode::Literal => Regex::new(&format!("(?i:{})", regex::escape(query)))
                 .map(Self::Regex)
-                .map_err(|_| ResourceError::Invalid),
+                .map_err(|_| ResourceError::InvalidPattern {
+                    field: "query",
+                    reason: "invalid_regex",
+                }),
             SearchMode::Regex => {
                 let pattern = if case_sensitive {
                     query.to_owned()
@@ -1422,7 +1509,10 @@ impl ContentMatcher {
                 };
                 Regex::new(&pattern)
                     .map(Self::Regex)
-                    .map_err(|_| ResourceError::Invalid)
+                    .map_err(|_| ResourceError::InvalidPattern {
+                        field: "query",
+                        reason: "invalid_regex",
+                    })
             }
         }
     }
@@ -1858,7 +1948,8 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use super::commit_candidate;
     use super::{
-        ResourceError, ResourceRegistry, apply_unified_diff, join_logical, read_bounded_search_line,
+        ContentMatcher, PathMatcher, ResourceError, ResourceRegistry, apply_unified_diff,
+        join_logical, read_bounded_search_line,
     };
 
     struct TempTree(PathBuf);
@@ -1880,6 +1971,63 @@ mod tests {
     impl Drop for TempTree {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn search_pattern_conformance() {
+        let cases: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/file-patterns.json")).unwrap();
+        for case in cases["glob"].as_array().unwrap() {
+            let pattern = case["pattern"].as_str().unwrap();
+            let matcher = PathMatcher::new(pattern, "pattern").unwrap();
+            for path in case["matches"].as_array().unwrap() {
+                assert!(matcher.matches(path.as_str().unwrap()), "{pattern}: {path}");
+            }
+            for path in case["misses"].as_array().unwrap() {
+                assert!(
+                    !matcher.matches(path.as_str().unwrap()),
+                    "{pattern}: {path}"
+                );
+            }
+        }
+        for pattern in cases["invalid_glob"].as_array().unwrap() {
+            assert!(
+                matches!(
+                    PathMatcher::new(pattern.as_str().unwrap(), "include_pattern"),
+                    Err(ResourceError::InvalidPattern {
+                        field: "include_pattern",
+                        reason: "invalid_glob"
+                    })
+                ),
+                "{pattern}"
+            );
+        }
+        for case in cases["content"].as_array().unwrap() {
+            let matcher = ContentMatcher::new(
+                if case["regex"].as_bool().unwrap() {
+                    SearchMode::Regex
+                } else {
+                    SearchMode::Literal
+                },
+                case["pattern"].as_str().unwrap(),
+                case["case_sensitive"].as_bool().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                matcher.matches(case["text"].as_str().unwrap()),
+                case["matches"].as_bool().unwrap(),
+                "{case}"
+            );
+        }
+        for pattern in ["(", "(?=a)", r"(a)\1"] {
+            assert!(matches!(
+                ContentMatcher::new(SearchMode::Regex, pattern, true),
+                Err(ResourceError::InvalidPattern {
+                    field: "query",
+                    reason: "invalid_regex"
+                })
+            ));
         }
     }
 

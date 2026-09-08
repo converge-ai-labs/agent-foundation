@@ -4,23 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import codecs
-import fnmatch
 import itertools
 import os
-import re
 import shutil
 import stat as stat_module
 import sys
 import tempfile
-from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pathspec.gitignore import GitIgnoreSpec
 
+from .._file_patterns import PathPattern, PatternError, content_pattern
+from .._file_search import search_text_file
 from ..files import (
     FileCopyResult,
     FileEntriesResult,
@@ -41,8 +40,6 @@ from ..text import apply_unified_diff
 
 if TYPE_CHECKING:
     from .provider import _DirectLocalFilePolicy
-
-_MAX_QUERY_PATTERN_BYTES = 16 * 1024
 
 
 class _LocalWriter:
@@ -608,16 +605,12 @@ class LocalFileOperator:
 
     def _search_page(self, request: FileTextSearchRequest) -> FileTextSearchResult:
         root = self._resolve_directory(request.root, "Search root")
-        if not request.pattern:
-            raise EnvironmentError("Search pattern must not be empty.", code="environment_request_invalid")
-        _validate_query_pattern(request.include)
-        needle = request.pattern if request.case_sensitive else request.pattern.casefold()
         try:
-            regex = (
-                re.compile(request.pattern, 0 if request.case_sensitive else re.IGNORECASE) if request.regex else None
-            )
-        except re.error as exc:
-            raise EnvironmentError("Search regular expression is invalid.", code="environment_request_invalid") from exc
+            include = PathPattern(request.include, "include")
+            regex = content_pattern(request.pattern, request.regex, request.case_sensitive)
+        except PatternError as exc:
+            raise EnvironmentError(str(exc), code="environment_request_invalid", details=exc.details) from exc
+        needle = request.pattern
 
         matches: list[FileTextMatch] = []
         seen = 0
@@ -631,7 +624,7 @@ class LocalFileOperator:
         )
         for native in paths:
             relative = native.relative_to(root).as_posix()
-            if not _query_glob_matches(relative, request.include):
+            if not include.matches(relative):
                 continue
             metadata = _regular_search_file_metadata(native)
             if metadata is None or metadata.st_size > request.max_file_bytes:
@@ -645,7 +638,7 @@ class LocalFileOperator:
             per_file_limit = request.max_matches_per_file
             remaining = request.max_matches - len(matches) + 1
             try:
-                scanned = _search_text_file(
+                scanned = search_text_file(
                     native,
                     needle,
                     regex,
@@ -657,6 +650,8 @@ class LocalFileOperator:
                     request.max_line_length,
                     min(self._policy.max_value_bytes, request.max_file_bytes),
                 )
+            except OverflowError as exc:
+                raise EnvironmentError(str(exc), code="environment_too_large") from exc
             except OSError:
                 continue
             if scanned is None:
@@ -907,43 +902,6 @@ def _environment_error_from_os(exc: OSError, *, action: str) -> EnvironmentError
     return EnvironmentError(f"Direct Local could not {action}.", code=code)
 
 
-def _validate_query_pattern(pattern: str) -> None:
-    normalized = pattern.removeprefix("/")
-    if (
-        not normalized
-        or len(pattern.encode("utf-8")) > _MAX_QUERY_PATTERN_BYTES
-        or any(character in pattern for character in "{}\\")
-    ):
-        raise EnvironmentError("File query pattern is invalid.", code="environment_request_invalid")
-    if any("**" in segment and segment != "**" for segment in normalized.split("/")):
-        raise EnvironmentError("File query pattern is invalid.", code="environment_request_invalid")
-
-
-def _query_glob_matches(path: str, pattern: str) -> bool:
-    anchored = pattern.startswith("/")
-    normalized = pattern.removeprefix("/")
-    path_parts = path.split("/")
-    pattern_parts = normalized.split("/")
-    if len(pattern_parts) == 1 and not anchored:
-        return fnmatch.fnmatchcase(path_parts[-1], pattern_parts[0])
-
-    reachable = [False] * (len(path_parts) + 1)
-    reachable[0] = True
-    for part in pattern_parts:
-        next_reachable = [False] * (len(path_parts) + 1)
-        if part == "**":
-            matched_prefix = False
-            for index, matched in enumerate(reachable):
-                matched_prefix |= matched
-                next_reachable[index] = matched_prefix
-        else:
-            for index, matched in enumerate(reachable[:-1]):
-                if matched and fnmatch.fnmatchcase(path_parts[index], part):
-                    next_reachable[index + 1] = True
-        reachable = next_reachable
-    return reachable[-1]
-
-
 def _iter_native_paths(
     root: Path,
     *,
@@ -969,6 +927,7 @@ def _iter_native_paths(
             raise EnvironmentError(
                 "File query could not enumerate a directory.", code="environment_provider_failure"
             ) from exc
+        actions: list[tuple[str, Path, bool]] = []
         for child in children:
             relative = child.relative_to(root)
             if not include_hidden and any(part.startswith(".") for part in relative.parts):
@@ -979,9 +938,16 @@ def _iter_native_paths(
                 continue
             if ignore_mode == "git" and _is_git_ignored(child, is_directory, active_specs):
                 continue
-            yield child
+            actions.append((child.name, child, False))
             if recursive and is_directory:
+                actions.append((child.name + "/", child, True))
+        # Descending at name + '/' keeps a.txt before a/x.txt without collecting
+        # the complete tree or losing the directory entry's own earlier position.
+        for _, child, descend in sorted(actions):
+            if descend:
                 yield from iterate(child, active_specs)
+            else:
+                yield child
 
     initial_specs: tuple[tuple[Path, GitIgnoreSpec], ...] = ()
     if ignore_mode == "git" and ignore_root is not None:
@@ -1044,7 +1010,10 @@ def _collect_query_slice(
 ) -> tuple[list[Path], bool]:
     """Walk in deterministic path order while retaining only the requested slice and lookahead."""
 
-    _validate_query_pattern(pattern)
+    try:
+        matcher = PathPattern(pattern)
+    except PatternError as exc:
+        raise EnvironmentError(str(exc), code="environment_request_invalid", details=exc.details) from exc
     selected: list[Path] = []
     matched = 0
     for item in _iter_native_paths(
@@ -1055,7 +1024,7 @@ def _collect_query_slice(
         ignore_root=ignore_root,
     ):
         relative = item.relative_to(root).as_posix()
-        if not _query_glob_matches(relative, pattern):
+        if not matcher.matches(relative):
             continue
         kind = _native_kind(item)
         if kinds is not None and kind not in kinds:
@@ -1068,110 +1037,6 @@ def _collect_query_slice(
         selected.append(item)
         matched += 1
     return selected, False
-
-
-def _search_text_file(
-    path: Path,
-    needle: str,
-    regex: re.Pattern[str] | None,
-    case_sensitive: bool,
-    skip: int,
-    limit: int,
-    max_matches_per_file: int | None,
-    context_lines: int,
-    max_line_length: int,
-    max_line_bytes: int,
-) -> tuple[list[tuple[int, str, bool, str, int]], int] | None:
-    """Scan one UTF-8 file incrementally and emit bounded matches with inline context."""
-    selected: list[tuple[int, str, bool, str, int]] = []
-    before: deque[tuple[int, str]] = deque(maxlen=context_lines)
-    pending: list[dict[str, object]] = []
-    matched = 0
-    stop_after_context = False
-    with path.open("rb") as file:
-        line_number = 0
-        while raw := file.readline(max_line_bytes + 2):
-            line_number += 1
-            terminated = raw.endswith(b"\n")
-            content = raw[:-1] if terminated else raw
-            if len(content) > max_line_bytes:
-                raise EnvironmentError("Text search line exceeds value limit.", code="environment_too_large")
-            if b"\x00" in content:
-                return None
-            try:
-                line = content.decode("utf-8", errors="strict")
-            except UnicodeDecodeError:
-                return None
-            rendered = line[:max_line_length] + ("\n" if terminated else "")
-
-            remaining_pending: list[dict[str, object]] = []
-            for item in pending:
-                context = cast(list[str], item["context"])
-                context.append(rendered)
-                remaining = cast(int, item["remaining"]) - 1
-                if remaining == 0:
-                    selected.append(
-                        (
-                            cast(int, item["line"]),
-                            cast(str, item["text"]),
-                            cast(bool, item["truncated"]),
-                            "".join(context),
-                            cast(int, item["context_start_line"]),
-                        )
-                    )
-                else:
-                    item["remaining"] = remaining
-                    remaining_pending.append(item)
-            pending = remaining_pending
-            if stop_after_context and not pending:
-                break
-
-            candidate = line if case_sensitive else line.casefold()
-            is_match = regex.search(line) is not None if regex is not None else needle in candidate
-            within_file_limit = max_matches_per_file is None or matched < max_matches_per_file
-            if is_match and within_file_limit:
-                if matched >= skip and len(selected) + len(pending) < limit:
-                    context = [text for _, text in before]
-                    context.append(rendered)
-                    item = {
-                        "line": line_number,
-                        "text": line[:max_line_length],
-                        "truncated": len(line) > max_line_length,
-                        "context": context,
-                        "context_start_line": before[0][0] if before else line_number,
-                        "remaining": context_lines,
-                    }
-                    if context_lines == 0:
-                        selected.append(
-                            (
-                                line_number,
-                                cast(str, item["text"]),
-                                cast(bool, item["truncated"]),
-                                "".join(context),
-                                cast(int, item["context_start_line"]),
-                            )
-                        )
-                    else:
-                        pending.append(item)
-                matched += 1
-                if len(selected) + len(pending) >= limit or (
-                    max_matches_per_file is not None and matched >= max_matches_per_file
-                ):
-                    stop_after_context = True
-                if stop_after_context and not pending:
-                    break
-            before.append((line_number, rendered))
-        for item in pending:
-            selected.append(
-                (
-                    cast(int, item["line"]),
-                    cast(str, item["text"]),
-                    cast(bool, item["truncated"]),
-                    "".join(cast(list[str], item["context"])),
-                    cast(int, item["context_start_line"]),
-                )
-            )
-    return selected, matched
 
 
 def _native_kind(path: Path) -> str:

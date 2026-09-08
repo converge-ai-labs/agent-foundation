@@ -111,7 +111,7 @@ def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> N
         },
     )
     text = _text(renderer.transcript)
-    assert text == "shell_exec | failed | exit 1 | output partial | pytest -q"
+    assert text == "Run failed · exit 1 · output partial · pytest -q"
     assert "line-2" not in text and "line-19" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
@@ -268,12 +268,12 @@ def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_succ
     renderer = StreamRenderer(Status())
     try:
         renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "view"})
-        assert _text(renderer.transcript) == "view | running"
+        assert _text(renderer.transcript) == "Read path unavailable …"
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": '{"file_path":"file.py"}'})
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
         renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": result})
         text = _text(renderer.transcript)
-        assert text.startswith(f"view | {state} | file.py | ")
+        assert text.startswith("Read failed:") if state == "failed" else text == "Read file.py"
         assert "{" not in text and "output-marker" not in text
         assert len(renderer.transcript.blocks) == 1
         renderer.transcript.detailed = True
@@ -321,7 +321,7 @@ def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with
         )
         assert len(renderer.transcript.blocks) == 1
         text = _text(renderer.transcript)
-        assert text.startswith(f"{name} | {state}") and len(text.splitlines()) == 1
+        assert text.startswith(f"{'Run' if name == 'shell_exec' else 'Call'} {state}:") and len(text.splitlines()) == 1
         assert "{" not in text and "extra_forbidden" not in text and "native result/retry" not in text
         assert not renderer._tools and renderer.status.state == "working"
         renderer.transcript.detailed = True
@@ -369,7 +369,7 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
         assert renderer.status.state == "cancelling"
         text = _text(renderer.transcript)
         if mode == "detailed":
-            assert "task_create | retry | child" in text
+            assert "Call retry:" in text and " · child" in text
         else:
             assert "retry" not in text
         assert len(renderer.transcript.blocks) == (2 if mode == "detailed" else 1)

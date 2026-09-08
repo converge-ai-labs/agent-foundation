@@ -17,6 +17,7 @@ from a13n_envd_client.errors import (
     EIPTransportError,
 )
 
+from .._file_patterns import PATTERN_HINTS
 from ..models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     EnvironmentError,
@@ -89,6 +90,7 @@ def convert_error(error: BaseException) -> EnvironmentError:
     if isinstance(error, EIPMethodError):
         error_type = error.error.data.error_type
         code = {
+            eip.ErrorType.INVALID_PARAMS: "environment_request_invalid",
             eip.ErrorType.DENIED: "environment_denied",
             eip.ErrorType.NOT_FOUND_OR_DENIED: "environment_not_found",
             eip.ErrorType.UNSUPPORTED: "environment_unsupported",
@@ -101,7 +103,13 @@ def convert_error(error: BaseException) -> EnvironmentError:
             eip.ErrorType.CANCELLED: "environment_cancelled",
             eip.ErrorType.CONFLICT: "environment_conflict",
         }.get(error_type, "environment_provider_failure")
-        return EnvironmentError("EIP operation failed", code=code)
+        data = error.error.data
+        details: dict[str, str] = {}
+        if error_type == eip.ErrorType.INVALID_PARAMS and data.safe_detail in PATTERN_HINTS:
+            field = {"query": "pattern", "include_pattern": "include", "pattern": "pattern"}.get(data.field or "")
+            if field is not None and data.safe_detail is not None:
+                details = {"field": field, "reason": data.safe_detail, "hint": PATTERN_HINTS[data.safe_detail]}
+        return EnvironmentError("EIP operation failed", code=code, details=details)
     if isinstance(error, EIPSessionStateError | EIPTransportClosedError | EIPTransportError):
         return EnvironmentError(
             "EIP environment is unavailable",

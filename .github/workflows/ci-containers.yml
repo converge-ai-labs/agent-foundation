@@ -91,12 +91,14 @@ jobs:
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["A13N_SERVICE_CHANGED"] == "true":
               images.append({
                   "name": "a13n-service",
+                  "runner": "ubuntu-latest",
                   "build_target": "image-a13n-service",
                   "check_target": "image-check-a13n-service",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               images.append({
                   "name": "a13n-sandbox",
+                  "runner": "ubuntu-24.04-8core",
                   "build_target": "image-sandbox",
                   "check_target": "image-check-sandbox",
               })
@@ -108,7 +110,7 @@ jobs:
     name: Container image (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.images != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:

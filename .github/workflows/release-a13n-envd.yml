@@ -306,7 +306,7 @@ jobs:
   publish-image:
     name: Publish sandbox image
     needs: [prepare, build-binaries, publish-crate, publish-client]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-8core
     permissions:
       contents: read
       packages: write

@@ -74,6 +74,14 @@ def test_edit_diff_and_summary_keep_content_beyond_old_preview_limit() -> None:
             },
         },
     )
+    assert summary not in _source(renderer)
+    renderer.ingest(
+        "CUSTOM",
+        {
+            "name": "a13n.harness.context",
+            "value": {"event": {"payload": {"type": "handoff_completed", "operation_id": "handoff-one"}}},
+        },
+    )
     assert summary in _source(renderer)
     assert "Files to inspect:\na.py" in _source(renderer)
 
@@ -107,7 +115,7 @@ def test_regular_tool_folds_without_discarding_full_result() -> None:
     transcript.render(80)
     assert "Folded" not in _text(transcript)
     assert len(transcript.blocks) == 1
-    assert "read | returned" in _text(transcript)
+    assert "Call read a.py" in _text(transcript)
     assert "line 99" not in _text(transcript)
     assert "line 99" in _source(renderer)
     transcript.detailed = True
@@ -129,7 +137,7 @@ def test_context_lifecycle_is_full_and_never_claims_hidden_summary() -> None:
     }
     renderer.ingest("CUSTOM", {"name": "a13n.harness.context", "value": {"event": {"payload": mutation}}})
     source = _source(renderer)
-    assert "[Compact · root]" in source
+    assert "Compact failed: failure" in source
     assert all(key in source for key in mutation)
     assert "reduction" not in source
 
@@ -152,8 +160,17 @@ def test_compaction_summary_projects_to_an_independent_expanded_block() -> None:
     renderer = StreamRenderer(Status())
     for event in HarnessAguiObserver().observe(source):
         renderer.ingest(event.type.value, event.model_dump(mode="json"), run_id="run-1")
+    assert next(iter(renderer.transcript.blocks.values())).source == "Compacting context…"
+    renderer.ingest(
+        "CUSTOM",
+        {
+            "name": "a13n.harness.context",
+            "value": {"event": {"payload": {"type": "compaction_completed", "operation_id": "compaction-1"}}},
+        },
+        run_id="run-1",
+    )
     blocks = list(renderer.transcript.blocks.values())
-    assert blocks[0].source == "Compact summary\n" + summary + "\n"
+    assert blocks[0].source == "Compact\n" + summary
     assert blocks[0].kind == "compact"
     assert blocks[0].collapsed_lines is None
     assert not renderer.assistant_seen
@@ -355,7 +372,7 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_with_exit_c
     )
     renderer.transcript.render(80)
     text = _text(renderer.transcript)
-    assert text == "shell_exec | failed | exit 7 | output partial | pytest -q"
+    assert text == "Run failed · exit 7 · output partial · pytest -q"
     assert "test failure" not in text and "test output" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
@@ -373,7 +390,8 @@ def test_tools_are_compact_and_question_debug_is_hidden() -> None:
         renderer.ingest("TOOL_CALL_START", call)
         renderer.ingest("TOOL_CALL_RESULT", {**call, "content": "done"})
     renderer.transcript.render(80)
-    assert len(renderer.transcript.rows) == 3
+    assert len(renderer.transcript.rows) == 4
+    assert "Explored" in _text(renderer.transcript)
     renderer.ingest("TOOL_CALL_START", {"tool_call_id": "private-id", "tool_call_name": "ask_user_question"})
     renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "private-id", "delta": '{"questions": []}'})
     renderer.ingest("TOOL_CALL_END", {"tool_call_id": "private-id"})

@@ -91,6 +91,7 @@ jobs:
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["A13N_SERVICE_CHANGED"] == "true":
               images.append({
                   "name": "a13n-service",
+                  "runner": "ubuntu-latest",
                   "file": "deploy/containers/a13n-service/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-service",
                   "local_image": "a13n-service:local",
@@ -99,6 +100,7 @@ jobs:
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               images.append({
                   "name": "a13n-sandbox",
+                  "runner": "ubuntu-24.04-8core",
                   "file": "deploy/containers/sandbox/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
                   "local_image": "a13n-sandbox:local",
@@ -112,7 +114,7 @@ jobs:
     name: Publish ${{ matrix.name }}
     needs: changes
     if: needs.changes.outputs.images != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:

@@ -1,0 +1,265 @@
+{
+  "glob": [
+    {
+      "pattern": "*.py",
+      "matches": [
+        "main.py",
+        "src/main.py"
+      ],
+      "misses": [
+        "main.rs"
+      ]
+    },
+    {
+      "pattern": "/*.py",
+      "matches": [
+        "main.py"
+      ],
+      "misses": [
+        "src/main.py"
+      ]
+    },
+    {
+      "pattern": "src/*.py",
+      "matches": [
+        "src/main.py"
+      ],
+      "misses": [
+        "src/lib/main.py"
+      ]
+    },
+    {
+      "pattern": "**/*.py",
+      "matches": [
+        "main.py",
+        "src/main.py"
+      ],
+      "misses": [
+        "main.rs"
+      ]
+    },
+    {
+      "pattern": "{src,tests}/**/*.{py,rs}",
+      "matches": [
+        "src/main.py",
+        "tests/a/b.rs"
+      ],
+      "misses": [
+        "docs/a.py"
+      ]
+    },
+    {
+      "pattern": "*.{py,rs}",
+      "matches": [
+        "src/main.py",
+        "a.rs"
+      ],
+      "misses": [
+        "a.txt"
+      ]
+    },
+    {
+      "pattern": "{*.py,src/*.rs}",
+      "matches": [
+        "other/a.py",
+        "src/a.rs"
+      ],
+      "misses": [
+        "other/a.rs"
+      ]
+    },
+    {
+      "pattern": "a/**/b",
+      "matches": [
+        "a/b",
+        "a/x/y/b"
+      ],
+      "misses": [
+        "a/b/c"
+      ]
+    },
+    {
+      "pattern": "a/?[0-9].py",
+      "matches": [
+        "a/b1.py"
+      ],
+      "misses": [
+        "a/bb1.py",
+        "x/a/b1.py"
+      ]
+    },
+    {
+      "pattern": "**",
+      "matches": [
+        "a",
+        "a/b"
+      ],
+      "misses": []
+    },
+    {
+      "pattern": "file[!0-9].txt",
+      "matches": [
+        "filea.txt"
+      ],
+      "misses": [
+        "file1.txt"
+      ]
+    },
+    {
+      "pattern": "name with spaces.*",
+      "matches": [
+        "a/name with spaces.txt"
+      ],
+      "misses": [
+        "name.txt"
+      ]
+    },
+    {
+      "pattern": "*.{py,py}",
+      "matches": [
+        "a.py"
+      ],
+      "misses": []
+    },
+    {
+      "pattern": "[[]",
+      "matches": [
+        "["
+      ],
+      "misses": [
+        "]"
+      ]
+    },
+    {
+      "pattern": "[]]",
+      "matches": [
+        "]"
+      ],
+      "misses": [
+        "["
+      ]
+    },
+    {
+      "pattern": "file[^0-9].{py,rs}",
+      "matches": [
+        "filea.py"
+      ],
+      "misses": [
+        "file1.py"
+      ]
+    },
+    {
+      "pattern": "file[[]*.{py,rs}",
+      "matches": [
+        "file[1].py"
+      ],
+      "misses": [
+        "file1.py"
+      ]
+    },
+    {
+      "pattern": "{src,tests}/**",
+      "matches": [
+        "src/file.py",
+        "tests/a"
+      ],
+      "misses": [
+        "src",
+        "tests"
+      ]
+    },
+    {
+      "pattern": "[{}].py",
+      "matches": [
+        "{.py",
+        "}.py"
+      ],
+      "misses": [
+        "a.py"
+      ]
+    }
+  ],
+  "invalid_glob": [
+    "",
+    "/",
+    "a**b",
+    "***",
+    "{a}",
+    "{a,}",
+    "{,b}",
+    "{a,{b,c}}",
+    "{a,b",
+    "a}",
+    "a\\b",
+    "[abc",
+    "{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}",
+    "[z-a]",
+    "[]",
+    "[/]"
+  ],
+  "content": [
+    {
+      "pattern": "a.b",
+      "regex": false,
+      "case_sensitive": true,
+      "text": "a.b",
+      "matches": true
+    },
+    {
+      "pattern": "a.b",
+      "regex": false,
+      "case_sensitive": true,
+      "text": "axb",
+      "matches": false
+    },
+    {
+      "pattern": "a.b",
+      "regex": true,
+      "case_sensitive": true,
+      "text": "axb",
+      "matches": true
+    },
+    {
+      "pattern": "foo|bar",
+      "regex": true,
+      "case_sensitive": true,
+      "text": "bar",
+      "matches": true
+    },
+    {
+      "pattern": "^(foo|bar)[0-9]+$",
+      "regex": true,
+      "case_sensitive": true,
+      "text": "foo12",
+      "matches": true
+    },
+    {
+      "pattern": "HELLO",
+      "regex": false,
+      "case_sensitive": false,
+      "text": "hello",
+      "matches": true
+    },
+    {
+      "pattern": "\u00c4",
+      "regex": false,
+      "case_sensitive": false,
+      "text": "\u00e4",
+      "matches": true
+    },
+    {
+      "pattern": "a",
+      "regex": true,
+      "case_sensitive": true,
+      "text": "A",
+      "matches": false
+    },
+    {
+      "pattern": "foo$",
+      "regex": true,
+      "case_sensitive": true,
+      "text": "foo\r",
+      "matches": false
+    }
+  ]
+}

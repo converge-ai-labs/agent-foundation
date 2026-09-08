@@ -1652,6 +1652,66 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
     ]
 
 
+async def test_grep_schema_options_literal_search_and_actionable_errors(tmp_path: Path) -> None:
+    (tmp_path / "context.py").write_text("a.b\naxb\nHELLO\n")
+    observed: list[dict[str, Any]] = []
+    requests = (
+        {"pattern": "a.b", "regex": False, "include": "*.{py,rs}"},
+        {"pattern": "a.b"},
+        {"pattern": "hello", "case_sensitive": False},
+        {"pattern": "absent"},
+        {"pattern": "(", "regex": True},
+        {"pattern": "a", "include": "{broken}"},
+    )
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        schema = next(tool for tool in info.function_tools if tool.name == "grep").parameters_json_schema
+        assert schema["properties"]["regex"]["default"] is True
+        assert schema["properties"]["case_sensitive"]["default"] is True
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        observed[:] = returns
+        if not returns:
+            yield {
+                index: DeltaToolCall(
+                    name="grep",
+                    json_args=json.dumps(request),
+                    tool_call_id=f"grep-context-{index}",
+                )
+                for index, request in enumerate(requests)
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "grep",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert [len(item["matches"]) for item in observed[:4]] == [1, 2, 1, 0]
+    assert all(item["ok"] for item in observed[:4])
+    for item, field, reason in zip(
+        observed[4:], ("pattern", "include"), ("invalid_regex", "invalid_glob"), strict=True
+    ):
+        assert item["ok"] is False
+        assert item["error"]["code"] == "environment_request_invalid"
+        assert item["error"]["details"]["field"] == field
+        assert item["error"]["details"]["reason"] == reason
+        assert item["error"]["details"]["hint"]
+
+
 async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_path: Path) -> None:
     (tmp_path / "recovered.txt").write_text("one\ntwo\n")
     failed_once = False

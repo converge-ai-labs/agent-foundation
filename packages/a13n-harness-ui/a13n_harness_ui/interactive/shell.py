@@ -787,7 +787,6 @@ class CliShell:
                 or (self._input_task is not None and not self._input_task.done())
             ):
                 self._last_interrupt = float("-inf")
-                self.emit("Ctrl+C received. Cancelling; waiting for cleanup.")
                 event.app.create_background_task(self.cancel())
             else:
                 now = time.monotonic()
@@ -1125,11 +1124,11 @@ class CliShell:
         if not self.busy:
             return
         self.status.state = "cancelling"
+        self.app.invalidate()
         if self.job_kind == "run" and self.backend is not None:
             await self.backend.cancel()
         elif self.job is not None:
             self.job.cancel()
-        self.emit("Cancellation requested; waiting for cleanup.")
 
     def launch(
         self,
