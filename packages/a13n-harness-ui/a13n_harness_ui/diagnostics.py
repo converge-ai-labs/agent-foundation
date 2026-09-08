@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import os
 import platform
 import tempfile
 import traceback
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -20,6 +22,7 @@ def exception_feedback(
     thread_id: str | None,
     run_id: str | None = None,
     phase: str,
+    loop_context: Mapping[str, object] | None = None,
 ) -> str:
     """Write a private dump, excluding locals, source lines, and conversation state.
 
@@ -55,6 +58,8 @@ def exception_feedback(
             ],
             "recovery": "Resume uses the last successfully selected continuation. This report is not a checkpoint.",
         }
+        if loop_context is not None:
+            report["event_loop"] = _event_loop_details(loop_context)
         # Serialize before opening the file so diagnostic formatting errors leave
         # no partial file containing a misleading report.
         content = json.dumps(report, ensure_ascii=False, indent=2)
@@ -68,6 +73,39 @@ def exception_feedback(
         f"{location} Review for sensitive content before attaching it to an issue. Nothing was uploaded.\n"
         f"Report a bug: {ISSUE_URL} (include reproduction steps and the reviewed report)."
     )
+
+
+def _event_loop_details(context: Mapping[str, object]) -> dict[str, object]:
+    """Allowlist locations, never repr tasks, callbacks, handles, or their arguments."""
+    details: dict[str, object] = {}
+    message = context.get("message")
+    if isinstance(message, str):
+        details["message"] = message[:4096]
+    task = context.get("task", context.get("future"))
+    if isinstance(task, asyncio.Task):
+        details["task_name"] = task.get_name()[:256]
+        details["task_done"] = task.done()
+        details["task_cancelled"] = task.cancelled()
+        coroutine = task.get_coro()
+        if inspect.iscoroutine(coroutine):
+            code = coroutine.cr_code
+            details["coroutine"] = {
+                "file": code.co_filename,
+                "line": code.co_firstlineno,
+                "function": code.co_qualname,
+            }
+        details["frames"] = [
+            {"file": frame.f_code.co_filename, "line": frame.f_lineno, "function": frame.f_code.co_name}
+            for frame in task.get_stack(limit=32)
+        ]
+    source = context.get("source_traceback")
+    if isinstance(source, (list, tuple)):
+        details["creation_frames"] = [
+            {"file": frame.filename, "line": frame.lineno, "function": frame.name}
+            for frame in source[-32:]
+            if isinstance(frame, traceback.FrameSummary)
+        ]
+    return details
 
 
 def _exception_chain(error: BaseException, seen: set[int] | None = None) -> Iterator[BaseException]:

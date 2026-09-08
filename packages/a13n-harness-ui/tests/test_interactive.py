@@ -725,7 +725,10 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
         assert "approved-result" in review
         interaction = await backend.interaction()
         assert interaction is not None
-        assert "Needs review" in interaction.prompt()
+        prompt = interaction.prompt()
+        assert "Reason: Needs review" in prompt
+        assert prompt.index("Risk: high") < prompt.index("Reason:") < prompt.index("Command:")
+        assert "Command:\necho reviewed > approved-result" in prompt
         response = interaction.accept("yes" if decision == "approve" else "no")
         assert response is not None and not isinstance(response, str)
         assert await backend.execute(StreamRenderer(backend.status), response=response) == ""

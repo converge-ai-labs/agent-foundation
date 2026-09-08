@@ -37,6 +37,22 @@ def capability_panel(
     name: object, event: Mapping[str, object], *, directory: PurePath | None = None
 ) -> CapabilityPanel | None:
     """Interpret known native facts here, never in the shared stream protocol."""
+    if name == "a13n.harness.invocation":
+        payload = event.get("payload")
+        if (
+            isinstance(payload, dict)
+            and payload.get("phase") == "denied"
+            and payload.get("reason_code") == "shell_review_timeout"
+        ):
+            timeout = payload.get("timeout_seconds")
+            duration = f" after {timeout:g}s" if isinstance(timeout, int | float) else ""
+            return CapabilityPanel(
+                "Shell review · timed out",
+                f"AI review timed out{duration}. Automatically denied; command was not executed.\n"
+                f"Tool: {payload.get('tool_name', 'shell')} · Request: {payload.get('tool_call_id', 'unavailable')}",
+                "warning",
+            )
+        return None
     if name in {"a13n.context.compaction_summary", "a13n.context.handoff_summary"}:
         summary = event.get("summary")
         if not isinstance(summary, str):

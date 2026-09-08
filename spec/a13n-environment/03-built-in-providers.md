@@ -61,7 +61,8 @@ class DirectLocalProviderConfiguration(BaseModel):
     root: DirectLocalRootConfiguration
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
     allowed_executables: frozenset[Path] = frozenset()
-    allowed_environment_keys: frozenset[str] = frozenset()
+    inherit_environment: bool = False
+    allowed_environment_keys: frozenset[str] | None = frozenset()
     allowed_ports: frozenset[int] = frozenset()
     max_value_bytes: int = 16 * 1024 * 1024
     max_concurrent_processes: int = 128
@@ -77,7 +78,7 @@ The root, shell executables, and allowed executables are absolute after user exp
 
 Direct Local runs on POSIX hosts and native Windows without WSL or a daemon. Each command owns a POSIX process group or Windows Job Object. On Windows, assignment to the Job precedes execution so descendants cannot escape ownership during startup. Root exit and complete tree cleanup are separate observations; inherited output pipes finish only after owned descendants are cleaned up. Timeout, cancellation, startup failure, and adapter close clean up owned processes and output resources.
 
-The default `posix` shell dialect retains `-c` and optional login semantics. A `powershell` profile disallows login, passes the script as an encoded command, and selects UTF-8 for redirected text input/output; argv execution passes arguments without shell interpolation. Hosts explicitly select executables, dialects, and environment keys. The Provider does not inherit ambient environment variables. Binary process output remains bytes.
+The default `posix` shell dialect retains `-c` and optional login semantics. A `powershell` profile disallows login, passes the script as an encoded command, and selects UTF-8 for redirected text input/output; argv execution passes arguments without shell interpolation. Hosts explicitly select executables, dialects, and environment policy. `inherit_environment` defaults to false, preserving an empty command environment for existing configurations. When explicitly enabled, each command copies the current Host process environment at launch, removes `CommandEnvironment.unset` keys, then overlays `CommandEnvironment.set`. Overrides never mutate the Host environment or other commands. Windows key matching is case-insensitive. `allowed_environment_keys` gates explicit set/unset keys only: the default empty set permits none, a set permits those names, and null permits any valid command environment key. It does not filter the inherited baseline. Environment values remain runtime-only; configuration, state, descriptors, and backing identity contain no inherited values. Shell startup files can still affect the spawned process environment; inheritance does not imply interactive shell initialization. Binary process output remains bytes.
 
 POSIX supports interrupt and terminate signals. Windows supports tree termination and kill; an interrupt request returns `environment_unsupported` rather than pretending a forced termination is a graceful interrupt. This does not limit cancellation, which uses owned-tree termination. Native execution does not enforce memory, CPU, process-count, or network-denial limits and rejects requests requiring them.
 

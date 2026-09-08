@@ -309,7 +309,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "name": "Local project",
             "roots": [{"path": selection.project_path}],
         }
-    return {name: yaml.safe_dump(value, sort_keys=False) for name, value in resources.items()}
+    return {name: yaml.safe_dump(value, sort_keys=False, allow_unicode=True) for name, value in resources.items()}
 
 
 def _same_connection(actual: dict[str, object], desired: dict[str, object]) -> bool:
@@ -367,10 +367,12 @@ async def preview_setup(
                 connection_model = f"model-api-key-{suffix}"
                 desired["id"] = connection_model
                 del templates["models/api-key.yaml"]
-                templates[f"models/api-key-{suffix}.yaml"] = yaml.safe_dump(desired, sort_keys=False)
+                templates[f"models/api-key-{suffix}.yaml"] = yaml.safe_dump(
+                    desired, sort_keys=False, allow_unicode=True
+                )
                 starter = yaml.safe_load(templates["agents/api-key.yaml"])
                 starter["model"] = connection_model
-                templates["agents/api-key.yaml"] = yaml.safe_dump(starter, sort_keys=False)
+                templates["agents/api-key.yaml"] = yaml.safe_dump(starter, sort_keys=False, allow_unicode=True)
     elif selection.providers:
         provider = selection.default_agent.removeprefix("agent-")
         connection_model = f"model-{provider if provider in selection.providers else selection.providers[0]}"
@@ -388,13 +390,13 @@ async def preview_setup(
                 desired["id"] = connection_model
                 del templates[model_path]
                 templates[f"models/{connection_model.removeprefix('model-')}.yaml"] = yaml.safe_dump(
-                    desired, sort_keys=False
+                    desired, sort_keys=False, allow_unicode=True
                 )
                 for name, text in list(templates.items()):
                     resource = yaml.safe_load(text)
                     if resource.get("model") == previous_model:
                         resource["model"] = connection_model
-                        templates[name] = yaml.safe_dump(resource, sort_keys=False)
+                        templates[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
     if connection_model is not None and connection_model in existing:
         desired = next(
             yaml.safe_load(text) for text in templates.values() if yaml.safe_load(text)["id"] == connection_model
@@ -424,13 +426,13 @@ async def preview_setup(
             updated = {**resource, "model": connection_model}
             if selection.instructions.strip():
                 updated["instructions"] = selection.instructions
-            files[name] = yaml.safe_dump(updated, sort_keys=False)
+            files[name] = yaml.safe_dump(updated, sort_keys=False, allow_unicode=True)
         else:
             for name, text in list(files.items()):
                 resource = yaml.safe_load(text)
                 if resource["id"] == (selection.new_agent_id or selection.default_agent):
                     resource["model"] = connection_model
-                    files[name] = yaml.safe_dump(resource, sort_keys=False)
+                    files[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
     root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
     if not selection.is_addition:
         root.setdefault(
@@ -450,7 +452,7 @@ async def preview_setup(
         }
         if selection.include_default_subagents is not None:
             root["subagents"] = {"include": list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []}
-        files[path.name] = yaml.safe_dump(root, sort_keys=False)
+        files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     candidate = dict(baseline)
     candidate.update({name: text.encode() for name, text in files.items()})
     staging = Path(await to_thread.run_sync(tempfile.mkdtemp))

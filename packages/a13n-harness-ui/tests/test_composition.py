@@ -693,3 +693,61 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
     assert composition.root.children[1].definition.model == original.root.children[1].definition.model
     assert source.models["model-primary"].settings == {"service_tier": "default"}
     assert resolver.resolve_run(source, _selection()).root == original.root
+
+
+@pytest.mark.parametrize("mount", ["workspace", "thread-files"])
+async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_path, monkeypatch, mount) -> None:
+    import os
+    import shlex
+    import sys
+
+    from a13n_environment import DirectLocalProviderRuntime
+    from a13n_environment.commands import CommandEnvironment, CommandRequest, ShellCommand
+    from a13n_environment.retention import EnvironmentOutputPolicy
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    selected = EnvironmentSnapshotReconstructor(catalog=_catalog()).reconstruct(composition.environment_profile)
+    root = tmp_path / mount
+    root.mkdir(exist_ok=True)
+    # Resolve Python by basename through an inherited PATH, not an absolute executable.
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("A13N_TEST_TOOL_SETTING", "inherited-test-value")
+    (root / "probe.py").write_text(
+        "import os\nprint(os.environ.get('A13N_TEST_TOOL_SETTING', 'missing'))\n", encoding="utf-8"
+    )
+    python = Path(sys.executable).name
+    script = f"& '{python}' probe.py" if sys.platform == "win32" else f"{shlex.quote(python)} probe.py"
+    environment = await selected.adapter.bind(
+        profile=composition.environment_profile,
+        root=root,
+        state=None,
+        provider=selected.provider,
+        runtime=DirectLocalProviderRuntime(),
+    )
+    await environment.enter(thread_id="thread-test", run_id="run-test", agent_instance_id="agent-test", mount_id=mount)
+    try:
+        await environment.prepare()
+        shell = environment.operations.shell
+        assert shell is not None
+        request = CommandRequest(
+            command=ShellCommand(profile_id="default", script=script),
+            output_policy=EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=65536, overflow="retain"),
+        )
+        inherited = await shell.exec(request)
+        assert inherited.status.exit_code == 0
+        assert inherited.output.stdout.inline.strip() == b"inherited-test-value"
+        override = await shell.exec(
+            request.model_copy(update={"environment": CommandEnvironment(set={"A13N_TEST_TOOL_SETTING": "override"})})
+        )
+        assert override.output.stdout.inline.strip() == b"override"
+        removed = await shell.exec(
+            request.model_copy(update={"environment": CommandEnvironment(unset=("A13N_TEST_TOOL_SETTING",))})
+        )
+        assert removed.output.stdout.inline.strip() == b"missing"
+        assert os.environ["A13N_TEST_TOOL_SETTING"] == "inherited-test-value"
+        assert environment.dump_state() is None
+        assert "inherited-test-value" not in composition.model_dump_json()
+        assert "inherited-test-value" not in environment.descriptor.model_dump_json()
+    finally:
+        await environment.close()

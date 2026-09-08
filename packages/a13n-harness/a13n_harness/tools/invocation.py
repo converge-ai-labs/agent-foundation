@@ -477,6 +477,17 @@ async def _evaluate_shell_review(
         raise
     except ShellReviewError as exc:
         await _record_shell_review_usage(ctx, exc.usage)
+        if exc.code == "shell_review_timeout":
+            await _emit(
+                ctx,
+                metadata,
+                "denied",
+                invocation_id=invocation.invocation_id,
+                tool_call_id=invocation.tool_call_id,
+                reason_code=exc.code,
+                timeout_seconds=capability.timeout_seconds,
+            )
+            raise ToolFailed("Shell review timed out. Automatically denied; command was not executed.") from exc
         return capability.on_error, None
     except DefinitionError:
         raise
