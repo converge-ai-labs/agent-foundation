@@ -43,7 +43,7 @@ class Block:
     markdown: bool
     kind: str = "text"
     revision: int = 0
-    cache_key: tuple[int, int, str, bool] | None = None
+    cache_key: tuple[int, int, ResolvedTheme, bool] | None = None
     rows: Sequence[StyleAndTextTuples] = field(default_factory=list)
     pending: list[str] = field(default_factory=list)
     size: int = 0
@@ -282,7 +282,12 @@ class Transcript:
                 if markdown
                 else Text(source.rstrip("\n"))
             )
-            if kind in {"command", "edit", "info", "summary", "compact", "notes"}:
+            if kind == "command" and folded:
+                title, _, body = source.rstrip("\n").partition("\n")
+                value = Text(title, style="bold", no_wrap=True, overflow="ellipsis")
+                if body:
+                    value.append("\n" + "\n".join("  " + line for line in body.splitlines()), style="not bold")
+            elif kind in {"command", "edit", "info", "summary", "compact", "notes"}:
                 from rich import box
                 from rich.panel import Panel
 
@@ -303,6 +308,10 @@ class Transcript:
                     box=box.ROUNDED,
                     padding=(0, 1),
                 )
+            elif kind == "processes":
+                from .processes import process_panel
+
+                value = process_panel(source, self.theme)
             # Stream Rich lines into a disposable disk cache, not a giant padded grid.
             for line in Segment.split_and_crop_lines(
                 console.render(value, console.options), width, pad=False, include_new_lines=False
@@ -323,7 +332,7 @@ class Transcript:
                 elif kind == "edit" and text.startswith(("+", "-")):
                     accent = "fg:ansigreen" if text.startswith("+") else "fg:ansired"
                 yield [(style + " " + accent, text) for style, text in rendered]
-            if kind not in {"tool", "shell", "edit", "command", "info", "summary", "compact", "notes"}:
+            if kind not in {"tool", "shell", "edit", "command", "info", "summary", "compact", "notes", "processes"}:
                 yield []
 
         self.ids = []
@@ -331,7 +340,7 @@ class Transcript:
         count = 0
         for block, following in pairwise(chain(self.blocks.values(), (None,))):
             assert block is not None
-            key = (block.revision, width, self.theme.variant, block.streaming)
+            key = (block.revision, width, self.theme, block.streaming)
             if block.cache_key != key:
                 source = block.source
                 if block.streaming and len(source) > 16384:

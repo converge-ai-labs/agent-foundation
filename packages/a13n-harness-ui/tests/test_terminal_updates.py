@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import click
 import pytest
-from a13n_harness_ui import terminal
+from a13n_harness_ui import terminal, updater
 from a13n_harness_ui.cli import CliRequest, cli
 from a13n_harness_ui.configuration import empty_harness_ui_configuration
 from a13n_harness_ui.interactive import onboarding, shell, startup, updates
@@ -29,14 +29,14 @@ def test_update_command_requires_the_running_uv_tool_installation(
 ) -> None:
     prefix = tmp_path / "tools" / "a13n-harness-ui"
     prefix.mkdir(parents=True)
-    monkeypatch.setattr(updates.sys, "prefix", str(prefix))
-    monkeypatch.setattr(updates.shutil, "which", lambda name: "/bin/uv")
+    monkeypatch.setattr(updater.sys, "prefix", str(prefix))
+    monkeypatch.setattr(updater.shutil, "which", lambda name: "/bin/uv")
     assert updates.update_command() is None
     (prefix / "uv-receipt.toml").touch()
     command = updates.update_command()
     assert command == updates.UpdateCommand("/bin/uv", prefix.parent)
     assert command.argv == ("/bin/uv", "tool", "upgrade", "a13n-harness-ui")
-    monkeypatch.setattr(updates.shutil, "which", lambda name: None)
+    monkeypatch.setattr(updater.shutil, "which", lambda name: None)
     assert updates.update_command() is None
 
 
@@ -231,13 +231,13 @@ def test_installer_runs_only_after_async_terminal_cleanup(
         assert events == ["cleanup"]
         events.append("install")
         assert argv == command.argv
-        assert kwargs == {"env": {**terminal.os.environ, "UV_TOOL_DIR": str(tmp_path)}, "check": False}
+        assert kwargs == {"env": {**updater.os.environ, "UV_TOOL_DIR": str(tmp_path)}, "check": False}
         return SimpleNamespace(returncode=exit_code)
 
     monkeypatch.setattr(terminal.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(terminal.sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(startup, "run_terminal", run)
-    monkeypatch.setattr(terminal.subprocess, "run", install)
+    monkeypatch.setattr(updater.subprocess, "run", install)
     if exit_code:
         with pytest.raises(click.exceptions.Exit) as exc:
             terminal.start(CliRequest())
@@ -248,3 +248,78 @@ def test_installer_runs_only_after_async_terminal_cleanup(
     output = capsys.readouterr()
     assert ("Update complete" in output.out) == (exit_code == 0)
     assert ("Update failed" in output.err) == (exit_code != 0)
+
+
+@pytest.mark.parametrize("arguments", [["update"], ["--no-update-check", "update"]])
+@pytest.mark.parametrize("exit_code", [0, 7, -15])
+def test_explicit_update_runs_without_terminal_setup_or_cached_detection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: list[str], exit_code: int
+) -> None:
+    prefix = tmp_path / "tools" / "a13n-harness-ui"
+    prefix.mkdir(parents=True)
+    (prefix / "uv-receipt.toml").touch()
+    monkeypatch.setattr(updater.sys, "prefix", str(prefix))
+    monkeypatch.setattr(updater.shutil, "which", lambda name: "/bin/uv")
+    monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "other-tools"))
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Explicit updates must not enter chat/setup or use startup detection")
+
+    monkeypatch.setattr(terminal, "start", unexpected)
+    monkeypatch.setattr(updates, "check_update", unexpected)
+    calls = []
+
+    def install(argv, **kwargs):
+        calls.append(argv)
+        assert argv == ("/bin/uv", "tool", "upgrade", "a13n-harness-ui")
+        assert kwargs == {"env": {**updater.os.environ, "UV_TOOL_DIR": str(prefix.parent)}, "check": False}
+        return SimpleNamespace(returncode=exit_code)
+
+    monkeypatch.setattr(updater.subprocess, "run", install)
+    result = CliRunner().invoke(cli, arguments)
+    assert result.exit_code == (exit_code if exit_code >= 0 else 1)
+    assert len(calls) == 1
+    assert f"Tool directory: {prefix.parent}" in result.output
+    assert ("Update complete" in result.output) == (exit_code == 0)
+    assert ("Update failed" in result.output) == (exit_code != 0)
+
+
+@pytest.mark.parametrize("recognized", [False, True])
+def test_explicit_update_does_not_guess_an_installer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recognized: bool
+) -> None:
+    prefix = tmp_path / "a13n-harness-ui"
+    prefix.mkdir()
+    if recognized:
+        (prefix / "uv-receipt.toml").touch()
+    monkeypatch.setattr(updater.sys, "prefix", str(prefix))
+    monkeypatch.setattr(updater.shutil, "which", lambda name: None if recognized else "/bin/uv")
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unsupported installations must never invoke an installer")
+
+    monkeypatch.setattr(updater.subprocess, "run", unexpected)
+    result = CliRunner().invoke(cli, ["update"])
+    assert result.exit_code == 1
+    assert "original package manager" in result.output
+    assert "uv tool upgrade a13n-harness-ui" in result.output
+
+
+@pytest.mark.parametrize("error", [OSError("uv could not start"), KeyboardInterrupt()])
+def test_explicit_update_reports_launch_failure_or_interruption_without_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    monkeypatch.setattr(updater, "update_command", lambda: updater.UpdateCommand("uv", tmp_path))
+    calls = []
+
+    def install(*args, **kwargs):
+        calls.append(args)
+        raise error
+
+    monkeypatch.setattr(updater.subprocess, "run", install)
+    result = CliRunner().invoke(cli, ["update"])
+    assert result.exit_code == (130 if isinstance(error, KeyboardInterrupt) else 1)
+    assert len(calls) == 1
+    assert "Update complete" not in result.output
+    message = "Update interrupted" if isinstance(error, KeyboardInterrupt) else "Could not run uv"
+    assert message in result.output

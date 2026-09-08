@@ -16,10 +16,10 @@ from .rendering import Status, terminal_text
 
 if TYPE_CHECKING:
     from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.updater import UpdateCommand
 
     from .backend import SessionBackend
     from .shell import CliShell
-    from .updates import UpdateCommand
 
 
 def _load_runtime() -> Callable[..., AbstractAsyncContextManager[SessionBackend]]:

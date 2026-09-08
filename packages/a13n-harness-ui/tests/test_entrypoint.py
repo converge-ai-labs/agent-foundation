@@ -25,6 +25,29 @@ def test_module_entrypoint_exposes_cli_help() -> None:
     assert "--config" in result.stdout
 
 
+@pytest.mark.parametrize("arguments", [["update"], ["update", "--help"]])
+def test_update_entrypoint_never_loads_runtime_or_terminal_renderer(arguments: list[str]) -> None:
+    script = f"""
+import sys
+from pathlib import Path
+from a13n_harness_ui import updater
+from a13n_harness_ui.cli import main
+updater.update_command = lambda: updater.UpdateCommand('uv', Path('/tools'))
+updater.run_update = lambda command: None
+main({arguments!r})
+for prefix in ('a13n_harness', 'pydantic', 'sqlalchemy', 'prompt_toolkit', 'httpx2', 'a13n_harness_ui.app'):
+    assert not any(name == prefix or name.startswith(prefix + '.') for name in sys.modules), prefix
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_startup_view_imports_without_loading_execution_dependencies() -> None:
     result = subprocess.run(
         [

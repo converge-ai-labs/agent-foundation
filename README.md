@@ -42,6 +42,20 @@ Harness UI interaction is provided by the terminal CLI. Its optional `a13n-harne
 
 ## Quick start
 
+### Use Harness UI
+
+Install the published CLI with [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then launch it in your project:
+
+```bash
+uv tool install a13n-harness-ui
+cd your-repository
+a13n-harness-ui
+```
+
+For a shorter command, add `alias anui='a13n-harness-ui'` to your Bash or Zsh configuration. Update whenever you choose with `a13n-harness-ui update` (or `anui update`). See the [Harness UI README](packages/a13n-harness-ui/README.md#install-and-run) for setup, PATH help, and update behavior.
+
+### Work from Source
+
 The documentation tracks `main` and the next 0.x releases. To work against the current source:
 
 ```bash

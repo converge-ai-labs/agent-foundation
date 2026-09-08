@@ -35,15 +35,27 @@ def capability_panel(name: object, event: Mapping[str, object]) -> CapabilityPan
             return CapabilityPanel(
                 f"Edit · {path} · applied",
                 "Unified diff omitted: comparison budget exceeded. Actual before/after text follows.\n"
-                + f"--- {path} (before)\n{before}\n+++ {path} (after)\n{after}",
+                + f"Before:\n{before}\nAfter:\n{after}",
                 "edit",
             )
         lines = difflib.unified_diff(
             before.splitlines(keepends=True), after.splitlines(keepends=True), fromfile=path, tofile=path
         )
-        body = "".join(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n" for line in lines)
-        added = sum(line.startswith("+") and not line.startswith("+++") for line in body.splitlines())
-        removed = sum(line.startswith("-") and not line.startswith("---") for line in body.splitlines())
+        # The panel title owns the path and counts. Skip only the two generated
+        # file headers, never content lines that happen to start with +++ or ---.
+        next(lines, None)
+        next(lines, None)
+        parts: list[str] = []
+        added = removed = 0
+        for line in lines:
+            if line.startswith("@@"):
+                if parts:
+                    parts.append("…\n")
+                continue
+            added += line.startswith("+")
+            removed += line.startswith("-")
+            parts.append(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n")
+        body = "".join(parts)
         return CapabilityPanel(f"Edit · {path} · +{added} -{removed}", body or "Empty file created.\n", "edit")
     return None
 
@@ -120,26 +132,43 @@ def shell_result_preview(text: str, command: str, max_lines: int) -> str | None:
     if not isinstance(phase, str):
         return None
     outcome = shell_outcome(status) or ("failed" if value.get("ok") is False else "")
-    title = " ".join(command.split())[:500] or "result"
-    lines = [title]
-    if outcome:
-        # Panel titles can be clipped on narrow terminals. A failure must remain
-        # visible independently of command length and available output.
-        lines.append(f"Result · {outcome}")
+    code = status.get("exit_code")
+    state = [outcome] if outcome else []
+    if isinstance(code, int) and not isinstance(code, bool):
+        state.append(f"exit {code}")
+    elif not state:
+        state.append("running" if phase == "running" else "finished" if phase == "exited" else phase)
+    # Keep status ahead of the command so narrow terminals and long commands
+    # cannot hide failure or the exit code. Empty capture needs no body at all.
+    title = " ".join(command.split())[:500] or "command unavailable"
+    lines = [" · ".join((*state, title))]
+    output_lines: list[str] = []
+    more_output = False
     for stream in ("stderr", "stdout"):
         page = value.get(stream)
         if not isinstance(page, dict):
             continue
+        coverage = page.get("coverage")
+        if coverage in {"partial", "unknown"} or page.get("content_complete") is False:
+            coverage = coverage if coverage in {"partial", "unknown"} else "incomplete"
+            lines.append(f"[output {coverage} · {stream}]")
+        omitted = page.get("omitted_before_bytes")
+        if isinstance(omitted, int) and omitted > 0:
+            lines.append(f"[{stream} · {omitted} earlier bytes omitted]")
         output = page.get("text")
         if isinstance(output, str) and output.strip():
-            parts = output.strip().splitlines()
+            # Never parse redirected/merged stdout as stderr, Markdown, or a
+            # structured tool result. Preserve literal content and indentation.
+            parts = output.splitlines()
+            limit = min(max_lines, 3)
             if stream == "stderr":
-                lines.append("stderr:")
-            lines.extend(parts[: min(max_lines, 3)])
-            if len(parts) > min(max_lines, 3):
-                lines.append("… more output · Ctrl+O details")
-        if page.get("coverage") in {"partial", "unknown"} or page.get("content_complete") is False:
-            lines.append(f"[output {page.get('coverage', 'incomplete')} · {stream}]")
+                output_lines.append("stderr:")
+            output_lines.extend(parts[:limit])
+            more_output |= len(parts) > limit
     if value.get("disclosure"):
         lines.append("[Output disclosure · Ctrl+O details]")
-    return "\n".join(lines)
+    if more_output:
+        lines.append("… more output · Ctrl+O details")
+    # Coverage and omission facts must survive the transcript preview budget,
+    # even when a captured line is very long.
+    return "\n".join((*lines, *output_lines))

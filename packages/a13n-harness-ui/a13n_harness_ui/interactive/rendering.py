@@ -145,6 +145,7 @@ class _ShellObservation:
     command: str = ""
     completion_seen: bool = False
     phase: str = "unknown"
+    exit_code: int | None = None
     background: bool = False
 
 
@@ -187,6 +188,23 @@ class StreamRenderer:
             self._shell_observations_omitted = True
         return observation
 
+    def _shell_command(self, name: str, arguments: str, run_id: str) -> str:
+        """Resolve only explicit launch arguments or a same-Run retained handle."""
+        try:
+            value = json.loads(arguments)
+        except ValueError:
+            return ""
+        if not isinstance(value, dict):
+            return ""
+        if name in {"shell_exec", "shell_start"}:
+            command = value.get("command")
+            return " ".join(command.split())[:500] if isinstance(command, str) else ""
+        process_id = value.get("process_id")
+        if name == "shell_wait" and isinstance(process_id, str):
+            observation = self._shell_processes.get((run_id, process_id))
+            return observation.command if observation else ""
+        return ""
+
     def _observe_shell_result(self, text: str, command: str, run_id: str) -> None:
         try:
             result = json.loads(text)
@@ -209,6 +227,8 @@ class StreamRenderer:
                 # running snapshot. Do not resurrect the completed process.
                 return
             observation.phase = phase
+            if isinstance(status, dict) and type(status.get("exit_code")) is int:
+                observation.exit_code = status["exit_code"]
             if phase in {"exited", "signaled", "timed_out", "cancelled", "failed"}:
                 observation.completion_seen = True
 
@@ -233,7 +253,8 @@ class StreamRenderer:
         lines = ["Background processes · last observed"]
         processes = [(key, value) for key, value in self._shell_processes.items() if value.background]
         for (run_id, process_id), item in processes[-16:]:
-            lines.append(f"{process_id} · {item.phase} · {item.command or 'command unavailable'} · Run {run_id}")
+            phase = f"failed (exit {item.exit_code})" if item.phase == "exited" and item.exit_code else item.phase
+            lines.append(f"{process_id} · {phase} · {item.command or 'command unavailable'} · Run {run_id}")
         if not processes:
             lines.append("No background processes observed.")
         if len(processes) > 16 or self._shell_observations_omitted:
@@ -453,6 +474,8 @@ class StreamRenderer:
                     preview.block_id = self.transcript.append(
                         header + "\n", collapsed_lines=None if shell else 1, kind="command" if shell else "tool"
                     )
+                    if shell:
+                        self.transcript.preview(preview.block_id, header)
                     self.append(header + "\n", display=False)
             elif event_type.endswith(("ARGS", "CHUNK")):
                 if preview is None:
@@ -471,8 +494,10 @@ class StreamRenderer:
             elif event_type.endswith("RESULT"):
                 name = preview.name if preview else "tool"
                 if name.startswith("shell"):
-                    command = preview.summary if preview and name in {"shell_exec", "shell_start"} else ""
-                    self._observe_shell_result(text, command, run_id)
+                    command = self._shell_command(name, preview.arguments, run_id) if preview else ""
+                    if preview and name in {"shell_exec", "shell_start", "shell_wait"}:
+                        preview.summary = command
+                    self._observe_shell_result(text, command if name in {"shell_exec", "shell_start"} else "", run_id)
                 if (not child or detailed) and (name != "ask_user_question" or detailed):
                     elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
                     result = tool_result(name, text)
@@ -489,6 +514,9 @@ class StreamRenderer:
                         shell_preview = shell_result_preview(text, summary, self.status.max_tool_result_lines)
                     if shell_preview is not None:
                         brief = f"{name} · {shell_preview}"
+                        if child:
+                            heading, separator, output_preview = brief.partition("\n")
+                            brief = f"{heading} · {identity}{separator}{output_preview}"
                     arguments = preview.arguments if preview else ""
                     body = header + "\n" + (f"Arguments · {label}\n{arguments}\n" if arguments else "") + result + "\n"
                     block_id = preview.block_id if preview is not None else None
@@ -521,6 +549,8 @@ class StreamRenderer:
                     preview.arguments = "".join(preview.parts or ())
                     preview.parts = None
                     preview.summary = tool_preview(preview.arguments)
+                    if preview.name in {"shell_exec", "shell_start", "shell_wait"}:
+                        preview.summary = self._shell_command(preview.name, preview.arguments, run_id)
                     if preview.name in {"edit", "multi_edit", "summarize", "compact"}:
                         preview.arguments = ""
                     elif preview.arguments:
@@ -533,7 +563,10 @@ class StreamRenderer:
                         self.transcript.replace(preview.block_id, terminal_text(header + "\n" + preview.arguments))
                         brief = header + " · " + preview.summary
                         if preview.name.startswith("shell"):
-                            brief = f"{preview.name} · {preview.summary}\nWaiting for output…"
+                            state = "waiting" if preview.name == "shell_wait" else "running"
+                            brief = f"{preview.name} · {state} · {preview.summary or 'command unavailable'}"
+                            if child:
+                                brief += f" · {identity}"
                         self.transcript.preview(preview.block_id, terminal_text(brief), 1)
                 self.boundary = True
             # START-only and malformed streams obey the same bound as ARGS.
@@ -567,7 +600,10 @@ class StreamRenderer:
                 if name == "a13n.shell.status":
                     process_id, phase = event.get("process_id"), event.get("phase")
                     if isinstance(process_id, str) and isinstance(phase, str):
-                        self._shell_observation(run_id, process_id).phase = phase
+                        observation = self._shell_observation(run_id, process_id)
+                        observation.phase = phase
+                        if type(event.get("exit_code")) is int:
+                            observation.exit_code = event["exit_code"]
                     if not child or detailed:
                         self._shell_notification(event, run_id, identity if child else "")
                     # Recognized routine statuses are intentionally quiet, not

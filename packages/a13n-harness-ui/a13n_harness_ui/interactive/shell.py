@@ -185,7 +185,11 @@ class CliShell:
                     ),
                     self.composer,
                     ConditionalContainer(
-                        Window(FormattedTextControl(self._hints), height=1, style="class:session-selector.hint"),
+                        Window(
+                            FormattedTextControl(self._hints),
+                            height=lambda: len(self._hints().splitlines()),
+                            style="class:session-selector.hint",
+                        ),
                         filter=Condition(lambda: self.app.output.get_size().rows >= 12),
                     ),
                 ]
@@ -212,10 +216,8 @@ class CliShell:
                             ),
                             self.history_window,
                             Window(
-                                FormattedTextControl(
-                                    " ↑↓ / PgUp PgDn scroll · Home page top · End latest · Ctrl+O details · Ctrl+T / q close"
-                                ),
-                                height=1,
+                                FormattedTextControl(self._hints),
+                                height=lambda: len(self._hints().splitlines()),
                                 style="class:session-selector.hint",
                             ),
                         ]
@@ -315,14 +317,46 @@ class CliShell:
         self.app.invalidate()
 
     def _task_text(self) -> FormattedText:
+        width = max(1, self.app.output.get_size().columns)
         fragments = []
-        for line in self.renderer.tasks.lines():
-            style = "class:session-selector.hint"
-            if line.startswith("[active]"):
-                style = "class:session-selector.key bold"
-            elif line.startswith("[blocked]"):
-                style = "class:warning"
-            fragments.append((style, terminal_text(line) + "\n"))
+        states = {"active": "running", "blocked": "waiting", "pending": "muted", "done": "completed"}
+        for index, line in enumerate(self.renderer.tasks.lines(width)):
+            line = terminal_text(line).expandtabs(4)
+            row = []
+            if index == 0:
+                heading, separator, hint = line.partition(" · F2")
+                row.append(("class:task-pane.heading", heading))
+                if separator:
+                    row.append(("class:activity.muted", " · F2" + hint))
+            elif line.startswith("["):
+                state, _, body = line[1:].partition("] ")
+                row.append((f"class:activity.{states.get(state, 'muted')} bold", f"[{state}] "))
+                identifier, separator, subject = body.partition(" · ")
+                row.append(("class:activity.muted", identifier + separator))
+                subject, separator, waits = subject.partition(" · waits ")
+                style = "bold" if state == "active" else "class:activity.muted" if state == "done" else ""
+                row.append((style, subject))
+                if separator:
+                    row.append(("class:activity.waiting", separator + waits))
+            else:
+                row.append(("class:activity.muted", line))
+            # One physical row per task; signal truncation without splitting wide
+            # characters or letting a long subject hide the next task's state.
+            clipped = get_cwidth(line) > width
+            remaining = width - int(clipped)
+            for style, text in row:
+                for char in text:
+                    cells = get_cwidth(char)
+                    if cells > remaining:
+                        remaining = 0
+                        break
+                    fragments.append((style, char))
+                    remaining -= cells
+                if remaining <= 0:
+                    break
+            if clipped:
+                fragments.append(("class:activity.muted", "…"))
+            fragments.append(("", "\n"))
         return FormattedText(fragments)
 
     def _activity_hint(self) -> str:
@@ -383,21 +417,44 @@ class CliShell:
         )
 
     def _hints(self) -> str:
-        width = self.app.output.get_size().columns
-        if self.selection or self.interaction:
-            return (
-                f" {'Menu' if self.selector_focused else 'Composer'} · Ctrl+Space focus · ↑↓ choose · Enter confirm · Esc back"
-                if width >= 60
-                else " Enter confirm · Esc back"
-            )
-        submit_hint = "Enter steer" if self.can_steer else "Draft only" if self.busy else "Enter send"
-        if width < 60:
-            return f" {submit_hint} · Alt+Enter newline · /help"
-        action = "Ctrl+C cancel" if self.busy else "Ctrl+C twice exit"
-        follow = "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest output"
-        history = " · Ctrl+T history"
-        mode = "scroll" if self.mouse else "select"
-        return f" [{mode}] {submit_hint} · Alt+Enter newline · Ctrl+O details · F2 tasks · {action} · {follow}{history}"
+        size = self.app.output.get_size()
+        if self.history_browser is not None:
+            hints = ["Ctrl+T/q close", "↑↓/PgUp/PgDn scroll", "Home page top", "End latest", "Ctrl+O details"]
+        elif self.composer.buffer.complete_state is not None:
+            hints = [
+                "Enter complete",
+                "Esc back" if self.interaction or self.menu_handler else "Esc dismiss",
+                "↑↓ choose",
+            ]
+        elif self.selection or self.interaction:
+            hints = ["Enter confirm", "Esc back"]
+            if self.selection is not None:
+                hints += ["Ctrl+Space focus", "Menu" if self.selector_focused else "Composer"]
+                hints.append("↑↓ choose" if self.selector_focused and not self.composer.text else "↑↓ edit")
+        else:
+            # Submission semantics already live in the composer header. Keep history
+            # first so it remains discoverable when secondary shortcuts cannot fit.
+            action = "Ctrl+C cancel" if self.busy else "Ctrl+C twice exit"
+            hints = ["Ctrl+T history", "Ctrl+O details", "F2 tasks", "Esc select" if self.mouse else "Esc scroll"]
+            hints += ["Alt+Enter newline", action, "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest"]
+            if size.columns < 60:
+                hints = ["Ctrl+T history", "/help", "Alt+Enter newline", action]
+
+        # Wrap between whole shortcuts, not inside key names. Recompute both text
+        # and Window height on every layout pass, including after a resize.
+        rows = [""]
+        max_rows = 2 if size.rows >= 12 else 1
+        for hint in hints:
+            if get_cwidth(" " + hint) > size.columns:
+                continue
+            candidate = rows[-1] + " · " + hint if rows[-1] else " " + hint
+            if get_cwidth(candidate) <= size.columns:
+                rows[-1] = candidate
+            elif len(rows) < max_rows:
+                rows.append(" " + hint)
+            else:
+                break
+        return "\n".join(rows)
 
     def _save_draft(self) -> None:
         self.selector_focused = True
@@ -521,7 +578,7 @@ class CliShell:
                     self.emit(str(exc))
                     return
             try:
-                if text.startswith("/"):
+                if text.startswith("/") and self.registry.lookup(text) is not None:
                     invocation = self.registry.parse(text, busy=self.busy)
                     name = invocation.command.name
                     local = {"help", "mode", "status", "quit", "cancel", "theme", "mouse"}
@@ -1027,6 +1084,9 @@ class CliShell:
         return ""
 
     async def handle(self, text: str, *, steering_receipt: str | None = None) -> None:
+        slash_command = text.startswith("/") and self.registry.lookup(text) is not None
+        if text.startswith("/") and not slash_command:
+            self.emit("No matching command; treating the original input as plain text.")
         if text.startswith("!"):
             try:
                 self._validate_local_shell(text)
@@ -1052,10 +1112,11 @@ class CliShell:
                 self.emit(str(exc))
                 self._restore_rejected_command(text, generation, ())
             return
-        if text.startswith("/"):
+        if slash_command:
             generation, images = self._draft_generation, self.images
             try:
                 invocation = self.registry.parse(text, busy=self.busy)
+                self.emit(f"Command accepted: /{invocation.command.name}")
                 await self.command(invocation)
             except Exception as exc:
                 self.emit(str(exc))
@@ -1277,7 +1338,7 @@ class CliShell:
         name = invocation.command.name
         argument = invocation.arguments[0] if invocation.arguments else None
         if name == "ps":
-            self.emit(self.renderer.process_details(), kind="info")
+            self.emit(self.renderer.process_details(), kind="processes")
         elif name == "subagents":
             if self.backend is None:
                 self.emit("Subagent inspection is unavailable while preparing.")

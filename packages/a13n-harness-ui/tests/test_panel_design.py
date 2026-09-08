@@ -111,7 +111,7 @@ def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> N
         },
     )
     text = _text(renderer.transcript)
-    assert "shell_exec · pytest -q" in text and "Result · failed" in text
+    assert "shell_exec · failed · exit 1 · pytest -q" in text
     assert "stdout  " not in text and "stderr  " not in text
     assert "stderr:" in text and "partial" in text and "more output" in text
     assert "line-2" in text and "line-19" not in text
@@ -134,7 +134,8 @@ def test_long_command_cannot_hide_failure_in_clipped_panel_title(phase: str, lab
     transcript.preview(block, preview)
     text = _text(transcript, 28)
     assert label in text
-    assert text.splitlines()[-1].startswith(("╰", "└"))
+    assert len(text.splitlines()) == 1
+    assert "exit 1" in text
     transcript.close()
 
 
