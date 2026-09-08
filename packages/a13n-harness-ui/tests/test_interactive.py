@@ -777,7 +777,7 @@ async def test_setup_model_view_uses_declared_media_without_an_external_provider
             yield {0: DeltaToolCall(name="view", tool_call_id="view-image", json_args='{"file_path":"image.png"}')}
 
     monkeypatch.setattr(
-        runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
+        runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
     )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
