@@ -75,6 +75,12 @@ def _publication(request: Request) -> SkillPublicationService:
     "/workspaces/{workspace_id}/skill-uploads",
     response_model=SkillUploadReceipt,
     status_code=status.HTTP_201_CREATED,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
 )
 async def stage_skill_upload(
     request: Request,

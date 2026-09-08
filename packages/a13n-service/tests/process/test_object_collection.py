@@ -175,3 +175,41 @@ async def test_expired_publisher_cannot_finish_or_select_missing_bytes(collectio
             await require_object_publications(database, (key,))
     with pytest.raises(ObjectNotFound):
         await object_store.stat(key)
+
+
+async def test_profile_image_collection_retains_only_current_owner_references(collection_sessions, object_store):
+    from a13n_service.iam.models import UserRecord, WorkspaceRecord
+
+    sessions = collection_sessions
+    await seed_run_and_secret(sessions)
+    clock = _Clock(utc_now())
+    writer = PublicationObjectStore(object_store, sessions, clock=clock)
+    current = f"users/{USER_ID}/profile/avatar/img_current/content.webp"
+    previous = f"users/{USER_ID}/profile/avatar/img_previous/content.webp"
+    icon = f"organizations/{ORGANIZATION_ID}/workspaces/{WORKSPACE_ID}/profile/icon/img_current/content.webp"
+    abandoned = f"organizations/{ORGANIZATION_ID}/profile/icon/img_abandoned/content.webp"
+    for key in (current, previous, icon, abandoned):
+        await writer.put(key, b"image", if_none_match=True)
+    async with transaction(sessions) as session:
+        user = UserRecord(
+            id=USER_ID,
+            email="profile@example.com",
+            normalized_email="profile@example.com",
+            name="Profile Owner",
+            status="active",
+            email_verified_at=clock.now,
+            created_at=clock.now,
+            updated_at=clock.now,
+        )
+        session.add(user)
+        workspace = await session.get(WorkspaceRecord, WORKSPACE_ID)
+        user.image_id = workspace.image_id = "img_current"
+    clock.now += timedelta(days=2)
+    collector = _collector(sessions, object_store, clock)
+    assert (await collector.scan()).completed == 1
+    assert (await collector.scan()).completed == 1
+    for key in (current, icon):
+        assert (await object_store.stat(key)).size == 5
+    for key in (previous, abandoned):
+        with pytest.raises(ObjectNotFound):
+            await object_store.stat(key)

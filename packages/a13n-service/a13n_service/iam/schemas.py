@@ -10,6 +10,7 @@ from pydantic import (
     Field,
     SecretStr,
     StringConstraints,
+    computed_field,
     field_validator,
     model_validator,
 )
@@ -127,6 +128,13 @@ class Resource(BaseModel):
 
 
 class User(Resource):
+    image_id: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def image_url(self) -> str | None:
+        return None if self.image_id is None else f"/api/v1/users/{self.id}/avatar/{self.image_id}"
+
     email: str
     name: str
     status: str
@@ -136,12 +144,26 @@ class User(Resource):
 
 
 class Organization(Resource):
+    image_id: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def image_url(self) -> str | None:
+        return None if self.image_id is None else f"/api/v1/organizations/{self.id}/icon/{self.image_id}"
+
     name: str
     created_at: datetime
     updated_at: datetime
 
 
 class Workspace(Resource):
+    image_id: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def image_url(self) -> str | None:
+        return None if self.image_id is None else f"/api/v1/workspaces/{self.id}/icon/{self.image_id}"
+
     organization_id: str
     name: str
     created_at: datetime

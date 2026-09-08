@@ -87,6 +87,7 @@ class WorkspaceAction(StrEnum):
     role_binding_manage = "role_binding.manage"
     service_account_manage = "service_account.manage"
     api_key_manage = "api_key.manage"
+    security_audit_read = "security_audit.read"
 
 
 _READ_ACTIONS = frozenset(
@@ -185,6 +186,7 @@ _ADMIN_ACTIONS = (
             WorkspaceAction.role_binding_manage,
             WorkspaceAction.service_account_manage,
             WorkspaceAction.api_key_manage,
+            WorkspaceAction.security_audit_read,
         }
     )
 )
@@ -610,3 +612,17 @@ async def authorize_organization_admin_principal(
     )
     if organization is None or role != "admin":
         raise AuthorizationError("permission_denied", concealed=True)
+
+
+async def workspace_permissions(
+    session: AsyncSession, *, actor: AuthenticatedActor, workspace_id: str
+) -> tuple[frozenset[WorkspaceAction], bool]:
+    """A current UI hint, never a reusable authorization grant."""
+    context = await _load_workspace_authorization(session, actor=actor, workspace_id=workspace_id)
+    actions = _workspace_permissions(context.bindings)
+    if not actions:
+        raise AuthorizationError("permission_denied", concealed=True)
+    organization_admin = any(
+        binding.resource_type == "organization" and binding.role_key == "admin" for binding in context.bindings
+    )
+    return actions, organization_admin

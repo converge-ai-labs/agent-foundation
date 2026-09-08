@@ -47,6 +47,12 @@ def _uploads(request: Request) -> AssetUploadService:
     "/workspaces/{workspace_id}/assets",
     response_model=Asset,
     status_code=status.HTTP_201_CREATED,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
 )
 async def upload_asset(
     request: Request,

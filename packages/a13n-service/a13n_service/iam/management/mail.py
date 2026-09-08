@@ -16,19 +16,24 @@ class InvitationMailer(Protocol):
     async def send(self, email: str, invitation_url: str) -> bool: ...
 
 
-class SmtpInvitationMailer:
+class SmtpMailer:
     def __init__(self, configuration: IdentityConfiguration) -> None:
         self._configuration = configuration
 
     async def send(self, email: str, invitation_url: str) -> bool:
+        return await self.send_message(
+            email,
+            "Your a13n Service invitation",
+            f"Complete your a13n Service registration using this single-use link:\n\n{invitation_url}\n",
+        )
+
+    async def send_message(self, email: str, subject: str, body: str) -> bool:
         configuration = self._configuration
         message = EmailMessage()
         message["From"] = configuration.smtp_sender
         message["To"] = email
-        message["Subject"] = "Your a13n Service invitation"
-        message.set_content(
-            f"Complete your a13n Service registration using this single-use link:\n\n{invitation_url}\n"
-        )
+        message["Subject"] = subject
+        message.set_content(body)
         try:
             async with asyncio.timeout(30):
                 await aiosmtplib.send(
@@ -45,6 +50,6 @@ class SmtpInvitationMailer:
                 )
         except (aiosmtplib.SMTPException, OSError, TimeoutError):
             # SMTP exceptions can contain recipients, server replies, or message data.
-            logger.warning("iam_invitation_delivery_failed")
+            logger.warning("iam_email_delivery_failed")
             return False
         return True

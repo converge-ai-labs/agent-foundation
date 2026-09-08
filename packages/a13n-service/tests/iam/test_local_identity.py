@@ -9,10 +9,13 @@ from a13n_service.api import install_api_conventions
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam.configuration import IdentityConfiguration
 from a13n_service.iam.http.auth_router import router as auth_router
-from a13n_service.iam.http.browser import router as browser_router
+from a13n_service.iam.http.image_router import router as image_router
 from a13n_service.iam.http.management_router import router
+from a13n_service.iam.http.profile_router import router as profile_router
+from a13n_service.iam.http.recovery_router import router as recovery_router
 from a13n_service.iam.runtime import build_identity_runtime
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
+from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
@@ -60,19 +63,42 @@ async def identity_runtime(request, service_sqlite_database):
 
 
 @pytest.fixture
-async def identity_http(identity_runtime, process_runtime_factory):
+async def identity_http(identity_runtime, process_runtime_factory, tmp_path):
     runtime = identity_runtime
     issued = await runtime.invitations.initialize()
     assert issued is not None
     process = process_runtime_factory(agents=object(), request_authenticator=runtime.authenticator)
     app = FastAPI()
     install_api_conventions(app)
-    app.include_router(browser_router)
     app.include_router(auth_router)
     app.include_router(router)
+    app.include_router(profile_router)
+    app.include_router(recovery_router)
+    app.include_router(image_router)
+    from types import SimpleNamespace
+
+    process.shared.storage = SimpleNamespace(objects=await LocalObjectStore.create(tmp_path / "profile-objects"))
     app.state.runtime = replace(process, control=replace(process.control, identity=runtime))
     async with AsyncClient(transport=ASGITransport(app), base_url=ORIGIN, headers={"Origin": ORIGIN}) as client:
         yield client, runtime, issued
+
+
+@pytest.fixture
+async def recovery_delivery(identity_http, monkeypatch):
+    _client, runtime, _issued = identity_http
+    recovery = runtime.recovery
+    configuration = runtime.configuration.model_copy(
+        update={"smtp_host": "smtp.example.com", "smtp_sender": "auth@example.com"}
+    )
+    monkeypatch.setattr(recovery, "_configuration", configuration)
+    deliveries = []
+
+    async def send(email, subject, body):
+        deliveries.append((email, subject, body))
+        return True
+
+    monkeypatch.setattr(recovery._mailer, "send_message", send)
+    return deliveries
 
 
 async def accept(client, issued):
@@ -92,8 +118,7 @@ async def accept(client, issued):
 async def test_bootstrap_login_key_and_logout(identity_http):
     client, runtime, issued = identity_http
     page = await client.get(f"/api/v1/invitations/{issued.invitation.id}/accept")
-    assert page.status_code == 200
-    assert page.headers["cache-control"] == "no-store"
+    assert page.status_code == 405
     _organization, workspace = await accept(client, issued)
     assert await runtime.invitations.initialize() is None
     assert (await client.get("/api/v1/users/me")).json()["email_verified_at"] is None
@@ -421,3 +446,177 @@ async def test_concurrent_admin_demotions_preserve_one_admin(identity_http):
     assert len(failures) == 1, results
     assert failures[0].code == "last_admin_required"
     assert sum(not isinstance(result, Exception) for result in results) == 1, results
+
+
+@pytest.mark.anyio
+async def test_console_profiles_are_versioned_and_permissions_are_current(identity_http):
+    client, _runtime, issued = identity_http
+    organization, workspace = await accept(client, issued)
+    me = await client.get("/api/v1/users/me")
+    assert "image_id" not in me.json()
+    assert me.json()["image_url"] is None
+    updated = await client.patch("/api/v1/users/me", json={"name": "Admin"}, headers={"If-Match": me.headers["etag"]})
+    assert updated.status_code == 200, updated.text
+    stale = await client.patch("/api/v1/users/me", json={"name": "Stale"}, headers={"If-Match": me.headers["etag"]})
+    assert stale.status_code == 412
+    org = await client.get(f"/api/v1/organizations/{organization}")
+    renamed = await client.patch(
+        f"/api/v1/organizations/{organization}", json={"name": "Example"}, headers={"If-Match": org.headers["etag"]}
+    )
+    assert renamed.status_code == 200
+    permissions = await client.get(f"/api/v1/workspaces/{workspace}/permissions")
+    assert permissions.json()["organization_admin"] is True
+    assert "agent.create" in permissions.json()["actions"]
+    events = await client.get("/api/v1/users/me/security-activity")
+    assert "user_profile.update" in {event["action"] for event in events.json()["items"]}
+    assert (await client.get(f"/api/v1/workspaces/{workspace}/api-keys")).status_code == 200
+    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": False}
+    assert (await client.post("/api/v1/auth/password-reset", json={"email": "admin@example.com"})).status_code == 503
+
+
+@pytest.mark.anyio
+async def test_profile_images_are_normalized_and_old_urls_stop_working(identity_http):
+    from io import BytesIO
+
+    from PIL import Image
+
+    client, _runtime, issued = identity_http
+    _organization, workspace = await accept(client, issued)
+    buffer = BytesIO()
+    Image.new("RGB", (800, 400), "red").save(buffer, format="PNG")
+    me = await client.get("/api/v1/users/me")
+    uploaded = await client.put(
+        "/api/v1/users/me/avatar",
+        content=buffer.getvalue(),
+        headers={"If-Match": me.headers["etag"], "Content-Type": "image/png"},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    url = uploaded.json()["image_url"]
+    assert url.startswith(f"/api/v1/users/{me.json()['id']}/avatar/")
+    image = await client.get(url)
+    assert image.headers["content-type"] == "image/webp"
+    assert Image.open(BytesIO(image.content)).size == (512, 256)
+    stale = await client.put(
+        "/api/v1/users/me/avatar", content=buffer.getvalue(), headers={"If-Match": me.headers["etag"]}
+    )
+    assert stale.status_code == 412
+    removed = await client.delete("/api/v1/users/me/avatar", headers={"If-Match": uploaded.headers["etag"]})
+    assert removed.status_code == 200
+    assert removed.json()["image_url"] is None
+    assert (await client.get(url)).status_code == 404
+    bad = await client.put(
+        "/api/v1/users/me/avatar", content=b"not an image", headers={"If-Match": removed.headers["etag"]}
+    )
+    assert bad.status_code == 400
+    ws = await client.get(f"/api/v1/workspaces/{workspace}")
+    icon = await client.put(
+        f"/api/v1/workspaces/{workspace}/icon", content=buffer.getvalue(), headers={"If-Match": ws.headers["etag"]}
+    )
+    assert icon.status_code == 200, icon.text
+    assert (await client.get(icon.json()["image_url"])).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_reset_links_are_single_use_and_revoke_sessions_not_keys(identity_http, recovery_delivery):
+    from urllib.parse import parse_qs, urlsplit
+
+    from a13n_service.iam.models import UserRecord
+    from a13n_service.storage import transaction
+    from a13n_service.temporal import utc_now
+
+    client, runtime, issued = identity_http
+    _organization, workspace = await accept(client, issued)
+    deliveries = recovery_delivery
+    me = (await client.get("/api/v1/users/me")).json()
+    async with transaction(runtime.sessions._sessions) as session:
+        user = await session.get(UserRecord, me["id"])
+        user.email_verified_at = utc_now()
+    key = (await client.post(f"/api/v1/workspaces/{workspace}/personal-api-keys", json={"name": "test"})).json()
+    assert (await client.post("/api/v1/auth/password-reset", json={"email": me["email"]})).status_code == 202
+    assert (await client.post("/api/v1/auth/password-reset", json={"email": "unknown@example.com"})).status_code == 202
+    assert len(deliveries) == 1
+    url = deliveries[0][2].splitlines()[2]
+    token = parse_qs(urlsplit(url).fragment)["token"][0]
+    body = {"token": token, "password": "a-new-valid-password-123"}
+    responses = await asyncio.gather(
+        *(client.post("/api/v1/auth/password-reset/complete", json=body) for _ in range(2))
+    )
+    assert sorted(response.status_code for response in responses) == [204, 400]
+    assert (await client.get("/api/v1/users/me")).status_code == 401
+    client.cookies.clear()
+    assert (
+        await client.get(f"/api/v1/workspaces/{workspace}", headers={"Authorization": f"Bearer {key['bearer']}"})
+    ).status_code == 200
+    assert (
+        await client.post("/api/v1/auth/login", json={"email": me["email"], "password": body["password"]})
+    ).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_workspace_viewer_cannot_change_profiles_or_read_admin_projections(identity_http):
+    client, _runtime, issued = identity_http
+    organization, workspace = await accept(client, issued)
+    invitation = (
+        await client.post(
+            f"/api/v1/workspaces/{workspace}/invitations", json={"email": "viewer@example.com", "role": "viewer"}
+        )
+    ).json()
+    token = invitation["invitation_url"].split("#token=")[1]
+    await client.post("/api/v1/auth/logout")
+    accepted = await client.post(
+        f"/api/v1/invitations/{invitation['invitation']['id']}/accept", json={"token": token, "password": PASSWORD}
+    )
+    assert accepted.status_code == 200
+    client.headers["X-A13N-CSRF-Token"] = accepted.json()["csrf_token"]
+    permissions = (await client.get(f"/api/v1/workspaces/{workspace}/permissions")).json()
+    assert permissions["organization_admin"] is False
+    assert "agent.read" in permissions["actions"]
+    assert "agent.create" not in permissions["actions"]
+    for path in [
+        f"/api/v1/workspaces/{workspace}/members",
+        f"/api/v1/workspaces/{workspace}/api-keys",
+        f"/api/v1/workspaces/{workspace}/security-audit-events",
+        f"/api/v1/organizations/{organization}/security-audit-events",
+    ]:
+        assert (await client.get(path)).status_code == 404
+    current = await client.get(f"/api/v1/organizations/{organization}")
+    assert current.status_code == 200
+    assert (
+        await client.patch(
+            f"/api/v1/organizations/{organization}",
+            json={"name": "Denied"},
+            headers={"If-Match": current.headers["etag"]},
+        )
+    ).status_code == 404
+    assert (await client.get("/api/v1/users/me/security-activity")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_email_change_proof_is_single_use_and_expires(identity_http, recovery_delivery):
+    from datetime import timedelta
+    from urllib.parse import parse_qs, urlsplit
+
+    from a13n_service.iam.models import EmailChangeRecord
+    from a13n_service.storage import transaction
+    from a13n_service.temporal import utc_now
+    from sqlalchemy import select
+
+    client, runtime, issued = identity_http
+    await accept(client, issued)
+    body = {"email": "new@example.com", "current_password": "wrong-password"}
+    assert (await client.post("/api/v1/users/me/email-change", json=body)).status_code == 401
+    body["current_password"] = PASSWORD
+    assert (await client.post("/api/v1/users/me/email-change", json=body)).status_code == 202
+    assert (await client.get("/api/v1/users/me")).json()["email"] == "admin@example.com"
+    token = parse_qs(urlsplit(recovery_delivery[-1][2].splitlines()[2]).fragment)["token"][0]
+    assert (await client.post("/api/v1/users/me/email-change/complete", json={"token": token})).status_code == 204
+    assert (await client.get("/api/v1/users/me")).json()["email"] == "new@example.com"
+    assert (await client.post("/api/v1/users/me/email-change/complete", json={"token": token})).status_code == 400
+    body["email"] = "expired@example.com"
+    assert (await client.post("/api/v1/users/me/email-change", json=body)).status_code == 202
+    token = parse_qs(urlsplit(recovery_delivery[-1][2].splitlines()[2]).fragment)["token"][0]
+    async with transaction(runtime.sessions._sessions) as session:
+        row = await session.scalar(select(EmailChangeRecord).where(EmailChangeRecord.consumed_at.is_(None)))
+        row.expires_at = utc_now() - timedelta(seconds=1)
+    assert (await client.post("/api/v1/users/me/email-change/complete", json={"token": token})).status_code == 400
+    assert (await client.get("/api/v1/users/me")).json()["email"] == "new@example.com"

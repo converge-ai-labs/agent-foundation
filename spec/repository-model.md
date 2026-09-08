@@ -49,7 +49,7 @@ Maintained component source directories and public distributions use the same ca
 
 ## Frontend Workspace
 
-`frontend/` owns one private pnpm workspace and lockfile. `frontend/apps/a13n-console` is the minimal React/TypeScript/Vite Console entry point with English as the default and fallback language and Simplified Chinese translation resources. It consumes shared styles and a language selector without product pages or an API client. `frontend/packages/a13n-ui` owns shared React components, design tokens, and its independent development showcase, as defined by the [frontend design system](frontend/design-system.md). Its private source exports exclude the showcase.
+`frontend/` owns one private pnpm workspace and lockfile. `frontend/apps/a13n-console` is the React/TypeScript/Vite Service Console with English as the default and fallback language and Simplified Chinese translation resources. It consumes the TypeScript Service SDK and shared design system; its product navigation and interaction boundary are owned by [Console](frontend/console.md). `frontend/packages/a13n-ui` owns shared React components, design tokens, and its independent development showcase, as defined by the [frontend design system](frontend/design-system.md). Its private source exports exclude the showcase.
 
 `frontend/apps/a13n-harness-ui` retains its existing Python distribution ownership. The workspace migration does not add a frontend runtime to Service or change Harness UI release identity. Both applications use the workspace build tooling; standalone SDK projects remain outside this workspace. The root Make targets integrate frontend installation, checks, and builds. Compiled assets and dependency directories are not committed.
 

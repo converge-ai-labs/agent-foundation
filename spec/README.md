@@ -24,7 +24,7 @@ An application can embed the Harness directly, install Harness UI for a local in
 | The application or Harness UI owns execution, configuration, continuation storage, Environment policy, and recovery policy. | a13n Service owns managed resources and revisions, durable acceptance, scheduling, Runs and RunAttempts, permissions, and recovery. |
 | Models and execution Environments can be remote.                                                                            | The Service can be deployed on the same machine as its client.                                                                      |
 
-Service workers embed the same Harness. `a13n` is only the Service client SDK, not an umbrella distribution and not a second Agent execution engine. `a13n-service-ui` is reserved for a possible future Service management application; Harness UI is not that application.
+Service workers embed the same Harness. `a13n` is only the Service client SDK, not an umbrella distribution and not a second Agent execution engine. `a13n-console` is the Service management and interaction browser application; Harness UI remains the local interactive Host.
 
 ## Architecture
 

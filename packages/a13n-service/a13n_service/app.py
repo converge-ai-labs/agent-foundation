@@ -25,8 +25,10 @@ from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.router import router as gateway_router
 from a13n_service.hooks.router import router as hook_router
 from a13n_service.iam.http.auth_router import router as auth_router
-from a13n_service.iam.http.browser import router as identity_browser_router
+from a13n_service.iam.http.image_router import router as image_router
 from a13n_service.iam.http.management_router import router as identity_router
+from a13n_service.iam.http.profile_router import router as profile_router
+from a13n_service.iam.http.recovery_router import router as recovery_router
 from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
 from a13n_service.models.providers import built_in_provider_registry
@@ -148,9 +150,11 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(ingress_data_router)
 
     if serves_control_plane:
-        app.include_router(identity_browser_router)
         app.include_router(auth_router)
         app.include_router(identity_router)
+        app.include_router(profile_router)
+        app.include_router(recovery_router)
+        app.include_router(image_router)
         app.include_router(agent_router)
         app.include_router(environment_router)
         app.include_router(thread_router)

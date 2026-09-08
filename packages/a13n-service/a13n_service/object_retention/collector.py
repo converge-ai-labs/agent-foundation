@@ -52,11 +52,14 @@ class ObjectCollector:
         self._timeout = item_timeout_seconds
         self._clock = clock
         self._cursor: str | None = None
+        self._prefix = "organizations/"
         self._after_recovery_key = ""
 
     async def scan(self) -> Sweep:
-        page = await self._objects.list(prefix="organizations/", cursor=self._cursor, limit=self._limit)
+        page = await self._objects.list(prefix=self._prefix, cursor=self._cursor, limit=self._limit)
         self._cursor = page.cursor
+        if page.cursor is None:
+            self._prefix = "users/" if self._prefix == "organizations/" else "organizations/"
         cutoff = self._clock() - self._minimum_age
         keys = tuple(item.key for item in page.items if assume_utc(item.modified_at) < cutoff)
         result = await self._process(keys)

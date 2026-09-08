@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, SecretStr
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.etags import resource_etag
 
 from ..auth.passwords import csrf_token
 from ..auth.sessions import Login
@@ -58,8 +59,10 @@ async def logout(request: Request, response: Response, actor: Actor) -> None:
 
 
 @router.get("/users/me", response_model=User)
-async def current_user(request: Request, actor: Actor) -> User:
-    return await identity(request).sessions.me(actor)
+async def current_user(request: Request, response: Response, actor: Actor) -> User:
+    user = await identity(request).sessions.me(actor)
+    response.headers["ETag"] = resource_etag(user.id, user.updated_at)
+    return user
 
 
 @router.get("/users/me/auth-sessions", response_model=Page[AuthSession])

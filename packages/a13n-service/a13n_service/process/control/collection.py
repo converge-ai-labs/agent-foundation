@@ -5,6 +5,7 @@ from datetime import timedelta
 from a13n_service.assets.retention import AssetRetention
 from a13n_service.background import PeriodicTask
 from a13n_service.hooks.retention import HookRetention
+from a13n_service.iam.auth.cleanup import IdentityTokenCleanup
 from a13n_service.iam.cleanup import OwnerCleanup
 from a13n_service.object_retention.collector import ObjectCollector
 from a13n_service.process.background import BackgroundTask
@@ -25,6 +26,7 @@ def build_collection_tasks(settings: Settings, shared: SharedRuntime) -> tuple[B
         item_timeout_seconds=settings.control_collection_timeout_seconds,
     )
     scans = (
+        ("identity_token_cleanup", IdentityTokenCleanup(sessions, batch_limit=limit).scan),
         ("owner_deletion_cleanup", OwnerCleanup(sessions, batch_limit=limit).scan),
         (
             "asset_tombstone_retention",

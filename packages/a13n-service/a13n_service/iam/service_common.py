@@ -8,13 +8,14 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
 from .audit import AuthenticationAuditActor, SystemAuditActor, security_audit_record
 from .domain import AuthenticatedActor
-from .models import OrganizationRecord
+from .models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 
 
 def identity_error(code: str, message: str, category: ErrorCategory = ErrorCategory.conflict) -> ApplicationError:
@@ -97,3 +98,10 @@ def audit(
             details=None,
         )
     )
+
+
+def require_etag(row: UserRecord | OrganizationRecord | WorkspaceRecord | RoleBindingRecord, if_match: str) -> None:
+    if not etag_matches(if_match, resource_etag(row.id, row.updated_at)):
+        raise identity_error(
+            "precondition_failed", "The identity resource changed after it was read.", ErrorCategory.stale_version
+        )

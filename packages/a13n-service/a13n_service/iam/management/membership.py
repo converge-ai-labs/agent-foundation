@@ -4,7 +4,6 @@ from sqlalchemy import exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
@@ -15,16 +14,16 @@ from ..domain import AuthenticatedActor
 from ..models import ApiKeyRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from ..role_rules import ROLE_KEYS
 from ..schemas import Organization, Page, RoleBinding, SetRoleRequest, Workspace
-from ..service_common import audit, identity_error, identity_transaction, not_found, singleton_organization
+from ..service_common import (
+    audit,
+    identity_error,
+    identity_transaction,
+    not_found,
+    require_etag,
+    singleton_organization,
+)
 from .bindings import grant_role, remove_user_binding
 from .collections import PageRequest, query_scope
-
-
-def require_etag(row: WorkspaceRecord | RoleBindingRecord, if_match: str) -> None:
-    if not etag_matches(if_match, resource_etag(row.id, row.updated_at)):
-        raise identity_error(
-            "precondition_failed", "The identity resource changed after it was read.", ErrorCategory.stale_version
-        )
 
 
 class MembershipService:
@@ -204,7 +203,7 @@ class MembershipService:
                     RoleBindingRecord.resource_id == organization_id,
                 )
             )
-            if member is None:
+            if member is None and workspace_id is not None:
                 raise identity_error("invitation_required", "Use an invitation to add a User to the Organization.")
             existing = await session.scalar(
                 select(RoleBindingRecord.id).where(

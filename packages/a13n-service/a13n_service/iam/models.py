@@ -15,6 +15,7 @@ class OrganizationRecord(Base):
     __tablename__ = "organizations"
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    image_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -36,6 +37,7 @@ class WorkspaceRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), ForeignKey("organizations.id", ondelete="RESTRICT"))
+    image_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128))
     normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -50,6 +52,7 @@ class UserRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     email: Mapped[str] = mapped_column(String(320))
     normalized_email: Mapped[str] = mapped_column(String(320), unique=True)
+    image_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -253,3 +256,29 @@ class InvitationGrantRecord(Base):
     resource_type: Mapped[str] = mapped_column(String(32), primary_key=True)
     resource_id: Mapped[str] = mapped_column(String(72), primary_key=True)
     role_key: Mapped[str] = mapped_column(String(32))
+
+
+class PasswordResetRecord(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(72), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EmailChangeRecord(Base):
+    __tablename__ = "email_change_tokens"
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(72), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    previous_email: Mapped[str] = mapped_column(String(320))
+    new_email: Mapped[str] = mapped_column(String(320))
+    new_normalized_email: Mapped[str] = mapped_column(String(320))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -1,7 +1,7 @@
 import aiosmtplib
 import pytest
 from a13n_service.iam.configuration import IdentityConfiguration
-from a13n_service.iam.management.mail import SmtpInvitationMailer
+from a13n_service.iam.management.mail import SmtpMailer
 
 
 @pytest.mark.anyio
@@ -13,7 +13,7 @@ async def test_smtp_failure_does_not_log_message_or_server_reply(monkeypatch, ca
         raise aiosmtplib.SMTPException("server echoed sensitive-invitation-token")
 
     monkeypatch.setattr(aiosmtplib, "send", fail)
-    mailer = SmtpInvitationMailer(
+    mailer = SmtpMailer(
         IdentityConfiguration(
             public_origin="https://testserver",
             smtp_host="smtp.example.com",
@@ -21,7 +21,7 @@ async def test_smtp_failure_does_not_log_message_or_server_reply(monkeypatch, ca
         )
     )
     assert await mailer.send("recipient@example.com", "https://testserver/#sensitive-invitation-token") is False
-    assert "iam_invitation_delivery_failed" in caplog.text
+    assert "iam_email_delivery_failed" in caplog.text
     assert "sensitive-invitation-token" not in caplog.text
     assert "recipient@example.com" not in caplog.text
 

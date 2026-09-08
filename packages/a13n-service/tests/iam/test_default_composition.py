@@ -24,7 +24,7 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             transport=ASGITransport(app), base_url="https://testserver", headers={"Origin": "https://testserver"}
         ) as client:
             accepted = await client.post(
-                link.path,
+                "/api/v1" + link.path,
                 json={"token": link.fragment.removeprefix("token="), "password": "initial-administrator-password"},
             )
             assert accepted.status_code == 200, accepted.text

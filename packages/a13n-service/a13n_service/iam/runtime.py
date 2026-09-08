@@ -6,14 +6,17 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .auth.passwords import Passwords
+from .auth.recovery import RecoveryService
 from .auth.sessions import SessionService
 from .configuration import IdentityConfiguration
 from .http.authentication import DatabaseAuthenticator
 from .management.api_keys import ApiKeyService
 from .management.collections import IdentityCollections
+from .management.images import ImageService
 from .management.invitations import InvitationService
-from .management.mail import SmtpInvitationMailer
+from .management.mail import SmtpMailer
 from .management.membership import MembershipService
+from .management.profiles import ProfileService
 from .management.service_accounts import ServiceAccountService
 
 logger = logging.getLogger("a13n_service.iam.runtime")
@@ -29,6 +32,9 @@ class IdentityRuntime:
     accounts: ServiceAccountService
     membership: MembershipService
     collections: IdentityCollections
+    profiles: ProfileService
+    recovery: RecoveryService
+    images: ImageService
 
 
 async def build_identity_runtime(
@@ -41,9 +47,12 @@ async def build_identity_runtime(
         sessions,
         configuration,
         passwords,
-        SmtpInvitationMailer(configuration) if configuration.smtp_host else None,
+        SmtpMailer(configuration) if configuration.smtp_host else None,
     )
     return IdentityRuntime(
+        profiles=ProfileService(sessions),
+        recovery=RecoveryService(sessions, configuration, passwords),
+        images=ImageService(sessions),
         configuration=configuration,
         authenticator=DatabaseAuthenticator(sessions, configuration),
         sessions=SessionService(sessions, passwords, session_days=configuration.session_days),

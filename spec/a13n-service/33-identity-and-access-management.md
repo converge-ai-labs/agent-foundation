@@ -566,3 +566,29 @@ User, Service Account, Organization, Workspace, and RoleBinding IDs; Principal k
 [Application Accounts](40-connectivity/01a-application-accounts.md) are Workspace-owned external identities. `application_account.read` is safe metadata access for Viewer, Runner, Builder, and Admin. `application_account.manage` is Admin-only resource and credential management. `application_account.use` is available to Runner, Builder, and Admin and permits only accepted account operations within their validated tool and target scope. Trusted entry binding and runtime dispatch each reauthorize that action and resource eligibility. Possession of an Account ID grants no authority.
 
 Ingress input executes as its configured a13n Service Account. Account ownership does not transfer the external provider identity into Service IAM. Every accepted inbound reply fixes the Account and target; disabling reception does not revoke that reply, while disabling the Account or losing current Principal authority blocks later dispatch.
+
+## Console Profile and Recovery API
+
+Profile reads return strong ETags. `PATCH /api/v1/users/me` updates the current browser User's name; `GET` and `PATCH /api/v1/organizations/{organization_id}` read the singleton Organization and update its name under Organization Admin authority. Profile mutations require exact `If-Match`. Workspace name operations retain the same contract.
+
+`GET /api/v1/auth/configuration` exposes only whether email delivery is configured. Password reset requests use `POST /api/v1/auth/password-reset`; completion uses `POST /api/v1/auth/password-reset/complete`. Requests return the same accepted response for unknown, inactive, unverified and eligible addresses. Tokens are single-use, expire after thirty minutes, and bind the current password verifier so a intervening password change invalidates them. Reissue invalidates earlier tokens. Completion atomically replaces the password and revokes all browser sessions, preserving API Keys.
+
+Authenticated email changes use `POST /api/v1/users/me/email-change` with a new address and current password, followed by `POST /api/v1/users/me/email-change/complete` with the delivered token in the request body. The initiating User must be authenticated at completion. The token binds the prior normalized email, expires after thirty minutes, and proves the new address. Completion checks uniqueness under the same IAM transaction and invalidates pending password resets. Mail links carry tokens in URL fragments, not request paths or query strings. SMTP I/O and password hashing never retain database sessions.
+
+`GET /api/v1/workspaces/{workspace_id}/permissions` returns current Workspace actions and an Organization Admin indicator for presentation. It grants no authority; every command reauthorizes. `GET /api/v1/workspaces/{workspace_id}/members` provides User profiles for direct Workspace members under membership-management authority. The corresponding `/api-keys` collection supplies administrators with bounded Personal API Key metadata; it never returns bearer values. Organization role creation uses `/api/v1/organizations/{organization_id}/role-bindings` for an existing active platform User; new Users still require invitations.
+
+Security event collections are `/api/v1/organizations/{organization_id}/security-audit-events`, `/api/v1/workspaces/{workspace_id}/security-audit-events`, and `/api/v1/users/me/security-activity`. Organization and Workspace collections require their Admin authority; personal activity requires the exact browser User. Collections paginate after authorization and return bounded action, actor, resource, outcome, time and request correlation without private event details.
+
+## Profile Images
+
+Users, Organizations and Workspaces have an optional current `image_id`. Public resources expose an authenticated `image_url`, not the object key. Avatar mutation uses `PUT` or `DELETE /api/v1/users/me/avatar`; Organization and Workspace icon mutation uses `PUT` or `DELETE /api/v1/organizations/{organization_id}/icon` and `/api/v1/workspaces/{workspace_id}/icon`. Mutations require a browser session, owner-specific profile-management authority and exact `If-Match`.
+
+Binary uploads accept PNG, JPEG or WebP, at most 5 MiB and 16 million pixels. Service strips image metadata by decoding and re-encoding to WebP with a maximum dimension of 512 pixels. Each replacement uses a new image ID. A User changes only its own avatar; current fellow Organization members can read it. Organization icons require membership to read and Admin authority to modify. Workspace icons use current Workspace read and management authority. Reads return only the currently referenced image and reauthorize before object I/O.
+
+Images use the existing ObjectStore and publication fences:
+
+- `users/{user_id}/profile/avatar/{image_id}/content.webp`;
+- `organizations/{organization_id}/profile/icon/{image_id}/content.webp`;
+- `organizations/{organization_id}/workspaces/{workspace_id}/profile/icon/{image_id}/content.webp`.
+
+The database reference is published only after successful object storage and a fresh authority/version check. Removed, superseded and abandoned uploads use canonical object collection; collectors cover both Organization and User namespaces and retain currently referenced images. Images are IAM-owned objects, not Workspace Assets. No public bucket, caller-selected key, filename-based identity, or second S3 client is introduced.

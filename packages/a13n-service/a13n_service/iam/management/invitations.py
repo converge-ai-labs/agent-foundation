@@ -327,9 +327,7 @@ class InvitationService:
 
     async def deliver(self, issued: IssuedInvitation) -> InvitationDelivery:
         # Fragment tokens never reach HTTP access logs or Referer headers.
-        url = (
-            f"{self._configuration.public_origin}/api/v1/invitations/{issued.invitation.id}/accept#token={issued.token}"
-        )
+        url = f"{self._configuration.public_origin}/invitations/{issued.invitation.id}/accept#token={issued.token}"
         if self._mailer is None:
             return InvitationDelivery(invitation=issued.invitation, delivery="manual", invitation_url=url)
         sent = await self._mailer.send(issued.invitation.email, url)

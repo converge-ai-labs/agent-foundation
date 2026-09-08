@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.assets.models import AssetRecord
 from a13n_service.gateway.models import AguiRunBindingRecord
+from a13n_service.iam.models import OrganizationRecord, UserRecord, WorkspaceRecord
 from a13n_service.interactions.models import RunRecord
 from a13n_service.skills.models import SkillRevisionRecord, SkillUploadRecord
 
@@ -26,6 +27,34 @@ async def retained_owner(database: AsyncSession, key: str, *, now: datetime) -> 
     still be referenced inside a retained checkpoint, beyond the public Run row.
     Neither Run history nor successful Skill publications has a new TTL.
     """
+    if match := re.fullmatch(r"users/([^/]+)/profile/avatar/([^/]+)/content\.webp", key):
+        user_id, image_id = match.groups()
+        return bool(
+            await database.scalar(select(exists().where(UserRecord.id == user_id, UserRecord.image_id == image_id)))
+        )
+    if match := re.fullmatch(r"organizations/([^/]+)/profile/icon/([^/]+)/content\.webp", key):
+        organization_id, image_id = match.groups()
+        return bool(
+            await database.scalar(
+                select(
+                    exists().where(OrganizationRecord.id == organization_id, OrganizationRecord.image_id == image_id)
+                )
+            )
+        )
+    if match := re.fullmatch(r"organizations/([^/]+)/workspaces/([^/]+)/profile/icon/([^/]+)/content\.webp", key):
+        organization_id, workspace_id, image_id = match.groups()
+        return bool(
+            await database.scalar(
+                select(
+                    exists().where(
+                        WorkspaceRecord.id == workspace_id,
+                        WorkspaceRecord.organization_id == organization_id,
+                        WorkspaceRecord.deleted_at.is_(None),
+                        WorkspaceRecord.image_id == image_id,
+                    )
+                )
+            )
+        )
     if match := _RUN.fullmatch(key):
         organization_id, run_id = match.groups()
         return bool(
