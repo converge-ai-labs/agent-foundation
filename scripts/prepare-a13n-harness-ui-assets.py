@@ -6,7 +6,7 @@ from pathlib import Path
 from prepare_a13n_harness_ui_assets import prepare_assets
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
-DEFAULT_SOURCE = REPOSITORY_ROOT / "apps" / "a13n-harness-ui" / "dist"
+DEFAULT_SOURCE = REPOSITORY_ROOT / "frontend" / "apps" / "a13n-harness-ui" / "dist"
 DEFAULT_TARGET = REPOSITORY_ROOT / "packages" / "a13n-harness-ui" / "a13n_harness_ui" / "static"
 
 

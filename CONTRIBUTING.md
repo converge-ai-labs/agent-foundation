@@ -4,7 +4,7 @@ Contributions to Agent Foundation are welcome. The project uses GitHub Issues fo
 
 ## Repository Language
 
-Write all repository content in English.
+Write repository code and documentation in English. UI translation resources contain their target-language text.
 
 ## Before You Start
 
@@ -24,7 +24,7 @@ Requirements:
 - Python 3.13
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 - Make
-- Node.js 24 with npm
+- Node.js 24 with npm (standalone TypeScript SDK) and pnpm (frontend workspace)
 - Go
 - A stable Rust toolchain with `rustfmt` and Clippy
 - Docker when generating PostgreSQL migrations, running container-backed integration tests, or validating images
@@ -36,6 +36,8 @@ git clone git@github.com:YOUR_NAME/agent-foundation.git
 cd agent-foundation
 make install
 ```
+
+The frontend pnpm workspace lives under `frontend/`: applications in `frontend/apps/` and shared UI source in `frontend/packages/`. `frontend/package.json` pins pnpm; install that version before running `make install`. The standalone TypeScript SDK retains its independent npm project and lockfile.
 
 The repository selects Python 3.13 through `.python-version`. Python packages are uv workspace members under `packages/`; Rust crates under `crates/` are validated by the same top-level merge gate.
 
@@ -79,6 +81,8 @@ Use the Makefile as the stable development interface:
 | `make rust-check`             | Format-check and lint the root Rust workspace                     |
 | `make sdk-check`              | Lint and type-check the standalone SDKs                           |
 | `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI             |
+| `make frontend-sync`          | Install the locked frontend workspace dependencies                |
+| `make frontend-check-all`     | Check and build all frontend applications                         |
 | `make build`                  | Build all workspace packages, applications, and standalone SDKs   |
 | `make images`                 | Build the a13n-service and sandbox images                         |
 | `make image-check`            | Build and smoke-check both container images                       |

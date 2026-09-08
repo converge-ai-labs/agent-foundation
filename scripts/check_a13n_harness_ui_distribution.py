@@ -282,7 +282,7 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
         _validate_terminal_package(names, PurePosixPath(root))
         if f"{root}/LICENSE" not in names:
             raise DistributionError("Harness UI sdist is missing the project license")
-        if any("apps/a13n-harness-ui" in name for name in names):
+        if any("frontend/apps/a13n-harness-ui" in name for name in names):
             raise DistributionError("Harness UI sdist must not require the Harness UI WebUI source tree")
         pyproject_path = f"{root}/pyproject.toml"
         if pyproject_path not in names:

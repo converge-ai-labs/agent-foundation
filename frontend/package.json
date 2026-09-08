@@ -1,0 +1,18 @@
+{
+  "name": "a13n-frontend",
+  "private": true,
+  "packageManager": "pnpm@10.11.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm run format:check && pnpm -r run check",
+    "build": "pnpm -r run build",
+    "clean": "pnpm -r run clean"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

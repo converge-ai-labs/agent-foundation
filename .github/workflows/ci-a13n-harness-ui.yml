@@ -7,7 +7,9 @@ on:
       - ".github/workflows/ci-a13n-harness-ui.yml"
       - ".github/workflows/release-a13n-harness-ui.yml"
       - ".gitignore"
-      - "apps/a13n-harness-ui/**"
+      - "Makefile"
+      - ".pre-commit-config.yaml"
+      - "frontend/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
@@ -29,7 +31,9 @@ on:
       - ".github/workflows/ci-a13n-harness-ui.yml"
       - ".github/workflows/release-a13n-harness-ui.yml"
       - ".gitignore"
-      - "apps/a13n-harness-ui/**"
+      - "Makefile"
+      - ".pre-commit-config.yaml"
+      - "frontend/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
@@ -90,19 +94,26 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Set up pnpm
+        if: matrix.name == 'Linux'
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
       - name: Set up Node.js
         if: matrix.name == 'Linux'
         uses: actions/setup-node@v6
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/a13n-harness-ui/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Install and check Harness UI WebUI
+      - name: Install and check frontend workspace
         if: matrix.name == 'Linux'
         run: |
-          npm --prefix apps/a13n-harness-ui ci
-          npm --prefix apps/a13n-harness-ui run check:all
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run check
+          pnpm --dir frontend run build
 
       - name: Synchronize Harness UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
