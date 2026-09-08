@@ -1,5 +1,0 @@
-dist
-node_modules
-
-# Mechanically generated backend contract; checked by generate:check.
-src/openapi.json

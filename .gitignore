@@ -56,7 +56,7 @@ target/
 # Frontend tooling
 node_modules/
 *.tsbuildinfo
-/apps/a13n-harness-ui/dist/
+/frontend/apps/*/dist/
 /packages/a13n-harness-ui/a13n_harness_ui/static/
 
 # Editors and operating systems

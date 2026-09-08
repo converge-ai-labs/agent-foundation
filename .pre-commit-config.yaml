@@ -59,11 +59,11 @@ repos:
         files: ^sdk/rust/a13n-service-cli/.*\.rs$
         pass_filenames: false
 
-      - id: a13n-harness-ui-webui-prettier
-        name: Prettier (Harness UI WebUI)
-        entry: npm exec --offline --prefix apps/a13n-harness-ui -- prettier --write --ignore-path apps/a13n-harness-ui/.prettierignore
+      - id: frontend-prettier
+        name: Prettier (frontend workspace)
+        entry: frontend/node_modules/.bin/prettier --write --ignore-path frontend/.prettierignore
         language: system
-        files: ^apps/a13n-harness-ui/.*\.(css|html|js|json|jsx|md|mjs|ts|tsx|yaml|yml)$
+        files: ^frontend/.*\.(css|html|js|json|jsx|mjs|ts|tsx|yaml|yml)$
 
       - id: sdk-typescript-prettier
         name: Prettier (TypeScript SDK)

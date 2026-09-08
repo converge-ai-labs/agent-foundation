@@ -18,7 +18,7 @@ try {
       "a13n-harness-ui",
       "--no-default-groups",
       "python",
-      "../../scripts/export-a13n-harness-ui-openapi.py",
+      "../../../scripts/export-a13n-harness-ui-openapi.py",
       "--output",
       `${output}/openapi.json`,
     ],
@@ -31,7 +31,7 @@ try {
     )
   ) {
     throw new Error(
-      "Generated contract drift: openapi.json. Run npm run generate.",
+      "Generated contract drift: openapi.json. Run pnpm run generate.",
     );
   }
 } finally {

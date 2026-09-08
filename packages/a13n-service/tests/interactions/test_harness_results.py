@@ -185,3 +185,33 @@ def _suspended(deferred: DeferredToolRequests) -> HarnessRunResult[object]:
         suspend_reason="deferred",
         deferred=deferred,
     )
+
+
+@pytest.mark.parametrize("surface", [None, [], [{"name": "client_action"}]])
+@pytest.mark.parametrize("kind", ["approval", "user_input"])
+async def test_suspension_without_client_calls_omits_surface_and_digest(
+    interaction_object_store: ObjectStore,
+    surface,
+    kind: str,
+) -> None:
+    adapter = StoredHarnessOutcomeAdapter(
+        organization_id=ORGANIZATION_ID,
+        run_id=RUN_ID,
+        payloads=RunPayloadStore(interaction_object_store),
+        max_output_bytes=1024,
+        inline_output_bytes=128,
+        client_tool_surface=surface,
+    )
+    call = ToolCallPart(
+        tool_name="dangerous_action" if kind == "approval" else "ask_user_question",
+        args={},
+        tool_call_id="pending-1",
+    )
+    deferred = DeferredToolRequests(approvals=[call]) if kind == "approval" else DeferredToolRequests(calls=[call])
+    projection = await adapter.project(_suspended(deferred))
+    assert isinstance(projection.candidate, WaitingOutcomeCandidate)
+    assert projection.candidate.wait_reason == RunWaitReason(kind)
+    assert projection.candidate.pending.calls[0].call_id == "pending-1"
+    assert projection.deferred is not None
+    assert projection.deferred.effective_client_tool_surface is None
+    assert projection.deferred.effective_surface_digest_sha256 is None

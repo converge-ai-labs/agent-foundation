@@ -27,7 +27,7 @@ def test_prepares_deterministic_asset_manifest(tmp_path: Path) -> None:
     manifest = json.loads((target / "asset-manifest.json").read_text(encoding="utf-8"))
     assert manifest == {
         "schema_version": "1",
-        "source": "apps/a13n-harness-ui",
+        "source": "frontend/apps/a13n-harness-ui",
         "files": {
             "assets/main.js": hashlib.sha256(script_content).hexdigest(),
             "index.html": hashlib.sha256(index_content).hexdigest(),

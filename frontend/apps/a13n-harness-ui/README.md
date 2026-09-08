@@ -9,9 +9,10 @@ The npm package name is `a13n-harness-ui-webui`. It is not published to npm and 
 From the repository root:
 
 ```bash
-npm --prefix apps/a13n-harness-ui run dev
-make a13n-harness-ui-webui-check
-make a13n-harness-ui-webui-check-all
+make frontend-sync
+pnpm --dir frontend --filter a13n-harness-ui-webui run dev
+make frontend-check
+make frontend-check-all
 make a13n-harness-ui-build
 ```
 
@@ -31,8 +32,8 @@ The Python runtime and HTTP API remain separate from this placeholder page.
 The checked-in `src/openapi.json` remains a snapshot of the Python adapter contract. It is not imported into the page. No browser client, TypeScript API declarations, or runtime validators are generated.
 
 ```bash
-npm --prefix apps/a13n-harness-ui run generate
-npm --prefix apps/a13n-harness-ui run generate:check
+pnpm --dir frontend --filter a13n-harness-ui-webui run generate
+pnpm --dir frontend --filter a13n-harness-ui-webui run generate:check
 ```
 
 Generation requires the repository's locked Python environment and exports the schema without starting an App or listener. `generate:check` compares temporary output without rewriting the snapshot.

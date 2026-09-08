@@ -11,7 +11,7 @@ CHECK_TARGETS := \
 	lint \
 	typecheck \
 	examples-check \
-	a13n-harness-ui-webui-check \
+	frontend-check \
 	rust-check \
 	sdk-python-check \
 	sdk-go-check \
@@ -23,14 +23,15 @@ CHECK_TARGETS := \
 install: ## Install locked dependencies and Git hooks
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
 	@command -v npm >/dev/null || { echo "Node.js and npm are required: https://nodejs.org/"; exit 1; }
+	@command -v pnpm >/dev/null || { echo "pnpm is required: https://pnpm.io/installation"; exit 1; }
 	@command -v go >/dev/null || { echo "Go is required: https://go.dev/"; exit 1; }
 	@command -v cargo >/dev/null || { echo "Rust is required: https://rustup.rs/"; exit 1; }
 	@echo "Synchronizing the Python workspace"
 	@uv sync --locked --all-packages
 	@echo "Synchronizing the standalone Python SDK"
 	@uv sync --project sdk/python --locked
-	@echo "Installing Harness UI WebUI dependencies"
-	@npm --prefix apps/a13n-harness-ui ci
+	@echo "Installing frontend workspace dependencies"
+	@pnpm --dir frontend install --frozen-lockfile
 	@echo "Installing TypeScript SDK dependencies"
 	@npm --prefix sdk/typescript ci
 	@echo "Installing pre-commit hooks"
@@ -186,7 +187,7 @@ a13n-harness-ui-db-migrate: sync ## Generate a Harness UI SQLite migration again
 	@uv run --locked python -m a13n_harness_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
-format: sync a13n-harness-ui-webui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
+format: sync frontend-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
 	@run_formatters() { \
 		formatter_status=0; \
 		for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
@@ -200,7 +201,7 @@ format: sync a13n-harness-ui-webui-sync sdk-python-sync sdk-typescript-sync ## F
 	@cargo fmt --all
 	@(cd sdk/rust && cargo fmt)
 	@(cd sdk/rust/a13n-service-cli && cargo fmt)
-	@npm --prefix apps/a13n-harness-ui run format
+	@pnpm --dir frontend run format
 	@npm --prefix sdk/typescript run format
 
 .PHONY: deps-check
@@ -471,26 +472,27 @@ a13n-service-cli-check: a13n-service-cli-isolation-check a13n-service-cli-format
 .PHONY: a13n-service-cli-check-all
 a13n-service-cli-check-all: a13n-service-cli-check a13n-service-cli-test a13n-service-cli-build ## Run the complete a13n Service CLI gate
 
-apps/a13n-harness-ui/node_modules/.package-lock.json: apps/a13n-harness-ui/package.json apps/a13n-harness-ui/package-lock.json
-	@npm --prefix apps/a13n-harness-ui ci
+.PHONY: frontend-sync
+frontend-sync: ## Install locked frontend workspace dependencies
+	@pnpm --dir frontend install --frozen-lockfile
 
-.PHONY: a13n-harness-ui-webui-sync
-a13n-harness-ui-webui-sync: apps/a13n-harness-ui/node_modules/.package-lock.json ## Install locked Harness UI WebUI dependencies
+.PHONY: frontend-check
+frontend-check: frontend-sync ## Check frontend formatting, types, tests, and API contract
+	@pnpm --dir frontend run check
 
-.PHONY: a13n-harness-ui-webui-format
-a13n-harness-ui-webui-format: a13n-harness-ui-webui-sync ## Format Harness UI WebUI sources
-	@npm --prefix apps/a13n-harness-ui run format
+.PHONY: frontend-build
+frontend-build: a13n-console-build a13n-harness-ui-webui-build ## Build every frontend application
+
+.PHONY: frontend-check-all
+frontend-check-all: frontend-check frontend-build ## Run the complete frontend gate
+
+.PHONY: a13n-console-build
+a13n-console-build: frontend-sync ## Build Console production assets
+	@pnpm --dir frontend --filter a13n-console run build
 
 .PHONY: a13n-harness-ui-webui-build
-a13n-harness-ui-webui-build: a13n-harness-ui-webui-sync ## Build Harness UI WebUI production assets
-	@npm --prefix apps/a13n-harness-ui run build
-
-.PHONY: a13n-harness-ui-webui-check
-a13n-harness-ui-webui-check: a13n-harness-ui-webui-sync ## Run Harness UI WebUI formatting and type checks
-	@npm --prefix apps/a13n-harness-ui run check
-
-.PHONY: a13n-harness-ui-webui-check-all
-a13n-harness-ui-webui-check-all: a13n-harness-ui-webui-check a13n-harness-ui-webui-build ## Run the complete Harness UI WebUI gate
+a13n-harness-ui-webui-build: frontend-sync ## Build Harness UI WebUI production assets
+	@pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
 .PHONY: a13n-harness-ui-assets
 a13n-harness-ui-assets: sync a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
@@ -524,7 +526,7 @@ sdk-check: sdk-python-check sdk-go-check sdk-rust-check sdk-typescript-check ## 
 sdk-check-all: sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
 
 .PHONY: build
-build: python-build rust-build sdk-build a13n-service-cli-build ## Build all workspace, application, SDK, and CLI artifacts
+build: frontend-build python-build rust-build sdk-build a13n-service-cli-build ## Build all workspace, application, SDK, and CLI artifacts
 
 .PHONY: db-migrate
 db-migrate: sync ## Generate a migration (usage: make db-migrate msg="description")
@@ -599,12 +601,12 @@ check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
-check-all: eip-check examples-check-all a13n-harness-ui-webui-check-all python-check-all rust-check-all sdk-check-all a13n-service-cli-check-all ## Run the complete repository gate
+check-all: eip-check examples-check-all frontend-check-all python-check-all rust-check-all sdk-check-all a13n-service-cli-check-all ## Run the complete repository gate
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
 	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/a13n-service-cli/target packages/a13n-harness-ui/a13n_harness_ui/static
-	@npm --prefix apps/a13n-harness-ui run clean
+	@pnpm --dir frontend run clean
 	@npm --prefix sdk/typescript run clean
 
 .PHONY: help

@@ -35,7 +35,7 @@ def prepare_assets(source: Path, target: Path) -> None:
         files = {path.relative_to(source).as_posix(): _digest(path) for path in source_files}
         manifest = {
             "schema_version": "1",
-            "source": "apps/a13n-harness-ui",
+            "source": "frontend/apps/a13n-harness-ui",
             "files": files,
         }
         (temporary / MANIFEST_NAME).write_text(

@@ -14,7 +14,7 @@ The [HTTP adapter contract](../05-runtime-subagents-and-surfaces.md#http-adapter
 
 ## Build and Distribution
 
-`apps/a13n-harness-ui` remains private frontend build input with npm package name `a13n-harness-ui-webui`. TypeScript, React, and Vite produce the local static asset tree. The npm lockfile owns dependency versions. There is no independently published npm artifact, browser-owned backend, Node.js runtime, or remote asset dependency.
+`frontend/apps/a13n-harness-ui` remains private frontend build input with npm package name `a13n-harness-ui-webui`. TypeScript, React, and Vite produce the local static asset tree. The shared `frontend/pnpm-lock.yaml` owns dependency versions. There is no independently published npm artifact, browser-owned backend, Node.js runtime, or remote asset dependency.
 
 The compiled assets and their hash manifest remain bundled in the `a13n-harness-ui` wheel and sdist under the [repository packaging boundary](../../repository-model.md#repository-surfaces). Repository and release asset preparation requires Node.js; installed runtime and wheel rebuilds from the sdist do not.
 

@@ -233,8 +233,14 @@ class RunControlCapability(AbstractCapability[AgentContext]):
         result: NodeResult[AgentContext],
     ) -> NodeResult[AgentContext]:
         if not self._nested and isinstance(node, CallToolsNode):
+            # Tool returns belong to the next request until ModelRequestNode runs.
+            # Export them without mutating the native history or replay would lose
+            # completed effects at this checkpoint boundary.
+            complete_messages = (
+                (*ctx.messages, result.request) if isinstance(result, ModelRequestNode) else ctx.messages
+            )
             async with self._driver.hook_boundary(ctx, self._binding) as boundary:
-                await self._control.after_tool_batch(boundary, result, ctx.messages)
+                await self._control.after_tool_batch(boundary, result, complete_messages)
         return result
 
 
