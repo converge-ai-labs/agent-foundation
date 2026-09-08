@@ -43,7 +43,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.6",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
   }
 }

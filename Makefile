@@ -477,7 +477,7 @@ frontend-sync: ## Install locked frontend workspace dependencies
 	@pnpm --dir frontend install --frozen-lockfile
 
 .PHONY: frontend-check
-frontend-check: frontend-sync ## Check frontend formatting, types, tests, and API contract
+frontend-check: frontend-sync sdk-typescript-build ## Check frontend formatting, types, tests, and API contract
 	@pnpm --dir frontend run check
 
 .PHONY: frontend-build
@@ -487,7 +487,7 @@ frontend-build: a13n-console-build a13n-harness-ui-webui-build ## Build every fr
 frontend-check-all: frontend-check frontend-build ## Run the complete frontend gate
 
 .PHONY: a13n-console-build
-a13n-console-build: frontend-sync ## Build Console production assets
+a13n-console-build: frontend-sync sdk-typescript-build ## Build Console production assets
 	@pnpm --dir frontend --filter a13n-console run build
 
 .PHONY: a13n-harness-ui-webui-build
@@ -504,16 +504,26 @@ sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/
 .PHONY: sdk-typescript-sync
 sdk-typescript-sync: sdk/typescript/node_modules/.package-lock.json ## Install locked TypeScript SDK dependencies
 
+.PHONY: sdk-typescript-generate
+sdk-typescript-generate: sync sdk-typescript-sync ## Regenerate the Native TypeScript API contract
+	@uv run python scripts/export-a13n-service-openapi.py
+	@node sdk/typescript/generate.mjs
+
+.PHONY: sdk-typescript-contract-check
+sdk-typescript-contract-check: sync sdk-typescript-sync ## Check Native TypeScript contract drift
+	@uv run python scripts/export-a13n-service-openapi.py --check
+	@node sdk/typescript/generate.mjs --check
+
 .PHONY: sdk-typescript-build
 sdk-typescript-build: sdk-typescript-sync ## Build the TypeScript SDK
 	@npm --prefix sdk/typescript run build
 
 .PHONY: sdk-typescript-check
-sdk-typescript-check: sdk-typescript-sync ## Run TypeScript SDK formatting and type checks
+sdk-typescript-check: sdk-typescript-sync sdk-typescript-contract-check ## Run TypeScript SDK formatting and type checks
 	@npm --prefix sdk/typescript run check
 
 .PHONY: sdk-typescript-check-all
-sdk-typescript-check-all: sdk-typescript-sync ## Run the complete TypeScript SDK gate
+sdk-typescript-check-all: sdk-typescript-sync sdk-typescript-contract-check ## Run the complete TypeScript SDK gate
 	@npm --prefix sdk/typescript run check:all
 
 .PHONY: sdk-build

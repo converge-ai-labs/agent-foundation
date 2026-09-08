@@ -2,27 +2,51 @@
 
 TypeScript SDK package for a13n Service.
 
-## Status
-
-This `0.0.x` package reserves the stable npm package and module names while the service API is being designed. It intentionally exposes no client API yet. Generated models and transports will be added only after the service contract is stable enough to support compatibility guarantees.
-
 ## Installation
 
 ```bash
 npm install @converge.ai/a13n
 ```
 
+This SDK targets the Native `/api/v1` contract and notification subprotocol `a13n.service.notifications.v1`. HTTP requests and responses are generated from the Service application; every Native operation is available through the typed `http` client.
+
 ```typescript
-import "@converge.ai/a13n";
+import { createClient, data } from "@converge.ai/a13n";
+
+const client = createClient({
+  baseUrl: "https://agents.example.com",
+  auth: { type: "bearer", token: process.env.A13N_API_KEY! },
+});
+try {
+  const workspace = data(
+    await client.http.GET("/api/v1/workspaces/{workspace_id}", {
+      params: { path: { workspace_id: "ws_example" } },
+    }),
+  );
+  console.log(workspace.name);
+} finally {
+  client.close();
+}
 ```
+
+Browser clients use `{ type: "session" }` on the same origin as Service. Restore the CSRF token from `/api/v1/auth/csrf` (or the login response) with `setCsrfToken` before mutations. Tokens stay in memory. Callers pass `If-Match`, `Idempotency-Key`, Workspace headers, pagination cursors, and `AbortSignal` explicitly through typed operation options. Responses expose headers for ETags and request IDs. `ApiError` carries status, code, safe details, request ID, and retry guidance.
+
+GET and HEAD retry at most twice by default, honoring bounded `Retry-After`. Mutations are never replayed automatically. Reconcile a lost command acknowledgement using the original idempotency key and the owning command contract. Omitted object fields and explicit `null` remain distinct.
+
+Binary operations accept `Blob` or `ReadableStream<Uint8Array>` and an explicit content type. Downloads support openapi-fetch's `parseAs: "stream"`. The SDK does not buffer binary bodies; Node streaming request bodies require the runtime's `duplex: "half"` request option.
+
+`streamRun(runId, { after, workspaceId, signal })` returns an async iterator of `{ cursor, event }`. Apply an event before requesting the next one. A `ReplayGapError` requires current Run, Items, and pending-action reconciliation. Closing an iterator or client only stops local delivery.
+
+`notifications({ subscriptions, onNotification, onState, onError })` opens a best-effort attachment with up to three reconnects. The `gap` state requires durable Workspace event and current resource reconciliation. Close the returned handle to change subscriptions. Browser notifications use session cookies; bearer clients supply a `socketFactory` capable of attaching authorization headers. Credentials never travel in WebSocket URLs or subprotocols.
 
 ## Development
 
-Run the TypeScript SDK checks from the repository root:
-
 ```bash
-make sdk-typescript-check
+make sdk-typescript-generate  # refresh the Service contract and TypeScript models
+make sdk-typescript-check-all
 ```
+
+Generated contract drift is checked against the live Service schema in the repository gate. The standalone SDK retains its own npm lockfile and build boundary.
 
 ## Publishing
 

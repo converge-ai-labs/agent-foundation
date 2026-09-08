@@ -4,10 +4,11 @@ import test from "node:test";
 
 const packageRoot = new URL("../", import.meta.url);
 
-test("package can be imported without exposing a premature API", async () => {
+test("package exposes a typed Service client", async () => {
   const sdk = await import("../dist/index.js");
 
-  assert.deepEqual(Object.keys(sdk), []);
+  assert.equal(typeof sdk.createClient, "function");
+  assert.equal(typeof sdk.ApiError, "function");
 });
 
 test("package metadata identifies the public npm package", async () => {
