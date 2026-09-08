@@ -11,6 +11,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.authentication import authenticate_mutation
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
@@ -395,7 +396,7 @@ async def delete_connector_connection(
 @router.get("/connectivity/v1/connector-setup/callback", include_in_schema=False)
 async def connector_setup_callback(
     request: Request,
-    actor: Actor,
+    actor: Annotated[AuthenticatedActor, Depends(authenticate_mutation)],
     session_uri: Annotated[str, Query(min_length=1, max_length=4096)],
 ) -> RedirectResponse:
     return_path = await _connections(request).complete_callback(actor=actor, session_uri=session_uri)

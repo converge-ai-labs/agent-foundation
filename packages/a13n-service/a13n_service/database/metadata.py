@@ -34,6 +34,7 @@ def service_metadata() -> MetaData:
     from a13n_service.environments import models as environment_models
     from a13n_service.gateway import models as gateway_models
     from a13n_service.hooks import models as hook_models
+    from a13n_service.iam import auth_models as iam_auth_models
     from a13n_service.iam import models as iam_models
     from a13n_service.interactions import control_models as interaction_control_models
     from a13n_service.interactions import models as interaction_models
@@ -55,6 +56,7 @@ def service_metadata() -> MetaData:
         gateway_models,
         hook_models,
         iam_models,
+        iam_auth_models,
         interaction_control_models,
         interaction_models,
         ingress_admission_models,

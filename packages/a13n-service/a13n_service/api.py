@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from a13n_service.application_errors import ApplicationError
 from a13n_service.http_errors import application_error_headers, application_error_status
-from a13n_service.iam import AuthenticationError
+from a13n_service.iam import AuthenticationError, AuthorizationError
 
 
 def install_api_conventions(app: FastAPI) -> None:
@@ -36,6 +36,15 @@ def install_api_conventions(app: FastAPI) -> None:
             error.message,
             error.details,
             headers=application_error_headers(error),
+        )
+
+    @app.exception_handler(AuthorizationError)
+    async def authorization_error(request: Request, error: AuthorizationError) -> JSONResponse:
+        return _error_response(
+            request,
+            404 if error.concealed else 403,
+            "resource_not_found" if error.concealed else "permission_denied",
+            "The requested resource was not found." if error.concealed else "Permission denied.",
         )
 
     @app.exception_handler(RequestValidationError)

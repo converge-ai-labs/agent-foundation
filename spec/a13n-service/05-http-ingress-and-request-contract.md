@@ -19,7 +19,7 @@ Resource routes, fields, commands, and authorization actions remain owned by the
 | `/internal/v1` control operator routes when configured |       Yes |       No |             No |   Yes |
 | `/healthz` and `/readyz`                               |       Yes |      Yes |            Yes |   Yes |
 
-A Worker-only process returns no product route, product OpenAPI document, authenticated product stream, provider-event route, or network MCP listener. Its in-process a13n MCP tool groups belong to Run execution and expose no HTTP route. A Connectivity-only process exposes only provider event ingress and operational surfaces; it exposes no `/api/v1`, AG-UI, A2A, or product stream route. The service does not host a browser application or provide HTML history fallback. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
+A Worker-only process returns no product route, product OpenAPI document, authenticated product stream, provider-event route, or network MCP listener. Its in-process a13n MCP tool groups belong to Run execution and expose no HTTP route. A Connectivity-only process exposes only provider event ingress and operational surfaces; it exposes no `/api/v1`, AG-UI, A2A, or product stream route. The service provides only exact local-login and invitation-acceptance HTML forms owned by IAM; it hosts no general browser application and provides no HTML history fallback. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
 
 The internal operator surface is excluded from the public product OpenAPI, SDKs, and product IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
 
@@ -47,7 +47,7 @@ Forwarded client address, host, and scheme values are ignored unless the direct 
 
 Production browser traffic is same-origin by default. The service does not enable permissive CORS to support local development; a development frontend proxies relative `/api` requests instead. A distribution that intentionally exposes cross-origin API access declares an exact origin and credential policy rather than reflecting request origins.
 
-Cookie-authenticated state-changing requests require both an accepted Origin and the IAM-owned anti-CSRF proof. Safe reads still authenticate and authorize normally. Bearer API keys are not cookie credentials and do not bypass Host, body, authorization, or rate/admission checks.
+Cookie-authenticated state-changing requests require both an accepted Origin and the IAM-owned anti-CSRF proof. Safe reads still authenticate and authorize normally. Cookie-authenticated notification WebSocket handshakes require the exact accepted Origin; subscription authorization and continuation rechecks remain mandatory. Bearer API keys are not cookie credentials and do not bypass Host, body, authorization, or rate/admission checks.
 
 ## Authentication and Authorization Boundary
 

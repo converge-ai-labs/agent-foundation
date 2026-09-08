@@ -17,6 +17,7 @@ from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
 from a13n_service.gateway.notifications import NotificationService
 from a13n_service.gateway.queries import NativeInteractionQueries
+from a13n_service.iam.runtime import build_identity_runtime, initialize_identity
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
@@ -55,6 +56,11 @@ async def build_control_runtime(
     stack: AsyncExitStack,
 ) -> tuple[ControlRuntime, tuple[BackgroundTask, ...]]:
     """Construct the services owned by a Control-capable role."""
+
+    identity = None
+    if components.request_authenticator is None:
+        identity = await build_identity_runtime(shared.storage.sessions, settings.identity_configuration())
+        await initialize_identity(identity)
 
     trace_queries = await build_trace_query_service(
         settings,
@@ -218,6 +224,7 @@ async def build_control_runtime(
         lifecycle_events=hooks.lifecycle_events,
         gateway=gateway,
         subagent_maintenance=subagents,
+        identity=identity,
     )
     background_tasks = [
         assets.cleanup_task,

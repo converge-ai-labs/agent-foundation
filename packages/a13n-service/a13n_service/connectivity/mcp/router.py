@@ -10,6 +10,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.authentication import authenticate_mutation
 from a13n_service.request_runtime import get_connectivity_control_runtime, get_process_runtime
 
 from .domain import (
@@ -175,7 +176,7 @@ async def authorize_mcp_connection(
 async def mcp_oauth_callback(
     request: Request,
     response: Response,
-    actor: Actor,
+    actor: Annotated[AuthenticatedActor, Depends(authenticate_mutation)],
     code: Annotated[str, Query(min_length=1, max_length=8192)],
     state_value: Annotated[str, Query(alias="state", min_length=32, max_length=512)],
     issuer: Annotated[str, Query(alias="iss", min_length=1, max_length=2048)],
