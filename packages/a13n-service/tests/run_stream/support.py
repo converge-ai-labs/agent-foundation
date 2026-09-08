@@ -16,7 +16,7 @@ def publication_failure(operation: str, *, after: Literal["event", "receipts", "
     marker = {
         "event": "    updates[#updates + 1] = 'event:' .. event.id",
         "receipts": "local length = redis.call('XLEN', stream)",
-        "retention": "redis.call('HDEL', metadata, 'pending', 'pending_ids')",
+        "retention": "redis.call('HDEL', metadata, 'pending')",
     }[after]
     assert _SCRIPT.count(marker) == 1
     return _SCRIPT.replace(marker, f"if operation == '{operation}' then error('injected runtime error') end\n{marker}")

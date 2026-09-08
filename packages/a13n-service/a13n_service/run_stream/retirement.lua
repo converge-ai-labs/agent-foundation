@@ -18,7 +18,7 @@ local deadline = redis.call('HGET', metadata, 'retention_deadline') or
     tostring(tonumber(redis.call('TIME')[1]) + request.closed_ttl_seconds)
 redis.call('HSET', metadata, 'organization_id', request.organization_id, 'run_id', request.run_id,
     'closed_at', request.closed_at, 'incomplete', '1', 'attempt_id', '', 'retention_deadline', deadline)
-redis.call('HDEL', metadata, 'pending', 'pending_ids')
+redis.call('HDEL', metadata, 'pending')
 redis.call('EXPIREAT', stream, deadline)
 redis.call('EXPIREAT', metadata, deadline)
 return {'ok'}

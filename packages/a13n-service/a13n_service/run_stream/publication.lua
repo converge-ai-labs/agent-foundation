@@ -235,7 +235,7 @@ elseif not closed then
     redis.call('PERSIST', stream)
     redis.call('PERSIST', metadata)
 end
-redis.call('HDEL', metadata, 'pending', 'pending_ids')
+redis.call('HDEL', metadata, 'pending')
 if operation == 'activate' then return {ids[1], ids[2] or '', '1'} end
 if #ids > 0 then return ids end
 return {'ok'}
