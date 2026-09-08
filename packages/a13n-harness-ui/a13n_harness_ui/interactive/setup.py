@@ -95,7 +95,6 @@ class SetupWizard:
     values: dict[str, str] = field(default_factory=dict)
     index: int = 0
     history: list[int] = field(default_factory=list)
-    preview_generation: str | None = None
     advanced: bool = False
     default_provider: str = "codex"
     default_environment: str = "full-control"
@@ -345,7 +344,6 @@ class SetupWizard:
     def back(self) -> bool:
         if not self.history:
             return False
-        self.preview_generation = None
         self.index = self.history.pop()
         return True
 
@@ -400,7 +398,6 @@ class SetupWizard:
         if question.key == "model" and self.values.get("model") != selected:
             self.values.pop("preset", None)
         self.values[question.key] = selected
-        self.preview_generation = None
         self.history.append(self.index)
         self.index += 1
         self._skip_irrelevant()

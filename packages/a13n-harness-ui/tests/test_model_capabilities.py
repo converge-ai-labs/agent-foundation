@@ -91,9 +91,7 @@ async def test_app_setup_fills_only_omitted_capabilities(tmp_path: Path, capabil
     expected = ["image_understanding"] if capabilities is None else capabilities
     document = yaml.safe_load(preview.files["models/api-key.yaml"])
     assert document["model_characteristics"] == {**characteristics, "capabilities": expected}
-    publication = await publish_setup(
-        path, selection, expected_generation=preview.generation, validate_candidate=validate
-    )
+    publication = await publish_setup(path, selection, validate_candidate=validate)
     assert publication.completed
     assert (tmp_path / "models/api-key.yaml").read_bytes() == preview.files["models/api-key.yaml"].encode("utf-8")
     assert (await load_harness_ui_configuration(path)).models[

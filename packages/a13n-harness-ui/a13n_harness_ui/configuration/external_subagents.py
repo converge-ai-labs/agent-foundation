@@ -1,4 +1,4 @@
-"""Explicit preview and no-clobber import of external subagent definitions."""
+"""Explicit preview and last-write-wins import of external subagent definitions."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ class ExternalImportDiagnostic:
 
 @dataclass(frozen=True, slots=True)
 class ExternalSubagentImportCandidate:
-    """One deterministic import candidate with all apply preconditions."""
+    """One deterministic import candidate with captured source provenance."""
 
     configuration_path: Path
     product: ExternalSubagentProduct
@@ -71,12 +71,10 @@ class ExternalSubagentImportCandidate:
     name: str
     source_facts: tuple[ExternalSourceFact, ...]
     target_relative_path: str
-    expected_target_relative_path: str | None
-    expected_target_source_digest: str | None
     canonical_content: str | None
     canonical_content_digest: str | None
     diagnostics: tuple[ExternalImportDiagnostic, ...]
-    status: Literal["ready", "unchanged", "conflict", "invalid"]
+    status: Literal["ready", "unchanged", "invalid"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +151,7 @@ async def apply_external_subagent_import(
     validate_candidate: CandidateValidator | None = None,
     content_plugin_root: Path | None = None,
 ) -> ConfigurationMutationResult:
-    """Apply an explicit preview without overwriting or renaming any target."""
+    """Validate and publish the captured preview with last-write-wins semantics."""
 
     selected = await to_thread.run_sync(lambda: configuration_path.expanduser().resolve(strict=False))
     if selected != candidate.configuration_path:
@@ -162,7 +160,7 @@ async def apply_external_subagent_import(
             "The preview belongs to a different Harness UI configuration.",
             selected,
         )
-    if candidate.status in {"invalid", "conflict"} or candidate.canonical_content is None:
+    if candidate.status == "invalid" or candidate.canonical_content is None:
         raise _error(
             "external_subagent_import_not_applicable",
             "The selected external subagent preview cannot be applied.",
@@ -176,33 +174,13 @@ async def apply_external_subagent_import(
             selected,
         )
 
-    await to_thread.run_sync(_verify_external_sources, candidate.source_facts)
-    current = await load_harness_ui_configuration(
-        selected,
-        content_plugin_root=content_plugin_root,
-    )
-    _verify_preview_target(current, candidate)
-
-    if candidate.status == "unchanged":
-        source_digest = candidate.expected_target_source_digest
-        return ConfigurationMutationResult(
-            action="unchanged",
-            relative_path=candidate.expected_target_relative_path or candidate.target_relative_path,
-            source_digest=source_digest,
-            configuration=current,
-        )
-
-    result = await mutate_configuration_source(
+    return await mutate_configuration_source(
         selected,
         candidate.target_relative_path,
-        ResourceMutationRequest(expected_source_digest=None, content=candidate.canonical_content),
+        ResourceMutationRequest(content=candidate.canonical_content),
         validate_candidate=validate_candidate,
         content_plugin_root=content_plugin_root,
     )
-    # Detect a cooperative source edit that happened during apply. The imported
-    # target is still never used until the mutation's generation reload succeeds.
-    await to_thread.run_sync(_verify_external_sources, candidate.source_facts)
-    return result
 
 
 # Short names for callers that already operate in the subagent-import namespace.
@@ -509,28 +487,16 @@ def _build_candidate(
 
     target_relative_path = f"subagents/{name}.md"
     canonical_content = _render_canonical_markdown(canonical) if canonical is not None else None
-    expected_target_relative_path: str | None = None
-    expected_target_source_digest: str | None = None
-    status: Literal["ready", "unchanged", "conflict", "invalid"] = "invalid"
+    status: Literal["ready", "unchanged", "invalid"] = "invalid"
 
     if canonical is not None and canonical_content is not None:
         existing_source, existing = _existing_target(loaded, canonical.id, target_relative_path)
         if existing_source is None:
             status = "ready"
         else:
-            expected_target_relative_path = existing_source.relative_path
-            expected_target_source_digest = existing_source.source_digest
-            if existing is not None and existing.model_dump(mode="json") == canonical.model_dump(mode="json"):
-                status = "unchanged"
-            else:
-                status = "conflict"
-                diagnostics.append(
-                    ExternalImportDiagnostic(
-                        severity="error",
-                        code="target_conflict",
-                        message="A different canonical subagent already occupies the target path or resource ID.",
-                    )
-                )
+            if existing_source.relative_path.startswith("subagents/"):
+                target_relative_path = existing_source.relative_path
+            status = "unchanged" if existing == canonical else "ready"
 
     content_digest = (
         hashlib.sha256(canonical_content.encode("utf-8")).hexdigest() if canonical_content is not None else None
@@ -542,8 +508,6 @@ def _build_candidate(
         name=name,
         source_facts=definition.source_facts,
         target_relative_path=target_relative_path,
-        expected_target_relative_path=expected_target_relative_path,
-        expected_target_source_digest=expected_target_source_digest,
         canonical_content=canonical_content,
         canonical_content_digest=content_digest,
         diagnostics=tuple(diagnostics),
@@ -630,63 +594,6 @@ def _existing_target(
         return None, None
     occupying = loaded.subagents.get(source.resource_id) if source.resource_id is not None else None
     return source, occupying
-
-
-def _verify_preview_target(
-    loaded: LoadedHarnessUiConfiguration,
-    candidate: ExternalSubagentImportCandidate,
-) -> None:
-    expected_path = candidate.expected_target_relative_path
-    expected_digest = candidate.expected_target_source_digest
-    existing_source: SourceDocument | None = None
-    for source in loaded.sources:
-        if source.relative_path == candidate.target_relative_path or (
-            expected_path is not None and source.relative_path == expected_path
-        ):
-            existing_source = source
-            break
-        if source.resource_id == f"subagent-{candidate.name}":
-            existing_source = source
-            break
-    latest_path = existing_source.relative_path if existing_source is not None else None
-    latest_digest = existing_source.source_digest if existing_source is not None else None
-    if latest_path != expected_path or latest_digest != expected_digest:
-        raise ConfigurationError(
-            "The canonical subagent target changed after preview.",
-            code="external_subagent_target_conflict",
-            details={
-                "expected_relative_path": expected_path,
-                "latest_relative_path": latest_path,
-                "expected_source_digest": expected_digest,
-                "latest_source_digest": latest_digest,
-            },
-        )
-
-
-def _verify_external_sources(facts: tuple[ExternalSourceFact, ...]) -> None:
-    for fact in facts:
-        try:
-            _content, latest = _read_external_source(fact.path)
-        except ConfigurationError as exc:
-            raise ConfigurationError(
-                "An external subagent source changed or disappeared after preview.",
-                code="external_subagent_source_conflict",
-                details={
-                    "path": str(fact.path)[-4096:],
-                    "expected_source_digest": fact.source_digest,
-                    "latest_source_digest": None,
-                },
-            ) from exc
-        if latest != fact.source_digest:
-            raise ConfigurationError(
-                "An external subagent source changed after preview.",
-                code="external_subagent_source_conflict",
-                details={
-                    "path": str(fact.path)[-4096:],
-                    "expected_source_digest": fact.source_digest,
-                    "latest_source_digest": latest,
-                },
-            )
 
 
 def _parse_external_markdown(path: Path, content: bytes) -> tuple[dict[str, Any], str]:

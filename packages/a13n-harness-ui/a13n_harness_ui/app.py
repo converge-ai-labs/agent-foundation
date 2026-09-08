@@ -52,7 +52,6 @@ from a13n_harness_ui.configuration.setup import (
     SetupSelection,
     preview_setup,
     publish_setup,
-    setup_generation,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
@@ -409,14 +408,12 @@ class HarnessUiApp:
         self,
         *,
         relative_path: str,
-        expected_source_digest: str,
     ) -> ConfigurationMutationResult:
         async with self._operation():
             path = self._require_configuration_path()
             result = await delete_configuration_source(
                 path,
                 relative_path,
-                expected_source_digest=expected_source_digest,
                 validate_candidate=self._configurations.validate,
                 content_plugin_root=self._content_plugin_root,
             )
@@ -530,42 +527,35 @@ class HarnessUiApp:
             raise AppStateError("Project root must be a directory.", code="project_root_invalid")
         root = str(normalized)
         project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
-        for attempt in range(2):
-            source = await self.current_configuration()
-            if source is None:
-                raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
-            exact = _cwd_project_ids(source, root)
-            if len(exact) > 1:
-                raise AppStateError(
-                    "Multiple Projects use this default directory. Resume a specific session or edit the Project roots.",
-                    code="project_ambiguous",
+        source = await self.current_configuration()
+        if source is None:
+            raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
+        exact = _cwd_project_ids(source, root)
+        if len(exact) > 1:
+            raise AppStateError(
+                "Multiple Projects use this default directory. Resume a specific session or edit the Project roots.",
+                code="project_ambiguous",
+            )
+        if exact:
+            return exact[0]
+        destination = f"projects/{project_id}.yaml"
+        if project_id in source.projects or any(item.relative_path == destination for item in source.sources):
+            raise AppStateError("Project identity conflicts with a configured resource.", code="project_conflict")
+        await self.mutate_configuration(
+            relative_path=destination,
+            request=ResourceMutationRequest(
+                content=json.dumps(
+                    {
+                        "schema_version": "1",
+                        "kind": "project",
+                        "id": project_id,
+                        "name": normalized.name or root,
+                        "roots": [{"path": root}],
+                    }
                 )
-            if exact:
-                return exact[0]
-            if project_id in source.projects:
-                raise AppStateError("Project identity conflicts with a configured resource.", code="project_conflict")
-            try:
-                await self.mutate_configuration(
-                    relative_path=f"projects/{project_id}.yaml",
-                    request=ResourceMutationRequest(
-                        content=json.dumps(
-                            {
-                                "schema_version": "1",
-                                "kind": "project",
-                                "id": project_id,
-                                "name": normalized.name or root,
-                                "roots": [{"path": root}],
-                            }
-                        )
-                    ),
-                )
-            except ConfigurationError as exc:
-                if attempt or exc.code != "configuration_source_conflict":
-                    raise
-                await self.reload_configuration()
-                continue
-            return project_id
-        raise AppStateError("Project changed during preparation; retry.", code="project_conflict")
+            ),
+        )
+        return project_id
 
     async def context_usage(self, thread_id: str) -> ContextUsageView:
         """Last reported root request footprint, not accumulated Run usage."""
@@ -1177,7 +1167,6 @@ class HarnessUiApp:
                 or defaults.project is None,
                 configuration_path=str(path),
                 suggested_project_path=str(Path.cwd()),
-                generation=await setup_generation(path),
                 providers=tuple(providers),
                 agents={} if current is None else {key: value.name for key, value in current.agents.items()},
                 projects={} if current is None else {key: value.name for key, value in current.projects.items()},
@@ -1201,25 +1190,23 @@ class HarnessUiApp:
                 content_plugin_root=self._content_plugin_root,
             )
 
-    async def apply_setup(self, selection: SetupSelection, *, expected_generation: str) -> SetupPublication:
+    async def apply_setup(self, selection: SetupSelection) -> SetupPublication:
         async with self._operation(), self._setup_lock:
-            if selection.environment_profile == "environment-sandbox":
-                preview = await preview_setup(
-                    self._require_configuration_path(),
-                    selection,
-                    validate_candidate=self._configurations.validate,
-                    content_plugin_root=self._content_plugin_root,
-                )
-                if any(Path(root).resolve() not in self._sandbox_ready_paths for root in preview.project_paths):
-                    raise AppStateError(
-                        "Run Sandbox preflight for the selected project before applying setup, or explicitly choose Full Control.",
-                        code="sandbox_preflight_required",
-                    )
+
+            def validate_candidate(candidate: LoadedHarnessUiConfiguration) -> None:
+                self._configurations.validate(candidate)
+                if not selection.is_addition and selection.environment_profile == "environment-sandbox":
+                    roots = candidate.projects[selection.project].roots
+                    if any(Path(root.path).resolve() not in self._sandbox_ready_paths for root in roots):
+                        raise AppStateError(
+                            "Run Sandbox preflight for the selected project before applying setup, or explicitly choose Full Control.",
+                            code="sandbox_preflight_required",
+                        )
+
             result = await publish_setup(
                 self._require_configuration_path(),
                 selection,
-                expected_generation=expected_generation,
-                validate_candidate=self._configurations.validate,
+                validate_candidate=validate_candidate,
                 content_plugin_root=self._content_plugin_root,
             )
             await self._reload_configuration_from_path()

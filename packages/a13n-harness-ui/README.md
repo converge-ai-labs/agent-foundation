@@ -57,7 +57,7 @@ See the [user guide](../../docs/a13n-harness-ui/index.md) for setup, all slash c
 
 Harness UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-harness-ui/a13n-harness-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain YAML Model, extension, MCP server, Agent, and Project resources, plus canonical Markdown `subagents/` definitions. MCP files also support `.json` and multi-server `mcpServers` objects, with literal or environment-referenced header/environment values. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.
 
-App-owned file mutations require expected source digests and reject stale writes. SQLite stores accepted-generation indexes and mutable Thread/runtime heads, but files remain desired-configuration authority. The data root is resolved before root-YAML parsing from `--data-root`, `A13N_HARNESS_UI_DATA_ROOT`, or the config directory's `data/` default.
+App-owned file mutations validate replacement content and use last-write-wins atomic publication. They require no expected source digest and do not reject concurrent editor saves. SQLite stores accepted-generation indexes and mutable Thread/runtime heads, but files remain desired-configuration authority. The data root is resolved before root-YAML parsing from `--data-root`, `A13N_HARNESS_UI_DATA_ROOT`, or the config directory's `data/` default.
 
 Harness UI includes two fixed Environment modes. **Full Control** uses Direct Local Host execution. **Sandbox** shows the same canonical Host Project paths to the Agent but executes Project commands through Local Envd over EIP with required native isolation and denied networking.
 

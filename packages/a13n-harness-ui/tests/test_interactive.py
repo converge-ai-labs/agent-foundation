@@ -175,8 +175,8 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         shell_review=False,
     )
     validate = AgentCompositionResolver(HarnessUiExtensionCatalog()).validate_generation
-    preview = await preview_setup(path, selection, validate_candidate=validate)
-    result = await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=validate)
+    await preview_setup(path, selection, validate_candidate=validate)
+    result = await publish_setup(path, selection, validate_candidate=validate)
     assert result.completed
     return path
 
@@ -202,6 +202,39 @@ async def test_exact_cwd_project_never_retargets_saved_project(tmp_path: Path, m
         with pytest.raises(ValueError, match="another Project"):
             await other.resume(thread_id)
         assert thread_id in await backend.resume()
+
+
+@pytest.mark.anyio
+async def test_cwd_project_creation_preserves_destination_owned_by_another_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    from a13n_harness_ui.errors import AppStateError
+
+    path = await _seed(tmp_path, monkeypatch)
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    generated_id = "project-cwd-" + hashlib.sha256(str(nested.resolve()).encode()).hexdigest()[:20]
+    occupied = path.parent / "projects" / f"{generated_id}.yaml"
+    content = json.dumps(
+        {
+            "schema_version": "1",
+            "kind": "project",
+            "id": "project-unrelated",
+            "name": "Unrelated",
+            "roots": [{"path": str(tmp_path)}],
+        }
+    )
+    occupied.write_text(content)
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        with pytest.raises(AppStateError) as error:
+            await app.ensure_cwd_project(nested)
+        assert error.value.code == "project_conflict"
+        assert occupied.read_text() == content
+        assert "project-unrelated" in (await app.current_configuration()).projects
 
 
 @pytest.mark.anyio
@@ -1190,8 +1223,8 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
-        preview = await app.preview_setup(second)
-        assert (await app.apply_setup(second, expected_generation=preview.generation)).completed
+        await app.preview_setup(second)
+        assert (await app.apply_setup(second)).completed
         baseline = {p: p.read_bytes() for p in path.parent.rglob("*.yaml")}
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         await backend.initialize()

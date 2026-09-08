@@ -2930,10 +2930,6 @@
       },
       "SetupPreview": {
         "properties": {
-          "generation": {
-            "type": "string",
-            "title": "Generation"
-          },
           "files": {
             "additionalProperties": {
               "type": "string"
@@ -2954,20 +2950,14 @@
             },
             "type": "array",
             "title": "Project Paths"
-          },
-          "candidate_digest": {
-            "type": "string",
-            "title": "Candidate Digest"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "generation",
           "files",
           "preserved_paths",
-          "project_paths",
-          "candidate_digest"
+          "project_paths"
         ],
         "title": "SetupPreview"
       },
@@ -3074,10 +3064,6 @@
             "title": "Suggested Project Path",
             "default": "."
           },
-          "generation": {
-            "type": "string",
-            "title": "Generation"
-          },
           "providers": {
             "items": {
               "$ref": "#/components/schemas/SetupProvider"
@@ -3157,7 +3143,6 @@
         "required": [
           "needed",
           "configuration_path",
-          "generation",
           "providers",
           "agents",
           "projects",
@@ -4403,18 +4388,12 @@
         "properties": {
           "selection": {
             "$ref": "#/components/schemas/SetupSelection"
-          },
-          "expected_generation": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Expected Generation"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "selection",
-          "expected_generation"
+          "selection"
         ],
         "title": "SetupApplyRequest"
       },

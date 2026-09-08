@@ -173,7 +173,7 @@ async def test_advanced_setup_offers_subagents_and_only_publishes_inclusion(tmp_
     validator = AgentCompositionResolver().validate_generation
     preview = await preview_setup(path, selection, validate_candidate=validator)
     assert not any(name.startswith("subagents/") for name in preview.files)
-    result = await publish_setup(path, selection, expected_generation=preview.generation, validate_candidate=validator)
+    result = await publish_setup(path, selection, validate_candidate=validator)
     assert result.completed
     source = await load_harness_ui_configuration(path)
     assert source.document.subagents.include == (BUILTIN_SUBAGENT_NAMES if choice == "all" else ())

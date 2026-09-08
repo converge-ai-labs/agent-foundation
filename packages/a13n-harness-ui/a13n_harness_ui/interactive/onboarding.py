@@ -397,7 +397,6 @@ async def run_setup(
                     if projects:
                         selection = selection.model_copy(update={"project": projects[0]})
                 preview = await app.preview_setup(selection)
-                wizard.preview_generation = preview.generation
                 emit("Saving agent…" if add_agent else "Saving model…" if add_model else "Saving your configuration…")
                 if not (add_agent or add_model) and selection.environment_profile == "environment-sandbox":
                     emit("Checking Sandbox prerequisites. Ctrl+C cancels; no fallback to Full Control.")
@@ -405,7 +404,7 @@ async def run_setup(
                         ready = await app.preflight_environment("environment-sandbox", project_path=root)
                         if not ready.ready:
                             raise ValueError(ready.message + "\n" + "\n".join(ready.instructions))
-                publication = await app.apply_setup(selection, expected_generation=preview.generation)
+                publication = await app.apply_setup(selection)
                 if not publication.completed:
                     raise ValueError(publication.error_message or "Setup publication is incomplete.")
                 emit(

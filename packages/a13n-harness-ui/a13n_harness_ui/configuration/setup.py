@@ -1,4 +1,4 @@
-"""Validated, non-clobbering first-use configuration publication.
+"""Validated, last-write-wins first-use configuration publication.
 
 The root defaults are published last. A failed multi-file publication reports its
 completed paths; it is deliberately not presented as a filesystem transaction.
@@ -24,15 +24,9 @@ from a13n_harness_ui.model_presets import known_model_capabilities
 from a13n_harness_ui.resource_names import coding_agent_name, model_name
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
-from .loader import _parse_yaml_mapping, _scan_directory, load_harness_ui_configuration
-from .models import ApiKeyAuthentication, LoadedHarnessUiConfiguration, ModelCharacteristics, ResourceId, StrictModel
-from .mutation import (
-    CandidateValidator,
-    _fsync_directory,
-    _publish_content,
-    _source_bytes_with_digest,
-    _source_digest_or_none,
-)
+from .loader import _parse_yaml_mapping, _read_bounded_stable, _scan_directory, load_harness_ui_configuration
+from .models import ApiKeyAuthentication, ModelCharacteristics, ResourceId, StrictModel
+from .mutation import CandidateValidator, _publish_content
 
 _EMPTY_ROOT = b'schema_version: "2"\n'
 _DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "subagents")
@@ -92,11 +86,9 @@ class SetupSelection(StrictModel):
 class SetupPreview(StrictModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True, str_strip_whitespace=False)
 
-    generation: str
     files: dict[str, str]
     preserved_paths: tuple[str, ...]
     project_paths: tuple[str, ...]
-    candidate_digest: str
 
 
 class SetupPublication(StrictModel):
@@ -107,40 +99,18 @@ class SetupPublication(StrictModel):
 
 
 def _capture(path: Path) -> dict[str, bytes]:
-    for parent in (path.parent, *(path.parent / name for name in _DIRECTORIES)):
-        for recovery in parent.glob(".a13n-harness-ui-setup-recovery-*"):
-            if any(recovery.iterdir()):
-                raise ConfigurationError(
-                    f"An interrupted setup retained configuration at {recovery}. Review and restore or move it before retrying.",
-                    code="setup_recovery_required",
-                )
     entries: dict[str, bytes] = {}
-    digest = _source_digest_or_none(path)
-    if digest is not None:
-        entries[path.name] = _source_bytes_with_digest(path, digest)
+    for source in (path, path.parent / "AGENTS.md"):
+        if os.path.lexists(source):
+            entries[source.name], _fingerprint = _read_bounded_stable(source, 1024 * 1024)
     for directory in _DIRECTORIES:
         for relative, source, _fingerprint in _scan_directory(
             path.parent / directory, markdown=directory == "subagents"
         ):
-            digest = _source_digest_or_none(source)
-            if digest is None:
-                raise ConfigurationError(
-                    "Configuration changed during setup discovery.", code="configuration_mutation_conflict"
-                )
-            entries[relative] = _source_bytes_with_digest(source, digest)
+            entries[relative], _fingerprint = _read_bounded_stable(source, 1024 * 1024)
             if len(entries) > 2048 or sum(map(len, entries.values())) > 16 * 1024 * 1024:
                 raise ConfigurationError("Configuration exceeds setup limits.", code="configuration_source_limit")
     return entries
-
-
-def _generation(entries: dict[str, bytes]) -> str:
-    return hashlib.sha256(
-        json.dumps({key: hashlib.sha256(value).hexdigest() for key, value in sorted(entries.items())}).encode()
-    ).hexdigest()
-
-
-async def setup_generation(path: Path) -> str:
-    return _generation(await to_thread.run_sync(_capture, path))
 
 
 def _model_characteristics(route: str, authored: HarnessModelCharacteristics | None = None) -> dict[str, JsonValue]:
@@ -479,18 +449,12 @@ async def preview_setup(
         validate_candidate(loaded)
     finally:
         await to_thread.run_sync(shutil.rmtree, staging, True)
-    if _generation(await to_thread.run_sync(_capture, path)) != _generation(baseline):
-        raise ConfigurationError(
-            "Configuration changed during setup preview. Retry setup.", code="configuration_mutation_conflict"
-        )
     return SetupPreview(
-        generation=_generation(baseline),
         files=files,
         preserved_paths=tuple(sorted(name for name in baseline if name not in files)),
         project_paths=()
         if selection.is_addition
         else tuple(root.path for root in loaded.projects[selection.project].roots),
-        candidate_digest=loaded.source_digest,
     )
 
 
@@ -501,101 +465,23 @@ def _write_candidate(staging: Path, candidate: dict[str, bytes]) -> None:
         destination.write_bytes(content)
 
 
-def _publish_root_defaults(path: Path, content: bytes, expected: str) -> None:
-    """Preserve a racing atomic save rather than replacing it unconditionally.
-
-    Detach the observed root into a recovery directory on the same filesystem,
-    verify what was actually detached, then publish only if the root is absent.
-    A crash can leave the named recovery directory for manual restoration.
-    """
-    recovery = Path(tempfile.mkdtemp(prefix=".a13n-harness-ui-setup-recovery-", dir=path.parent))
-    retained = recovery / path.name
-    completed = False
-    try:
-        os.rename(path, retained)
-        _fsync_directory(recovery)
-        _fsync_directory(path.parent)
-        if _source_digest_or_none(retained) != expected:
-            raise ConfigurationError(
-                "The root defaults changed during setup publication.", code="configuration_mutation_conflict"
-            )
-        _publish_content(path, content, None)
-        completed = True
-    except BaseException as exc:
-        if retained.exists():
-            try:
-                os.link(retained, path, follow_symlinks=False)
-                _fsync_directory(path.parent)
-                retained.unlink()
-                _fsync_directory(recovery)
-            except FileExistsError:
-                raise ConfigurationError(
-                    f"A concurrent root configuration was preserved. The displaced version remains at {retained}. Review both files before retrying setup.",
-                    code="configuration_mutation_conflict",
-                ) from exc
-        raise
-    finally:
-        if completed and retained.exists():
-            retained.unlink()
-            _fsync_directory(recovery)
-        if not any(recovery.iterdir()):
-            recovery.rmdir()
-            _fsync_directory(path.parent)
-
-
 async def publish_setup(
     path: Path,
     selection: SetupSelection,
     *,
-    expected_generation: str,
     validate_candidate: CandidateValidator,
     content_plugin_root: Path | None = None,
 ) -> SetupPublication:
     preview = await preview_setup(
         path, selection, validate_candidate=validate_candidate, content_plugin_root=content_plugin_root
     )
-    if preview.generation != expected_generation:
-        raise ConfigurationError(
-            "Setup preview is stale. Review the current files and retry.", code="configuration_mutation_conflict"
-        )
-    baseline = await to_thread.run_sync(_capture, path)
     published: list[str] = []
     try:
-        if _generation(baseline) != preview.generation:
-            raise ConfigurationError(
-                "Configuration changed before setup publication.", code="configuration_mutation_conflict"
-            )
         for name, text in sorted(
             preview.files.items(), key=lambda item: (item[0] == path.name, not item[0].startswith("models/"), item[0])
         ):
-            if await to_thread.run_sync(_capture, path) != baseline:
-                raise ConfigurationError(
-                    "Configuration changed during setup publication. Published files were retained.",
-                    code="configuration_mutation_conflict",
-                )
-            content = text.encode()
-            if baseline.get(name) == content:
-                continue
-            expected = hashlib.sha256(baseline[name]).hexdigest() if name in baseline else None
-            if expected is not None:
-                await to_thread.run_sync(_publish_root_defaults, path.parent / name, content, expected)
-            else:
-                await to_thread.run_sync(_publish_content, path.parent / name, content, expected)
+            await to_thread.run_sync(_publish_content, path.parent / name, text.encode())
             published.append(name)
-            baseline[name] = content
-        if await to_thread.run_sync(_capture, path) != baseline:
-            raise ConfigurationError(
-                "Configuration changed after setup publication.", code="configuration_mutation_conflict"
-            )
-        loaded: LoadedHarnessUiConfiguration = await load_harness_ui_configuration(
-            path, content_plugin_root=content_plugin_root
-        )
-        validate_candidate(loaded)
-        if loaded.source_digest != preview.candidate_digest:
-            raise ConfigurationError(
-                "Configuration changed during final setup verification. Published files were retained.",
-                code="configuration_mutation_conflict",
-            )
         return SetupPublication(completed=True, published_paths=tuple(published))
     except (HarnessUiError, OSError) as exc:
         return SetupPublication(

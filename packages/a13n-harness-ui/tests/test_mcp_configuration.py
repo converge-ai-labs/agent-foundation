@@ -211,7 +211,6 @@ async def test_json_mutation_roundtrip_preserves_other_literal_sources(tmp_path:
         root,
         "mcp/extra.json",
         ResourceMutationRequest(
-            expected_source_digest=result.source_digest,
             content=json.dumps({"mcpServers": {"two": {"command": "python", "env": {"TOKEN": "updated"}}}}),
         ),
     )
@@ -219,17 +218,10 @@ async def test_json_mutation_roundtrip_preserves_other_literal_sources(tmp_path:
     transport = updated.configuration.mcp_servers["mcp-two"].transport
     assert isinstance(transport, McpCommandTransport)
     assert await resolve_mcp_values(transport.environment, tmp_path) == {"TOKEN": "updated"}
-    with pytest.raises(ConfigurationError):
-        await mutate_configuration_source(
-            root,
-            "mcp/extra.json",
-            ResourceMutationRequest(
-                expected_source_digest=result.source_digest,
-                content=request.content,
-            ),
-        )
+    overwritten = await mutate_configuration_source(root, "mcp/extra.json", request)
+    assert "mcp-three" in overwritten.configuration.mcp_servers
     assert updated.source_digest is not None
-    deleted = await delete_configuration_source(root, "mcp/extra.json", expected_source_digest=updated.source_digest)
+    deleted = await delete_configuration_source(root, "mcp/extra.json")
     assert set(deleted.configuration.mcp_servers) == {"mcp-one"}
     assert source.read_bytes() == original
 

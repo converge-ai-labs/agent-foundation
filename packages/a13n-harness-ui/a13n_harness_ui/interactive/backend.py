@@ -439,7 +439,6 @@ class SessionBackend:
             await self.app.mutate_configuration(
                 relative_path=source.relative_path,
                 request=ResourceMutationRequest(
-                    expected_source_digest=source.source_digest,
                     content=yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
                 ),
             )
