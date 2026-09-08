@@ -11,6 +11,7 @@ from a13n_harness import (
     AgentDefinition,
     AgentSpec,
     HarnessBuilder,
+    HarnessState,
     RunBindings,
 )
 from a13n_harness.errors import DefinitionError
@@ -22,10 +23,11 @@ from a13n_service.interactions.harness_control import (
     compose_run_control,
 )
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.agent import ModelRequestNode
+from pydantic_ai.capabilities import AbstractCapability, Capability, CapabilityOrdering
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolReturnPart
 from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.models.function import AgentInfo, DeltaToolCalls, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
@@ -218,3 +220,46 @@ async def test_harness_rejects_a_feature_wrapper_outside_service_control() -> No
         HarnessBuilder(instrumentation=None).build(
             compose_run_control(_definition(IncompatibleWrapper()), _RecordingCoordinator(), _RecordingDriver())
         )
+
+
+async def test_post_tool_checkpoint_resumes_without_repeating_side_effects() -> None:
+    executions: list[str] = []
+    checkpoints: list[HarnessState] = []
+
+    class CheckpointCoordinator(_RecordingCoordinator):
+        async def after_tool_batch(self, boundary, result, complete_messages) -> None:
+            if isinstance(result, ModelRequestNode):
+                checkpoints.append(HarnessState.new(message_history=complete_messages))
+
+    async def side_effect() -> str:
+        executions.append("executed")
+        return "saved"
+
+    async def model_stream(messages, info) -> AsyncIterator[str | DeltaToolCalls]:
+        if any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield "done"
+        else:
+            yield {0: DeltaToolCall(name="side_effect", json_args="{}", tool_call_id="effect-1")}
+
+    definition = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model_stream),
+        capabilities=(Capability(id="test.side-effect", tools=[side_effect]),),
+    )
+    result = (
+        await HarnessBuilder(instrumentation=None)
+        .build(compose_run_control(definition, CheckpointCoordinator(), _RecordingDriver()))
+        .run("execute")
+    )
+    assert result.output_or_raise() == "done"
+    assert executions == ["executed"]
+    assert len(checkpoints) == 1
+    checkpoint = HarnessState.model_validate_json(checkpoints[0].model_dump_json())
+    returns = [
+        part for message in checkpoint.message_history for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+    assert [(part.tool_call_id, part.content) for part in returns] == [("effect-1", "saved")]
+    restored = await HarnessBuilder(instrumentation=None).build(definition).run(previous_state=checkpoint)
+    assert restored.output_or_raise() == "done"
+    assert executions == ["executed"]
