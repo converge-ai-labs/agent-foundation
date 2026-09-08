@@ -20,6 +20,28 @@ For API access, choose **API key** in initial setup, `a13n-harness-ui add model`
 
 Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
 
+## Native media input
+
+Setup, `add model`, and `add agent` with a new connection automatically save known model input capabilities. The final summary shows the selected native media types; no separate capability question is required. Defaults come from a bundled, reviewed model catalog, not a network probe. They describe model capabilities, not account entitlement or continued model availability.
+
+For example, a known image-capable OpenAI, Claude, or Grok Model includes:
+
+```yaml
+model_characteristics:
+  capabilities: [image_understanding]
+  context_window: 350000
+  proactive_context_management_threshold: 0.65
+  compact_threshold: 0.90
+```
+
+Known Gemini Models on the native Google API can also include `audio_understanding` and `video_understanding`. Defaults respect the selected protocol: an image-capable compatible route does not automatically gain native audio/video input just because the upstream model supports it through another API.
+
+Capabilities are separate from an Agent's tools and from model output modalities. In particular, the file `view` tool uses these declarations to attach media directly to the active model. Without a matching capability, it requires an explicitly configured [media-understanding fallback](../a13n-harness/multimedia-understanding.md) or reports unavailability.
+
+Unknown model IDs are labeled unknown and do not automatically enable media. Exact known IDs still receive starter defaults behind a custom base URL; verify that your endpoint supports the declared input. You can edit `model_characteristics.capabilities` in the Model file. Direct setup API callers can explicitly supply capabilities, including `[]`, to override defaults without changing their context policy.
+
+Existing Model files are never backfilled automatically. If an older setup generated `capabilities: []` for an image-capable model, change only that field to `[image_understanding]` after checking the selected model and endpoint. Later Runs use the accepted configuration; active Runs and historical captures remain unchanged. Adding an Agent that reuses a Model preserves that Model exactly.
+
 ## Starter model choices
 
 Initial setup and new-Model creation offer these explicit subscription routes:

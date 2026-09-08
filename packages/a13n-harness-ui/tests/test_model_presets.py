@@ -587,6 +587,8 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
         assert f"name: {title} · Coding\n" in (tmp_path / "agents/api-key.yaml").read_text(encoding="utf-8")
         characteristics = source.models["model-api-key"].model_characteristics
         assert characteristics.context_window == window
+        expected_capabilities = frozenset({"image_understanding"}) if model_id == "kimi-k2.5" else frozenset()
+        assert characteristics.capabilities == expected_capabilities
         composition = AgentCompositionResolver().resolve_run(
             source,
             ThreadCompositionSelection(

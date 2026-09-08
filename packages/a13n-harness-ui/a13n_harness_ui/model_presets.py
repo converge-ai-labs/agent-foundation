@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
 from pydantic import JsonValue
+
+if TYPE_CHECKING:
+    from a13n_harness.spec import ModelCapability
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +112,57 @@ def known_context_window(provider: str, model_id: str, base_url: str) -> int | N
     )
     entry = get_default_pricing_catalog().resolve(model_id, provider=catalog_provider, provider_url=base_url)
     return entry.context_window if entry is not None else None
+
+
+def known_model_capabilities(route: str) -> frozenset[ModelCapability] | None:
+    """Materialize reviewed input facts for the selected transport, without I/O.
+
+    Exact IDs remain case-sensitive, including behind custom base URLs. A URL
+    cannot establish model identity or endpoint compatibility. Unknown IDs and
+    undeclared catalog facts return None, not a claim of text-only support.
+    """
+    from a13n_harness.model_catalog import get_official_model_catalog
+    from a13n_harness.spec import ModelCapability
+
+    provider, _, model_id = route.partition(":")
+    catalog_provider = {
+        "openai-responses": "openai",
+        "openai-chat": "openai",
+        "openai-codex": "openai",
+        "google": "google-gla",
+    }.get(provider, provider)
+    catalog_key = f"{catalog_provider}:{model_id}"
+    if provider == "openrouter":
+        publisher, _, upstream_id = model_id.partition("/")
+        catalog_provider = {
+            "openai": "openai",
+            "anthropic": "anthropic",
+            "google": "google-gla",
+            "x-ai": "grok",
+            "moonshotai": "moonshotai",
+            "z-ai": "zai",
+            "deepseek": "deepseek",
+        }.get(publisher, "")
+        # Reviewed routed spellings; do not strip arbitrary suffixes or rewrite
+        # version punctuation on custom model IDs.
+        catalog_key = {
+            "anthropic/claude-sonnet-4.6": "anthropic:claude-sonnet-4-6",
+            "anthropic/claude-opus-4.6": "anthropic:claude-opus-4-6",
+            "anthropic/claude-haiku-4.5": "anthropic:claude-haiku-4-5",
+            "anthropic/claude-sonnet-4.5": "anthropic:claude-sonnet-4-5",
+        }.get(model_id, f"{catalog_provider}:{upstream_id}")
+    entry = get_official_model_catalog().get(catalog_key)
+    if entry is None or "capabilities" not in entry.characteristics.model_fields_set:
+        return None
+    # The Google adapter accepts native image, audio and video bytes. The other
+    # setup transports are reviewed here for image input only, not video URLs,
+    # frame extraction, live voice, or provider-native tools.
+    supported = (
+        frozenset(ModelCapability)
+        if provider in {"google", "google-gla"}
+        else frozenset({ModelCapability.IMAGE_UNDERSTANDING})
+    )
+    return entry.characteristics.capabilities & supported
 
 
 def validate_base_url(value: str) -> str:

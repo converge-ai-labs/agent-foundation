@@ -56,7 +56,7 @@ def _model() -> FunctionModel:
 def test_official_model_catalog_contains_only_provider_qualified_direct_models() -> None:
     catalog = get_official_model_catalog()
 
-    assert set(catalog) == {
+    assert set(catalog) >= {
         "anthropic:claude-fable-5-1",
         "anthropic:claude-opus-5",
         "anthropic:claude-sonnet-5",
@@ -69,6 +69,25 @@ def test_official_model_catalog_contains_only_provider_qualified_direct_models()
     }
     assert catalog["openai:gpt-5.5"].characteristics.context_window == 1_050_000
     assert all(entry.key.count(":") == 1 for entry in catalog.entries)
+    assert {entry.key.partition(":")[0] for entry in catalog.entries} <= {
+        "anthropic",
+        "deepseek",
+        "google-gla",
+        "grok",
+        "moonshotai",
+        "openai",
+        "zai",
+    }
+    assert catalog["openai:gpt-6-astra"].characteristics.capabilities == {"image_understanding"}
+    assert catalog["google-gla:gemini-2.5-pro"].characteristics.capabilities == {
+        "image_understanding",
+        "audio_understanding",
+        "video_understanding",
+    }
+    text_only = catalog["zai:glm-4.7"].characteristics
+    assert not text_only.capabilities and "capabilities" in text_only.model_fields_set
+    context_only = catalog["deepseek:deepseek-v4-pro"].characteristics
+    assert not context_only.capabilities and "capabilities" not in context_only.model_fields_set
 
 
 def test_default_pricing_catalog_exports_genai_snapshot_plus_harness_overlay() -> None:
