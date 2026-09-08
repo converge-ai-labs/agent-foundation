@@ -24,7 +24,7 @@ def upgrade() -> None:
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("normalized_name", sa.String(length=128), nullable=False),
+        sa.Column("normalized_name", sa.String(length=384), nullable=False),
         sa.Column("endpoint_url", sa.String(length=2048), nullable=False),
         sa.Column("auth_mode", sa.String(length=32), nullable=False),
         sa.Column("static_header_names_json", sa.JSON(), nullable=False),

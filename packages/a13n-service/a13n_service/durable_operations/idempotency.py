@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.digests import digest_request
+from a13n_service import digests
 from a13n_service.ids import new_object_id
 from a13n_service.temporal import assume_utc
 
@@ -77,7 +77,7 @@ async def load_evidence(
     if session.get_bind().dialect.name == "postgresql":
         # Serialize a key even before its first row exists; expiry replacement
         # and the mutation use this same transaction and bounded DB timeouts.
-        material = digest_request(
+        material = digests.digest_request(
             (boundary_id, scope.actor_type, scope.actor_id, scope.operation, scope.scope_id, identity.key_digest)
         )
         lock_id = int.from_bytes(bytes.fromhex(material)[:8], signed=True)
@@ -173,7 +173,6 @@ __all__ = [
     "IdempotencyIdentity",
     "InvalidIdempotencyKey",
     "delete_expired_evidence",
-    "digest_request",
     "digest_visible_ascii_key",
     "is_evidence_unique_race",
     "load_evidence",

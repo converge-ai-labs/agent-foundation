@@ -24,7 +24,7 @@ from a13n_service.object_retention.persistence import require_object_publication
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .audit import asset_audit_record, record_denied
+from .audit import record_denied
 from .domain import (
     Asset,
     AssetSourceKind,
@@ -34,17 +34,17 @@ from .errors import (
     asset_content_invalid,
     asset_idempotency_conflict,
 )
-from .models import AssetRecord
 from .objects import AssetObjectStore, asset_content_key
 from .persistence import (
     UPLOAD_OPERATION,
+    add_asset_publication,
     authorization_error,
     canonical_upload_digest,
     idempotency_key_digest,
     load_upload_replay,
 )
 from .publication import AssetPublisher
-from .staging import AssetStaging, StagedAssetContent
+from .staging import AssetStaging
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,12 +114,7 @@ class AssetUploadService:
             await self._publisher.publish(candidate)
             return await self._commit_upload(
                 actor=actor,
-                organization_id=organization_id,
-                workspace_id=workspace_id,
-                asset_id=asset.id,
-                filename=asset.filename,
-                media_type=asset.media_type,
-                content=candidate.content,
+                asset=asset,
                 identity=identity,
             )
 
@@ -196,35 +191,7 @@ class AssetUploadService:
                 or asset.source.principal != actor.principal
             ):
                 raise asset_content_invalid()
-            session.add(
-                AssetRecord(
-                    id=asset.id,
-                    organization_id=asset.organization_id,
-                    workspace_id=asset.workspace_id,
-                    filename=asset.filename,
-                    media_type=asset.media_type,
-                    size_bytes=asset.size_bytes,
-                    content_sha256=asset.content_sha256,
-                    source_kind="upload",
-                    source_principal_type=actor.principal.principal_type.value,
-                    source_principal_id=actor.principal.principal_id,
-                    source_run_attempt_id=None,
-                    source_invocation_id=None,
-                    created_at=asset.created_at,
-                    deleted_at=None,
-                )
-            )
-            session.add(
-                asset_audit_record(
-                    actor=actor,
-                    organization_id=asset.organization_id,
-                    workspace_id=asset.workspace_id,
-                    asset_id=asset.id,
-                    action="asset.create",
-                    source_kind="upload",
-                    now=now,
-                )
-            )
+            add_asset_publication(session, asset=asset, actor=actor, now=now)
         await session.flush()
 
     async def discard_protocol_import(self, publication: PreparedAssetPublication) -> None:
@@ -324,12 +291,7 @@ class AssetUploadService:
         self,
         *,
         actor: AuthenticatedActor,
-        organization_id: str,
-        workspace_id: str,
-        asset_id: str,
-        filename: str,
-        media_type: str,
-        content: StagedAssetContent,
+        asset: Asset,
         identity: IdempotencyIdentity,
     ) -> Asset:
         now = self._clock()
@@ -340,16 +302,16 @@ class AssetUploadService:
                     workspace = await authorize_workspace(
                         session,
                         actor=actor,
-                        workspace_id=workspace_id,
+                        workspace_id=asset.workspace_id,
                         action=WorkspaceAction.asset_create,
                     )
-                    if workspace.organization_id != organization_id:
+                    if workspace.organization_id != asset.organization_id:
                         raise AuthorizationError("workspace_owner_changed", concealed=True)
                     replay = await load_upload_replay(
                         session,
                         actor=actor,
-                        organization_id=organization_id,
-                        workspace_id=workspace_id,
+                        organization_id=asset.organization_id,
+                        workspace_id=asset.workspace_id,
                         identity=identity,
                         now=now,
                     )
@@ -360,66 +322,42 @@ class AssetUploadService:
                             session,
                             (
                                 asset_content_key(
-                                    organization_id=organization_id, workspace_id=workspace_id, asset_id=asset_id
+                                    organization_id=asset.organization_id,
+                                    workspace_id=asset.workspace_id,
+                                    asset_id=asset.id,
                                 ),
                             ),
                         )
-                        record = AssetRecord(
-                            id=asset_id,
-                            organization_id=organization_id,
-                            workspace_id=workspace_id,
-                            filename=filename,
-                            media_type=media_type,
-                            size_bytes=content.size_bytes,
-                            content_sha256=content.content_sha256,
-                            source_kind="upload",
-                            source_principal_type=actor.principal.principal_type.value,
-                            source_principal_id=actor.principal.principal_id,
-                            source_run_attempt_id=None,
-                            source_invocation_id=None,
-                            created_at=now,
-                            deleted_at=None,
-                        )
-                        session.add(record)
+                        asset = asset.model_copy(update={"created_at": now})
+                        add_asset_publication(session, asset=asset, actor=actor, now=now)
                         session.add(
                             new_evidence(
-                                organization_id=organization_id,
+                                organization_id=asset.organization_id,
                                 scope=EvidenceScope(
-                                    workspace_id=workspace_id,
+                                    workspace_id=asset.workspace_id,
                                     actor_type=actor.principal.principal_type.value,
                                     actor_id=actor.principal.principal_id,
                                     operation=UPLOAD_OPERATION,
-                                    scope_id=workspace_id,
+                                    scope_id=asset.workspace_id,
                                     organization_id=actor.boundary_organization_id,
                                 ),
                                 identity=identity,
                                 result_kind="asset",
-                                result_ref=asset_id,
-                                now=now,
-                            )
-                        )
-                        session.add(
-                            asset_audit_record(
-                                actor=actor,
-                                organization_id=organization_id,
-                                workspace_id=workspace_id,
-                                asset_id=asset_id,
-                                action="asset.create",
-                                source_kind="upload",
+                                result_ref=asset.id,
                                 now=now,
                             )
                         )
                         await session.flush()
-                        result = record.to_resource()
-                candidate_is_authoritative = result.id == asset_id
+                        result = asset
+                candidate_is_authoritative = result.id == asset.id
                 return result
             except IntegrityError as error:
                 if not is_evidence_unique_race(error):
                     raise
                 replay = await self._load_authorized_upload_replay(
                     actor=actor,
-                    organization_id=organization_id,
-                    workspace_id=workspace_id,
+                    organization_id=asset.organization_id,
+                    workspace_id=asset.workspace_id,
                     identity=identity,
                 )
                 if replay is None:
@@ -430,7 +368,7 @@ class AssetUploadService:
                     self._sessions,
                     clock=self._clock,
                     actor=actor,
-                    workspace_id=workspace_id,
+                    workspace_id=asset.workspace_id,
                     asset_id=None,
                     action="asset.create",
                 )
@@ -438,9 +376,9 @@ class AssetUploadService:
         finally:
             if not candidate_is_authoritative:
                 await self._delete_candidate_if_unowned(
-                    asset_id=asset_id,
-                    organization_id=organization_id,
-                    workspace_id=workspace_id,
+                    asset_id=asset.id,
+                    organization_id=asset.organization_id,
+                    workspace_id=asset.workspace_id,
                 )
 
     async def _delete_candidate_if_unowned(

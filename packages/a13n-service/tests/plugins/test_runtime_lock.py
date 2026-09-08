@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 
 import pytest
 from a13n_service.plugins.runtime import (
     LockedDistribution,
+    PluginRuntimeLock,
     PluginRuntimeLockError,
     PluginRuntimeLockStore,
     WorkerReleaseManifest,
@@ -61,6 +63,23 @@ def _store() -> PluginRuntimeLockStore:
         ),
         clock=lambda: NOW,
     )
+
+
+def test_runtime_lock_digest_retains_ordinary_json_encoding() -> None:
+    lock = PluginRuntimeLock(
+        mode="on_demand",
+        runtime_target=default_runtime_target(),
+        worker_release="版本-é",
+        harness_version="test-harness",
+        digest="0" * 64,
+    )
+    encoded = json.dumps(
+        lock.model_dump(mode="json", exclude={"digest"}),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    assert lock.computed_digest() == hashlib.sha256(encoded).hexdigest()
 
 
 @pytest.mark.anyio

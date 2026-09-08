@@ -33,6 +33,7 @@ from a13n_service.gateway.models import (
     A2APushConfigurationRecord,
     A2ATaskBindingRecord,
 )
+from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session, transaction
@@ -258,6 +259,33 @@ async def test_raw_part_is_atomically_imported_as_asset_and_replayed_without_rep
         "source": {"type": "asset", "asset_id": assets[0].id},
         "delivery": "model_content",
     }
+
+
+async def test_asset_and_success_audit_rollback_with_failed_message_acceptance(
+    lifecycle_interaction_sessions, tmp_path, monkeypatch
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    persist = AssetUploadService.commit_protocol_imports_in_transaction
+
+    async def fail_after_assets(self, session, **kwargs):
+        await persist(self, session, **kwargs)
+        assert await session.scalar(select(AssetRecord.id)) is not None
+        raise RuntimeError("message acceptance failed after Asset flush")
+
+    monkeypatch.setattr(AssetUploadService, "commit_protocol_imports_in_transaction", fail_after_assets)
+    request = _request()
+    request.message.parts.append(a2a.Part(raw=b"candidate", filename="candidate.bin"))
+    with pytest.raises(RuntimeError, match="after Asset flush"):
+        await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+    async with short_session(lifecycle_interaction_sessions) as session:
+        assert await session.scalar(select(AssetRecord.id)) is None
+        assert await session.scalar(select(RunRecord.id)) is None
+        assert await session.scalar(select(A2AMessageBindingRecord.id)) is None
+        assert (
+            await session.scalar(select(SecurityAuditRecord.id).where(SecurityAuditRecord.action == "asset.create"))
+            is None
+        )
 
 
 async def test_url_part_follows_bounded_redirect_and_is_not_refetched_on_replay(

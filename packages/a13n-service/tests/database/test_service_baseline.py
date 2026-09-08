@@ -14,6 +14,17 @@ from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 
+_NAME_KEY_TABLES = {
+    "agents",
+    "application_accounts",
+    "connector_connections",
+    "connector_providers",
+    "mcp_connections",
+    "model_providers",
+    "service_accounts",
+    "workspaces",
+}
+
 
 @pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
 def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(
@@ -40,6 +51,10 @@ def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(
                 columns = {column["name"] for column in inspector.get_columns(table)}
                 assert not any("catalog" in column or column.startswith("mcp_tool_snapshot_") for column in columns)
             for table in tables:
+                if table in _NAME_KEY_TABLES or table == "assets":
+                    columns = {column["name"]: column for column in inspector.get_columns(table)}
+                    name, width = ("filename", 256) if table == "assets" else ("normalized_name", 384)
+                    assert columns[name]["type"].length == width, (revision.revision, table, name)
                 for foreign_key in inspector.get_foreign_keys(table):
                     assert foreign_key["referred_table"] in tables, (revision.revision, table, foreign_key)
             snapshots.append(tables)

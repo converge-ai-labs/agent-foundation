@@ -32,11 +32,12 @@ from a13n_service.object_retention.persistence import require_object_publication
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .audit import asset_audit_record, record_publication_denied
+from .audit import record_publication_denied
 from .domain import Asset, AssetRef, RunOutputAssetSource
 from .errors import AssetError, asset_content_invalid, asset_idempotency_conflict
 from .models import AssetRecord
 from .objects import AssetObjectStore, asset_content_key
+from .persistence import add_asset_publication
 from .publication import AssetPublisher
 
 _TOOL_ID = "service.publish_asset"
@@ -146,36 +147,13 @@ class AssetRuntime:
                     ),
                 ),
             )
-            session.add(
-                AssetRecord(
-                    id=asset.id,
-                    organization_id=asset.organization_id,
-                    workspace_id=asset.workspace_id,
-                    filename=asset.filename,
-                    media_type=asset.media_type,
-                    size_bytes=asset.size_bytes,
-                    content_sha256=asset.content_sha256,
-                    source_kind="run_output",
-                    source_principal_type=None,
-                    source_principal_id=None,
-                    source_run_attempt_id=authority.run_attempt_id,
-                    source_invocation_id=invocation_id,
-                    created_at=now,
-                    deleted_at=None,
-                )
-            )
-            session.add(
-                asset_audit_record(
-                    actor=actor,
-                    organization_id=asset.organization_id,
-                    workspace_id=asset.workspace_id,
-                    asset_id=asset.id,
-                    action="asset.create",
-                    source_kind="run_output",
-                    run_id=authority.run_id,
-                    run_attempt_id=authority.run_attempt_id,
-                    now=now,
-                )
+            add_asset_publication(
+                session,
+                asset=asset.model_copy(update={"created_at": now}),
+                actor=actor,
+                now=now,
+                run_attempt_id=authority.run_attempt_id,
+                invocation_id=invocation_id,
             )
             await session.flush()
         return AssetRef.from_asset(asset)

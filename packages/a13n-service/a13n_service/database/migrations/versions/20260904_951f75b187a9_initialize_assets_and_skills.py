@@ -23,7 +23,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("filename", sa.String(length=1024), nullable=False),
+        sa.Column("filename", sa.String(length=256), nullable=False),
         sa.Column("media_type", sa.String(length=255), nullable=False),
         sa.Column("size_bytes", sa.BigInteger(), nullable=False),
         sa.Column("content_sha256", sa.String(length=64), nullable=False),

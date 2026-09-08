@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, digest_request, is_evidence_unique_race
+from a13n_service.digests import digest_request
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, is_evidence_unique_race
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.audit import security_audit_record
