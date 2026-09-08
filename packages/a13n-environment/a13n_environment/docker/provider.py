@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-from collections.abc import Awaitable, Mapping
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Awaitable, Mapping
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Literal
 
-from a13n_envd_client import EIPSession
+from a13n_envd_client import EIPConnectionError, EIPSession
 from pydantic import ValidationError
 
 from ..attachments import HttpEIPSessionSource
@@ -89,6 +89,39 @@ _LABEL_BOOTSTRAP = "io.a13n.bootstrap-correlation"
 _LABEL_FINGERPRINT = "io.a13n.configuration-fingerprint"
 _LABEL_CREATE = "io.a13n.create-correlation"
 _REQUIRED_EIP_METHODS = frozenset({"environment.describe", "environment.readiness", "session.close"})
+_EIP_STARTUP_TIMEOUT = 10.0
+_EIP_RETRY_INTERVAL = 0.1
+
+
+@asynccontextmanager
+async def _open_docker_eip_session(
+    endpoint: str, credential: str, *, expected_environment_id: str
+) -> AsyncIterator[EIPSession]:
+    # A published Docker port can accept and reset connections before envd binds.
+    # Only initialization/readiness may be retried, always with a fresh source.
+    async with asyncio.timeout(_EIP_STARTUP_TIMEOUT):
+        while True:
+            source = HttpEIPSessionSource(
+                endpoint,
+                credential,
+                initialization_timeout=_EIP_STARTUP_TIMEOUT,
+                request_timeout=30.0,
+                allow_plaintext_private_link=True,
+            )
+            context = source.open_session(
+                expected_environment_id=expected_environment_id,
+                required_methods=_REQUIRED_EIP_METHODS,
+            )
+            try:
+                session = await context.__aenter__()
+            except EIPConnectionError:
+                await asyncio.sleep(_EIP_RETRY_INTERVAL)
+            else:
+                break
+    try:
+        yield session
+    finally:
+        await context.__aexit__(None, None, None)
 
 
 class _DockerEIPSession:
@@ -138,16 +171,10 @@ class _DockerEIPSession:
             or inspection.eip_host_port is None
         ):
             raise _conflict_failure("Docker target has no exact active Host-loopback EIP route.")
-        source = HttpEIPSessionSource(
+        context = _open_docker_eip_session(
             f"http://127.0.0.1:{inspection.eip_host_port}",
             allocation.material.credential,
-            initialization_timeout=10.0,
-            request_timeout=30.0,
-            allow_plaintext_private_link=True,
-        )
-        context = source.open_session(
             expected_environment_id=inspection.labels[_LABEL_ENVIRONMENT],
-            required_methods=_REQUIRED_EIP_METHODS,
         )
         try:
             session = await context.__aenter__()

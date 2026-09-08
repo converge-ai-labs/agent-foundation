@@ -10,8 +10,10 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx2
 
+from a13n_envd_client._timeouts import response_timeout
 from a13n_envd_client.eip.v1 import DataFrame, DataFrameKind
 from a13n_envd_client.errors import (
+    EIPConnectionError,
     EIPProtocolError,
     EIPTransportClosedError,
     EIPTransportError,
@@ -63,6 +65,7 @@ class HttpTransport:
             allow_plaintext_private_link=allow_plaintext_private_link,
         )
         self._credential = credential
+        self._request_timeout = request_timeout
         self._client = httpx2.AsyncClient(
             verify=verify,
             timeout=request_timeout,
@@ -133,11 +136,16 @@ class HttpTransport:
         if self._session is not None:
             headers[_SESSION_HEADER] = self._session
         try:
+            params = json.loads(frame.payload).get("params", {})
             async with self._client.stream(
                 "POST",
                 f"{self._endpoint}{_CONTROL_PATH}",
                 headers=headers,
                 content=frame.payload,
+                timeout=httpx2.Timeout(
+                    self._request_timeout,
+                    read=response_timeout(params, self._request_timeout),
+                ),
             ) as response:
                 if response.status_code != 200:
                     raise EIPTransportError(f"EIP HTTP control request failed with status {response.status_code}")
@@ -151,6 +159,8 @@ class HttpTransport:
                         raise EIPProtocolError("successful HTTP initialize response omitted EIP-Session")
         except EIPTransportError:
             raise
+        except (httpx2.NetworkError, httpx2.ConnectTimeout, httpx2.RemoteProtocolError) as error:
+            raise EIPConnectionError("EIP HTTP connection failed") from error
         except httpx2.HTTPError as error:
             raise EIPTransportError("EIP HTTP control request failed") from error
         await self._received.put(ControlFrame(payload))

@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from a13n_envd_client._timeouts import response_timeout
 from a13n_envd_client.eip.v1 import (
     DataFrame,
     DataFrameKind,
@@ -233,6 +234,10 @@ class RequestCoordinator(EIPRequester):
                 dispatched=False,
             )
 
+        # Admission is bounded separately. The daemon starts its operation budget
+        # after dispatch, so reserve additional time to receive its typed result.
+        response_budget = response_timeout(params_payload, self._request_timeout)
+        timeout_at = loop.time() + response_budget if response_budget is not None else None
         future: asyncio.Future[object] = asyncio.get_running_loop().create_future()
         pending = _PendingRequest(cast(MethodSpec[Any, Any], method), future)
         self._pending[request_id] = pending

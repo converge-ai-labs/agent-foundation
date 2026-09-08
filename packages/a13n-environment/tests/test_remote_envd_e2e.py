@@ -27,6 +27,7 @@ from a13n_environment import (
     WebSocketEnvdEnvironmentProvider,
     WebSocketEnvdProviderRuntime,
 )
+from a13n_environment.docker.provider import _open_docker_eip_session
 from a13n_environment.files import FileQueryRequest, FileTextSearchRequest
 from a13n_environment.models import EnvironmentError
 from pydantic import SecretStr
@@ -147,6 +148,42 @@ def free_port():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return listener.getsockname()[1]
+
+
+async def test_docker_session_recovers_when_published_port_precedes_real_envd(binary, tmp_path):
+    disconnected = asyncio.Event()
+
+    async def early_connection(reader, writer):
+        try:
+            await reader.read(65536)
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            disconnected.set()
+
+    # Model Docker's published route accepting a connection before envd starts.
+    listener = await asyncio.start_server(early_connection, "127.0.0.1", 0)
+    port = listener.sockets[0].getsockname()[1]
+
+    async def connect():
+        async with _open_docker_eip_session(
+            f"http://127.0.0.1:{port}", TOKEN, expected_environment_id=NATIVE_ID
+        ) as session:
+            assert session.descriptor.environment_id == NATIVE_ID
+            assert (await session.readiness()).ready
+
+    task = asyncio.create_task(connect())
+    try:
+        await asyncio.wait_for(disconnected.wait(), 5)
+        listener.close()
+        await listener.wait_closed()
+        async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}"):
+            await asyncio.wait_for(task, 5)
+    finally:
+        listener.close()
+        await listener.wait_closed()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def exercise(environment):
