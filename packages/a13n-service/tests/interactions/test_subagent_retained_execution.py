@@ -10,8 +10,9 @@ from a13n_harness.capabilities import (
     SubagentInfoRequest,
     SubagentOperatorContext,
 )
-from a13n_service.agents.domain import EffectiveAgentConfig, canonical_digest
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.agents.models import AgentRevisionRecord
+from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.domain import RunLineageKind, Thread, ThreadOriginKind, ThreadRole
@@ -487,9 +488,7 @@ def _replace_parent_child_revision(config: EffectiveAgentConfig) -> EffectiveAge
     )
     changed = changed.model_copy(
         update={
-            "content_digest": canonical_digest(
-                changed.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-            )
+            "content_digest": digest_request(changed.model_dump(mode="json", by_alias=True, exclude={"content_digest"}))
         }
     )
     replacement = child.model_copy(update={"revision_content_digest": "4" * 64, "effective_config": changed})
@@ -502,7 +501,7 @@ def _replace_parent_child_revision(config: EffectiveAgentConfig) -> EffectiveAge
     )
     return candidate.model_copy(
         update={
-            "content_digest": canonical_digest(
+            "content_digest": digest_request(
                 candidate.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
             )
         }

@@ -27,13 +27,13 @@ from a13n_service.agents.domain import (
     ResolvedPluginVersion,
     ResolvedRevisionContent,
     ResolvedSubagentEdge,
-    canonical_digest,
 )
 from a13n_service.agents.reconstruction import (
     AgentDefinitionReconstructionContext,
     AgentDefinitionReconstructionError,
     AgentReconstructor,
 )
+from a13n_service.digests import digest_request
 from a13n_service.iam import PrincipalRef
 from a13n_service.models.domain import ModelExecutionSnapshot
 from pydantic import JsonValue, RootModel, TypeAdapter
@@ -164,7 +164,7 @@ def _effective(
         content_digest="0" * 64,
     )
     payload = candidate.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-    return candidate.model_copy(update={"content_digest": canonical_digest(payload)})
+    return candidate.model_copy(update={"content_digest": digest_request(payload)})
 
 
 def _revision(
@@ -187,7 +187,7 @@ def _revision(
         mcp_tools=mcp_tools,
         resolved_subagents=subagents,
     )
-    digest = canonical_digest(
+    digest = digest_request(
         {
             "plugin_runtime_mode": PluginRuntimeMode.on_demand.value,
             "config": selected_config.model_dump(mode="json", by_alias=True),
@@ -202,7 +202,7 @@ def _revision(
         version=1,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
         config=selected_config,
-        config_digest=canonical_digest(selected_config),
+        config_digest=digest_request(selected_config),
         resolved_model=resolved.resolved_model,
         resolved_plugin_versions=resolved.resolved_plugin_versions,
         runtime_lock_digest=resolved.runtime_lock_digest,
@@ -258,7 +258,7 @@ def _with_children(effective: EffectiveAgentConfig, children: Mapping[str, Agent
 def _rehash(effective: EffectiveAgentConfig) -> EffectiveAgentConfig:
     return effective.model_copy(
         update={
-            "content_digest": canonical_digest(
+            "content_digest": digest_request(
                 effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
             )
         }

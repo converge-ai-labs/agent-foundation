@@ -6,7 +6,8 @@ import pytest
 from a13n_harness import AgentContext, HarnessBuilder, RunBindings
 from a13n_harness.tools.invocation import current_invocation_scope
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
-from a13n_service.agents.domain import SecretRequirement, canonical_digest
+from a13n_service.agents.domain import SecretRequirement
+from a13n_service.digests import digest_request
 from a13n_service.iam import AuthorizationError
 from a13n_service.iam.models import UserRecord
 from a13n_service.interactions.attempts import AttemptAuthorityError
@@ -185,9 +186,7 @@ async def test_run_acceptance_freezes_only_declared_secret_references(
     config = frozen.effective_config.model_copy(update={"secret_requirements": (SecretRequirement(key="storage"),)})
     config = config.model_copy(
         update={
-            "content_digest": canonical_digest(
-                config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-            )
+            "content_digest": digest_request(config.model_dump(mode="json", by_alias=True, exclude={"content_digest"}))
         }
     )
     commands = _commands(

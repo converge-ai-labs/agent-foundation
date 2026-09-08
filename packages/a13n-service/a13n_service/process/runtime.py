@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from a13n_service.agents.application import AgentManagement
-    from a13n_service.assets.service import AssetService
+    from a13n_service.assets.catalog import AssetCatalog
+    from a13n_service.assets.uploads import AssetUploadService
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.lifecycle import EnvironmentLifecycle
@@ -63,7 +64,8 @@ class ControlRuntime:
     agents: AgentManagement
     models: ModelService
     model_providers: ModelProviderService
-    assets: AssetService
+    assets: AssetCatalog
+    asset_uploads: AssetUploadService
     hook_subscriptions: HookSubscriptionService
     lifecycle_events: LifecycleEventService
     gateway: GatewayRuntime

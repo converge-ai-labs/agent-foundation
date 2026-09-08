@@ -25,7 +25,7 @@ from a13n_service.ids import new_object_id
 
 from .domain import (
     BoundedKey,
-    BoundedName,
+    BoundedText,
     ObjectId,
     PendingCallKind,
     PendingCallSummary,
@@ -114,23 +114,23 @@ class SubmittedPendingAction(StrEnum):
 
 
 class ApprovePendingResolution(StrictModel):
-    call_id: BoundedName
+    call_id: BoundedText
     action: Literal[SubmittedPendingAction.approve] = SubmittedPendingAction.approve
 
 
 class RejectPendingResolution(StrictModel):
-    call_id: BoundedName
+    call_id: BoundedText
     action: Literal[SubmittedPendingAction.reject] = SubmittedPendingAction.reject
 
 
 class CompletePendingResolution(StrictModel):
-    call_id: BoundedName
+    call_id: BoundedText
     action: Literal[SubmittedPendingAction.complete] = SubmittedPendingAction.complete
     result: JsonValue
 
 
 class RespondPendingResolution(StrictModel):
-    call_id: BoundedName
+    call_id: BoundedText
     action: Literal[SubmittedPendingAction.respond] = SubmittedPendingAction.respond
     response: JsonValue
 
@@ -167,7 +167,7 @@ class PendingResolutionOutcome(StrEnum):
 
 
 class AcceptedPendingResolution(StrictModel):
-    call_id: BoundedName
+    call_id: BoundedText
     kind: PendingCallKind
     outcome: PendingResolutionOutcome
     result: JsonValue | None = None
@@ -467,7 +467,7 @@ class QueuedSubmissionState(StrEnum):
 
 class QueuedSubmissionFailure(StrictModel):
     code: BoundedKey
-    message: BoundedName
+    message: BoundedText
 
 
 class QueuedSubmission(StrictModel):

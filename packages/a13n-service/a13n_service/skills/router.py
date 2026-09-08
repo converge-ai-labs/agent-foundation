@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
+from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
@@ -33,7 +34,6 @@ from .uploads import SkillUploadService
 
 router = APIRouter(prefix="/api/v1", tags=["skill-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
-IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 _CONTENT_CHUNK_BYTES = 1024 * 1024
 

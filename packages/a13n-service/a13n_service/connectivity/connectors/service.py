@@ -23,10 +23,10 @@ from a13n_service.connectivity.management import (
     record_command,
     replay_command,
 )
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     IdempotencyConflict,
     InvalidIdempotencyKey,
-    digest_request,
     digest_visible_ascii_key,
 )
 from a13n_service.iam import AuthenticatedActor

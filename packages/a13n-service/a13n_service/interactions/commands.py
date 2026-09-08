@@ -17,13 +17,13 @@ from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver, FrozenAgentInvocation
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.assets import Asset, UploadedAssetSource
-from a13n_service.assets.service import AssetService
+from a13n_service.assets.catalog import AssetCatalog
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_request,
     digest_visible_ascii_key,
     is_evidence_unique_race,
     load_evidence,
@@ -136,7 +136,7 @@ class InteractionCommands:
         invocations: AgentInvocationResolver,
         acceptance: RunAcceptanceService,
         states: RunStateStore,
-        assets: AssetService,
+        assets: AssetCatalog,
         endpoint_policy: EndpointPolicy,
         *,
         outcomes: RunOutcomeService | None = None,

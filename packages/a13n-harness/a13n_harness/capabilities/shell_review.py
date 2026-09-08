@@ -14,9 +14,11 @@ from importlib.resources import files
 from typing import Protocol, cast, runtime_checkable
 from uuid import uuid4
 
+from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_ai import Agent, PromptedOutput, RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.settings import ModelSettings
@@ -29,6 +31,7 @@ from a13n_harness.usage import ProviderUsage, UsageMeasure
 SHELL_REVIEW_CAPABILITY_ID = "a13n.shell-review"
 SHELL_EXEC_TOOL_ID = "environment.shell_exec"
 MAX_SHELL_REVIEW_REASON_CHARS = 2_000
+_LOGGER = get_logger(__name__)
 
 
 class ShellRiskLevel(StrEnum):
@@ -41,10 +44,11 @@ class ShellRiskLevel(StrEnum):
 
 
 class ShellReviewAction(StrEnum):
-    """Restriction applied to a flagged or failed review."""
+    """Review response; skipping adds no restriction to the invocation policy."""
 
     APPROVAL_REQUIRED = "approval_required"
     DENY = "deny"
+    SKIP = "skip"
 
 
 _RISK_ORDER = {
@@ -186,6 +190,16 @@ class AgentShellCommandReviewer:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            # Provider error messages/bodies can echo credentials or command input.
+            # Keep diagnostics useful without publishing the protected exception chain.
+            _LOGGER.warning(
+                "shell_review_failed",
+                extra={
+                    "tool_call_id": request.tool_call_id,
+                    "error_type": type(exc).__name__,
+                    "status_code": exc.status_code if isinstance(exc, ModelHTTPError) else None,
+                },
+            )
             raise ShellReviewError(
                 "shell_review_failed",
                 usage=_provider_usage_receipts(self._model, usage),

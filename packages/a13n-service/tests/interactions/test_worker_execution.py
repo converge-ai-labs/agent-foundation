@@ -12,9 +12,11 @@ from a13n_environment import (
 )
 from a13n_harness import EnvironmentAccess, EnvironmentMount
 from a13n_harness.tools.invocation import current_invocation_scope
-from a13n_service.agents.domain import AssetPublicationConfig, SecretRequirement, canonical_digest
+from a13n_service.agents.domain import AssetPublicationConfig, SecretRequirement
+from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.agents.reconstruction import AgentReconstructor
 from a13n_service.assets.models import AssetRecord
+from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.control_models import ThreadInboxRecord
@@ -80,9 +82,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     )
     config = config.model_copy(
         update={
-            "content_digest": canonical_digest(
-                config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-            )
+            "content_digest": digest_request(config.model_dump(mode="json", by_alias=True, exclude={"content_digest"}))
         }
     )
     monkeypatch.setattr(acceptance, "effective_agent_config", lambda: config)
@@ -100,6 +100,8 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     monkeypatch.setattr(acceptance, "initialize_start_state", initialize_with_context)
     states, run, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store)
     async with transaction(interaction_sessions) as session:
+        revision = await session.get(AgentRevisionRecord, run.agent_revision_id)
+        revision.config = {**revision.config, "asset_publication": {"enabled": True}}
         session.add(
             PluginRuntimeLockRecord(
                 digest=lock.digest,
@@ -361,7 +363,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                     .where(RunAttemptRecord.run_id == run.id)
                 )
                 assert asset is not None and asset.filename == "result.txt"
-            assert published and published[0].asset_id == asset.id
+            assert published and published[0]["asset_id"] == asset.id
         assert preflight.await_count == (2 if late_input and not recover_candidate else 1) + int(handoff)
         assert all(call.args == (lock,) for call in preflight.await_args_list)
 

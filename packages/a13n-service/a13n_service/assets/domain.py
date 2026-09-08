@@ -8,12 +8,12 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from a13n_service.iam.domain import ObjectId, PrincipalRef
-from a13n_service.ids import new_object_id
+from a13n_service.digests import Sha256Digest
+from a13n_service.iam.domain import PrincipalRef
+from a13n_service.ids import ObjectId, new_object_id
 
-ContentDigest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 _MIME_TOKEN = r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+"
 _MEDIA_TYPE_PATTERN = re.compile(rf"^(?P<type>{_MIME_TOKEN})/(?P<subtype>{_MIME_TOKEN})$")
 
@@ -34,7 +34,7 @@ class RunOutputAssetSource(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal[AssetSourceKind.run_output] = AssetSourceKind.run_output
-    run_id: ObjectId
+    run_id: ObjectId | None = None
 
 
 AssetSource = Annotated[UploadedAssetSource | RunOutputAssetSource, Field(discriminator="kind")]
@@ -51,7 +51,7 @@ class Asset(BaseModel):
     filename: str
     media_type: str
     size_bytes: int = Field(ge=0)
-    content_sha256: ContentDigest
+    content_sha256: Sha256Digest
     source: AssetSource
     created_at: datetime
     deleted_at: datetime | None
@@ -77,7 +77,7 @@ class AssetRef(BaseModel):
     filename: str
     media_type: str
     size_bytes: int = Field(ge=0)
-    content_sha256: ContentDigest
+    content_sha256: Sha256Digest
 
     @classmethod
     def from_asset(cls, asset: Asset) -> AssetRef:
@@ -121,6 +121,6 @@ def normalize_media_type(value: str | None) -> str:
     if not isinstance(candidate, str):
         raise ValueError("media_type must be a string")
     match = _MEDIA_TYPE_PATTERN.fullmatch(candidate)
-    if match is None or "*" in candidate:
+    if match is None or "*" in candidate or len(candidate) > 255:
         raise ValueError("media_type must be a MIME media-type essence without parameters or wildcards")
     return candidate.lower()

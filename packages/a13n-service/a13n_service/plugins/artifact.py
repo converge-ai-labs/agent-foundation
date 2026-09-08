@@ -21,10 +21,11 @@ from packaging.tags import parse_tag
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+from .domain import PLUGIN_KEY_PATTERN
 from .errors import PluginError, plugin_artifact_invalid, plugin_artifact_limit
 
 HARNESS_PLUGIN_ENTRY_POINT_GROUP = "a13n_harness.plugins"
-_PLUGIN_KEY = re.compile(r"^[a-z][a-z0-9_.-]{1,127}$")
+_PLUGIN_KEY = re.compile(PLUGIN_KEY_PATTERN)
 _IMPORT_PART = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _MAX_METADATA_BYTES = 1024 * 1024
 

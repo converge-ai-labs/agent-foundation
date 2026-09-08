@@ -90,6 +90,14 @@ class PrincipalRef:
     principal_id: str
 
 
+class SystemActorRef:
+    principal_type: Literal["system"]
+    principal_id: str
+
+
+type ActorRef = PrincipalRef | SystemActorRef
+
+
 class ResourceRef:
     resource_type: str
     resource_id: str
@@ -97,7 +105,7 @@ class ResourceRef:
     workspace_id: str | None
 ```
 
-These schemas are conceptual domain values, not wire or ORM models.
+These schemas are conceptual domain values, not wire or ORM models. `ActorRef` is historical attribution for fields such as Agent creator and updater. Its `system` branch is not a Principal, cannot authenticate, and cannot hold RoleBindings; builtin system attribution must not be presented as a Service Account.
 
 ## Core Relational Contract
 

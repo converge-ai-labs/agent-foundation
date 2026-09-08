@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
+from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.authentication import authenticate_mutation
 from a13n_service.request_runtime import get_connectivity_control_runtime, get_process_runtime
@@ -29,7 +30,6 @@ from .service import MCPConnectionService
 
 router = APIRouter(tags=["connectivity-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
-IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
 
 
 def _connections(request: Request) -> MCPConnectionService:

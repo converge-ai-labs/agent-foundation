@@ -14,10 +14,10 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import CommandReceipt, fingerprint, record_command, replay_command
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     IdempotencyConflict,
     InvalidIdempotencyKey,
-    digest_request,
     digest_visible_ascii_key,
 )
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord

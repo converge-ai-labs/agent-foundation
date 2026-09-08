@@ -118,6 +118,7 @@ class ProcessRuntimeFactory:
                 models=placeholder,
                 model_providers=placeholder,
                 assets=placeholder,
+                asset_uploads=placeholder,
                 hook_subscriptions=hook_subscriptions if hook_subscriptions is not None else placeholder,
                 lifecycle_events=lifecycle_events if lifecycle_events is not None else placeholder,
                 gateway=gateway if gateway is not None else placeholder,

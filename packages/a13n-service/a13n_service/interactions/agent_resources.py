@@ -12,10 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext
+from a13n_service.assets.runtime import AssetCapability, AssetRuntime, PublicationSelection
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_agent_principal_actions
 from a13n_service.models.domain import ModelExecutionSnapshot
+from a13n_service.skills.attempts import CurrentSkillAttempt
 from a13n_service.skills.runtime import PreparedSkillRuntime, SkillRuntimePreparer
 from a13n_service.storage import short_session
 
@@ -71,6 +73,7 @@ async def validate_agent_resources(
             organization_id=run.organization_id,
             workspace_id=workspace_id,
             locks=selected.skills,
+            fence=CurrentSkillAttempt(sessions, current_context),
         )
     return prepared
 
@@ -78,6 +81,8 @@ async def validate_agent_resources(
 async def prepare_agent_resources(
     *,
     run: Run,
+    workspace_id: str,
+    asset_publication: AssetRuntime,
     config: EffectiveAgentConfig,
     current_context: Callable[[], AttemptContext],
     skills: dict[str, PreparedSkillRuntime],
@@ -100,7 +105,17 @@ async def prepare_agent_resources(
             )
         )
         configurations[revision_id] = child.effective_config
-    for revision_id in configurations:
+    for revision_id, selected in configurations.items():
+        if selected.asset_publication is not None:
+            agent_id = run.agent_id if revision_id == run.agent_revision_id else children[revision_id][0].child_agent_id
+            capabilities[revision_id] = (
+                *capabilities[revision_id],
+                AssetCapability(
+                    asset_publication,
+                    current_context,
+                    PublicationSelection(workspace_id, agent_id, revision_id, run.effective_agent_config_digest),
+                ),
+            )
         runtime = skills[revision_id]
         if runtime.manager is not None:
             capabilities[revision_id] = (*capabilities[revision_id], SkillsCapability(runtime.manager))

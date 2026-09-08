@@ -14,11 +14,11 @@ from .objects import ASSET_OBJECT_DESTINATION
 
 
 def tombstone_asset(
-    database: AsyncSession, record: AssetRecord, *, actor: AuthenticatedActor | SystemAuditActor, now: datetime
+    session: AsyncSession, record: AssetRecord, *, actor: AuthenticatedActor | SystemAuditActor, now: datetime
 ) -> None:
     """The caller locks and validates the active Asset before this transition."""
     record.deleted_at = now
-    database.add(
+    session.add(
         security_audit_record(
             audit_id=new_object_id("aud"),
             actor=actor,
@@ -32,7 +32,7 @@ def tombstone_asset(
             details={"source_kind": record.source_kind},
         )
     )
-    database.add(
+    session.add(
         OutboxRecord(
             id=new_object_id("obx"),
             source_kind="asset",

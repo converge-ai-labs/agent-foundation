@@ -14,7 +14,7 @@ from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.secrets.domain import AgentSecretBinding
 
 from .domain import (
-    BoundedName,
+    BoundedText,
     JsonObject,
     ObjectId,
     PendingCallKind,
@@ -45,7 +45,7 @@ class DeferredContinuationState(StrictModel):
 
 class InboxReceipt(StrictModel):
     inbox_entry_id: ObjectId
-    kind: BoundedName
+    kind: BoundedText
 
 
 class HostContinuationState(StrictModel):

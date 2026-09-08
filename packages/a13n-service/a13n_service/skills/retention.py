@@ -30,9 +30,9 @@ class SkillUploadRetention:
                 cast(IdempotencyEvidenceRecord.receipt_json, String).contains(SkillUploadRecord.id),
             ),
         )
-        async with transaction(self._sessions) as database:
+        async with transaction(self._sessions) as session:
             records = tuple(
-                await database.scalars(
+                await session.scalars(
                     select(SkillUploadRecord)
                     .where(SkillUploadRecord.expires_at <= now, ~replay)
                     .order_by(SkillUploadRecord.expires_at, SkillUploadRecord.id)
@@ -42,5 +42,5 @@ class SkillUploadRetention:
             )
             age = max((now - assume_utc(row.expires_at)).total_seconds() for row in records) if records else None
             for record in records:
-                await database.delete(record)
+                await session.delete(record)
         return Sweep(examined=len(records), completed=len(records), oldest_age_seconds=age)

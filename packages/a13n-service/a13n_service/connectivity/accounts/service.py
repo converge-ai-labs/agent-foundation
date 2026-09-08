@@ -24,7 +24,7 @@ from a13n_service.connectivity.native_management import (
     require_limit,
     require_version,
 )
-from a13n_service.durable_operations.idempotency import digest_request
+from a13n_service.digests import digest_request
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
     WorkspaceAction,

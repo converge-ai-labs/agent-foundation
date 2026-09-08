@@ -28,7 +28,7 @@ from a13n_service.connectivity.ingress.provider import (
     ReceptionDefaults,
 )
 from a13n_service.database.metadata import service_metadata
-from a13n_service.durable_operations.idempotency import digest_request
+from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import (
     OrganizationRecord,

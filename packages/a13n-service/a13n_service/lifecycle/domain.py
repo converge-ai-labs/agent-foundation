@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
 import rfc8785
 from a13n_harness import SafeFailure
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from a13n_service.ids import new_object_id
-from a13n_service.temporal import require_aware_utc
+from a13n_service.temporal import UtcDateTime
 
 MAX_LIFECYCLE_PAYLOAD_BYTES = 64 * 1024
 
@@ -21,16 +20,6 @@ MutationId = Annotated[str, StringConstraints(pattern=r"^mut_[a-z0-9]{16,64}$")]
 ResourceId = Annotated[str, StringConstraints(min_length=1, max_length=72)]
 SchemaVersion = Annotated[str, StringConstraints(pattern=r"^[1-9][0-9]{0,31}$")]
 JsonObject = dict[str, JsonValue]
-
-
-def _utc(value: datetime) -> datetime:
-    try:
-        return require_aware_utc(value)
-    except ValueError as error:
-        raise ValueError("timestamp must include a UTC offset") from error
-
-
-UtcDateTime = Annotated[datetime, AfterValidator(_utc)]
 
 
 class _StrictModel(BaseModel):

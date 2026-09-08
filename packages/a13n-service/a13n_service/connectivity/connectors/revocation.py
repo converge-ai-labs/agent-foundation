@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.management import record_command
-from a13n_service.durable_operations.idempotency import digest_request
+from a13n_service.digests import digest_request
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.resource_scope import ResourceScope

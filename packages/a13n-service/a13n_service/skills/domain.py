@@ -8,11 +8,10 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
+from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import PrincipalRef
-from a13n_service.ids import new_object_id
+from a13n_service.ids import ObjectId, new_object_id
 
-Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 SKILL_KEY_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 SkillKey = Annotated[
     str,

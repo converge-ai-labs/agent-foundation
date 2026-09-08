@@ -8,6 +8,7 @@ from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, ForeignKeyCo
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 
 
 class OrganizationRecord(Base):
@@ -36,7 +37,7 @@ class WorkspaceRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), ForeignKey("organizations.id", ondelete="RESTRICT"))
     name: Mapped[str] = mapped_column(String(128))
-    normalized_name: Mapped[str] = mapped_column(String(128))
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -79,7 +80,7 @@ class ServiceAccountRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72))
     workspace_id: Mapped[str] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128))
-    normalized_name: Mapped[str] = mapped_column(String(128))
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH))
     description: Mapped[str | None] = mapped_column(String(2048))
     status: Mapped[str] = mapped_column(String(16))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

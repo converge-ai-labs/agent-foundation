@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
+from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
@@ -29,7 +30,6 @@ from .errors import AgentError
 
 router = APIRouter(prefix="/api/v1", tags=["agent-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
-IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 

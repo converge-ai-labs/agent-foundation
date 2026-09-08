@@ -12,7 +12,7 @@ from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from anyio import fail_after
 
 from a13n_service.assets.objects import AssetObjectStore
-from a13n_service.assets.publication import AgentAssetPublisher
+from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
@@ -54,7 +54,7 @@ class WorkerAttempts:
         stream: RedisRunStream,
         replay: RunReplayStore,
         assets: AssetObjectStore,
-        asset_publisher: AgentAssetPublisher | None = None,
+        asset_publication: AssetRuntime,
         observability: ObservabilityRuntime | None = None,
     ) -> None:
         self._shared = shared
@@ -65,7 +65,7 @@ class WorkerAttempts:
         self._stream = stream
         self._replay = replay
         self._assets = assets
-        self._asset_publisher = asset_publisher
+        self._asset_publication = asset_publication
         self._secrets = AgentSecretRuntime(shared.storage.sessions, shared.secret_protector)
         self._observability = observability
         self._execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)
@@ -163,10 +163,10 @@ class WorkerAttempts:
                 model_factory=self._resources.native_model_factory,
                 skills=self._skills,
                 async_results=async_results,
+                asset_publication=self._asset_publication,
                 environments=self._environments,
                 external_tools=self._external_tools,
                 subagent_capability=subagent_capability,
-                asset_publisher=self._asset_publisher,
                 secrets=self._secrets,
             )
             projector = AttemptRunStreamProjector(self._stream, context)

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx2
 import pytest
-from a13n_service.agents.domain import ChildAgentExecution, EffectiveAgentConfig, ResolvedSubagentEdge, canonical_digest
+from a13n_service.agents.domain import ChildAgentExecution, EffectiveAgentConfig, ResolvedSubagentEdge
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.connectivity import execution as tool_execution
 from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
@@ -15,6 +15,7 @@ from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
+from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.models import RunRecord
@@ -54,9 +55,7 @@ CHILD_MODEL_ID = "mdl_child12345678901"
 def rehash(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
     return config.model_copy(
         update={
-            "content_digest": canonical_digest(
-                config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-            )
+            "content_digest": digest_request(config.model_dump(mode="json", by_alias=True, exclude={"content_digest"}))
         }
     )
 

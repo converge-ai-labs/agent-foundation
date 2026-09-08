@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.connectivity.selection_resolution import (
     ConnectivitySelectionResolver,
 )
+from a13n_service.digests import digest_request
 from a13n_service.iam import (
     AuthorizationError,
     WorkspaceAction,
@@ -24,7 +25,6 @@ from ..domain import (
     EffectiveAgentConfig,
     EffectiveAgentModel,
     PluginRuntimeMode,
-    canonical_digest,
 )
 from ..errors import (
     agent_revision_not_executable,
@@ -203,7 +203,7 @@ class AgentInvocationFreezer:
         )
         effective = EffectiveAgentConfig(
             **config_payload,
-            content_digest=canonical_digest(digest_payload),
+            content_digest=digest_request(digest_payload),
         )
         return FrozenAgentInvocation(
             agent_id=prepared.agent_id,

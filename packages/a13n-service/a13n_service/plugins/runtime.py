@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import platform
 import sys
 from collections.abc import Mapping, Sequence
@@ -21,7 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.temporal import utc_now
+from a13n_service.digests import digest_request
+from a13n_service.temporal import Clock, utc_now
 
 from .models import PluginRuntimeLockRecord
 
@@ -92,7 +91,7 @@ class PluginRuntimeLock(BaseModel):
     digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     def computed_digest(self) -> str:
-        return _canonical_digest(self.model_dump(mode="json", exclude={"digest"}))
+        return digest_request(self.model_dump(mode="json", exclude={"digest"}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,7 +166,7 @@ class PluginRuntimeLockStore:
         self,
         manifest: WorkerReleaseManifest,
         *,
-        clock=None,
+        clock: Clock | None = None,
     ) -> None:
         self.manifest = manifest
         self._clock = clock or utc_now
@@ -273,7 +272,7 @@ class PluginRuntimeLockStore:
             "plugins": [item.model_dump(mode="json") for item in plugin_items],
             "distributions": [item.model_dump(mode="json") for item in distribution_items],
         }
-        runtime_lock = PluginRuntimeLock(**payload, digest=_canonical_digest(payload))
+        runtime_lock = PluginRuntimeLock(**payload, digest=digest_request(payload))
         await self._persist(session, runtime_lock)
         return runtime_lock
 
@@ -423,8 +422,3 @@ def _validated_record(record: PluginRuntimeLockRecord) -> PluginRuntimeLock:
     ):
         raise PluginRuntimeLockError("plugin_runtime_lock_invalid")
     return runtime_lock
-
-
-def _canonical_digest(value: object) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    return hashlib.sha256(encoded).hexdigest()

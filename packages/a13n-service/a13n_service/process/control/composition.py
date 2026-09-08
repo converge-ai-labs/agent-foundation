@@ -146,7 +146,7 @@ async def build_control_runtime(
             max_redirects=settings.connectivity_max_redirects,
         )
     gateway_commands = build_input_commands(
-        settings, shared, agents.invocations, assets.service, hooks.inline_validator
+        settings, shared, agents.invocations, assets.catalog, hooks.inline_validator
     )
     if settings.a2a_enabled:
         assert a2a_import_http_client is not None
@@ -192,7 +192,7 @@ async def build_control_runtime(
                 shared.secret_protector,
                 a2a_endpoint_policy,
                 A2APartImporter(
-                    assets.service,
+                    assets.uploads,
                     a2a_import_http_client,
                     EndpointPolicy(),
                     max_redirects=settings.connectivity_max_redirects,
@@ -219,7 +219,8 @@ async def build_control_runtime(
         agents=agents,
         models=models.models,
         model_providers=models.providers,
-        assets=assets.service,
+        assets=assets.catalog,
+        asset_uploads=assets.uploads,
         hook_subscriptions=hooks.subscriptions,
         lifecycle_events=hooks.lifecycle_events,
         gateway=gateway,

@@ -537,7 +537,8 @@ async def test_missing_markdown_only_blocks_the_agent_that_selects_it(tmp_path: 
     assert composition.root.source_id == "agent-reviewer"
 
 
-async def test_shell_review_captures_and_registers_its_subscription_model(tmp_path: Path) -> None:
+@pytest.mark.parametrize("on_error", ["approval_required", "deny", "skip"])
+async def test_shell_review_captures_and_registers_its_subscription_model(tmp_path: Path, on_error: str) -> None:
     from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability
     from a13n_harness_ui.model_runtime import model_recipe_id
 
@@ -555,12 +556,12 @@ settings: {thinking: low}
     agent.write_text(
         agent.read_text().replace(
             "harness_plugins: null",
-            """  - capability: ShellReviewCapability
+            f"""  - capability: ShellReviewCapability
     configuration:
       model: model-review
       risk_threshold: high
       on_flagged: approval_required
-      on_error: approval_required
+      on_error: {on_error}
 harness_plugins: null""",
         )
     )
@@ -578,7 +579,8 @@ harness_plugins: null""",
         item for item in reconstructed.executable.definition.capabilities if isinstance(item, ShellReviewCapability)
     )
     assert capability.model == model_recipe_id(recipe.model)
-    assert capability.on_error is ShellReviewAction.APPROVAL_REQUIRED
+    assert capability.on_error is ShellReviewAction(on_error)
+    assert capability.on_flagged is ShellReviewAction.APPROVAL_REQUIRED
     assert capability.model_settings["thinking"] == "low"
     assert recipe.model in reconstructed.model_resolver._recipes.values()
 

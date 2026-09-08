@@ -7,8 +7,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_service.agents.domain import AgentConfig, canonical_digest
+from a13n_service.agents.domain import AgentConfig
 from a13n_service.agents.models import AgentRevisionRecord
+from a13n_service.digests import digest_request
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore, hosted_agui_replay_key
 from a13n_service.gateway.hosted_agui import (
     HostedAguiCancelRequest,
@@ -145,7 +146,7 @@ def _frozen_resolver(protocol=None):
         config = frozen.effective_config.model_copy(update={"protocol": protocol})
         config = config.model_copy(
             update={
-                "content_digest": canonical_digest(
+                "content_digest": digest_request(
                     config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
                 )
             }

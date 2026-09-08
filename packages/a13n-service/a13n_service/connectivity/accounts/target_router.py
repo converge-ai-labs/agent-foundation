@@ -2,11 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.etags import resource_etag
+from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
@@ -40,7 +41,7 @@ async def create(
     actor: Actor,
     account_id: str,
     body: TargetConfig,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)],
+    idempotency_key: IdempotencyKey,
 ) -> AccountTarget:
     return _response(
         response,

@@ -8,9 +8,9 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 import rfc8785
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from a13n_service.temporal import require_aware_utc
+from a13n_service.temporal import UtcDateTime
 
 MAX_RUN_STREAM_PAYLOAD_BYTES = 256 * 1024
 
@@ -20,16 +20,6 @@ ResourceId = Annotated[str, StringConstraints(min_length=1, max_length=72)]
 RedisStreamId = Annotated[str, StringConstraints(pattern=r"^[0-9]+-[0-9]+$")]
 EventType = Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]+(?:\.[a-z0-9_]+)+$", max_length=128)]
 JsonObject = dict[str, JsonValue]
-
-
-def _utc(value: datetime) -> datetime:
-    try:
-        return require_aware_utc(value)
-    except ValueError as error:
-        raise ValueError("timestamp must include a UTC offset") from error
-
-
-UtcDateTime = Annotated[datetime, AfterValidator(_utc)]
 
 
 class _StrictModel(BaseModel):

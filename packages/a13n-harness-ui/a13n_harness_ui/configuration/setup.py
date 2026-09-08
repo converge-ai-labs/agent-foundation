@@ -197,7 +197,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
                         "model": reviewer,
                         "risk_threshold": "extra_high",
                         "on_flagged": "approval_required",
-                        "on_error": "approval_required",
+                        "on_error": "skip",
                     },
                 }
             )

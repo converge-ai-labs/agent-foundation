@@ -7,7 +7,7 @@ from typing import Annotated
 
 from pydantic import StringConstraints
 
-ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
+ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$", max_length=72)]
 
 _KIND_PATTERN = re.compile(r"^[a-z][a-z0-9]{1,7}$")
 _ID_ALPHABET = string.ascii_lowercase + string.digits
