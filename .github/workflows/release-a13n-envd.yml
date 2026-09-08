@@ -34,31 +34,14 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.96.0
-
-      - name: Install Linux isolation dependency
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes bubblewrap
-          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-
+      # CI owns EIP and cross-platform tests before tagging. Release preparation
+      # changes only release metadata, not the independent example lock files.
       - name: Prepare release version
         id: version
         run: |
           version="${GITHUB_REF_NAME#release/a13n-envd-v}"
           python3 scripts/prepare-release-version.py a13n-envd "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Run EIP protocol gate
-        run: make eip-check
 
       - name: Create release version patch
         run: |
