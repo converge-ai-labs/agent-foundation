@@ -236,9 +236,11 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
 ) -> None:
     routes: list[tuple[str, str]] = []
 
-    async def review_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages, info
-        yield '{"risk":"low","reason":"read-only command"}'
+    async def review_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[DeltaToolCalls]:
+        del messages
+        yield {
+            0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low","reason":"read-only command"}')
+        }
 
     reviewer_model = FunctionModel(stream_function=review_stream, model_name="review-model")
     sentinel_provider = cast(Provider[Any], object())
@@ -283,15 +285,23 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
     assert executed == [{"command": "printf safe"}]
 
 
-async def test_default_reviewer_is_tool_free_and_records_one_request_usage() -> None:
+async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_records_one_request_usage() -> None:
     seen_info: list[AgentInfo] = []
 
-    async def review_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+    async def review_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[DeltaToolCalls]:
         del messages
         seen_info.append(info)
-        yield '{"risk":"medium","reason":"bounded workspace mutation"}'
+        yield {
+            0: DeltaToolCall(
+                name=info.output_tools[0].name,
+                json_args='{"risk":"medium","reason":"bounded workspace mutation"}',
+            )
+        }
 
-    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=review_model))
+    settings = {"openai_store": False, "temperature": 0.5}
+    reviewer = AgentShellCommandReviewer(
+        FunctionModel(stream_function=review_model), model_settings=cast(Any, settings)
+    )
     result = await reviewer.review(
         ShellReviewRequest(
             tool_id="environment.shell_exec",
@@ -304,15 +314,19 @@ async def test_default_reviewer_is_tool_free_and_records_one_request_usage() -> 
     assert result.assessment.risk == ShellRiskLevel.MEDIUM
     assert len(seen_info) == 1
     assert seen_info[0].function_tools == []
-    assert seen_info[0].output_tools == []
+    assert len(seen_info[0].output_tools) == 1
+    assert seen_info[0].allow_text_output is True  # Provider compatibility, not local text acceptance.
+    assert seen_info[0].model_settings == {"openai_store": False, "temperature": 0.5, "tool_choice": "auto"}
+    assert settings == {"openai_store": False, "temperature": 0.5}  # Never mutate caller settings.
     assert result.usage
     assert any(measure.unit == "requests" for measure in result.usage[0].measures)
 
 
-async def test_default_reviewer_preserves_usage_when_structured_output_fails() -> None:
+@pytest.mark.parametrize("output", ["not a structured assessment", '{"risk":"low","reason":"looks valid"}'])
+async def test_default_reviewer_preserves_usage_and_rejects_text_output(output: str) -> None:
     async def invalid_review(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
-        yield "not a structured assessment"
+        yield output
 
     reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=invalid_review))
     with pytest.raises(ShellReviewError) as error:
@@ -777,3 +791,32 @@ async def test_timeout_emits_observable_denial_before_any_authorization() -> Non
     assert invocations[-1]["tool_call_id"] == "shell-call-1"
     assert executed == []
     assert stream.result is not None and stream.result.status == "completed"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        '{"risk":"unknown","reason":"invalid risk"}',
+        '{"risk":"low","reason":""}',
+        '{"risk":"low","reason":"unexpected field","allow":true}',
+        '{"risk":',
+    ],
+)
+async def test_default_reviewer_rejects_invalid_output_tool_without_retry(arguments: str) -> None:
+    requests = 0
+
+    async def invalid_review(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[DeltaToolCalls]:
+        nonlocal requests
+        del messages
+        requests += 1
+        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args=arguments)}
+
+    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=invalid_review))
+    with pytest.raises(ShellReviewError) as error:
+        await reviewer.review(
+            ShellReviewRequest(tool_id="environment.shell_exec", tool_call_id="invalid-call", command="echo safe"),
+            context=cast(AgentContext, object()),
+        )
+    assert error.value.code == "shell_review_failed"
+    assert requests == 1
+    assert error.value.usage

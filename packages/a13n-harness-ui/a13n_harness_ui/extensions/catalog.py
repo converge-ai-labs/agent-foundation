@@ -486,7 +486,9 @@ def _construct_capability(
         for name in ("on_flagged", "on_error"):
             if name in arguments:
                 arguments[name] = ShellReviewAction(arguments[name])
-    initializer: Any = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True))(
+    # Preserve open TypedDict extensions, notably provider-specific ModelSettings,
+    # using Pydantic's extra handling rather than a Host-owned parameter allowlist.
+    initializer: Any = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True, extra="allow"))(
         capability_type.__init__
     )
     capability = capability_type.__new__(capability_type)

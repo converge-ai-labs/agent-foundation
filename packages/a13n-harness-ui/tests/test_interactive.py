@@ -723,7 +723,9 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 
     async def stream(messages, info):
         if not info.function_tools:
-            yield '{"risk":"high","reason":"Needs review"}'
+            yield {
+                0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"high","reason":"Needs review"}')
+            }
         elif any(
             isinstance(message, ModelRequest) and any(isinstance(part, ToolReturnPart) for part in message.parts)
             for message in messages

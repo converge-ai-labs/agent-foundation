@@ -650,7 +650,7 @@ id: model-review
 name: Review
 route: openai-codex:gpt-5.6-luna
 authentication: {kind: codex_subscription}
-settings: {thinking: low}
+settings: {thinking: low, openai_store: false, openai_reasoning_summary: detailed}
 """)
     agent = tmp_path / "agents" / "assistant.yaml"
     agent.write_text(
@@ -662,6 +662,7 @@ settings: {thinking: low}
       risk_threshold: high
       on_flagged: approval_required
       on_error: {on_error}
+      model_settings: {{openai_reasoning_summary: concise}}
 harness_plugins: null""",
         )
     )
@@ -681,7 +682,16 @@ harness_plugins: null""",
     assert capability.model == model_recipe_id(recipe.model)
     assert capability.on_error is ShellReviewAction(on_error)
     assert capability.on_flagged is ShellReviewAction.APPROVAL_REQUIRED
-    assert capability.model_settings["thinking"] == "low"
+    assert capability.model_settings == {
+        "thinking": "low",
+        "openai_store": False,
+        "openai_reasoning_summary": "concise",
+    }
+    assert recipe.model.settings == {
+        "thinking": "low",
+        "openai_store": False,
+        "openai_reasoning_summary": "detailed",
+    }
     assert recipe.model in reconstructed.model_resolver._recipes.values()
 
 

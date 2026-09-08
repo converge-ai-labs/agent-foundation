@@ -47,7 +47,7 @@ Harness UI enumerates the complete declarative Capability catalog available to i
 - Harness UI-owned selectable Capabilities;
 - exact custom types admitted through the Harness UI Host capability catalog.
 
-The resulting selected custom set is supplied to the Harness `CapabilityTypeCatalog`. YAML names a stable serialization name and JSON-compatible arguments; it never supplies a Python import target.
+The resulting selected custom set is supplied to the Harness `CapabilityTypeCatalog`. YAML names a stable serialization name and JSON-compatible arguments; it never supplies a Python import target. Generic Capability construction uses Pydantic's `extra="allow"` behavior, without a Host-owned parameter allowlist. Known fields retain their native validation and open TypedDict arguments preserve extension fields, including provider-specific Model settings; a type's explicit closed-schema validation remains authoritative. Accepting an extra constructor argument does not guarantee that the selected Capability uses it.
 
 Installed custom Capability packages may contribute concrete declarative types through the Harness UI-owned `a13n_harness_ui.capabilities` entry-point group. An entry-point name equals the type's serialization name and loads one concrete directly dataclass-declared `AbstractCapability` type. Metadata discovery does not import targets. Catalog construction imports only selected names and applies all Harness `CapabilityTypeCatalog` collision, reserved-type, and schema checks.
 

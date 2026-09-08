@@ -160,7 +160,7 @@ capabilities:
       on_error: skip
 ```
 
-`model` here is a **Model resource ID** for a tool-free auxiliary reviewer, not a subagent reference or ambient provider route. Explicit capability `model_settings` can override its captured Model settings. With this configuration, flagged commands require approval and non-timeout review errors add no restriction; invocation-policy denial and approval requirements still apply. A review timeout always denies the command before execution, regardless of `on_error`. Omitting `on_error` retains the Harness library's `approval_required` default. Review does not provide filesystem or network isolation. This is independent of the `code-reviewer` built-in child, which reviews changes when delegated work.
+`model` here is a **Model resource ID** for an auxiliary reviewer with no execution tools, not a subagent reference or ambient provider route. Explicit capability `model_settings` can override its captured Model settings. With this configuration, flagged commands require approval and non-timeout review errors add no restriction; invocation-policy denial and approval requirements still apply. A review timeout always denies the command before execution, regardless of `on_error`. Omitting `on_error` retains the Harness library's `approval_required` default. Review does not provide filesystem or network isolation. This is independent of the `code-reviewer` built-in child, which reviews changes when delegated work.
 
 ### Context management
 

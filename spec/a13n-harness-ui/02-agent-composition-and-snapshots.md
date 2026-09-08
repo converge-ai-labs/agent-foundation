@@ -39,7 +39,7 @@ The App accepts detached per-operation `RunModelOverrides` for a selected Model 
 
 ### Shell Review Auxiliary Model
 
-`ShellReviewCapability.configuration.model` names a Model resource ID, not an ambient provider route. Harness UI validates the reference, captures its complete credential-free recipe with the Capability in the immutable Run composition, and registers it in the same per-Run Model resolver as primary Models. Subscription refresh and request-local authentication therefore apply to the reviewer as well as the main Agent. Changing or deleting the source Model does not change an already captured reviewer. The captured Model settings initialize the review request, with explicit Capability `model_settings` overriding matching keys. Auxiliary-model resolution alone does not apply request settings; the reconstructed reviewer receives the merged frozen values, including the starter Luna's low thinking level.
+`ShellReviewCapability.configuration.model` names a Model resource ID, not an ambient provider route. Harness UI validates the reference, captures its complete credential-free recipe with the Capability in the immutable Run composition, and registers it in the same per-Run Model resolver as primary Models. Subscription refresh and request-local authentication therefore apply to the reviewer as well as the main Agent. Changing or deleting the source Model does not change an already captured reviewer. The captured Model settings initialize the review request, with explicit Capability `model_settings` overriding matching keys. Auxiliary-model resolution alone does not apply request settings; the reconstructed reviewer receives the merged frozen values, including provider-specific fields such as `openai_store: false` and the starter Luna's low thinking level. Capability construction preserves these provider settings rather than narrowing them to the provider-neutral settings schema.
 
 ```yaml
 capabilities:
@@ -51,7 +51,7 @@ capabilities:
       on_error: skip
 ```
 
-The reviewer is tool-free and uses the Harness-owned bounded review lifecycle. Harness UI starter Agents explicitly select `on_error: skip`, so non-timeout review failure adds no restriction; invocation-policy denial and approval requirements still apply. Review timeout always denies before execution, regardless of `on_error`. The Harness library default remains `approval_required` when the action is omitted. Shell review is not filesystem, process, or network isolation and remains useful in explicitly selected Full Control mode. Setup offers a reviewed lightweight subscription Model and lets the user opt out before publication.
+The reviewer has no execution tools and uses the [Harness-owned bounded review lifecycle and output-tool protocol](../a13n-harness/07-tool-execution.md#shell-command-review). Harness UI starter Agents explicitly select `on_error: skip`, so non-timeout review failure adds no restriction; invocation-policy denial and approval requirements still apply. Review timeout always denies before execution, regardless of `on_error`. The Harness library default remains `approval_required` when the action is omitted. Shell review is not filesystem, process, or network isolation and remains useful in explicitly selected Full Control mode. Setup offers a reviewed lightweight subscription Model and lets the user opt out before publication.
 
 ## MCP Servers
 

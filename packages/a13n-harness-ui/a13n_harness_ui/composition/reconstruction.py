@@ -101,21 +101,20 @@ class _ToolAllowlistCapability(AbstractCapability[AgentContext]):
         return _ToolAllowlistToolset(toolset, self.names)
 
 
+@dataclass
 class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
-    def __init__(self, wrapped: AbstractToolset[AgentContext], names: frozenset[str]) -> None:
-        super().__init__(wrapped)
-        self._names = names
+    names: frozenset[str]
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
-        missing = self._names - tools.keys()
+        missing = self.names - tools.keys()
         if missing:
             raise CompositionError(
                 "The selected tool allowlist contains an unavailable tool.",
                 code="tool_selection_missing",
                 details={"tool": sorted(missing)[0]},
             )
-        return {name: tool for name, tool in tools.items() if name in self._names}
+        return {name: tool for name, tool in tools.items() if name in self.names}
 
 
 class _NativeDefaultToolsCapability(AbstractCapability[AgentContext]):

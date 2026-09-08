@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic_ai import Agent, PromptedOutput, RunContext
+from pydantic_ai import Agent, RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import AgentStreamEvent
@@ -26,6 +26,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.models.structured_output import StructuredOutputAutoToolChoiceModel
 from a13n_harness.usage import ProviderUsage, UsageMeasure
 
 SHELL_REVIEW_CAPABILITY_ID = "a13n.shell-review"
@@ -140,7 +141,7 @@ class ShellCommandReviewer(Protocol):
 
 
 class AgentShellCommandReviewer:
-    """Tool-free Pydantic AI implementation of shell command review."""
+    """Pydantic AI shell review with an output tool and no execution tools."""
 
     def __init__(
         self,
@@ -156,8 +157,8 @@ class AgentShellCommandReviewer:
         self._model = model
         self._timeout_seconds = float(timeout_seconds)
         self._agent: Agent[None, ShellReviewAssessment] = Agent(
-            model,
-            output_type=PromptedOutput(ShellReviewAssessment),
+            StructuredOutputAutoToolChoiceModel(model),
+            output_type=ToolOutput(ShellReviewAssessment),
             name="shell-command-review",
             system_prompt=_system_prompt(),
             model_settings=cast(ModelSettings, dict(model_settings or {})),

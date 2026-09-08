@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.metadata
+from dataclasses import dataclass
+from typing import Annotated, Any, cast
 
 import pytest
 from a13n_harness.capabilities import WebCapability
@@ -8,6 +10,29 @@ from a13n_harness.plugin_factories import HarnessPluginFactory
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.extensions import catalog as catalog_module
+from pydantic import Field
+from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.settings import ModelSettings
+
+
+@dataclass
+class _ProviderSettingsCapability(AbstractCapability):
+    settings: ModelSettings
+    count: int = 1
+
+
+@dataclass
+class _AliasedSettingsCapability(AbstractCapability):
+    settings: Annotated[ModelSettings, Field(alias="request_settings")]
+
+
+def _settings_catalog() -> HarnessUiExtensionCatalog:
+    return HarnessUiExtensionCatalog(
+        host_capabilities={
+            "_ProviderSettingsCapability": _ProviderSettingsCapability,
+            "_AliasedSettingsCapability": _AliasedSettingsCapability,
+        }
+    )
 
 
 class _PluginFactory(HarnessPluginFactory):
@@ -91,3 +116,62 @@ def test_catalog_projection_returns_detached_models() -> None:
     assert first == second
     assert first is not second
     assert all(left is not right for left, right in zip(first, second, strict=True))
+
+
+@pytest.mark.parametrize(
+    ("key", "configuration"),
+    [
+        ("ShellReviewCapability", {"model": "logical:review", "extra_option": True}),
+        ("_ProviderSettingsCapability", {"settings": {}, "extra_option": True}),
+        ("Thinking", {"effort": "low", "extra_option": True}),
+        ("_AliasedSettingsCapability", {"request_settings": {}, "extra_option": True}),
+    ],
+)
+def test_catalog_uses_pydantic_allow_extra_constructor_behavior(key, configuration) -> None:
+    selected = _settings_catalog().capabilities(((key, configuration),))
+    assert len(selected) == 1
+    assert selected[0].key == key
+
+
+@pytest.mark.parametrize("key", ["ShellReviewCapability", "_ProviderSettingsCapability"])
+def test_catalog_preserves_provider_settings_and_validates_known_types(key: str) -> None:
+    settings: dict[str, Any] = {"temperature": 0.5, "openai_store": False, "anthropic_effort": "low"}
+    configuration = (
+        {"model": "logical:review", "model_settings": settings}
+        if key == "ShellReviewCapability"
+        else {"settings": settings}
+    )
+    selected = _settings_catalog().capabilities(((key, configuration),))[0]
+    capability = cast(Any, selected.capability)
+    actual = capability.model_settings if key == "ShellReviewCapability" else capability.settings
+    assert actual == settings
+
+    settings["temperature"] = "not-a-number"
+    with pytest.raises(CompositionError) as error:
+        _settings_catalog().capabilities(((key, configuration),))
+    assert error.value.code == "capability_configuration_invalid"
+
+
+def test_catalog_preserves_aliased_provider_settings() -> None:
+    settings = {"openai_store": False, "temperature": 0.5}
+    capability = (
+        _settings_catalog()
+        .capabilities((("_AliasedSettingsCapability", {"request_settings": settings}),))[0]
+        .capability
+    )
+    assert isinstance(capability, _AliasedSettingsCapability)
+    assert capability.settings == settings
+
+
+def test_catalog_keeps_constructor_scalar_validation_strict() -> None:
+    with pytest.raises(CompositionError) as error:
+        _settings_catalog().capabilities((("_ProviderSettingsCapability", {"settings": {}, "count": "2"}),))
+    assert error.value.code == "capability_configuration_invalid"
+
+
+def test_catalog_preserves_explicit_keyword_metadata() -> None:
+    from pydantic_ai.capabilities import SetToolMetadata
+
+    capability = HarnessUiExtensionCatalog().capabilities((("SetToolMetadata", {"code_mode": True}),))[0].capability
+    assert isinstance(capability, SetToolMetadata)
+    assert capability.metadata == {"code_mode": True}

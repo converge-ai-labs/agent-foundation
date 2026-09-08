@@ -470,7 +470,14 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
         assert not info.function_tools
         if review_outcome == "error":
             raise RuntimeError("Synthetic reviewer unavailable")
-        yield '{"risk":"extra_high","reason":"Requires user review"}'
+        assert len(info.output_tools) == 1
+        assert info.model_settings["tool_choice"] == "auto"
+        yield {
+            0: DeltaToolCall(
+                name=info.output_tools[0].name,
+                json_args='{"risk":"extra_high","reason":"Requires user review"}',
+            )
+        }
 
     def build(model_name: str, **kwargs):
         resolved.append(model_name)
