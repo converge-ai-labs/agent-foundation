@@ -12,9 +12,12 @@ from dataclasses import fields as dataclass_fields
 from datetime import UTC, datetime
 from functools import reduce
 from operator import or_
+from traceback import walk_tb
 from typing import Any, Literal, Self, cast, get_args, get_origin, get_type_hints, overload
 from uuid import uuid4
 
+from a13n_logging import get_logger
+from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunEvents
@@ -28,7 +31,7 @@ from pydantic_ai.capabilities import (
     ResolveModelId,
     WrapperCapability,
 )
-from pydantic_ai.exceptions import AgentRunError, RunCancelled, UsageLimitExceeded, UserError
+from pydantic_ai.exceptions import AgentRunError, ModelHTTPError, RunCancelled, UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     AgentStreamEvent,
     EnqueuedMessagesEvent,
@@ -238,6 +241,30 @@ from a13n_harness.usage import USAGE_CAPABILITY_ID, RunUsageLedger, UsageCapabil
 
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
 _EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
+
+
+def _model_failure_details(error: BaseException, *, thread_id: str, run_id: str) -> dict[str, JsonValue]:
+    """Keep actionable structure without logging provider bodies or exception payloads."""
+    details: dict[str, JsonValue] = {"exception_type": type(error).__name__}
+    if isinstance(error, ModelHTTPError):
+        details["status_code"] = error.status_code
+    locations: list[str] = []
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen and len(seen) < 8:
+        seen.add(id(current))
+        locations.append(type(current).__name__)
+        for frame, line in list(walk_tb(current.__traceback__))[-32:]:
+            locations.append(f"  {frame.f_code.co_filename}:{line} in {frame.f_code.co_name}")
+        current = current.__cause__ or (None if current.__suppress_context__ else current.__context__)
+    get_logger(__name__).warning(
+        "Model execution interrupted: thread_id=%s run_id=%s details=%s\n%s",
+        thread_id,
+        run_id,
+        details,
+        "\n".join(locations),
+    )
+    return details
 
 
 class _UnsetOutputType:
@@ -1252,6 +1279,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._run_attachments_closed = False
         self._logical_events_started = False
         self._latest_messages: tuple[ModelMessage, ...] = self._previous_state.message_history
+        self._shutdown_state: HarnessState | None = None
+        self._shutdown_state_error: BaseException | None = None
+        self._diagnostic_error: BaseException | None = None
         self._new_message_index = len(self._latest_messages)
         self._source_sequence = 0
         self._public_sequence = 0
@@ -1278,6 +1308,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     def result(self) -> HarnessRunResult[OutputT] | None:
         """Return the terminal result only after its result event was delivered."""
         return self._result if self._terminal_yielded else None
+
+    @property
+    def outcome(self) -> HarnessRunResult[OutputT] | None:
+        """Return the last validated candidate after shutdown, not a success receipt.
+
+        Unlike result, this is also available when cleanup or consumer cancellation
+        prevents terminal delivery. Hosts must preserve state and deferred requests
+        together while keeping the original execution/cleanup failure authoritative.
+        """
+        return self._last_valid_outcome if self._closed else None
+
+    @property
+    def diagnostic_error(self) -> BaseException | None:
+        """Return the terminal exception for private Host diagnostics, never serialization."""
+        return self._diagnostic_error
 
     @property
     def usage(self) -> RunUsage:
@@ -1828,8 +1873,14 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         return await self._context._steering.steer(input)
 
     async def export_state(self) -> HarnessState:
-        """Export the latest complete message and Capability-state boundary."""
-        if not self._entered or self._closed or self._context is None:
+        """Export active state or the detached checkpoint retained before shutdown."""
+        if self._closed:
+            if self._shutdown_state is not None:
+                return self._shutdown_state
+            raise StateError(
+                "No complete shutdown checkpoint is available.", code="run_state_unavailable"
+            ) from self._shutdown_state_error
+        if not self._entered or self._context is None:
             raise StateError("The run is not active.", code="run_not_active")
         self._refresh_live_messages()
         return await self._context.export_state(self._latest_messages)
@@ -2262,23 +2313,43 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             return
 
                         model_failure = is_recoverable_model_failure(error, messages)
+                        failure_details = (
+                            _model_failure_details(error, thread_id=self.thread_id, run_id=self.run_id)
+                            if model_failure or isinstance(error, AgentRunError)
+                            else None
+                        )
                         retryable = policy.enabled and model_failure
                         if retryable and next_attempt_index < max_attempts:
                             retry_error = error
                         elif model_failure or isinstance(error, AgentRunError):
+                            self._diagnostic_error = error
                             exhausted = retryable
                             yield await self._failed_candidate(
                                 code="model_recovery_exhausted" if exhausted else "agent_run_failed",
                                 message=(
                                     "Model recovery attempts were exhausted."
                                     if exhausted
-                                    else "Pydantic AI agent execution failed."
+                                    else f"Pydantic AI agent execution failed ({type(error).__name__})."
                                 ),
+                                details=failure_details,
                                 refresh_messages=False,
                             )
                             return
                         else:
                             raise
+            except BaseException as exc:
+                # Pydantic attaches cancellation state only after its event context
+                # drains the model task. Capture that committed boundary, not the
+                # still-running response observed inside the context.
+                cancelled = RunCancelled.from_cancellation(exc)
+                if cancelled is not None and cancelled.run_id is not None:
+                    self._latest_messages = tuple(cancelled.all_messages())
+                else:
+                    self._refresh_live_messages()
+                self._latest_messages, _ = normalize_interrupted_history(
+                    self._latest_messages, response_tracker=response_tracker
+                )
+                raise
             finally:
                 self._pydantic_events = None
                 if attempt_token is not None:
@@ -2318,6 +2389,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         *,
         code: str,
         message: str,
+        details: dict[str, JsonValue] | None = None,
         refresh_messages: bool = True,
     ) -> HarnessRunResult[OutputT]:
         if refresh_messages:
@@ -2331,10 +2403,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 output=None,
                 state=state,
                 usage=self._current_usage(),
-                failure=SafeFailure(
-                    code=code,
-                    message=message,
-                    retry_hint="dependency_change",
+                failure=SafeFailure.model_validate(
+                    {
+                        "code": code,
+                        "message": message,
+                        "details": details or {},
+                        "retry_hint": "dependency_change",
+                    }
                 ),
                 _messages=self._latest_messages,
                 _new_message_index=min(self._new_message_index, len(self._latest_messages)),
@@ -2461,6 +2536,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if cancellation is not None:
                 raise cancellation
             return
+        if failure is not None and cancellation is None:
+            self._diagnostic_error = failure
 
         fence_failure: BaseException | None = None
         try:
@@ -2498,6 +2575,18 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
         await finish_cleanup(self._cancel_logical_source_tasks())
         await finish_cleanup(self._close_registered_responses())
+        outcome = outcome or self._last_valid_outcome
+        with CancelScope(shield=True):
+            if outcome is not None:
+                # A validated middleware-owned result remains the state authority.
+                self._shutdown_state = outcome.state
+            elif self._context is not None:
+                try:
+                    self._shutdown_state = await self._context.export_state(self._latest_messages)
+                except BaseException as exc:
+                    # The Host can diagnose export failure without losing the original
+                    # execution error or preventing resource cleanup.
+                    self._shutdown_state_error = exc
         await finish_cleanup(self._close_run_attachments())
         causes.extend(self._source_cleanup_failures)
         self._source_cleanup_failures.clear()

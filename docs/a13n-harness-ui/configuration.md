@@ -113,10 +113,10 @@ For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, f
 
 ## What wins, and when edits apply
 
-- A live `/agent` (also `/model`) or `/thinking` choice applies to subsequent operations without writing YAML.
+- A live `/agent` selection applies to subsequent operations without writing YAML. `/model` temporarily overrides only the model in the current TUI session; `/thinking` overrides its reasoning setting.
 - Launch options such as `--agent` and `--environment-mode` select a new session's values.
 - Otherwise accepted Agent resources and root defaults apply, then documented package defaults.
-- Resume restores the selected continuation's Model and reasoning against current resources. It does not invent a replacement for a deleted Model. Resume cannot be combined with Agent, Environment, or title overrides.
+- Resume restores the Thread's selected Agent against current resources, preserving an explicit Model override in the current TUI session. A later TUI invocation does not restore a previous temporary Model choice. Without a Model override, saved reasoning is restored only when the continuation used that Agent's configured Model. Resume launch options cannot be combined with Agent, Environment, or title overrides.
 - A complete valid file tree becomes the next accepted generation. Invalid or partial saves leave the preceding accepted generation active and produce diagnostics. Fix the file and run `config validate` again.
 - A newly admitted Run captures its full composition. File edits, inclusion changes, or package prompt updates never rewrite an active or already captured Run.
 

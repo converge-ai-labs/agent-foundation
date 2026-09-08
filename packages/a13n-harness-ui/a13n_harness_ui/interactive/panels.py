@@ -45,14 +45,6 @@ def capability_panel(name: object, event: Mapping[str, object]) -> CapabilityPan
         return CapabilityPanel(
             f"Edit · applied · {path} · {event.get('tool_call_id')}", body or "Empty file created.\n", "edit"
         )
-    if name == "a13n.shell.status":
-        callback = " · completion notification" if event.get("callback") else ""
-        code = event.get("exit_code")
-        return CapabilityPanel(
-            f"Shell · {event.get('process_id') or event.get('tool_call_id') or 'foreground'} · {event.get('phase')}{callback}",
-            f"Exit code: {code}" if code is not None else "",
-            "shell",
-        )
     return None
 
 
@@ -79,6 +71,25 @@ def tool_preview(arguments: str) -> str:
     return str(value)[:160]
 
 
+def shell_outcome(status: Mapping[str, object]) -> str:
+    """Only highlight noteworthy outcomes; routine process phases stay in details."""
+    phase = status.get("phase")
+    labels = {
+        "timed_out": "timed out",
+        "cancelled": "cancelled",
+        "signaled": "interrupted",
+        "failed": "failed",
+        "unknown": "status unavailable",
+        "missing": "process unavailable",
+    }
+    if isinstance(phase, str) and phase in labels:
+        return labels[phase]
+    code = status.get("exit_code")
+    if isinstance(code, int) and code != 0:
+        return "failed"
+    return ""
+
+
 def tool_result(name: str, text: str) -> str:
     try:
         value = json.loads(text)
@@ -90,6 +101,8 @@ def tool_result(name: str, text: str) -> str:
             state = "failed · no edit confirmed" if name in {"edit", "multi_edit"} else "failed"
         elif value.get("ok") is True and name in {"edit", "multi_edit"}:
             state = "completed"
+        if name.startswith("shell") and isinstance(value.get("status"), dict):
+            state = shell_outcome(value["status"]) or state
         text = json.dumps(value, ensure_ascii=False, indent=2)
     return f"{state}\n{text}"
 
@@ -106,10 +119,9 @@ def shell_result_preview(text: str, command: str, max_lines: int) -> str | None:
     phase = status.get("phase")
     if not isinstance(phase, str):
         return None
-    code = status.get("exit_code")
-    lines = [phase + (f" · exit {code}" if isinstance(code, int) else "")]
-    if command:
-        lines.append("$ " + " ".join(command.split())[:500])
+    outcome = shell_outcome(status) or ("failed" if value.get("ok") is False else "")
+    title = " ".join(command.split())[:500] or "result"
+    lines = [title + (f" · {outcome}" if outcome else "")]
     for stream in ("stderr", "stdout"):
         page = value.get(stream)
         if not isinstance(page, dict):

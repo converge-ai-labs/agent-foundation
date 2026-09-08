@@ -28,6 +28,7 @@ async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: b
     received = []
 
     class Backend:
+        thread_id = "thread-one"
         receipt_id = "receipt-original"
 
         async def steer(self, message, *, receipt_id, skill_references=()):
@@ -83,6 +84,7 @@ async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: b
 @pytest.mark.parametrize("blocked", ["preparing", "cancelling", "login", "images"])
 async def test_enter_preserves_draft_when_operation_cannot_accept_it(blocked: str) -> None:
     class Backend:
+        thread_id = "thread-one"
         receipt_id = None if blocked == "preparing" else "receipt-active"
 
         async def steer(self, *args, **kwargs):

@@ -233,6 +233,12 @@ class HarnessRunStream[OutputT](
     def result(self) -> HarnessRunResult[OutputT] | None: ...
 
     @property
+    def outcome(self) -> HarnessRunResult[OutputT] | None: ...
+
+    @property
+    def diagnostic_error(self) -> BaseException | None: ...
+
+    @property
     def usage(self) -> RunUsage: ...
 
     def cancel(self) -> None: ...
@@ -246,7 +252,7 @@ Context entry allocates the Harness Run ID, restores the selected State-owned Th
 
 The stream has exactly one consumer and forbids concurrent `__anext__()` calls. It yields normalized `HarnessEvent` values followed by at most one `HarnessRunResultEvent`. Public event sequence numbers are reassigned after plugin transformation and remain monotonic from zero.
 
-`result` remains `None` until the terminal event is actually yielded. Leaving the context earlier establishes the terminal fence and closes resources without synthesizing a normal result. `cancel()` is idempotent and interrupts pre-start, active-attempt, or recovery-backoff work. `export_state()` is valid only while the stream is entered and not closed and includes Environment state collection linearized with mount publication.
+`result` remains `None` until the terminal event is actually yielded. After shutdown, `outcome` exposes the nearest validated terminal candidate, including when cleanup failure or external cancellation prevented delivery; before shutdown it is `None`. This is the same candidate authority used by `RunCleanupError.outcome`, not a success receipt. Hosts recovering a suspended candidate preserve its state and deferred requests together and still propagate the original failure or cancellation. Leaving the context earlier establishes the terminal fence and closes resources without synthesizing a normal result. `cancel()` is idempotent and interrupts pre-start, active-attempt, or recovery-backoff work. While active, `export_state()` includes Environment state collection linearized with mount publication. After close it returns the detached shutdown checkpoint, or raises an explicit state-unavailable error if capture failed. `diagnostic_error` exposes the terminal exception only to trusted in-process Hosts for private diagnostics; it is not part of `SafeFailure`, events, state, or any serialized result.
 
 `steer()` accepts one non-empty native `RunInputValue` while an inner Pydantic run is active, records it as user-authored input when compaction is enabled, and delivers it through public `RunContext.enqueue(..., priority="asap")`. It returns the native enqueue ID. Native Pydantic queue timing and `EnqueuedMessagesEvent` own active-run incorporation; the Harness adds no parallel delivery queue or applied-receipt state machine. A steering value retained immediately before an active-run boundary may be replayed by later compaction even when immediate native delivery cannot be confirmed. This context-first behavior deliberately prefers possible duplicate replay to silently losing accepted user intent.
 

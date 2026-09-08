@@ -25,6 +25,10 @@ model_configuration: {}
 
 The release-owned Model integration selected by the route validates settings, construction configuration, and the explicit authentication kind without resolving credential bytes. API keys name environment variables; Codex and Grok subscription Models can instead select their compatible product account store. [Model Authentication and Compatible Account Stores](02a-model-authentication-and-account-stores.md) owns authentication precedence, shared login, refresh, and credential persistence.
 
+For supported API-key HTTP providers, `model_configuration.base_url` is an optional HTTP(S) endpoint. It is part of the frozen Model recipe and is supplied to the native Provider or its native SDK client; it is not a request setting. URLs cannot contain embedded credentials, query parameters, or fragments. Local HTTP endpoints are allowed. Unknown constructor fields and subscription endpoint overrides fail validation rather than being ignored.
+
+Setup presets expand to ordinary settings, never opaque preset references. For upstream profiles that support reasoning, OpenAI Responses presets request `openai_reasoning_summary: detailed` and `openai_store: false`, with high unified `thinking` by default. Unknown and non-reasoning OpenAI models default to neutral settings without a reasoning summary parameter. Chat Completions does not receive Responses-only summary fields. Anthropic presets select adaptive thinking with `display: summarized` and high effort for upstream profiles that support adaptive thinking, or extended thinking with an 8,192-token budget, `display: summarized`, and the interleaved-thinking beta. Both Anthropic presets use a 16,384-token output cap; profiles that reject budget thinking do not offer that preset. Google uses native unified-thinking translation, including thought summaries; OpenRouter reasoning presets set `exclude: false`. Provider-default presets avoid forcing unsupported reasoning on non-reasoning models. These are editable creation-time recommendations, not an override of existing resources or a guarantee of model support. Returned thinking means the content or summaries exposed by the provider, not private reasoning withheld by the provider. Provider-specific Anthropic, Google, OpenRouter, and Z.AI settings are validated against their matching route families. DeepSeek (`deepseek:`), GLM (`zai:`), and Kimi (`moonshotai:`) use their dedicated native Provider profiles, including `reasoning_content` parsing and replay, rather than generic OpenAI profiles. Recognized thinking-capable models offer unified `thinking: true`; Z.AI additionally sets `zai_clear_thinking: false` and uses native `ZaiModel`. Returned thinking remains in native messages through tool continuation and serialized history replay. These presets do not offer a misleading universal thinking-disable switch for always-thinking models.
+
 ### Model Characteristics and Operation Overrides
 
 Model resources may include native `HarnessModelCharacteristics` under `model_characteristics`: `context_window`, `proactive_context_management_threshold`, and `compact_threshold`, together with the native optional capabilities field. The complete value is captured in `ResolvedModelRecipe` and passed to the fresh native `AgentSpec`. Absent values retain native defaults; old captures without this field remain readable. Host defaults do not overwrite an explicitly configured capability policy.
@@ -42,7 +46,7 @@ capabilities:
   - capability: ShellReviewCapability
     configuration:
       model: model-codex-review
-      risk_threshold: high
+      risk_threshold: extra_high
       on_flagged: approval_required
       on_error: approval_required
 ```

@@ -155,14 +155,18 @@ def test_markdown_model_overrides_are_not_a_second_agent_configuration(model: st
 async def test_advanced_setup_offers_subagents_and_only_publishes_inclusion(tmp_path: Path, choice: str) -> None:
     wizard = SetupWizard(advanced=True)
     wizard.accept("api")
-    wizard.accept("openai:gpt-5")
+    wizard.accept("openai-responses")
+    wizard.accept("")
     wizard.accept("env:TEST_KEY")
-    wizard.accept("full-control")
+    wizard.accept("gpt-5")
+    wizard.accept("high")
     assert wizard.question is not None
     assert wizard.question.key == "subagents"
     assert wizard.question.choices == ("all", "none")
     wizard.accept(choice)
-    wizard.accept("")
+    wizard.accept("")  # Context budget.
+    wizard.accept("")  # Additional instructions.
+    wizard.accept("full-control")
     assert wizard.question is None
     selection = SetupSelection.model_validate(wizard.selection(str(tmp_path)))
     path = tmp_path / "config/a13n-harness-ui.yaml"

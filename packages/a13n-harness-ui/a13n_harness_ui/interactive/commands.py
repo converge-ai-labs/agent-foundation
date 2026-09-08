@@ -64,6 +64,14 @@ COMMANDS = (
     ),
     Command("recover", "Restore an unsent prompt."),
     Command("status", "Show model, context, environment, and subscription usage.", busy=True),
+    Command("ps", "Inspect observed background processes and their last reported status.", busy=True),
+    Command(
+        "subagents",
+        "Inspect this conversation's child executions and retained output.",
+        "[execution-id|next]",
+        maximum=1,
+        busy=True,
+    ),
     Command(
         "usage",
         "Show recorded Thread usage; subscription/reset inspect Codex limits.",
@@ -86,7 +94,12 @@ COMMANDS = (
         "agent",
         "Switch agent, including its model, instructions, and tools.",
         "[agent-id]",
-        aliases=("model",),
+        maximum=1,
+    ),
+    Command(
+        "model",
+        "Temporarily switch model without changing Agent or saving configuration.",
+        "[model-id|default]",
         maximum=1,
     ),
     Command(
@@ -196,7 +209,16 @@ class CommandRegistry:
                 "`Ctrl+V` paste image · `Alt+E` expand paste · `PgUp/PgDn` scroll · `Ctrl+End` latest · `/mouse off` copy",
                 "`Ctrl+T` browse retained messages · `$` complete available skills · `/` commands",
                 "",
-                "Add agents with `a13n-harness-ui add agent`. `/model` is an alias for `/agent`.",
+                "Add agents with `a13n-harness-ui add agent`. `/model` changes only the model for this TUI session; "
+                "`/model default` returns to the Agent's model. Nothing is saved.",
+            ]
+        if name is None or commands[0].name in {"paste-image", "attach"}:
+            lines += [
+                "",
+                "Image paste reads the clipboard on the host running this TUI. Over SSH, it does not "
+                "read your local computer's clipboard. Text paste still works through your terminal "
+                "(Cmd+V on macOS). Upload images to the remote host, then `/attach <remote-path>`; "
+                "pasting a local file path does not upload the file.",
             ]
         return "\n".join(lines)
 

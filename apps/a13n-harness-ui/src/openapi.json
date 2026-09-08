@@ -4109,6 +4109,68 @@
         ],
         "title": "ApiKeyAuthentication"
       },
+      "HarnessModelCharacteristics": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCapability"
+            },
+            "type": "array",
+            "uniqueItems": true,
+            "title": "Capabilities"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "proactive_context_management_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proactive Context Management Threshold",
+            "default": 0.65
+          },
+          "compact_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Compact Threshold",
+            "default": 0.9
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HarnessModelCharacteristics",
+        "description": "Resolved Harness characteristics of the active Agent model."
+      },
+      "ModelCapability": {
+        "type": "string",
+        "enum": [
+          "image_understanding",
+          "video_understanding",
+          "audio_understanding"
+        ],
+        "title": "ModelCapability",
+        "description": "Harness-owned capabilities of the active Agent model."
+      },
+      "ModelCharacteristics": {
+        "$ref": "#/components/schemas/HarnessModelCharacteristics"
+      },
       "SetupApiKeyModel": {
         "properties": {
           "route": {
@@ -4119,6 +4181,23 @@
           },
           "authentication": {
             "$ref": "#/components/schemas/ApiKeyAuthentication"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Settings"
+          },
+          "model_configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Model Configuration"
+          },
+          "model_characteristics": {
+            "$ref": "#/components/schemas/ModelCharacteristics"
           }
         },
         "additionalProperties": false,
@@ -4174,6 +4253,32 @@
             "maxLength": 128,
             "title": "New Agent Name",
             "default": ""
+          },
+          "new_model_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "new_model_name": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "New Model Name",
+            "default": ""
+          },
+          "existing_model_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "connect_default": {
             "type": "boolean",

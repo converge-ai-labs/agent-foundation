@@ -37,6 +37,8 @@ After switching branches, run `make sync` (or launch with `make a13n-harness-ui`
 
 Interactive diagnostics go to `<data-root>/logs/terminal.log` (5 MiB, three rotated backups), not the conversation or normal-screen scrollback. Skipped plugins produce one actionable notice for each unchanged path/reason; use the log for details. No legacy plugin files are removed automatically.
 
+Model execution failures and unexpected errors also produce a private `a13n-harness-ui-error-*.json` report in the system temporary directory (`/tmp` on typical Linux installations). The failure notice links its path and the GitHub Issue form. The report collects exception chains, stack locations, component versions, and Thread/Run IDs without frame locals, source lines, or a transcript. Exception messages may still contain sensitive information: review the report before attaching it, and include reproduction steps. Nothing is uploaded automatically. Correlate the same Run ID with `terminal.log` if more context is needed; report creation never substitutes for saving conversation state.
+
 Startup order is **update confirmation → setup if needed → conversation**. The update prompt, setup, and conversation replace the view inside the same TUI rather than exiting and reopening it or appending notices to your terminal. Installed release builds check public PyPI metadata with a three-second timeout and a daily cache; offline failure silently continues startup. Both ordinary launch and `a13n-harness-ui setup` follow this order.
 
 Update detection is enabled by default. To disable it in `a13n-harness-ui.yaml`:
@@ -54,7 +56,7 @@ Use `a13n-harness-ui --no-update-check` to skip detection for one invocation. `m
 uv tool upgrade a13n-harness-ui
 ```
 
-After cleanup, the normal terminal shows a resume command for the actual saved root thread, preserving explicit configuration/data-root options and identifying the workspace to run it from. An interrupted operation may not have produced a new resumable continuation; resume uses the last saved one.
+After cleanup, the normal terminal shows a resume command for the actual saved root thread, preserving explicit configuration/data-root options and identifying the workspace to run it from. Failed and interrupted operations save an available valid Harness checkpoint, including safely retained partial text, before releasing the operation. The next turn and `--resume` use that selected checkpoint without automatically replaying tools. If state export or storage fails, or the process is killed before cleanup can run, resume uses the previous saved checkpoint.
 
 Large active messages use a lightweight plain-text preview and reflow to Markdown when complete. Rendered rows are loaded in pages as you scroll, rather than dropping older rows at a fixed viewport limit. The source cache is still bounded; explicit eviction notices direct you to `/history`. That command can only recover content retained and exposed by the App, not data omitted upstream.
 

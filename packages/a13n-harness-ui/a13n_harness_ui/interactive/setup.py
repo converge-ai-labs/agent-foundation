@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field, replace
 
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
+from a13n_harness_ui.model_presets import (
+    API_MODEL_SUGGESTIONS,
+    API_PROVIDER_BY_ROUTE,
+    API_PROVIDERS,
+    settings_presets,
+    validate_base_url,
+)
 
 from .selection import Choice, Selection, resolve_choice
 
@@ -31,24 +39,26 @@ class Question:
     text: str
     default: str
     choices: tuple[str, ...] = ()
+    password: bool = False
+    allow_custom: bool = False
 
 
 _QUESTIONS = (
+    Question("model_source", "Choose a model for the new agent", "new"),
     Question("provider", "Connect a model", "codex", ("codex", "grok", "api")),
-    Question("route", "API model route", "openai-responses:gpt-5.6-sol"),
+    Question(
+        "api_provider", "Choose an API provider / protocol", "openai-responses", tuple(p.route for p in API_PROVIDERS)
+    ),
+    Question("base_url", "Base URL (HTTP or HTTPS; no credentials in the URL)", ""),
     Question(
         "credential",
-        "Credential reference: env:VARIABLE or key:credential-id. Never paste a secret here.\n"
-        "Store keys separately with `a13n-harness-ui auth key set <id>`.",
-        "env:OPENAI_API_KEY",
+        "API key (hidden), or env:VARIABLE / key:credential-id.\n"
+        "Entering a new key saves it immediately in the local key store, even if setup is later cancelled.",
+        "",
+        password=True,
     ),
     Question("model", "Choose a model", "gpt-5.6-sol", ("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra")),
-    Question(
-        "environment",
-        "Execution permissions",
-        "full-control",
-        ("full-control", "sandbox"),
-    ),
+    Question("preset", "Choose model settings (editable in the saved YAML)", ""),
     Question(
         "subagents",
         "Include the default subagents (code-reviewer, executor, explorer)?",
@@ -66,6 +76,12 @@ _QUESTIONS = (
         "review", "Review shell commands; flagged commands and review errors require approval", "yes", ("yes", "no")
     ),
     Question("instructions", "Additional Agent instructions (optional)", ""),
+    Question(
+        "environment",
+        "Execution permissions",
+        "full-control",
+        ("full-control", "sandbox"),
+    ),
 )
 
 
@@ -80,16 +96,68 @@ class SetupWizard:
     default_environment: str = "full-control"
     provider_descriptions: dict[str, str] = field(default_factory=dict)
     add_agent: bool = False
+    add_model: bool = False
+    model_choices: tuple[Choice, ...] = ()
+    subscription_models: frozenset[str] = frozenset()
     suggested_name: str = ""
+    existing_agent_ids: frozenset[str] = frozenset()
+    context_window_hint: int | None = None
+
+    def __post_init__(self) -> None:
+        self._skip_irrelevant()
+
+    @property
+    def existing_model_id(self) -> str | None:
+        value = self.values.get("model_source", "new")
+        return value if value != "new" else None
 
     @property
     def question(self) -> Question | None:
-        if self.index >= len(_QUESTIONS) or (self.index >= 5 and not self.advanced):
+        if self.index >= len(_QUESTIONS):
             return None
         question = _QUESTIONS[self.index]
         default = self.values.get(question.key, question.default)
+        if question.key == "model_source":
+            choices = (*tuple(str(c.value) for c in self.model_choices), "new")
+            return Question("model_source", question.text, self.values.get("model_source", choices[0]), choices)
         if question.key == "provider":
             default = self.values.get("provider", self.default_provider)
+        if self.values.get("provider") == "api":
+            provider = API_PROVIDER_BY_ROUTE[self.values.get("api_provider", "openai-responses")]
+            if question.key == "base_url":
+                default = self.values.get("base_url", provider.base_url)
+            elif question.key == "credential":
+                default = self.values.get("credential", f"env:{provider.credential_env}")
+            elif question.key == "model":
+                suggestions = API_MODEL_SUGGESTIONS[provider.route]
+                selected = self.values.get("model", suggestions[0])
+                choices = suggestions if selected in suggestions else (selected, *suggestions)
+                return Question(
+                    "model",
+                    "Model ID (choose a suggestion or type a custom ID; no provider: prefix)",
+                    selected,
+                    choices,
+                    allow_custom=True,
+                )
+            elif question.key == "context":
+                recommended = min(350000, self.context_window_hint) if self.context_window_hint else 350000
+                catalog_note = (
+                    f"Bundled model context: {self.context_window_hint:,} tokens."
+                    if self.context_window_hint
+                    else "Model limit unknown; 350,000 is a working default, not a provider guarantee."
+                )
+                return Question(
+                    "context",
+                    "Working context budget (tokens, or e.g. 350k; editable)\n"
+                    + catalog_note
+                    + "\nSummary reminder at 65%; automatic compaction at 90%, using the default summary prompt.",
+                    self.values.get("context", str(recommended)),
+                )
+            elif question.key == "preset":
+                presets = settings_presets(provider.route, self.values.get("model", ""))
+                return Question(
+                    "preset", question.text, self.values.get("preset", presets[0].key), tuple(p.key for p in presets)
+                )
         if question.key == "model" and self.values.get("provider") == "grok":
             return Question(
                 "model",
@@ -97,11 +165,11 @@ class SetupWizard:
                 self.values.get("model", "grok-4.6"),
                 ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
             )
-        if question.key == "environment" and self.add_agent:
+        if question.key == "environment" and (self.add_agent or self.add_model):
             return Question(
                 "name",
-                "Name this agent",
-                self.values.get("name", self.suggested_name or self.values.get("model", "API agent")),
+                "Name this model" if self.add_model else "Name this agent",
+                self.values.get("name", self.suggested_name or self.values.get("model", "New agent")),
             )
         if question.key == "environment":
             default = self.values.get("environment", self.default_environment)
@@ -109,10 +177,94 @@ class SetupWizard:
                 return Question("environment", WINDOWS_EXECUTION_NOTICE, "full-control", ("full-control",))
         return replace(question, default=default)
 
+    def notice(self) -> str:
+        question = self.question
+        if question is None:
+            return "Ready to save."
+        keys = (
+            (
+                "provider",
+                "api_provider",
+                "base_url",
+                "credential",
+                "model",
+                "preset",
+                "context",
+                "name" if self.add_agent or self.add_model else "environment",
+            )
+            if self.values.get("provider") == "api"
+            else ("provider", "model", "name" if self.add_agent or self.add_model else "environment")
+        )
+        if self.add_agent:
+            keys = ("model_source", "name") if self.existing_model_id else ("model_source", *keys)
+        if question.key in keys:
+            hint = f"{keys.index(question.key) + 1} / {len(keys)} · "
+            if question.key in {"environment", "name"}:
+                hint += "Review your selection. "
+                hint += "Saved after this choice."
+                if self.existing_model_id is not None:
+                    hint += f"\nUse existing Model: {self.existing_model_id}. Its settings stay unchanged."
+                elif self.values["provider"] == "api":
+                    preset = next(
+                        p
+                        for p in settings_presets(self.values["api_provider"], self.values["model"])
+                        if p.key == self.values["preset"]
+                    )
+                    hint += f"\n{self.values['api_provider']}:{self.values['model']}\nBase URL: {self.values['base_url']}\nSettings: {json.dumps(preset.settings, sort_keys=True)}"
+                    hint += f"\nContext: {int(self.values['context']):,} tokens · Summary reminder: 65% · Compact: 90%."
+                else:
+                    hint += f"\n{self.values['provider']}:{self.values['model']}"
+                    if self.values["provider"] == "codex":
+                        hint += f" · Thinking: {self.values.get('thinking', 'high')} · Reasoning summary: detailed."
+                    if not self.add_model:
+                        hint += (
+                            " · Shell review threshold: extra high."
+                            if self.values.get("review", "yes") == "yes"
+                            else " · Shell review disabled."
+                        )
+                if self.add_agent:
+                    hint += "\nCreates a new agent; existing agents and defaults stay unchanged."
+                elif self.add_model:
+                    hint += "\nCreates only a Model; no Agent or default is changed."
+            elif question.key == "provider":
+                hint += "Reuse a subscription or connect an API key."
+            elif question.key == "preset":
+                hint += "Choose settings supported by this model. Provider limits still apply."
+            else:
+                hint += "Esc goes back; Ctrl+C cancels."
+            return hint
+        return "Advanced options · Esc back · Ctrl+C cancel."
+
     def selection_prompt(self) -> Selection | None:
         question = self.question
         if question is None or not question.choices:
             return None
+        if question.key == "model_source":
+            return Selection(
+                (
+                    *self.model_choices,
+                    Choice("new", "Create a new model", "Configure a provider, credentials and settings"),
+                ),
+                cursor=question.choices.index(question.default),
+            )
+        if question.key == "model" and self.values.get("provider") == "api":
+            return Selection(
+                tuple(Choice(value, value) for value in question.choices),
+                cursor=question.choices.index(question.default),
+            )
+        if question.key == "api_provider":
+            return Selection(
+                tuple(Choice(p.route, p.label, p.base_url) for p in API_PROVIDERS),
+                cursor=question.choices.index(question.default),
+            )
+        if question.key == "preset":
+            return Selection(
+                tuple(
+                    Choice(p.key, p.label, p.description)
+                    for p in settings_presets(self.values["api_provider"], self.values["model"])
+                ),
+                cursor=question.choices.index(question.default),
+            )
         labels = {
             "codex": "Codex subscription",
             "grok": "Grok subscription",
@@ -136,7 +288,7 @@ class SetupWizard:
             "grok-4.6": "Recommended · latest coding and agentic model",
             "grok-4.5": "Previous generation · configurable reasoning",
             "grok-4.20-0309-reasoning": "Earlier reasoning model · long-context work",
-            "api": "Use a stored key or environment variable",
+            "api": "Choose a provider, base URL, API key, model ID and settings",
             "full-control": "Run directly as your host account; not a sandbox",
             "sandbox": "Isolated execution; prerequisites checked before saving",
             "all": "Package-owned roles; choose individual names later in subagents.include",
@@ -167,17 +319,44 @@ class SetupWizard:
             raise ValueError("Setup choices are complete.")
         selected = text.strip() or question.default
         if question.choices:
-            selected = str(resolve_choice(selected, question.choices)).lower()
-            if selected not in question.choices:
+            selected = str(resolve_choice(selected, question.choices))
+            if not question.allow_custom and selected not in question.choices:
                 raise ValueError(f"Choose one of: {', '.join(question.choices)}")
+        if question.key == "context" and self.values.get("provider") == "api":
+            tokens = selected.lower()
+            multiplier = 1000 if tokens.endswith("k") else 1
+            digits = tokens[:-1] if multiplier == 1000 else tokens
+            if not digits.isascii() or not digits.isdecimal() or int(digits) <= 0:
+                raise ValueError("Enter a positive whole token count, such as 350000 or 350k.")
+            selected = str(int(digits) * multiplier)
         if question.key == "name" and (not selected or len(selected) > 128):
-            raise ValueError("Choose an agent name between 1 and 128 characters.")
+            raise ValueError("Choose a name between 1 and 128 characters.")
+        if question.key == "base_url":
+            validate_base_url(selected)
+        if question.key == "model" and self.values.get("provider") == "api":
+            if not selected or len(selected) > 480 or any(c.isspace() for c in selected) or ":" in selected:
+                raise ValueError("Enter a model ID without whitespace or a provider prefix.")
         if question.key == "credential":
             kind, separator, name = selected.partition(":")
             if not separator or kind not in {"env", "key"} or not name or any(c.isspace() for c in name):
                 raise ValueError("Use env:VARIABLE or key:credential-id; do not enter the API key itself.")
-        if question.key == "provider" and self.values.get("provider") != selected:
+        if question.key == "model_source" and self.values.get("model_source") != selected:
             self.values.clear()
+        if question.key == "provider" and self.values.get("provider") != selected:
+            self.values = {key: value for key, value in self.values.items() if key == "model_source"}
+        if question.key == "api_provider" and self.values.get("api_provider") != selected:
+            self.values = {
+                **{key: value for key, value in self.values.items() if key == "model_source"},
+                "provider": "api",
+            }
+        if (
+            question.key in {"model_source", "provider", "api_provider", "base_url", "model"}
+            and self.values.get(question.key) != selected
+        ):
+            self.context_window_hint = None
+            self.values.pop("context", None)
+        if question.key == "model" and self.values.get("model") != selected:
+            self.values.pop("preset", None)
         self.values[question.key] = selected
         self.preview_generation = None
         self.history.append(self.index)
@@ -188,40 +367,82 @@ class SetupWizard:
         provider = self.values.get("provider", self.default_provider)
         while self.question is not None:
             key = self.question.key
-            if key == "subagents" and self.add_agent:
+            if (
+                key in {"subagents", "context", "thinking", "review", "instructions"}
+                and not self.advanced
+                and not (key == "context" and provider == "api")
+            ):
                 self.index += 1
-            elif key in {"route", "credential"} and provider != "api":
+            elif key == "model_source" and not self.add_agent:
                 self.index += 1
-            elif (key == "model" and provider == "api") or (key in {"context", "thinking"} and provider != "codex"):
+            elif self.existing_model_id is not None and key in {
+                "provider",
+                "api_provider",
+                "base_url",
+                "credential",
+                "model",
+                "preset",
+                "context",
+                "thinking",
+            }:
                 self.index += 1
-            elif key == "review" and provider == "api":
+            elif key == "subagents" and (self.add_agent or self.add_model):
+                self.index += 1
+            elif self.add_model and key in {"review", "instructions"}:
+                self.index += 1
+            elif key in {"api_provider", "base_url", "credential", "preset"} and provider != "api":
+                self.index += 1
+            elif (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
+                self.index += 1
+            elif key == "review" and (
+                provider == "api"
+                or (self.existing_model_id is not None and self.existing_model_id not in self.subscription_models)
+            ):
                 self.index += 1
             else:
                 break
 
     def selection(self, directory: str) -> dict[str, object]:
-        provider = self.values["provider"]
+        provider = self.values.get("provider", "existing")
         result: dict[str, object] = {
-            "providers": [provider] if provider != "api" else [],
+            "providers": [provider] if provider in {"codex", "grok"} else [],
             "default_agent": f"agent-{provider if provider != 'api' else 'api-key'}",
             "project_path": directory,
             "environment_profile": "environment-native"
             if self.values.get("environment", self.default_environment) == "full-control"
             else "environment-sandbox",
-            "shell_review": provider != "api" and self.values.get("review", "yes") == "yes",
+            "shell_review": not self.add_model
+            and (provider in {"codex", "grok"} or self.existing_model_id in self.subscription_models)
+            and self.values.get("review", "yes") == "yes",
             "connect_default": True,
             "include_default_subagents": self.values.get("subagents", "all") == "all",
             "instructions": self.values.get("instructions", ""),
         }
-        if self.add_agent:
+        if self.add_agent or self.add_model:
             name = self.values["name"]
             slug = (
                 re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:80]
                 or hashlib.sha256(name.encode()).hexdigest()[:12]
             )
-            result.update(
-                new_agent_id=f"agent-{slug}", new_agent_name=name, include_default_subagents=None, connect_default=False
+            prefix = "model" if self.add_model else "agent"
+            occupied = (
+                {str(choice.value) for choice in self.model_choices} if self.add_model else self.existing_agent_ids
             )
+            resource_id, number = f"{prefix}-{slug}", 2
+            while resource_id in occupied:
+                resource_id = f"{prefix}-{slug}-{number}"
+                number += 1
+            result.update(
+                {
+                    f"new_{prefix}_id": resource_id,
+                    f"new_{prefix}_name": name,
+                    "include_default_subagents": None,
+                    "connect_default": False,
+                }
+            )
+        if self.existing_model_id is not None:
+            result["existing_model_id"] = self.existing_model_id
+            return result
         if provider == "grok":
             result["grok_model"] = self.values.get("model", "grok-4.6")
         if provider == "codex":
@@ -237,7 +458,18 @@ class SetupWizard:
         if provider == "api":
             kind, _, name = self.values["credential"].partition(":")
             result["api_key_model"] = {
-                "route": self.values["route"],
+                "route": f"{self.values['api_provider']}:{self.values['model']}",
                 "authentication": {"kind": "api_key", "env" if kind == "env" else "credential_ref": name},
+                "model_configuration": {"base_url": self.values["base_url"]},
+                "model_characteristics": {
+                    "context_window": int(self.values["context"]),
+                    "proactive_context_management_threshold": 0.65,
+                    "compact_threshold": 0.90,
+                },
+                "settings": next(
+                    p.settings
+                    for p in settings_presets(self.values["api_provider"], self.values["model"])
+                    if p.key == self.values["preset"]
+                ),
             }
         return result

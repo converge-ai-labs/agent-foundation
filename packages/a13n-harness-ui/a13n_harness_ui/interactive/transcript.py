@@ -7,7 +7,7 @@ from collections import OrderedDict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from io import StringIO
-from itertools import islice
+from itertools import chain, islice, pairwise
 from tempfile import TemporaryDirectory
 from typing import overload
 
@@ -312,7 +312,8 @@ class Transcript:
         self.ids = []
         self.ends = []
         count = 0
-        for block in self.blocks.values():
+        for block, following in pairwise(chain(self.blocks.values(), (None,))):
+            assert block is not None
             key = (block.revision, width, self.theme.variant, block.streaming)
             if block.cache_key != key:
                 source = block.source
@@ -367,6 +368,11 @@ class Transcript:
                 length = len(block.preview_rows)
             elif block.collapsed_lines is not None and not self.detailed:
                 length = min(length, block.collapsed_lines)
+            elif block.kind == "thinking" and following is not None and following.kind == "thinking":
+                # The cached final row is our synthetic spacer, not model text.
+                # Omit it only between adjacent thinking blocks. Keep sources,
+                # Markdown paragraphs, and cached rows intact for other layouts.
+                length -= 1
             count += max(1, length)
             self.ids.append(block.id)
             self.ends.append(count)

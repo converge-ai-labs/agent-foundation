@@ -6,6 +6,15 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
+class Question:
+    key: str
+    text: str
+    default: str
+    choices: tuple[str, ...] = ()
+    secret: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Choice:
     value: str
     label: str

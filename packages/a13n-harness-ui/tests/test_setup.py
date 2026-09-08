@@ -357,7 +357,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
         assert not info.function_tools
         if review_outcome == "error":
             raise RuntimeError("Synthetic reviewer unavailable")
-        yield '{"risk":"high","reason":"Requires user review"}'
+        yield '{"risk":"extra_high","reason":"Requires user review"}'
 
     def build(model_name: str, **kwargs):
         resolved.append(model_name)

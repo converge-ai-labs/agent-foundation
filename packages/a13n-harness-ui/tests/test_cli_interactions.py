@@ -209,12 +209,16 @@ def test_question_and_approval_batch_is_typed_and_complete() -> None:
 def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     wizard = SetupWizard(advanced=True)
     wizard.accept("3")
-    assert wizard.question is not None and wizard.question.key == "route"
+    assert wizard.question is not None and wizard.question.key == "api_provider"
+    wizard.accept("")
     wizard.accept("")
     wizard.accept("key:work")
-    wizard.accept("1")
+    wizard.accept("gpt-5.6-sol")
+    wizard.accept("high")
     wizard.accept("all")
+    wizard.accept("")
     wizard.accept("Keep replies concise")
+    wizard.accept("1")
     assert wizard.question is None
     selection = wizard.selection("/workspace")
     assert selection["instructions"] == "Keep replies concise"
@@ -222,7 +226,16 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     assert selection["api_key_model"] == {
         "route": "openai-responses:gpt-5.6-sol",
         "authentication": {"kind": "api_key", "credential_ref": "work"},
+        "model_configuration": {"base_url": "https://api.openai.com/v1"},
+        "model_characteristics": {
+            "context_window": 350000,
+            "proactive_context_management_threshold": 0.65,
+            "compact_threshold": 0.90,
+        },
+        "settings": {"thinking": "high", "openai_reasoning_summary": "detailed", "openai_store": False},
     }
+    assert wizard.back()
+    assert wizard.question.key == "environment"
     assert wizard.back()
     assert wizard.question is not None and wizard.question.key == "instructions"
     assert wizard.preview_generation is None

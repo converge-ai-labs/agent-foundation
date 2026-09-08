@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, 
 from a13n_harness.context import AgentContext
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_logging import get_logger
 from a13n_stream_protocol import HarnessAguiObserver
 from anyio import CancelScope, to_thread
 from pydantic_ai import ToolDenied, ToolFailed
@@ -39,6 +41,7 @@ from a13n_harness_ui.composition import (
     ThreadCompositionSelection,
 )
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.live import HarnessUiLiveHub
@@ -171,6 +174,7 @@ class RootRunExecutor:
             capabilities=production_run_capabilities(reconstructed.definition_capability_ids),
         )
         result: HarnessRunResult[str] | None = None
+        stream: HarnessRunStream[str] | None = None
         run_error: BaseException | None = None
         try:
             stream = reconstructed.executable.stream(
@@ -203,14 +207,63 @@ class RootRunExecutor:
                             result = item.result
         except BaseException as exc:
             run_error = exc
+            if result is None and stream is not None:
+                # A suspended candidate includes deferred requests as well as state.
+                # Preserve the whole envelope even when cleanup/cancellation prevents delivery.
+                result = stream.outcome
 
         finalization: EnvironmentFinalization | None = None
         finalization_error: Exception | None = None
+        continuation = RootContinuationSelection(status="not_available")
         with CancelScope(shield=True):
             try:
                 finalization = await environment.finalize(timeout_seconds=self._cleanup_timeout_seconds)
             except Exception as exc:
                 finalization_error = exc
+            if (
+                result is not None
+                and result.failure is not None
+                and stream is not None
+                and stream.diagnostic_error is not None
+            ):
+                feedback = await to_thread.run_sync(
+                    partial(
+                        exception_feedback,
+                        stream.diagnostic_error,
+                        thread_id=thread.thread_id,
+                        run_id=stream.run_id,
+                        phase="root_execution",
+                    )
+                )
+                result = result.replace(
+                    failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
+                )
+            if result is not None:
+                continuation = await self._select_state(
+                    thread=thread,
+                    composition=published.reference,
+                    state=result.state,
+                    deferred=result.deferred,
+                )
+            elif stream is not None:
+                try:
+                    state = await stream.export_state()
+                except Exception as exc:
+                    continuation = RootContinuationSelection(status="failed", error=exc)
+                else:
+                    continuation = await self._select_state(thread=thread, composition=published.reference, state=state)
+            else:
+                continuation = RootContinuationSelection(status="not_available")
+            if continuation.error is not None:
+                get_logger(__name__).error(
+                    "Root continuation save failed: thread_id=%s exception_type=%s",
+                    thread.thread_id,
+                    type(continuation.error).__name__,
+                )
+                if run_error is not None:
+                    run_error.add_note(
+                        "The latest continuation could not be saved; the previous selection is unchanged."
+                    )
         if run_error is not None:
             if finalization_error is not None:
                 run_error.add_note(f"Environment finalization also failed: {finalization_error!r}")
@@ -223,11 +276,6 @@ class RootRunExecutor:
                 cleanup_errors=(finalization_error,),
                 state_publications=(),
             )
-        continuation = await self._select_result(
-            thread=thread,
-            composition=published.reference,
-            result=result,
-        )
         return RootRunOutcome(
             result=result,
             environment=finalization,
@@ -281,14 +329,15 @@ class RootRunExecutor:
             )
         return state, deferred
 
-    async def _select_result(
+    async def _select_state(
         self,
         *,
         thread: Thread,
         composition: ObjectRef,
-        result: HarnessRunResult[str],
+        state: HarnessState | None,
+        deferred: DeferredToolRequests | None = None,
     ) -> RootContinuationSelection:
-        if result.state is None or result.status not in {"completed", "suspended"}:
+        if state is None:
             return RootContinuationSelection(status="not_available")
         published_ref: ObjectRef | None = None
         try:
@@ -298,8 +347,8 @@ class RootRunExecutor:
                     value=StoredContinuation(
                         harness_release=harness_version,
                         run_composition=composition,
-                        harness_state=result.state,
-                        deferred_requests=result.deferred,
+                        harness_state=state,
+                        deferred_requests=deferred,
                         created_at=datetime.now(UTC),
                     ),
                 )

@@ -78,6 +78,8 @@ class CliShell:
         self.status = status or Status(mode=request.display or "concise", mode_explicit=request.display is not None)
         self.renderer = StreamRenderer(self.status)
         self.backend: SessionBackend | None = None
+        self._activity_thread: str | None = None
+        self._subagent_total: int | None = 0
         self.pending_codex_reset: ResetRequest | None = None
         self.history_browser: HistoryBrowser | None = None
         self.ready = False
@@ -142,17 +144,28 @@ class CliShell:
                 [
                     self.output_window,
                     ConditionalContainer(
-                        Window(
-                            FormattedTextControl(self._task_text),
-                            height=lambda: min(7, len(self.renderer.tasks.lines())),
-                            wrap_lines=False,
-                            style="class:task-pane",
+                        HSplit(
+                            [
+                                Window(height=1, char="─", style="class:input-area.border"),
+                                Window(
+                                    FormattedTextControl(self._task_text),
+                                    height=lambda: min(7, len(self.renderer.tasks.lines())),
+                                    wrap_lines=False,
+                                    style="class:task-pane",
+                                ),
+                            ]
                         ),
                         filter=Condition(
                             lambda: bool(self.renderer.tasks.lines()) and self.app.output.get_size().rows >= 16
                         ),
                     ),
                     panel,
+                    ConditionalContainer(
+                        Window(
+                            FormattedTextControl(self._activity_text), height=1, style="class:session-selector.hint"
+                        ),
+                        filter=Condition(lambda: bool(self._activity_hint()) and self.app.output.get_size().rows >= 10),
+                    ),
                     ConditionalContainer(
                         Window(FormattedTextControl(self._toolbar), height=1, style="class:status-bar"),
                         filter=Condition(lambda: self.status.show_status and self.app.output.get_size().rows >= 8),
@@ -308,6 +321,42 @@ class CliShell:
                 style = "class:warning"
             fragments.append((style, terminal_text(line) + "\n"))
         return FormattedText(fragments)
+
+    def _activity_hint(self) -> str:
+        hints = []
+        thread_id = self.backend.thread_id if self.backend is not None else None
+        if thread_id is not None and self._activity_thread == thread_id:
+            if self._subagent_total is None:
+                hints.append("Subagents unavailable · /subagents")
+            elif self._subagent_total:
+                hints.append(f"Subagents {self._subagent_total} total · /subagents")
+        if self.renderer.background_hint:
+            hints.append(self.renderer.background_hint)
+        return " · ".join(hints)
+
+    def _activity_text(self) -> FormattedText:
+        return FormattedText([("", terminal_text(self._activity_hint()))])
+
+    async def _refresh_activities(self) -> None:
+        backend = self.backend
+        thread_id = backend.thread_id if backend is not None else None
+        total: int | None = 0
+        if backend is not None and thread_id is not None:
+            try:
+                page = await backend.app.query_child_executions(parent_thread_id=thread_id, limit=1)
+                total = page.total
+            except Exception:
+                # Failed inspection must not take down an active conversation.
+                total = None
+        if backend is self.backend and (backend is None or backend.thread_id == thread_id):
+            self._activity_thread = thread_id
+            self._subagent_total = total
+            self.app.invalidate()
+
+    async def _activity_refresher(self) -> None:
+        while not self.closing:
+            await self._refresh_activities()
+            await asyncio.sleep(2)
 
     def _toolbar(self) -> FormattedText:
         return FormattedText([("", self.status.line(self.app.output.get_size().columns))])
@@ -798,6 +847,7 @@ class CliShell:
         self.status.state = "waiting for you" if self.interaction is not None else "ready"
         self.app.invalidate()
         flusher = self.app.create_background_task(self._flusher())
+        activity_refresher = self.app.create_background_task(self._activity_refresher())
         loop = asyncio.get_running_loop()
         previous_handler = loop.get_exception_handler()
 
@@ -837,8 +887,8 @@ class CliShell:
                 self._clipboard_task.cancel()
                 await asyncio.gather(self._clipboard_task, return_exceptions=True)
             flusher.cancel()
-            with suppress(asyncio.CancelledError):
-                await flusher
+            activity_refresher.cancel()
+            await asyncio.gather(flusher, activity_refresher, return_exceptions=True)
             self.renderer.finish()
             self.renderer.transcript.close()
             self.backend = None
@@ -1223,7 +1273,15 @@ class CliShell:
     async def command(self, invocation: Invocation) -> None:
         name = invocation.command.name
         argument = invocation.arguments[0] if invocation.arguments else None
-        if name == "help":
+        if name == "ps":
+            self.emit(self.renderer.process_details())
+        elif name == "subagents":
+            if self.backend is None:
+                self.emit("Subagent inspection is unavailable while preparing.")
+            else:
+                self.emit(await self.backend.subagents(argument))
+                await self._refresh_activities()
+        elif name == "help":
             self.renderer.append(self.registry.help(argument) + "\n", markdown=True, kind="notice")
         elif name == "quit":
             self.closing = True
@@ -1317,7 +1375,7 @@ class CliShell:
             assert argument is not None
             result = await self.backend.steer(argument)
             self.emit(result)
-        elif name in {"agent", "thinking", "environment", "resume"} and argument is None:
+        elif name in {"agent", "model", "thinking", "environment", "resume"} and argument is None:
             choices = await self.backend.choices(name)
             if not choices:
                 self.emit("No choices yet. Add an agent with a13n-harness-ui add agent.")
@@ -1332,11 +1390,15 @@ class CliShell:
             self.offer_import()
         elif name == "agent":
             self.launch(self.backend.agents(argument), failure_input=invocation.source)
+        elif name == "model":
+            assert argument is not None
+            self.launch(self.backend.models(argument), failure_input=invocation.source)
         elif name == "thinking":
             self.launch(self.backend.thinking(argument), failure_input=invocation.source)
         elif name == "environment":
             self.launch(self.backend.set_environment(argument), failure_input=invocation.source)
         elif name == "new":
+            self.renderer.clear_process_observations()
             self.launch(self.backend.new(), failure_input=invocation.source, discard_images=True)
         elif name == "resume":
             self.launch(self._resume(argument), failure_input=invocation.source, discard_images=True)
@@ -1349,5 +1411,5 @@ class CliShell:
             self.open_history()
         elif name == "config":
             self.emit(
-                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent for this session; /thinking adjusts its reasoning for subsequent turns.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
+                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent; /model temporarily overrides only its model in this TUI session; /thinking adjusts reasoning for subsequent turns.\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
             )

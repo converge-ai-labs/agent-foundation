@@ -118,8 +118,7 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
     wizard.accept("gpt-5.6-sol")
-    wizard.accept("sandbox")
-    for value in ("all", "extended", "medium", "no", ""):
+    for value in ("all", "extended", "medium", "no", "", "sandbox"):
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
@@ -133,7 +132,15 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
 
 @pytest.mark.parametrize(
     "arguments",
-    [["--help"], ["--version"], ["login", "--help"], ["run", "--help"], ["add", "--help"], ["add", "agent", "--help"]],
+    [
+        ["--help"],
+        ["--version"],
+        ["login", "--help"],
+        ["run", "--help"],
+        ["add", "--help"],
+        ["add", "agent", "--help"],
+        ["add", "model", "--help"],
+    ],
 )
 def test_cli_help_never_imports_runtime(arguments: list[str], tmp_path: Path) -> None:
     script = f"""
@@ -442,6 +449,59 @@ async def test_session_overrides_capture_native_context_and_resume(
     assert (path.parent / "models/codex.yaml").read_bytes() == before
     config = await load_harness_ui_configuration(path)
     assert config.models["model-codex"].settings["thinking"] == "high"
+
+
+@pytest.mark.anyio
+async def test_model_selection_is_session_only_and_preserves_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import a13n_harness.model_auth as runtime
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/alternate.yaml"
+    model = yaml.safe_load((path.parent / "models/codex.yaml").read_text())
+    model.update(id="model-alternate", name="Alternate")
+    model_path.write_text(yaml.safe_dump(model))
+    before = {item: item.read_bytes() for item in path.parent.rglob("*.yaml")}
+
+    async def stream(messages, info):
+        yield "Reply from the selected model."
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *a, **kw: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        thread_id = await backend.ensure_session()
+        original = (await app.get_thread(thread_id)).thread.configuration
+        choices = await backend.choices("model")
+        assert {item.value for item in choices} == {"default", "model-codex", "model-alternate"}
+        await backend.thinking("low")
+        assert "nothing saved" in await backend.models("model-alternate")
+        assert backend.overrides.model_id == "model-alternate"
+        assert backend.overrides.thinking is None
+        assert (await app.get_thread(thread_id)).thread.configuration.agent_source == original.agent_source
+        with pytest.raises(ValueError, match="Unknown model"):
+            await backend.models("missing")
+        assert backend.overrides.model_id == "model-alternate"
+        assert await backend.execute(StreamRenderer(backend.status), prompt="Hello") == ""
+        assert (await app.context_usage(thread_id)).model_id == "model-alternate"
+        assert (await app.get_thread(thread_id)).thread.configuration == original
+        await backend.agents("agent-codex")
+        assert backend.overrides.model_id == "model-alternate"
+        await backend.new()
+        assert backend.overrides.model_id == "model-alternate"
+        await backend.resume(thread_id)
+        assert backend.overrides.model_id == "model-alternate"
+        fresh = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        await fresh.initialize()
+        assert fresh.overrides.model_id is None
+        await backend.models("default")
+        assert backend.overrides.model_id is None
+        assert backend.status.agent == fresh.status.agent
+    assert {item: item.read_bytes() for item in before} == before
 
 
 @pytest.mark.anyio
@@ -1066,7 +1126,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
         await backend.thinking("low")
         await backend.execute(StreamRenderer(backend.status), prompt="First agent")
         thread_id = backend.thread_id
-        assert CommandRegistry().parse("/model agent-astra").command.name == "agent"
+        assert CommandRegistry().parse("/agent agent-astra").command.name == "agent"
         with pytest.raises(ValueError, match="unavailable"):
             CommandRegistry().parse("/agent agent-astra", busy=True)
         await backend.agents("agent-astra")

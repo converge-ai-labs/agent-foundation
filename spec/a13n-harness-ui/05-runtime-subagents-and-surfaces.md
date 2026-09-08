@@ -99,7 +99,7 @@ For an admitted prompt or deferred response, the App:
 08. starts one Harness stream and observer from the selected `HarnessState`;
 09. forwards public live events best effort;
 10. finalizes Environment adapters and publishes changed state;
-11. publishes and compare-and-selects an acceptable complete or suspended continuation;
+11. publishes and compare-and-selects any available valid terminal checkpoint, including failed or interrupted execution, under the [continuation policy](03-local-storage-and-recovery.md#run-composition-and-continuation);
 12. selects a detached terminal operation outcome with independent execution, continuation, Environment-state, and cleanup facts.
 
 No database transaction spans file I/O, catalog import, native construction, or steps 7 through 11. If capture fails, an already committed explicit Thread patch remains the Thread's desired next state and the operation reports why it could not start.

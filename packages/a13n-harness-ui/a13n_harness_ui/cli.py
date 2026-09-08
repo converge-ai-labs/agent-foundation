@@ -203,6 +203,14 @@ def add_agent_command(ctx: click.Context, advanced: bool) -> None:
     _execute(_request(ctx, command="add", action="agent", setup_advanced=advanced))
 
 
+@add_group.command("model")
+@click.option("--advanced", is_flag=True, help="Also customize subscription context and reasoning settings.")
+@click.pass_context
+def add_model_command(ctx: click.Context, advanced: bool) -> None:
+    """Create a reusable model without creating or changing an agent."""
+    _execute(_request(ctx, command="add", action="model", setup_advanced=advanced))
+
+
 @cli.command("run")
 @click.argument("prompt")
 @click.option("--resume", "thread_id", help="Continue a saved session.")

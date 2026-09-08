@@ -672,6 +672,8 @@ def _registration_provenance(
 def _validate_auth_route(item: ModelResource) -> None:
     prefix = item.route.split(":", 1)[0]
     authentication = item.authentication
+    if not isinstance(authentication, ApiKeyAuthentication) and item.model_configuration:
+        raise CompositionError("Subscription endpoints cannot be overridden.", code="model_configuration_unsupported")
     if isinstance(authentication, CodexSubscriptionAuthentication) and prefix != "openai-codex":
         raise CompositionError(
             "Codex subscription authentication requires an openai-codex route.", code="model_auth_invalid"

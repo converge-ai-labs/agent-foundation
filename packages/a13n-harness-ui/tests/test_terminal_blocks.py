@@ -332,7 +332,7 @@ def test_input_events_hide_context_without_marking_user_as_assistant() -> None:
     assert "HIDDEN" not in _source(renderer)
 
 
-def test_native_shell_preview_prioritizes_command_exit_and_partial_output() -> None:
+def test_native_shell_preview_prioritizes_command_output_and_failure_without_exit_code() -> None:
     import json
 
     renderer = StreamRenderer(Status())
@@ -355,10 +355,14 @@ def test_native_shell_preview_prioritizes_command_exit_and_partial_output() -> N
     )
     renderer.transcript.render(80)
     text = _text(renderer.transcript)
-    assert "exited · exit 7" in text
-    assert "$ pytest -q" in text
+    assert "shell_exec · pytest -q · failed" in text
+    assert "exited" not in text and "exit 7" not in text
     assert text.index("test failure") < text.index("test output")
     assert "output partial" in text
+    renderer.transcript.detailed = True
+    renderer.transcript.dirty = True
+    renderer.transcript.render(80)
+    assert '"exit_code": 7' in _text(renderer.transcript)
     renderer.transcript.close()
 
 
@@ -391,3 +395,62 @@ def test_notes_show_full_values_and_distinct_style_without_repeated_snapshots() 
     assert any("ansimagenta" in style for row in renderer.transcript.rows for style, _ in row)
     assert next(iter(renderer.transcript.blocks.values())).kind == "notes"
     renderer.transcript.close()
+
+
+def _unpadded_text(transcript: Transcript) -> str:
+    return "\n".join(line.rstrip() for line in _text(transcript).split("\n"))
+
+
+def test_adjacent_thinking_blocks_have_no_synthetic_blank_line() -> None:
+    renderer = StreamRenderer(Status())
+    for index, text in enumerate(("First thought.", "Second thought.", "Third thought.")):
+        renderer.ingest("THINKING_TEXT_MESSAGE_CONTENT", {"message_id": str(index), "delta": text})
+        renderer.ingest("THINKING_TEXT_MESSAGE_END", {"message_id": str(index)})
+    renderer.transcript.render(80)
+    assert _unpadded_text(renderer.transcript) == "First thought.\nSecond thought.\nThird thought.\n"
+    assert len(renderer.transcript.blocks) == 3
+    assert [block.source for block in renderer.transcript.blocks.values()] == [
+        "First thought.",
+        "Second thought.",
+        "Third thought.",
+    ]
+    renderer.transcript.detailed = True
+    renderer.transcript.dirty = True
+    renderer.transcript.render(80)
+    assert _unpadded_text(renderer.transcript) == "First thought.\nSecond thought.\nThird thought.\n"
+    renderer.transcript.close()
+
+
+def test_thinking_spacing_preserves_paragraphs_and_other_block_boundaries() -> None:
+    transcript = Transcript()
+    first = transcript.append("First paragraph.\n\nSecond paragraph.", markdown=True, kind="thinking")
+    transcript.render(80)
+    cached = transcript.blocks[first].rows
+    transcript.append("Next thought.", markdown=True, kind="thinking")
+    transcript.append("view · result", kind="tool")
+    transcript.append("Final thought.", markdown=True, kind="thinking")
+    transcript.append("Answer.", markdown=True)
+    transcript.render(80)
+    assert transcript.blocks[first].rows is cached
+    assert _unpadded_text(transcript) == (
+        "First paragraph.\n\nSecond paragraph.\nNext thought.\n\nview · result\nFinal thought.\n\nAnswer.\n"
+    )
+    assert transcript.locate((first, 2)) == 2
+    transcript.close()
+
+
+def test_thinking_adjacency_reflows_after_resize_and_eviction() -> None:
+    transcript = Transcript(max_blocks=2)
+    transcript.append("First thought.", markdown=True, kind="thinking")
+    transcript.render(80)
+    second = transcript.append("Second thought.", markdown=True, kind="thinking")
+    transcript.render(8)
+    assert "\n\n" not in _unpadded_text(transcript).rstrip("\n")
+    transcript.render(80)
+    assert _unpadded_text(transcript) == "First thought.\nSecond thought.\n"
+    transcript.append("Answer.", markdown=True)
+    transcript.render(80)
+    assert transcript.evicted
+    assert _unpadded_text(transcript) == "Second thought.\n\nAnswer.\n"
+    assert transcript.anchor(0) == (second, 0)
+    transcript.close()

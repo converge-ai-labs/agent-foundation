@@ -78,14 +78,20 @@ async def run_terminal(
                 configured = await backend.initialize()
                 logger.info("Startup session_initialize=%.3fs", time.perf_counter() - session_started)
                 if request.command in {"setup", "add"} or not configured:
-                    landing.title = "Harness UI · Add agent" if request.command == "add" else "Harness UI · Setup"
+                    landing.title = (
+                        f"Harness UI · Add {request.action}" if request.command == "add" else "Harness UI · Setup"
+                    )
                     completed = await run_setup(
                         backend.app,
                         directory,
                         ask_user=landing.ask,
                         emit=emit,
                         environment=backend.environment,
-                        **({"add_agent": True} if request.command == "add" else {}),
+                        **(
+                            {"add_model" if request.action == "model" else "add_agent": True}
+                            if request.command == "add"
+                            else {}
+                        ),
                         **({"advanced": True} if request.setup_advanced else {}),
                     )
                     if not completed or request.command in {"setup", "add"}:

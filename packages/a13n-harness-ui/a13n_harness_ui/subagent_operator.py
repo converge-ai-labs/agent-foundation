@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import partial
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -48,6 +49,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.execution import derive_child_identity
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_logging import get_logger
 from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
 from ag_ui.core import Event as AguiEvent
 from ag_ui.core.events import (
@@ -81,6 +83,7 @@ from a13n_harness_ui.composition import (
     RunCompositionService,
     ThreadCompositionSelection,
 )
+from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
@@ -969,16 +972,35 @@ class HarnessUiSubagentOperator(SubagentOperator):
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
             with CancelScope(shield=True):
+                checkpoint: ObjectRef | None = None
+                try:
+                    state = await current.stream.export_state()
+                    checkpoint = await self._publish_checkpoint_object(
+                        head=current.head,
+                        run_id=current.stream.run_id,
+                        state=state,
+                        deferred_requests=None,
+                        display=active.display,
+                        terminal=True,
+                    )
+                except Exception as checkpoint_error:
+                    get_logger(__name__).error(
+                        "Child recovery checkpoint failed: execution_id=%s exception_type=%s",
+                        current.head.execution_id,
+                        type(checkpoint_error).__name__,
+                    )
                 if isinstance(exc, get_cancelled_exc_class()):
                     await self._lose_after_acceptance(
                         current.head.execution_id,
                         expected_checkpoint=expected_checkpoint,
+                        checkpoint=checkpoint,
                     )
                 else:
                     await self._fail_after_acceptance(
                         current.head.execution_id,
                         exc,
                         expected_checkpoint=expected_checkpoint,
+                        checkpoint=checkpoint,
                     )
         finally:
             with CancelScope(shield=True):
@@ -1044,6 +1066,19 @@ class HarnessUiSubagentOperator(SubagentOperator):
             raise finalization_error
         if result is None:
             raise RunCoordinationError("Child Harness Run produced no result.", code="subagent_result_missing")
+        if result.failure is not None and prepared.stream.diagnostic_error is not None:
+            feedback = await to_thread.run_sync(
+                partial(
+                    exception_feedback,
+                    prepared.stream.diagnostic_error,
+                    thread_id=prepared.stream.thread_id,
+                    run_id=prepared.stream.run_id,
+                    phase="child_execution",
+                )
+            )
+            result = result.replace(
+                failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
+            )
         return result, compactor.snapshot(), terminal_events
 
     async def _finish_result(
@@ -1231,6 +1266,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         exc: BaseException,
         *,
         expected_checkpoint: ObjectRef | None,
+        checkpoint: ObjectRef | None = None,
     ) -> None:
         failure = _safe_failure(exc, fallback_code="subagent_execution_failed")
         try:
@@ -1238,7 +1274,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 execution_id=execution_id,
                 status="failed",
                 expected_checkpoint=expected_checkpoint,
-                checkpoint=None,
+                checkpoint=checkpoint,
                 failure=failure,
             )
         except StoreError:
@@ -1250,13 +1286,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
         execution_id: str,
         *,
         expected_checkpoint: ObjectRef | None,
+        checkpoint: ObjectRef | None = None,
     ) -> None:
         try:
             await self._store.child_executions.finish(
                 execution_id=execution_id,
                 status="lost",
                 expected_checkpoint=expected_checkpoint,
-                checkpoint=None,
+                checkpoint=checkpoint,
             )
         except StoreError:
             return

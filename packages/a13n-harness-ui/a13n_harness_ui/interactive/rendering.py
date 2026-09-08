@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from .panels import capability_panel, shell_result_preview, tool_arguments, tool_preview, tool_result
+from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
 from .transcript import Transcript
 
 if TYPE_CHECKING:
@@ -139,6 +139,14 @@ class _ToolPreview:
     summary: str = ""
 
 
+@dataclass(slots=True)
+class _ShellObservation:
+    command: str = ""
+    completion_seen: bool = False
+    phase: str = "unknown"
+    background: bool = False
+
+
 class StreamRenderer:
     """Keep only a bounded pending batch and bounded per-tool argument tails.
 
@@ -161,12 +169,100 @@ class StreamRenderer:
         self._pending: list[str] = []
         self._size = 0
         self._tools: dict[tuple[str, str], _ToolPreview] = {}
+        self._shell_processes: dict[tuple[str, str], _ShellObservation] = {}
+        self._shell_observations_omitted = False
         self.assistant_seen = False
         self.gap = False
         self.boundary = False
         self._line_open = False
         self._local_output: dict[str, int] = {}
         self._custom_events = CustomEventAssembler()
+
+    def _shell_observation(self, run_id: str, process_id: str) -> _ShellObservation:
+        key = (run_id, process_id)
+        observation = self._shell_processes.setdefault(key, _ShellObservation())
+        while len(self._shell_processes) > 128:
+            self._shell_processes.pop(next(iter(self._shell_processes)))
+            self._shell_observations_omitted = True
+        return observation
+
+    def _observe_shell_result(self, text: str, command: str, run_id: str) -> None:
+        try:
+            result = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(result, dict) or not isinstance(result.get("process_id"), str):
+            return
+        observation = self._shell_observation(run_id, result["process_id"])
+        if command:
+            observation.command = " ".join(command.split())[:500]
+        status = result.get("status")
+        phase = status.get("phase") if isinstance(status, dict) else None
+        if isinstance(phase, str):
+            if phase == "running":
+                # A returned running handle is background work, unlike an
+                # in-flight foreground invocation's routine status event.
+                observation.background = True
+            if phase == "running" and observation.phase in {"exited", "signaled", "timed_out", "cancelled", "failed"}:
+                # A completion event can overtake delivery of the tool's earlier
+                # running snapshot. Do not resurrect the completed process.
+                return
+            observation.phase = phase
+            if phase in {"exited", "signaled", "timed_out", "cancelled", "failed"}:
+                observation.completion_seen = True
+
+    def clear_process_observations(self) -> None:
+        self._shell_processes.clear()
+        self._shell_observations_omitted = False
+
+    def end_process_observations(self, run_id: str | None = None) -> None:
+        for (observed_run, _), observation in self._shell_processes.items():
+            if (run_id is None or observed_run == run_id) and observation.phase == "running":
+                observation.phase = "unavailable"
+
+    @property
+    def background_hint(self) -> str:
+        running = sum(item.background and item.phase == "running" for item in self._shell_processes.values())
+        uncertain = self.gap or self._shell_observations_omitted
+        if not running and not uncertain:
+            return ""
+        return f"Background {running}{'+' if uncertain else ''} observed · /ps"
+
+    def process_details(self) -> str:
+        lines = ["Background processes · live observations, not a host process list"]
+        processes = [(key, value) for key, value in self._shell_processes.items() if value.background]
+        for (run_id, process_id), item in processes[-16:]:
+            lines.append(f"{process_id} · {item.phase} · {item.command or 'command unavailable'} · Run {run_id}")
+        if not processes:
+            lines.append("No background processes observed in this conversation.")
+        if len(processes) > 16 or self._shell_observations_omitted:
+            lines.append("Older observations omitted; showing at most 16 processes.")
+        if self.gap:
+            lines.append("Live output was incomplete; process observations may be stale or missing.")
+        lines.append("Status is last observed; unavailable does not confirm exit. Expand tool details for output.")
+        return terminal_text("\n".join(lines))
+
+    def _shell_notification(self, event: Mapping[str, object], run_id: str, child_label: str = "") -> None:
+        process_id = event.get("process_id")
+        if event.get("callback") is not True or not isinstance(process_id, str):
+            return
+        phase = event.get("phase")
+        if not isinstance(phase, str) or phase not in {"exited", "signaled", "timed_out", "cancelled", "failed"}:
+            return
+        observation = self._shell_observation(run_id, process_id)
+        if observation.completion_seen:
+            return
+        observation.completion_seen = True
+        outcome = shell_outcome(event) or "finished"
+        label = observation.command or "background command"
+        brief = f"{label} · {outcome}" + (f" · {child_label}" if child_label else "")
+        self.finish()
+        # Keep diagnostic identity and status available on expansion, not as a
+        # second process lifecycle panel in the default conversation view.
+        body = brief + "\n" + json.dumps(dict(event), ensure_ascii=False, indent=2)
+        block = self.transcript.append(terminal_text(body), collapsed_lines=1, kind="tool")
+        self.transcript.preview(block, terminal_text(brief), 1)
+        self.append(brief + "\n", display=False)
 
     def restore_notes(self, page: NotePage, *, force: bool = False) -> None:
         previous = self._notes
@@ -361,6 +457,9 @@ class StreamRenderer:
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
                 name = preview.name if preview else "tool"
+                if name.startswith("shell"):
+                    command = preview.summary if preview and name in {"shell_exec", "shell_start"} else ""
+                    self._observe_shell_result(text, command, run_id)
                 if (not child or detailed) and (name != "ask_user_question" or detailed):
                     elapsed = f" · {time.monotonic() - preview.started:.1f}s" if preview else ""
                     result = tool_result(name, text)
@@ -372,7 +471,9 @@ class StreamRenderer:
                         for item in (header, " ".join(summary.split())[:100], output.split("\n", 1)[0][:100])
                         if item
                     )
-                    shell_preview = shell_result_preview(text, summary, self.status.max_tool_result_lines)
+                    shell_preview = None
+                    if name.startswith("shell"):
+                        shell_preview = shell_result_preview(text, summary, self.status.max_tool_result_lines)
                     if shell_preview is not None:
                         brief = f"{name} · {shell_preview}"
                     arguments = preview.arguments if preview else ""
@@ -404,14 +505,15 @@ class StreamRenderer:
                     if preview.block_id is not None and preview.arguments:
                         header = f"{preview.name} · running" + (f" · {identity}" if child else "")
                         self.transcript.replace(preview.block_id, terminal_text(header + "\n" + preview.arguments))
-                        shell = preview.name.startswith("shell")
-                        brief = header + ("\n" if shell else " · ") + preview.summary
-                        self.transcript.preview(preview.block_id, terminal_text(brief), 4 if shell else 1)
+                        brief = header + " · " + preview.summary
+                        self.transcript.preview(preview.block_id, terminal_text(brief), 1)
                 self.boundary = True
             # START-only and malformed streams obey the same bound as ARGS.
             while len(self._tools) > 128:
                 self._tools.pop(next(iter(self._tools)))
             return
+        if event_type in {"RUN_FINISHED", "RUN_ERROR"}:
+            self.end_process_observations(run_id)
         if event_type == "RUN_ERROR":
             self.finish()
             self.append(f"Error: {payload.get('message', payload.get('code', 'run failed'))}\n")
@@ -433,6 +535,15 @@ class StreamRenderer:
                             label += f" · {reference}"
                         self.finish()
                         self.append(f"> [{label}]\n", kind="user")
+                    return
+                if name == "a13n.shell.status":
+                    process_id, phase = event.get("process_id"), event.get("phase")
+                    if isinstance(process_id, str) and isinstance(phase, str):
+                        self._shell_observation(run_id, process_id).phase = phase
+                    if not child or detailed:
+                        self._shell_notification(event, run_id, identity if child else "")
+                    # Recognized routine statuses are intentionally quiet, not
+                    # unknown capability events to render as raw JSON.
                     return
                 panel = capability_panel(name, event)
                 if panel is not None:

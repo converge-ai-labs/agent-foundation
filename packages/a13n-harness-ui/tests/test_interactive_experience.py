@@ -385,9 +385,155 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
     assert app.thread_usage.call_count == 2  # No ledger scans per live report.
 
 
-def test_agent_alias_is_an_exact_completion_and_never_an_independent_picker() -> None:
+@pytest.mark.anyio
+async def test_subscription_close_invalidates_outliving_child_process_observations(tmp_path: Path) -> None:
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.live import HarnessUiLiveHub
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    hub = HarnessUiLiveHub()
+    renderer = StreamRenderer(Status())
+
+    async def submit(**kwargs):
+        renderer._observe_shell_result(
+            json.dumps({"process_id": "process-child", "status": {"phase": "running"}}), "sleep 30", "child-run"
+        )
+        assert "Background 1" in renderer.background_hint
+        return SimpleNamespace(receipt_id="receipt-one")
+
+    app = SimpleNamespace(
+        live_events=hub.subscribe,
+        submit_thread=submit,
+        wait_root_operation=AsyncMock(
+            return_value=SimpleNamespace(status=RootOperationStatus.cancelled, outcome=None, failure=None)
+        ),
+        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+    )
+    backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)
+    backend.refresh = AsyncMock(return_value=True)
+    backend.ensure_session = AsyncMock(return_value="thread-one")
+    try:
+        await backend.execute(renderer, prompt="test")
+        assert renderer.background_hint == ""
+        assert "process-child · unavailable" in renderer.process_details()
+    finally:
+        renderer.transcript.close()
+        await hub.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("execution_id", [None, "execution-one"])
+async def test_subagent_inspection_discards_results_after_conversation_switch(execution_id) -> None:
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.surfaces import ChildExecutionPage, ReviewView
+
+    pending = asyncio.Future()
+
+    async def delayed(**kwargs):
+        assert kwargs["parent_thread_id"] == "thread-one"
+        return await pending
+
+    backend = SessionBackend(
+        SimpleNamespace(query_child_executions=delayed, child_review=delayed), CliRequest(), Path.cwd(), Status()
+    )
+    backend.thread_id = "thread-one"
+    query = asyncio.create_task(backend.subagents(execution_id))
+    await asyncio.sleep(0)
+    backend.thread_id = "thread-two"
+    pending.set_result(
+        ChildExecutionPage(executions=(), total=21, next_cursor="old-cursor")
+        if execution_id is None
+        else ReviewView(lifecycle="closed", kind="child", title="Old child", content="Old output")
+    )
+    assert "discarded" in await query
+    assert backend._child_page_thread is None
+    assert "No next page" in await backend.subagents("next")
+
+
+@pytest.mark.anyio
+async def test_task_panel_has_a_full_width_separator_in_the_terminal() -> None:
+    from a13n_harness_ui.surfaces import TaskView
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.renderer.append("tool output", kind="tool")
+        shell.renderer.tasks.restore(
+            TaskPage(tasks=(TaskView(task_id="task-1", version=1, subject="Do work", status="pending"),))
+        )
+        terminal = asyncio.create_task(shell.app.run_async())
+        try:
+            for _ in range(100):
+                screen = shell.app.renderer.last_rendered_screen
+                if screen is not None:
+                    break
+                await asyncio.sleep(0.01)
+            assert screen is not None
+            lines = ["".join(row[x].char for x in range(80)) for _, row in sorted(screen.data_buffer.items())]
+            index = next(index for index, line in enumerate(lines) if "Tasks ·" in line)
+            assert lines[index - 1] == "─" * 80
+        finally:
+            shell.app.exit()
+            await terminal
+            shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+async def test_activity_refresh_is_thread_scoped_and_does_not_publish_stale_results() -> None:
+    from a13n_harness_ui.surfaces import ChildExecutionPage
+
+    with create_pipe_input(), create_app_session(output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        query = AsyncMock(return_value=ChildExecutionPage(executions=(), total=3))
+        shell.backend = SimpleNamespace(thread_id="thread-one", app=SimpleNamespace(query_child_executions=query))
+        await shell._refresh_activities()
+        assert "Subagents 3 total · /subagents" in shell._activity_hint()
+        query.assert_awaited_once_with(parent_thread_id="thread-one", limit=1)
+        pending = asyncio.Future()
+
+        async def delayed(**kwargs):
+            return await pending
+
+        query.side_effect = delayed
+        refresh = asyncio.create_task(shell._refresh_activities())
+        await asyncio.sleep(0)
+        shell.backend.thread_id = "thread-two"
+        pending.set_result(ChildExecutionPage(executions=(), total=7))
+        await refresh
+        assert shell._activity_hint() == ""
+        query.side_effect = RuntimeError("offline")
+        await shell._refresh_activities()
+        assert "Subagents unavailable" in shell._activity_hint()
+        shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+async def test_subagent_inspection_uses_app_pages_and_review_without_execution() -> None:
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.surfaces import ChildExecutionPage, ReviewView
+
+    query = AsyncMock(return_value=ChildExecutionPage(executions=(), total=21, next_cursor="page-two"))
+    review = AsyncMock(return_value=ReviewView(lifecycle="closed", kind="child", title="Child", content="Saved output"))
+    app = SimpleNamespace(query_child_executions=query, child_review=review)
+    backend = SessionBackend(app, CliRequest(), Path.cwd(), Status())
+    assert "No subagent" in await backend.subagents()
+    backend.thread_id = "thread-one"
+    assert "/subagents next" in await backend.subagents()
+    await backend.subagents("next")
+    query.assert_awaited_with(parent_thread_id="thread-one", cursor="page-two", limit=20)
+    assert "Saved output" in await backend.subagents("execution-one")
+    review.assert_awaited_once_with(parent_thread_id="thread-one", execution_id="execution-one")
+    backend.thread_id = "thread-two"
+    assert "No next page" in await backend.subagents("next")
+
+
+def test_model_and_agent_have_independent_commands_and_help() -> None:
     registry = CommandRegistry()
-    assert registry.parse("/model").command is registry.parse("/agent").command
+    assert registry.parse("/model").command is not registry.parse("/agent").command
     assert registry.completions("/model")[0][0] == "/model"
-    assert "/model" in registry.help("agent")
-    assert "[agent-id]" in registry.help("model")
+    assert "[agent-id]" in registry.help("agent")
+    assert "[model-id|default]" in registry.help("model")
+    for command in ("/model other", "/agent other"):
+        with pytest.raises(ValueError, match="unavailable"):
+            registry.parse(command, busy=True)
+    assert registry.parse("/ps", busy=True).command.name == "ps"
+    assert registry.parse("/subagents", busy=True).command.name == "subagents"

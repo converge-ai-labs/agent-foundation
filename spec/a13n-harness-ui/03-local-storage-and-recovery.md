@@ -123,7 +123,7 @@ The composition reference explains which Agent, Project roots, Capability, Harne
 
 Deferred requests are stored only as part of the complete suspended continuation. Surface projections use the selected continuation digest as an opaque continuation ID and never expose the object reference or native request value. A deferred response compares that exact selected reference and reconstructs its complete native request/result pair in memory.
 
-At an acceptable complete or suspended result, Harness UI publishes the continuation and compare-and-selects it against the reference loaded at admission. Publication or selection failure leaves the prior or concurrently selected continuation current. Root receipts, input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
+Harness UI publishes every available valid terminal `HarnessState`, including failed and cancelled results, and compare-and-selects it against the reference loaded at admission. After an unexpected exception or external cancellation, it attempts to export the Harness-retained shutdown checkpoint and publish it under cancellation shielding before propagating the original error. Saving a checkpoint does not turn failed or cancelled execution into success and never automatically replays input or effects. Deferred requests accompany only a suspended result. If export, publication, or selection fails, the prior or concurrently selected continuation remains current and the save failure is diagnosed independently. Root receipts, input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
 
 ## Child Threads and Execution Segments
 
@@ -193,6 +193,12 @@ A Thread resumes from its selected continuation using its current sticky configu
 
 External model, tool, and Environment effects can be unknown and may repeat after explicit retry or linked resume.
 
+## Private Failure Diagnostics
+
+Recognized model failures and unexpected execution errors produce a best-effort private JSON report in the operating-system temporary directory. The report contains component versions, Python/platform metadata, Thread/Run correlation, exception chains, and frame locations, but no frame locals, source lines, configuration snapshot, transcript, or serialized checkpoint. Exception messages can themselves contain sensitive provider content; the report is user-reviewed diagnostic material, not a safe public payload. Files use owner-only access where supported. A report-write failure never replaces the execution error or blocks checkpoint publication.
+
+The terminal failure presentation identifies the report path and the repository's new-Issue entry point, requests reproduction steps, and tells the user to review sensitive content before sharing. Nothing is uploaded automatically. Normal diagnostic logs retain safe exception types and stack locations with Thread/Run correlation, not raw exception messages or provider bodies. Reports and logs never reconstruct or select continuation state.
+
 ## Failure Semantics
 
 | Failure                                         | Outcome                                                             |
@@ -200,7 +206,7 @@ External model, tool, and Environment effects can be unknown and may repeat afte
 | Immutable serialization or publication fails    | No selected reference changes                                       |
 | SQLite selection fails after object publication | Prior selected head remains current; object is unreferenced         |
 | Thread configuration version conflicts          | Stale patch is rejected without partial selection changes           |
-| Root process exits during a Run                 | Prior continuation remains current                                  |
+| Root process exits abruptly without cleanup     | Prior continuation remains current                                  |
 | Child process exits abruptly during a segment   | Saved nonterminal head remains; no liveness or takeover is inferred |
 | Child terminal checkpoint cannot be selected    | Execution is not reported as succeeded                              |
 | Live delivery fails                             | Saved heads are unaffected                                          |

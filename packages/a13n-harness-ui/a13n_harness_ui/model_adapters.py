@@ -12,11 +12,12 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from a13n_harness_ui.errors import CompositionError
+from a13n_harness_ui.model_presets import API_PROVIDER_BY_ROUTE, validate_base_url
 
 _BUILTIN_ADAPTER_DISTRIBUTION = "a13n-harness-ui"
 _PYDANTIC_AI_ADAPTER_KEY = "a13n.pydantic-ai"
 _MODEL_ROUTE = re.compile(r"^[a-z0-9][a-z0-9._-]*:[^\s:@/][^\s:@]*$")
-_SUPPORTED_PROVIDERS = frozenset(
+_SUPPORTED_PROVIDERS = frozenset(API_PROVIDER_BY_ROUTE) | frozenset(
     {
         "anthropic",
         "cohere",
@@ -54,6 +55,47 @@ class NormalizedModelConfiguration(BaseModel):
     model_cfg: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class _ModelConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    base_url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url(cls, value: str | None) -> str | None:
+        return validate_base_url(value) if value is not None else None
+
+
+class _AnthropicThinking(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    type: Literal["enabled", "adaptive", "disabled"]
+    budget_tokens: int | None = Field(default=None, ge=1024)
+    display: Literal["summarized", "omitted", "updates"] | None = None
+
+    @model_validator(mode="after")
+    def _budget(self) -> Self:
+        if (self.type == "enabled") != (self.budget_tokens is not None):
+            raise ValueError("Only enabled extended thinking requires a token budget")
+        return self
+
+
+class _GoogleThinking(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    include_thoughts: bool | None = None
+    thinking_budget: int | None = Field(default=None, ge=-1)
+    thinking_level: Literal["minimal", "low", "medium", "high"] | None = None
+
+
+class _OpenRouterReasoning(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None = None
+    enabled: bool | None = None
+    exclude: bool | None = None
+
+
 class _SupportedModelSettings(BaseModel):
     """The intentionally small Pydantic AI settings surface owned by Harness UI."""
 
@@ -74,6 +116,12 @@ class _SupportedModelSettings(BaseModel):
     thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
     openai_reasoning_summary: Literal["auto", "concise", "detailed"] | None = None
     openai_store: bool | None = None
+    anthropic_thinking: _AnthropicThinking | None = None
+    anthropic_effort: Literal["low", "medium", "high", "max"] | None = None
+    anthropic_betas: list[str] | None = Field(default=None, max_length=32)
+    google_thinking_config: _GoogleThinking | None = None
+    openrouter_reasoning: _OpenRouterReasoning | None = None
+    zai_clear_thinking: bool | None = None
     service_tier: Literal["auto", "default", "flex", "priority"] | None = None
 
     @field_validator("stop_sequences", mode="before")
@@ -111,6 +159,13 @@ class _SupportedModelSettings(BaseModel):
         for value in (self.presence_penalty, self.frequency_penalty):
             if value is not None and not -2 <= value <= 2:
                 raise ValueError("Model penalties must be between -2 and 2")
+        if (
+            self.anthropic_thinking is not None
+            and self.anthropic_thinking.budget_tokens is not None
+            and self.max_tokens is not None
+            and self.anthropic_thinking.budget_tokens >= self.max_tokens
+        ):
+            raise ValueError("The thinking budget must be smaller than max_tokens")
         return self
 
 
@@ -133,13 +188,32 @@ class PydanticAiModelAdapter:
                 "The Model route is not supported by the Harness UI Pydantic AI adapter.",
                 code="model_route_unsupported",
             )
-        if model_cfg:
+        provider, _, model_id = route.partition(":")
+        if provider == "openrouter" and ("/" not in model_id or not all(model_id.split("/", 1))):
             raise CompositionError(
-                "Model construction configuration is not supported for this adapter release.",
-                code="model_configuration_unsupported",
+                "OpenRouter model IDs must include the upstream provider, for example anthropic/claude-sonnet-4.6.",
+                code="model_route_unsupported",
             )
         try:
+            configuration = _ModelConfiguration.model_validate(dict(model_cfg), strict=True)
+            if configuration.base_url is not None and provider not in {*API_PROVIDER_BY_ROUTE, "openai"}:
+                raise ValueError("This route does not support an API-key base URL override")
+        except ValueError as exc:
+            raise CompositionError(
+                "Model construction configuration is invalid or unsupported.",
+                code="model_configuration_unsupported",
+            ) from exc
+        try:
             validated = _SupportedModelSettings.model_validate(dict(settings), strict=True)
+            families = {
+                "anthropic_": {"anthropic"},
+                "google_": {"google", "google-cloud", "google-gla", "google-vertex", "gemini"},
+                "openrouter_": {"openrouter"},
+                "zai_": {"zai"},
+            }
+            for prefix, providers in families.items():
+                if provider not in providers and any(key.startswith(prefix) for key in settings):
+                    raise ValueError("Provider-specific settings do not match the selected route")
         except ValueError as exc:
             raise CompositionError(
                 "Model settings are invalid or unsupported.",
@@ -149,7 +223,7 @@ class PydanticAiModelAdapter:
         return NormalizedModelConfiguration(
             route=route,
             settings=normalized,
-            model_cfg={},
+            model_cfg=configuration.model_dump(mode="json", exclude_none=True),
         )
 
 

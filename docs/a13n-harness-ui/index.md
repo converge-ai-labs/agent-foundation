@@ -14,13 +14,13 @@ Startup checks local configuration before opening full-terminal chat. If no Mode
 
 Setup runs automatically when needed. To change configuration later, leave chat and run `a13n-harness-ui setup`; there is no `/setup` command inside chat.
 
-1. **Connect a model:** choose Codex subscription, Grok subscription, or an API key. Existing compatible Codex/Grok logins are detected and reused without another login prompt, including credentials that can refresh when used. API-key access asks for a model route and an environment-variable or stored-key reference, never the raw key.
+1. **Connect a model:** choose Codex subscription, Grok subscription, or an API key. Existing compatible Codex/Grok logins are detected and reused without another login prompt, including credentials that can refresh when used. API-key access guides you through provider/protocol, base URL, a hidden key or environment-variable/stored-key reference, model ID, and settings preset.
 2. **Choose a model:** Codex offers Astra, Sol, and Terra; Grok offers 4.6, 4.5, and 4.20 Reasoning. Sol and Grok 4.6 are the defaults. Availability depends on your account.
 3. **Choose execution permissions and finish:** Full Control runs as your host account; Sandbox checks isolation prerequisites before saving. Your answer saves the configuration directly, with no extra confirmation. There is no automatic fallback between modes.
 
-The starter enables shell review and all three built-in subagents (`code-reviewer`, `executor`, `explorer`). Codex uses high reasoning and a 350k working budget. Use `a13n-harness-ui setup --advanced` for optional context, reasoning, review, subagent, and instruction choices. These remain ordinary editable configuration values.
+The subscription starter enables shell review at the extra-high risk threshold and all three built-in subagents (`code-reviewer`, `executor`, `explorer`). Codex uses high reasoning and a 350k working budget. Use `a13n-harness-ui setup --advanced` for optional context, reasoning, review, subagent, and instruction choices. These remain ordinary editable configuration values.
 
-To add another agent, run `a13n-harness-ui add agent`: choose its connection, model, and name. Existing agents, defaults, and permissions stay unchanged. In chat, `/agent` switches the complete agent; `/model` is an alias. See [model choices](models-and-authentication.md#starter-model-choices) for the reviewed catalog.
+After first use, run `a13n-harness-ui add model` to create only a reusable Model. Run `a13n-harness-ui add agent` to create another Agent: select an existing Model or **Create a new model**, then name the Agent. Existing resources, defaults, and permissions stay unchanged; repeated names create separate resources instead of replacing them. In chat, `/agent` switches the complete agent; `/model` temporarily overrides only the model for this TUI session without saving configuration. See [model choices](models-and-authentication.md#starter-model-choices) for the reviewed catalog.
 
 Use Up/Down and Enter, or type option numbers. Esc goes back; Ctrl+C or Ctrl+D cancels. Cancelling first-use setup returns to the command shell without opening chat. After successful first-use setup, chat opens automatically. Running `a13n-harness-ui setup` explicitly returns to the command shell after saving or cancelling.
 

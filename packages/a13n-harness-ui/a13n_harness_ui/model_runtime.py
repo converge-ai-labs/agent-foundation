@@ -27,6 +27,7 @@ from a13n_harness_ui.configuration import (
     GrokSubscriptionAuthentication,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
+from a13n_harness_ui.model_presets import API_PROVIDER_BY_ROUTE
 
 if TYPE_CHECKING:
     from a13n_harness_ui.composition.models import ResolvedModelRecipe
@@ -36,6 +37,7 @@ _PROVIDER_ALIASES = {
     "google-gla": "google-cloud",
     "google-vertex": "google-cloud",
     "openai": "openai-responses",
+    "grok": "openai-chat",
 }
 _GROK_BASE_URL = "https://api.x.ai/v1"
 
@@ -143,6 +145,9 @@ class HarnessUiModelResolver:
         route_provider, separator, model_name = recipe.route.partition(":")
         provider_name = _PROVIDER_ALIASES.get(route_provider, route_provider)
         route = f"{provider_name}:{model_name}" if separator else recipe.route
+        base_url = recipe.model_configuration.get("base_url")
+        if base_url is not None and not isinstance(base_url, str):
+            raise ModelResolutionError("Invalid Model base URL.", code="model_reconstruction_failed")
 
         def provider_factory(requested_provider: str) -> Provider[Any]:
             if requested_provider != provider_name:
@@ -155,10 +160,19 @@ class HarnessUiModelResolver:
                 from openai import AsyncOpenAI
                 from pydantic_ai.providers.openai import OpenAIProvider
 
-                return OpenAIProvider(openai_client=AsyncOpenAI(api_key=api_key, base_url=_GROK_BASE_URL))
+                return OpenAIProvider(openai_client=AsyncOpenAI(api_key=api_key, base_url=base_url or _GROK_BASE_URL))
             provider_type = infer_provider_class(requested_provider)
             constructor = cast(Callable[..., Provider[Any]], provider_type)
-            return constructor(api_key=api_key)
+            provider = API_PROVIDER_BY_ROUTE.get(provider_name)
+            if base_url is not None and provider is not None and provider.transport == "openai-client":
+                from openai import AsyncOpenAI
+
+                return constructor(openai_client=AsyncOpenAI(api_key=api_key, base_url=base_url))
+            return (
+                constructor(api_key=api_key, base_url=base_url)
+                if base_url is not None
+                else constructor(api_key=api_key)
+            )
 
         return _infer(recipe, route=route, provider_factory=provider_factory)
 

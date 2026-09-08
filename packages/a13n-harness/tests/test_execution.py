@@ -21,14 +21,16 @@ from a13n_harness import (
     PluginError,
     RunBindings,
     RunError,
+    StateError,
     SubagentDefinition,
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness.context import AgentContext
 from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.output import NativeOutput, PromptedOutput, TextOutput, ToolOutput
@@ -908,10 +910,16 @@ async def test_usage_limit_has_a_specific_safe_failure() -> None:
     assert result.failure.retry_hint == "dependency_change"
 
 
-async def test_recognized_pydantic_run_failure_becomes_a_failed_result() -> None:
+@pytest.mark.parametrize(
+    "error",
+    [UnexpectedModelBehavior("private-provider-body"), ModelHTTPError(429, "test-model", "private-provider-body")],
+)
+async def test_recognized_pydantic_run_failure_becomes_a_failed_result(
+    error: Exception, caplog: pytest.LogCaptureFixture
+) -> None:
     async def failing_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
-        raise UnexpectedModelBehavior("provider returned an invalid response")
+        raise error
         yield "unreachable"
 
     executable = _build(FunctionModel(stream_function=failing_stream))
@@ -920,7 +928,41 @@ async def test_recognized_pydantic_run_failure_becomes_a_failed_result() -> None
     assert result.status == "failed"
     assert result.failure is not None
     assert result.failure.code == "agent_run_failed"
-    assert "invalid response" not in result.failure.message
+    assert result.failure.details["exception_type"] == type(error).__name__
+    if isinstance(error, ModelHTTPError):
+        assert result.failure.details["status_code"] == 429
+    assert "private-provider-body" not in str(result.failure)
+    assert "private-provider-body" not in caplog.text
+    assert result.thread_id in caplog.text
+    assert result.run_id in caplog.text
+    assert "failing_stream" in caplog.text
+    assert type(error).__name__ in caplog.text
+
+
+async def test_closed_stream_exports_its_validated_result_state() -> None:
+    executable = _build(_turn_model([]))
+    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
+        items = await _consume_stream(stream)
+    terminal = items[-1]
+    assert isinstance(terminal, HarnessRunResultEvent)
+    assert await stream.export_state() == terminal.result.state
+
+
+async def test_closed_stream_export_failure_does_not_mask_consumer_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fail_export(self, message_history):
+        del self, message_history
+        raise ValueError("invalid capability state")
+
+    executable = _build(_turn_model([]))
+    stream = executable.stream("hello", bindings=RunBindings.embedded())
+    with pytest.raises(RuntimeError, match="consumer failed"):
+        async with stream:
+            monkeypatch.setattr(AgentContext, "export_state", fail_export)
+            raise RuntimeError("consumer failed")
+    with pytest.raises(StateError) as error:
+        await stream.export_state()
+    assert error.value.code == "run_state_unavailable"
+    assert isinstance(error.value.__cause__, ValueError)
 
 
 async def test_event_consumer_stop_wakes_a_blocked_environment_change_producer() -> None:

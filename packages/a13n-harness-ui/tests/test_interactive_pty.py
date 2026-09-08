@@ -80,9 +80,17 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         output = _read_until(master, b"Connect a model")
         assert output.count(b"\x1b[?1049h") == 1
         os.write(master, b"\x1b[B\x1b[B\r")
-        output += _read_until(master, b"API model")
+        output += _read_until(master, b"API provider")
         os.write(master, b"\r")
-        output += _read_until(master, b"Credential reference")
+        output += _read_until(master, b"Base URL")
+        os.write(master, b"\r")
+        output += _read_until(master, b"API key (hidden)")
+        os.write(master, b"fixture-hidden-api-key\r")
+        output += _read_until(master, b"Model ID")
+        os.write(master, b"gpt-5.6-sol\r")
+        output += _read_until(master, b"High thinking")
+        os.write(master, b"\r")
+        output += _read_until(master, b"Working context budget")
         os.write(master, b"\r")
         output += _read_until(master, b"Execution permissions")
         os.write(master, b"\r")
@@ -98,6 +106,8 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         process.wait(timeout=5)
         assert process.returncode == 0
         assert (configuration / "models").exists()
+        assert b"fixture-hidden-api-key" not in output
+        assert all(b"fixture-hidden-api-key" not in path.read_bytes() for path in configuration.rglob("*.yaml"))
     finally:
         _stop(process, master)
 

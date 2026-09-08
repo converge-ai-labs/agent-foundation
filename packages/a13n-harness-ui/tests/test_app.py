@@ -21,6 +21,8 @@ from a13n_harness import (
     AgentInstanceContext,
     AgentSpec,
     HarnessBuilder,
+    HarnessRunResultEvent,
+    HarnessRunStream,
 )
 from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, SubagentSteerResult, WebCapability
 from a13n_harness.environment import EnvironmentAction, EnvironmentError
@@ -59,6 +61,7 @@ from a13n_harness_ui.surfaces import (
 )
 from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
 from pydantic_ai.capabilities import Capability
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.tools import ToolDefinition
@@ -918,6 +921,155 @@ async def test_application_creates_and_runs_root_thread(tmp_path: Path) -> None:
         assert transcript.entries[0].position == transcript.total - 1
         assert transcript.entries[0].message_kind == "response"
         assert transcript.entries[0].parts
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+@pytest.mark.parametrize("restart", [False, True])
+async def test_application_retains_failed_and_interrupted_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool, restart: bool
+) -> None:
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    started = Event()
+    calls: list[list[ModelMessage]] = []
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        calls.append(messages)
+        if len(calls) == 1:
+            yield "partial progress"
+            started.set()
+            if interrupted:
+                await sleep_forever()
+            raise UnexpectedModelBehavior("provider failure with private payload")
+        yield "continued"
+
+    def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+        del self, composition, kwargs
+        return _reconstructed(model, root_capabilities)
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", reconstruct)
+
+    async def resume(app, thread_id: str) -> None:
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="continue the previous task")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+        assert "original task" in str(calls[-1])
+        assert "partial progress" in str(calls[-1])
+
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="original task")
+            with fail_after(5):
+                await started.wait()
+                if interrupted:
+                    while (await watch.events.receive()).event_type != "TEXT_MESSAGE_CONTENT":
+                        pass
+                    assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
+                operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is (RootOperationStatus.cancelled if interrupted else RootOperationStatus.failed)
+        selected = await app.get_thread(thread.thread_id)
+        assert selected.continuation_id is not None
+        if not interrupted:
+            assert operation.outcome is not None
+            assert operation.outcome.execution.failure is not None
+            message = operation.outcome.execution.failure.message
+            report = next(tmp_path.glob("a13n-harness-ui-error-*.json"))
+            assert str(report) in message
+            assert "issues/new" in message
+            assert "private payload" not in message
+            assert "private payload" in report.read_text()
+        if not restart:
+            await resume(app, thread.thread_id)
+
+    if restart:
+        async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+            assert (await reopened.get_thread(thread.thread_id)).continuation_id == selected.continuation_id
+            await resume(reopened, thread.thread_id)
+
+
+async def test_unexpected_consumer_error_saves_state_and_reports_private_dump(tmp_path: Path, monkeypatch) -> None:
+    root = _write_configuration(tmp_path)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        observe = app._store.usage.observe
+
+        async def fail_after_terminal(*, thread_id, item):
+            await observe(thread_id=thread_id, item=item)
+            if isinstance(item, HarnessRunResultEvent):
+                raise RuntimeError("private consumer failure")
+
+        monkeypatch.setattr(app._store.usage, "observe", fail_after_terminal)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="original task")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.failed
+        assert operation.failure is not None
+        assert "issues/new" in operation.failure.message
+        assert "private consumer failure" not in operation.failure.message
+        assert (await app.get_thread(thread.thread_id)).continuation_id is not None
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert "original task" in str(transcript)
+        assert "root complete" in str(transcript)
+        assert "private consumer failure" in next(tmp_path.glob("a13n-harness-ui-error-*.json")).read_text()
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_cleanup_failure_retains_complete_deferred_checkpoint(tmp_path: Path, monkeypatch, cancelled) -> None:
+    root = _write_configuration(tmp_path)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    cleaning = Event()
+
+    async def fail_cleanup(self):
+        cleaning.set()
+        if cancelled:
+            await sleep_forever()
+        raise RuntimeError("attachment cleanup failed")
+
+    monkeypatch.setattr(HarnessRunStream, "_close_run_attachments", fail_cleanup)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = _DeferredReconstructor()
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="defer")
+        with fail_after(5):
+            await cleaning.wait()
+            if cancelled:
+                assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
+            operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is (RootOperationStatus.cancelled if cancelled else RootOperationStatus.failed)
+        detail = await app.get_thread(thread.thread_id)
+        assert detail.continuation_id is not None
+        assert len(detail.deferred_requests) == 1
+        assert detail.deferred_requests[0].kind == "external"
+
+
+async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path, monkeypatch) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="first")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        prior = (await app.get_thread(thread.thread_id)).continuation_id
+        publish = app._store.objects.publish_model
+
+        async def fail_continuation(**kwargs):
+            if kwargs["object_kind"] == ObjectKind.continuation:
+                raise OSError("checkpoint disk unavailable")
+            return await publish(**kwargs)
+
+        monkeypatch.setattr(app._store.objects, "publish_model", fail_continuation)
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="second")
+        failed = await app.wait_root_operation(second.receipt_id)
+        assert failed.status is RootOperationStatus.failed
+        assert failed.outcome is not None
+        assert failed.outcome.execution.status == "completed"
+        assert failed.outcome.continuation.status == "failed"
+        assert (await app.get_thread(thread.thread_id)).continuation_id == prior
 
 
 async def test_focused_watch_cuts_over_before_snapshot_and_summary_stream_invalidates(tmp_path: Path) -> None:

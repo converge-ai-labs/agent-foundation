@@ -66,6 +66,8 @@ class SessionBackend:
         self.cancel_requested = False
         self.import_preview: ExternalSubagentImportPreview | None = None
         self.resumed_transcript: TranscriptPage | None = None
+        self._child_page_thread: str | None = None
+        self._child_page_cursor: str | None = None
 
     async def initialize(self) -> bool:
         configuration = await self.app.current_configuration()
@@ -156,10 +158,23 @@ class SessionBackend:
                 ),
             )
         self.agent_id = agent.id
-        self.overrides = RunModelOverrides()
+        self.overrides = RunModelOverrides(model_id=self.overrides.model_id)
         self.status.context_tokens = None
         await self.refresh()
         return f"Agent · {agent.name} · {self.status.model}. Ready for the next turn."
+
+    async def models(self, selected: str) -> str:
+        configuration = await self.app.current_configuration()
+        if configuration is None:
+            raise ValueError("Run a13n-harness-ui setup first.")
+        model_id = None if selected == "default" else selected
+        if model_id is not None and model_id not in configuration.models:
+            raise ValueError("Unknown model. Use /model to see available choices.")
+        # Switching models drops model-specific reasoning, not the selected Agent.
+        self.overrides = RunModelOverrides(model_id=model_id)
+        self.status.context_tokens = None
+        await self.refresh()
+        return f"Model · {self.status.model} · this TUI session only. Agent unchanged; nothing saved."
 
     async def thinking(self, selected: str | None) -> str:
         if selected is not None:
@@ -247,14 +262,15 @@ class SessionBackend:
         totals = await self.app.thread_usage(thread_id=selected)
         self.thread_id = selected
         self.status.restore_usage(totals.root)
-        self.overrides = RunModelOverrides()
         usage = await self.app.context_usage(selected)
         self.status.context_tokens = usage.latest_request_tokens
         agent = configuration.agents.get(detail.thread.configuration.agent_source.id)
         self.agent_id = detail.thread.configuration.agent_source.id
-        if agent is not None and usage.model_id == agent.model:
-            # Restore reasoning only when the selected Agent still uses that Model.
-            self.overrides = RunModelOverrides.model_validate({"model_id": usage.model_id, "thinking": usage.thinking})
+        if self.overrides.model_id is None:
+            # Historical usage never restores a temporary model selection.
+            self.overrides = RunModelOverrides.model_validate(
+                {"thinking": usage.thinking if agent is not None and usage.model_id == agent.model else None}
+            )
         await self.refresh(thread=detail.thread)
         self.resumed_transcript = page
         return f"Resumed {selected}. Recent messages restored; Ctrl+T browses retained messages."
@@ -304,6 +320,44 @@ class SessionBackend:
             lines.append(json.dumps(review.value, ensure_ascii=False, indent=2))
         if review.truncated or review.omitted:
             lines.append("Review preview is incomplete; omitted content is not approval evidence.")
+        return "\n".join(lines)
+
+    async def subagents(self, execution_id: str | None = None) -> str:
+        thread_id = self.thread_id
+        if thread_id is None:
+            return "No subagent executions in this conversation."
+        if execution_id is not None and execution_id != "next":
+            review = await self.app.child_review(parent_thread_id=thread_id, execution_id=execution_id)
+            if self.thread_id != thread_id:
+                return "Conversation changed; subagent inspection discarded. /subagents retries."
+            lines = [f"{review.title} · {review.lifecycle}"]
+            lines.extend(item for item in (review.summary, review.content, review.unavailable_reason) if item)
+            if review.value is not None:
+                lines.append(json.dumps(review.value, ensure_ascii=False, indent=2))
+            if review.truncated or review.omitted:
+                lines.append("Subagent preview is incomplete; omitted content is not restored here.")
+            return "\n".join(lines)
+        cursor = None
+        if execution_id == "next":
+            if self._child_page_thread != thread_id or self._child_page_cursor is None:
+                return "No next page. /subagents refreshes the execution list."
+            cursor = self._child_page_cursor
+        page = await self.app.query_child_executions(parent_thread_id=thread_id, cursor=cursor, limit=20)
+        if self.thread_id != thread_id:
+            return "Conversation changed; subagent inspection discarded. /subagents retries."
+        self._child_page_thread = thread_id
+        self._child_page_cursor = page.next_cursor
+        lines = [f"Subagents · {page.total} executions in this conversation"]
+        for item in page.executions:
+            state = "active" if item.local_status == "active" else item.persisted_status
+            if state == "running":
+                state = "running (local execution unavailable)"
+            lines.append(f"{item.execution_id} · {item.subagent_name} · {state}")
+        if not page.executions:
+            lines.append("No subagent executions.")
+        if page.next_cursor is not None:
+            lines.append("More executions available: /subagents next")
+        lines.append("/subagents <execution-id> shows the App's execution detail and retained output.")
         return "\n".join(lines)
 
     async def import_choices(self, product: str, scope: str) -> tuple[tuple[Choice, ...], str]:
@@ -363,6 +417,14 @@ class SessionBackend:
             ) from exc
 
     async def choices(self, kind: str) -> tuple[Choice, ...]:
+        if kind == "model":
+            configuration = await self.app.current_configuration()
+            if configuration is None:
+                return ()
+            return (
+                Choice("default", "Agent default", "Clear the temporary model override"),
+                *(Choice(item.id, item.name, item.route) for item in configuration.models.values()),
+            )
         if kind == "agent":
             configuration = await self.app.current_configuration()
             return (
@@ -516,6 +578,10 @@ class SessionBackend:
                             await flush()
                 except HarnessUiError:
                     renderer.gap = True
+                finally:
+                    # Children can outlive this root subscription. Without live
+                    # observation, a running snapshot is no longer current.
+                    renderer.end_process_observations()
                 renderer.finish()
                 # The ledger includes terminal/failed/cancelled observations and
                 # repairs live gaps. Replace, rather than add, after draining.

@@ -93,7 +93,7 @@ sequenceDiagram
     App->>Files: resolve resources from accepted generation
     App->>Store: publish immutable Run composition
     App->>Harness: execute with previous HarnessState
-    Harness-->>App: complete or suspended result
+    Harness-->>App: terminal result or recoverable shutdown checkpoint
     App->>Store: publish and select continuation
 ```
 

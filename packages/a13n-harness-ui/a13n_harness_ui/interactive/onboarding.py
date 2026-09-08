@@ -6,7 +6,9 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
+from anyio import to_thread
 from prompt_toolkit.application import Application
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
@@ -14,6 +16,7 @@ from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
+from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import TextArea
 
 from .rendering import terminal_text
@@ -50,7 +53,12 @@ class LandingScreen:
         self._task: asyncio.Task[None] | None = None
         self._owner: asyncio.Task[object] | None = None
         self._ready = asyncio.Event()
-        self.field = TextArea(multiline=False, prompt="> ", height=1)
+        self.field = TextArea(
+            multiline=False,
+            prompt="> ",
+            height=1,
+            password=Condition(lambda: self.question is not None and self.question.password),
+        )
         keys = KeyBindings()
 
         @keys.add("enter", eager=True)
@@ -142,7 +150,24 @@ class LandingScreen:
 
     def _choices(self) -> FormattedText:
         if self.selection is not None:
-            return FormattedText(self.selection.lines(max_choices=len(self.selection.choices), descriptions=True)[:-1])
+            size = self.application.output.get_size()
+            columns = max(1, size.columns)
+
+            def wrapped_rows(text: str) -> int:
+                return sum(max(1, (get_cwidth(line) + columns - 1) // columns) for line in text.splitlines())
+
+            header = wrapped_rows("  " + self.notice)
+            if self.question is not None:
+                header += wrapped_rows("  " + terminal_text(self.question.text))
+            # Title/spacers, one input row, and the footer own six fixed rows.
+            available = max(1, size.rows - 6 - header)
+            lines = self.selection.lines(max_choices=1, descriptions=True)[:-1]
+            for count in range(2, min(len(self.selection.choices), available) + 1):
+                candidate = self.selection.lines(max_choices=count, descriptions=True)[:-1]
+                if wrapped_rows("".join(text for _style, text in candidate)) > available:
+                    break
+                lines = candidate
+            return FormattedText(lines)
         if self.question is not None:
             return FormattedText([("", f"Default: {terminal_text(self.question.default) or '(none)'}")])
         return FormattedText([])
@@ -160,6 +185,7 @@ class LandingScreen:
         try:
             return await self._answer
         finally:
+            self.field.buffer.reset()
             self.question, self.selection, self._answer = None, None, None
             self.application.invalidate()
 
@@ -258,31 +284,43 @@ async def run_setup(
     emit: Callable[[str], None],
     environment: str | None = None,
     add_agent: bool = False,
+    add_model: bool = False,
     advanced: bool = False,
 ) -> bool:
     """Publish the completed choices. Cancellation never starts chat."""
+    from pydantic import SecretStr
+
     from a13n_harness_ui.configuration.setup import SetupSelection
+    from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput
 
     emit(
-        "Add an agent · Existing agents and defaults stay unchanged."
+        "Add an agent · Choose an existing Model or create a new one. Existing agents and defaults stay unchanged."
         if add_agent
-        else "Three choices to get started. Saved after the final choice · Ctrl+C to cancel."
+        else "Add a model · Only a Model is created; agents and defaults stay unchanged."
+        if add_model
+        else "Connect a model and review its settings. Saved after the final choice · Ctrl+C to cancel."
     )
     status = await app.setup_status(rediscover=True)
     if status.diagnostic:
         emit(f"Configuration needs repair: {status.diagnostic}\nFix the source and run a13n-harness-ui setup again.")
         return False
-    if add_agent and status.needed:
-        emit("Run a13n-harness-ui setup first, then add another agent.")
+    if (add_agent or add_model) and status.needed:
+        emit("Run a13n-harness-ui setup first, then add models or agents.")
         return False
+    configuration = await app.current_configuration() if add_agent or add_model else None
+    models = configuration.models if configuration is not None else {}
     wizard = SetupWizard(
         add_agent=add_agent,
+        add_model=add_model,
+        model_choices=tuple(Choice(model.id, model.name, model.route) for model in models.values()),
+        subscription_models=frozenset(model.id for model in models.values() if model.authentication.kind != "api_key"),
         advanced=advanced,
         default_provider=next((item.provider for item in status.providers if item.available), "codex"),
         default_environment="sandbox"
         if (environment or status.environment_profile) == "environment-sandbox"
         else "full-control",
         provider_descriptions=_describe_accounts(status),
+        existing_agent_ids=frozenset(status.agents),
     )
     checked_provider: str | None = None
     try:
@@ -290,38 +328,67 @@ async def run_setup(
             try:
                 question = wizard.question
                 if question is not None:
-                    step = {"provider": 1, "model": 2, "environment": 3, "name": 3}.get(question.key)
-                    if step is not None and not advanced:
-                        hint = (
-                            "Saved after this choice. Existing defaults stay unchanged."
-                            if add_agent and step == 3
-                            else "Saved after this choice. Shell review is on."
-                            if step == 3 and wizard.values.get("provider") != "api"
-                            else "Saved after this choice."
-                            if step == 3
-                            else "Availability depends on your account."
-                            if step == 2
-                            else "Reuse a subscription or connect an API key."
+                    emit(wizard.notice())
+                    answer = await ask_user(question, wizard.selection_prompt())
+                    if (
+                        question.key == "credential"
+                        and answer.strip()
+                        and not answer.strip().startswith(("env:", "key:"))
+                    ):
+                        if len(answer) > 32768 or any(c.isspace() for c in answer.strip()):
+                            raise ValueError(
+                                "Enter a non-empty API key without whitespace (at most 32,768 characters)."
+                            )
+                        reference = f"key-{uuid4().hex[:16]}"
+                        await app.put_api_key(ApiKeyInput(credential_ref=reference, key=SecretStr(answer.strip())))
+                        answer = f"key:{reference}"
+                    wizard.accept(answer)
+                    answer = ""
+                    if question.key == "model" and wizard.values.get("provider") == "api":
+                        from a13n_harness_ui.model_presets import known_context_window
+
+                        wizard.context_window_hint = await to_thread.run_sync(
+                            known_context_window,
+                            wizard.values["api_provider"],
+                            wizard.values["model"],
+                            wizard.values["base_url"],
                         )
-                        emit(f"{step} / 3 · {hint}")
-                    wizard.accept(await ask_user(question, wizard.selection_prompt()))
                     if question.key == "provider" and wizard.values["provider"] != "api":
                         await _ensure_account(app, wizard.values["provider"], ask_user, emit)
                         checked_provider = wizard.values["provider"]
-                    if question.key in {"model", "credential"} and add_agent:
-                        base = wizard.values.get("model", "API agent")
+                    if (add_agent or add_model) and (
+                        question.key == "model"
+                        or (question.key == "model_source" and wizard.existing_model_id is not None)
+                    ):
+                        from a13n_harness_ui.model_presets import connection_display_name
+
+                        if wizard.existing_model_id is not None:
+                            base = models[wizard.existing_model_id].name[:110]
+                        else:
+                            provider = wizard.values["provider"]
+                            route = (
+                                wizard.values["api_provider"]
+                                if provider == "api"
+                                else "grok-subscription"
+                                if provider == "grok"
+                                else provider
+                            )
+                            base = connection_display_name(route, wizard.values["model"])
+                        if add_agent:
+                            base += " · Coding"
                         name, number = base, 2
-                        while name in status.agents.values():
+                        names = {model.name for model in models.values()} if add_model else set(status.agents.values())
+                        while name in names:
                             name = f"{base} {number}"
                             number += 1
                         wizard.suggested_name = name
                     continue
-                provider = wizard.values["provider"]
-                if provider != "api" and provider != checked_provider:
+                provider = wizard.values.get("provider", "existing")
+                if provider in {"codex", "grok"} and provider != checked_provider:
                     await _ensure_account(app, provider, ask_user, emit)
                     checked_provider = provider
                 selection = SetupSelection.model_validate(wizard.selection(str(directory)))
-                if not add_agent:
+                if not (add_agent or add_model):
                     projects = await app.cwd_project_ids(directory)
                     if len(projects) > 1:
                         raise ValueError(
@@ -331,8 +398,8 @@ async def run_setup(
                         selection = selection.model_copy(update={"project": projects[0]})
                 preview = await app.preview_setup(selection)
                 wizard.preview_generation = preview.generation
-                emit("Saving agent…" if add_agent else "Saving your configuration…")
-                if not add_agent and selection.environment_profile == "environment-sandbox":
+                emit("Saving agent…" if add_agent else "Saving model…" if add_model else "Saving your configuration…")
+                if not (add_agent or add_model) and selection.environment_profile == "environment-sandbox":
                     emit("Checking Sandbox prerequisites. Ctrl+C cancels; no fallback to Full Control.")
                     for root in preview.project_paths:
                         ready = await app.preflight_environment("environment-sandbox", project_path=root)
@@ -344,6 +411,8 @@ async def run_setup(
                 emit(
                     f"Added {selection.new_agent_name}. Select it with /agent {selection.new_agent_id}."
                     if add_agent
+                    else f"Added Model {selection.new_model_name} ({selection.new_model_id}). Use it when adding an agent."
+                    if add_model
                     else "Ready. Use /agent to switch agents, /help for shortcuts."
                 )
                 return True

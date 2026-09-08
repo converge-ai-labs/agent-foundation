@@ -152,7 +152,7 @@ Recovery is limited to model-boundary failures. It does not restart after:
 
 Provider transport retries remain below this layer. `SelfHealingModel` may replay one request after an exact history repair before the `ModelAttempt` recovery loop observes the failure. These budgets are independent and are not multiplied into a second unbounded retry framework.
 
-When the `ModelAttempt` budget is exhausted, the logical run returns `status="failed"` with `failure.code="model_recovery_exhausted"`. When recovery is disabled, recognized Pydantic execution failure returns `failure.code="agent_run_failed"`.
+When the `ModelAttempt` budget is exhausted, the logical run returns `status="failed"` with `failure.code="model_recovery_exhausted"`. When recovery is disabled, recognized Pydantic execution failure returns `failure.code="agent_run_failed"`. Safe failure details identify the exception type and, for HTTP failures, the status code without exposing the provider body or exception message. Local diagnostic logs correlate the failure with Thread and Run IDs and retain exception types and stack locations without locals, source lines, or exception payloads.
 
 ## Native Deferred and Provider Continuation
 
@@ -189,7 +189,7 @@ Cancellation does not prove provider rollback. Any dispatched side effect withou
 
 `HarnessState` combines its stable `thread_id`, the latest complete Pydantic message view, a detached snapshot of `AgentContextState`, and optional portable Environment state. `AgentContext.export_state()` preserves the context's ID. The outer context, Environment aggregate, and state coordinator remain shared across internal `ModelAttempt` values. The previous state is copied when the stream is created, so caller mutation cannot change an active run.
 
-`export_state()` is valid only while the stream context is active. Before a `ModelAttempt` starts it returns imported messages plus current Capability and Environment snapshots. During execution it returns the latest complete public message view and an Environment export linearized with mount publication; partial token deltas are not reconstructed into synthetic messages.
+While the stream context is active, `export_state()` returns imported messages before a `ModelAttempt` starts and the latest complete public message view during execution, together with current Capability state and an Environment export linearized with mount publication. At shutdown the Harness retains the validated result state, or attempts a complete checkpoint after stopping execution and before closing state-owning resources. After close, `export_state()` returns that detached checkpoint without accessing closed resources; if capture failed or no context was entered, export fails explicitly. This supports Host persistence after failures and external cancellation without suppressing the original exception. Interrupted messages follow the same normalization rules as model recovery, and raw stream deltas never become synthetic complete messages.
 
 The detailed state schema and interrupted-history rules are owned by [Harness State and Resume](10-snapshot-and-resume.md).
 

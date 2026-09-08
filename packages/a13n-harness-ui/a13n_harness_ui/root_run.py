@@ -8,16 +8,18 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.input import RunInputValue
-from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after
+from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.usage import RunUsage
 
+from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.live import HarnessUiSummaryHub
 from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
@@ -380,7 +382,22 @@ class RootRunCoordinator:
         except cancelled_class:
             cancelled = True
         except BaseException as exc:
-            failure = _exception_failure(exc, code="root_operation_failed")
+            if isinstance(exc, HarnessUiError):
+                failure = _exception_failure(exc, code="root_operation_failed")
+            else:
+                with CancelScope(shield=True):
+                    feedback = await to_thread.run_sync(
+                        partial(
+                            exception_feedback,
+                            exc,
+                            thread_id=operation.receipt.thread_id,
+                            run_id=operation.run_id,
+                            phase="root_operation",
+                        )
+                    )
+                    failure = FailureView(
+                        code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
+                    )
         with CancelScope(shield=True):
             async with self._lock:
                 if cancelled:

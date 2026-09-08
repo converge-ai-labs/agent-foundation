@@ -10,7 +10,7 @@ from a13n_harness_ui.surfaces import (
     RootOperationStatus,
     ThreadDeferredResponse,
 )
-from anyio import Event, sleep_forever
+from anyio import CancelScope, Event, fail_after, sleep, sleep_forever
 
 pytestmark = pytest.mark.anyio
 
@@ -91,6 +91,33 @@ async def test_root_coordinator_cancels_preparation_and_stale_receipt_cannot_con
         assert (await coordinator.wait(second.receipt_id)).status is RootOperationStatus.cancelled
     finally:
         await coordinator.close(timeout_seconds=1)
+
+
+async def test_shutdown_cancellation_during_error_reporting_still_settles_receipt(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    executor = _PreparingExecutor()
+
+    async def failing_execute(**kwargs):
+        executor.started.set()
+        try:
+            await sleep_forever()
+        except BaseException:
+            with CancelScope(shield=True):
+                await sleep(0.05)
+            raise RuntimeError("cleanup failed") from None
+
+    monkeypatch.setattr(executor, "execute", failing_execute)
+    coordinator = RootRunCoordinator(cast(Any, executor))
+    await coordinator.start()
+    receipt = await coordinator.submit_prompt(thread_id="thread-1", prompt="run")
+    await executor.started.wait()
+    await coordinator.close(timeout_seconds=0.01)
+    with fail_after(1):
+        operation = await coordinator.wait(receipt.receipt_id)
+    assert operation.status is RootOperationStatus.failed
+    assert operation.failure is not None
+    assert "issues/new" in operation.failure.message
+    assert await coordinator.active_count() == 0
 
 
 async def test_root_coordinator_cancels_the_operation_scope_after_stream_creation() -> None:

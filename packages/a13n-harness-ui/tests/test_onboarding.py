@@ -213,8 +213,12 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
             "codex",
             SetupBack(),
             "api",
-            "openai:gpt-test",
+            "openai-responses",
+            "https://api.openai.com/v1",
             "env:TEST_KEY",
+            "gpt-test",
+            "high",
+            "",
             "full-control",
         ]
     )
@@ -237,12 +241,11 @@ def test_custom_settings_are_optional_and_connection_change_clears_stale_values(
     wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
     wizard.accept("gpt-6-astra")
-    wizard.accept("full-control")
-    for value in ("all", "extended", "low", "no", "be concise"):
+    for value in ("all", "extended", "low", "no", "be concise", "full-control"):
         wizard.accept(value)
     assert wizard.question is None
     assert wizard.selection("/tmp")["codex_context_window"] == 872000
-    while wizard.index:
+    while wizard.history:
         assert wizard.back()
     wizard.accept("api")
     assert wizard.values == {"provider": "api"}
@@ -282,6 +285,46 @@ async def test_landing_reuses_one_application_and_replaces_question_content() ->
             with pytest.raises(SetupBack):
                 await asyncio.wait_for(second, 2)
         assert not application.is_running
+
+
+@pytest.mark.anyio
+async def test_landing_choices_use_available_rows_and_reflow_on_resize(monkeypatch) -> None:
+    from a13n_harness_ui.interactive.onboarding import LandingScreen
+    from a13n_harness_ui.interactive.selection import Choice, Selection
+    from a13n_harness_ui.interactive.setup import Question
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.data_structures import Size
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+    from prompt_toolkit.utils import get_cwidth
+
+    output = DummyOutput()
+    size = Size(rows=40, columns=120)
+    monkeypatch.setattr(output, "get_size", lambda: size)
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+        screen = LandingScreen()
+        screen.notice = "Choose a provider"
+        screen.question = Question("provider", "Available providers", "0")
+        screen.selection = Selection(
+            tuple(Choice(str(i), f"Provider {i}", "Wide description " * 2) for i in range(30)), cursor=0
+        )
+
+        def visible():
+            return "".join(text for _, text in screen._choices())
+
+        assert visible().count("Provider ") == 30  # Not capped at four or eight.
+        size = Size(rows=15, columns=120)
+        assert visible().count("Provider ") == 7
+        screen.selection.move(29)
+        assert "Provider 29" in visible()
+        size = Size(rows=22, columns=35)
+        screen.notice = "A long wrapped notice " * 3
+        text = visible()
+        rows = sum(max(1, (get_cwidth(line) + size.columns - 1) // size.columns) for line in text.splitlines())
+        header_rows = (get_cwidth("  " + screen.notice) + size.columns - 1) // size.columns + 1
+        assert rows <= size.rows - 6 - header_rows
+        assert "Provider 29" in text
+        assert text.count("Provider ") < 7
 
 
 @pytest.mark.anyio
@@ -381,10 +424,98 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
         root = path.read_bytes()
         asked.clear()
-        answers.extend(["codex", "gpt-6-astra", "Astra coding"])
+        answers.extend(["new", "codex", "gpt-6-astra", "Astra coding"])
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
-        assert asked == ["provider", "model", "name"]
+        assert asked == ["model_source", "provider", "model", "name"]
         assert path.read_bytes() == root
         source = await app.current_configuration()
         assert source.models[source.agents["agent-astra-coding"].model].route == "openai-codex:gpt-6-astra"
         assert source.document.defaults.agent == "agent-codex"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("api", [False, True])
+async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, api: bool) -> None:
+    _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
+    path = tmp_path / "config.yaml"
+    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+    asked = []
+
+    async def ask(question, selection):
+        asked.append(question.key)
+        assert answers, question
+        return answers.popleft()
+
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
+        configuration_path=path,
+    ) as app:
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
+        baseline = {p: p.read_bytes() for p in tmp_path.rglob("*.yaml")}
+        for _ in range(2):
+            asked.clear()
+            answers.extend(
+                [
+                    "api",
+                    "anthropic",
+                    "https://api.anthropic.com",
+                    "env:TEST_KEY",
+                    "claude-sonnet-4-6",
+                    "adaptive",
+                    "",
+                    "Shared model",
+                ]
+                if api
+                else ["codex", "gpt-6-astra", "Shared model"]
+            )
+            assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_model=True)
+            assert asked == (
+                ["provider", "api_provider", "base_url", "credential", "model", "preset", "context", "name"]
+                if api
+                else ["provider", "model", "name"]
+            )
+        source = await app.current_configuration()
+        assert set(source.agents) == {"agent-codex"}
+        assert {"model-shared-model", "model-shared-model-2"} <= source.models.keys()
+        assert all(p.read_bytes() == content for p, content in baseline.items())
+        models = {p: p.read_bytes() for p in (tmp_path / "models").glob("*.yaml")}
+        for name in ("First agent", "Second agent"):
+            asked.clear()
+            answers.extend(["model-shared-model", name])
+            assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
+            assert asked == ["model_source", "name"]
+        source = await app.current_configuration()
+        assert source.agents["agent-first-agent"].model == "model-shared-model"
+        assert source.agents["agent-second-agent"].model == "model-shared-model"
+        review = next(
+            (c for c in source.agents["agent-first-agent"].capabilities if c.capability == "ShellReviewCapability"),
+            None,
+        )
+        assert (review is None) is api
+        if review is not None:
+            assert review.configuration["risk_threshold"] == "extra_high"
+        assert set((tmp_path / "models").glob("*.yaml")) == set(models)
+        assert all(p.read_bytes() == content for p, content in {**baseline, **models}.items())
+
+
+@pytest.mark.anyio
+async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path: Path) -> None:
+    _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
+    answers = deque(["codex", "gpt-5.6-sol", "full-control"])
+
+    async def ask(question, selection):
+        value = answers.popleft()
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
+        configuration_path=tmp_path / "config.yaml",
+    ) as app:
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
+        answers.extend(["model-codex", SetupBack(), "new", "codex", "gpt-6-astra", "Independent"])
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
+        source = await app.current_configuration()
+        assert source.agents["agent-independent"].model == "model-agent-independent"
+        assert source.models["model-agent-independent"].route == "openai-codex:gpt-6-astra"
