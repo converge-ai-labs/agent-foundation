@@ -75,6 +75,25 @@ def exception_feedback(
     )
 
 
+def terminal_traceback(error: BaseException) -> str:
+    """Expand startup failures on stderr without locals or raw provider payloads."""
+    from a13n_harness.errors import DefinitionError
+
+    from a13n_harness_ui.errors import HarnessUiError
+
+    lines = ["Traceback (exception chain; most recent call last):"]
+    for item in _exception_chain(error):
+        for frame, line in traceback.walk_tb(item.__traceback__):
+            lines.append(f'  File "{frame.f_code.co_filename}", line {line}, in {frame.f_code.co_name}')
+        if isinstance(item, HarnessUiError | DefinitionError):
+            lines.append(f"{type(item).__name__} [{item.code}]: {item}")
+        elif isinstance(item, BaseExceptionGroup):
+            lines.append(f"{type(item).__name__}: {len(item.exceptions)} nested exception(s)")
+        else:
+            lines.append(f"{type(item).__name__}: details in the diagnostic report")
+    return "\n".join(lines)
+
+
 def _event_loop_details(context: Mapping[str, object]) -> dict[str, object]:
     """Allowlist locations, never repr tasks, callbacks, handles, or their arguments."""
     details: dict[str, object] = {}

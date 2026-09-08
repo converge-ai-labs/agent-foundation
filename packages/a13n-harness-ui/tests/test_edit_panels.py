@@ -44,7 +44,7 @@ def test_disjoint_edit_hunks_keep_context_and_a_separator_without_coordinates() 
     )
 
 
-@pytest.mark.parametrize("before", ["original\n" * 2001, "x" * 140_000])
+@pytest.mark.parametrize("before", ["original\n" * 2001, "x" * 140_000], ids=["many-lines", "long-line"])
 def test_edit_within_expanded_comparison_budget_still_renders_diff(before: str) -> None:
     panel = capability_panel(
         "a13n.filesystem.edit_applied", {"file_path": "file.py", "before": before, "after": before + "last"}
@@ -54,7 +54,9 @@ def test_edit_within_expanded_comparison_budget_still_renders_diff(before: str) 
     assert "omitted" not in panel.title
 
 
-@pytest.mark.parametrize("before", ["original\n" * 5001, "x" * (256 * 1024 + 1)])
+@pytest.mark.parametrize(
+    "before", ["original\n" * 5001, "x" * (256 * 1024 + 1)], ids=["too-many-lines", "too-many-characters"]
+)
 def test_edit_over_comparison_budget_returns_a_plain_fact_with_raw_details(before: str) -> None:
     event = {"file_path": "file.py", "before": before, "after": before + "last"}
     panel = capability_panel("a13n.filesystem.edit_applied", event)
