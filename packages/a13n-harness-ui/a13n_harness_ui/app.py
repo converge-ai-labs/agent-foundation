@@ -251,7 +251,7 @@ class HarnessUiApp:
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
         self._resolve_sandbox_executable = resolve_sandbox_executable
-        self._setup_lock = Lock()
+        self._configuration_lock = Lock()
         self._sandbox_ready_paths: set[Path] = set()
         self._grok_account = grok_account
         self._grok_account_error = grok_account_error
@@ -320,7 +320,7 @@ class HarnessUiApp:
     async def reload_configuration(self) -> LoadedHarnessUiConfiguration | None:
         """Load and accept one stable complete source tree, retaining the previous generation on failure."""
 
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             await self._reload_configuration_from_path()
             return await self._configurations.current()
 
@@ -367,24 +367,28 @@ class HarnessUiApp:
             await sleep(0.5)
             if self._state is not AppState.ready:
                 return
-            path = self._require_configuration_path()
-            if not self._configuration_seen and not path.exists():
-                continue
-            try:
-                fingerprint = await configuration_tree_fingerprint(
-                    path,
-                    content_plugin_root=self._content_plugin_root,
-                )
-            except HarnessUiError as exc:
-                diagnostic_changed = self._replace_candidate_error(exc)
-                self._configuration_fingerprint = None
-                if diagnostic_changed:
-                    await self._summary_hub.publish(kind="configuration")
-                continue
-            if fingerprint == self._configuration_fingerprint:
-                continue
-            self._configuration_fingerprint = fingerprint
-            await self._reload_configuration_from_path()
+            # App-owned publication and acceptance share one critical section.
+            # External editors remain last-write-wins; this only avoids racing
+            # our own SQLite head selection or observing our partial setup writes.
+            async with self._configuration_lock:
+                path = self._require_configuration_path()
+                if not self._configuration_seen and not path.exists():
+                    continue
+                try:
+                    fingerprint = await configuration_tree_fingerprint(
+                        path,
+                        content_plugin_root=self._content_plugin_root,
+                    )
+                except HarnessUiError as exc:
+                    diagnostic_changed = self._replace_candidate_error(exc)
+                    self._configuration_fingerprint = None
+                    if diagnostic_changed:
+                        await self._summary_hub.publish(kind="configuration")
+                    continue
+                if fingerprint == self._configuration_fingerprint:
+                    continue
+                self._configuration_fingerprint = fingerprint
+                await self._reload_configuration_from_path()
 
     async def mutate_configuration(
         self,
@@ -392,7 +396,7 @@ class HarnessUiApp:
         relative_path: str,
         request: ResourceMutationRequest,
     ) -> ConfigurationMutationResult:
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             path = self._require_configuration_path()
             result = await mutate_configuration_source(
                 path,
@@ -409,7 +413,7 @@ class HarnessUiApp:
         *,
         relative_path: str,
     ) -> ConfigurationMutationResult:
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             path = self._require_configuration_path()
             result = await delete_configuration_source(
                 path,
@@ -444,7 +448,7 @@ class HarnessUiApp:
         self,
         candidate: ExternalSubagentImportCandidate,
     ) -> ConfigurationMutationResult:
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             result = await apply_external_subagent_import(
                 self._require_configuration_path(),
                 candidate,
@@ -1126,7 +1130,7 @@ class HarnessUiApp:
 
     async def setup_status(self, *, rediscover: bool = False) -> SetupStatus:
         """Discover compatible accounts without login, token refresh, or model calls."""
-        async with self._operation(), self._setup_lock:
+        async with self._operation(), self._configuration_lock:
             if rediscover:
                 self._codex_account, self._grok_account, errors = await self._rediscover_accounts()
                 self._codex_account_error = errors.get(Provider.CODEX)
@@ -1182,7 +1186,7 @@ class HarnessUiApp:
             )
 
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
-        async with self._operation():
+        async with self._operation(), self._configuration_lock:
             return await preview_setup(
                 self._require_configuration_path(),
                 selection,
@@ -1191,7 +1195,7 @@ class HarnessUiApp:
             )
 
     async def apply_setup(self, selection: SetupSelection) -> SetupPublication:
-        async with self._operation(), self._setup_lock:
+        async with self._operation(), self._configuration_lock:
 
             def validate_candidate(candidate: LoadedHarnessUiConfiguration) -> None:
                 self._configurations.validate(candidate)
