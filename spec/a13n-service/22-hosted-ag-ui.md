@@ -177,7 +177,7 @@ If the requested Hosted cursor is outside retained history, attachment fails bef
 
 Service selects one published Harness release group, which pins the Harness, Agent Stream Protocol, Environment Provider, and compatible AG-UI Python schema. Service manifests and compatibility tests select exact package versions; this specification defines behavior and does not hard-code a release artifact version. Breaking changes to Service extensions require a new extension schema or Hosted route compatibility line.
 
-Newly generated events and ProtocolConfig event selection use only the `a13n.service.*` registry. These replacement extension names retain the version-one payload shapes. Clients and Agent configurations using the former `a13n.foundation.*` event names must adopt the new names together. Existing immutable replay snapshots retain their original event names and bytes, including the former waiting `run_status` boundary; replay does not rename historical events. Clients reading retained history must recognize those historical names as well. The persisted `foundation_run_id` field remains unchanged.
+Service custom event names use only the `a13n.service.*` registry in publication, ProtocolConfig selection, and retained delivery boundaries. Retained snapshots identify the Service Run with `run_id` and the external AG-UI Run with `external_run_id`. Superseded event names and snapshot field names have no compatibility aliases or migration path.
 
 1. Hosted AG-UI uses `HarnessAguiObserver` as its only Harness event converter.
 2. One external AG-UI Run binds one Service Run; Worker recovery does not change either identity.

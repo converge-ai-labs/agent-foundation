@@ -1102,7 +1102,7 @@ def _binding(run: AguiRunBindingRecord, thread: AguiThreadBindingRecord) -> Host
 def _validate_replay_binding(binding: HostedAguiBinding, replay: HostedAguiReplaySnapshot) -> None:
     if (
         replay.binding_id != binding.run_binding_id
-        or replay.foundation_run_id != binding.run_id
+        or replay.run_id != binding.run_id
         or replay.external_thread_id != binding.external_thread_id
         or replay.external_run_id != binding.external_run_id
         or replay.agent_revision_id != binding.agent_revision_id
@@ -1131,7 +1131,7 @@ def _build_replay_snapshot(
     events.append(terminal)
     return HostedAguiReplaySnapshot(
         binding_id=binding.run_binding_id,
-        foundation_run_id=binding.run_id,
+        run_id=binding.run_id,
         external_thread_id=binding.external_thread_id,
         external_run_id=binding.external_run_id,
         agent_revision_id=binding.agent_revision_id,
