@@ -1,0 +1,87 @@
+.screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: var(--a13n-canvas);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 36px;
+  font-size: 15px;
+  color: var(--a13n-secondary);
+}
+.brand img {
+  width: 42px;
+  height: auto;
+}
+.brand span {
+  padding-left: 13px;
+  border-left: 1px solid var(--a13n-border);
+}
+.card {
+  background: var(--a13n-elevated);
+  border: 1px solid var(--a13n-border);
+  border-radius: 14px;
+  padding: 40px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--a13n-shadow-subtle);
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  color: var(--a13n-secondary);
+  font-weight: 600;
+}
+.card h1 {
+  margin: 14px 0 10px;
+  font-size: 26px;
+  letter-spacing: -0.8px;
+  font-weight: 600;
+}
+.card p {
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.form {
+  margin-top: 26px;
+  display: grid;
+  gap: 20px;
+}
+.secondary {
+  display: block;
+  text-align: center;
+  color: var(--a13n-secondary);
+  text-decoration: none;
+  margin-top: 24px;
+  font-size: 12px;
+}
+.screen footer {
+  margin-top: 30px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.success {
+  padding: 24px 0;
+  text-align: center;
+}
+.success svg {
+  color: var(--a13n-success);
+}
+.success h2 {
+  font-size: 18px;
+}
+.success a {
+  color: var(--a13n-accent);
+}
+@media (max-width: 480px) {
+  .card {
+    padding: 28px 24px;
+  }
+}

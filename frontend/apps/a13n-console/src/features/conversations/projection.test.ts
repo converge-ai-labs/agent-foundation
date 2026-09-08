@@ -1,0 +1,117 @@
+import { describe, expect, it } from "vitest";
+import type { RunEvent } from "@converge.ai/a13n";
+import {
+  applyRunEvent,
+  compareCursors,
+  mergeRetainedItems,
+  type PresentedItem,
+} from "./projection";
+function event(
+  cursor: string,
+  event_type: string,
+  payload: Record<string, unknown>,
+): RunEvent {
+  return {
+    cursor,
+    event: {
+      event_id: `rse_${cursor}`,
+      event_type,
+      run_id: "run_test",
+      thread_id: "thread_test",
+      item_id: "itm_message",
+      occurred_at: "2026-09-08T00:00:00Z",
+      payload,
+    },
+  };
+}
+describe("Run presentation checkpoints", () => {
+  it("compares stream sequence numbers numerically without losing precision", () => {
+    expect(compareCursors("100-10", "100-2")).toBeGreaterThan(0);
+    expect(
+      compareCursors("9007199254740993-0", "9007199254740992-0"),
+    ).toBeGreaterThan(0);
+  });
+  it("deduplicates replay against retained item boundaries before appending new deltas", () => {
+    let items = mergeRetainedItems(new Map(), [
+      {
+        id: "itm_message",
+        kind: "text_message",
+        state: "interrupted",
+        parent_item_id: null,
+        first_stream_id: "100-0",
+        last_stream_id: "100-1",
+        content: {
+          events: [
+            {
+              event_type: "agui.text_message_content",
+              payload: { delta: "Hello" },
+            },
+          ],
+        },
+      },
+    ]);
+    items = applyRunEvent(
+      items,
+      event("100-1", "agui.text_message_content", { delta: "Hello" }),
+    );
+    items = applyRunEvent(
+      items,
+      event("100-2", "agui.text_message_content", { delta: " world" }),
+    );
+    items = applyRunEvent(
+      items,
+      event("100-3", "item.completed", { item_state: "completed" }),
+    );
+    expect(items.get("itm_message")?.text).toBe("Hello world");
+    expect(items.get("itm_message")?.lastCursor).toBe("100-3");
+    expect(items.get("itm_message")?.state).toBe("completed");
+  });
+  it("does not let an older snapshot overwrite newer streamed content", () => {
+    let items = new Map<string, PresentedItem>();
+    items = applyRunEvent(
+      items,
+      event("200-1", "agui.text_message_content", {
+        item_kind: "text_message",
+        delta: "New",
+      }),
+    );
+    items = mergeRetainedItems(items, [
+      {
+        id: "itm_message",
+        kind: "text_message",
+        state: "interrupted",
+        parent_item_id: null,
+        first_stream_id: "100-0",
+        last_stream_id: "100-1",
+        content: {},
+      },
+    ]);
+    expect(items.get("itm_message")?.text).toBe("New");
+  });
+  it("retains tool arguments and distinguishes interrupted presentation from tool success", () => {
+    let items = applyRunEvent(
+      new Map(),
+      event("100-0", "agui.tool_call_start", {
+        item_kind: "tool_call",
+        toolCallName: "read_file",
+      }),
+    );
+    items = applyRunEvent(
+      items,
+      event("100-1", "agui.tool_call_args", { delta: '{"path":' }),
+    );
+    items = applyRunEvent(
+      items,
+      event("100-2", "item.interrupted", {
+        item_state: "interrupted",
+        interruption: { code: "run_closed" },
+      }),
+    );
+    expect(items.get("itm_message")).toMatchObject({
+      toolName: "read_file",
+      arguments: '{"path":',
+      state: "interrupted",
+    });
+    expect(items.get("itm_message")?.result).toBeUndefined();
+  });
+});

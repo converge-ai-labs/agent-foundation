@@ -1,0 +1,114 @@
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 20px;
+  border: 1px solid var(--a13n-border);
+  border-radius: var(--a13n-radius-lg);
+}
+.metrics > div {
+  display: grid;
+  gap: 6px;
+}
+.metrics small {
+  color: var(--a13n-muted);
+}
+.metrics strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.timeline {
+  border: 1px solid var(--a13n-border);
+  border-radius: var(--a13n-radius-lg);
+  overflow: hidden;
+}
+.timelineHeader,
+.observation {
+  display: grid;
+  grid-template-columns: minmax(180px, 35%) 1fr;
+  gap: 16px;
+  padding: 12px 16px;
+}
+.timelineHeader {
+  background: var(--a13n-surface);
+  color: var(--a13n-muted);
+  font-size: 12px;
+}
+.observation {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--a13n-border);
+  color: var(--a13n-text);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+.observation:hover {
+  background: var(--a13n-hover);
+}
+.observationName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.observationName small {
+  display: block;
+  font-size: 11px;
+  color: var(--a13n-muted);
+  margin-top: 3px;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a13n-muted);
+  flex: none;
+}
+.dot[data-status="error"],
+.bar[data-status="error"] {
+  background: var(--a13n-danger);
+}
+.track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  background-image: linear-gradient(
+    to right,
+    var(--a13n-border) 1px,
+    transparent 1px
+  );
+  background-size: 25% 100%;
+}
+.bar {
+  position: absolute;
+  height: 16px;
+  background: var(--a13n-accent);
+  opacity: 0.45;
+  border-radius: 3px;
+}
+.duration {
+  z-index: 1;
+  margin-inline-start: auto;
+  font-size: 11px;
+  background: var(--a13n-surface);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.payloads {
+  display: grid;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .timelineHeader,
+  .observation {
+    grid-template-columns: minmax(140px, 1fr) 1fr;
+    padding: 10px;
+    gap: 8px;
+  }
+  .metrics {
+    gap: 16px;
+  }
+}

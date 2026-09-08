@@ -1,0 +1,199 @@
+import { useTranslation } from "react-i18next";
+import { Bot, Wrench, Brain, File } from "lucide-react";
+import { JsonView } from "../../shared/form";
+import { StateBadge } from "../../shared/feedback";
+import { isObject, type PresentedItem } from "./projection";
+import { MessageMarkdown } from "./markdown";
+import styles from "./conversations.module.css";
+export function PresentedItems({
+  items,
+  runState,
+}: {
+  items: readonly PresentedItem[];
+  runState?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {items
+        .filter(
+          (item) =>
+            item.kind !== "run_output" &&
+            (item.kind !== "text_message" || item.role === "assistant"),
+        )
+        .map((item) => {
+          if (item.kind === "tool_call")
+            return (
+              <details key={item.id} className={styles.tool}>
+                <summary>
+                  <Wrench size={14} />
+                  <strong>{item.toolName || t("Tool call")}</strong>
+                  <StateBadge
+                    state={
+                      item.state === "streaming" && runState === "waiting"
+                        ? "waiting"
+                        : item.state
+                    }
+                  />
+                </summary>
+                <div className={styles.toolBody}>
+                  <h4>{t("Arguments")}</h4>
+                  <JsonView value={parseJson(item.arguments)} />
+                  {item.result !== undefined && (
+                    <>
+                      <h4>{t("Result")}</h4>
+                      <JsonView value={parseJson(item.result)} />
+                    </>
+                  )}
+                  {item.failure !== undefined && (
+                    <JsonView value={item.failure} />
+                  )}
+                </div>
+              </details>
+            );
+          if (item.kind === "reasoning_message")
+            return (
+              <details key={item.id} className={styles.reasoning}>
+                <summary>
+                  <Brain size={14} />
+                  {t("Reasoning summary")} <StateBadge state={item.state} />
+                </summary>
+                {item.text && <MessageMarkdown text={item.text} />}
+                {item.protectedReasoning && (
+                  <p>
+                    {t("The provider retained protected reasoning content.")}
+                  </p>
+                )}
+              </details>
+            );
+          if (item.kind !== "text_message")
+            return (
+              <details key={item.id} className={styles.tool}>
+                <summary>
+                  {t("Additional run item")}: {item.kind}
+                </summary>
+                <JsonView value={item.detail} />
+              </details>
+            );
+          return (
+            <article
+              key={item.id}
+              className={styles.message}
+              data-role={item.role}
+            >
+              <div className={styles.messageAvatar}>{<Bot size={16} />}</div>
+              <div className={styles.messageBody}>
+                <div className={styles.messageHeading}>
+                  <strong>{t("Assistant")}</strong>
+                  {item.state !== "completed" && (
+                    <StateBadge state={item.state} />
+                  )}
+                </div>
+                <MessageMarkdown
+                  text={
+                    item.text ||
+                    (item.state === "streaming"
+                      ? t("Thinking…")
+                      : t("No text content"))
+                  }
+                />
+                {item.failure !== undefined && (
+                  <JsonView value={item.failure} />
+                )}
+              </div>
+            </article>
+          );
+        })}
+    </>
+  );
+}
+export function InputContent({
+  input,
+  fallback,
+}: {
+  input: unknown;
+  fallback?: string | null;
+}) {
+  const { t } = useTranslation();
+  if (isObject(input) && Array.isArray(input.resolutions))
+    return (
+      <div className={styles.prose}>
+        {input.resolutions.map((resolution, index) =>
+          isObject(resolution) ? (
+            <section key={index}>
+              <strong>{String(resolution.call_id ?? t("Response"))}</strong> ·{" "}
+              {t(String(resolution.outcome ?? resolution.kind ?? "Response"))}
+              {resolution.result !== undefined && (
+                <JsonView value={resolution.result} />
+              )}
+              {resolution.response !== undefined && (
+                <JsonView value={resolution.response} />
+              )}
+            </section>
+          ) : null,
+        )}
+      </div>
+    );
+  const ordinary =
+    isObject(input) && isObject(input.input) ? input.input : input;
+  if (!isObject(ordinary) || !Array.isArray(ordinary.content))
+    return fallback ? (
+      <div className={styles.prose}>{fallback}</div>
+    ) : (
+      <JsonView value={input} />
+    );
+  return (
+    <>
+      <div className={styles.prose}>
+        {ordinary.content
+          .flatMap((block) =>
+            isObject(block) &&
+            block.type === "text" &&
+            typeof block.text === "string"
+              ? [block.text]
+              : [],
+          )
+          .join("\n\n") || fallback}
+      </div>
+      <div className={styles.attachments}>
+        {ordinary.content.flatMap((block, index) => {
+          if (
+            !isObject(block) ||
+            block.type !== "binary" ||
+            !isObject(block.source)
+          )
+            return [];
+          const label =
+            typeof block.filename === "string"
+              ? block.filename
+              : block.source.type === "asset"
+                ? String(block.source.asset_id)
+                : block.source.type === "url"
+                  ? String(block.source.url)
+                  : String(block.source.path);
+          return [
+            <span key={index} className={styles.attachment}>
+              <File size={13} />
+              {label}
+            </span>,
+          ];
+        })}
+      </div>
+      {ordinary.structured_content !== undefined &&
+        ordinary.structured_content !== null && (
+          <details>
+            <summary>{t("Structured input")}</summary>
+            <JsonView value={ordinary.structured_content} />
+          </details>
+        )}
+    </>
+  );
+}
+function parseJson(value: unknown) {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}

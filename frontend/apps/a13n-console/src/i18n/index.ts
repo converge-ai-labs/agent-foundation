@@ -10,6 +10,7 @@ export const i18n = createInstance();
 await i18n.use(initReactI18next).init({
   lng: readLanguage(),
   fallbackLng: "en",
+  keySeparator: false,
   supportedLngs: ["en", "zh-CN"],
   resources: {
     en: { translation: en },

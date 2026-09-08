@@ -10,6 +10,7 @@ on:
       - "Makefile"
       - ".pre-commit-config.yaml"
       - "frontend/**"
+      - "sdk/typescript/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
@@ -34,6 +35,7 @@ on:
       - "Makefile"
       - ".pre-commit-config.yaml"
       - "frontend/**"
+      - "sdk/typescript/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
@@ -111,6 +113,7 @@ jobs:
       - name: Install and check frontend workspace
         if: matrix.name == 'Linux'
         run: |
+          make sdk-typescript-build
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend run check
           pnpm --dir frontend run build
