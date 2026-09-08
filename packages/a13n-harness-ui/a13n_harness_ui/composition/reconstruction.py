@@ -7,7 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from a13n_harness import AgentContext, AgentDefinition, AgentSpec, ExecutableAgent, HarnessBuilder, SubagentDefinition
+from a13n_harness import (
+    AgentContext,
+    AgentDefinition,
+    AgentSpec,
+    ExecutableAgent,
+    HarnessBuilder,
+    ModelRecoveryPolicy,
+    SubagentDefinition,
+)
 from a13n_harness.capabilities import SubagentCapability, SubagentOperator
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.model_context import (
@@ -275,6 +283,7 @@ class AgentReconstructor:
             capabilities=tuple(capabilities),
             plugins=plugins,
             subagents=children,
+            model_recovery=ModelRecoveryPolicy(enabled=True),
         )
 
 

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from a13n_harness import AbstractHarnessPlugin, HarnessBuilder
+from a13n_harness import AbstractHarnessPlugin, HarnessBuilder, ModelRecoveryPolicy
 from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
@@ -453,6 +453,8 @@ def test_reconstructs_each_subagent_occurrence_with_fresh_plugin_instances() -> 
         capability_provider=capabilities,
     )
 
+    assert definition.model_recovery == ModelRecoveryPolicy(enabled=True)
+    assert all(child.agent.model_recovery == definition.model_recovery for child in definition.subagents)
     assert [item.name for item in definition.subagents] == ["reviewer", "checker"]
     assert definition.subagents[0].description == "Review the answer."
     assert definition.subagents[1].description == "Support"

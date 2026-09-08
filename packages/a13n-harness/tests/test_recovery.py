@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 
+import httpx2
 import pytest
 from a13n_harness import (
     HarnessBuilder,
@@ -13,6 +14,7 @@ from a13n_harness import (
     ModelRecoveryPolicy,
     RunBindings,
 )
+from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.recovery import INTERRUPTED_TOOL_RESULT, normalize_interrupted_history
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
@@ -77,7 +79,8 @@ async def test_recovery_prompt_factory_receives_detached_messages() -> None:
     assert prompt.content == "original"
 
 
-async def test_stream_failure_resumes_with_partial_history_and_shared_usage() -> None:
+@pytest.mark.parametrize("error_type", [RuntimeError, httpx2.ReadError])
+async def test_stream_failure_resumes_with_partial_history_and_shared_usage(error_type: type[Exception]) -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -85,7 +88,7 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage() ->
         calls.append(deepcopy(messages))
         if len(calls) == 1:
             yield "partial answer"
-            raise RuntimeError("stream disconnected")
+            raise error_type("stream disconnected")
         yield "resumed answer"
 
     executable = HarnessBuilder().build(
@@ -695,12 +698,31 @@ async def test_recovery_attempt_budget_is_total_and_monotonic() -> None:
         model_recovery=_recovery_policy(max_attempts=3),
     )
 
-    result = await executable.run("start", bindings=RunBindings.embedded())
+    events = []
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run:
+        async for item in run:
+            if isinstance(item, HarnessEvent):
+                events.append(item)
+        result = run.result
 
+    notices = [
+        item.event.payload
+        for item in events
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "recovery"
+    ]
+    assert notices == [
+        {"type": "model_retry_scheduled", "attempt": 2, "max_attempts": 3, "delay_seconds": 0.0},
+        {"type": "model_retry_scheduled", "attempt": 3, "max_attempts": 3, "delay_seconds": 0.0},
+    ]
+    assert len({item.run_id for item in events}) == 1
+    assert [item.sequence for item in events] == sorted({item.sequence for item in events})
     assert calls == 3
+    assert result is not None
     assert result.status == "failed"
     assert result.failure is not None
     assert result.failure.code == "model_recovery_exhausted"
+    assert result.failure.retry_hint == "new_run"
+    assert "after 3 attempts" in result.failure.message
     assert result.usage.requests == 3
 
 
@@ -730,6 +752,42 @@ async def test_usage_limit_never_enters_model_recovery() -> None:
     assert result.status == "failed"
     assert result.failure is not None
     assert result.failure.code == "usage_limit_exceeded"
+
+
+async def test_cancel_after_retry_notice_does_not_start_the_scheduled_attempt() -> None:
+    calls = 0
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        calls += 1
+        yield "partial"
+        raise httpx2.ReadError("connection reset")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True,
+            backoff_initial_seconds=60,
+            backoff_max_seconds=60,
+        ),
+    )
+    notices = 0
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run:
+        async with asyncio.timeout(2):
+            async for item in run:
+                if (
+                    isinstance(item, HarnessEvent)
+                    and isinstance(item.event, HarnessExtensionEvent)
+                    and item.event.kind == "recovery"
+                ):
+                    notices += 1
+                    run.cancel()
+        result = run.result
+    assert notices == 1
+    assert calls == 1
+    assert result is not None and result.status == "cancelled"
 
 
 async def test_cancel_interrupts_recovery_backoff_without_starting_another_attempt() -> None:

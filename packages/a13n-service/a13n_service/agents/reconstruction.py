@@ -11,6 +11,7 @@ from a13n_harness import (
     AgentContext,
     AgentDefinition,
     AgentSpec,
+    ModelRecoveryPolicy,
     SubagentDefinition,
 )
 from a13n_harness import (
@@ -243,6 +244,7 @@ class AgentReconstructor:
                 capabilities=tuple(capabilities),
                 plugins=plugins,
                 subagents=tuple(child_definitions),
+                model_recovery=ModelRecoveryPolicy(enabled=True),
             )
         except AgentDefinitionReconstructionError:
             raise

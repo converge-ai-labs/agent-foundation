@@ -57,6 +57,15 @@ class _FirstPartyPayload(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class ModelRetryScheduledPayload(_FirstPartyPayload):
+    """A bounded in-process continuation, not a durable Host retry."""
+
+    type: Literal["model_retry_scheduled"] = "model_retry_scheduled"
+    attempt: int = Field(ge=2)
+    max_attempts: int = Field(ge=2)
+    delay_seconds: float = Field(ge=0, allow_inf_nan=False)
+
+
 class ModelRequestStartedPayload(_FirstPartyPayload):
     type: Literal["model_request_started"] = "model_request_started"
     request_id: str = Field(pattern=r"^model-request-[1-9][0-9]*$", max_length=64)
@@ -315,7 +324,8 @@ class ToolExtraEventPayload(_FirstPartyPayload):
 
 
 type FirstPartyEventPayload = (
-    ModelRequestStartedPayload
+    ModelRetryScheduledPayload
+    | ModelRequestStartedPayload
     | ModelRequestCompletedPayload
     | ModelRequestFailedPayload
     | ContextSnapshotPayload
