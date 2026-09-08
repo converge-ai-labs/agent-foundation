@@ -4,7 +4,7 @@
 
 Harness UI keeps persistence continuation-oriented:
 
-1. editable YAML and local Markdown files own desired resources and global defaults;
+1. editable YAML, MCP JSON, and local Markdown files own desired resources and global defaults;
 2. data-root Content Plugin ID directories contain editable local files with optional Git provenance;
 3. SQLite owns accepted-generation indexes, Project/resource lookup projections, sticky Thread configurations, execution heads, and selected references;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
@@ -124,6 +124,10 @@ The composition reference explains which Agent, Project roots, Capability, Harne
 Deferred requests are stored only as part of the complete suspended continuation. Surface projections use the selected continuation digest as an opaque continuation ID and never expose the object reference or native request value. A deferred response compares that exact selected reference and reconstructs its complete native request/result pair in memory.
 
 Harness UI publishes every available valid terminal `HarnessState`, including failed and cancelled results, and compare-and-selects it against the reference loaded at admission. After an unexpected exception or external cancellation, it attempts to export the Harness-retained shutdown checkpoint and publish it under cancellation shielding before propagating the original error. Saving a checkpoint does not turn failed or cancelled execution into success and never automatically replays input or effects. Deferred requests accompany only a suspended result. If export, publication, or selection fails, the prior or concurrently selected continuation remains current and the save failure is diagnosed independently. Root receipts, input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
+
+## MCP Resource Index Compatibility
+
+Resource index identity is `(generation_digest, resource_kind, resource_id)`, not a physical source path. Multiple MCP resources can point to one source without duplicating source rows. The SQLite upgrade rebuilds only the derived resource index table, preserving existing rows and leaving Thread and continuation data unchanged. The rebuild takes a write lock and scans the local index; no external I/O or background backfill is required. Startup migrations retain their existing serialized transaction and rerun behavior. Older binaries do not support the new schema; use forward repair rather than mixed-version access. Downgrade refuses before altering the index if any generation contains multiple resources per source, rather than discarding entries.
 
 ## Child Threads and Execution Segments
 

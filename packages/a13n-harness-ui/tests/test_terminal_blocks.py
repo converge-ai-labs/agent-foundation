@@ -391,6 +391,10 @@ def test_notes_show_full_values_and_distinct_style_without_repeated_snapshots() 
     assert len(renderer.transcript.blocks) == 1
     assert "THE END" in _source(renderer)
     renderer.transcript.render(60)
+    assert _text(renderer.transcript) == "Notes · 1 saved · Ctrl+O details · design"
+    renderer.transcript.detailed = True
+    renderer.transcript.dirty = True
+    renderer.transcript.render(60)
     assert "THE END" in _text(renderer.transcript)
     assert any(corner in _text(renderer.transcript) for corner in ("╭", "┌"))
     assert any(corner in _text(renderer.transcript) for corner in ("╰", "└"))

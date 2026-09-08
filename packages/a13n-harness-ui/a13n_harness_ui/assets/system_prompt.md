@@ -19,7 +19,7 @@ An explicit --config selects a different root YAML and its sibling resource dire
 - models/: YAML Model definitions with settings and credential references, never literal credentials.
 - agents/: YAML Agent definitions with instructions, capabilities, and child references.
 - extensions/: YAML Harness Plugin, Environment profile, and Environment Run Extension definitions.
-- mcp/: YAML MCP server definitions.
+- mcp/: YAML or JSON MCP server definitions, including multi-server mcpServers objects. Environment/header values accept literals or environment references.
 - subagents/: User-authored Markdown child roles. Markdown children inherit the parent model; reference an Agent resource for independent model settings.
 - AGENTS.md: Optional global guidance from the selected configuration directory.
 

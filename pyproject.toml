@@ -13,6 +13,8 @@ members = ["packages/*"]
 [dependency-groups]
 dev = [
     "deptry>=0.25,<0.26",
+    # Keep real MCP server fixtures available in the default local development environment.
+    "fastmcp>=3.4,<4",
     "grpcio-tools>=1.75,<2",
     "mdformat==1.0.0",
     "mdformat-footnote==0.1.3",

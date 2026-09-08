@@ -23,6 +23,8 @@ This contract owns those caller- or responder-driven acceptance forms, their pub
 
 ## Acceptance and Lineage
 
+This contract owns operation eligibility, input selection, and configuration inheritance. The following table is the canonical public operation matrix; [Run state initialization](12-run-persistence.md#state-initialization-matrix) owns how the selected source becomes a complete new Run-owned envelope.
+
 The accepted operation determines the new Run identity, state source, input protocol, and explicit retry correlation:
 
 | Operation         | Public command                                | Thread effect                                                                                       | State and lineage                                                                                                                                                | Accepted Run input                                    | Run authority Principal                                     |
@@ -179,7 +181,7 @@ Idempotency-Key: opaque-caller-key
 
 Any retained and readable completed Run is eligible, including a historical Run that is neither the source Thread's `current_run_id` nor `head_run_id`.
 
-The request carries `AgentInput`, compatible Agent/config selections and a separate optional Environment choice. Service authorizes the source Run and Session, allocates a child Thread, applies `HarnessState.fork(thread_id=new_thread_id)`, clears portable Environment state, and atomically commits its first Run and fixed Environment selection. Omitted Environment selection copies the source Run's Environment/access; an explicit selection uses another environment or allocates one from a template. Agent/config inheritance is independent. No file copying, target creation or connection occurs during acceptance; execution applies the selected preparation policy.
+The request carries `AgentInput`, compatible Agent/config selections and a separate optional Environment choice. Service authorizes the source Run and Session, allocates a child Thread, applies `HarnessState.fork(thread_id=new_thread_id)`, clears portable Environment state, and atomically commits its first Run and fixed Environment selection. Omitted Environment selection copies the source Run's Environment/access; an explicit selection uses another environment or allocates one from a template. Agent/config inheritance is independent: omission preserves the source Run's exact AgentRevision, `EffectiveAgentConfig`, and Runtime lock; an explicit compatible Agent/Revision/override selection resolves a new effective configuration under [Agent Management](28-agent-management.md#agentrunoverride-and-effective-configuration). No file copying, target creation or connection occurs during acceptance; execution applies the selected preparation policy.
 
 The source Run is part of fork's common idempotency scope. A Session fork that creates a new Session and root Thread remains a distinct Session-domain operation and is never implied by this route.
 
