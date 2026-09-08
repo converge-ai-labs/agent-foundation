@@ -25,7 +25,7 @@ This document defines the normative content and workflow boundaries of the Agent
 
 There is no repository-local `issues/` directory. "Issues" means the repository's GitHub Issues.
 
-Workspace membership does not by itself select a release group. The Harness release group contains `packages/a13n-harness`, `packages/a13n-environment`, and `packages/a13n-stream-protocol`; one `release/a13n-harness-v<version>` tag assigns the same version to all three Python distributions and publishes them through one workflow. Published Harness metadata requires the exact Environment version, and the published Stream Protocol artifact requires the exact Harness version. `packages/a13n-harness-ui` releases independently through `release/a13n-harness-ui-v<version>` and its published artifacts require one reviewed Harness release version for the Harness-group dependencies it consumes. Source manifests keep those workspace dependencies unversioned so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). a13n Service releases exclude these packages and select their own compatible published Harness release.
+Workspace membership does not by itself select a release group. The Harness release group contains `packages/a13n-harness`, `packages/a13n-environment`, and `packages/a13n-stream-protocol`; one `release/a13n-harness-v<version>` tag assigns the same version to all three Python distributions and publishes them through one workflow. Published Harness metadata requires the exact Environment version, and the published Stream Protocol artifact requires the exact Harness version. `packages/a13n-harness-ui` releases independently through `release/a13n-harness-ui-v<version>` and its published artifacts consume a bounded compatible Harness release line. Source manifests keep workspace dependencies unversioned and project versions at `0.0.0` so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). a13n Service releases exclude these packages and select their own compatible published Harness release.
 
 `packages/a13n-logging` is a shared library with an independent `release/a13n-logging-v<version>` release channel. Its workflow versions and publishes only the `a13n-logging` Python distribution through the existing `foundation-pypi` environment. a13n Service releases neither version nor republish logging. Consumers retain unversioned source workspace dependencies and consume published logging independently of their own release versions.
 
@@ -33,7 +33,7 @@ Workspace membership does not by itself select a release group. The Harness rele
 
 a13n-envd native releases publish immutable archives for Linux, macOS, and Windows x86_64/ARM64 plus `SHA256SUMS`. Repository-owned POSIX shell and Windows PowerShell installers select and verify one release archive and publish the executable to an absolute user-selected directory; they do not define a self-updater, service installation, or install database. The detailed installer contract is owned by [Protocol Source, Client, and Generation](a13n-envd/08-protocol-source-client-and-generation.md#executable-distribution-and-installation).
 
-Harness UI releases independently select both one exact Harness release group and one exact a13n-envd version. The Harness UI wheel and sdist contain the selected native version rather than per-target asset metadata, hashes, or native binaries. The application lazily acquires only the current target for Local EIP; Native and extension Providers do not use this Host runtime cache. The detailed ownership is defined by [Projects, Threads, and Environments](a13n-harness-ui/04-projects-threads-and-environments.md#local-eip-runtime).
+Harness UI resolves its native a13n-envd version from the installed `a13n-envd-client` distribution, which is co-versioned with the daemon. Its wheel and sdist contain neither a separate native version resource nor per-target asset metadata, hashes, or native binaries. The application lazily acquires only the current target for Local EIP; Native and extension Providers do not use this Host runtime cache. The detailed ownership is defined by [Projects, Threads, and Environments](a13n-harness-ui/04-projects-threads-and-environments.md#local-eip-runtime).
 
 a13n Service SDKs are independent projects under `sdk/{python,go,rust,typescript}` rather than root language-workspace members. The companion CLI at `sdk/rust/a13n-service-cli` is also an independent Cargo project: it has its own manifest and lock file, is not a member of either Rust workspace, and is excluded from the Rust SDK source package. Its Cargo package is `a13n-service-cli`, and its installed executable is `a13n-service-cli`.
 
@@ -43,7 +43,7 @@ The CLI releases independently from all SDK channels through `release/a13n-servi
 
 Projects under `examples/` may carry their own manifests and lock files when realistic packaging is part of the integration being demonstrated. They remain outside production package workspaces and release groups; example distribution names and artifacts are not platform packages.
 
-`a13n-harness-ui` is the independently versioned Python library/distribution supplying the `a13n-harness-ui` executable. Bare invocation starts the native full-terminal CLI; `a13n-harness-ui webui` starts the foreground browser server over the same reusable `HarnessUiApp` boundary. Its wheel and sdist contain both adapters, the compiled browser asset tree and hash manifest, the project license, and native runtime metadata. `frontend/apps/a13n-harness-ui` is private frontend build input, not an independent npm package. Repository/release asset preparation requires Node.js; installed runtime and wheel rebuilds from the sdist do not.
+`a13n-harness-ui` is the independently versioned Python library/distribution supplying the `a13n-harness-ui` executable. Bare invocation starts the native full-terminal CLI; `a13n-harness-ui webui` starts the foreground browser server over the same reusable `HarnessUiApp` boundary. Its wheel and sdist contain both adapters, the compiled browser asset tree and hash manifest, and the project license. `frontend/apps/a13n-harness-ui` is private frontend build input, not an independent npm package. Repository/release asset preparation requires Node.js; installed runtime and wheel rebuilds from the sdist do not.
 
 Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-environment` and `a13n-environment`. Python imports normalize hyphens to underscores, such as `a13n_environment`; the same rule applies to Harness, Harness UI, Stream Protocol, Envd client, Service, and logging. The standalone Service SDKs use `a13n` as the Python distribution and import and the Rust crate and library identifier. The TypeScript SDK uses `@converge.ai/a13n` as its public npm package and import specifier. The Go module URL remains `github.com/converge-ai-labs/agent-foundation/sdk/go`, while its public package name is `a13n`.
 
@@ -103,6 +103,22 @@ Keep those materials in GitHub Issues. When discussion changes the accepted desi
 The development guide does not establish product semantics or subsystem ownership; those remain in `spec/`. It also does not replace package-local setup and command documentation or the contributor workflow in `CONTRIBUTING.md`. `AGENTS.md` may summarize high-risk rules and link to the guide, but must not become a second complete copy.
 
 ## Release Automation
+
+### Dependency Compatibility Lines
+
+Each consuming package owns its cross-release-group Python requirements in its `pyproject.toml` under `[tool.a13n.release-dependencies]`: a mapping from distribution names to bounded Python specifiers of the form `>=MIN,<MAX`. Release preparation injects these requirements into publishable manifests without changing unversioned source workspace dependencies or committing release versions. Dependencies within a release group remain pinned to the exact shared release version.
+
+The current cross-group requirements are:
+
+| Consumer            | Dependency                            | Published requirement                     |
+| ------------------- | ------------------------------------- | ----------------------------------------- |
+| Harness UI          | Environment, Harness, Stream Protocol | `>=0.0.5,<0.1.0`, identical for all three |
+| Harness UI, Harness | `a13n-logging`                        | `>=0.1.0,<0.2.0`                          |
+| Environment         | `a13n-envd-client`                    | `>=0.0.5,<0.1.0`                          |
+
+Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
+
+### Release Identity
 
 Every release channel accepts a canonical stable `X.Y.Z` identity or RC `X.Y.Z-rc.N` identity, where `N` is a positive integer without leading zeroes. The canonical identity appears in release tags, GitHub Release titles, Rust and npm package metadata, Go module tags, binary archive names, and exact container tags. Python package metadata, lock entries, and artifact names use the PEP 440-normalized `X.Y.ZrcN` spelling for the same RC identity.
 

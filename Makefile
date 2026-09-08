@@ -316,7 +316,7 @@ a13n-harness-ui-build: sync a13n-harness-ui-assets ## Build Harness UI for repos
 a13n-harness-ui-release-build: ## Build and verify Harness UI from prepared assets and release metadata
 	@rm -rf dist
 	@uv build --package a13n-harness-ui --out-dir dist
-	@uv run --no-project python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel --require-exact-internal-version
+	@uv run --no-project python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel --require-compatible-dependencies
 
 .PHONY: a13n-logging-python-build
 a13n-logging-python-build: ## Build only the logging Python distributions

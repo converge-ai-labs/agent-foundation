@@ -53,7 +53,7 @@ jobs:
       - name: Prepare bundled browser assets
         run: make a13n-harness-ui-assets
 
-      - name: Prepare release version and library pins
+      - name: Prepare release version and compatible dependencies
         id: version
         run: |
           version="${GITHUB_REF_NAME#release/a13n-harness-ui-v}"
@@ -73,21 +73,6 @@ jobs:
           test -f "dist/a13n_harness_ui-${python_version}.tar.gz"
           test "$(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 2
 
-      - name: Verify selected Harness release from PyPI
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          python_version="${VERSION/-rc./rc}"
-          environment="${RUNNER_TEMP}/a13n-harness-ui-release-smoke"
-          uv venv --python 3.13 "$environment"
-          uv pip install \
-            --python "$environment/bin/python" \
-            --no-cache \
-            --index-url https://pypi.org/simple \
-            "dist/a13n_harness_ui-${python_version}-py3-none-any.whl"
-          "$environment/bin/a13n-harness-ui" --help
-          "$environment/bin/a13n-harness-ui" webui --help
-
       - name: Upload Harness UI distribution
         uses: actions/upload-artifact@v4
         with:
@@ -98,9 +83,90 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  compatibility:
+    name: Verify ${{ matrix.dependencies }} compatible dependencies
+    needs: build-python
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dependencies: [minimum, latest]
+    steps:
+      - name: Checkout release policy
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download Harness UI distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: a13n-harness-ui-python-dist
+          path: dist
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Resolve declared dependency minimums
+        if: matrix.dependencies == 'minimum'
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "scripts")
+          from release_version import ENVIRONMENT_PROVIDER_MANIFEST, HARNESS_UI_MANIFEST, release_dependency_ranges
+          constraints = {}
+          for manifest in (ENVIRONMENT_PROVIDER_MANIFEST, HARNESS_UI_MANIFEST):
+              constraints.update(release_dependency_ranges(Path.cwd(), manifest))
+          Path("minimum-constraints.txt").write_text("".join(
+              f"{package}=={constraint.split(',')[0][2:]}\n"
+              for package, constraint in constraints.items()
+          ))
+          PY
+
+      - name: Verify installed application and matching native runtime
+        env:
+          VERSION: ${{ needs.build-python.outputs.version }}
+          DEPENDENCIES: ${{ matrix.dependencies }}
+        run: |
+          python_version="${VERSION/-rc./rc}"
+          environment="${RUNNER_TEMP}/a13n-harness-ui-release-smoke"
+          uv venv --python 3.13 "$environment"
+          constraints=()
+          if [[ "$DEPENDENCIES" == minimum ]]; then
+            constraints=(--constraint minimum-constraints.txt)
+          fi
+          uv pip install \
+            --python "$environment/bin/python" \
+            --no-cache --resolution highest \
+            --index-url https://pypi.org/simple \
+            "${constraints[@]}" \
+            "dist/a13n_harness_ui-${python_version}-py3-none-any.whl"
+          uv pip check --python "$environment/bin/python"
+          uv pip freeze --python "$environment/bin/python"
+          "$environment/bin/a13n-harness-ui" --help
+          "$environment/bin/a13n-harness-ui" webui --help
+          mkdir -p "$RUNNER_TEMP/smoke-config"
+          printf '{}\n' > "$RUNNER_TEMP/smoke-config/a13n-harness-ui.yaml"
+          "$environment/bin/a13n-harness-ui" --config "$RUNNER_TEMP/smoke-config/a13n-harness-ui.yaml" config validate
+          "$environment/bin/python" - <<'PY'
+          import tempfile
+          from pathlib import Path
+          import anyio
+          from a13n_harness_ui.managed_runtime import ManagedEnvdRuntime
+          from a13n_harness_ui.settings import EnvdRuntimeSettings
+          with tempfile.TemporaryDirectory() as directory:
+              root = Path(directory)
+              runtime = ManagedEnvdRuntime(
+                  cache_root=root / "cache", staging_root=root / "staging", settings=EnvdRuntimeSettings()
+              )
+              print(anyio.run(runtime.resolve))
+          PY
+
   publish-python:
     name: Publish Harness UI distribution
-    needs: build-python
+    needs: [build-python, compatibility]
     runs-on: ubuntu-latest
     environment: agent-ui-pypi
     steps:

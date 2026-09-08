@@ -38,8 +38,7 @@ HARNESS_PACKAGES = (
 )
 HARNESS_UI_MANIFEST = Path("packages/a13n-harness-ui/pyproject.toml")
 HARNESS_UI_PACKAGE = "a13n-harness-ui"
-HARNESS_UI_RELEASE_TOOL = "tool.a13n.harness-ui-release"
-HARNESS_UI_ENVD_VERSION = Path("packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-version.txt")
+RELEASE_DEPENDENCIES_TOOL = "tool.a13n.release-dependencies"
 LOGGING_MANIFEST = Path("packages/a13n-logging/pyproject.toml")
 LOGGING_PACKAGE = "a13n-logging"
 A13N_SERVICE_MANIFESTS = (
@@ -183,34 +182,48 @@ def _project_dependency_requirement(root: Path, relative_path: Path, package_nam
     return matches[0]
 
 
-def _harness_ui_release_selection(root: Path, key: str, label: str) -> ReleaseVersion:
-    data = _load_toml(root, HARNESS_UI_MANIFEST)
-    tool = _mapping(data.get("tool"), f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}")
-    a13n = _mapping(tool.get("a13n"), f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}")
-    release = _mapping(
-        a13n.get("harness-ui-release"),
-        f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}",
-    )
-    version = _string(release.get(key), f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}")
-    selected = parse_release_version(version)
-    if selected.canonical == "0.0.0":
+def validate_dependency_range(value: str) -> str:
+    """Normalize the supported inclusive-minimum/exclusive-maximum release policy."""
+    parts = [part.strip() for part in value.split(",")]
+    lower = [part[2:] for part in parts if part.startswith(">=")]
+    upper = [part[1:] for part in parts if part.startswith("<") and not part.startswith("<=")]
+    if len(parts) != 2 or len(lower) != 1 or len(upper) != 1:
+        raise ReleaseVersionError(f"Dependency range must use >=MIN,<MAX: {value}")
+    minimum = parse_release_version(re.sub(r"rc([1-9][0-9]*)$", r"-rc.\1", lower[0]))
+    maximum = parse_release_version(upper[0])
+    if lower[0] != minimum.python_package or maximum.is_prerelease:
         raise ReleaseVersionError(
-            f"Select a published {label} release in {HARNESS_UI_MANIFEST} before releasing Harness UI"
+            f"Dependency bounds must use Python release syntax with a stable upper bound: {value}"
         )
-    return selected
+    if (minimum.major, minimum.minor, minimum.patch) == (0, 0, 0):
+        raise ReleaseVersionError(f"Dependency minimum must select a published release, not 0.0.0: {value}")
+    # PEP 440's exclusive upper bound also excludes prereleases of that release.
+    if (minimum.major, minimum.minor, minimum.patch) >= (maximum.major, maximum.minor, maximum.patch):
+        raise ReleaseVersionError(f"Dependency range must be non-empty: {value}")
+    return f">={minimum.python_package},<{maximum.python_package}"
 
 
-def _harness_ui_harness_release(root: Path) -> ReleaseVersion:
-    return _harness_ui_release_selection(root, "harness-version", "Harness")
-
-
-def _harness_ui_envd_release(root: Path) -> ReleaseVersion:
-    selected = parse_release_version(_read_text(root, HARNESS_UI_ENVD_VERSION).strip())
-    if selected.canonical == "0.0.0":
+def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
+    """Read independently versioned dependencies without constraining local workspace members."""
+    expected = {
+        ENVIRONMENT_PROVIDER_MANIFEST: (A13N_ENVD_CLIENT_PACKAGE,),
+        HARNESS_MANIFEST: (LOGGING_PACKAGE,),
+        HARNESS_UI_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE),
+    }[manifest]
+    label = f"{RELEASE_DEPENDENCIES_TOOL} in {manifest}"
+    tool = _mapping(_load_toml(root, manifest).get("tool"), label)
+    a13n = _mapping(tool.get("a13n"), label)
+    declarations = _mapping(a13n.get("release-dependencies"), label)
+    if set(declarations) != set(expected):
+        raise ReleaseVersionError(f"Expected {label} keys {sorted(expected)}, found {sorted(declarations)}")
+    ranges = {
+        package: validate_dependency_range(_string(declarations[package], f"{label}.{package}")) for package in expected
+    }
+    if manifest == HARNESS_UI_MANIFEST and len({ranges[package] for package in HARNESS_PACKAGES}) != 1:
         raise ReleaseVersionError(
-            f"Select a published a13n-envd release in {HARNESS_UI_ENVD_VERSION} before releasing Harness UI"
+            "Harness UI must declare the same compatible range for all Harness-group dependencies"
         )
-    return selected
+    return ranges
 
 
 def _cargo_package_version(root: Path, relative_path: Path) -> str:
@@ -418,14 +431,16 @@ def validate_component_version(root: Path, component: str, version: str) -> None
             actual = _project_dependency_requirement(root, manifest, package_name)
             if actual != expected:
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
-    elif component == "a13n-harness-ui":
-        selected = _harness_ui_harness_release(root).python_package
-        _harness_ui_envd_release(root)
-        for package_name in HARNESS_PACKAGES:
-            expected = f"{package_name}=={selected}"
-            actual = _project_dependency_requirement(root, HARNESS_UI_MANIFEST, package_name)
+    manifests = {
+        "a13n-harness": (ENVIRONMENT_PROVIDER_MANIFEST, HARNESS_MANIFEST),
+        "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
+    }.get(component, ())
+    for manifest in manifests:
+        for package_name, constraint in release_dependency_ranges(root, manifest).items():
+            expected = f"{package_name}{constraint}"
+            actual = _project_dependency_requirement(root, manifest, package_name)
             if actual != expected:
-                raise ReleaseVersionError(f"Expected {HARNESS_UI_MANIFEST} dependency {expected}, found {actual}")
+                raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
 
 
 def _replace_table_version(content: str, table_name: str, version: str, path: Path) -> str:
@@ -607,21 +622,12 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
             )
         planned[ROOT_UV_LOCK] = lock_content
     elif component == "a13n-harness-ui":
-        selected_harness_version = _harness_ui_harness_release(root).python_package
-        _harness_ui_envd_release(root)
         ui_content = _replace_table_version(
             _read_text(root, HARNESS_UI_MANIFEST),
             "project",
             python_version,
             HARNESS_UI_MANIFEST,
         )
-        for package_name in HARNESS_PACKAGES:
-            ui_content = _replace_project_dependency(
-                ui_content,
-                package_name,
-                f"{package_name}=={selected_harness_version}",
-                HARNESS_UI_MANIFEST,
-            )
         planned[HARNESS_UI_MANIFEST] = ui_content
         planned[ROOT_UV_LOCK] = _replace_lock_package_version(
             _read_text(root, ROOT_UV_LOCK),
@@ -736,6 +742,16 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
             SDK_TYPESCRIPT_LOCK,
             include_lock_root=True,
         )
+
+    manifests = {
+        "a13n-harness": (ENVIRONMENT_PROVIDER_MANIFEST, HARNESS_MANIFEST),
+        "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
+    }.get(component, ())
+    for manifest in manifests:
+        for package_name, constraint in release_dependency_ranges(root, manifest).items():
+            planned[manifest] = _replace_project_dependency(
+                planned[manifest], package_name, f"{package_name}{constraint}", manifest
+            )
 
     changed = tuple(path for path in sorted(planned) if planned[path] != _read_text(root, path))
     for relative_path in changed:

@@ -21,12 +21,11 @@ from pathlib import Path, PurePosixPath
 from typing import ClassVar
 from urllib.parse import unquote, urlsplit
 
-from release_version import ReleaseVersionError, parse_release_version
+from release_version import ReleaseVersionError, validate_dependency_range
 
 DISTRIBUTION_STEM = "a13n_harness_ui"
 MANIFEST_NAME = "asset-manifest.json"
 PACKAGE_PREFIX = PurePosixPath("a13n_harness_ui/static")
-RUNTIME_VERSION_PATH = PurePosixPath("a13n_harness_ui/assets/a13n-envd-version.txt")
 TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/__init__.py"),
     PurePosixPath("a13n_harness_ui/__main__.py"),
@@ -34,6 +33,7 @@ TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/webui.py"),
     PurePosixPath("a13n_harness_ui/terminal.py"),
     PurePosixPath("a13n_harness_ui/cli_runtime.py"),
+    PurePosixPath("a13n_harness_ui/managed_runtime.py"),
     PurePosixPath("a13n_harness_ui/prompts.py"),
     PurePosixPath("a13n_harness_ui/assets/system_prompt.md"),
     PurePosixPath("a13n_harness_ui/interactive/shell.py"),
@@ -210,39 +210,29 @@ def _validate_console_entrypoint(content: bytes) -> None:
         raise DistributionError("Harness UI artifact is missing the a13n-harness-ui console entrypoint")
 
 
-def _validate_runtime_version(read: Callable[[str], bytes], names: set[str], path: PurePosixPath) -> None:
-    version_path = path.as_posix()
-    if version_path not in names:
-        raise DistributionError(f"Harness UI artifact is missing {version_path}")
-    try:
-        parse_release_version(read(version_path).decode("utf-8").strip())
-    except (UnicodeError, ReleaseVersionError) as error:
-        raise DistributionError(f"Invalid a13n-envd version in {version_path}: {error}") from error
-
-
-def _validate_internal_requirements(requirements: list[str]) -> str:
-    versions: set[str] = set()
-    for package_name in INTERNAL_PACKAGES:
+def _validate_internal_requirements(requirements: list[str]) -> dict[str, str]:
+    ranges: dict[str, str] = {}
+    for package_name in (*INTERNAL_PACKAGES, "a13n-logging"):
         package_pattern = re.compile(rf"^{re.escape(package_name)}(?=$|\s|[<>=!~;@\[])")
         matches = [requirement for requirement in requirements if package_pattern.match(requirement)]
         if len(matches) != 1:
+            raise DistributionError(f"Expected one {package_name} requirement in Harness UI metadata, found {matches}")
+        try:
+            ranges[package_name] = validate_dependency_range(matches[0][len(package_name) :].strip())
+        except ReleaseVersionError as error:
             raise DistributionError(
-                f"Expected one exact {package_name} requirement in Harness UI metadata, found {matches}"
-            )
-        exact = re.fullmatch(rf"{re.escape(package_name)}\s*==\s*([^\s;]+)", matches[0])
-        if exact is None:
-            raise DistributionError(f"Harness UI metadata must pin {package_name} exactly, found {matches[0]}")
-        versions.add(exact.group(1))
-    if len(versions) != 1:
-        raise DistributionError(f"Harness UI internal dependency versions do not match: {sorted(versions)}")
-    return versions.pop()
+                f"Harness UI metadata must use a compatible dependency range for {package_name}, found {matches[0]}: {error}"
+            ) from error
+    group_ranges = {ranges[package_name] for package_name in INTERNAL_PACKAGES}
+    if len(group_ranges) != 1:
+        raise DistributionError(f"Harness UI internal dependency ranges do not match: {sorted(group_ranges)}")
+    return ranges
 
 
-def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) -> str | None:
+def validate_wheel(path: Path, *, require_compatible_dependencies: bool = False) -> dict[str, str] | None:
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
         _validate_assets(archive.read, names, PACKAGE_PREFIX)
-        _validate_runtime_version(archive.read, names, RUNTIME_VERSION_PATH)
         _validate_terminal_package(names)
         if not any(name.endswith(".dist-info/licenses/LICENSE") for name in names):
             raise DistributionError("Harness UI wheel is missing the project license")
@@ -257,12 +247,12 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
         requirements = metadata.get_all("Requires-Dist", [])
         if not all(isinstance(requirement, str) for requirement in requirements):
             raise DistributionError(f"Invalid Requires-Dist metadata in {path}")
-        pin = _validate_internal_requirements(requirements) if require_exact_internal_version else None
+        dependency_ranges = _validate_internal_requirements(requirements) if require_compatible_dependencies else None
     _validate_wheel_imports(path)
-    return pin
+    return dependency_ranges
 
 
-def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) -> tuple[str, str | None]:
+def validate_sdist(path: Path, *, require_compatible_dependencies: bool = False) -> tuple[str, dict[str, str] | None]:
     with tarfile.open(path, mode="r:gz") as archive:
         members = [member for member in archive.getmembers() if member.isfile()]
         roots = {PurePosixPath(member.name).parts[0] for member in members}
@@ -278,7 +268,6 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
             return file.read()
 
         _validate_assets(read, names, PurePosixPath(root) / PACKAGE_PREFIX)
-        _validate_runtime_version(read, names, PurePosixPath(root) / RUNTIME_VERSION_PATH)
         _validate_terminal_package(names, PurePosixPath(root))
         if f"{root}/LICENSE" not in names:
             raise DistributionError("Harness UI sdist is missing the project license")
@@ -297,11 +286,12 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
             raise DistributionError("Harness UI sdist has invalid project.dependencies")
         if not isinstance(scripts, dict) or scripts.get("a13n-harness-ui") != "a13n_harness_ui.cli:main":
             raise DistributionError("Harness UI sdist is missing the a13n-harness-ui console entrypoint")
-        pin = _validate_internal_requirements(requirements) if require_exact_internal_version else None
-        return root, pin
+        dependency_ranges = _validate_internal_requirements(requirements) if require_compatible_dependencies else None
+        return root, dependency_ranges
 
 
-def rebuild_wheel_from_sdist(sdist: Path, *, require_exact_internal_version: bool = False) -> Path:
+def rebuild_wheel_from_sdist(sdist: Path, *, require_compatible_dependencies: bool = False) -> Path:
+    _, sdist_ranges = validate_sdist(sdist, require_compatible_dependencies=require_compatible_dependencies)
     uv = shutil.which("uv")
     if uv is None:
         raise DistributionError("uv is required to rebuild the Harness UI wheel")
@@ -333,7 +323,11 @@ def rebuild_wheel_from_sdist(sdist: Path, *, require_exact_internal_version: boo
         rebuilt = sdist.parent / "rebuilt-from-sdist" / wheels[0].name
         rebuilt.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(wheels[0], rebuilt)
-    validate_wheel(rebuilt, require_exact_internal_version=require_exact_internal_version)
+    rebuilt_ranges = validate_wheel(rebuilt, require_compatible_dependencies=require_compatible_dependencies)
+    if rebuilt_ranges != sdist_ranges:
+        raise DistributionError(
+            f"Harness UI rebuilt wheel and sdist dependency ranges do not match: {rebuilt_ranges} != {sdist_ranges}"
+        )
     return rebuilt
 
 
@@ -341,7 +335,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Validate a13n-harness-ui wheel and sdist contents.")
     parser.add_argument("dist_dir", type=Path)
     parser.add_argument("--rebuild-wheel", action="store_true")
-    parser.add_argument("--require-exact-internal-version", action="store_true")
+    parser.add_argument("--require-compatible-dependencies", action="store_true")
     args = parser.parse_args()
 
     wheels = sorted(args.dist_dir.glob(f"{DISTRIBUTION_STEM}-*.whl"))
@@ -353,22 +347,22 @@ def main() -> None:
         )
 
     try:
-        wheel_pin = validate_wheel(
+        wheel_ranges = validate_wheel(
             wheels[0],
-            require_exact_internal_version=args.require_exact_internal_version,
+            require_compatible_dependencies=args.require_compatible_dependencies,
         )
-        _, sdist_pin = validate_sdist(
+        _, sdist_ranges = validate_sdist(
             sdists[0],
-            require_exact_internal_version=args.require_exact_internal_version,
+            require_compatible_dependencies=args.require_compatible_dependencies,
         )
-        if wheel_pin != sdist_pin:
+        if wheel_ranges != sdist_ranges:
             raise DistributionError(
-                f"Harness UI wheel and sdist dependency pins do not match: {wheel_pin} != {sdist_pin}"
+                f"Harness UI wheel and sdist dependency ranges do not match: {wheel_ranges} != {sdist_ranges}"
             )
         rebuilt = (
             rebuild_wheel_from_sdist(
                 sdists[0],
-                require_exact_internal_version=args.require_exact_internal_version,
+                require_compatible_dependencies=args.require_compatible_dependencies,
             )
             if args.rebuild_wheel
             else None

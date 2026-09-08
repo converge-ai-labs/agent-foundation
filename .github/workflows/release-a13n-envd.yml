@@ -283,7 +283,8 @@ jobs:
 
   publish-client:
     name: Publish Python client
-    needs: [prepare, build-client, build-binaries]
+    # Installing this client can select the co-versioned native runtime immediately.
+    needs: [build-client, create-release]
     runs-on: ubuntu-latest
     environment: agent-envd-client-pypi
     steps:
@@ -380,8 +381,9 @@ jobs:
           fi
 
   create-release:
-    name: Create GitHub Release
-    needs: [prepare, build-client, build-binaries, publish-crate, publish-client, publish-image]
+    name: Publish and verify GitHub Release downloads
+    # Native downloads must be public before PyPI, independently of crates.io and GHCR.
+    needs: [prepare, build-client, build-binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -415,6 +417,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
-        run: >-
-          python3 scripts/create-github-release.py a13n-envd "$VERSION"
-          "a13n-envd $VERSION" dist/*
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null; then
+            python3 scripts/create-github-release.py a13n-envd "$VERSION" \
+              "a13n-envd $VERSION" dist/*
+          fi
+          # A retry never replaces existing assets; the next step verifies their bytes.
+
+      - name: Verify public release downloads
+        run: |
+          mkdir -p verified
+          tag="${GITHUB_REF_NAME//\//%2F}"
+          for asset in dist/*; do
+            filename="${asset##*/}"
+            curl --fail --location --silent --show-error \
+              --retry 3 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+              --connect-timeout 10 --max-time 120 \
+              --output "verified/$filename" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$filename"
+            if ! cmp --silent "$asset" "verified/$filename"; then
+              echo "Published release asset does not match this release tag: $filename" >&2
+              exit 1
+            fi
+          done

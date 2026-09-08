@@ -34,7 +34,7 @@ export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 
 The Python `a13n-envd-client` package does not discover, install, or launch the binary. A Provider or Host supplies process lifecycle and transport policy.
 
-For a published release, install `a13n-envd` from the registry only with the matching published Python release group. Do not combine an unversioned registry binary with the source workspace.
+For a published Local Envd installation, select the native `a13n-envd` release matching the installed `a13n-envd-client` version, not the independently versioned Harness or UI. Python RC metadata such as `0.0.5rc1` corresponds to native `0.0.5-rc.1`. Harness UI manages this selection and acquisition for Local EIP; standalone Hosts supply their executable explicitly. Do not combine an arbitrary registry binary with the source workspace.
 
 ## Recommended Harness path
 

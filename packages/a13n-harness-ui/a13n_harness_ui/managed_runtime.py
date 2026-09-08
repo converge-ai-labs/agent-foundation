@@ -9,7 +9,7 @@ import stat
 import subprocess
 import tarfile
 import zipfile
-from importlib.resources import files
+from importlib import metadata
 from pathlib import Path
 from typing import IO
 from uuid import uuid4
@@ -20,7 +20,11 @@ from anyio import Lock, open_file, to_thread
 from a13n_harness_ui.errors import RuntimeResolutionError
 from a13n_harness_ui.settings import EnvdRuntimeSettings
 
-_VERSION_RESOURCE = "assets/a13n-envd-version.txt"
+_RELEASE_VERSION_PATTERN = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+_VERSION_RECOVERY = (
+    "Reinstall a13n-harness-ui with its matching a13n-envd-client dependency, "
+    "or set HarnessUiSettings.envd_runtime.executable to an absolute path to a locally built a13n-envd."
+)
 _RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v"
 _DOWNLOAD_CHUNK_BYTES = 256 * 1024
 
@@ -39,7 +43,8 @@ class ManagedEnvdRuntime:
         self._cache_root = cache_root
         self._staging_root = staging_root
         self._settings = settings
-        self._version = load_envd_version() if version is None else _validate_version(version)
+        # Metadata is needed only for managed acquisition, not Native or an explicit executable override.
+        self._version = None if version is None else _validate_version(version)
         self._lock = Lock()
         self._selected: Path | None = None
 
@@ -48,9 +53,11 @@ class ManagedEnvdRuntime:
 
         if self._selected is not None:
             return self._selected
+        if self._version is None:
+            self._version = await to_thread.run_sync(load_envd_version)
         if self._version == "0.0.0":
             raise RuntimeResolutionError(
-                "This source build has no selected a13n-envd release. "
+                "The installed a13n-envd-client is a source build (0.0.0) with no selected a13n-envd release. "
                 "Set HarnessUiSettings.envd_runtime.executable to an absolute path to a locally built a13n-envd.",
                 code="local_eip_release_unselected",
             )
@@ -111,21 +118,38 @@ class ManagedEnvdRuntime:
 
 
 def _validate_version(version: str) -> str:
-    if re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-rc\.[1-9][0-9]*)?", version) is None:
-        raise RuntimeResolutionError("The packaged a13n-envd version is invalid.", code="local_eip_version_invalid")
+    if re.fullmatch(rf"{_RELEASE_VERSION_PATTERN}(?:-rc\.[1-9][0-9]*)?", version) is None:
+        raise RuntimeResolutionError(
+            "The selected a13n-envd version must use X.Y.Z or X.Y.Z-rc.N (N >= 1).",
+            code="local_eip_version_invalid",
+        )
     return version
 
 
 def load_envd_version() -> str:
-    """Read the single native version selection shipped in source, wheel, and sdist."""
+    """Select the native release co-released with the installed client distribution."""
 
     try:
-        version = files("a13n_harness_ui").joinpath(_VERSION_RESOURCE).read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError) as exc:
+        version = metadata.version("a13n-envd-client")
+    except (metadata.PackageNotFoundError, OSError, UnicodeError) as exc:
         raise RuntimeResolutionError(
-            "The packaged a13n-envd version is missing or unreadable.", code="local_eip_version_invalid"
+            f"The installed a13n-envd-client distribution metadata is missing or unreadable. {_VERSION_RECOVERY}",
+            code="local_eip_version_invalid",
         ) from exc
-    return _validate_version(version)
+    # Accept only canonical Python stable/RC release forms, not the wider PEP 440 grammar.
+    match = (
+        re.fullmatch(rf"(?P<release>{_RELEASE_VERSION_PATTERN})(?:rc(?P<rc>[1-9][0-9]*))?", version)
+        if isinstance(version, str)
+        else None
+    )
+    if match is None:
+        raise RuntimeResolutionError(
+            f"The installed a13n-envd-client version must use X.Y.Z or X.Y.ZrcN (N >= 1). {_VERSION_RECOVERY}",
+            code="local_eip_version_invalid",
+        )
+    release = match.group("release")
+    rc = match.group("rc")
+    return release if rc is None else f"{release}-rc.{rc}"
 
 
 def current_envd_target() -> str:
