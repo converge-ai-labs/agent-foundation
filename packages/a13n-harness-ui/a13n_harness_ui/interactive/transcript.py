@@ -39,13 +39,22 @@ def bounded_text(text: str, limit: int) -> str:
 def _tool_row(source: str, theme: ResolvedTheme) -> Text:
     """Style the generated name/status fields, leaving the payload literal."""
     colors = activity_colors(theme)
+    if source.startswith(("Read ", "Find ", "Search ", "List ", "Run ", "Call ", "Modified:", "Exploring", "Explored")):
+        value = Text(no_wrap=True, overflow="ellipsis")
+        for index, line in enumerate(source.splitlines()):
+            if index:
+                value.append("\n")
+            label, separator, detail = line.partition(" ")
+            value.append(label + separator, style=colors["muted"])
+            value.append(detail, style="default")
+        return value
     name, separator, remainder = source.partition(" | ")
     value = Text(name, style=colors["muted"], no_wrap=True, overflow="ellipsis")
     if not separator:
         return value
     state, separator, detail = remainder.partition(" | ")
     if state.startswith(("failed", "denied", "timed out", "cancelled", "interrupted")):
-        tone = "failed"
+        tone = "muted"
     elif state in {"completed", "created", "updated", "deleted", "already absent", "finished", "exit 0"}:
         tone = "completed"
     elif state == "running":
@@ -77,6 +86,8 @@ class Block:
     preview_rows: list[StyleAndTextTuples] = field(default_factory=list)
     preview: str | None = None
     streaming: bool = False
+    concise_hidden: bool = False
+    concise_anchor: int | None = None
     chunks: list[tuple[str, RowStore]] = field(default_factory=list)
 
     @property
@@ -228,10 +239,12 @@ class Transcript:
         self.dirty = True
         return block_id
 
-    def preview(self, block_id: int, text: str, lines: int = 1) -> None:
+    def preview(self, block_id: int, text: str, lines: int = 1, *, limit: int = 1024) -> None:
         block = self.blocks.get(block_id)
         if block is not None:
-            block.preview = text if len(text) <= 1024 else text[:960] + "\n… preview shortened · Ctrl+O details"
+            block.preview = (
+                text if len(text) <= limit else text[: max(0, limit - 64)] + "\n… preview shortened · Ctrl+O details"
+            )
             block.collapsed_lines = lines
             block.revision += 1
             self.dirty = True
@@ -391,6 +404,8 @@ class Transcript:
         count = 0
         for block, following in pairwise(chain(self.blocks.values(), (None,))):
             assert block is not None
+            if not self.detailed and (block.concise_hidden or block.concise_anchor in self.blocks):
+                continue
             key = (block.revision, width, self.theme, block.streaming)
             if block.cache_key != key:
                 source = block.source

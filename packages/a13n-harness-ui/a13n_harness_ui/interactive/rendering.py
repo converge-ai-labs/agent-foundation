@@ -9,7 +9,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from .context_activity import ContextActivity
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
+from .tool_rows import (
+    CONTEXT_TOOLS,
+    EXPLORATION_TOOLS,
+    ExplorationGroup,
+    ExplorationMember,
+    failure_reason,
+    semantic_tool_row,
+)
 from .transcript import Transcript
 
 if TYPE_CHECKING:
@@ -165,6 +174,10 @@ class _ToolPreview:
     block_id: int | None = None
     summary: str = ""
     edit_applied: bool = False
+    semantic: str = ""
+    read_path: str | None = None
+    group: ExplorationGroup | None = None
+    member: ExplorationMember | None = None
 
 
 @dataclass(slots=True)
@@ -206,6 +219,9 @@ class StreamRenderer:
         self._line_open = False
         self._local_output: dict[str, int] = {}
         self._custom_events = CustomEventAssembler()
+        self._exploration: ExplorationGroup | None = None
+        self._context: dict[tuple[str, str], ContextActivity] = {}
+        self._write_notices: dict[tuple[str, str, str], None] = {}
 
     def _shell_observation(self, run_id: str, process_id: str) -> _ShellObservation:
         key = (run_id, process_id)
@@ -480,6 +496,7 @@ class StreamRenderer:
         assistant = message and not user
         identity = terminal_text(execution_id or run_id)
         if thinking or message:
+            self._exploration = None
             if not user and not child and self.status.state != "cancelling":
                 self.status.state = "thinking" if thinking else "responding"
             if child and not detailed:
@@ -523,7 +540,13 @@ class StreamRenderer:
             preview = self._tools.get(key)
             label = f"{identity} / {call_id}" if child else call_id
             if event_type.endswith("START"):
+                if self._exploration is not None and self._exploration.members:
+                    if next(reversed(self.transcript.blocks), None) != self._exploration.members[-1].block_id:
+                        self._exploration = None
                 preview = _ToolPreview(str(payload.get("tool_call_name", "tool"))[:60], time.monotonic())
+                preview.semantic, preview.read_path = semantic_tool_row(preview.name, "", self.status.directory)
+                if preview.name not in EXPLORATION_TOOLS:
+                    self._exploration = None
                 self._tools[key] = preview
                 if not child and self.status.state != "cancelling":
                     self.status.state = preview.name
@@ -534,7 +557,24 @@ class StreamRenderer:
                     preview.block_id = self.transcript.append(
                         header + "\n", collapsed_lines=None if shell else 1, kind="command" if shell else "tool"
                     )
-                    self.transcript.preview(preview.block_id, header)
+                    brief = preview.semantic + " …"
+                    if preview.name in {"edit", "multi_edit"}:
+                        brief = header
+                    self.transcript.preview(preview.block_id, brief)
+                    if preview.name in CONTEXT_TOOLS:
+                        self.transcript.blocks[preview.block_id].concise_hidden = True
+                    elif preview.name in EXPLORATION_TOOLS:
+                        group_identity = (run_id, execution_id if child else None)
+                        if (
+                            self._exploration is None
+                            or self._exploration.identity != group_identity
+                            or len(self._exploration.members) >= 16
+                        ):
+                            self._exploration = ExplorationGroup(group_identity)
+                        preview.group = self._exploration
+                        preview.member = ExplorationMember(preview.block_id, brief)
+                        preview.group.members.append(preview.member)
+                        preview.group.refresh(self.transcript)
                     self.append(header + "\n", display=False)
             elif event_type.endswith(("ARGS", "CHUNK")):
                 if preview is None:
@@ -569,11 +609,31 @@ class StreamRenderer:
                     brief = header + (f" | {' '.join(summary.split())}" if summary else "") + elapsed
                     shell_preview = None
                     if name.startswith("shell") and native_state is None:
-                        shell_preview = shell_result_preview(text, summary)
+                        shell_preview = shell_result_preview(text, summary, separator=" · ")
                     if shell_preview is not None:
                         brief = f"{name} | {shell_preview}"
                         if child:
                             brief += f" | {identity}"
+                    failed = state.startswith("failed") or state in {"retry", "denied"}
+                    if name not in {"edit", "multi_edit"}:
+                        semantic = (
+                            preview.semantic if preview else semantic_tool_row(name, "", self.status.directory)[0]
+                        )
+                        if shell_preview is not None:
+                            brief = "Run " + shell_preview
+                        elif failed:
+                            brief = f"{semantic.split(' ', 1)[0]} {state}: {failure_reason(text, state)} — {semantic}"
+                        else:
+                            brief = semantic
+                            if name in {"note_write", "note_delete"} and state in {
+                                "created",
+                                "updated",
+                                "deleted",
+                                "already absent",
+                            }:
+                                brief += f" · {state}"
+                        if child:
+                            brief += f" · {identity}"
                     arguments = preview.arguments if preview else ""
                     body = (
                         header
@@ -604,6 +664,14 @@ class StreamRenderer:
                         if block_id is None or not self.transcript.replace(block_id, terminal_text(body), kind=kind):
                             block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind=kind)
                         self.transcript.preview(block_id, terminal_text(brief), 1)
+                        if name in CONTEXT_TOOLS:
+                            self.transcript.blocks[block_id].concise_hidden = not failed
+                        if preview is not None and preview.group is not None and preview.member is not None:
+                            preview.member.block_id = block_id
+                            preview.member.brief = terminal_text(brief)
+                            preview.member.active = False
+                            preview.member.failed = failed
+                            preview.group.refresh(self.transcript)
                     self.append(header + elapsed + "\n", display=False)
                 self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
@@ -614,6 +682,9 @@ class StreamRenderer:
                 if preview:
                     preview.arguments = "".join(preview.parts or ())
                     preview.parts = None
+                    preview.semantic, preview.read_path = semantic_tool_row(
+                        preview.name, preview.arguments, self.status.directory
+                    )
                     preview.summary = tool_preview(
                         preview.arguments, name=preview.name, directory=self.status.directory
                     )
@@ -635,13 +706,22 @@ class StreamRenderer:
                             brief = f"{preview.name} | {state} | {preview.summary or 'command unavailable'}"
                             if child:
                                 brief += f" | {identity}"
+                        if preview.name not in {"edit", "multi_edit"}:
+                            brief = preview.semantic + " …"
+                            if preview.name == "shell_wait":
+                                brief = "Run waiting · " + (preview.summary or "command unavailable")
                         self.transcript.preview(preview.block_id, terminal_text(brief), 1)
+                        if preview.group is not None and preview.member is not None:
+                            preview.member.brief = terminal_text(brief)
+                            preview.member.read_path = preview.read_path
+                            preview.group.refresh(self.transcript)
                 self.boundary = True
             # START-only and malformed streams obey the same bound as ARGS.
             while len(self._tools) > 128:
                 self._tools.pop(next(iter(self._tools)))
             return
         if event_type in {"RUN_FINISHED", "RUN_ERROR"}:
+            self._exploration = None
             self.end_process_observations(run_id)
         if event_type == "RUN_ERROR":
             self.finish()
@@ -685,13 +765,80 @@ class StreamRenderer:
                     # Recognized routine statuses are intentionally quiet, not
                     # unknown capability events to render as raw JSON.
                     return
+                mutation = event.get("payload")
+                context_content = name in {"a13n.context.compaction_summary", "a13n.context.handoff_summary"}
+                context_kind = str(mutation.get("type", "")) if isinstance(mutation, dict) else ""
+                if context_content or (
+                    name == "a13n.harness.context" and context_kind.startswith(("compaction_", "handoff_"))
+                ):
+                    self._exploration = None
+                    if not child or detailed:
+                        observation = event if context_content else mutation
+                        assert isinstance(observation, dict)
+                        operation_id = observation.get("operation_id")
+                        if isinstance(operation_id, str):
+                            context_key = (run_id, operation_id)
+                            activity = self._context.get(context_key)
+                            if activity is None or activity.block_id not in self.transcript.blocks:
+                                block_id = self.transcript.append("", kind="tool")
+                                details_id = self.transcript.append("", kind="tool")
+                                self.transcript.blocks[details_id].concise_hidden = True
+                                title = (
+                                    "Compact"
+                                    if (
+                                        context_kind.startswith("compaction_")
+                                        or name == "a13n.context.compaction_summary"
+                                    )
+                                    else "Summary"
+                                )
+                                activity = self._context[context_key] = ContextActivity(title, block_id, details_id)
+                            activity.update(
+                                self.transcript, str(name) if context_content else context_kind, observation
+                            )
+                            # All rendered native content crosses the same terminal-text boundary.
+                            for block_id in (activity.block_id, activity.details_id):
+                                block = self.transcript.blocks.get(block_id)
+                                if block is not None:
+                                    self.transcript.replace(block_id, terminal_text(block.source))
+                            while len(self._context) > 64:
+                                self._context.pop(next(iter(self._context)))
+                    return
+                if (
+                    name == "a13n.harness.tool"
+                    and isinstance(mutation, dict)
+                    and mutation.get("type") == "tool_extra"
+                    and mutation.get("name") == "filesystem.changed"
+                    and mutation.get("tool_id") == "filesystem.write"
+                ):
+                    if not child or detailed:
+                        value = mutation.get("value")
+                        changes = value.get("changes") if isinstance(value, dict) else None
+                        if isinstance(changes, list):
+                            for change in changes:
+                                if (
+                                    not isinstance(change, dict)
+                                    or change.get("action") != "written"
+                                    or not isinstance(change.get("path"), str)
+                                ):
+                                    continue
+                                notice_key = (run_id, str(mutation.get("tool_call_id")), change["path"])
+                                if notice_key not in self._write_notices:
+                                    self._write_notices[notice_key] = None
+                                    notice = terminal_text("Modified: " + " ".join(change["path"].split()))
+                                    block_id = self.transcript.append(notice, kind="tool")
+                                    self.transcript.preview(block_id, notice)
+                            while len(self._write_notices) > 128:
+                                self._write_notices.pop(next(iter(self._write_notices)))
+                    return
                 panel = capability_panel(name, event, directory=self.status.directory)
                 if panel is not None:
                     if not child or detailed:
                         self.finish()
                         source = terminal_text(f"{panel.title}\n{panel.body}\n")
                         edit = (
-                            self._tools.get((run_id, str(event.get("tool_call_id")))) if panel.kind == "edit" else None
+                            self._tools.get((run_id, str(event.get("tool_call_id"))))
+                            if name == "a13n.filesystem.edit_applied"
+                            else None
                         )
                         block_id = edit.block_id if edit is not None else None
                         if block_id is None or not self.transcript.replace(block_id, source, kind=panel.kind):
@@ -705,6 +852,8 @@ class StreamRenderer:
                             if len(lines) > 8:
                                 preview_body += "\n… more diff · Ctrl+O details"
                             self.transcript.preview(block_id, terminal_text(f"{panel.title}\n{preview_body}"), 12)
+                        elif panel.kind == "tool":
+                            self.transcript.preview(block_id, terminal_text(panel.title))
                         self.append(source, display=False)
                     return
                 if event.get("event_kind") == "capability":
@@ -719,17 +868,7 @@ class StreamRenderer:
                 mutation = event.get("payload")
                 if isinstance(mutation, dict):
                     kind = str(mutation.get("type", ""))
-                    if kind.startswith(("compaction_", "handoff_")):
-                        self.finish()
-                        title = "Compact" if kind.startswith("compaction_") else "Summary"
-                        self.append(
-                            f"[{title} · {identity}] {kind}\n"
-                            + json.dumps(mutation, ensure_ascii=False, indent=2)
-                            + "\n",
-                            collapsed_lines=1,
-                            kind="compact" if kind.startswith("compaction_") else "summary",
-                        )
-                    elif kind == "task_changed" and not child:
+                    if kind == "task_changed" and not child:
                         self.tasks.ingest(mutation)
                 if name == "a13n.pydantic_ai.enqueued_messages" and event.get("event_kind") == "enqueued_messages":
                     # ModelInputEvent owns applied input. Acceptance is a local

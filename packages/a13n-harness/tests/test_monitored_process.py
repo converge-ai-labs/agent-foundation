@@ -537,7 +537,41 @@ async def test_observation_does_not_require_stdin_signals_or_standalone_outputs(
         assert "stdout" not in inspected
         listing = await toolset.shell_info(_ctx())
         assert not listing["ok"]
+        assert listing["error"]["code"] == "environment_denied"
         await toolset.close()
+
+
+async def test_invented_alias_does_not_start_process_and_valid_interactive_flow_still_works(
+    tmp_path: Path,
+) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        ctx = _ctx()
+        try:
+            first = await toolset.shell_exec(ctx, "printf ordinary")
+            assert first["ok"] and first["stdout"]["text"] == "ordinary"
+            invalid = await toolset.shell_exec(ctx, "cat", alias="shell-smoke-input", yield_time_seconds=0)
+            assert not invalid["ok"]
+            assert invalid["error"]["code"] == "environment_selection_invalid"
+            assert invalid["error"]["details"]["field"] == "alias"
+            assert "not a process label" in invalid["error"]["details"]["hint"]
+            assert "process_id" not in invalid
+            assert not toolset._process_controller._entries
+
+            started = await toolset.shell_exec(ctx, "cat; printf 'stdin: EOF' >&2", yield_time_seconds=0)
+            assert started["ok"]
+            ref = started["process_id"]
+            inspected = await toolset.shell_inspect(ctx, ref)
+            assert inspected["ok"]
+            written = await toolset.shell_input(ctx, ref, "hello\\n", close_stdin=True)
+            assert written["ok"]
+            final = await toolset.shell_wait(ctx, ref, timeout_seconds=2)
+            assert final["ok"]
+            assert final["status"]["exit_code"] == 0
+            assert final["stdout"]["text"] == "hello\\n"
+            assert final["stderr"]["text"] == "stdin: EOF"
+        finally:
+            await toolset.close()
 
 
 async def test_foreground_capture_requires_only_shell_execution(tmp_path: Path) -> None:

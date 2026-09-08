@@ -301,3 +301,20 @@ The example explicitly destroys its sandbox in `finally`. Live integration tests
 ```bash
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
+
+## File search patterns
+
+File query patterns and text-search `include` filters use the same path syntax on Direct Local, E2B, and envd-backed Providers:
+
+| Pattern                    | Selection                                        |
+| -------------------------- | ------------------------------------------------ |
+| `*.py`                     | Python basenames at every traversed depth        |
+| `/*.py`                    | Python names immediately below the selected root |
+| `src/*.py`                 | Python names directly in `src`                   |
+| `{src,tests}/**/*.{py,rs}` | Python or Rust files under either directory      |
+
+Brace groups are non-nested, with at least two nonempty alternatives and at most 256 expanded patterns. Patterns accept at most 16 KiB. Backslash escapes and numeric ranges are not shell-expanded. Use a complete `**` path segment for recursive matching.
+
+Text search defaults to literal matching at the Environment API. The model-facing Harness `grep` tool instead defaults to `regex=true`; it also exposes `regex=false` and `case_sensitive=false`. Prefer literal mode for code fragments containing punctuation. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Direct Local and E2B use Python `re`; envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
+
+Invalid patterns produce an `environment_request_invalid` error with a safe field, reason, and correction hint. Zero results are successful. Continue bounded pages using the returned offset while keeping filters and filesystem stable. A per-file match limit caps returned matches from that file; an eligible-file scan ceiling raises a limit error rather than silently claiming a complete result. Narrow the root and include filter before increasing limits.

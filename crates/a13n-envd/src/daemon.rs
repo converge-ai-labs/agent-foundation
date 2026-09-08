@@ -2264,6 +2264,12 @@ fn map_resource_error(error: ResourceError) -> EIPError {
         error => error,
     };
     let (error_type, message, retry_hint) = match error {
+        ResourceError::InvalidPattern { field, reason } => {
+            let mut mapped = protocol_error(ErrorType::InvalidParams, "invalid search pattern");
+            mapped.data.field = Some(field.to_owned());
+            mapped.data.safe_detail = Some(reason.to_owned());
+            return mapped;
+        }
         ResourceError::Invalid => (
             ErrorType::InvalidParams,
             "invalid resource operation parameters",

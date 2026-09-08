@@ -159,8 +159,17 @@ async def test_large_compaction_summary_reaches_live_renderer_without_payload_om
     for event in await hub.snapshot():
         assert not event.payload_omitted
         renderer.ingest(event.event_type, event.payload, run_id=event.run_id)
+    assert next(iter(renderer.transcript.blocks.values())).source == "Compacting context…"
+    renderer.ingest(
+        "CUSTOM",
+        {
+            "name": "a13n.harness.context",
+            "value": {"event": {"payload": {"type": "compaction_completed", "operation_id": "compact-1"}}},
+        },
+        run_id="run-1",
+    )
     blocks = list(renderer.transcript.blocks.values())
-    assert blocks[0].source.endswith(summary + "\n")
+    assert blocks[0].source.endswith(summary)
     assert blocks[0].kind == "compact"
     assert not renderer.assistant_seen
 

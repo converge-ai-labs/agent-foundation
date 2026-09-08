@@ -53,7 +53,7 @@ def test_running_and_completed_tool_labels_keep_raw_payloads(name: str, key: str
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps(arguments)})
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
         block = next(iter(renderer.transcript.blocks.values()))
-        assert block.preview == f"{name} | running | {Path('src/file.py')}"
+        assert block.preview == f"{dict(view='Read', write='Call write', ls='List')[name]} {Path('src/file.py')} …"
         assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
         renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": json.dumps(result)})
         assert str(tmp_path) not in (block.preview or "")
@@ -104,10 +104,10 @@ def test_interleaved_child_paths_keep_invocation_base_and_run_identity(tmp_path:
                 "TOOL_CALL_RESULT", {"tool_call_id": "same", "content": "done"}, run_id=run, child=run == "child"
             )
         root, child = renderer.transcript.blocks.values()
-        assert " | file.py | " in (root.preview or "")
+        assert root.preview == "Read file.py"
         assert "done" not in (root.preview or "") and "done" in root.source
         assert str(tmp_path) not in (root.preview or "")
-        assert f" | child | {paths['child']} | " in (child.preview or "")
+        assert child.preview == f"Read {paths['child']} · child"
         assert "done" not in (child.preview or "") and "done" in child.source
     finally:
         renderer.transcript.close()

@@ -1652,6 +1652,66 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
     ]
 
 
+async def test_grep_schema_options_literal_search_and_actionable_errors(tmp_path: Path) -> None:
+    (tmp_path / "context.py").write_text("a.b\naxb\nHELLO\n")
+    observed: list[dict[str, Any]] = []
+    requests = (
+        {"pattern": "a.b", "regex": False, "include": "*.{py,rs}"},
+        {"pattern": "a.b"},
+        {"pattern": "hello", "case_sensitive": False},
+        {"pattern": "absent"},
+        {"pattern": "(", "regex": True},
+        {"pattern": "a", "include": "{broken}"},
+    )
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        schema = next(tool for tool in info.function_tools if tool.name == "grep").parameters_json_schema
+        assert schema["properties"]["regex"]["default"] is True
+        assert schema["properties"]["case_sensitive"]["default"] is True
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        observed[:] = returns
+        if not returns:
+            yield {
+                index: DeltaToolCall(
+                    name="grep",
+                    json_args=json.dumps(request),
+                    tool_call_id=f"grep-context-{index}",
+                )
+                for index, request in enumerate(requests)
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "grep",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert [len(item["matches"]) for item in observed[:4]] == [1, 2, 1, 0]
+    assert all(item["ok"] for item in observed[:4])
+    for item, field, reason in zip(
+        observed[4:], ("pattern", "include"), ("invalid_regex", "invalid_glob"), strict=True
+    ):
+        assert item["ok"] is False
+        assert item["error"]["code"] == "environment_request_invalid"
+        assert item["error"]["details"]["field"] == field
+        assert item["error"]["details"]["reason"] == reason
+        assert item["error"]["details"]["hint"]
+
+
 async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_path: Path) -> None:
     (tmp_path / "recovered.txt").write_text("one\ntwo\n")
     failed_once = False
@@ -2624,6 +2684,7 @@ async def test_shell_toolset_is_foreground_only_without_process_actions(tmp_path
         properties = tools["shell_exec"].function_schema.json_schema["properties"]
         assert "background" not in properties
         assert "yield_time_seconds" not in properties
+        assert "not a command or process label" in properties["alias"]["description"]
 
 
 async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: Path) -> None:
@@ -2643,6 +2704,11 @@ async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: P
         properties = tools["shell_exec"].function_schema.json_schema["properties"]
         assert "background" not in properties
         assert "yield_time_seconds" in properties
+        assert "not a command or process label" in properties["alias"]["description"]
+        info_schema = tools["shell_info"].function_schema.json_schema
+        assert "process_id" in info_schema["required"]
+        assert "limit" not in info_schema["properties"]
+        assert "not a command or process label" in info_schema["properties"]["alias"]["description"]
         signal_metadata = tools["shell_signal"].metadata[HARNESS_TOOL_METADATA_KEY]
         assert signal_metadata.effects == frozenset({"delete", "execute"})
         await toolset.close()
@@ -2669,6 +2735,56 @@ async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_er
     assert (tmp_path / "three" / "four" / "value.txt").read_text() == "created"
     assert missing["ok"] is False
     assert missing["error"]["code"] == "environment_not_found"
+
+
+async def test_file_failures_distinguish_unmounted_existing_path_from_missing_mounted_path(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    sibling = tmp_path / "sibling-worktree"
+    sibling.mkdir()
+    (sibling / "README.md").write_text("keep in place")
+    runtime = _local_binding(root, mount_path=root.as_posix())
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}
+    ) as environment:
+        await runtime._activate()
+        toolset = FileToolset(environment.files, file_scopes=environment)
+        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(environment=environment), capabilities={}))
+        outside = await toolset.ls(ctx, sibling.as_posix())
+        missing = await toolset.view(ctx, "spec/harness-ui/README.md")
+        assert outside["error"]["code"] == "environment_selection_invalid"
+        assert outside["error"]["details"]["reason"] == "path_outside_mounts"
+        assert "existence was not checked" in outside["error"]["details"]["hint"]
+        assert "Do not move files or worktrees" in outside["error"]["details"]["hint"]
+        assert missing["error"]["code"] == "environment_not_found"
+        assert missing["error"]["details"]["reason"] == "path_not_found"
+        assert "ls or glob" in missing["error"]["details"]["hint"]
+        assert "not an outside-mount" in missing["error"]["details"]["hint"]
+        with pytest.raises(EnvironmentError) as invalid_alias:
+            environment.resolve_path("README.md", alias="invented")
+        assert invalid_alias.value.details["reason"] == "mount_selection_unavailable"
+    assert not tuple(root.iterdir())
+    assert (sibling / "README.md").read_text() == "keep in place"
+
+
+def test_file_failure_hints_preserve_specific_diagnostics_without_raw_provider_details() -> None:
+    from a13n_harness.toolsets.files import _environment_error_result
+
+    result = _environment_error_result(
+        EnvironmentError(
+            "private OS exception text",
+            code="environment_not_found",
+            details={"hint": "Check the selected source.", "reason": "specific_lookup", "private": "secret"},
+        )
+    )
+    assert result == {
+        "ok": False,
+        "error": {
+            "code": "environment_not_found",
+            "details": {"hint": "Check the selected source.", "reason": "specific_lookup"},
+        },
+    }
 
 
 async def test_file_toolset_rechecks_authorization_between_compound_operations(tmp_path: Path) -> None:

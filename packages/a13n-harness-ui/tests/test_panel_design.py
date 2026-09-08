@@ -111,7 +111,7 @@ def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> N
         },
     )
     text = _text(renderer.transcript)
-    assert text == "shell_exec | failed | exit 1 | output partial | pytest -q"
+    assert text == "Run failed · exit 1 · output partial · pytest -q"
     assert "line-2" not in text and "line-19" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
@@ -223,12 +223,12 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         ("running", "running"),
         ("waiting", "waiting"),
         ("retry", "waiting"),
-        ("denied", "failed"),
+        ("denied", "muted"),
         ("completed", "completed"),
         ("exit 0", "completed"),
-        ("failed", "failed"),
-        ("timed out", "failed"),
-        ("cancelled", "failed"),
+        ("failed", "muted"),
+        ("timed out", "muted"),
+        ("cancelled", "muted"),
         ("returned", "muted"),
         ("status unavailable", "muted"),
     ],
@@ -254,6 +254,31 @@ def test_tool_rows_use_status_colors_without_bold_or_payload_markup(theme, kind,
         transcript.close()
 
 
+@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
+@pytest.mark.parametrize(
+    "preview",
+    [
+        "Run failed · exit 1 · python3 -u -c 'print(1)'",
+        "Run timed out · sleep 120",
+        "Call mkdir failed: permission denied",
+        "Read file.py denied: environment_denied",
+        "Explored 2 files\n  Read file.py failed: not found",
+    ],
+)
+def test_semantic_tool_failures_keep_text_without_error_emphasis(theme: str, preview: str) -> None:
+    transcript = Transcript()
+    transcript.theme = resolve_theme(theme)
+    block = transcript.append("Expanded details", kind="tool")
+    transcript.preview(block, preview, lines=len(preview.splitlines()))
+    try:
+        assert _text(transcript, 120) == preview
+        assert all(
+            "ansired" not in style and "bold" not in style.split() for row in transcript.rows for style, _ in row
+        )
+    finally:
+        transcript.close()
+
+
 @pytest.mark.parametrize(
     "result, state",
     [
@@ -268,12 +293,12 @@ def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_succ
     renderer = StreamRenderer(Status())
     try:
         renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "view"})
-        assert _text(renderer.transcript) == "view | running"
+        assert _text(renderer.transcript) == "Read path unavailable …"
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": '{"file_path":"file.py"}'})
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
         renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": result})
         text = _text(renderer.transcript)
-        assert text.startswith(f"view | {state} | file.py | ")
+        assert text.startswith("Read failed:") if state == "failed" else text == "Read file.py"
         assert "{" not in text and "output-marker" not in text
         assert len(renderer.transcript.blocks) == 1
         renderer.transcript.detailed = True
@@ -321,7 +346,7 @@ def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with
         )
         assert len(renderer.transcript.blocks) == 1
         text = _text(renderer.transcript)
-        assert text.startswith(f"{name} | {state}") and len(text.splitlines()) == 1
+        assert text.startswith(f"{'Run' if name == 'shell_exec' else 'Call'} {state}:") and len(text.splitlines()) == 1
         assert "{" not in text and "extra_forbidden" not in text and "native result/retry" not in text
         assert not renderer._tools and renderer.status.state == "working"
         renderer.transcript.detailed = True
@@ -369,7 +394,7 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
         assert renderer.status.state == "cancelling"
         text = _text(renderer.transcript)
         if mode == "detailed":
-            assert "task_create | retry | child" in text
+            assert "Call retry:" in text and " · child" in text
         else:
             assert "retry" not in text
         assert len(renderer.transcript.blocks) == (2 if mode == "detailed" else 1)

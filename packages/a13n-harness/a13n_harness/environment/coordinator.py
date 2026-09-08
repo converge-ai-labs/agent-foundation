@@ -622,6 +622,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 raise EnvironmentError(
                     "The absolute path is outside the available Environment mounts.",
                     code="environment_selection_invalid",
+                    details={
+                        "field": "path",
+                        "reason": "path_outside_mounts",
+                        "hint": (
+                            "Path is outside mounted roots; existence was not checked. Check the active Environment roots. "
+                            "If Shell access to this location is authorized, use Shell with cwd inside a mounted root. "
+                            "Do not move files or worktrees just to make file-tool routing succeed."
+                        ),
+                    },
                 )
             best_depth = max(item[0] for item in matches)
             selected_matches = [item for item in matches if item[0] == best_depth]
@@ -670,6 +679,14 @@ class CompositeBoundEnvironment(BoundEnvironment):
             raise EnvironmentError(
                 "The selected Environment mount is unavailable.",
                 code="environment_selection_invalid",
+                details={
+                    "field": "alias",
+                    "reason": "mount_selection_unavailable",
+                    "hint": (
+                        "Select an existing mount name from the active Environment context, not a process label. "
+                        "Omit alias to use the default mount when one is available."
+                    ),
+                },
             )
         return entered
 

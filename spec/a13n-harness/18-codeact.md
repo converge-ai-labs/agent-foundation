@@ -142,7 +142,7 @@ async def run_code(
 ) -> JsonValue: ...
 ```
 
-Inline source is strict Python text bounded by UTF-8 bytes. Successful calls may leave bindings for later `run_code` calls in the same logical Harness run. `restart=True` discards all prior inline state before evaluation.
+Inline source is strict Python text bounded by UTF-8 bytes. Successful calls may leave bindings for later `run_code` calls in the same logical Harness run. Native model-recovery attempts inside that run reuse the same CodeAct state without replaying completed nested calls; they do not create a new logical-run owner. Capability preparation validates that run scope, while execution hooks validate finalized capability identity. `restart=True` discards all prior inline state before evaluation.
 
 Any unsuccessful inline feed discards the entire inline session before control returns. Partial interpreter mutation does not survive a failed source feed. Inline interpreter state is never exported through `HarnessState`, copied into a child, restored into a new Harness run, retained across deferred resume, or treated as a crash/takeover checkpoint.
 

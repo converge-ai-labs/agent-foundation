@@ -28,6 +28,8 @@ from a13n_environment import (
     WebSocketEnvdProviderRuntime,
 )
 from a13n_environment.docker.provider import _open_docker_eip_session
+from a13n_environment.files import FileQueryRequest, FileTextSearchRequest
+from a13n_environment.models import EnvironmentError
 from pydantic import SecretStr
 from websockets.asyncio.server import serve
 
@@ -83,6 +85,8 @@ async def daemon(binary, tmp_path, transport, address):
                             "open_reader",
                             "open_writer",
                             "list",
+                            "find",
+                            "search",
                             "command_cwd",
                         ],
                     }
@@ -193,6 +197,23 @@ async def exercise(environment):
     assert files is not None
     await files.write_text("/text.txt", "remote envd\n", mode="create")
     assert (await files.read_text("/text.txt")).text == "remote envd\n"
+    query = await files.query(FileQueryRequest(root="/", pattern="*.{txt,py}", max_results=10))
+    assert [entry.path for entry in query.entries] == ["/text.txt"]
+    search = await files.search_text(
+        FileTextSearchRequest(root="/", pattern="REMOTE", case_sensitive=False, include="*.{txt,py}", max_matches=10)
+    )
+    assert [match.text for match in search.matches] == ["remote envd"]
+    for arguments, field, reason in [
+        ({"pattern": "(", "regex": True}, "pattern", "invalid_regex"),
+        ({"pattern": "ok", "include": "{broken}"}, "include", "invalid_glob"),
+        ({"pattern": ""}, "pattern", "empty_pattern"),
+    ]:
+        with pytest.raises(EnvironmentError) as error:
+            await files.search_text(FileTextSearchRequest(root="/", max_matches=10, **arguments))
+        assert error.value.code == "environment_request_invalid"
+        assert error.value.details["field"] == field
+        assert error.value.details["reason"] == reason
+        assert error.value.details["hint"]
     payload = bytes(range(256)) * 100
 
     async def chunks():

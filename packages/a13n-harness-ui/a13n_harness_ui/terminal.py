@@ -32,4 +32,9 @@ def start(request: CliRequest) -> None:
     except KeyboardInterrupt:
         raise click.exceptions.Exit(130) from None
     except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
+        from a13n_harness_ui.diagnostics import exception_feedback, terminal_traceback
+
+        # asyncio.run has unwound the App and terminal contexts before stderr is used.
+        click.echo(terminal_traceback(exc), err=True)
+        click.echo(exception_feedback(exc, thread_id=request.thread_id, phase="terminal_startup"), err=True)
+        raise click.exceptions.Exit(1) from exc

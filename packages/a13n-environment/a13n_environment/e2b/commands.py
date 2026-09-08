@@ -32,6 +32,12 @@ class GuestCommands:
         self._sources = {
             name: files(__package__).joinpath("guest", f"{name}.py").read_text() for name in ("files", "ports")
         }
+        for module, names in (
+            ("_file_patterns", "PathPattern, PatternError, content_pattern"),
+            ("_file_search", "search_text_file"),
+        ):
+            source = files("a13n_environment").joinpath(f"{module}.py").read_text()
+            self._sources["files"] = self._sources["files"].replace(f"from ...{module} import {names}", source)
 
     def command(self, module: Literal["files", "ports"], arguments: dict[str, JsonValue]) -> str:
         if self.closed:
@@ -64,7 +70,17 @@ class GuestCommands:
             ) from None
         error = value.get("error")
         if isinstance(error, str):
-            raise EnvironmentError("E2B operation failed.", code=error)
+            details = value.get("details")
+            safe_details = (
+                {
+                    key: item
+                    for key, item in details.items()
+                    if key in {"field", "reason", "hint"} and isinstance(item, str)
+                }
+                if isinstance(details, dict)
+                else {}
+            )
+            raise EnvironmentError("E2B operation failed.", code=error, details=safe_details)
         return value
 
     async def files(

@@ -81,10 +81,19 @@ jobs:
       - name: Test a13n Environment
         run: uv run --locked python -m pytest packages/a13n-environment/tests
 
-      - name: Build sandbox image
-        if: matrix.name == 'Linux'
-        run: make image-sandbox
-
       - name: Build a13n Environment distribution
         if: matrix.name == 'Linux'
         run: uv build --package a13n-environment --out-dir dist/provider
+
+  sandbox-image:
+    name: Build sandbox image
+    needs: provider
+    runs-on: ubuntu-24.04-8core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build sandbox image
+        run: make image-sandbox

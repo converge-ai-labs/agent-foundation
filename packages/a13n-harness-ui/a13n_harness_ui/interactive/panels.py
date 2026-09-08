@@ -53,27 +53,16 @@ def capability_panel(
                 "warning",
             )
         return None
-    if name in {"a13n.context.compaction_summary", "a13n.context.handoff_summary"}:
-        summary = event.get("summary")
-        if not isinstance(summary, str):
-            return None
-        compact = name == "a13n.context.compaction_summary"
-        title = "Compact summary" if compact else "Summary · prepared"
-        files = event.get("files")
-        if isinstance(files, list) and files:
-            summary += "\n\nFiles to inspect:\n" + "\n".join(str(path) for path in files)
-        return CapabilityPanel(title, summary, "compact" if compact else "summary")
     if name == "a13n.filesystem.edit_applied":
         before, after, path = event.get("before"), event.get("after"), event.get("file_path")
         if not isinstance(before, str) or not isinstance(after, str) or not isinstance(path, str):
             return None
         path = display_path(path, directory)
-        if len(before) + len(after) > 128 * 1024 or before.count("\n") + after.count("\n") > 2000:
+        if len(before) + len(after) > 512 * 1024 or before.count("\n") + after.count("\n") > 10_000:
             return CapabilityPanel(
-                f"Edit · {path} · applied",
-                "Unified diff omitted: comparison budget exceeded. Actual before/after text follows.\n"
-                + f"Before:\n{before}\nAfter:\n{after}",
-                "edit",
+                f"Modified: {path} · diff preview omitted (size limit)",
+                json.dumps(dict(event), ensure_ascii=False, indent=2),
+                "tool",
             )
         lines = difflib.unified_diff(
             before.splitlines(keepends=True), after.splitlines(keepends=True), fromfile=path, tofile=path
@@ -169,7 +158,7 @@ def tool_result(name: str, text: str) -> str:
     return f"{state}\n{text}"
 
 
-def shell_result_preview(text: str, command: str) -> str:
+def shell_result_preview(text: str, command: str, *, separator: str = " | ") -> str:
     """Summarize native status only; captured output belongs in expanded details."""
     try:
         value = json.loads(text)
@@ -208,4 +197,4 @@ def shell_result_preview(text: str, command: str) -> str:
     if value.get("disclosure"):
         state.append("output disclosure")
     title = " ".join(command.split())[:500] or "command unavailable"
-    return " | ".join((*state, title))
+    return separator.join((*state, title))

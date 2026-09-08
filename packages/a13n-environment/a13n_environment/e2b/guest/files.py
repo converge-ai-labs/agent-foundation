@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import base64
-import fnmatch
-import io
 import json
 import os
 import re
@@ -14,6 +12,10 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from ..._file_patterns import PathPattern, PatternError, content_pattern
+from ..._file_search import search_text_file
 
 
 def resolve(root: Path, value: str, *, follow: bool = True) -> Path:
@@ -43,9 +45,10 @@ def metadata(root: Path, path: Path, read_only: bool) -> dict:
 
 def entries(root: Path, path: Path, request: dict, ceiling: int):
     count = 0
-    pending = [path]
-    while pending:
-        directory = pending.pop()
+    git_prefix: list[str] = []
+
+    def walk(directory: Path):
+        nonlocal count
         with os.scandir(directory) as scan:
             children = []
             for entry in scan:
@@ -55,98 +58,129 @@ def entries(root: Path, path: Path, request: dict, ceiling: int):
                 if not request.get("include_hidden", False) and entry.name.startswith("."):
                     continue
                 children.append(Path(entry.path))
-        yield from sorted(children)
-        if request.get("recursive", False):
-            pending.extend(child for child in reversed(sorted(children)) if child.is_dir() and not child.is_symlink())
-
-
-def query(root: Path, path: Path, request: dict, config: dict) -> dict:
-    results = []
-    for child in entries(root, path, request, config["max_query_entries"]):
-        relative = child.relative_to(path).as_posix()
-        pattern = request["pattern"]
-        if not (
-            fnmatch.fnmatchcase(relative, pattern)
-            or (pattern.startswith("**/") and fnmatch.fnmatchcase(relative, pattern[3:]))
-        ):
-            continue
-        if request.get("ignore_mode") == "git":
+        children.sort()
+        ignored = set()
+        if request.get("ignore_mode") == "git" and children:
             result = subprocess.run(
-                ["git", "check-ignore", "-q", "--", str(child)],
-                cwd=path,
+                [*git_prefix, "check-ignore", "--no-index", "--stdin", "-z"],
+                input=b"".join(os.fsencode(child) + b"\0" for child in children),
+                cwd=directory,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            if result.returncode not in (0, 1, 128):
+                raise ValueError("git ignore check failed")
+            ignored = set(result.stdout.split(b"\0")) if result.returncode == 0 else set()
+        actions = []
+        for child in children:
+            if os.fsencode(child) in ignored or (request.get("ignore_mode") == "git" and child.name == ".git"):
+                continue
+            actions.append((child.name, child, False))
+            if request.get("recursive", False) and child.is_dir() and not child.is_symlink():
+                actions.append((child.name + "/", child, True))
+        for _, child, descend in sorted(actions):
+            if descend:
+                yield from walk(child)
+            else:
+                yield child
+
+    if request.get("ignore_mode") == "git":
+        # An isolated Git directory reads only the mount's nested .gitignore files,
+        # including outside a repository; no index, global excludes, or target writes.
+        with TemporaryDirectory(prefix="a13n-ignore-") as git_directory:
+            subprocess.run(
+                ["git", "init", "--bare", "--quiet", git_directory],
+                check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=5,
             )
-            if result.returncode == 0:
-                continue
-            if result.returncode not in (1, 128):
-                raise ValueError("git ignore check failed")
+            git_prefix = [
+                "git",
+                "--git-dir",
+                git_directory,
+                "--work-tree",
+                str(root),
+                "-c",
+                "core.excludesFile=/dev/null",
+            ]
+            yield from walk(path)
+    else:
+        yield from walk(path)
+
+
+def query(root: Path, path: Path, request: dict, config: dict) -> dict:
+    matcher = PathPattern(request["pattern"])
+    results = []
+    offset, limit = request.get("offset", 0), request["max_results"]
+    seen = 0
+    for child in entries(root, path, request, config["max_query_entries"]):
+        if not matcher.matches(child.relative_to(path).as_posix()):
+            continue
         item = metadata(root, child, config["read_only"])
         if request.get("kinds") and item["kind"] not in request["kinds"]:
             continue
+        if seen < offset:
+            seen += 1
+            continue
+        if len(results) == limit:
+            return {"entries": results, "offset": offset, "has_more": True}
         results.append(item)
-    offset, limit = request.get("offset", 0), request["max_results"]
-    return {"entries": results[offset : offset + limit], "offset": offset, "has_more": len(results) > offset + limit}
+    return {"entries": results, "offset": offset, "has_more": False}
 
 
 def search(root: Path, path: Path, request: dict, config: dict) -> dict:
-    candidates = query(
-        root,
-        path,
-        {
-            "pattern": request["include"],
-            "recursive": True,
-            "include_hidden": request["include_hidden"],
-            "ignore_mode": request["ignore_mode"],
-            "kinds": ["file"],
-            "max_results": config["max_query_entries"],
-        },
-        config,
-    )["entries"]
-    flags = 0 if request["case_sensitive"] else re.IGNORECASE
-    pattern = re.compile(request["pattern"] if request["regex"] else re.escape(request["pattern"]), flags)
+    include = PathPattern(request["include"], "include")
+    pattern = content_pattern(request["pattern"], request["regex"], request["case_sensitive"])
     matches = []
     result_bytes = 0
+    seen = files_scanned = 0
     offset, maximum = request["offset"], request["max_matches"]
-    for item in candidates[: request["max_files"]]:
-        candidate = resolve(root, item["path"])
-        limit = min(request["max_file_bytes"], config["max_file_bytes"])
-        with candidate.open("rb") as file:
-            content = file.read(limit + 1)
-        if len(content) > limit or b"\x00" in content:
+    for candidate in entries(root, path, {**request, "recursive": True}, config["max_query_entries"]):
+        if not include.matches(candidate.relative_to(path).as_posix()):
             continue
+        item = metadata(root, candidate, config["read_only"])
+        if item["kind"] != "file" or item["size"] > request["max_file_bytes"]:
+            continue
+        if request["max_files"] is not None and files_scanned >= request["max_files"]:
+            raise OverflowError("eligible file limit")
+        files_scanned += 1
         try:
-            lines = list(io.StringIO(content.decode("utf-8"), newline="\n"))
-        except UnicodeDecodeError:
-            continue
-        count = 0
-        for number, line in enumerate(lines):
-            if not pattern.search(line):
-                continue
-            if request["max_matches_per_file"] is not None and count >= request["max_matches_per_file"]:
-                break
-            count += 1
-            width = request["max_line_length"]
-            start = max(0, number - request["context_lines"])
-            end = number + request["context_lines"] + 1
-            text = line.rstrip("\r\n")
-            matches.append(
-                {
-                    "path": item["path"],
-                    "line": number + 1,
-                    "text": text[:width],
-                    "text_truncated": len(text) > width,
-                    "context": "".join(part[:width] for part in lines[start:end]),
-                    "context_start_line": start + 1,
-                }
+            scanned = search_text_file(
+                candidate,
+                request["pattern"],
+                pattern,
+                request["case_sensitive"],
+                max(offset - seen, 0),
+                maximum - len(matches) + 1,
+                request["max_matches_per_file"],
+                request["context_lines"],
+                request["max_line_length"],
+                min(request["max_file_bytes"], config["max_file_bytes"]),
             )
-            result_bytes += len(json.dumps(matches[-1], separators=(",", ":")).encode())
+        except OSError:
+            continue
+        if scanned is None:
+            continue
+        selected, count = scanned
+        seen += count
+        for line, text, truncated, context, start in selected:
+            if len(matches) == maximum:
+                return {"matches": matches, "offset": offset, "has_more": True}
+            match = {
+                "path": item["path"],
+                "line": line,
+                "text": text,
+                "text_truncated": truncated,
+                "context": context,
+                "context_start_line": start,
+            }
+            result_bytes += len(json.dumps(match, separators=(",", ":")).encode())
             if result_bytes > config["max_file_bytes"]:
                 raise OverflowError("search result exceeds configured limit")
-            if len(matches) > offset + maximum:
-                return {"matches": matches[offset : offset + maximum], "offset": offset, "has_more": True}
-    return {"matches": matches[offset : offset + maximum], "offset": offset, "has_more": False}
+            matches.append(match)
+    return {"matches": matches, "offset": offset, "has_more": False}
 
 
 def execute(request: dict) -> dict:
@@ -236,6 +270,8 @@ def main() -> None:
         result = {"error": "environment_conflict"}
     except OverflowError:
         result = {"error": "environment_too_large"}
+    except PatternError as exc:
+        result = {"error": "environment_request_invalid", "details": exc.details}
     except (ValueError, NotADirectoryError, IsADirectoryError, re.error):
         result = {"error": "environment_request_invalid"}
     except OSError:

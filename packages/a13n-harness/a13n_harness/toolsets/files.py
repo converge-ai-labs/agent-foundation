@@ -890,7 +890,7 @@ class FileToolset:
     async def grep(
         self,
         ctx: RunContext[AgentContext],
-        pattern: Annotated[str, Field(description="Regular expression to search for")],
+        pattern: Annotated[str, Field(description="Text to search for; regex by default, literal when regex=false")],
         root: Annotated[str, Field(default=".", description="Logical root to search from")] = ".",
         include: Annotated[str, Field(default="**/*", description="Glob selecting files to include")] = "**/*",
         include_ignored: Annotated[
@@ -898,6 +898,12 @@ class FileToolset:
             Field(default=False, description="If true, do not interpret repository ignore files"),
         ] = False,
         include_hidden: Annotated[bool, Field(default=False)] = False,
+        regex: Annotated[
+            bool, Field(default=True, description="Use regular expressions; false searches literal text")
+        ] = True,
+        case_sensitive: Annotated[
+            bool, Field(default=True, description="Match case exactly; false ignores case")
+        ] = True,
         context_lines: Annotated[int, Field(default=2, ge=0, le=20)] = 2,
         offset: Annotated[int, Field(default=0, ge=0)] = 0,
         max_results: _UnlimitedOrPositiveResults = 100,
@@ -909,8 +915,8 @@ class FileToolset:
         request = FileTextSearchRequest(
             root=root,
             pattern=pattern,
-            regex=True,
-            case_sensitive=True,
+            regex=regex,
+            case_sensitive=case_sensitive,
             include=include,
             include_hidden=include_hidden,
             ignore_mode="none" if include_ignored else "git",
@@ -1386,6 +1392,18 @@ def _environment_error_result(exc: EnvironmentError) -> ToolFailure:
         value = exc.details.get(key)
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
             safe_details[key] = value
+    for key in ("field", "reason", "hint"):
+        value = exc.details.get(key)
+        if isinstance(value, str):
+            safe_details[key] = value
+    if exc.code == "environment_not_found":
+        safe_details.setdefault("reason", "path_not_found")
+        safe_details.setdefault(
+            "hint",
+            "File or directory was not found in the selected mount. Verify the path and use ls or glob on an "
+            "existing parent to locate it; do not assume a guessed repository path is correct. "
+            "This is not an outside-mount routing error.",
+        )
     error = ToolError(code=exc.code, details=safe_details)
     if exc.retry_hint is not None:
         error["retry_hint"] = exc.retry_hint

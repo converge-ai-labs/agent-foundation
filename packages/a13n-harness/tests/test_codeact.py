@@ -108,6 +108,50 @@ def _local_environment(root: Path):
     )
 
 
+async def test_codeact_preserves_run_state_across_native_model_recovery() -> None:
+    from a13n_harness import ModelRecoveryPolicy
+
+    calls: list[int] = []
+    requests = 0
+    final_value = None
+
+    def double(value: int) -> int:
+        calls.append(value)
+        return value * 2
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests, final_value
+        requests += 1
+        assert "run_code" in {tool.name for tool in info.function_tools}
+        if requests == 1:
+            code = "saved = await double(value=21)\nsaved"
+        elif requests == 2:
+            yield "partial answer"
+            raise RuntimeError("stream disconnected")
+        elif requests == 3:
+            code = "saved + 1"
+        else:
+            final_value = _tool_returns(messages, "run_code")[-1].content
+            yield "recovered"
+            return
+        yield {0: DeltaToolCall(name="run_code", json_args=json.dumps({"code": code}), tool_call_id=f"code-{requests}")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(), _codeact_tools(double, allowed=("double",))),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
+        ),
+    )
+    result = await executable.run("start", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "recovered"
+    assert requests == 4
+    assert calls == [21]
+    assert final_value == 43
+
+
 async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> None:
     calls: list[int] = []
     descriptions: list[str] = []

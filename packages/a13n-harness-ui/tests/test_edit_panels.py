@@ -44,16 +44,55 @@ def test_disjoint_edit_hunks_keep_context_and_a_separator_without_coordinates() 
     )
 
 
-def test_edit_over_comparison_budget_labels_actual_text_without_repeating_path() -> None:
-    before = "original\n" * 2001
-    after = before + "last"
-    panel = capability_panel("a13n.filesystem.edit_applied", {"file_path": "file.py", "before": before, "after": after})
-    assert panel is not None
-    assert panel.title == "Edit · file.py · applied"
-    assert panel.body == (
-        "Unified diff omitted: comparison budget exceeded. Actual before/after text follows.\n"
-        f"Before:\n{before}\nAfter:\n{after}"
+@pytest.mark.parametrize("before", ["original\n" * 2001, "x" * 140_000], ids=["many-lines", "long-line"])
+def test_edit_within_expanded_comparison_budget_still_renders_diff(before: str) -> None:
+    panel = capability_panel(
+        "a13n.filesystem.edit_applied", {"file_path": "file.py", "before": before, "after": before + "last"}
     )
+    assert panel is not None and panel.kind == "edit"
+    assert "last" in panel.body
+    assert "omitted" not in panel.title
+
+
+@pytest.mark.parametrize(
+    "before", ["original\n" * 5001, "x" * (256 * 1024 + 1)], ids=["too-many-lines", "too-many-characters"]
+)
+def test_edit_over_comparison_budget_returns_a_plain_fact_with_raw_details(before: str) -> None:
+    event = {"file_path": "file.py", "before": before, "after": before + "last"}
+    panel = capability_panel("a13n.filesystem.edit_applied", event)
+    assert panel is not None
+    assert panel.kind == "tool"
+    assert panel.title == "Modified: file.py · diff preview omitted (size limit)"
+    assert json.loads(panel.body) == event
+
+
+def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_details() -> None:
+    renderer = StreamRenderer(Status())
+    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "large", "tool_call_name": "edit"})
+    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "large", "delta": '{"file_path":"file.py"}'})
+    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "large"})
+    before = "x\n" * 6000
+    renderer.ingest(
+        "CUSTOM",
+        {
+            "name": "a13n.filesystem.edit_applied",
+            "value": {
+                "event": {"tool_call_id": "large", "file_path": "file.py", "before": before, "after": before + "last"}
+            },
+        },
+    )
+    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "large", "content": '{"ok":true}'})
+    try:
+        renderer.transcript.render(100)
+        text = "\n".join("".join(text for _, text in row).rstrip() for row in renderer.transcript.rows)
+        assert text == "Modified: file.py · diff preview omitted (size limit)"
+        assert len(renderer.transcript.blocks) == 1
+        block = next(iter(renderer.transcript.blocks.values()))
+        assert block.kind == "tool" and "Tool result · large" in block.source
+        assert '"before":' in block.source and '"after":' in block.source
+        assert "Actual before/after" not in block.source
+    finally:
+        renderer.transcript.close()
 
 
 @pytest.mark.parametrize("detailed", [False, True])

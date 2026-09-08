@@ -50,6 +50,64 @@ def test_report_captures_cleanup_causes_and_notes_without_syntax_source(tmp_path
     assert "private_source_line" not in content
 
 
+def test_terminal_traceback_expands_groups_and_causes_without_private_values() -> None:
+    from a13n_harness_ui.diagnostics import terminal_traceback
+    from a13n_harness_ui.errors import ConfigurationError
+
+    try:
+        try:
+            raise ValueError("private provider detail")
+        except ValueError as cause:
+            raise ConfigurationError("Configuration is incompatible.", code="configuration_invalid") from cause
+    except ConfigurationError as error:
+        rendered = terminal_traceback(ExceptionGroup("startup failed", [error]))
+    assert "ExceptionGroup: 1 nested exception(s)" in rendered
+    assert "ConfigurationError [configuration_invalid]: Configuration is incompatible." in rendered
+    assert "ValueError: details in the diagnostic report" in rendered
+    assert "in test_terminal_traceback_expands_groups" in rendered
+    assert "private provider detail" not in rendered
+    assert "raise ValueError" not in rendered
+
+
+def test_resume_startup_prints_nested_traceback_after_terminal_cleanup(tmp_path: Path, monkeypatch, capsys) -> None:
+    import asyncio
+
+    import click
+    from a13n_harness_ui import terminal
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.errors import ConfigurationError
+    from a13n_harness_ui.interactive import startup
+
+    cleaned = []
+
+    async def fail_startup(request):
+        assert request.thread_id == "thread-resume"
+        try:
+            async with asyncio.TaskGroup():
+                raise ConfigurationError("Cannot restore the selected session.", code="resume_invalid")
+        finally:
+            cleaned.append(True)
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    monkeypatch.setattr(terminal.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(terminal.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(startup, "run_terminal", fail_startup)
+    with pytest.raises(click.exceptions.Exit) as failed:
+        terminal.start(CliRequest(thread_id="thread-resume"))
+    assert failed.value.exit_code == 1
+    assert cleaned == [True]
+    output = capsys.readouterr()
+    assert not output.out
+    assert "Traceback" in output.err
+    assert "ExceptionGroup: 1 nested exception(s)" in output.err
+    assert "ConfigurationError [resume_invalid]: Cannot restore the selected session." in output.err
+    assert "in fail_startup" in output.err
+    assert "Diagnostic report:" in output.err
+    report = json.loads(next(tmp_path.glob("a13n-harness-ui-error-*.json")).read_text())
+    assert report["phase"] == "terminal_startup"
+    assert report["session_id"] == "thread-resume"
+
+
 def test_report_write_failure_still_provides_feedback(monkeypatch) -> None:
     def fail_write(**kwargs):
         raise OSError("disk unavailable")

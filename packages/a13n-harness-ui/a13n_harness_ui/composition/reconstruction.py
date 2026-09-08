@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,11 +29,14 @@ from a13n_harness.model_context import (
 )
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
 from a13n_harness.pricing import PricingCatalog
+from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
+from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
+from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
@@ -115,6 +118,41 @@ class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
         return {name: tool for name, tool in tools.items() if name in self._names}
 
 
+class _NativeDefaultToolsCapability(AbstractCapability[AgentContext]):
+    """Let Harness resolve Shell supersession for the UI's native default surface."""
+
+    id = "a13n.ui.native-default-tools"
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(position="innermost")
+
+    def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
+        return _NativeDefaultToolsToolset(toolset)
+
+
+class _NativeDefaultToolsToolset(WrapperToolset[AgentContext]):
+    async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        tools = await self.wrapped.get_tools(ctx)
+        mutations = {"filesystem.mkdir", "filesystem.remove", "filesystem.copy", "filesystem.move"}
+        result = {}
+        for name, tool in tools.items():
+            values = tool.tool_def.metadata or {}
+            raw = values.get(HARNESS_TOOL_METADATA_KEY)
+            if raw is not None:
+                metadata = normalize_harness_tool_metadata(raw)
+                if metadata.tool_id in mutations:
+                    metadata = replace(
+                        metadata,
+                        superseded_by_tool_ids=metadata.superseded_by_tool_ids | {"environment.shell_exec"},
+                    )
+                    tool = replace(
+                        tool,
+                        tool_def=replace(tool.tool_def, metadata={**values, HARNESS_TOOL_METADATA_KEY: metadata}),
+                    )
+            result[name] = tool
+        return result
+
+
 class AgentReconstructor:
     """Build a fresh native Agent graph without resolving credentials or entering Environments."""
 
@@ -169,6 +207,11 @@ class AgentReconstructor:
                 root=True,
                 path_layout=path_layout,
                 model_recipes=model_recipes,
+                native_default_tools=(
+                    environment_profile.profile_id == FULL_CONTROL_PROFILE.profile_id
+                    and environment_profile.provider_key == FULL_CONTROL_PROFILE.provider_key
+                    and environment_profile.adapter_key == FULL_CONTROL_PROFILE.adapter_key
+                ),
             )
             executable = HarnessBuilder(configured_plugins_enabled=False).build(
                 definition, pricing_catalog=pricing_catalog
@@ -200,6 +243,7 @@ class AgentReconstructor:
         root: bool,
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
+        native_default_tools: bool,
     ) -> AgentDefinition[str]:
         recipe_id = model_recipe_id(node.model)
         previous = model_recipes.setdefault(recipe_id, node.model)
@@ -238,6 +282,8 @@ class AgentReconstructor:
             capabilities.append(SubagentCapability(async_enabled=True, operator=subagent_operator))
         if node.tools is not None:
             capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools)))
+        elif native_default_tools:
+            capabilities.append(_NativeDefaultToolsCapability())
         if root:
             capabilities.extend(root_capabilities)
 
@@ -266,6 +312,7 @@ class AgentReconstructor:
                     root=False,
                     path_layout=path_layout,
                     model_recipes=model_recipes,
+                    native_default_tools=native_default_tools,
                 ),
             )
             for item in node.children
