@@ -513,7 +513,7 @@ class HostedAguiService:
         except HostedAguiReplayError:
             gap = {
                 "type": "CUSTOM",
-                "name": "a13n.foundation.replay_gap",
+                "name": "a13n.service.replay_gap",
                 "value": {"schema_version": "1", "run_id": binding.external_run_id},
             }
             if attachment.after_ordinal < 0:
@@ -561,7 +561,7 @@ class HostedAguiService:
                 if retained is None:
                     gap = {
                         "type": "CUSTOM",
-                        "name": "a13n.foundation.replay_gap",
+                        "name": "a13n.service.replay_gap",
                         "value": {"schema_version": "1", "run_id": binding.external_run_id},
                     }
                     if ordinal > attachment.after_ordinal:
@@ -1436,7 +1436,7 @@ def _terminal_event(binding: HostedAguiBinding, run: RunRecord) -> dict[str, Any
         return _standard_event(
             {
                 "type": "CUSTOM",
-                "name": "a13n.foundation.run_status",
+                "name": "a13n.service.run_status",
                 "value": {
                     "schema_version": "1",
                     "status": "waiting",

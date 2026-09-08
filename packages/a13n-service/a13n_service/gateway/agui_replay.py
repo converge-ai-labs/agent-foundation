@@ -63,7 +63,11 @@ class HostedAguiReplaySnapshot(_StrictModel):
             raise ValueError("Hosted AG-UI replay must begin with RUN_STARTED")
         terminal = self.events[-1].event
         terminal_type = terminal.get("type")
-        waiting = terminal_type == "CUSTOM" and terminal.get("name") == "a13n.foundation.run_status"
+        # Retained snapshots preserve their original event names and canonical bytes.
+        waiting = terminal_type == "CUSTOM" and terminal.get("name") in {
+            "a13n.service.run_status",
+            "a13n.foundation.run_status",
+        }
         if terminal_type not in {"RUN_FINISHED", "RUN_ERROR"} and not waiting:
             raise ValueError("Hosted AG-UI replay must end at a sealed delivery boundary")
         return self

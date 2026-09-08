@@ -14,7 +14,8 @@ from a13n_service.storage.object_store import LocalObjectStore
 
 
 @pytest.mark.anyio
-async def test_reads_existing_version_one_replay_without_rewriting(tmp_path) -> None:
+@pytest.mark.parametrize("terminal_name", [None, "a13n.foundation.run_status", "a13n.service.run_status"])
+async def test_reads_existing_version_one_replay_without_rewriting(tmp_path, terminal_name: str | None) -> None:
     # This is the persisted version-one representation, independent of the current model.
     body = json.dumps(
         {
@@ -36,11 +37,11 @@ async def test_reads_existing_version_one_replay_without_rewriting(tmp_path) -> 
                 },
                 {
                     "ordinal": 1,
-                    "event": {
-                        "type": "RUN_FINISHED",
-                        "threadId": "external-thread",
-                        "runId": "external-run",
-                    },
+                    "event": (
+                        {"type": "CUSTOM", "name": terminal_name, "value": {"schema_version": "1", "status": "waiting"}}
+                        if terminal_name is not None
+                        else {"type": "RUN_FINISHED", "threadId": "external-thread", "runId": "external-run"}
+                    ),
                 },
             ],
         },
