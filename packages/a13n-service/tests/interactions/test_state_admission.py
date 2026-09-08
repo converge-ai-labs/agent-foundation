@@ -254,8 +254,12 @@ async def test_authority_loss_cancels_initial_read_without_stale_failure(
         finally:
             read_stopped.set()
 
+    heartbeat = execution.heartbeat
+
     async def lost(*args, **kwargs):
-        await read_started.wait()
+        # Renewal holds the authority lock that state admission needs before reading.
+        if not read_started.is_set():
+            return await heartbeat(*args, **kwargs)
         raise AttemptAuthorityError("takeover won")
 
     monkeypatch.setattr(states, "read_run", stalled)
