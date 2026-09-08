@@ -39,6 +39,13 @@ def semantic_tool_row(name: str, arguments: str, directory: Path | None = None) 
         return f"{'Find' if name == 'glob' else 'Search'} {string('pattern')} in {string('root', '.')}", None
     if name.startswith("shell"):
         return f"Run {string('command', 'command unavailable')}", None
+    raw_paths = value.get("paths")
+    if name == "mkdir" and isinstance(raw_paths, list):
+        paths = [path for path in raw_paths if isinstance(path, str)]
+        targets = ", ".join(" ".join(display_path(path, directory).split()) for path in paths[:3])
+        if len(paths) > 3:
+            targets += f" (+{len(paths) - 3} more)"
+        return "Call mkdir" + (f" {targets}" if targets else ""), None
     target = string("file_path") or string("key")
     if name == "note_get" and not target:
         target = "all notes"

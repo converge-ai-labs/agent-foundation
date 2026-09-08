@@ -177,6 +177,23 @@ async def test_hidden_nested_ignore_and_unignore(tmp_path, search_files, reposit
     assert [match["path"] for match in result["matches"]] == ["/.hidden.py", "/src/a.py", "/src/keep.tmp"]
 
 
+def test_guest_embedded_source_compiles_with_posix_configuration():
+    configuration = E2BProviderConfiguration(root="/workspace", python="/usr/bin/python3")
+    commands = GuestCommands(None, configuration)
+    arguments = {
+        "configuration": configuration.model_dump(mode="json"),
+        "action": "query",
+        "arguments": {"path": "/", "pattern": "*.{py,rs}", "max_results": 1},
+    }
+    argv = shlex.split(commands.command("files", arguments))
+    assert argv[:3] == ["/usr/bin/python3", "-I", "-c"]
+    assert json.loads(argv[4]) == arguments
+    assert "class PathPattern" in argv[3] and "def search_text_file" in argv[3]
+    assert "from ..._file_" not in argv[3]
+    compile(argv[3], "<e2b-files-guest>", "exec")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Embedded E2B commands execute in a POSIX guest")
 def test_guest_embedded_source_executes_and_returns_diagnostics(tmp_path):
     configuration = E2BProviderConfiguration(root=str(tmp_path), python=sys.executable)
     commands = GuestCommands(None, configuration)

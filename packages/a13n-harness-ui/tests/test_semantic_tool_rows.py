@@ -51,6 +51,8 @@ def custom(renderer, name, event, **kwargs):
         ("glob", {"pattern": "*.{py,rs}", "root": "src"}, "Find *.{py,rs} in src"),
         ("grep", {"pattern": "foo|bar", "root": "src"}, "Search foo|bar in src"),
         ("ls", {"path": "src"}, "List src"),
+        ("mkdir", {"paths": ["src/generated"]}, "Call mkdir src/generated"),
+        ("mkdir", {"paths": ["src", "tests"]}, "Call mkdir src, tests"),
         ("unknown", {"input": "value"}, "Call unknown"),
     ],
 )
@@ -283,3 +285,19 @@ def test_context_validation_failure_without_lifecycle_remains_visible(renderer):
     )
     assert "retry:" in render(renderer)
     assert "content must not be empty" in render(renderer, detailed=True)
+
+
+def test_mkdir_preview_shortens_paths_and_discloses_omitted_targets(renderer, tmp_path):
+    renderer.status.directory = tmp_path
+    paths = [str(tmp_path / name) for name in ("first", "second", "third", "fourth")]
+    call(renderer, "mkdir", {"paths": paths}, result={"ok": True})
+    assert render(renderer) == "Call mkdir first, second, third (+1 more)"
+    details = render(renderer, detailed=True, width=4096)
+    assert all(json.dumps(path) in details for path in paths)
+
+
+def test_mkdir_failure_keeps_target_and_does_not_claim_creation(renderer):
+    call(renderer, "mkdir", {"paths": ["target"]}, result={"ok": False, "error": {"code": "environment_denied"}})
+    visible = render(renderer)
+    assert "environment_denied" in visible and "Call mkdir target" in visible
+    assert "created" not in visible
