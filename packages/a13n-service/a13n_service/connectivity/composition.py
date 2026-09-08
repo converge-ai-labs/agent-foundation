@@ -15,6 +15,8 @@ AdapterT = TypeVar("AdapterT")
 class AdapterResolver[AdapterT](Protocol):
     def create(self, key: str, *, config_version: str) -> AdapterT: ...
 
+    def versions(self) -> tuple[tuple[str, str], ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class AdapterDefinition[AdapterT]:
@@ -51,6 +53,13 @@ class AdapterRegistry[AdapterT]:
         if config_version not in definition.config_versions:
             raise ValueError(f"adapter configuration version is not registered: {key}@{config_version}")
         return definition.factory()
+
+    def versions(self) -> tuple[tuple[str, str], ...]:
+        return tuple(
+            (key, version)
+            for key, definition in sorted(self._definitions.items())
+            for version in sorted(definition.config_versions)
+        )
 
     def keys(self) -> tuple[str, ...]:
         return tuple(sorted(self._definitions))

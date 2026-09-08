@@ -37,6 +37,7 @@ from a13n_service.temporal import Clock, utc_now
 from .domain import (
     Account,
     AccountCollection,
+    AccountProviderDefinitionCollection,
     AccountStatus,
     CreateAccountRequest,
     ReplaceAccountCredentialsRequest,
@@ -65,6 +66,18 @@ class AccountService:
         self._clock = clock
         self._batch_max_events = batch_max_events
         self._batch_max_interval_ms = round(batch_max_wait_seconds * 1000)
+
+    async def provider_types(
+        self, *, actor: AuthenticatedActor, workspace_id: str
+    ) -> AccountProviderDefinitionCollection:
+        async with transaction(self._sessions) as session:
+            await authorize(session, actor, workspace_id, WorkspaceAction.application_account_read)
+        return AccountProviderDefinitionCollection(
+            items=tuple(
+                require_adapter(self._adapters, key, version).describe_account(config_version=version)
+                for key, version in self._adapters.versions()
+            )
+        )
 
     async def create_account(
         self,

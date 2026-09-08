@@ -17,6 +17,7 @@ from .domain import (
     Account,
     AccountCollection,
     AccountCommandRequest,
+    AccountProviderDefinitionCollection,
     AccountStatus,
     CreateAccountRequest,
     ReplaceAccountCredentialsRequest,
@@ -39,6 +40,16 @@ def _service(request: Request) -> AccountService:
 
 def _set_etag(response: Response, resource: Account) -> None:
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
+
+
+@router.get(
+    "/workspaces/{workspace_id}/application-account-provider-types",
+    response_model=AccountProviderDefinitionCollection,
+)
+async def account_provider_types(
+    request: Request, actor: Actor, workspace_id: str
+) -> AccountProviderDefinitionCollection:
+    return await _service(request).provider_types(actor=actor, workspace_id=workspace_id)
 
 
 @router.post(

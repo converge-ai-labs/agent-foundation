@@ -358,3 +358,12 @@ async def test_account_metadata_does_not_grant_use_or_management(account_service
 async def native_http():
     async with httpx2.AsyncClient() as client:
         yield client
+
+
+async def test_account_provider_metadata_is_registered_and_workspace_authorized(account_service):
+    definitions = await account_service.provider_types(actor=actor(), workspace_id=WORKSPACE_ID)
+    assert [(item.provider_key, item.config_version) for item in definitions.items] == [("fake", "fake_http_v1")]
+    assert definitions.items[0].credential_schema["properties"]["token"]["writeOnly"] is True
+    with pytest.raises(NativeError) as denied:
+        await account_service.provider_types(actor=actor(), workspace_id="ws_missing1234567890")
+    assert denied.value.code == "resource_not_found"

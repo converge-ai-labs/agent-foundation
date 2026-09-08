@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from a13n_service.agents.models import AgentRecord
+from a13n_service.connectivity.accounts.domain import AccountProviderDefinition
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.accounts.service import AccountService
@@ -70,6 +71,16 @@ class FakeIngressAdapter:
     config_versions = frozenset({"fake_http_v1"})
     max_request_bytes = 1024 * 1024
     dedup_horizon_seconds = 3600
+
+    def describe_account(self, *, config_version: str) -> AccountProviderDefinition:
+        return AccountProviderDefinition(
+            provider_key=self.provider_key,
+            config_version=config_version,
+            configuration_schema={"type": "object", "properties": {"installation_id": {"type": "string"}}},
+            credential_schema={"type": "object", "properties": {"token": {"type": "string", "writeOnly": True}}},
+            reception_policy_schema={"type": "object"},
+            target_kinds=("conversation",),
+        )
 
     def validate_config(self, value: object, *, config_version: str) -> dict[str, object]:
         if config_version != "fake_http_v1" or not isinstance(value, dict) or set(value) != {"installation_id"}:

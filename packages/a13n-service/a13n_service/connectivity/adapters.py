@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Protocol
 
+from a13n_service.connectivity.accounts.domain import AccountProviderDefinition
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
@@ -18,6 +19,8 @@ from a13n_service.connectivity.ingress.provider import (
 class AccountAdapter(Protocol):
     provider_key: str
     config_versions: frozenset[str]
+
+    def describe_account(self, *, config_version: str) -> AccountProviderDefinition: ...
 
     def validate_config(self, value: object, *, config_version: str) -> JsonObject: ...
 

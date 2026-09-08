@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
@@ -13,6 +14,19 @@ from .reception import InputBatchingPolicy, Reception
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class AccountProviderDefinition(StrictModel):
+    provider_key: AdapterKey
+    config_version: ConfigVersion
+    configuration_schema: JsonObject
+    credential_schema: JsonObject
+    reception_policy_schema: JsonObject
+    target_kinds: tuple[Literal["conversation", "repository"], ...]
+
+
+class AccountProviderDefinitionCollection(StrictModel):
+    items: tuple[AccountProviderDefinition, ...]
 
 
 class AccountStatus(StrEnum):

@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter
 
+from a13n_service.connectivity.accounts.domain import AccountProviderDefinition
 from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
@@ -51,6 +52,12 @@ class LarkAccountConfig(_StrictModel):
     bot_open_id: str = Field(min_length=1, max_length=256)
 
 
+class LarkAccountCredentials(_StrictModel):
+    app_secret: SecretStr = Field(min_length=1, max_length=4096)
+    verification_token: SecretStr = Field(min_length=1, max_length=4096)
+    encrypt_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+
+
 class LarkIngressAdapter:
     provider_key = "lark"
     config_versions = frozenset({_CONFIG_VERSION})
@@ -72,17 +79,21 @@ class LarkIngressAdapter:
             raise ValueError("Lark brand and official API origin do not match")
         return _model_json(config.model_copy(update={"open_api_origin": origin}))
 
+    def describe_account(self, *, config_version: str) -> AccountProviderDefinition:
+        _require_version(config_version)
+        return AccountProviderDefinition(
+            provider_key=self.provider_key,
+            config_version=config_version,
+            configuration_schema=LarkAccountConfig.model_json_schema(),
+            credential_schema=LarkAccountCredentials.model_json_schema(),
+            reception_policy_schema=MessagingPolicy.model_json_schema(),
+            target_kinds=("conversation",),
+        )
+
     def validate_credentials(self, value: dict[str, str], *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        if set(value) not in (
-            {"app_secret", "verification_token"},
-            {"app_secret", "encrypt_key", "verification_token"},
-        ):
-            raise ValueError("Lark credentials are incomplete")
-        limits = {"app_secret": 4096, "encrypt_key": 4096, "verification_token": 4096}
-        if any(not secret or len(secret) > limits[key] for key, secret in value.items()):
-            raise ValueError("Lark credentials are invalid")
-        return dict(value)
+        credentials = LarkAccountCredentials.model_validate(value)
+        return {key: secret.get_secret_value() for key, secret in credentials.model_dump(exclude_none=True).items()}
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object:
         _require_version(config_version)

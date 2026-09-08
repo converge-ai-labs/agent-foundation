@@ -9,8 +9,9 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter, ValidationError
 
+from a13n_service.connectivity.accounts.domain import AccountProviderDefinition
 from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.adapters import JsonObject
 from a13n_service.connectivity.ingress.provider import (
@@ -55,6 +56,11 @@ class SlackAccountConfig(_StrictModel):
     bot_user_id: str = Field(min_length=1, max_length=128)
 
 
+class SlackAccountCredentials(_StrictModel):
+    signing_secret: SecretStr = Field(min_length=1, max_length=512)
+    bot_token: SecretStr = Field(min_length=1, max_length=4096)
+
+
 class SlackIngressAdapter:
     provider_key = "slack"
     config_versions = frozenset({_CONFIG_VERSION})
@@ -65,17 +71,21 @@ class SlackIngressAdapter:
         _require_version(config_version)
         return _model_json(SlackAccountConfig.model_validate(value))
 
+    def describe_account(self, *, config_version: str) -> AccountProviderDefinition:
+        _require_version(config_version)
+        return AccountProviderDefinition(
+            provider_key=self.provider_key,
+            config_version=config_version,
+            configuration_schema=SlackAccountConfig.model_json_schema(),
+            credential_schema=SlackAccountCredentials.model_json_schema(),
+            reception_policy_schema=MessagingPolicy.model_json_schema(),
+            target_kinds=("conversation",),
+        )
+
     def validate_credentials(self, value: dict[str, str], *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        if set(value) != {"signing_secret", "bot_token"}:
-            raise ValueError("Slack credentials are incomplete")
-        signing_secret = value["signing_secret"]
-        bot_token = value["bot_token"]
-        if not isinstance(signing_secret, str) or not 1 <= len(signing_secret) <= 512:
-            raise ValueError("Slack signing secret is invalid")
-        if not isinstance(bot_token, str) or not 1 <= len(bot_token) <= 4096:
-            raise ValueError("Slack bot token is invalid")
-        return {"signing_secret": signing_secret, "bot_token": bot_token}
+        credentials = SlackAccountCredentials.model_validate(value)
+        return {key: secret.get_secret_value() for key, secret in credentials.model_dump(exclude_none=True).items()}
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object:
         _require_version(config_version)

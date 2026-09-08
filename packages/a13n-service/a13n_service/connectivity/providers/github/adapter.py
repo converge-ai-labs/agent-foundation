@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter, field_validator
 
+from a13n_service.connectivity.accounts.domain import AccountProviderDefinition
 from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
@@ -52,6 +53,19 @@ class GitHubAccountConfig(_StrictModel):
     bot_account_id: int = Field(gt=0)
 
 
+class GitHubAccountCredentials(_StrictModel):
+    webhook_secret: SecretStr = Field(min_length=1, max_length=4096)
+    app_private_key_pem: SecretStr = Field(
+        min_length=1, max_length=32 * 1024, json_schema_extra={"contentMediaType": "application/x-pem-file"}
+    )
+
+    @field_validator("app_private_key_pem")
+    @classmethod
+    def valid_private_key(cls, value: SecretStr) -> SecretStr:
+        load_github_private_key(value.get_secret_value())
+        return value
+
+
 class GitHubIngressAdapter:
     provider_key = "github"
     config_versions = frozenset({_CONFIG_VERSION})
@@ -80,16 +94,21 @@ class GitHubIngressAdapter:
             raise ValueError("GitHub Enterprise API and Web origins must share one origin")
         return _model_json(config.model_copy(update={"api_origin": api_origin, "web_origin": web_origin}))
 
+    def describe_account(self, *, config_version: str) -> AccountProviderDefinition:
+        _require_version(config_version)
+        return AccountProviderDefinition(
+            provider_key=self.provider_key,
+            config_version=config_version,
+            configuration_schema=GitHubAccountConfig.model_json_schema(),
+            credential_schema=GitHubAccountCredentials.model_json_schema(),
+            reception_policy_schema=_StrictModel.model_json_schema(),
+            target_kinds=("repository",),
+        )
+
     def validate_credentials(self, value: dict[str, str], *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        if set(value) != {"webhook_secret", "app_private_key_pem"}:
-            raise ValueError("GitHub App credentials are incomplete")
-        if not 1 <= len(value["webhook_secret"]) <= 4096:
-            raise ValueError("GitHub webhook secret is invalid")
-        if not 1 <= len(value["app_private_key_pem"]) <= 32 * 1024:
-            raise ValueError("GitHub App private key is invalid")
-        load_github_private_key(value["app_private_key_pem"])
-        return dict(value)
+        credentials = GitHubAccountCredentials.model_validate(value)
+        return {key: secret.get_secret_value() for key, secret in credentials.model_dump(exclude_none=True).items()}
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object:
         _require_version(config_version)
