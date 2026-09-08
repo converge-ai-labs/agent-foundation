@@ -11,7 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
 
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.events import HarnessEventEmitter, SteeringInputEnqueuedPayload, emit_harness_event
@@ -143,7 +143,9 @@ class SteeringBridge:
         if active is None:
             return None
         request = ModelRequest(
-            parts=[UserPromptPart(content=message)],
+            parts=[
+                UserPromptPart(content=[TextContent(message, metadata={_NOTIFICATION_SOURCE_METADATA_KEY: source})])
+            ],
             metadata={
                 _SOURCE_RUN_METADATA_KEY: self._run_id,
                 _NOTIFICATION_SOURCE_METADATA_KEY: source,

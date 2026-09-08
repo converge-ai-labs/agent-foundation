@@ -159,13 +159,16 @@ class CliShell:
                             lambda: bool(self.renderer.tasks.lines()) and self.app.output.get_size().rows >= 16
                         ),
                     ),
-                    panel,
                     ConditionalContainer(
-                        Window(
-                            FormattedTextControl(self._activity_text), height=1, style="class:session-selector.hint"
+                        HSplit(
+                            [
+                                Window(height=1, char="─", style="class:frame.border"),
+                                Window(FormattedTextControl(self._activity_text), height=1, style="class:status-bar"),
+                            ]
                         ),
-                        filter=Condition(lambda: bool(self._activity_hint()) and self.app.output.get_size().rows >= 10),
+                        filter=Condition(lambda: bool(self._activity_hint()) and self.app.output.get_size().rows >= 12),
                     ),
+                    panel,
                     ConditionalContainer(
                         Window(FormattedTextControl(self._toolbar), height=1, style="class:status-bar"),
                         filter=Condition(lambda: self.status.show_status and self.app.output.get_size().rows >= 8),
@@ -460,9 +463,9 @@ class CliShell:
             and self.backend.receipt_id is not None
         )
 
-    def emit(self, text: str) -> None:
+    def emit(self, text: str, *, kind: str = "text") -> None:
         self.renderer.finish()
-        self.renderer.append(text + "\n")
+        self.renderer.append(text + "\n", kind=kind)
         self.app.invalidate()
 
     async def flush(self) -> None:
@@ -1274,12 +1277,12 @@ class CliShell:
         name = invocation.command.name
         argument = invocation.arguments[0] if invocation.arguments else None
         if name == "ps":
-            self.emit(self.renderer.process_details())
+            self.emit(self.renderer.process_details(), kind="info")
         elif name == "subagents":
             if self.backend is None:
                 self.emit("Subagent inspection is unavailable while preparing.")
             else:
-                self.emit(await self.backend.subagents(argument))
+                self.emit(await self.backend.subagents(argument), kind="info")
                 await self._refresh_activities()
         elif name == "help":
             self.renderer.append(self.registry.help(argument) + "\n", markdown=True, kind="notice")
@@ -1332,11 +1335,18 @@ class CliShell:
         elif name == "cancel":
             await self.cancel()
         elif name == "status":
+            tokens = f"{self.status.context_tokens:,}" if self.status.context_tokens is not None else "unknown"
+            window = f"{self.status.context_window:,}" if self.status.context_window else "unknown"
             self.emit(
-                self.status.line()
+                "Status · "
+                + self.status.state.capitalize()
                 + "\n"
-                + self.status.usage_details()
-                + f"\nAgent: {self.status.agent}\nReasoning: {self.status.thinking}\nContext: {self.status.context_tokens if self.status.context_tokens is not None else 'unknown'}/{self.status.context_window or 'unknown'} tokens (working budget)\nModel: {self.status.model}\nDisplay: {self.status.mode}\nWorkspace: {self.directory}\nSession: {self.status.session_id or '(new)'}\nEnvironment: {self.status.environment}\nContext is the last reported request footprint, not accumulated usage or an estimate of the next prompt."
+                + f"Agent        {self.status.agent}\nModel        {self.status.model}\n"
+                + f"Reasoning    {self.status.thinking}\nContext      {tokens} / {window} tokens\n"
+                + f"Environment  {self.status.environment}\nWorkspace    {self.directory}\n"
+                + f"Session      {self.status.session_id or '(new)'}\nDisplay      {self.status.mode}\n"
+                + "Context = last request footprint, not cumulative usage. /usage shows recorded totals.",
+                kind="info",
             )
             if self.backend is not None and not self.busy:
                 if self.status.model.startswith("openai-codex:") and self.interaction is None:
@@ -1356,15 +1366,12 @@ class CliShell:
         elif name == "usage":
             from .usage import choose_codex_reset, show_codex_usage, thread_usage_text
 
-            if argument is None:
+            if argument in {None, "details"}:
                 if self.backend.thread_id is None:
                     self.emit("No Thread selected. Send a message or /resume to inspect recorded usage.")
                     return
                 view = await self.backend.app.thread_usage(thread_id=self.backend.thread_id)
-                self.emit(thread_usage_text(view))
-                tokens = f"{self.status.context_tokens:,}" if self.status.context_tokens is not None else "unknown"
-                window = f"{self.status.context_window:,}" if self.status.context_window is not None else "unknown"
-                self.emit(f"Current context: {tokens} / {window} tokens. Context occupancy is not cumulative usage.")
+                self.emit(thread_usage_text(view, details=argument == "details"), kind="info")
             else:
                 if not self.status.model.startswith("openai-codex:"):
                     raise ValueError("Subscription usage is available for Codex Agents only.")

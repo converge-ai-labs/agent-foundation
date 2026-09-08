@@ -132,7 +132,20 @@ async def _materializer(
 
 
 @pytest.mark.anyio
-async def test_materializes_exact_runtime_atomically_and_replays(tmp_path: Path) -> None:
+async def test_materializes_exact_runtime_atomically_and_replays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_process = anyio.run_process
+    install_commands = []
+
+    async def record_install(command, **kwargs):
+        if "--target" in command:
+            install_commands.append(command)
+            assert command[command.index("--link-mode") + 1] == "copy"
+            assert "--no-index" in command and "--no-deps" in command
+        return await run_process(command, **kwargs)
+
+    monkeypatch.setattr(anyio, "run_process", record_install)
     plugin_wheel = build_wheel(
         requires_dist=("dependency-one==1.0.0",),
         factory_source=_VALID_FACTORY,
@@ -152,6 +165,7 @@ async def test_materializes_exact_runtime_atomically_and_replays(tmp_path: Path)
     replay = await materializer.materialize(runtime_lock)
 
     assert replay == first
+    assert len(install_commands) == 1
     assert (first.site_packages / "acme_audit" / "__init__.py").is_file()
     assert (first.site_packages / "dependency_one" / "__init__.py").is_file()
     assert first.manifest_path.is_file()

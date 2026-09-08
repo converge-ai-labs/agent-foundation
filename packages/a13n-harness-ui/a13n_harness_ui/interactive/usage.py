@@ -18,7 +18,45 @@ if TYPE_CHECKING:
     from .shell import CliShell
 
 
-def thread_usage_text(view: ThreadUsageView) -> str:
+def thread_usage_text(view: ThreadUsageView, *, details: bool = False) -> str:
+    if not details:
+        return _usage_summary(view)
+    return _usage_details(view)
+
+
+def _usage_summary(view: ThreadUsageView) -> str:
+    lines = ["Usage · this conversation"]
+    if view.first_observed_at is None:
+        return "\n".join([*lines, "No recorded usage yet. Lifetime coverage is unavailable, not proven zero."])
+    totals = view.combined
+    tokens = dict(totals.tokens)
+    total = tokens["input_tokens"] + tokens["output_tokens"]
+    lines.extend(
+        [
+            f"Tokens       {total:,}  ·  in {tokens['input_tokens']:,} / out {tokens['output_tokens']:,}",
+            f"Responses    {totals.model_requests:,}  ·  root {view.root.model_requests:,} / children {view.descendants.model_requests:,}",
+            f"Model cost   USD {totals.model_cost_usd:.6f} known subtotal"
+            + (f" · {totals.unknown_model_costs:,} unknown-cost responses" if totals.unknown_model_costs else ""),
+            f"Cache read   {tokens['cache_read_tokens']:,}"
+            + (f" · {100 * tokens['cache_read_tokens'] / total:.1f}% of input + output" if total else ""),
+        ]
+    )
+    for currency, cost in totals.provider_costs:
+        lines.append(f"Provider     {currency} {cost} · separate known subtotal")
+    if totals.unknown_provider_costs or totals.omitted_currency_receipts:
+        lines.append(
+            f"Provider cost incomplete · {totals.unknown_provider_costs} unknown / {totals.omitted_currency_receipts} currency entries omitted"
+        )
+    lines.extend(
+        [
+            "Recorded so far · includes children · not a provider invoice.",
+            "/usage details · models, Runs and counters   /usage subscription · limits",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _usage_details(view: ThreadUsageView) -> str:
     lines = [f"Thread usage · {view.thread_id}"]
     if view.first_observed_at is None:
         return "\n".join([*lines, "No recorded usage yet. Lifetime coverage is unavailable, not proven zero."])
@@ -124,7 +162,7 @@ def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
 async def show_codex_usage(shell: CliShell) -> str:
     """Status never takes over the composer, including with an uncertain redemption."""
     assert shell.backend is not None
-    shell.emit(usage_text(await shell.backend.app.codex_usage()))
+    shell.emit(usage_text(await shell.backend.app.codex_usage()), kind="info")
     if shell.pending_codex_reset is not None:
         shell.emit(
             f"Reset outcome is unconfirmed. Redemption ID: {shell.pending_codex_reset.redeem_request_id}. "
@@ -142,7 +180,7 @@ async def choose_codex_reset(shell: CliShell) -> str:
         )
         return ""
     usage = await app.codex_usage()
-    shell.emit(usage_text(usage))
+    shell.emit(usage_text(usage), kind="info")
     credits = (
         tuple(
             item

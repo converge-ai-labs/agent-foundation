@@ -330,7 +330,7 @@ Planned handoff changes only the Attempt and Harness Run generation. Recovery pr
 
 ## Worker Cache
 
-Each Worker owns a confined content-addressed cache with a configured byte budget. Downloads use temporary locations and publish verified artifacts and materialized directories atomically.
+Each Worker owns a confined content-addressed cache with a configured byte budget. Downloads use temporary locations and publish verified artifacts and materialized directories atomically. Wheel installation copies files into the private staging directory; runtime reconstruction does not require filesystem reflink support.
 
 An imported on-demand artifact is pinned for that process lifetime because another loaded module may import it later. A live Runner pins its materialized directory and artifacts. Eviction removes only entries unused by the on-demand registry and every local Runner. Cache loss never changes Plugin state, a Agent lock, the runner active lock, or a Run's pinned digest.
 

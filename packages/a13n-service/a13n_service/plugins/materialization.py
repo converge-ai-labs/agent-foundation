@@ -295,6 +295,10 @@ class PluginRuntimeMaterializer:
             str(site_packages),
             "--no-index",
             "--no-deps",
+            # Staging is disposable and independent of uv's temporary cache.
+            # Avoid reflink failures on filesystems that reject cloning.
+            "--link-mode",
+            "copy",
             "--python",
             sys.executable,
             "--compile-bytecode",

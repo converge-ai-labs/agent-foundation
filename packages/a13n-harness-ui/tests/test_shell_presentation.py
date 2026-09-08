@@ -75,7 +75,7 @@ def test_routine_shell_status_events_never_create_duplicate_panels(mode: str) ->
     _status(renderer, code=127, callback=True)
     assert len(renderer.transcript.blocks) == 1
     text = _visible(renderer)
-    assert "pytest -q · failed" in text
+    assert "pytest -q" in text and "Result · failed" in text
     assert "process-one" not in text
     assert "Shell ·" not in text and "Exit code" not in text and "Event ·" not in text
     assert '"exit_code": 127' in _visible(renderer, detailed=True)
@@ -125,11 +125,13 @@ def test_process_observation_end_is_run_scoped_and_gaps_are_not_complete_counts(
     renderer.transcript.close()
 
 
-def test_pending_shell_uses_the_same_compact_row_as_other_tools() -> None:
+def test_pending_shell_uses_compact_framed_command_and_waiting_state() -> None:
     renderer = StreamRenderer(Status())
     _start(renderer)
-    assert len(_visible(renderer).splitlines()) == 1
-    assert "shell_start · running · pytest -q" in _visible(renderer)
+    assert len(_visible(renderer).splitlines()) == 3
+    assert "shell_start · pytest -q" in _visible(renderer)
+    assert "Waiting for output" in _visible(renderer)
+    assert "╭" in _visible(renderer) and "╰" in _visible(renderer)
     renderer.transcript.close()
 
 

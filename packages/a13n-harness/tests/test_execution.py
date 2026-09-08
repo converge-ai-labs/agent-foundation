@@ -863,6 +863,22 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
     assert enqueue_id
     assert len(calls) == 2
     assert "wait_subagent" in str(calls[1])
+    from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest, TextContent, UserPromptPart
+
+    delivered = next(
+        item for item in items if isinstance(item, HarnessEvent) and isinstance(item.event, EnqueuedMessagesEvent)
+    )
+    content = [
+        content
+        for message in delivered.event.messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+        for content in part.content
+        if isinstance(content, TextContent)
+    ]
+    assert content[0].metadata == {"a13n.steering-source": "async_subagent"}
+    assert content[0].content == "Background subagent subagent-1 has finished. Call wait_subagent."
     notifications = [
         item.event
         for item in items

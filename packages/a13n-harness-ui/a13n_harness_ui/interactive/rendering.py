@@ -137,6 +137,7 @@ class _ToolPreview:
     truncated: bool = False
     block_id: int | None = None
     summary: str = ""
+    edit_applied: bool = False
 
 
 @dataclass(slots=True)
@@ -386,6 +387,10 @@ class StreamRenderer:
         thinking = event_type.startswith(("REASONING_MESSAGE", "THINKING_TEXT_MESSAGE"))
         message = event_type.startswith("TEXT_MESSAGE")
         user = message and payload.get("role") == "user"
+        notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in {
+            "background_process",
+            "async_subagent",
+        }
         if user and not child and metadata.source_id in self._local_inputs:
             # Correlate explicit authored input identity, never equal text. Keep
             # the identity across repeated model boundaries of this operation.
@@ -413,12 +418,16 @@ class StreamRenderer:
             elif text:
                 block_id = self._messages.get(key)
                 if block_id is None or not self.transcript.extend(block_id, terminal_text(text)):
-                    label = (f"**Subagent · {identity}**\n\n" if child else "") + ("> " if user else "")
+                    label = (
+                        "Activity · "
+                        if notification
+                        else (f"**Subagent · {identity}**\n\n" if child else "") + ("> " if user else "")
+                    )
                     self._messages[key] = self.transcript.append(
                         label + terminal_text(text),
                         markdown=not user,
                         streaming=True,
-                        kind="thinking" if thinking else "user" if user else "text",
+                        kind="tool" if notification else "thinking" if thinking else "user" if user else "text",
                     )
                     if len(self._messages) > 128:
                         self._messages.pop(next(iter(self._messages)))
@@ -439,7 +448,10 @@ class StreamRenderer:
                 if (not child or detailed) and (preview.name != "ask_user_question" or detailed):
                     self.finish()
                     header = f"{preview.name} · running" + (f" · {identity}" if child else "")
-                    preview.block_id = self.transcript.append(header + "\n", collapsed_lines=1, kind="tool")
+                    shell = preview.name.startswith("shell")
+                    preview.block_id = self.transcript.append(
+                        header + "\n", collapsed_lines=None if shell else 1, kind="command" if shell else "tool"
+                    )
                     self.append(header + "\n", display=False)
             elif event_type.endswith(("ARGS", "CHUNK")):
                 if preview is None:
@@ -479,11 +491,24 @@ class StreamRenderer:
                     arguments = preview.arguments if preview else ""
                     body = header + "\n" + (f"Arguments · {label}\n{arguments}\n" if arguments else "") + result + "\n"
                     block_id = preview.block_id if preview is not None else None
-                    if block_id is None or not self.transcript.replace(block_id, terminal_text(body)):
-                        block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind="tool")
-                    self.transcript.preview(
-                        block_id, terminal_text(brief), len(brief.splitlines()) if shell_preview is not None else 1
+                    applied_retained = (
+                        preview is not None
+                        and preview.edit_applied
+                        and block_id is not None
+                        and self.transcript.extend(block_id, terminal_text(f"\nTool result · {label}\n{result}\n"))
                     )
+                    if applied_retained and block_id is not None and state.startswith("failed"):
+                        block = self.transcript.blocks[block_id]
+                        self.transcript.preview(
+                            block_id, (block.preview or "Edit applied") + "\nTool result · failed", 14
+                        )
+                    if not applied_retained:
+                        kind = "command" if shell_preview is not None else "tool"
+                        if block_id is None or not self.transcript.replace(block_id, terminal_text(body), kind=kind):
+                            block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind=kind)
+                        self.transcript.preview(
+                            block_id, terminal_text(brief), len(brief.splitlines()) if shell_preview is not None else 1
+                        )
                     self.append(header + "\n", display=False)
                 self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
@@ -506,6 +531,8 @@ class StreamRenderer:
                         header = f"{preview.name} · running" + (f" · {identity}" if child else "")
                         self.transcript.replace(preview.block_id, terminal_text(header + "\n" + preview.arguments))
                         brief = header + " · " + preview.summary
+                        if preview.name.startswith("shell"):
+                            brief = f"{preview.name} · {preview.summary}\nWaiting for output…"
                         self.transcript.preview(preview.block_id, terminal_text(brief), 1)
                 self.boundary = True
             # START-only and malformed streams obey the same bound as ARGS.
@@ -549,7 +576,23 @@ class StreamRenderer:
                 if panel is not None:
                     if not child or detailed:
                         self.finish()
-                        self.append(f"{panel.title}\n{panel.body}\n", kind=panel.kind)
+                        source = terminal_text(f"{panel.title}\n{panel.body}\n")
+                        edit = (
+                            self._tools.get((run_id, str(event.get("tool_call_id")))) if panel.kind == "edit" else None
+                        )
+                        block_id = edit.block_id if edit is not None else None
+                        if block_id is None or not self.transcript.replace(block_id, source, kind=panel.kind):
+                            block_id = self.transcript.append(source, kind=panel.kind)
+                        if edit is not None:
+                            edit.block_id = block_id
+                            edit.edit_applied = True
+                        if panel.kind == "edit":
+                            lines = panel.body.splitlines()
+                            preview_body = "\n".join(lines[:8])
+                            if len(lines) > 8:
+                                preview_body += "\n… more diff · Ctrl+O details"
+                            self.transcript.preview(block_id, terminal_text(f"{panel.title}\n{preview_body}"), 12)
+                        self.append(source, display=False)
                     return
                 if event.get("event_kind") == "capability":
                     if not child or detailed:

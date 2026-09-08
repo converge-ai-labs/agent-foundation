@@ -75,9 +75,9 @@ COMMANDS = (
     Command(
         "usage",
         "Show recorded Thread usage; subscription/reset inspect Codex limits.",
-        "[subscription|reset]",
+        "[details|subscription|reset]",
         maximum=1,
-        choices=("subscription", "reset"),
+        choices=("details", "subscription", "reset"),
         busy=True,
     ),
     Command(

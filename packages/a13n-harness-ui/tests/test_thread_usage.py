@@ -149,7 +149,12 @@ async def test_reports_terminal_and_receipts_deduplicate_across_root_inline_and_
         assert (await repository.snapshot(thread_id="thread-other")).combined.model_requests == 1
         with pytest.raises(ValueError, match="root Threads"):
             await repository.snapshot(thread_id="thread-child")
-        text = thread_usage_text(snapshot)
+        summary = thread_usage_text(snapshot)
+        assert len(summary.splitlines()) < 12
+        assert "Recent Runs" not in summary and "Audio:" not in summary
+        assert "3 unknown-cost responses" in summary and "EUR 0.2" in summary
+        assert "/usage details" in summary and "root 1 / children 3" in summary
+        text = thread_usage_text(snapshot, details=True)
         assert "50.0%" in text and "0.125000 known subtotal" in text
         assert "3 unknown-cost responses" in text and "EUR 0.2" in text
         assert "Recent Runs" in text and "run-inline" in text

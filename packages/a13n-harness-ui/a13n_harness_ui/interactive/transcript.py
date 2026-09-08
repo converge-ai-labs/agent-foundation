@@ -206,16 +206,18 @@ class Transcript:
     def preview(self, block_id: int, text: str, lines: int = 1) -> None:
         block = self.blocks.get(block_id)
         if block is not None:
-            block.preview = text[:1024]
+            block.preview = text if len(text) <= 1024 else text[:960] + "\n… preview shortened · Ctrl+O details"
             block.collapsed_lines = lines
             block.revision += 1
             self.dirty = True
 
-    def replace(self, block_id: int, source: str) -> bool:
+    def replace(self, block_id: int, source: str, *, kind: str | None = None) -> bool:
         block = self.blocks.get(block_id)
         if block is None:
             return False
         block.close()
+        if kind is not None:
+            block.kind = kind
         self.source_bytes -= block.size
         block._source = bounded_text(source, self.block_bytes)
         block.pending.clear()
@@ -272,16 +274,35 @@ class Transcript:
         self.width = width
         console = Console(file=StringIO(), width=width, force_terminal=True, color_system="truecolor")
 
-        def rows(source: str, markdown: bool, kind: str = "text") -> Iterator[StyleAndTextTuples]:
+        def rows(
+            source: str, markdown: bool, kind: str = "text", *, folded: bool = False
+        ) -> Iterator[StyleAndTextTuples]:
             value = (
                 TerminalMarkdown(source, code_theme=self.theme.syntax_theme, hyperlinks=False)
                 if markdown
                 else Text(source.rstrip("\n"))
             )
-            if kind in {"summary", "compact", "notes"}:
+            if kind in {"command", "edit", "info", "summary", "compact", "notes"}:
+                from rich import box
                 from rich.panel import Panel
 
-                value = Panel(value, border_style="cyan" if kind == "compact" else "magenta", padding=(0, 1))
+                title, _, body = source.rstrip("\n").partition("\n")
+                content: Text | TerminalMarkdown = Text(body, no_wrap=folded, overflow="ellipsis" if folded else "fold")
+                if kind == "edit":
+                    content = Text(no_wrap=folded, overflow="ellipsis" if folded else "fold")
+                    for line in body.splitlines(keepends=True):
+                        style = "green" if line.startswith("+") else "red" if line.startswith("-") else ""
+                        content.append(line, style=style)
+                elif markdown:
+                    content = TerminalMarkdown(body, code_theme=self.theme.syntax_theme, hyperlinks=False)
+                value = Panel(
+                    content,
+                    title=Text(title, style="bold"),
+                    title_align="left",
+                    border_style="bright_black",
+                    box=box.ROUNDED,
+                    padding=(0, 1),
+                )
             # Stream Rich lines into a disposable disk cache, not a giant padded grid.
             for line in Segment.split_and_crop_lines(
                 console.render(value, console.options), width, pad=False, include_new_lines=False
@@ -293,10 +314,6 @@ class Transcript:
                     accent = "fg:ansimagenta italic"
                 elif kind == "user":
                     accent = "fg:ansigreen"
-                elif kind in {"summary", "notes"}:
-                    accent = "fg:ansimagenta"
-                elif kind == "compact":
-                    accent = "fg:ansicyan"
                 elif kind == "tool":
                     accent = "fg:ansibrightblack"
                 elif kind == "shell":
@@ -306,7 +323,7 @@ class Transcript:
                 elif kind == "edit" and text.startswith(("+", "-")):
                     accent = "fg:ansigreen" if text.startswith("+") else "fg:ansired"
                 yield [(style + " " + accent, text) for style, text in rendered]
-            if kind not in {"tool", "shell", "edit"}:
+            if kind not in {"tool", "shell", "edit", "command", "info", "summary", "compact", "notes"}:
                 yield []
 
         self.ids = []
@@ -355,7 +372,10 @@ class Transcript:
                     )
                 if block.preview is not None:
                     block.preview_rows = list(
-                        islice(rows(block.preview, False, block.kind), block.collapsed_lines or 1)
+                        islice(
+                            rows(block.preview, False, block.kind, folded=True),
+                            64 if block.kind in {"command", "edit", "info"} else block.collapsed_lines or 1,
+                        )
                     )
                 elif block.collapsed_chars is not None:
                     limit = block.collapsed_lines or 5
@@ -368,9 +388,13 @@ class Transcript:
                 length = len(block.preview_rows)
             elif block.collapsed_lines is not None and not self.detailed:
                 length = min(length, block.collapsed_lines)
-            elif block.kind == "thinking" and following is not None and following.kind == "thinking":
+            elif (
+                block.kind == "thinking"
+                and following is not None
+                and following.kind in {"thinking", "tool", "command", "edit"}
+            ):
                 # The cached final row is our synthetic spacer, not model text.
-                # Omit it only between adjacent thinking blocks. Keep sources,
+                # Omit it before adjacent thinking and tool blocks. Keep sources,
                 # Markdown paragraphs, and cached rows intact for other layouts.
                 length -= 1
             count += max(1, length)

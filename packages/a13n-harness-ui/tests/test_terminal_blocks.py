@@ -355,7 +355,7 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_without_exi
     )
     renderer.transcript.render(80)
     text = _text(renderer.transcript)
-    assert "shell_exec · pytest -q · failed" in text
+    assert "shell_exec · pytest -q" in text and "Result · failed" in text
     assert "exited" not in text and "exit 7" not in text
     assert text.index("test failure") < text.index("test output")
     assert "output partial" in text
@@ -392,7 +392,8 @@ def test_notes_show_full_values_and_distinct_style_without_repeated_snapshots() 
     assert "THE END" in _source(renderer)
     renderer.transcript.render(60)
     assert "THE END" in _text(renderer.transcript)
-    assert any("ansimagenta" in style for row in renderer.transcript.rows for style, _ in row)
+    assert "╭" in _text(renderer.transcript) and "╰" in _text(renderer.transcript)
+    assert any("bold" in style for row in renderer.transcript.rows for style, _ in row)
     assert next(iter(renderer.transcript.blocks.values())).kind == "notes"
     renderer.transcript.close()
 
@@ -433,7 +434,7 @@ def test_thinking_spacing_preserves_paragraphs_and_other_block_boundaries() -> N
     transcript.render(80)
     assert transcript.blocks[first].rows is cached
     assert _unpadded_text(transcript) == (
-        "First paragraph.\n\nSecond paragraph.\nNext thought.\n\nview · result\nFinal thought.\n\nAnswer.\n"
+        "First paragraph.\n\nSecond paragraph.\nNext thought.\nview · result\nFinal thought.\n\nAnswer.\n"
     )
     assert transcript.locate((first, 2)) == 2
     transcript.close()
