@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 
 import pytest
 from a13n_harness_ui.cli import CliRequest
@@ -21,15 +22,22 @@ def _text(transcript: Transcript, width: int = 80) -> str:
     return "\n".join("".join(text for _, text in row).rstrip() for row in transcript.rows)
 
 
+@pytest.mark.parametrize("legacy_windows", [False, True])
 @pytest.mark.parametrize("theme", ["dark", "light"])
 @pytest.mark.parametrize("width", [28, 80])
-def test_custom_panels_share_frame_and_preserve_literal_output(theme: str, width: int) -> None:
+def test_custom_panels_share_frame_and_preserve_literal_output(
+    theme: str, width: int, legacy_windows: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import a13n_harness_ui.interactive.transcript as module
+
+    monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
     transcript = Transcript()
     transcript.theme = resolve_theme(theme)
     for kind in ("command", "edit", "info", "notes", "summary", "compact"):
         transcript.append("Title\n[bold]literal[/bold]\n+added\n-removed", kind=kind)
     text = _text(transcript, width)
-    assert text.count("╭") == text.count("╰") == 6
+    assert text.count("╭") + text.count("┌") == 6
+    assert text.count("╰") + text.count("└") == 6
     assert "[bold]literal[/bold]" in text
     assert all(get_cwidth(line) <= width for line in text.splitlines())
     assert any("ansigreen" in style for row in transcript.rows for style, _ in row)
@@ -126,7 +134,7 @@ def test_long_command_cannot_hide_failure_in_clipped_panel_title(phase: str, lab
     transcript.preview(block, preview)
     text = _text(transcript, 28)
     assert label in text
-    assert text.splitlines()[-1].startswith("╰")
+    assert text.splitlines()[-1].startswith(("╰", "└"))
     transcript.close()
 
 
@@ -137,7 +145,7 @@ def test_long_edit_preview_discloses_character_omission_and_preserves_closed_fra
     transcript.preview(block, source)
     text = _text(transcript, 50)
     assert "preview shortened" in text
-    assert text.splitlines()[-1].startswith("╰")
+    assert text.splitlines()[-1].startswith(("╰", "└"))
     transcript.detailed = True
     transcript.dirty = True
     assert "+new" in _text(transcript, 50)
@@ -201,5 +209,6 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         text = _text(shell.renderer.transcript)
         assert "Status ·" in text and "Reasoning" in text and "Workspace" in text
         assert "Root Run usage" not in text and "unknown / unknown" in text
-        assert "╭" in text and "╰" in text
+        assert any(corner in text for corner in ("╭", "┌"))
+        assert any(corner in text for corner in ("╰", "└"))
         shell.renderer.transcript.close()

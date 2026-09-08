@@ -131,7 +131,8 @@ def test_pending_shell_uses_compact_framed_command_and_waiting_state() -> None:
     assert len(_visible(renderer).splitlines()) == 3
     assert "shell_start · pytest -q" in _visible(renderer)
     assert "Waiting for output" in _visible(renderer)
-    assert "╭" in _visible(renderer) and "╰" in _visible(renderer)
+    assert any(corner in _visible(renderer) for corner in ("╭", "┌"))
+    assert any(corner in _visible(renderer) for corner in ("╰", "└"))
     renderer.transcript.close()
 
 

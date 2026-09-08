@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from a13n_harness_ui.cli import CliRequest
@@ -19,7 +20,9 @@ from prompt_toolkit.output import DummyOutput
 def isolated_clipboard(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("SSH_TTY", "SSH_CONNECTION", "WAYLAND_DISPLAY", "DISPLAY"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(attachments.sys, "platform", "linux")
+    # Replace this module's reference, not the process-wide platform used by
+    # prompt_toolkit to select native Windows/POSIX input backends.
+    monkeypatch.setattr(attachments, "sys", SimpleNamespace(platform="linux"))
     monkeypatch.setattr(attachments.shutil, "which", lambda name: None)
 
     def unavailable():
