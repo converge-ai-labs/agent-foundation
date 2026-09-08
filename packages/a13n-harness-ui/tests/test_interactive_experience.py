@@ -518,7 +518,9 @@ async def test_subagent_inspection_uses_app_pages_and_review_without_execution()
     backend = SessionBackend(app, CliRequest(), Path.cwd(), Status())
     assert "No subagent" in await backend.subagents()
     backend.thread_id = "thread-one"
-    assert "/subagents next" in await backend.subagents()
+    listing = await backend.subagents()
+    assert "0 shown · 21 executions" in listing
+    assert "/subagents next" in listing
     await backend.subagents("next")
     query.assert_awaited_with(parent_thread_id="thread-one", cursor="page-two", limit=20)
     assert "Saved output" in await backend.subagents("execution-one")

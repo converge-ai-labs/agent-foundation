@@ -332,7 +332,7 @@ def test_input_events_hide_context_without_marking_user_as_assistant() -> None:
     assert "HIDDEN" not in _source(renderer)
 
 
-def test_native_shell_preview_prioritizes_command_output_and_failure_without_exit_code() -> None:
+def test_native_shell_preview_prioritizes_command_output_and_failure_with_exit_code() -> None:
     import json
 
     renderer = StreamRenderer(Status())
@@ -355,14 +355,14 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_without_exi
     )
     renderer.transcript.render(80)
     text = _text(renderer.transcript)
-    assert "shell_exec · pytest -q" in text and "Result · failed" in text
-    assert "exited" not in text and "exit 7" not in text
-    assert text.index("test failure") < text.index("test output")
-    assert "output partial" in text
+    assert text == "shell_exec · failed · exit 7 · output partial · pytest -q"
+    assert "test failure" not in text and "test output" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
     renderer.transcript.render(80)
-    assert '"exit_code": 7' in _text(renderer.transcript)
+    expanded = _text(renderer.transcript)
+    assert '"exit_code": 7' in expanded
+    assert "test failure" in expanded and "test output" in expanded
     renderer.transcript.close()
 
 
@@ -390,6 +390,10 @@ def test_notes_show_full_values_and_distinct_style_without_repeated_snapshots() 
     renderer.restore_notes(page)
     assert len(renderer.transcript.blocks) == 1
     assert "THE END" in _source(renderer)
+    renderer.transcript.render(60)
+    assert _text(renderer.transcript) == "Notes · 1 saved · Ctrl+O details · design"
+    renderer.transcript.detailed = True
+    renderer.transcript.dirty = True
     renderer.transcript.render(60)
     assert "THE END" in _text(renderer.transcript)
     assert any(corner in _text(renderer.transcript) for corner in ("╭", "┌"))

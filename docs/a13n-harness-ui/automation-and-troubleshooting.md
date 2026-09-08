@@ -50,11 +50,13 @@ process:
 
 Use `a13n-harness-ui --no-update-check` to skip detection for one invocation. `make a13n-harness-ui` always disables it for repository development. Development versions, help/version, and noninteractive commands also skip detection.
 
-**Nothing is installed without confirmation.** For a recognized uv-tool installation, the prompt shows the command and tool directory, with **Update now** and **Not now** (the default). Choosing Not now, Escape, or Ctrl+C at this prompt continues startup. If a newer version remains available, the next enabled launch asks again. Choosing Update now closes the App and TUI before running the installer, then asks you to restart; an installer failure is reported without retry or continuing setup. Other installation methods receive manual instructions rather than a guessed update command. You can also update a uv-tool installation yourself:
+**Startup never installs without confirmation.** For a recognized uv-tool installation, the prompt shows the command and tool directory, with **Update now** and **Not now** (the default). Choosing Not now, Escape, or Ctrl+C at this prompt continues startup. If a newer version remains available, the next enabled launch asks again. Choosing Update now closes the App and TUI before running the installer, then asks you to restart; an installer failure is reported without retry or continuing setup. Other installation methods receive manual instructions rather than a guessed update command. To update immediately without waiting for the next startup check:
 
 ```console
-uv tool upgrade a13n-harness-ui
+a13n-harness-ui update
 ```
+
+The command itself requests installation, so it does not ask for another confirmation or open chat/setup. It runs `uv tool upgrade a13n-harness-ui` against the running installation's tool directory, bypassing the startup metadata cache. Disabling startup detection does not disable this command. uv must be available on PATH; unsupported installations fail with instructions to use their original package manager. uv owns package resolution and network errors. Failures return the installer status without retry; an interrupted update exits with status 130 and asks you to check the installation before retrying. Restart Harness UI after success. You can also run `uv tool upgrade a13n-harness-ui` directly.
 
 After cleanup, the normal terminal shows a resume command for the actual saved root thread, preserving explicit configuration/data-root options and identifying the workspace to run it from. Failed and interrupted operations save an available valid Harness checkpoint, including safely retained partial text, before releasing the operation. The next turn and `--resume` use that selected checkpoint without automatically replaying tools. If state export or storage fails, or the process is killed before cleanup can run, resume uses the previous saved checkpoint.
 
@@ -68,6 +70,7 @@ Put global options before the subcommand. Use `--help` at each level for exact a
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `a13n-harness-ui`                                        | Interactive launch; `--config`, `--data-root`, `--resume`, `--agent`, `--environment-mode`, `--environment-profile`, `--display`, `--no-update-check`, `--help`, `--version` |
 | `run PROMPT`                                             | One-shot; `--resume`, `--agent`, `--environment-mode`, `--environment-profile`, `--title`, `--format text\|json`                                                             |
+| `update`                                                 | Immediately upgrade the running uv-tool installation; no startup check or second confirmation                                                                                |
 | `setup`                                                  | Guided configuration outside chat; no in-chat `/setup`                                                                                                                       |
 | `config path\|show\|validate\|subagents`                 | Read-only inspection; `--format text\|json`                                                                                                                                  |
 | `environment list`, `doctor`                             | Inspection/readiness diagnostics; `--format text\|json`                                                                                                                      |

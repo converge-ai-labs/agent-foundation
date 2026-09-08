@@ -31,6 +31,7 @@ async def test_control_lifespan_registers_distribution_builtin_plugins(
     app = create_app(
         Settings(
             _env_file=None,
+            iam_initial_admin_email="admin@example.com",
             role=ProcessRole.control,
             database_backend="sqlite",
             database_sqlite_path=service_sqlite_database,

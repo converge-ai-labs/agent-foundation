@@ -180,6 +180,14 @@ def webui_command(
     )
 
 
+@cli.command("update")
+def update_command() -> None:
+    """Update this uv-tool installation now, without starting chat or setup."""
+    from a13n_harness_ui.updater import update
+
+    update()
+
+
 @cli.command("setup")
 @click.option(
     "--advanced", is_flag=True, help="Also choose context, reasoning, shell review, subagents, and instructions."

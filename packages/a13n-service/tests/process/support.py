@@ -33,6 +33,8 @@ def local_settings(tmp_path: Path, *, database_template: Path | None = None, **u
         "secret_encryption_key_id": "a13n-service-test-key",
         "connectivity_public_origin": "http://testserver",
         "connectivity_http_origins": ("http://testserver",),
+        "iam_initial_admin_email": "admin@example.com",
+        "iam_public_origin": "https://testserver",
     }
     values.update(updates)
     settings = Settings(**values)

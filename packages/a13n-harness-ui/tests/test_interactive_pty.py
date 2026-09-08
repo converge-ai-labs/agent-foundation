@@ -133,7 +133,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from a13n_harness_ui.cli import main
 from a13n_harness_ui.interactive import updates
-from a13n_harness_ui import terminal
+from a13n_harness_ui import updater
 async def check(root):
     return updates.AvailableUpdate("1.0", "2.0")
 updates.check_update = check
@@ -141,7 +141,7 @@ updates.update_command = lambda: updates.UpdateCommand("fixture-uv", Path.cwd())
 def install(*args, **kwargs):
     print("INSTALLER STARTED", flush=True)
     return SimpleNamespace(returncode=0)
-terminal.subprocess.run = install
+updater.subprocess.run = install
 main(["setup"])
 """
     process, master = _spawn(script, tmp_path)

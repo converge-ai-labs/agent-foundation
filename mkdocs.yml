@@ -45,6 +45,7 @@ nav:
           - Remote Envd: a13n-environment/remote-envd.md
       - a13n-envd: a13n-envd/index.md
   - a13n Service:
+      - Identity and Access: a13n-service/identity.md
       - External Tools: a13n-service/external-tools.md
       - Configure Models: a13n-service/models.md
       - Background Tasks: a13n-service/background-tasks.md

@@ -8,10 +8,10 @@ import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
 
-def _visible(renderer: StreamRenderer, *, detailed: bool = False) -> str:
+def _visible(renderer: StreamRenderer, *, detailed: bool = False, width: int = 120) -> str:
     renderer.transcript.detailed = detailed
     renderer.transcript.dirty = True
-    renderer.transcript.render(120)
+    renderer.transcript.render(width)
     return "\n".join("".join(part[1] for part in row) for row in renderer.transcript.rows)
 
 
@@ -75,7 +75,7 @@ def test_routine_shell_status_events_never_create_duplicate_panels(mode: str) ->
     _status(renderer, code=127, callback=True)
     assert len(renderer.transcript.blocks) == 1
     text = _visible(renderer)
-    assert "pytest -q" in text and "Result · failed" in text
+    assert "pytest -q" in text and "failed · exit 127" in text
     assert "process-one" not in text
     assert "Shell ·" not in text and "Exit code" not in text and "Event ·" not in text
     assert '"exit_code": 127' in _visible(renderer, detailed=True)
@@ -125,14 +125,10 @@ def test_process_observation_end_is_run_scoped_and_gaps_are_not_complete_counts(
     renderer.transcript.close()
 
 
-def test_pending_shell_uses_compact_framed_command_and_waiting_state() -> None:
+def test_pending_shell_uses_one_borderless_command_and_status_row() -> None:
     renderer = StreamRenderer(Status())
-    _start(renderer)
-    assert len(_visible(renderer).splitlines()) == 3
-    assert "shell_start · pytest -q" in _visible(renderer)
-    assert "Waiting for output" in _visible(renderer)
-    assert any(corner in _visible(renderer) for corner in ("╭", "┌"))
-    assert any(corner in _visible(renderer) for corner in ("╰", "└"))
+    _start(renderer, name="shell_exec")
+    assert _visible(renderer) == "shell_exec · running · pytest -q"
     renderer.transcript.close()
 
 
@@ -208,4 +204,201 @@ def test_unknown_capability_events_still_have_a_fallback() -> None:
         },
     )
     assert "important fact" in _visible(renderer)
+    renderer.transcript.close()
+
+
+def _capture(renderer: StreamRenderer, result: dict, *, run: str = "root") -> None:
+    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "call-one", "content": json.dumps(result)}, run_id=run)
+
+
+def _wait(renderer: StreamRenderer, *, run: str = "root", process_id: str = "process-one") -> None:
+    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call-one", "tool_call_name": "shell_wait"}, run_id=run)
+    renderer.ingest(
+        "TOOL_CALL_ARGS", {"tool_call_id": "call-one", "delta": json.dumps({"process_id": process_id})}, run_id=run
+    )
+    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call-one"}, run_id=run)
+
+
+@pytest.mark.parametrize("streams", [{}, {"stdout": {"text": ""}, "stderr": {"text": ""}}])
+@pytest.mark.parametrize(
+    ("phase", "code", "label"),
+    [("running", None, "running"), ("exited", 0, "exit 0"), ("exited", 2, "failed · exit 2")],
+)
+def test_redirected_or_uncaptured_output_needs_only_one_row(streams, phase, code, label) -> None:
+    renderer = StreamRenderer(Status())
+    command = "pytest -q > /tmp/tests.log 2>&1"
+    _start(renderer, name="shell_exec", command=command)
+    _capture(renderer, {"ok": True, "status": {"phase": phase, "exit_code": code}, **streams})
+    assert _visible(renderer) == f"shell_exec · {label} · {command}"
+    assert '"command":' in _visible(renderer, detailed=True)
+    renderer.transcript.close()
+
+
+def test_merged_stdout_is_literal_output_not_inferred_stderr_or_tool_data() -> None:
+    renderer = StreamRenderer(Status())
+    _start(renderer, name="shell_exec", command="check 2>&1")
+    output = '  [bold]ERROR[/bold]\n{"status":{"phase":"failed"}}\n--- file.py'
+    _capture(
+        renderer,
+        {
+            "ok": True,
+            "status": {"phase": "exited", "exit_code": 0},
+            "stdout": {"text": output, "coverage": "complete"},
+            "stderr": {"text": "", "coverage": "complete"},
+        },
+    )
+    text = _visible(renderer)
+    assert text == "shell_exec · exit 0 · check 2>&1"
+    expanded = _visible(renderer, detailed=True)
+    assert "[bold]ERROR[/bold]" in expanded and "--- file.py" in expanded
+    assert json.dumps(output) in next(iter(renderer.transcript.blocks.values())).source
+    renderer.transcript.close()
+
+
+def test_short_shell_output_is_only_in_expanded_details() -> None:
+    renderer = StreamRenderer(Status())
+    _start(renderer, name="shell_exec", command="printf done")
+    _capture(renderer, {"status": {"phase": "exited", "exit_code": 0}, "stdout": {"text": "done\n"}})
+    assert _visible(renderer) == "shell_exec · exit 0 · printf done"
+    assert '"text": "done\\n"' in _visible(renderer, detailed=True)
+    renderer.transcript.close()
+
+
+def test_shell_wait_uses_retained_launch_command_without_overwriting_it() -> None:
+    renderer = StreamRenderer(Status())
+    command = "pytest -q > tests.log 2>&1"
+    _start(renderer, name="shell_exec", command=command)
+    _result(renderer)
+    _wait(renderer)
+    assert _visible(renderer).splitlines()[-1] == f"shell_wait · waiting · {command}"
+    _capture(renderer, {"process_id": "process-one", "status": {"phase": "exited", "exit_code": 0}})
+    assert _visible(renderer).splitlines()[-1] == f"shell_wait · exit 0 · {command}"
+    assert renderer._shell_processes[("root", "process-one")].command == command
+    assert "process-one" not in _visible(renderer)
+    renderer.transcript.close()
+
+
+@pytest.mark.parametrize("unavailable", ["other-run", "other-process", "evicted"])
+def test_shell_wait_does_not_guess_missing_or_cross_run_commands(unavailable: str) -> None:
+    renderer = StreamRenderer(Status())
+    _start(renderer, name="shell_exec", command="original")
+    _result(renderer)
+    if unavailable == "evicted":
+        renderer.clear_process_observations()
+    run = "other" if unavailable == "other-run" else "root"
+    _wait(renderer, run=run, process_id="process-other" if unavailable == "other-process" else "process-one")
+    assert _visible(renderer).splitlines()[-1] == "shell_wait · waiting · command unavailable"
+    _capture(renderer, {"status": {"phase": "exited", "exit_code": 0}}, run=run)
+    assert _visible(renderer).splitlines()[-1] == "shell_wait · exit 0 · command unavailable"
+    renderer.transcript.close()
+
+
+@pytest.mark.parametrize("width", [28, 80])
+@pytest.mark.parametrize("phase", ["timed_out", "cancelled", "failed"])
+def test_long_commands_and_empty_output_cannot_hide_explicit_outcome(width: int, phase: str) -> None:
+    renderer = StreamRenderer(Status())
+    _start(renderer, name="shell_exec", command="long-command " * 100)
+    _capture(renderer, {"status": {"phase": phase, "exit_code": None}})
+    renderer.transcript.render(width)
+    text = "\n".join("".join(part[1] for part in row) for row in renderer.transcript.rows)
+    assert phase.replace("_", " ") in text
+    assert len(text.splitlines()) == 1
+    renderer.transcript.close()
+
+
+def test_empty_partial_capture_and_disclosure_are_not_silently_hidden() -> None:
+    renderer = StreamRenderer(Status())
+    _start(renderer, name="shell_exec", command="check > tests.log 2>&1")
+    _capture(
+        renderer,
+        {
+            "status": {"phase": "exited", "exit_code": 0},
+            "stdout": {"text": "", "coverage": "complete", "content_complete": False, "omitted_before_bytes": 12},
+            "stderr": {"text": "", "coverage": "unknown"},
+            "disclosure": {"truncated": True},
+        },
+    )
+    text = _visible(renderer)
+    assert "exit 0" in text and "failed" not in text
+    assert text.startswith(
+        "shell_exec · exit 0 · output unknown · output incomplete · output omitted · output disclosure · "
+    )
+    assert len(text.splitlines()) == 1
+    expanded = _visible(renderer, detailed=True)
+    assert '"omitted_before_bytes": 12' in expanded and '"truncated": true' in expanded
+    renderer.transcript.close()
+
+
+def test_long_capture_cannot_push_coverage_notices_out_of_preview_budget() -> None:
+    renderer = StreamRenderer(Status())
+    _start(renderer, name="shell_exec", command="check")
+    _capture(
+        renderer,
+        {
+            "status": {"phase": "exited", "exit_code": 1},
+            "stderr": {"text": "x" * 2000, "coverage": "complete"},
+            "stdout": {"text": "", "coverage": "partial"},
+            "disclosure": {"truncated": True},
+        },
+    )
+    text = _visible(renderer)
+    assert text == "shell_exec · failed · exit 1 · output partial · output disclosure · check"
+    assert "x" * 20 in _visible(renderer, detailed=True)
+    renderer.transcript.close()
+
+
+def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
+    renderer = StreamRenderer(Status())
+    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "shell_exec"})
+    assert _visible(renderer) == "shell_exec · running"
+    renderer.transcript.close()
+
+
+@pytest.mark.parametrize("name", ["shell_exec", "shell_wait"])
+@pytest.mark.parametrize("width", [28, 80, 120])
+@pytest.mark.parametrize("output", ["", "captured line\n", "captured line\n" * 100])
+def test_shell_exec_and_wait_are_one_row_regardless_of_capture(name: str, width: int, output: str) -> None:
+    renderer = StreamRenderer(Status())
+    if name == "shell_wait":
+        _wait(renderer)
+    else:
+        _start(renderer, name=name, command="check 2>&1")
+    _capture(
+        renderer,
+        {
+            "status": {"phase": "running", "exit_code": None},
+            "stdout": {"text": output, "coverage": "partial"},
+            "stderr": {"text": output, "coverage": "partial"},
+        },
+    )
+    text = _visible(renderer, width=width)
+    assert len(text.splitlines()) == 1
+    assert "captured line" not in text
+    preview = next(iter(renderer.transcript.blocks.values())).preview
+    assert preview is not None and preview.count("output partial") == 1
+    if output:
+        assert "captured line" in _visible(renderer, detailed=True)
+    renderer.transcript.close()
+
+
+@pytest.mark.parametrize(
+    ("result", "label"),
+    [
+        ('{"ok":true}', "status unavailable"),
+        ('{"ok":false,"error":{"code":"denied"}}', "failed"),
+        ('{"ok":false,"status":{"phase":"unknown"}}', "failed · status unavailable"),
+        ("unstructured tool output", "status unavailable"),
+    ],
+)
+def test_unavailable_native_status_never_falls_back_to_output_preview(result: str, label: str) -> None:
+    renderer = StreamRenderer(Status())
+    _start(renderer, name="shell_exec", command="check")
+    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "call-one", "content": result}, run_id="root")
+    assert _visible(renderer) == f"shell_exec · {label} · check"
+    expanded = _visible(renderer, detailed=True)
+    assert '"command": "check"' in expanded
+    if result.startswith("{"):
+        assert '"ok":' in expanded
+    else:
+        assert result in expanded
     renderer.transcript.close()

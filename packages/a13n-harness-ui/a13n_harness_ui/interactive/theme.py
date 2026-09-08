@@ -82,14 +82,47 @@ def fallback_theme(preference: object) -> ResolvedTheme:
     return _resolved_theme("dark", "fallback")
 
 
+def activity_colors(theme: ResolvedTheme) -> dict[str, str]:
+    """Semantic task/process colors shared by Rich and prompt_toolkit."""
+    if theme.source != "config":
+        return {
+            "running": "cyan",
+            "waiting": "yellow",
+            "completed": "green",
+            "failed": "red",
+            "muted": "bright_black",
+        }
+    if theme.variant == "light":
+        return {
+            "running": "#116f65",
+            "waiting": "#9a3412",
+            "completed": "#28743e",
+            "failed": "#b42318",
+            "muted": "#526176",
+        }
+    return {
+        "running": "#76d4c4",
+        "waiting": "#fbbf24",
+        "completed": "#86d99b",
+        "failed": "#fca5a5",
+        "muted": "#a0afc2",
+    }
+
+
 def prompt_toolkit_style_rules(theme: ResolvedTheme) -> dict[str, str]:
     """Return prompt_toolkit style rules for a resolved theme."""
+    activity = {
+        f"activity.{name}": f"fg:{color if color.startswith('#') else 'ansi' + color.replace('_', '')}"
+        for name, color in activity_colors(theme).items()
+    }
     if theme.source != "config":
         return {
             "": "bg:default fg:default",
             "status-bar": "fg:ansibrightblack",
             "status-bar.warning": "fg:ansiyellow bold",
             "task-pane": "",
+            "task-pane.heading": "fg:ansicyan bold",
+            **activity,
             "frame.border": "fg:ansibrightblack",
             "frame.label": "fg:ansicyan bold",
             "session-selector.title": "bold",
@@ -119,6 +152,8 @@ def prompt_toolkit_style_rules(theme: ResolvedTheme) -> dict[str, str]:
         "status-bar": f"bg:{surface} fg:{muted}",
         "status-bar.warning": f"fg:{warning} bold",
         "task-pane": f"bg:{surface} fg:{foreground}",
+        "task-pane.heading": f"bg:{selected} fg:{accent} bold",
+        **activity,
         "frame.border": f"fg:{border}",
         "frame.label": f"fg:{accent} bold",
         "session-selector.title": f"fg:{foreground} bold",

@@ -160,7 +160,8 @@ async def open_process_runtime(
             runtime = ProcessRuntime(
                 settings=settings,
                 status=status,
-                request_authenticator=components.request_authenticator,
+                request_authenticator=components.request_authenticator
+                or (control.identity.authenticator if control is not None and control.identity is not None else None),
                 observability=observability,
                 shared=shared,
                 control=control,

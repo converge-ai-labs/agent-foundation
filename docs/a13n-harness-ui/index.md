@@ -2,11 +2,31 @@
 
 Harness UI (`a13n-harness-ui`, installed from the `a13n-harness-ui` distribution) is an interactive coding CLI built on Agent Foundation Harness. Its native full-terminal interface supports Windows, macOS, and Linux, with reflowing Markdown, selectable interactions, and image drafts. One foreground process owns one `HarnessUiApp`, the current conversation, and its active work. The optional `a13n-harness-ui webui` command starts the HTTP API and a bundled Hello World page in a foreground server; browser chat and management are not implemented. There is no detached daemon or detached execution mode.
 
+## Install and update
+
+Use [`uv`](https://docs.astral.sh/uv/getting-started/installation/) to install the published CLI in an isolated tool environment; no repository checkout or Node.js is required:
+
 ```console
 uv tool install a13n-harness-ui
 cd your-repository
 a13n-harness-ui
 ```
+
+If the command is not on PATH, run `uv tool update-shell` and restart your shell. For a shortcut in Bash or Zsh, add this line to `~/.bashrc` or `~/.zshrc`, then reload the file or open a new shell:
+
+```bash
+alias anui='a13n-harness-ui'
+```
+
+Use `anui` to start, `anui setup` to reconfigure, and `anui update` to upgrade. The alias is optional and does not rename the installed executable.
+
+```console
+a13n-harness-ui update
+```
+
+This explicitly updates the running uv-tool installation without waiting for the cached startup check or opening chat/setup. It requires uv on PATH and does not ask for another confirmation. Restart Harness UI afterwards. Startup checks alone never install automatically. See [update behavior and troubleshooting](automation-and-troubleshooting.md#logs-updates-and-exit) for other installation methods and failures.
+
+For source development, use `make a13n-harness-ui` from the repository root; see the [repository contribution guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) for prerequisites.
 
 Startup checks local configuration before opening full-terminal chat. If no Model is configured, a setup wizard opens in the same full-terminal interface before chat. A model request begins only when you explicitly send a prompt. The current directory is the workspace; you do not need to create or manage a Project.
 

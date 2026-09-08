@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
-import sys
 import time
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
@@ -14,6 +12,8 @@ from pathlib import Path
 
 import httpx2
 from packaging.version import InvalidVersion, Version
+
+from a13n_harness_ui.updater import UpdateCommand, update_command
 
 from .onboarding import LandingScreen, SetupBack, SetupCancelled
 from .selection import Choice, Selection, resolve_choice
@@ -24,18 +24,6 @@ from .setup import Question
 class AvailableUpdate:
     current: str
     latest: str
-
-
-@dataclass(frozen=True, slots=True)
-class UpdateCommand:
-    """A recognized uv-tool installation, not a user-supplied shell command."""
-
-    executable: str
-    tool_directory: Path
-
-    @property
-    def argv(self) -> tuple[str, ...]:
-        return (self.executable, "tool", "upgrade", "a13n-harness-ui")
 
 
 def installed_version() -> str | None:
@@ -92,15 +80,6 @@ async def check_update(root: Path, *, current: str | None = None) -> AvailableUp
         return available_update(current, latest)
     except (TimeoutError, httpx2.HTTPError, OSError, ValueError, KeyError, TypeError):
         return None
-
-
-def update_command() -> UpdateCommand | None:
-    """Only the documented uv-tool installation has an automatic command recipe."""
-    prefix = Path(sys.prefix)
-    executable = shutil.which("uv")
-    if executable is None or prefix.name != "a13n-harness-ui" or not (prefix / "uv-receipt.toml").is_file():
-        return None
-    return UpdateCommand(executable, prefix.parent)
 
 
 async def prompt_update(root: Path, landing: LandingScreen) -> UpdateCommand | None:

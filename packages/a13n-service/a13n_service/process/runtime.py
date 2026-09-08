@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from a13n_service.gateway import GatewayRuntime
     from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
+    from a13n_service.iam.runtime import IdentityRuntime
     from a13n_service.interactions.lifecycle import LifecycleWriter
     from a13n_service.interactions.worker import WorkerExecutionLoop
     from a13n_service.lifecycle.service import LifecycleEventService
@@ -67,6 +68,7 @@ class ControlRuntime:
     lifecycle_events: LifecycleEventService
     gateway: GatewayRuntime
     subagent_maintenance: SubagentMaintenance
+    identity: IdentityRuntime | None = None
 
 
 @dataclass(frozen=True, slots=True)

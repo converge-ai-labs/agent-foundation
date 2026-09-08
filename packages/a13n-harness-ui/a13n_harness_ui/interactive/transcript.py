@@ -16,14 +16,14 @@ from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 from rich.color import ColorType
-from rich.console import Console
+from rich.console import Console, Group
 from rich.segment import Segment
 from rich.style import Style as RichStyle
 from rich.text import Text
 
 from .markdown import TerminalMarkdown
 from .rows import RowStore
-from .theme import ResolvedTheme, resolve_theme
+from .theme import ResolvedTheme, activity_colors, resolve_theme
 
 _TRUNCATED = "[Display truncated; /history reads retained content]\n"
 
@@ -43,7 +43,7 @@ class Block:
     markdown: bool
     kind: str = "text"
     revision: int = 0
-    cache_key: tuple[int, int, str, bool] | None = None
+    cache_key: tuple[int, int, ResolvedTheme, bool] | None = None
     rows: Sequence[StyleAndTextTuples] = field(default_factory=list)
     pending: list[str] = field(default_factory=list)
     size: int = 0
@@ -282,7 +282,26 @@ class Transcript:
                 if markdown
                 else Text(source.rstrip("\n"))
             )
-            if kind in {"command", "edit", "info", "summary", "compact", "notes"}:
+            if kind == "notice":
+                colors = activity_colors(self.theme)
+                label = Text("System", style=f"bold {colors['running']}")
+                if markdown:
+                    value = Group(label, value)
+                else:
+                    label.append(" · ", style=colors["muted"])
+                    label.append(source.rstrip("\n"), style=f"not bold {colors['muted']}")
+                    value = label
+            elif kind == "notes" and folded:
+                colors = activity_colors(self.theme)
+                title, separator, detail = source.partition(" · Ctrl+O details")
+                value = Text(title, style=f"bold {colors['running']}", no_wrap=True, overflow="ellipsis")
+                value.append(separator + detail, style=f"not bold {colors['muted']}")
+            elif kind == "command" and folded:
+                title, _, body = source.rstrip("\n").partition("\n")
+                value = Text(title, style="bold", no_wrap=True, overflow="ellipsis")
+                if body:
+                    value.append("\n" + "\n".join("  " + line for line in body.splitlines()), style="not bold")
+            elif kind in {"command", "edit", "info", "summary", "compact", "notes"}:
                 from rich import box
                 from rich.panel import Panel
 
@@ -297,12 +316,22 @@ class Transcript:
                     content = TerminalMarkdown(body, code_theme=self.theme.syntax_theme, hyperlinks=False)
                 value = Panel(
                     content,
-                    title=Text(title, style="bold"),
+                    title=Text(
+                        title, style=f"bold {activity_colors(self.theme)['running']}" if kind == "notes" else "bold"
+                    ),
                     title_align="left",
                     border_style="bright_black",
                     box=box.ROUNDED,
                     padding=(0, 1),
                 )
+            elif kind == "processes":
+                from .processes import process_panel
+
+                value = process_panel(source, self.theme)
+            elif kind == "subagents":
+                from .subagents import subagent_panel
+
+                value = subagent_panel(source, self.theme)
             # Stream Rich lines into a disposable disk cache, not a giant padded grid.
             for line in Segment.split_and_crop_lines(
                 console.render(value, console.options), width, pad=False, include_new_lines=False
@@ -318,12 +347,12 @@ class Transcript:
                     accent = "fg:ansibrightblack"
                 elif kind == "shell":
                     accent = "fg:ansicyan"
-                elif not markdown and text.startswith("["):
+                elif kind != "notice" and not markdown and text.startswith("["):
                     accent = "fg:ansicyan bold"
                 elif kind == "edit" and text.startswith(("+", "-")):
                     accent = "fg:ansigreen" if text.startswith("+") else "fg:ansired"
                 yield [(style + " " + accent, text) for style, text in rendered]
-            if kind not in {"tool", "shell", "edit", "command", "info", "summary", "compact", "notes"}:
+            if kind not in {"tool", "shell", "edit", "command", "info", "summary", "compact", "notes", "processes"}:
                 yield []
 
         self.ids = []
@@ -331,7 +360,7 @@ class Transcript:
         count = 0
         for block, following in pairwise(chain(self.blocks.values(), (None,))):
             assert block is not None
-            key = (block.revision, width, self.theme.variant, block.streaming)
+            key = (block.revision, width, self.theme, block.streaming)
             if block.cache_key != key:
                 source = block.source
                 if block.streaming and len(source) > 16384:

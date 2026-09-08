@@ -2,14 +2,37 @@
 
 `a13n-harness-ui` is the interactive coding CLI supplied by the `a13n-harness-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `HarnessUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-harness-ui webui` starts the HTTP API and bundled Hello World page in a foreground server process; browser chat and management are not implemented. There is no detached daemon.
 
+## Install and Run
+
+Install the published CLI in an isolated tool environment with [`uv`](https://docs.astral.sh/uv/getting-started/installation/):
+
 ```console
+uv tool install a13n-harness-ui
 cd your-repository
 a13n-harness-ui
-# From a source checkout:
-make a13n-harness-ui
-# From a published distribution:
-uvx --from a13n-harness-ui a13n-harness-ui
 ```
+
+No repository checkout or Node.js is needed to use the published package. If the command is not on your PATH, run `uv tool update-shell` and restart your shell.
+
+For a shorter command in Bash or Zsh, add this to `~/.bashrc` or `~/.zshrc`:
+
+```bash
+alias anui='a13n-harness-ui'
+```
+
+Reload that file or open a new shell, then use `anui`, `anui setup`, or `anui update`. The alias is optional; the installed executable remains `a13n-harness-ui`.
+
+Update immediately without waiting for the startup check:
+
+```console
+a13n-harness-ui update
+```
+
+This explicitly runs `uv tool upgrade a13n-harness-ui` for the running tool installation, without opening chat or setup or asking for another confirmation. uv must be on PATH. Other installation methods receive manual package-manager guidance. Startup only checks for updates and asks before installing; it never installs automatically. Restart Harness UI after updating.
+
+For source development, run `make a13n-harness-ui` from the repository root instead; it uses the uv workspace and skips release update checks. See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the development toolchain.
+
+## First Use
 
 First use opens a single-screen setup wizard before chat: choose a connection, a model, and execution permissions. The final answer saves directly, without another confirmation. Existing compatible Codex/Grok logins are reused without another sign-in prompt. Reconfigure later with `a13n-harness-ui setup`, which returns to the command shell; chat has no `/setup`. `/help` explains chat commands; sign in outside chat with `a13n-harness-ui login codex`. Default Codex setup uses GPT-5.6 Sol, high reasoning, a 350k working context budget, and shell review. `setup --advanced` offers reasoning, 272k/350k/872k budgets, review, subagents, and additional instructions. `a13n-harness-ui add agent` creates another named agent without changing existing agents or defaults. Editable YAML contains actual values and thresholds, not opaque preset names.
 
