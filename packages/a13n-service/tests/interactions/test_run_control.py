@@ -22,6 +22,7 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
+from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_service.interactions.attempts import (
     AttemptContext,
     AttemptExecutionService,
@@ -456,7 +457,13 @@ async def test_compaction_precedes_receipt_publication_without_losing_incorporat
 
     async def stream(messages, info):
         nonlocal compact_calls, ordinary_calls
-        if info.model_settings and info.model_settings.get("tool_choice") == "none":
+        # Compaction preserves model settings for provider prompt-cache reuse.
+        if any(
+            isinstance(part, UserPromptPart) and part.content == _COMPACTION_PROMPT
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ):
             compact_calls += 1
             if compact_calls == 1:
                 assert "new direction" in _business_prompts(tuple(messages))
