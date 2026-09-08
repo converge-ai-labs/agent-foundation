@@ -112,7 +112,7 @@ Retention deletes bounded event ranges older than the configured horizon. The AP
 
 ## Run Redis Stream
 
-Every accepted Run has one stable organization-scoped Redis Stream shared by all its `RunAttempt` values. The internal stream locator is not a bearer reference, and each event identifies its own attempt and Harness Run. Checkpoint resume neither allocates another presentation stream nor uses a stream cursor as state input.
+Every accepted Run has one stable organization-scoped Redis Stream shared by all its `RunAttempt` values. The internal stream locator is not a bearer reference, and each event preserves its source Attempt and Harness Run identities when present. Checkpoint resume neither allocates another presentation stream nor uses a stream cursor as state input.
 
 A `run_attempt.yielded` fact closes only that Attempt generation. It does not close the Run Stream, emit another `run.running`, reset its Redis replay cursor, or allocate a replacement stream. A planned-handoff successor appends observations under its fresh Attempt and Harness Run identities to the same open Run Stream. Only the eventual Run terminal outcome closes the stream and makes retained replay publication eligible.
 
@@ -138,6 +138,54 @@ The Redis Stream entry ID is the live replay cursor. `event_id` is the stable ev
 Writers bound payloads and stream length, use deterministic event identities for retryable publication, and set a retention TTL that never expires an active Run's stream. Consumers resume within the live horizon from the last Redis Stream entry ID.
 
 The public Native SSE framing, `Last-Event-ID` behavior, and replay-to-live cutover are owned by [Native Streaming and Notifications](21-native-streaming-and-notifications.md#run-sse). Hosted AG-UI and A2A can project this source under their own protocol identities, but they do not reinterpret the Redis entry ID as an AG-UI or A2A cursor.
+
+### Publication Activation and Fencing
+
+PostgreSQL owns Attempt selection, leases, and the monotonic fence defined by [Attempt authority](13-run-attempt-scheduling-and-recovery.md#current-attempt-authority). Redis reuses that fence only to gate presentation publication; it allocates no independent ownership counter and grants no execution or outcome authority.
+
+After the claim commits and before publishing any Attempt-owned observation, including Environment preparation, the executor requests one Redis Lua activation with the claim-derived organization, Run, Attempt, fence, and exact committed `run_attempt.leased` fact. No database session or transaction spans this request or its retries. The operation:
+
+1. validates Run identity, open-stream state, and expected publication state; rejects a lower fence or a different Attempt at the same fence;
+2. atomically advances the publication fence, appends the committed `run_attempt.leased` projection, and appends `run.recovery` immediately after it for a non-initial Attempt; and
+3. retains stable opening-event identities, canonical payloads, and activation-result evidence for idempotent retry. The same request returns its existing result; conflicting content fails explicitly. The result also reports whether that generation remains active.
+
+The successful Redis activation is the presentation switch. Old observations accepted after the PostgreSQL claim but before activation remain valid history before the opening events. Already accepted or buffered events cannot be recalled; ordering concerns stream position, not client receipt time. Lease expiry alone does not atomically revoke Redis publication before another activation. Execution still obeys PostgreSQL authority throughout.
+
+Only confirmed activation admits observations. Every Attempt-owned append atomically checks the exact activated Attempt/fence and open-stream state together with `XADD` in Lua. A separate check followed by append is insufficient; ordinary append cannot initialize or advance authority. An old activation receipt never permits publication after a newer activation. Stable event deduplication remains required independently of fencing.
+
+The same fence protects Attempt-owned completion metadata and any Worker-accessible reset, cleanup, or close operation. A stale Worker cannot delete replacement events, close its stream, or certify its projection complete. Stale-publication rejection closes local publishing admission and invokes existing authority-loss handling; it never authorizes a stale Run failure. Trusted projection of a committed Run outcome retains its separate stream-closure rules.
+
+### Lifecycle Projection at Activation
+
+`run_attempt.leased` has one Run Stream publication path: activation. The generic asynchronous lifecycle projector never appends it independently. Worker retries and service-owned repair use the same atomic operation and identities. Confirmation settles its lifecycle projection bookkeeping without repeating the source mutation.
+
+If an Attempt is superseded before activation, its leased fact remains in PostgreSQL history but is not later appended as a false switch or used to reactivate that Attempt. After establishing that no activation occurred, reconciliation marks the fact `projected`, meaning no projection work remains. An unknown activation outcome follows bounded reconciliation; it is not silently skipped or certified complete. Exhaustion without establishing completeness marks the projection `abandoned` and retained replay unavailable. Projection settlement never blocks the authoritative Run outcome. This distinction settles superseded claims without waiting forever for an obsolete activation.
+
+Other committed lifecycle facts, including a delayed failure for an older Attempt, remain eligible for trusted lifecycle projection. Their older provenance alone does not reject them, and their publication never changes the active fence. This exception grants no live-writing permission to the old Worker. Stream completeness accounts for these facts separately from activation and Attempt-owned observations.
+
+### Recovery Event
+
+`run.recovery` is a Run Stream presentation event, not a new Run status, PostgreSQL lifecycle-event type, or durable Hook-delivery source. It records a switch to a replacement publisher, not successful preparation, Harness restoration, or agent execution. Activation of the first Attempt emits only `run_attempt.leased`. Every successor Attempt's successful activation emits one recovery event, even if its predecessors never activated or produced agent output, or the new Worker stops before Harness entry.
+
+It uses the existing `RunStreamEvent` envelope with the same Run and Thread, the new `run_attempt_id`, the source leased fact's `lifecycle_event_id`, and no `item_id`. `harness_run_id` may be null before Harness entry. Its stable `event_id` is derived from the source leased event identity and the recovery event type; its `occurred_at` uses the source fact's timestamp. Both remain unchanged on retry. The ordered stream position defines the effective switch, independently of that timestamp.
+
+Version `1` has the serialized payload `{"reason": "lease_expired"}`, with this finite reason registry:
+
+| Reason                | Owning claim classification                                               |
+| --------------------- | ------------------------------------------------------------------------- |
+| `lease_expired`       | Replacement of an expired selected Attempt; does not prove a Worker crash |
+| `retry_after_failure` | Retry after a known retryable Attempt failure                             |
+| `planned_handoff`     | Successor to a yielded Attempt                                            |
+
+The event is retained in source order and projected through [Hosted AG-UI recovery](22-hosted-ag-ui.md#recovery-projection). It carries no public fence or lease proof.
+
+### Publication Failure and Continuity
+
+Activation timeout, unknown outcome, or script failure permits only bounded reconciliation and retry, never unfenced publication. Lua does not roll back writes made before a runtime error: input, key types, payload bounds, and ordinary rejection conditions are validated before mutation. Partial activation must remain closed to observations until its complete opening sequence is established; a fence-only write is not successful activation.
+
+Active publication metadata and deduplication evidence cannot expire before their required active-Run lifetime. Missing, lost, or rolled-back metadata is not permission to restamp authority. Service-owned recovery revalidates durable authority before reinitialization and stops publication when admission or continuity cannot be established. Incomplete history retains explicit replay-gap/unavailable semantics and cannot produce a complete snapshot.
+
+Lua atomicity alone provides no continuity guarantee across asynchronous-replication rollback. A supported Redis topology defines how discontinuity invalidates publication admission and how authority is revalidated before reopening it; unsupported rollback conditions fail closed. Redis Cluster support requires every key touched by one script to share a hash slot. No normal writer bypasses these rules when metadata or scripts are unavailable.
 
 ## Workspace Events and Best-Effort Notifications
 
@@ -192,19 +240,23 @@ class RunReplaySnapshot:
 
 Snapshot publication is create-only. An existing object is accepted only after its digest metadata and complete body validate. A snapshot exists only for a closed, complete, nonempty stream within the configured event-count, Item-count, payload-size, and encoded-size bounds. An incomplete, trimmed, empty, or oversized source reports retained replay as unavailable; version `1` has no partial snapshot or chunk manifest.
 
+`events` preserves each recovery event's identity and position relative to subsequent observations. Recovery does not create an Item or trigger a per-recovery snapshot. `items` remains the post-Run aggregation of Item observations; an Item without a completion result is `interrupted`. Version `1` does not require an interruption reason or exact recovery-boundary attribution on each Item.
+
 The service derives the object key only after an organization-authorized Run lookup and never treats it as direct authorization. A missing snapshot after Redis expiry means retained presentation is unavailable; Run input, output, and state remain governed by their own records. Item content cannot prove tool execution, provider side effects, or Run completion.
 
 ## Failure Semantics
 
-| Failure                                                         | Durable effect                                                  | Recovery                                                                                        |
-| --------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Owning state mutation cannot append its required lifecycle fact | Neither change commits                                          | Retry the complete relational transaction                                                       |
-| Lifecycle live projection fails                                 | Fact remains pending or retryable                               | Projector reclaims it without repeating the source mutation                                     |
-| Yielded lifecycle projection is delayed or duplicated           | The Attempt remains durably yielded and the Run remains running | Successor scheduling reads relational state; projection retry preserves the same event identity |
-| Redis presentation stream is lost while Run is active           | Live observation is unavailable                                 | Work continues from durable Run and attempt state; no cursor becomes state                      |
-| Redis Thread control Stream is trimmed, expires, or is lost     | Wakeup delivery and its group cursor are unavailable            | Attempt executor reconciles durable Thread inbox and Run state at mandatory boundaries          |
-| Replay snapshot publication fails                               | Run outcome remains committed                                   | Retry deterministic create-only publication while source stream is complete                     |
-| Native notification is dropped or duplicated                    | Wake-up observation is incomplete                               | Client reconciles durable Workspace events and current resources                                |
+| Failure                                                         | Durable effect                                                  | Recovery                                                                                                    |
+| --------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Owning state mutation cannot append its required lifecycle fact | Neither change commits                                          | Retry the complete relational transaction                                                                   |
+| Lifecycle live projection fails                                 | Fact remains pending or retryable                               | Projector reclaims it without repeating the source mutation                                                 |
+| Yielded lifecycle projection is delayed or duplicated           | The Attempt remains durably yielded and the Run remains running | Successor scheduling reads relational state; projection retry preserves the same event identity             |
+| Redis presentation stream is lost while Run is active           | Live observation and continuity are unavailable                 | Revalidate publication admission under the continuity contract; execution authority remains relational      |
+| Activation acknowledgement is lost                              | Opening events may already exist                                | Retry with identical identities and payloads; confirm completeness and current activation before publishing |
+| Old append races activation                                     | Accepted before the switch or rejected after it                 | Close stale local publishing admission; never fail the Run under stale authority                            |
+| Redis Thread control Stream is trimmed, expires, or is lost     | Wakeup delivery and its group cursor are unavailable            | Attempt executor reconciles durable Thread inbox and Run state at mandatory boundaries                      |
+| Replay snapshot publication fails                               | Run outcome remains committed                                   | Retry deterministic create-only publication while source stream is complete                                 |
+| Native notification is dropped or duplicated                    | Wake-up observation is incomplete                               | Client reconciles durable Workspace events and current resources                                            |
 
 ## Compatibility and Trade-offs
 
@@ -213,6 +265,8 @@ Lifecycle payload versions, Redis presentation-event versions, Thread control si
 The distinction between the Workspace `seq` cursor and resource-local `resource_seq`, including the latter's per-resource contiguity, is a wire compatibility contract. A deployment cannot renumber retained resource events, reuse a resource sequence, or reinterpret `entity_version` as the recovery cursor.
 
 Using Redis Streams and one retained object instead of Item and replay tables keeps high-volume presentation writes out of the relational database. The cost is an explicit replay horizon and independent projection availability; callers must not mistake retained presentation for durable lifecycle or Run-state authority.
+
+Deployment compatibility covers every publication entry point: mixed versions cannot leave an unfenced writer able to bypass activation. Rollout or drain removes that access before relying on the new guarantee. Recovery is an additive presentation event; Native decoding, Hosted visibility, and replay serialization preserve its identity and ordering together.
 
 ## Invariants
 
@@ -227,3 +281,6 @@ Using Redis Streams and one retained object instead of Item and replay tables ke
 09. `seq` orders the Workspace lifecycle feed; `resource_seq` is contiguous only within one lifecycle resource and is the sole numeric resource-gap signal.
 10. Thread control signal Streams, consumer-group cursors, and TTL expiry remain separate from Run presentation replay and every durable domain cursor.
 11. Planned handoff appends `run_attempt.yielded` without closing or replacing the Run Stream and without repeating `run.running`.
+12. Activation atomically fences publication and appends `leased`, then recovery for a replacement, before admitting that Attempt's observations.
+13. Every Attempt-owned stream mutation checks the active generation atomically; trusted historical lifecycle projection never promotes publication authority.
+14. Unknown or incomplete activation never admits observations; missing continuity never becomes complete-looking replay.

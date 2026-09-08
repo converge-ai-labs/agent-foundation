@@ -160,6 +160,8 @@ Subscription List and Get authorize `hook_subscription.read`; creation authorize
 
 Only committed lifecycle events are eligible for durable Webhook subscription delivery. Live-only Run Stream entries, Items, token deltas, diagnostics, Environment-binding observations, and telemetry never create Outbox rows.
 
+The retained presentation event [`run.recovery`](24-lifecycle-and-stream-persistence.md#recovery-event) likewise creates no durable Hook-delivery intent or lifecycle sequence. Its Native and Hosted ordering belongs to Run Stream activation. The committed `run_attempt.leased` fact remains independently eligible for lifecycle Webhooks; its Run Stream projection uses only the activation path.
+
 ### Inline Subscription Lifetime
 
 An inline subscription expires when its owning Run seals as `waiting`, `completed`, `failed`, or `cancelled`, including failure or cancellation before any Attempt starts. Waiting seals the old Run; it does not keep the subscription active until feedback. Attempt replacement, recovery backoff, and planned handoff within the same unsealed Run keep the existing subscription and never create another one.
@@ -292,7 +294,7 @@ sequenceDiagram
     Control->>Redis: establish replay-to-live subscription
     Harness-->>Executor: public stream item
     Executor->>Executor: AG-UI conversion, visibility policy, and bounded enqueue
-    Executor->>Redis: append RunStreamEvent
+    Executor->>Redis: atomically check activated Attempt/fence and append RunStreamEvent
     Redis-->>Control: retained or live entry
     Control-->>Caller: RunStreamEvent over SSE
     Caller--xControl: disconnect
@@ -584,7 +586,7 @@ AG-UI payload compatibility follows the selected Agent Stream Protocol release. 
 13. Run and RunAttempt domain services are shared in-process application code, not an independently deployed network service and not a Worker-private authority.
 14. Hook delivery adds no Hook-specific Redis stream or object-storage object; durable Webhook source and progress remain in PostgreSQL.
 15. Inline creation produces the same versioned HookSubscription record as management-API creation, commits before matching `run.accepted` in the same transaction, and never performs Webhook delivery on the acceptance path.
-16. Expected planned handoff emits `run_attempt.yielded` only; it does not fabricate an AG-UI terminal Run hook, close the Run Stream, or repeat a Run lifecycle transition.
+16. Expected planned handoff commits `run_attempt.yielded` without fabricating an AG-UI terminal Run hook, closing the Run Stream, or repeating a Run lifecycle transition. Successor activation adds a presentation recovery event without a new durable Hook source.
 17. An inline subscription has immutable ownership and configuration, exactly one Revision v1, and scope exact to one Run; sealing expires the head atomically after final event matching, while committed deliveries retain that Revision.
 18. Feedback, waiting Continue, and terminal Retry inherit only the direct source's accepted inline Revision v1 by default; explicit null opts out and a complete object replaces it. Manual pause or deletion suppresses default inheritance, while automatic expiry does not.
 19. Each new Run receives at most one fresh inline subscription; same-Run recovery and successful idempotent replay create none. Replay preserves the original receipt independently of subsequent subscription mutation or expiry.
