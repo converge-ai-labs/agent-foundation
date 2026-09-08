@@ -151,6 +151,9 @@ async def test_reports_terminal_and_receipts_deduplicate_across_root_inline_and_
             await repository.snapshot(thread_id="thread-child")
         summary = thread_usage_text(snapshot)
         assert len(summary.splitlines()) < 12
+        assert "Cache read   240 (50.0%)" in summary
+        assert "Recorded so far" not in summary and "not a provider invoice" not in summary
+        assert "of input + output" not in summary
         assert "Recent Runs" not in summary and "Audio:" not in summary
         assert "3 unknown-cost responses" in summary and "EUR 0.2" in summary
         assert "/usage details" in summary and "root 1 / children 3" in summary
@@ -186,7 +189,8 @@ async def test_bounded_batches_keep_all_totals_and_recent_run_details(tmp_path: 
         repository = ThreadUsageRepository(database.sessions)
         empty = await repository.snapshot(thread_id="thread-root")
         assert empty.first_observed_at is None
-        assert "not proven zero" in thread_usage_text(empty)
+        assert thread_usage_text(empty) == "Usage · this conversation\nNo recorded usage yet."
+        assert "not proven zero" in thread_usage_text(empty, details=True)
         for batch in range(3):
             await repository.append(
                 thread_id="thread-root",

@@ -161,7 +161,7 @@ class SessionBackend:
         self.overrides = RunModelOverrides(model_id=self.overrides.model_id)
         self.status.context_tokens = None
         await self.refresh()
-        return f"Agent · {agent.name} · {self.status.model}. Ready for the next turn."
+        return f"Agent · {agent.name} · {self.status.model}"
 
     async def models(self, selected: str) -> str:
         configuration = await self.app.current_configuration()
@@ -174,7 +174,7 @@ class SessionBackend:
         self.overrides = RunModelOverrides(model_id=model_id)
         self.status.context_tokens = None
         await self.refresh()
-        return f"Model · {self.status.model} · this TUI session only. Agent unchanged; nothing saved."
+        return f"Model · {self.status.model} · session only"
 
     async def thinking(self, selected: str | None) -> str:
         if selected is not None:
@@ -182,7 +182,7 @@ class SessionBackend:
                 {"model_id": self.overrides.model_id, "thinking": None if selected == "default" else selected}
             )
             await self.refresh()
-        return f"Reasoning: {self.status.thinking}. Display detail is controlled separately by /mode."
+        return f"Reasoning · {self.status.thinking}"
 
     async def set_environment(self, selected: str | None) -> str:
         if selected is not None:
@@ -199,7 +199,7 @@ class SessionBackend:
                 )
             self.environment = profile
             await self.refresh()
-        return f"Environment: {self.status.environment}. Changes apply on the next turn; no fallback."
+        return f"Environment · {self.status.environment} · next turn"
 
     async def ensure_session(self) -> str:
         await self.refresh()
@@ -226,7 +226,7 @@ class SessionBackend:
         self.status.context_tokens = None
         self.status.reset_usage()
         await self.refresh()
-        return "New session. Existing history is saved; no files were deleted."
+        return "New session."
 
     async def resume(self, selected: str | None = None) -> str:
         configuration = await self.app.current_configuration()
@@ -273,7 +273,7 @@ class SessionBackend:
             )
         await self.refresh(thread=detail.thread)
         self.resumed_transcript = page
-        return f"Resumed {selected}. Recent messages restored; Ctrl+T browses retained messages."
+        return f"Resumed {selected}."
 
     async def interaction(self) -> DecisionInteraction | None:
         if self.thread_id is None:
@@ -325,7 +325,7 @@ class SessionBackend:
     async def subagents(self, execution_id: str | None = None) -> str:
         thread_id = self.thread_id
         if thread_id is None:
-            return "No subagent executions in this conversation."
+            return "No subagent executions."
         if execution_id is not None and execution_id != "next":
             review = await self.app.child_review(parent_thread_id=thread_id, execution_id=execution_id)
             if self.thread_id != thread_id:
@@ -335,19 +335,19 @@ class SessionBackend:
             if review.value is not None:
                 lines.append(json.dumps(review.value, ensure_ascii=False, indent=2))
             if review.truncated or review.omitted:
-                lines.append("Subagent preview is incomplete; omitted content is not restored here.")
+                lines.append("Subagent preview incomplete.")
             return "\n".join(lines)
         cursor = None
         if execution_id == "next":
             if self._child_page_thread != thread_id or self._child_page_cursor is None:
-                return "No next page. /subagents refreshes the execution list."
+                return "No next page. /subagents to refresh."
             cursor = self._child_page_cursor
         page = await self.app.query_child_executions(parent_thread_id=thread_id, cursor=cursor, limit=20)
         if self.thread_id != thread_id:
             return "Conversation changed; subagent inspection discarded. /subagents retries."
         self._child_page_thread = thread_id
         self._child_page_cursor = page.next_cursor
-        lines = [f"Subagents · {page.total} executions in this conversation"]
+        lines = [f"Subagents · {page.total} executions"]
         for item in page.executions:
             state = "active" if item.local_status == "active" else item.persisted_status
             if state == "running":
@@ -356,8 +356,8 @@ class SessionBackend:
         if not page.executions:
             lines.append("No subagent executions.")
         if page.next_cursor is not None:
-            lines.append("More executions available: /subagents next")
-        lines.append("/subagents <execution-id> shows the App's execution detail and retained output.")
+            lines.append("More · /subagents next")
+        lines.append("/subagents <execution-id> · details")
         return "\n".join(lines)
 
     async def import_choices(self, product: str, scope: str) -> tuple[tuple[Choice, ...], str]:
@@ -410,7 +410,7 @@ class SessionBackend:
                     content=yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
                 ),
             )
-            return f"Imported and enabled {len(candidates)} subagent(s) on {agent_id}. Model and tools inherit at the next composition capture."
+            return f"Imported and enabled {len(candidates)} subagent(s) · {agent_id} · next turn"
         except Exception as exc:
             raise ValueError(
                 f"Import/enrollment incomplete: {exc}. Definitions already published or reused: {', '.join(published) or 'none'}. No rollback claimed; /import previews the current state before retry."
@@ -626,7 +626,7 @@ class SessionBackend:
         )
         if not result.accepted:
             raise ValueError("This receipt is preparing or no longer running. Your guidance was not accepted.")
-        return "Guidance sent. It will appear as input when applied."
+        return "Guidance sent."
 
     async def cancel(self) -> None:
         self.cancel_requested = True

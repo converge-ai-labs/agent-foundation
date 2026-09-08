@@ -1294,7 +1294,7 @@ class CliShell:
             self.status.mode_explicit = True
             self.renderer.finish()
             self.status.mode = argument or ("detailed" if self.status.mode == "concise" else "concise")
-            self.emit(f"Display · {self.status.mode}. Ctrl+O toggles details.")
+            self.emit(f"Display · {self.status.mode}")
             self.renderer.transcript.detailed = self.status.mode == "detailed"
             self.renderer.transcript.dirty = True
         elif name == "theme":
@@ -1344,8 +1344,7 @@ class CliShell:
                 + f"Agent        {self.status.agent}\nModel        {self.status.model}\n"
                 + f"Reasoning    {self.status.thinking}\nContext      {tokens} / {window} tokens\n"
                 + f"Environment  {self.status.environment}\nWorkspace    {self.directory}\n"
-                + f"Session      {self.status.session_id or '(new)'}\nDisplay      {self.status.mode}\n"
-                + "Context = last request footprint, not cumulative usage. /usage shows recorded totals.",
+                + f"Session      {self.status.session_id or '(new)'}\nDisplay      {self.status.mode}",
                 kind="info",
             )
             if self.backend is not None and not self.busy:
@@ -1356,7 +1355,7 @@ class CliShell:
                 else:
                     self.launch(self.backend.pending())
             elif self.status.model.startswith("openai-codex:"):
-                self.emit("Use /status while idle to refresh subscription limits and inspect reset credits.")
+                self.emit("/usage subscription · available while idle.")
         elif self.backend is None:
             raise ValueError("The App is not ready. No operation was started.")
         elif self.interaction is not None and name != "review":
@@ -1368,7 +1367,7 @@ class CliShell:
 
             if argument in {None, "details"}:
                 if self.backend.thread_id is None:
-                    self.emit("No Thread selected. Send a message or /resume to inspect recorded usage.")
+                    self.emit("No session selected. Send a message or /resume.")
                     return
                 view = await self.backend.app.thread_usage(thread_id=self.backend.thread_id)
                 self.emit(thread_usage_text(view, details=argument == "details"), kind="info")
@@ -1385,7 +1384,7 @@ class CliShell:
         elif name in {"agent", "model", "thinking", "environment", "resume"} and argument is None:
             choices = await self.backend.choices(name)
             if not choices:
-                self.emit("No choices yet. Add an agent with a13n-harness-ui add agent.")
+                self.emit("No choices available.")
                 return
 
             async def selected(value: str | tuple[str, ...]) -> None:

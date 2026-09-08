@@ -230,17 +230,18 @@ class StreamRenderer:
         return f"Background {running}{'+' if uncertain else ''} observed · /ps"
 
     def process_details(self) -> str:
-        lines = ["Background processes · live observations, not a host process list"]
+        lines = ["Background processes · last observed"]
         processes = [(key, value) for key, value in self._shell_processes.items() if value.background]
         for (run_id, process_id), item in processes[-16:]:
             lines.append(f"{process_id} · {item.phase} · {item.command or 'command unavailable'} · Run {run_id}")
         if not processes:
-            lines.append("No background processes observed in this conversation.")
+            lines.append("No background processes observed.")
         if len(processes) > 16 or self._shell_observations_omitted:
-            lines.append("Older observations omitted; showing at most 16 processes.")
+            lines.append("Older observations omitted · showing up to 16.")
         if self.gap:
-            lines.append("Live output was incomplete; process observations may be stale or missing.")
-        lines.append("Status is last observed; unavailable does not confirm exit. Expand tool details for output.")
+            lines.append("Live output incomplete · status may be stale.")
+        if processes:
+            lines.append("Ctrl+O · tool output")
         return terminal_text("\n".join(lines))
 
     def _shell_notification(self, event: Mapping[str, object], run_id: str, child_label: str = "") -> None:

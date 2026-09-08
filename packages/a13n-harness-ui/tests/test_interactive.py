@@ -479,7 +479,7 @@ async def test_model_selection_is_session_only_and_preserves_agent(
         choices = await backend.choices("model")
         assert {item.value for item in choices} == {"default", "model-codex", "model-alternate"}
         await backend.thinking("low")
-        assert "nothing saved" in await backend.models("model-alternate")
+        assert (await backend.models("model-alternate")).endswith(" · session only")
         assert backend.overrides.model_id == "model-alternate"
         assert backend.overrides.thinking is None
         assert (await app.get_thread(thread_id)).thread.configuration.agent_source == original.agent_source

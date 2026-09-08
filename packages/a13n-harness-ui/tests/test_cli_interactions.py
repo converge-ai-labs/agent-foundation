@@ -439,7 +439,7 @@ async def test_steering_captures_receipt_and_does_not_retarget(tmp_path: Path) -
     app.steer_root_operation = AsyncMock(
         return_value=RootControlResult(receipt_id="replacement", accepted=True, enqueue_id="input-one")
     )
-    assert await backend.steer("new guidance") == "Guidance sent. It will appear as input when applied."
+    assert await backend.steer("new guidance") == "Guidance sent."
     backend.receipt_id = None
     with pytest.raises(ValueError, match="No running receipt"):
         await backend.steer("not sent")

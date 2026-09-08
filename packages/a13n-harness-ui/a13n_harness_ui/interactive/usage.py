@@ -27,7 +27,7 @@ def thread_usage_text(view: ThreadUsageView, *, details: bool = False) -> str:
 def _usage_summary(view: ThreadUsageView) -> str:
     lines = ["Usage · this conversation"]
     if view.first_observed_at is None:
-        return "\n".join([*lines, "No recorded usage yet. Lifetime coverage is unavailable, not proven zero."])
+        return "\n".join([*lines, "No recorded usage yet."])
     totals = view.combined
     tokens = dict(totals.tokens)
     total = tokens["input_tokens"] + tokens["output_tokens"]
@@ -38,7 +38,7 @@ def _usage_summary(view: ThreadUsageView) -> str:
             f"Model cost   USD {totals.model_cost_usd:.6f} known subtotal"
             + (f" · {totals.unknown_model_costs:,} unknown-cost responses" if totals.unknown_model_costs else ""),
             f"Cache read   {tokens['cache_read_tokens']:,}"
-            + (f" · {100 * tokens['cache_read_tokens'] / total:.1f}% of input + output" if total else ""),
+            + (f" ({100 * tokens['cache_read_tokens'] / total:.1f}%)" if total else ""),
         ]
     )
     for currency, cost in totals.provider_costs:
@@ -47,12 +47,7 @@ def _usage_summary(view: ThreadUsageView) -> str:
         lines.append(
             f"Provider cost incomplete · {totals.unknown_provider_costs} unknown / {totals.omitted_currency_receipts} currency entries omitted"
         )
-    lines.extend(
-        [
-            "Recorded so far · includes children · not a provider invoice.",
-            "/usage details · models, Runs and counters   /usage subscription · limits",
-        ]
-    )
+    lines.append("/usage details · /usage subscription")
     return "\n".join(lines)
 
 
@@ -151,9 +146,7 @@ def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
                 f"{name} limit: {remaining}% remaining · [{'=' * filled}{'-' * (10 - filled)}] · resets {reset_text}"
             )
     if usage.reset_credits is not None:
-        lines.append(
-            f"Reset credits available: {usage.reset_credits.available_count} · /usage reset to review (consumes a credit)."
-        )
+        lines.append(f"Reset credits: {usage.reset_credits.available_count} · /usage reset")
     if usage.reset_unavailable:
         lines.append(f"Reset credits unavailable: {usage.reset_unavailable}")
     return "\n".join(lines)

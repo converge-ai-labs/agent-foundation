@@ -209,6 +209,8 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         text = _text(shell.renderer.transcript)
         assert "Status ·" in text and "Reasoning" in text and "Workspace" in text
         assert "Root Run usage" not in text and "unknown / unknown" in text
+        assert "Context =" not in text and "cumulative usage" not in text
+        assert "recorded totals" not in text
         assert any(corner in text for corner in ("╭", "┌"))
         assert any(corner in text for corner in ("╰", "└"))
         shell.renderer.transcript.close()

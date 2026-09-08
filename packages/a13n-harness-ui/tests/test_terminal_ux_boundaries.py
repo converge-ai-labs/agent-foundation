@@ -151,7 +151,7 @@ async def test_usage_without_a_selected_thread_does_not_create_one_or_open_reset
         shell = CliShell(CliRequest(), status=Status(model="openai:test"))
         shell.backend = SimpleNamespace(thread_id=None, app=SimpleNamespace(thread_usage=AsyncMock()))
         await shell.command(shell.registry.parse("/usage", busy=True))
-        assert "No Thread selected" in "\n".join(block.source for block in shell.renderer.transcript.blocks.values())
+        assert "No session selected" in "\n".join(block.source for block in shell.renderer.transcript.blocks.values())
         shell.backend.app.thread_usage.assert_not_awaited()
         assert shell.job is None and shell.menu_handler is None and shell.pending_codex_reset is None
         shell.renderer.transcript.close()
