@@ -3,6 +3,11 @@ description: Propose a capability or a change to accepted behavior
 title: "[Proposal]: "
 labels: [enhancement]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Agents must follow [Writing Issues and Pull Requests](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md#writing-issues-and-pull-requests); human contributors may adapt this writing guidance. In the problem description, use a small Mermaid diagram, diff, or other Markdown view when it helps explain the issue. Simple issues can use prose alone.
+
   - type: dropdown
     id: component
     attributes:
@@ -32,7 +37,7 @@ body:
     id: problem
     attributes:
       label: Problem or use case
-      description: Explain the user or system problem without assuming a specific implementation.
+      description: Start with the user or system scenario, the problem, and its impact without assuming a specific implementation.
     validations:
       required: true
 

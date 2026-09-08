@@ -177,6 +177,20 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 
 See [spec/repository-model.md](spec/repository-model.md) for the normative repository boundaries.
 
+## Writing Issues and Pull Requests
+
+Agents must follow the writing guidance in this section when drafting or updating Issue and PR bodies. Human contributors may adapt it at their discretion; this section adds no mandatory writing format for humans. Existing contribution and validation requirements still apply.
+
+Start the main description with a concise explanation that a reader unfamiliar with the discussion can understand: the triggering scenario, the problem and its impact, and the desired or resulting behavior. Use the existing Issue problem field or PR Summary rather than adding a duplicate overview.
+
+- In Issues, distinguish observed behavior, desired outcomes, and proposed solutions or open decisions. Label uncertain causes and proposed flows explicitly.
+- In PRs, explain the final before/after behavior and material boundaries or compatibility effects. Keep the explanation and any visuals aligned with the final diff as scope changes. Avoid work logs and file inventories as substitutes for explaining the change.
+- Choose the smallest view that clarifies the point: Mermaid for interactions, flows, or states; a short `diff` for a local change; pseudocode for logic; a shallow text tree for calls or file responsibilities; or a table for comparisons. Use a visual when it makes relationships or changes easier to understand; a short paragraph is enough for a simple correction.
+- Place each visual beside the brief text it supports. Keep only the participants, steps, files, or states needed to understand the issue or change. Use concrete names and keep facts separate from proposals in diagrams as well as prose.
+- Use GitHub-native Markdown and fenced code blocks, including `mermaid` for diagrams. Do not rely on HTML artifacts or external interactive pages for the explanation. GitHub supports Mermaid in [Issues and pull requests](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams).
+
+Keep reproduction steps, constraints, implementation details, and validation in the relevant sections after the opening explanation. Scale detail to the change instead of filling every available visual format.
+
 ## Pull Requests
 
 A pull request should:

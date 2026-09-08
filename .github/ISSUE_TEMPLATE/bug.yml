@@ -6,6 +6,11 @@ body:
   - type: markdown
     attributes:
       value: |
+        Agents must follow [Writing Issues and Pull Requests](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md#writing-issues-and-pull-requests); human contributors may adapt this writing guidance. In the problem description, use a small Mermaid diagram, diff, or other Markdown view when it helps explain the issue. Simple issues can use prose alone.
+
+  - type: markdown
+    attributes:
+      value: |
         Thanks for reporting a problem. Do not include credentials, private prompts, model output, or sensitive logs.
 
   - type: dropdown
@@ -38,7 +43,7 @@ body:
     id: behavior
     attributes:
       label: Actual and expected behavior
-      description: Describe what happened and what you expected instead.
+      description: Start with the triggering scenario, what happened, its impact, and what you expected instead.
     validations:
       required: true
 

@@ -1,5 +1,7 @@
 ## Summary
 
+<!-- Agents must follow https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md#writing-issues-and-pull-requests; human contributors may adapt this writing guidance. Start with the scenario, problem, and resulting behavior. Add a small Mermaid diagram, diff, or other Markdown view when it clarifies the change; simple changes can use prose alone. -->
+
 <!-- Explain the motivation and the material behavior or boundary changes. For significant design changes, explain why added mechanisms are needed and how the result affects understanding and maintenance cost. -->
 
 ## Related issue
