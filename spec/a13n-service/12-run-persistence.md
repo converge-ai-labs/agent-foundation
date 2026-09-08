@@ -2,6 +2,8 @@
 
 ## Design Position
 
+a13n Service persists each accepted Thread advancement as one relational `Run` row. The Run is the durable Agent-work, scheduling, recovery, and Git-like history boundary; it owns the parent edge, input, exact selections, finite recovery budget, lifecycle, and sealed outcome.
+
 | Dimension               | Core question                              | Service choice                                                                                                                                                                                                                                                                    |
 | ----------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity and boundary   | When are Run and RunAttempt created?       | The [Agent interaction and execution model](10-agent-interaction-and-execution-model.md#identity-allocation-boundary) owns the allocation distinction: accepted semantic work creates a Run, while first or replacement Worker execution creates a `RunAttempt` under that Run    |
@@ -11,21 +13,7 @@
 | State advancement       | Which service instance can commit updates? | At most one worker service instance is lease-authorized through the current fenced `RunAttempt`; only its relational and conditional object writes can commit, while stale or partitioned instances are rejected                                                                  |
 | Completion and recovery | How do checkpoint, seal, and resume work?  | Checkpoint publication conditionally overwrites the object at the same key; relational sealing selects the exact candidate digest; recovery reads the complete checkpoint from the latest conditionally committed version of that same state object                               |
 
-a13n Service persists each accepted Thread advancement as one relational `Run` row. The Run is the durable Agent-work, scheduling, recovery, and Git-like history boundary; it owns the parent edge, input, exact selections, finite recovery budget, lifecycle, and sealed outcome.
-
-[Durable Thread Persistence](11-thread-persistence.md) separately owns the versioned Thread row. Run acceptance atomically creates or advances that row, and Run outcome commit verifies that the sealing Run remains current and either selects a new continuation head or preserves the prior head. A Run row does not infer Thread existence, current selection, or head state by timestamp.
-
-Each Run also owns one complete state object at a key derived from its Organization and Run IDs. The control plane initializes it from a new root state or the selected parent's frozen state. The current fenced `RunAttempt` conditionally replaces it at complete Harness state boundaries, and sealing makes it immutable. Service stores no separate `base_state`, `result_state`, or selectable checkpoint history.
-
-Worker recovery can resume the same Run from its latest valid state object; `continue` and `fork` instead initialize a new Run from frozen parent state. The [Agent interaction and execution model](10-agent-interaction-and-execution-model.md#identity-allocation-boundary) owns that identity distinction, while [RunAttempt allocation](13-run-attempt-scheduling-and-recovery.md#runattempt-allocation-within-a-run) owns creation of each Worker generation. No state write for the new Run mutates the parent.
-
-This is a Service Host policy above the Harness state API. Harness exports complete detached state but does not select or authorize a durable recovery point; Service selects only the conditionally committed value at the Run's deterministic state key.
-
-The shared [interaction model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item` meaning. Every Service-managed Agent invocation, including schedules, webhooks, and asynchronous children, accepts a Run; non-Agent maintenance uses its owning domain's work model. [`RunAttempt`](13-run-attempt-scheduling-and-recovery.md) remains a subordinate worker generation, and Service defines no generic `Execution` resource.
-
 ## Boundaries
-
-Every Run-sealing path, including waiting, completion, failure before execution, and cancellation, includes [inline Hook expiry](26-hook-notifications.md#inline-subscription-lifetime) in the same relational commit after final lifecycle-event matching. Hook configuration and its inheritance retention remain owned by the subscription head and Revisions, not by Run input or state. Attempt recovery and handoff that leave the Run unsealed preserve its subscription.
 
 | Concern                                                                     | Owner                                                                                   | Contract                                                                                                             |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -47,6 +35,10 @@ Every Run-sealing path, including waiting, completion, failure before execution,
 | Pending calls and approvals                                                 | Waiting Run plus its frozen Run state                                                   | Stores a bounded relational summary and the complete deferred value without a separate table                         |
 | Tool work between complete checkpoints                                      | Latest complete Run state plus any tool-specific durable protocol                       | Generic recovery cannot reconstruct it; effectful tools own cross-crash idempotency or reconciliation                |
 | Credentials and invocation authority                                        | Service Secret and policy boundaries                                                    | Resolves fresh authority; plaintext credentials never enter Run state                                                |
+
+The shared [interaction model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item` meaning. Every Service-managed Agent invocation, including schedules, webhooks, and asynchronous children, accepts a Run; non-Agent maintenance uses its owning domain's work model. [`RunAttempt`](13-run-attempt-scheduling-and-recovery.md) remains a subordinate worker generation, and Service defines no generic `Execution` resource.
+
+This is a Service Host policy above the Harness state API. Harness exports complete detached state but does not select or authorize a durable recovery point; Service selects only the conditionally committed value at the Run's deterministic state key.
 
 ## Durable Run Model
 
@@ -216,7 +208,7 @@ class Run:
     sealed_at: datetime | None
 ```
 
-`RunPendingSummary` is a bounded read and query projection, not a collection of mutable action rows. `resolution_policy="all"` means one accepted feedback or explicit waiting Continue finalizes the complete frozen set; partial responses never mutate this summary. The exact request values remain in the sealed Run state.
+### Identity and Immutable Fields
 
 `id` is the Service-owned Run identity and follows [Platform Data Conventions](../data-conventions.md). `version` is the positive Run object version used for compare-and-swap relational mutation. The state object key is derived from `organization_id` and `id`; it is not duplicated in the row and is never accepted from a caller.
 
@@ -224,31 +216,41 @@ class Run:
 
 `authority_principal` is the User or Service Account identity whose current product authority and principal-owned resource eligibility govern the Run. It is not necessarily the actor that later claims, retries, consumes queued work, or performs an internal reconciliation step. The Run stores only the stable `PrincipalRef`; it stores no browser session, API key, bearer value, credential ID, credential boundary, RoleBinding, role key, permission set, or authorization decision. Public acceptance, native Ingress acceptance, asynchronous child acceptance, waiting continuation, retry, and automatic successor acceptance assign or inherit this field under their owning contracts. No Run uses `system` as an authority Principal; an internal system actor remains audit attribution and must act for an explicit persisted User or Service Account.
 
-The [Model Management contract](30-model-management.md) owns `ModelExecutionSnapshot` and `ModelExecutionObservation`. The complete non-secret snapshot, final merged settings, and characteristics live inside `EffectiveAgentConfig.model` and are reused by every replacement RunAttempt. The selected Model supplies its single API at acceptance; discovery descriptions, parameter schemas, and mutable Model defaults are not replay inputs. The safe observation is the smaller relational and public-history projection. Neither value is Harness continuation state.
+The request fingerprint covers normalized semantic input, including omission versus explicit null for Environment selection. It is computed once before preparation and remains unchanged through acceptance.
 
-The [Environment Management contract](29-environment-management.md#run-binding-and-recovery) owns `Run.environment_id`, `environment_access` and the use-acquisition timestamp. Primary environment selection is independent of `EffectiveAgentConfig`. Each replacement Attempt uses the same logical Environment, resolves current Provider credentials, and receives a fresh ready or lazy operation object. Environment state, backing generations and retention coordination are owned by the Environment record, not by Run state.
+### Configuration and Resource References
 
-The [Service Skill Management contract](31-skill-management.md#agent-selection-and-run-locking) owns effective managed Skill selection. Run acceptance either resolves the AgentRevision's frozen Skill bindings or whole-replaces them through `AgentRunOverride.skills`, then stores the final exact ordered locks in `EffectiveAgentConfig.skills`. An unpinned AgentRevision binding resolves its stable Skill identity's current Revision only at this acceptance boundary. Every replacement RunAttempt reuses the resulting locks.
+The exact `AgentId`, `AgentRevisionId`, complete `EffectiveAgentConfig`, and internal Plugin Runtime lock digest are fixed at Run acceptance. [Agent Management](28-agent-management.md#agentrunoverride-and-effective-configuration) owns configuration resolution; [Input and Continuation](18-agent-control-input-and-continuation.md#acceptance-and-lineage) owns operation-specific preservation or replacement. Run persistence stores the selected values without merging them again during state initialization or checkpoint replacement.
+
+The [Model Management contract](30-model-management.md) owns the snapshot stored in `EffectiveAgentConfig.model` and the smaller `ModelExecutionObservation` stored in the Run row for public history. Neither value is Harness continuation state.
+
+The [Environment Management contract](29-environment-management.md#run-binding-and-recovery) owns the meaning, selection, and use lifecycle of `environment_id`, `environment_access`, and `environment_use_started_at`. These fields live on the Run row independently of `EffectiveAgentConfig`; Environment state and backing generations live on the Environment record.
+
+The [Service Skill Management contract](31-skill-management.md#agent-selection-and-run-locking) owns Skill selection and exact ordered locks inside `EffectiveAgentConfig.skills`. Run persistence stores those locks as part of the immutable effective configuration.
 
 The [Connector Providers and Connector Connections contract](40-connectivity/03-connectors-and-connections.md#assignment-and-effective-selection) defines `ConnectorConnectionRunSelection`; [Remote MCP Connections](40-connectivity/06-remote-mcp-connections.md#tool-discovery-and-run-selection) defines `MCPConnectionToolSelection`; and [Agent-Facing External Tools](40-connectivity/04-agent-facing-tools.md#default-native-tool-contexts) owns `NativeToolContext` and default injection. Runs store empty tuples for absent connection selections or native contexts. Connection selections retain all-tools or explicit-name scopes and deferred-loading policy. Trusted entries independently freeze native contexts, including exact Account identity, execution Principal, allowed actions, and target authority. Neither stores tool schemas or credentials. Compatible Steers and continuations that inherit execution preserve both selections and contexts; replacement Attempts compose fresh capabilities under that same scope. New child Runs do not inherit parent native contexts.
 
-`sealed_state` is absent while the Run is active. A `waiting` or `completed` sealing transaction always records the exact digest, size, schema versions, and checkpoint sequence of the state object frozen with the Run. A Worker-originated `failed` Run can record a complete state prepared under its fence or leave `sealed_state` null. An interrupt-driven `cancelled` Run always leaves it null because interrupt performs no object I/O. After any seal, no later object value is authoritative; only a recorded `sealed_state` selects bytes as part of the Run outcome. When a sealed state is present, its fields identify the exact terminal bytes without introducing a second base or result object. `committed_by_run_attempt_id` is null only when a relational fail-closed decision seals a Run without an attempt-originated state change.
+### Input and Output
 
-Every Run can own zero or more immutable `RunAttempt` values over its lifetime, with at most one current and lease-authorized attempt. The [RunAttempt allocation contract](13-run-attempt-scheduling-and-recovery.md#runattempt-allocation-within-a-run) owns when those generations are created.
-
-`RecoveryBudget` is the accepted recovery-policy snapshot. `max_recovery_attempts` includes the first Attempt and every successor created after retryable failure or expired-lease takeover; a successor created after a planned handoff does not consume it. `max_handoffs` bounds successful planned handoffs independently. `attempts_started` counts every Attempt for audit, `recovery_attempts_started` counts only Attempts charged to the recovery budget, and `handoffs_completed` counts committed `yielded` transitions. `recovery_deadline_at` is a fixed UTC deadline, and `usage_charged` aggregates every Attempt, including known usage from yielded or failed work. Every counter and limit is non-negative. Missing required usage is never treated as zero; if durable usage evidence is insufficient to prove that a configured ceiling remains, no new Attempt is admitted. The Run row is the sole authority for whether another Attempt or planned handoff is permitted.
-
-The exact `AgentId`, `AgentRevisionId`, complete `EffectiveAgentConfig`, and internal Plugin Runtime lock digest are fixed at Run acceptance. The selected Revision supplies the base Agent behavior; a typed override is merged and resolved exactly once. Worker resume never resolves the Agent head, another current Revision, another Runtime lock, or current managed-resource heads. An ordinary compatible continuation is another Run and resolves its selected AgentRevision and optional typed override, including every unpinned Skill binding. Authenticated waiting feedback, explicit waiting Continue, and Retry preserve the source Run's exact Revision, effective config, and Runtime lock, but their new acceptance still enforces current lifecycle gates. A fork either preserves that complete selection or resolves an explicitly selected compatible Agent/Revision/override according to the public fork contract.
-
-The request fingerprint covers normalized semantic input, including omission versus explicit null for Environment selection. It is computed once before preparation and remains unchanged through acceptance. Retry and resume retain the frozen resource selection and never reapply override merge rules; owning resource domains resolve current credentials.
-
-Exactly one of `input` and `input_object` is present. `input_kind` selects its owning protocol: `agent_input` stores the accepted [`AgentInput`](17-agent-input.md#agent-input-protocol), `waiting_feedback` stores the complete normalized [`WaitingRunFeedback`](18-agent-control-input-and-continuation.md#deferred-interaction), `waiting_continue` stores the composite [`WaitingRunContinueInput`](18-agent-control-input-and-continuation.md#waiting-continue-with-defaults), and `async_subagent_result` stores the exact [`AsyncSubagentResultInboxPayload`](34-async-subagents.md#asynchronous-child-runs) whose consumption accepted the Run. Start, ordinary continue, continue from, and fork use `agent_input`; feedback uses `waiting_feedback`; waiting Continue uses `waiting_continue`; eligible automatic inactive-Thread child-result delivery uses `async_subagent_result`; retry copies the source Run's exact kind and value. `retry_of_run_id` is present only for retry and names the same-Thread failed or cancelled Run that was current when its accepted intent was copied. It is correlation, not another state or history edge.
+Exactly one of `input` and `input_object` is present. `input_kind` selects its owning protocol: `agent_input` stores the accepted [`AgentInput`](17-agent-input.md#agent-input-protocol), `waiting_feedback` stores the complete normalized [`WaitingRunFeedback`](18-agent-control-input-and-continuation.md#deferred-interaction), `waiting_continue` stores the composite [`WaitingRunContinueInput`](18-agent-control-input-and-continuation.md#waiting-continue-with-defaults), and `async_subagent_result` stores the exact [`AsyncSubagentResultInboxPayload`](34-async-subagents.md#asynchronous-child-runs) whose consumption accepted the Run. The [acceptance and lineage table](18-agent-control-input-and-continuation.md#acceptance-and-lineage) and [Async Subagents](34-async-subagents.md#asynchronous-child-runs) select the input protocol. `retry_of_run_id` records terminal-intent retry correlation under the acceptance contract; it is not another state or history edge.
 
 At most one of `output` and `output_object` is present, and neither is present before a completed outcome. The `JsonValue` annotation is the storage encoding, not an open input schema. Inline values are bounded structured data suitable for direct Run reads. Oversized payloads use immutable objects. Retry copies the exact accepted descriptor value, publishes a new Run-owned payload envelope when that JSON is object-backed, and lets execution reacquire any required binary source for the new Run. `input_text` and `output_text` are optional bounded derived projections and never replace exact data, accepted source descriptions, or the complete message history.
 
 An Asset-backed input stores its exact immutable `asset_id` inside accepted `AgentInput`; it does not copy Asset bytes or create an Asset snapshot. A completed output can contain a bounded [`AssetRef`](32-asset-management.md#asset-model) inside its owning JSON value. Service creates no Run-to-Asset relation or Run-owned Asset list. Retry preserves the same input Asset ID, while output references remain ordinary immutable outcome data.
 
+### Recovery Budget
+
+Every Run can own zero or more immutable `RunAttempt` values over its lifetime, with at most one current and lease-authorized attempt. The [RunAttempt allocation contract](13-run-attempt-scheduling-and-recovery.md#runattempt-allocation-within-a-run) owns when those generations are created.
+
+`RecoveryBudget` is the accepted recovery-policy snapshot. `max_recovery_attempts` includes the first Attempt and every successor created after retryable failure or expired-lease takeover; a successor created after a planned handoff does not consume it. `max_handoffs` bounds successful planned handoffs independently. `attempts_started` counts every Attempt for audit, `recovery_attempts_started` counts only Attempts charged to the recovery budget, and `handoffs_completed` counts committed `yielded` transitions. `recovery_deadline_at` is a fixed UTC deadline, and `usage_charged` aggregates every Attempt, including known usage from yielded or failed work. Every counter and limit is non-negative. Missing required usage is never treated as zero; if durable usage evidence is insufficient to prove that a configured ceiling remains, no new Attempt is admitted. The Run row is the sole authority for whether another Attempt or planned handoff is permitted.
+
+### Pending and Sealed State
+
+`RunPendingSummary` is a bounded read and query projection, not a collection of mutable action rows. `resolution_policy="all"` means one accepted feedback or explicit waiting Continue finalizes the complete frozen set; partial responses never mutate this summary. The exact request values remain in the sealed Run state.
+
 `waiting` is a sealed Run outcome. It contains a bounded `pending` summary; the frozen Run state contains the authoritative deferred requests and effective client-tool surface. Authenticated Feedback or explicit waiting Continue is the accepted input of a new Run whose `parent_run_id` names the waiting Run and whose state is initialized from that waiting state. Pending Thread-inbox delivery remains outside that input and binds to the successor under its separate FIFO.
+
+`sealed_state` is absent while the Run is active. A `waiting` or `completed` sealing transaction always records the exact digest, size, schema versions, and checkpoint sequence of the state object frozen with the Run. A Worker-originated `failed` Run can record a complete state prepared under its fence or leave `sealed_state` null. An interrupt-driven `cancelled` Run always leaves it null because interrupt performs no object I/O. After any seal, no later object value is authoritative; only a recorded `sealed_state` selects bytes as part of the Run outcome. When a sealed state is present, its fields identify the exact terminal bytes without introducing a second base or result object. `committed_by_run_attempt_id` is null only when a relational fail-closed decision seals a Run without an attempt-originated state change.
 
 ### Run Lifecycle
 
@@ -296,13 +298,39 @@ flowchart LR
 
 The cross-layer identity-allocation decision is owned by the [Agent Interaction and Execution Model](10-agent-interaction-and-execution-model.md#identity-allocation-boundary). The RunAttempt contract owns how a Worker claim allocates a particular generation.
 
+## Git-Like Run DAG
+
+`parent_run_id` names the exact sealed Run whose frozen state initialized the new Run. It is the sole interaction-history edge. The operation-specific acceptance rules are owned by [Agent Control: Input and Continuation](18-agent-control-input-and-continuation.md#acceptance-and-lineage).
+
+```mermaid
+flowchart LR
+    T0["Run T0<br/>Thread A<br/>completed"] --> T1["Run T1<br/>Thread A<br/>waiting"]
+    T0 --> C1["Run C1<br/>Thread A<br/>continue from T0"]
+    T1 --> T2["Run T2<br/>Thread A<br/>feedback or waiting Continue"]
+    T1 --> R2["Run R2<br/>Thread A<br/>retry of failed feedback T2"]
+    T0 --> F1["Run F1<br/>Thread B<br/>fork"]
+    F1 --> F2["Run F2<br/>Thread B<br/>continue"]
+```
+
+The persisted lineage has three forms: a root has no parent; a continuation preserves its parent's Thread ID; and a fork uses another Thread ID. Failed and cancelled Runs remain queryable but are not eligible state parents. Trigger and delegation fields record structural or causal child relationships independently of the state-parent edge. Worker resume adds no DAG node.
+
+[Acceptance and Lineage](18-agent-control-input-and-continuation.md#acceptance-and-lineage) is the operation matrix for parent selection, accepted input, and execution Principal. It owns completed-head, waiting-head, null-head, Continue From, Fork, and Retry eligibility; [Async Subagents](34-async-subagents.md#asynchronous-child-runs) owns automatic-result eligibility. The [state initialization matrix](#state-initialization-matrix) below owns the transformation of the selected source into new Run-owned bytes.
+
+[Durable Thread Persistence](11-thread-persistence.md) owns the versioned Thread row and its current/head selection. Thread existence and selection are never inferred from Run timestamps. The Thread row serializes every accepted advancement. Several retained Runs can share the same `(thread_id, parent_run_id)` and represent historical sibling continuations, but at most one Run in the Thread can be `accepted` or `running`. Acceptance locks the Thread, verifies its exact version and operation-specific current/head selection, then advances it atomically with the new Run. An explicit fork creates a new Thread row and first Run in the same transaction.
+
+A lineage read follows `parent_run_id` from an explicitly selected head. It is organization-scoped, cycle-safe, and bounded. Created time and event order are not lineage authority.
+
+The relational implementation uses one bounded recursive query, verifies that traversal reaches a root without a cycle or truncation, and returns at most 1,000 Run rows. Its recursive step runs once per ancestor. For `A` ancestors before a fork and `L` ancestors in the fork's local lineage, it visits `A + L + 1` rows in one database round trip, with `O(A + L)` work and temporary path state.
+
+The public route, response, authorization, and failure contract are owned by [Run Lineage Read](16-management-api.md#run-lineage-read).
+
 ## Relational Run Table
 
 The conceptual `Run` materializes as one row in `runs`; supported relational backends preserve the same validation and query semantics.
 
 | Column group            | Columns                                                                                                                                                                                                                                        | Relational shape and contract                                                                                                          |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity                | `id`, `version`, `organization_id`                                                                                                                                                                                                             | Opaque text IDs and a positive integer CAS version; `id` is the primary key                                                            |
+| Identity                | `id`, `version`, `organization_id`                                                                                                                                                                                                             | Opaque text IDs; `id` is the primary key and `version` is the positive CAS version                                                     |
 | Execution authority     | `authority_principal_type`, `authority_principal_id`                                                                                                                                                                                           | Immutable User or Service Account represented by this Run; never a credential or role snapshot                                         |
 | Interaction lineage     | `session_id`, `thread_id`, `parent_run_id`, `retry_of_run_id`, `lineage_kind`                                                                                                                                                                  | Immutable state-source edge plus optional same-Thread terminal-intent retry correlation                                                |
 | Scheduling              | `priority`, `queue_name`, `available_at`, `current_run_attempt_id`, `next_attempt_fence`                                                                                                                                                       | Durable claim order and the sole current worker generation                                                                             |
@@ -324,40 +352,46 @@ Object-reference columns form all-or-none groups. Bounded values are validated b
 
 `environment_id` is an optional same-Workspace foreign key to the actual Environment record; `environment_access` is present exactly when it is. Both are immutable after acceptance. `environment_use_started_at` is set once when execution acquires use, not at acceptance, and remains historical evidence after sealing. Retention considers use active only while the Run is running. There is no separate environment-binding table or duplicated target configuration. Indexes support finding active users across Threads for one Environment.
 
-## Git-Like Run DAG
+## Relational Constraints and Queries
 
-`parent_run_id` names the exact sealed Run whose frozen state initialized the new Run. It is the sole interaction-history edge. The operation-specific acceptance rules are owned by [Agent Control: Input and Continuation](18-agent-control-input-and-continuation.md#acceptance-and-lineage).
+The `runs` table follows the [Relational Schema Lifecycle](04-relational-schema.md) and preserves these constraints:
 
-```mermaid
-flowchart LR
-    T0["Run T0<br/>Thread A<br/>completed"] --> T1["Run T1<br/>Thread A<br/>waiting"]
-    T0 --> C1["Run C1<br/>Thread A<br/>continue from T0"]
-    T1 --> T2["Run T2<br/>Thread A<br/>feedback or waiting Continue"]
-    T1 --> R2["Run R2<br/>Thread A<br/>retry of failed feedback T2"]
-    T0 --> F1["Run F1<br/>Thread B<br/>fork"]
-    F1 --> F2["Run F2<br/>Thread B<br/>continue"]
-```
+1. `id` is the primary key, `(organization_id, id)` is unique so parent references remain same-organization, `(organization_id, thread_id)` references one durable Thread in the same organization and Session, and a present retry source references a Run in that same organization and Thread.
+2. `authority_principal_type` is `user` or `service_account`; acceptance validates that the referenced Principal belongs to the Run organization and is eligible for its Workspace. The polymorphic reference has no universal Principal foreign key, so every Attempt repeats domain referential and authorization validation. Immutable acceptance fields never change; versions, fences, checkpoint sequences, sizes, and recovery counters satisfy their positive or non-negative field bounds.
+3. Input has exactly one inline or object-backed representation and matches `input_kind`. `retry_of_run_id` is null for start, ordinary or waiting Continue, continue from, feedback, automatic asynchronous-result acceptance, and fork and otherwise names a same-Thread failed or cancelled Run that was current at retry acceptance and whose accepted kind and value match the retry. Outcome fields satisfy their status-specific nullability, and output exists only for `completed`.
+4. Every present sealed-state digest matches the selected envelope identity, checkpoint, and outcome candidate. It is required for `waiting` and `completed`; a `failed` Run can omit it, and an interrupt-driven `cancelled` Run does omit it. Sealed rows reject all relational updates. Active-control preconditions and inbox disposition follow the owning [race contract](19-agent-control-active-execution.md#completion-and-control-races).
+5. `current_run_attempt_id` is absent for `accepted` and sealed Runs and can exist only for `running`. A `running` Run may omit it during bounded retry backoff. Active updates require expected Run version; attempt-originated updates also require the current attempt, fence, and lease.
+6. Parent, lineage, retry-source, and input-kind validation enforces the operation predicates in [Acceptance and Lineage](18-agent-control-input-and-continuation.md#acceptance-and-lineage) or [Async Subagents](34-async-subagents.md#asynchronous-child-runs). Every parent used for initialization has an eligible sealed state; failed and cancelled Runs are never state parents.
+7. `recovery_attempts_started` does not exceed `max_recovery_attempts`, and `handoffs_completed` does not exceed `max_handoffs`; the total `attempts_started` remains the complete audit count. Recovery, handoff, deadline, and usage limits remain Run-owned authority.
 
-The lineage rules are:
+The accepted access paths are:
 
-1. A root Run has `parent_run_id=null` and `lineage_kind=root`. The first Run of a new Thread initializes state with `HarnessState.new(thread_id=thread.id)`. An ordinary root-like Run accepted later in an existing Thread is permitted for the first input to an empty Thread, or explicit/queued ordinary input while `head_run_id=null` after the current Run failed or was cancelled; Retry of a failed root separately repeats root lineage under rule 5. An async result from that terminal root lineage is suppressed rather than accepted. The trusted Host transformation constructs empty state while preserving that Thread's exact `thread_id`.
-2. A continuation has `lineage_kind=continue`, uses a completed parent in the same Thread, and initializes its state from the parent's frozen state while preserving `thread_id`. Ordinary Continue and eligible automatic asynchronous-result acceptance select the current completed head; Continue From can explicitly reselect any retained and readable completed historical Run in that Thread.
-3. Authenticated Feedback and explicit waiting Continue have `lineage_kind=continue`, use the exact waiting parent, initialize state from that parent's frozen deferred state, and preserve `thread_id`.
-4. A fork has `lineage_kind=fork`, uses a completed parent, allocates the new Thread ID, transforms its frozen Harness state with `HarnessState.fork(thread_id=new_thread_id)`, clears portable Environment state, retains only eligible non-Environment Host continuation, and initializes a new state with that ID.
-5. A retry names its failed or cancelled source in `retry_of_run_id`, copies that source's `parent_run_id`, `lineage_kind`, `input_kind`, and accepted input, and repeats the same state initialization without using the terminal source as a parent or inheriting its child relationships and results.
-6. A child Agent that starts with independent empty history is a root of its own Thread. Structural or causal parentage uses trigger and delegation fields.
-7. Worker resume preserves the Run, Thread, parent edge, and state key. It does not add a DAG node.
-8. Failed and cancelled Runs remain queryable but are not eligible parents.
+| Access path                              | Index or uniqueness contract                                                                                                           |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Worker claim and retry scan              | `(organization_id, queue_name, status, available_at, priority, created_at, id)` for `accepted` and current-attempt-free `running` Runs |
+| Idempotent acceptance                    | Unique `(organization_id, idempotency_key)` when the key exists                                                                        |
+| Session activity                         | `(organization_id, session_id, created_at, id)`                                                                                        |
+| Thread activity and stable paging        | `(organization_id, thread_id, created_at, id)`                                                                                         |
+| DAG successor traversal                  | `(organization_id, parent_run_id, id)`                                                                                                 |
+| Retry correlation                        | `(organization_id, retry_of_run_id, id)`                                                                                               |
+| DAG ancestor traversal                   | Unique `(organization_id, id)` parent lookup at each recursive step                                                                    |
+| One active Run per Thread                | Partial unique `(organization_id, thread_id)` for `accepted` and `running`                                                             |
+| One live or selected root Run per Thread | Partial unique `(organization_id, thread_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is null                |
 
-The independent Thread row serializes every accepted advancement. Several retained Runs can share the same `(thread_id, parent_run_id)` and represent historical sibling continuations, but at most one Run in the Thread can be `accepted` or `running`. Acceptance locks the Thread, verifies its exact version and operation-specific current/head selection, then advances it atomically with the new Run. An explicit fork creates a new Thread row and first Run in the same transaction.
+## Object Storage Schemas
 
-A lineage read follows `parent_run_id` from an explicitly selected head. It is organization-scoped, cycle-safe, and bounded. Created time and event order are not lineage authority.
+All JSON objects serialize as UTF-8 RFC 8785 canonical JSON after typed values are converted to declared JSON strings. Digests and sizes cover those exact bytes. Non-finite numbers and duplicate object keys are invalid.
 
-The relational implementation uses one bounded recursive query, verifies that traversal reaches a root without a cycle or truncation, and returns at most 1,000 Run rows. Its recursive step runs once per ancestor. For `A` ancestors before a fork and `L` ancestors in the fork's local lineage, it visits `A + L + 1` rows in one database round trip, with `O(A + L)` work and temporary path state.
+Service Run persistence uses these serialized object types:
 
-The public route, response, authorization, and failure contract are owned by [Run Lineage Read](16-management-api.md#run-lineage-read).
+| Object type          | Content type                                | Owner                                                   |
+| -------------------- | ------------------------------------------- | ------------------------------------------------------- |
+| `RunStateEnvelope`   | `application/vnd.converge.run-state+json`   | One deterministic, conditionally replaced Run state key |
+| `RunPayloadEnvelope` | `application/vnd.converge.run-payload+json` | Immutable oversized Run input or output                 |
 
-## Run State Object
+[Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) separately owns `RunReplaySnapshot`.
+
+### Run State Object
 
 Each accepted Run owns one `RunStateEnvelope`. It combines Harness portable state with Host continuation required to resume the same Run or initialize a new Run from a selected parent. It contains data and correlation, never current authority.
 
@@ -421,11 +455,11 @@ class RunStateEnvelope:
 
 This is the complete serialized outer schema. `HarnessState` is encoded through its owning public adapter and carries the same `thread_id`. `checkpoint_seq` starts at zero and increases monotonically for each successful semantic state replacement. The initial value has `checkpoint_kind=initial`, `input_disposition=pending`, no attempt identity, fence zero, and no outcome candidate.
 
-`effective_agent_config` is the complete non-secret snapshot resolved and authorized at Run acceptance. Its Model, instructions, exact Plugin lock, Skill locks, managed ConnectorConnection and MCPConnection tool configuration, subagent graph, client tools, output contract, and correction budgets remain byte-for-byte equivalent across every checkpoint replacement for that Run. The Run's separate Connectivity selections and protected Ingress context are the final source and tool-scope authority after trusted overlays. They do not freeze discovered external schemas. A Worker reauthorizes mutable references required by their owning contracts, resolves fresh eligible credential values, and opens live bindings, but cannot rewrite either accepted configuration. Exact Skill packages remain internally readable for reconstruction of that accepted Run after Skill deletion.
+`effective_agent_config` stores the complete non-secret snapshot defined by [Agent Management](28-agent-management.md#agentrunoverride-and-effective-configuration). It remains byte-for-byte equivalent across checkpoint replacements, and its digest must match `Run.effective_agent_config_digest`. The separate accepted Connectivity selections and protected Ingress context remain immutable under their owning contracts. [Recovery Preparation](13-run-attempt-scheduling-and-recovery.md#recovery-preparation) revalidates references and current authority without rewriting the accepted configuration; [Skill retention](31-skill-management.md#agent-selection-and-run-locking) governs reconstruction from exact retained Skill packages.
 
 `usage_limits` persists the accepted native Pydantic AI per-invocation ceiling separately from reusable Agent configuration. It is immutable across checkpoints and replacement Attempts. Child admission intersects the Harness plan with the parent and frozen edge limits. A continuation or fork retains that ceiling and can only narrow it; explicit Retry copies the source ceiling. Each Attempt supplies it to the Harness with its own usage accumulator. Durable cross-Attempt charging and recovery budgets remain governed by [Run Attempt recovery](13-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement). `None` uses the Harness definition default.
 
-The Run row independently fixes logical Environment identity and access. A Worker reads current protected Provider state from that Environment and applies its frozen template policy. A confirmed rebuild advances backing generation and emits lifecycle evidence without changing the Run's Environment ID or rewriting historical observations. Portable Harness state cannot override this authority.
+Portable Harness Environment state is data, not authority over the Run row's Environment selection or the Environment record's current state and backing generation; their relationship is defined by [Run Binding and Recovery](29-environment-management.md#run-binding-and-recovery).
 
 The first checkpoint after the accepted Run input has crossed a complete Harness input boundary sets `input_disposition=applied`. Every later progress or outcome checkpoint retains `applied`. This field prevents a later attempt from injecting the same accepted input twice: a pending initial state receives the Run input; an applied state resumes directly from its exported Harness and Host state. For `waiting_feedback` and `waiting_continue`, Service does not publish that first applied checkpoint until the isolated first model request and any resulting complete tool batch have reached the safe delivery hook. For `waiting_continue`, the one pending input application covers the complete default deferred results and the new `AgentInput` supplied to the same first model request. A crash before that checkpoint replays the complete feedback input, including both waiting-Continue components; recovery from an applied checkpoint supplies none of it again. Waiting-derived Thread-inbox delivery has separate receipts and remains pending in PostgreSQL until the Service-owned hook makes it eligible.
 
@@ -433,11 +467,11 @@ The first checkpoint after the accepted Run input has crossed a complete Harness
 
 `requests` is the exact serialized native Pydantic `DeferredToolRequests` value; Service classifies its approval, client-tool, and structured-user-input calls in the relational summary without reconstructing the native value from that summary. Its call IDs and kinds exactly equal the waiting pending summary. Service defines no additional provider-owned pending kind or Host-request collection. Provider-native public-message continuation remains a Harness/model-integration capability and does not become a Service waiting reason. Asynchronous child results remain independent Thread-inbox entries and never enter deferred state, impersonate the original spawn call, or enter `DeferredToolResume`.
 
-`consumed_inbox_entries` is the bounded receipt set for [`thread_inbox`](19-agent-control-active-execution.md#thread-inbox) entries incorporated into this Run. Each receipt correlates the exact inbox identity and kind with the continuation represented by Harness or Host state in the same envelope. Service records incorporation independently of message history before compaction can remove the original input. The next complete checkpoint merges those records with prior receipts and publishes them with the current, possibly compacted history in one conditional write. Replacement Attempts preserve the receipts without requiring original messages to remain in history. A new Run does not inherit its parent's receipts; it records only inbox entries consumed by that new Run's own acceptance. Stable message provenance, synchronous incorporation recording, and recovery of a prior checkpoint missing a receipt follow the [active-control contract](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption).
+`consumed_inbox_entries` is the bounded receipt set for [`thread_inbox`](19-agent-control-active-execution.md#thread-inbox) entries incorporated into this Run. Each `ConsumedThreadInboxEntry` stores the exact inbox identity and kind and corresponds to the Harness or Host continuation in the same envelope. Receipts persist across replacement Attempts of the same Run; new-Run initialization clears inherited receipts and records only entries consumed by that new Run. [Offer, Incorporation, and Durable Consumption](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption) owns provenance, process-local recording, compaction, receipt assembly, and recovery repair.
 
 `RunStateEnvelope` contains no Asset publication ledger, receipt, reference list, or Asset Capability namespace. When a successful `publish_asset` tool result has crossed a complete Harness checkpoint, its `AssetRef` can already appear in ordinary `harness` message history. The independent Asset row and selected content object remain publication authority whether or not that tool result was checkpointed.
 
-The envelope separates four state classes:
+The envelope separates three state classes:
 
 | State class                   | Contents                                                                                                                      | Restore rule                                                                                  |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -447,27 +481,81 @@ The envelope separates four state classes:
 
 The envelope contains data and correlation only; current policy, credentials, live resources, and process-local objects are resolved afresh.
 
-Fork portability is determined by Harness state and each owning deferred-value contract. Harness portable Environment state contains no credentials or live objects and is not Service selection authority. A new Run freezes or preserves its `EffectiveAgentConfig` independently from its Environment selection, clears portable Environment state and uses the source or explicitly selected Environment under the control contract. Conversation continuation does not copy files or guarantee that a previously deleted target still exists.
+Harness and each deferred-value owner determine portable-state compatibility. The accepting [control operation](18-agent-control-input-and-continuation.md#acceptance-and-lineage) and [Environment contract](29-environment-management.md#run-binding-and-recovery) govern Environment selection and state clearing for a new Run; Run persistence applies those decisions without storing live resources or credentials.
+
+### Run Payload Object
+
+```python
+class RunPayloadEnvelope:
+    schema_version: Literal["1"]
+    run_id: str
+    payload_kind: Literal["input", "output"]
+    payload_schema_version: str
+    payload: JsonValue
+```
+
+For `payload_kind="input"`, `payload_schema_version` is the exact owning `AgentInput`, waiting-feedback, waiting-continue, or asynchronous-result schema version and `payload` is that protocol's complete accepted JSON value. It is not an independent extensible payload schema.
+
+The object key is content-addressed beneath the Run:
+
+```text
+organizations/{organization_id}/runs/{run_id}/payloads/{payload_kind}/{digest_sha256}.json
+```
+
+[`BinaryContent`](17-agent-input.md#binary-source-and-delivery) in an accepted input retains only its normalized URL or Environment-path source description or exact immutable `asset_id`. Run payload objects never contain inline file bytes, an Asset body snapshot, or a public object-storage reference.
+
+## Run Acceptance, Checkpoint, and Outcome Commit
+
+The persistence protocol initializes a Run-owned state, publishes acceptance, admits a fenced writer, and conditionally checkpoints or seals the Run. Recovery uses the selected complete state under the same authority checks.
 
 ### State Initialization Matrix
 
-| Concern                                                                           | Start                                                | Ordinary Continue                                                                      | Waiting Feedback or Continue                                                     | Fork                                                                                                                         |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Run and state identity                                                            | Allocate a Run and deterministic Run-owned state key | Allocate a Run and key; name the completed head, or no parent under the null-head rule | Allocate a Run and key; name the exact waiting Run                               | Allocate a Run, Thread, and key; name the completed source                                                                   |
-| Harness state                                                                     | Create `HarnessState.new(thread_id=thread.id)`       | Copy the frozen parent, or create empty state with the existing `thread_id`            | Copy frozen waiting state and preserve `thread_id`                               | Apply `source_state.fork(thread_id=new_thread_id)`, clear Environment state, and use the new `thread_id`                     |
-| Host deferred continuation                                                        | Start empty                                          | Start empty after clearing the parent outcome, or empty with no parent                 | Retain exact pending requests until the complete default or supplied set applies | Clear source outcome and deferred data                                                                                       |
-| Accepted input                                                                    | Store new `AgentInput` as pending                    | Store new `AgentInput` as pending                                                      | Store `WaitingRunFeedback` or composite `WaitingRunContinueInput` as pending     | Store new `AgentInput` as pending                                                                                            |
-| Effective Agent configuration                                                     | Resolve selected Revision and typed override         | Resolve selected Revision and typed override; validate portable state                  | Copy the waiting parent's exact effective config and reauthorize it              | Preserve source config unless an explicit compatible selection is supplied; bind the inherited or replacement target exactly |
-| Definition and integration                                                        | Freeze effective config and exact Runtime lock       | Freeze effective config and validate compatibility                                     | Preserve the waiting parent's exact Revision and Runtime lock                    | Preserve source selection unless an explicit compatible selection is supplied                                                |
-| Policy, Secrets, `RunBindings`, Environment operation objects, tools, and clients | Resolve fresh                                        | Resolve fresh and reauthorize retained selectors                                       | Resolve fresh and reauthorize retained selectors                                 | Resolve fresh and reauthorize retained selectors                                                                             |
+The accepting operation supplies the authorized parent, lineage, exact configuration, and input under [Acceptance and Lineage](18-agent-control-input-and-continuation.md#acceptance-and-lineage). The control plane applies the corresponding source transformation:
+
+| Selected state source         | Harness state                                                                            | Host deferred continuation                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| No parent                     | Create `HarnessState.new(thread_id=thread.id)`, including when the Thread already exists | Start empty                                                                      |
+| Completed parent, same Thread | Copy the frozen parent and preserve `thread_id`                                          | Clear source outcome and deferred data                                           |
+| Waiting parent, same Thread   | Copy the frozen waiting state and preserve `thread_id`                                   | Retain exact pending requests until the complete accepted resolution set applies |
+| Completed parent, new Thread  | Apply `source_state.fork(thread_id=new_thread_id)` and clear portable Environment state  | Clear source outcome and deferred data                                           |
+
+Every form stores the operation-selected input as pending and the complete selected `EffectiveAgentConfig` and Runtime lock in the new envelope. Configuration inheritance follows the accepting operation; initialization does not resolve or merge configuration. Environment selection and portable-state handling follow [Environment Management](29-environment-management.md#run-binding-and-recovery) and the accepting control operation.
 
 Initialization of a new Run always writes a complete Run-owned envelope with `checkpoint_seq=0`. It does not reference the parent state as a base, retain the parent's outcome candidate as the new Run's outcome, or create another state field on the new Run. Parent state is only immutable source data for this initialization. It clears the parent's consumed-inbox receipts after applying any inbox value explicitly selected by the accepting operation; the new Run records only inbox entries that it consumes itself.
 
-An explicit Retry repeats the source Run's row in this matrix: it copies the source's `parent_run_id`, `lineage_kind`, complete accepted input kind and value, AgentRevision, `EffectiveAgentConfig`, and Runtime lock, then rebuilds a complete state from the same eligible parent. It records `retry_of_run_id`, accepts no invocation override, inherits no child relationship or inbox result originating from the terminal source, and resolves current authority, fresh live resources, and a fresh recovery budget.
+A [terminal-intent Retry](18-agent-control-input-and-continuation.md#retry-of-terminal-intent) initializes from its copied state-parent edge through this same matrix. The failed or cancelled intent source supplies no recovery state; a fresh Run-owned envelope and any object-backed input are published for the new Run.
+
+Worker recovery can resume the same Run from its latest valid state object; `continue` and `fork` instead initialize a new Run from frozen parent state. The [Agent interaction and execution model](10-agent-interaction-and-execution-model.md#identity-allocation-boundary) owns that identity distinction, while [RunAttempt allocation](13-run-attempt-scheduling-and-recovery.md#runattempt-allocation-within-a-run) owns creation of each Worker generation. No state write for the new Run mutates the parent.
+
+### Run Acceptance
+
+Run acceptance creates or advances the Thread row together with the Run row and its initial state as one externally indivisible acceptance operation:
+
+1. determine the operation's exact `authority_principal`, validate that Principal's current status and authorization together with Thread version, current/head selection, lineage, exact Revision, typed override, and any parent state; resolve and authorize the independent Environment choice or template revision without external I/O; then build the complete Run-owned initial state containing `EffectiveAgentConfig`;
+2. publish object-backed input, and `state.json` create-only;
+3. in one short transaction, insert or advance the Thread, allocate or revalidate the selected Environment record, insert the `accepted` Run with its fixed Environment ID/access, update the Thread default without acquiring target use, and commit required lifecycle facts, idempotency evidence, and outbox intents.
+
+```mermaid
+sequenceDiagram
+    participant Control as Control plane
+    participant Objects as Object storage
+    participant DB as Relational database
+
+    Control->>Control: Validate Thread, parent, Revision, override, and current authority
+    Control->>Objects: Read frozen parent state when required
+    Control->>Control: Build new Run initial state
+    Control->>Objects: Create new Run state.json and optional input payload
+    Control->>DB: Commit Thread/default, Environment allocation, Run selection and lifecycle facts
+    alt transaction commits
+        DB-->>Control: Thread advanced and Run accepted
+    else transaction fails
+        DB-->>Control: Thread unchanged and objects remain cleanup candidates
+    end
+```
 
 ### State Key, Conditional Writes, and Fencing
 
-The state key is deterministic and stable for the lifetime of the Run:
+Each accepted Run owns one complete state object at a deterministic key, stable for its lifetime. Service stores no separate `base_state`, `result_state`, or selectable checkpoint history:
 
 ```text
 organizations/{organization_id}/runs/{run_id}/state.json
@@ -505,9 +593,70 @@ Each storage request and reconciliation read has a finite timeout, and retry cyc
 
 Retry exhaustion and non-authority deadline expiry follow the [Attempt preparation-failure contract](13-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement). An owner that can still confirm authority records the classified failure and releases the selected Attempt through a fenced transaction. It does not merely stop its local task and leave a renewable `leased` Attempt until expiry. If PostgreSQL is unavailable or authority is lost, the executor stops claim writes, performs bounded cleanup and leaves recovery to authoritative reconciliation or lease expiry. This policy applies only to pre-Harness state writer admission; it does not authorize replay of Agent model or tool effects or refreshing a checkpoint's version token after a conflicting write.
 
-### Resume Semantics
+### Checkpoint Triggers and Refresh
+
+During an active Harness Run, Service requests a progress checkpoint only at a complete public state boundary:
+
+1. after the accepted Run input has crossed the Harness input boundary and before the first model request, except that waiting Feedback and waiting Continue defer their first applied checkpoint until the isolated first-request hook boundary;
+2. when flushing recorded Thread-inbox incorporation under the [inbox-consumption flow](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption);
+3. after a complete tool batch and its results have entered the next complete message boundary, before another model request;
+4. between internal `ModelAttempt` values when the Harness exposes a new complete normalized state.
+
+A waiting or completed Harness outcome always triggers its matching outcome checkpoint. Raw stream deltas, an in-flight model response, an incomplete tool batch, an active inline child, a lease heartbeat, and elapsed time alone never trigger state publication. Adjacent progress triggers with no Harness or Host state change are coalesced rather than creating duplicate checkpoints.
+
+[Active Execution](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption) owns when recorded inbox incorporations must enter a checkpoint, including compaction and event-delivery independence. Those rules use the complete checkpoint boundaries defined here.
+
+A graceful-handoff request reaches state persistence only at a complete boundary selected by [Service–Harness Runtime Integration](14-harness-runtime-integration.md#safe-boundaries-and-corresponding-hooks). At that boundary, state persistence publishes or reuses one ordinary complete progress checkpoint; [RunAttempt planned handoff](13-run-attempt-scheduling-and-recovery.md#graceful-handoff-transaction) owns request observation, continued lease authority, local quiescence, and the `yielded` transaction. A handoff creates no checkpoint identity or relational checkpoint selection; persistence confirms only the latest conditionally published complete state at the ordinary Run key.
+
+#### Conditional Publication
 
 Service writes state only after `HarnessRunStream.export_state()` produces a complete structurally valid state and Host continuation has been serialized under its bounds. Raw token deltas, incomplete private graph nodes, live `RunBindings`, Environment adapters, entered facades, and process-local handles never enter the object.
+
+During execution, a checkpoint operation:
+
+1. exports complete Harness state and obtains the matching bounded Host state, including receipts assembled under the [active-control contract](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption), as one coherent envelope;
+2. validates current Run, attempt, fence, lease, and expected object version;
+3. conditionally replaces the same `state.json` with the next checkpoint sequence and matching metadata;
+4. reconciles an unknown publication result when necessary, revalidates current Attempt authority, and treats only the confirmed publication's object version as the next valid write token.
+
+A checkpoint publishes the complete continuation and all corresponding `ConsumedThreadInboxEntry` receipts atomically in the same envelope. A receipt cannot be published separately from the state it describes or paired with another continuation. The [active-control contract](19-agent-control-active-execution.md#offer-incorporation-and-durable-consumption) owns receipt validation, FIFO consumption, recovery repair, and terminal races; object publication alone does not mark an inbox entry consumed.
+
+Checkpoint writes do not create a Run row, attempt row, lifecycle transition, or historical checkpoint selector. A failed or unknown put is reconciled by `stat` and exact body validation before any retry.
+
+### Outcome Sealing
+
+#### Common Transaction Requirements
+
+Every Run-sealing path, including waiting, completion, failure before execution, and cancellation, includes [inline Hook expiry](26-hook-notifications.md#inline-subscription-lifetime) in the same relational commit after final lifecycle-event matching. Hook configuration and its inheritance retention remain owned by the subscription head and Revisions, not by Run input or state. Attempt recovery and handoff that leave the Run unsealed preserve its subscription.
+
+A Run outcome commit applies the [active-control outcome precondition and pending-delivery disposition](19-agent-control-active-execution.md#completion-and-control-races). This contract selects receipts already present in the complete state and seals the matching Run candidate; the active-control contract owns completed-outcome blocking, waiting rollover, suppression, and supersession of Thread inbox entries.
+
+#### Waiting and Completed
+
+A waiting outcome and a completed outcome without a prepared queued successor commit in this order:
+
+1. publish any immutable object-backed output;
+2. conditionally replace `state.json` with a complete matching outcome candidate;
+3. in one short transaction, revalidate current Run and `RunAttempt`, satisfy the [active-control outcome precondition](19-agent-control-active-execution.md#completion-and-control-races), reconcile inbox receipts from the selected state, select the candidate's exact digest and checkpoint sequence as `sealed_state`, copy its bounded output or pending summary into the Run row, terminalize the attempt, charge known usage, append lifecycle facts, verify that this Run is still the Thread's current Run, release any acquired Environment use and update its aggregate retention condition, seal it, select it as the continuation head, and increment the Thread version;
+4. after commit, reject every later write to the state key.
+
+#### Failed and Cancelled
+
+A transaction that seals a Run as failed or cancelled retains its immutable effective configuration and Environment selection. It releases acquired Environment use and updates retention in the same transaction, and applies the terminal inbox and asynchronous-result disposition owned by [Active Execution](19-agent-control-active-execution.md) and [Async Subagents](34-async-subagents.md). A never-used lazy Run has no use to release.
+
+A Worker-originated failed outcome can select a complete state already prepared under its current fence. An interrupt-driven cancelled outcome performs no object I/O and selects no new sealed state; its `sealed_state` is null. Either terminal transaction verifies that the Run remains current, preserves it as the Thread's current Run, preserves the prior continuation head, and increments the Thread version. Neither outcome makes that Run eligible as a parent.
+
+#### Completion with a Queued Successor
+
+A completed outcome with queued intent can instead use the [state-first combined handoff](20-agent-control-queued-submissions.md#completion-time-combined-handoff). Run persistence publishes the source outcome candidate and, when consumption remains eligible, the prospective successor's complete initial state before that transaction; it permits no accepted successor without valid initial state. The queued-submission contract owns detached preflight, queue ordering, three-way failure classification, atomic consumption or terminal queue failure with source sealing, and fallback recovery; the [Thread contract](11-thread-persistence.md#head-and-current-runs) owns the resulting head, current, and version effects.
+
+Transactions that seal a Run and accept a successor atomically release prior acquired Environment use and record the successor selection under [Environment use and retention](29-environment-management.md#retention-policy). They use the canonical Thread/Run/Attempt then stable Environment-ID lock order before inbox/queue locks. The Environment owner defines acquisition, idempotent release, and aggregate active/idle conditions.
+
+#### Uncommitted Outcome Candidate
+
+If the object write succeeds but the relational transaction does not commit, the Run remains active and the outcome candidate remains a valid resumable state, not a sealed outcome. The current attempt or an authorized later attempt can retry the exact relational commit after reconciliation. Object timestamps or listings never authorize that adoption.
+
+### Resume Semantics
 
 After the [RunAttempt allocation contract](13-run-attempt-scheduling-and-recovery.md#runattempt-allocation-within-a-run) authorizes a later generation for the same Run, the Worker validates and claims the existing state key and completes [Recovery Preparation](13-run-attempt-scheduling-and-recovery.md#recovery-preparation) against that confirmed complete state. It reconciles existing inbox evidence before new delivery or execution and selects one continuation branch:
 
@@ -527,148 +676,15 @@ The same resume rule applies after a predecessor Attempt commits `yielded`. Reco
 
 The resume point is the current state object, not an event cursor, latest object listing result, lifecycle timestamp, retained Item, or state from another Run. If work occurred after the last successful conditional write, that work is not part of the resume point. The [Run Attempt recovery contract](13-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement) owns unresolved tool-call handling after that boundary.
 
-## Object Storage Schemas
-
-All JSON objects serialize as UTF-8 RFC 8785 canonical JSON after typed values are converted to declared JSON strings. Digests and sizes cover those exact bytes. Non-finite numbers and duplicate object keys are invalid.
-
-Service Run persistence uses these serialized object types:
-
-| Object type          | Content type                                | Owner                                                   |
-| -------------------- | ------------------------------------------- | ------------------------------------------------------- |
-| `RunStateEnvelope`   | `application/vnd.converge.run-state+json`   | One deterministic, conditionally replaced Run state key |
-| `RunPayloadEnvelope` | `application/vnd.converge.run-payload+json` | Immutable oversized Run input or output                 |
-
-[Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) separately owns `RunReplaySnapshot`.
-
-### Run Payload Object
-
-```python
-class RunPayloadEnvelope:
-    schema_version: Literal["1"]
-    run_id: str
-    payload_kind: Literal["input", "output"]
-    payload_schema_version: str
-    payload: JsonValue
-```
-
-For `payload_kind="input"`, `payload_schema_version` is the exact owning `AgentInput`, waiting-feedback, waiting-continue, or asynchronous-result schema version and `payload` is that protocol's complete accepted JSON value. It is not an independent extensible payload schema.
-
-The object key is content-addressed beneath the Run:
-
-```text
-organizations/{organization_id}/runs/{run_id}/payloads/{payload_kind}/{digest_sha256}.json
-```
-
-[`BinaryContent`](17-agent-input.md#binary-source-and-delivery) in an accepted input retains only its normalized URL or Environment-path source description or exact immutable `asset_id`. Run payload objects never contain inline file bytes, an Asset body snapshot, or a public object-storage reference.
-
-### Retention
+## Retention
 
 Retention never removes a state or Run payload object while a retained Run or successor depends on it. A parent state remains frozen and reachable while any successor or lineage policy requires it. Reference-aware deletion of those state and payload objects never relies on object age alone. URL and Environment-path source bytes remain outside Service persistence. Asset bytes follow the independent [Asset deletion and retention contract](32-asset-management.md#deletion-and-retention); a Run reference does not pin or restore a deleted Asset.
 
 [Control Background Tasks](07-control-background-tasks.md#retention-and-collection) owns periodic discovery and collection of eligible retained or unselected objects, including exclusion against concurrent publication. That execution obligation introduces no Run expiry or permission to remove a retained lineage dependency.
 
-## Run Acceptance, Checkpoint, and Outcome Commit
-
-Run acceptance creates or advances the Thread row together with the Run row and its initial state as one externally indivisible acceptance operation:
-
-1. determine the operation's exact `authority_principal`, validate that Principal's current status and authorization together with Thread version, current/head selection, lineage, exact Revision, typed override, and any parent state; resolve and authorize the independent Environment choice or template revision without external I/O; then build the complete Run-owned initial state containing `EffectiveAgentConfig`;
-2. publish object-backed input, and `state.json` create-only;
-3. in one short transaction, insert or advance the Thread, allocate or revalidate the selected Environment record, insert the `accepted` Run with its fixed Environment ID/access, update the Thread default without acquiring target use, and commit required lifecycle facts, idempotency evidence, and outbox intents.
-
-```mermaid
-sequenceDiagram
-    participant Control as Control plane
-    participant Objects as Object storage
-    participant DB as Relational database
-
-    Control->>Control: Validate Thread, parent, Revision, override, and current authority
-    Control->>Objects: Read frozen parent state when required
-    Control->>Control: Build new Run initial state
-    Control->>Objects: Create new Run state.json and optional input payload
-    Control->>DB: Commit Thread/default, Environment allocation, Run selection and lifecycle facts
-    alt transaction commits
-        DB-->>Control: Thread advanced and Run accepted
-    else transaction fails
-        DB-->>Control: Thread unchanged and objects remain cleanup candidates
-    end
-```
-
-### Checkpoint Triggers and Refresh
-
-During an active Harness Run, Service requests a progress checkpoint only at a complete public state boundary:
-
-1. after the accepted Run input has crossed the Harness input boundary and before the first model request, except that waiting Feedback and waiting Continue defer their first applied checkpoint until the isolated first-request hook boundary;
-2. when flushing recorded Thread-inbox incorporation under the complete [inbox-consumption flow](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment), which permits compaction before that publication;
-3. after a complete tool batch and its results have entered the next complete message boundary, before another model request;
-4. between internal `ModelAttempt` values when the Harness exposes a new complete normalized state.
-
-A waiting or completed Harness outcome always triggers its matching outcome checkpoint. Raw stream deltas, an in-flight model response, an incomplete tool batch, an active inline child, a lease heartbeat, and elapsed time alone never trigger state publication. Adjacent progress triggers with no Harness or Host state change are coalesced rather than creating duplicate checkpoints.
-
-Synchronous incorporation recording and compaction do not require an additional pre-compaction checkpoint. Recorded entries are merged into the next ordinary complete checkpoint, including a post-tool, model-boundary, recovery, handoff, or terminal checkpoint. Its history may already be compacted; no recorded incorporation in that continuation is deferred to a later write because the original message is absent or an event has not arrived. Until publication and the fenced consumption transaction succeed, PostgreSQL still reports the entries as pending.
-
-A graceful-handoff request reaches state persistence only at a complete boundary selected by [Service–Harness Runtime Integration](14-harness-runtime-integration.md#safe-boundaries-and-corresponding-hooks). At that boundary, state persistence publishes or reuses one ordinary complete progress checkpoint; [RunAttempt planned handoff](13-run-attempt-scheduling-and-recovery.md#graceful-handoff-transaction) owns request observation, continued lease authority, local quiescence, and the `yielded` transaction.
-
-During execution, a checkpoint operation:
-
-1. exports complete Harness state and snapshots the incorporation records for that continuation under the same run-control critical section, then builds bounded Host state by merging those records with prior receipts under the active-control contract;
-2. validates current Run, attempt, fence, lease, and expected object version;
-3. conditionally replaces the same `state.json` with the next checkpoint sequence and matching metadata;
-4. reconciles an unknown publication result when necessary, revalidates current Attempt authority, and treats only the confirmed publication's object version as the next valid write token.
-
-When the checkpoint incorporates Thread inbox entries, the complete envelope contains their `ConsumedThreadInboxEntry` receipts. The current continuation and its receipts are assembled at one complete safe boundary and published together. A receipt can derive from a synchronous record made before compaction; it does not require the original message or metadata to remain in the exported history. Neither event-consumer delay nor history replacement can defer such a receipt to another checkpoint. Multiple entries can share the write. The active-control contract owns their identity confirmation, relational consumption, recovery, and terminal-race semantics; this contract owns only the complete state representation and conditional object write.
-
-Checkpoint writes do not create a Run row, attempt row, lifecycle transition, or historical checkpoint selector. A failed or unknown put is reconciled by `stat` and exact body validation before any retry.
-
-A graceful handoff creates no checkpoint identity or relational checkpoint selection. State persistence only confirms that the complete safe boundary is the latest conditionally published value at the ordinary Run key; the RunAttempt contract owns every subsequent handoff decision and failure path.
-
-A waiting outcome and a completed outcome without a prepared queued successor commit in this order:
-
-1. publish any immutable object-backed output;
-2. conditionally replace `state.json` with a complete matching outcome candidate;
-3. in one short transaction, revalidate current Run and `RunAttempt`, satisfy the [active-control outcome precondition](19-agent-control-active-execution.md#completion-and-control-races), reconcile inbox receipts from the selected state, select the candidate's exact digest and checkpoint sequence as `sealed_state`, copy its bounded output or pending summary into the Run row, terminalize the attempt, charge known usage, append lifecycle facts, verify that this Run is still the Thread's current Run, release any acquired Environment use and update its aggregate retention condition, seal it, select it as the continuation head, and increment the Thread version;
-4. after commit, reject every later write to the state key.
-
-A Run outcome commit applies the [active-control outcome precondition and pending-delivery disposition](19-agent-control-active-execution.md#completion-and-control-races). This contract selects receipts already present in the complete state and seals the matching Run candidate; the active-control contract owns completed-outcome blocking, waiting rollover, suppression, and supersession of Thread inbox entries.
-
-A completed outcome with queued intent can instead use the [state-first combined handoff](20-agent-control-queued-submissions.md#completion-time-combined-handoff). Run persistence publishes the source outcome candidate and, when consumption remains eligible, the prospective successor's complete initial state before that transaction; it permits no accepted successor without valid initial state. The queued-submission contract owns detached preflight, queue ordering, three-way failure classification, atomic consumption or terminal queue failure with source sealing, and fallback recovery; the [Thread contract](11-thread-persistence.md#head-and-current-runs) owns the resulting head, current, and version effects.
-
-A transaction that seals a Run as failed or cancelled retains its immutable effective configuration and Environment selection. It releases acquired Environment use and updates retention in the same transaction, and applies the terminal inbox and asynchronous-result disposition owned by [Active Execution](19-agent-control-active-execution.md) and [Async Subagents](34-async-subagents.md). A never-used lazy Run has no use to release.
-
-Transactions that seal a Run and accept a successor release prior acquired use and record the new selection atomically. Acceptance alone does not acquire use; preparation does. Changes follow the canonical Thread/Run/Attempt then stable Environment-ID lock order before inbox/queue locks. Replay cannot release use twice. [Environment retention](29-environment-management.md#retention-policy) owns aggregate active/idle conditions and safe lifecycle reconciliation; approval waiting follows idle policy unless another Run has active use.
-
-If the object write succeeds but the relational transaction does not commit, the Run remains active and the outcome candidate remains a valid resumable state, not a sealed outcome. The current attempt or an authorized later attempt can retry the exact relational commit after reconciliation. Object timestamps or listings never authorize that adoption.
-
-A Worker-originated failed outcome can select a complete state already prepared under its current fence. An interrupt-driven cancelled outcome performs no object I/O and selects no new sealed state; its `sealed_state` is null. Either terminal transaction verifies that the Run remains current, preserves it as the Thread's current Run, preserves the prior continuation head, and increments the Thread version. Neither outcome makes that Run eligible as a parent.
-
 ## Accounting Boundary
 
 A separate accounting contract owns Run acceptance audit, usage aggregation, pricing revisions, and settlement lifecycle. Those records may correlate by `run_id` but never select Run state, mutate a sealed Run, or authorize another attempt.
-
-## Relational Constraints and Queries
-
-The `runs` table follows the [Relational Schema Lifecycle](04-relational-schema.md) and preserves these constraints:
-
-1. `id` is the primary key, `(organization_id, id)` is unique so parent references remain same-organization, `(organization_id, thread_id)` references one durable Thread in the same organization and Session, and a present retry source references a Run in that same organization and Thread.
-2. `authority_principal_type` is `user` or `service_account`; acceptance validates that the referenced Principal belongs to the Run organization and is eligible for its Workspace. The polymorphic reference has no universal Principal foreign key, so every Attempt repeats domain referential and authorization validation. Immutable acceptance fields never change; versions, fences, checkpoint sequences, sizes, and recovery counters satisfy their positive or non-negative field bounds.
-3. Input has exactly one inline or object-backed representation and matches `input_kind`. `retry_of_run_id` is null for start, ordinary or waiting Continue, continue from, feedback, automatic asynchronous-result acceptance, and fork and otherwise names a same-Thread failed or cancelled Run that was current at retry acceptance and whose accepted kind and value match the retry. Outcome fields satisfy their status-specific nullability, and output exists only for `completed`.
-4. Every present sealed-state digest matches the selected envelope identity, checkpoint, and outcome candidate. It is required for `waiting` and `completed`; a `failed` Run can omit it, and an interrupt-driven `cancelled` Run does omit it. Sealed rows reject all relational updates. Active-control preconditions and inbox disposition follow the owning [race contract](19-agent-control-active-execution.md#completion-and-control-races).
-5. `current_run_attempt_id` is absent for `accepted` and sealed Runs and can exist only for `running`. A `running` Run may omit it during bounded retry backoff. Active updates require expected Run version; attempt-originated updates also require the current attempt, fence, and lease.
-6. Ordinary Continue and eligible automatic asynchronous-result acceptance use the completed head when present; only ordinary Continue's null-head form after a failed or cancelled current Run can have no parent and use root lineage. The async path requires a completed head and a result that did not originate from a failed or cancelled Run. Continue From and fork require a completed parent. Waiting Feedback and waiting Continue require the exact waiting parent and consume one complete normalized resolution batch; waiting Continue additionally carries one `AgentInput`. Retry copies the terminal source's eligible state-parent edge; failed and cancelled Runs are never themselves eligible parents.
-7. `recovery_attempts_started` does not exceed `max_recovery_attempts`, and `handoffs_completed` does not exceed `max_handoffs`; the total `attempts_started` remains the complete audit count. Recovery, handoff, deadline, and usage limits remain Run-owned authority.
-
-The accepted access paths are:
-
-| Access path                              | Index or uniqueness contract                                                                                                           |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Worker claim and retry scan              | `(organization_id, queue_name, status, available_at, priority, created_at, id)` for `accepted` and current-attempt-free `running` Runs |
-| Idempotent acceptance                    | Unique `(organization_id, idempotency_key)` when the key exists                                                                        |
-| Session activity                         | `(organization_id, session_id, created_at, id)`                                                                                        |
-| Thread activity and stable paging        | `(organization_id, thread_id, created_at, id)`                                                                                         |
-| DAG successor traversal                  | `(organization_id, parent_run_id, id)`                                                                                                 |
-| Retry correlation                        | `(organization_id, retry_of_run_id, id)`                                                                                               |
-| DAG ancestor traversal                   | Unique `(organization_id, id)` parent lookup at each recursive step                                                                    |
-| One active Run per Thread                | Partial unique `(organization_id, thread_id)` for `accepted` and `running`                                                             |
-| One live or selected root Run per Thread | Partial unique `(organization_id, thread_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is null                |
 
 ## Security and Protection
 
@@ -680,30 +696,24 @@ Fork, continuation, automatic asynchronous-result acceptance, feedback, retry, a
 
 ## Failure and Recovery Semantics
 
-| Failure or interruption                                                                        | Durable outcome                                                                                          | Recovery rule                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Initial state or input publication fails                                                       | No Run is accepted                                                                                       | Retry under the acceptance idempotency contract                                                                                                                                     |
-| Environment allocation and Run acceptance transaction fails                                    | Neither Environment allocation nor Run/default mutation commits                                          | Retry the same idempotent acceptance; no external creation occurred                                                                                                                 |
-| Initial objects publish but relational acceptance fails                                        | Objects are non-authoritative orphans                                                                    | Cleanup removes them after proving no accepted Run owns the key                                                                                                                     |
-| Queued successor state publishes but combined completion rolls back                            | Source remains active under its existing outcome candidate; queue remains queued and no successor exists | Retry ordinary source completion under current race rules; clean or reuse only objects whose ownership can be proved                                                                |
-| Locked handoff facts prove permanent queued-intent invalidity                                  | Source completes and the queued submission terminally fails in one commit; no successor exists           | Preserve bounded queue-failure evidence; later recovery considers the next queued entry                                                                                             |
-| Conditional state write conflicts                                                              | Existing complete state remains visible                                                                  | Re-read Run and object versions; stale writers stop                                                                                                                                 |
-| State write response is lost                                                                   | Replacement effect is unknown                                                                            | Reconcile by deterministic key, metadata, and opaque version before retrying                                                                                                        |
-| Terminal candidate writes but relational seal fails                                            | Run remains active; candidate is a resumable prepared state                                              | Current or later authorized attempt can retry exact sealing after reconciliation                                                                                                    |
-| State containing inbox receipts writes but row consumption does not commit                     | The object is prepared but inbox consumption is not yet durable                                          | Follow the [active-control race and reconciliation contract](19-agent-control-active-execution.md#completion-and-control-races)                                                     |
-| Stale `RunAttempt` writes state, lifecycle, usage, pending data, or outcome                    | Write is rejected by Run and object fencing                                                              | Current attempt continues; stale work is cancelled best-effort                                                                                                                      |
-| A state write prepared before sealing reaches storage after the seal                           | The object outcome can be unknown but is not selected                                                    | The sealed relational outcome remains authoritative; no inbox or continuation fact adopts the object-only write                                                                     |
-| Worker disappears after a committed checkpoint                                                 | Latest state remains at the same key                                                                     | After lease expiry, a Worker's transactional takeover creates a later fenced attempt that reconstructs fresh `RunBindings` and an Environment operation object for the same binding |
-| Worker disappears after uncheckpointed work                                                    | Only the prior checkpoint is recoverable                                                                 | The replacement attempt resumes from that checkpoint; absent model or tool work can be re-driven, and generic recovery cannot determine its external outcome                        |
-| Handoff checkpoint commits but the yield transaction does not                                  | The new value remains the active Run's latest complete checkpoint                                        | The current Attempt can retry yield while its lease remains valid; after process loss, ordinary lease-expiry recovery uses the same state                                           |
-| Recovery budget is exhausted                                                                   | Run seals as `failed`                                                                                    | The sealed Run receives no later Attempt; see [RunAttempt allocation](13-run-attempt-scheduling-and-recovery.md#runattempt-allocation-within-a-run)                                 |
-| Required state, schema, or codec is permanently incompatible                                   | No model or tool work starts                                                                             | Apply an explicit compatible reader or fail the Run                                                                                                                                 |
-| Frozen artifact or dependency is temporarily unavailable                                       | Selected state remains unchanged                                                                         | Apply bounded backoff only when policy classifies the condition retryable and budget remains                                                                                        |
-| State object is confirmed missing or fails integrity validation                                | Run seals as `failed` without selecting invalid state bytes                                              | Freeze the exact deterministic key, record a bounded failure, and never substitute listing results                                                                                  |
-| Waiting Feedback or Continue is invalid or mismatches frozen deferred requests                 | Waiting Run remains unchanged                                                                            | Reject input; do not create a new Run                                                                                                                                               |
-| A required parent is absent, unauthorized, unsealed, or ineligible                             | Run acceptance fails                                                                                     | Caller re-reads authorized history and chooses an eligible operation                                                                                                                |
-| Persisted authority Principal is absent, disabled, cross-organization, or no longer authorized | Acceptance or Attempt preparation fails closed; no other Principal is substituted                        | Restore that Principal's legitimate authority or accept distinct work through an operation that explicitly selects a new authenticated Principal                                    |
-| Write is initiated after Run sealing                                                           | Frozen state and outcome remain unchanged                                                                | Reject before object I/O even if the caller has process-local bytes or a stale object version                                                                                       |
+The table covers state publication and selection failures. [Input and Continuation](18-agent-control-input-and-continuation.md#failure-semantics) owns command rejection, [RunAttempt recovery](13-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement) owns Worker loss, dependency failures and budget enforcement, and [Environment Management](29-environment-management.md#lifecycle-coordination-and-failure) owns target lifecycle failures.
+
+| Failure or interruption                                                     | Durable outcome                                                                                          | Recovery rule                                                                                                                             |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial state or input publication fails                                    | No Run is accepted                                                                                       | Retry under the acceptance idempotency contract                                                                                           |
+| Initial objects publish but relational acceptance fails                     | Objects are non-authoritative orphans                                                                    | Cleanup removes them after proving no accepted Run owns the key                                                                           |
+| Queued successor state publishes but combined completion rolls back         | Source remains active under its existing outcome candidate; queue remains queued and no successor exists | Retry ordinary source completion under current race rules; clean or reuse only objects whose ownership can be proved                      |
+| Locked handoff facts prove permanent queued-intent invalidity               | Source completes and the queued submission terminally fails in one commit; no successor exists           | Preserve bounded queue-failure evidence; later recovery considers the next queued entry                                                   |
+| Conditional state write conflicts                                           | Existing complete state remains visible                                                                  | Re-read Run and object versions; stale writers stop                                                                                       |
+| State write response is lost                                                | Replacement effect is unknown                                                                            | Reconcile by deterministic key, metadata, and opaque version before retrying                                                              |
+| Terminal candidate writes but relational seal fails                         | Run remains active; candidate is a resumable prepared state                                              | Current or later authorized attempt can retry exact sealing after reconciliation                                                          |
+| State containing inbox receipts writes but row consumption does not commit  | The object is prepared but inbox consumption is not yet durable                                          | Follow the [active-control race and reconciliation contract](19-agent-control-active-execution.md#completion-and-control-races)           |
+| Stale `RunAttempt` writes state, lifecycle, usage, pending data, or outcome | Write is rejected by Run and object fencing                                                              | Current attempt continues; stale work is cancelled best-effort                                                                            |
+| A state write prepared before sealing reaches storage after the seal        | The object outcome can be unknown but is not selected                                                    | The sealed relational outcome remains authoritative; no inbox or continuation fact adopts the object-only write                           |
+| Handoff checkpoint commits but the yield transaction does not               | The new value remains the active Run's latest complete checkpoint                                        | The current Attempt can retry yield while its lease remains valid; after process loss, ordinary lease-expiry recovery uses the same state |
+| Required state, schema, or codec is permanently incompatible                | No model or tool work starts                                                                             | Apply an explicit compatible reader or fail the Run                                                                                       |
+| State object is confirmed missing or fails integrity validation             | Run seals as `failed` without selecting invalid state bytes                                              | Freeze the exact deterministic key, record a bounded failure, and never substitute listing results                                        |
+| Write is initiated after Run sealing                                        | Frozen state and outcome remain unchanged                                                                | Reject before object I/O even if the caller has process-local bytes or a stale object version                                             |
 
 Cancellation before durable acceptance creates no Run. Interrupt after acceptance seals the Run without selecting in-flight state and does not make the Run an eligible parent. A lost client response after possible acceptance is reconciled through the API idempotency contract.
 
@@ -737,15 +747,15 @@ Each new Run owns a complete state copy, so initialization cost grows with the r
 ## Invariants
 
 01. The Run is Service's durable Agent-work and recovery boundary; each Run owns one deterministic state key and no base, result, or selectable checkpoint-history object.
-02. Start, ordinary or waiting Continue, continue from, feedback, eligible automatic asynchronous-result acceptance, fork, and retry initialize a complete Run-owned state without mutating or aliasing the parent key. A null-head root-like Continue initializes empty state under the existing Thread ID; automatic asynchronous-result acceptance requires a completed head, and a result from a failed or cancelled origin never initializes a Run.
+02. Every acceptance initializes a complete Run-owned state from the source selected by its operation contract, without mutating or aliasing the parent key.
 03. Only the current leased and fenced `RunAttempt` can conditionally replace active state; `checkpoint_seq` and expected object versions prevent stale overwrite.
 04. `input_disposition` prevents accepted input from being injected twice.
 05. A consumed Thread inbox entry is represented in complete Run state by its stable receipt; the active-control contract owns relational reconciliation and delivery.
 06. `parent_run_id` is the sole semantic history edge. Waiting Feedback or Continue creates another Run rather than mutating the sealed parent; `retry_of_run_id` records copied terminal intent without becoming another history edge or reviving child results suppressed by that terminal source.
 07. Waiting and completed outcomes become authoritative only when relational sealing selects the matching state candidate; the sealed Run and state are immutable.
 08. Persisted state restores data and correlation, never current authority. Events, Items, streams, accounting records, listings, and worker memory never select state.
-09. Every accepted Run stores one complete non-secret `EffectiveAgentConfig` in `state.json` and one immutable safe model observation for history; a replacement attempt never reads mutable Agent or Model configuration as a fallback, while every outbound model request deliberately resolves the selected Model's current Provider configuration and lifecycle.
-10. Every accepted Run row stores the matching effective-config digest; checkpoint replacement cannot change it or reapply override merge rules.
+09. The [state envelope](#run-state-object) stores the immutable non-secret `EffectiveAgentConfig`; the Run row stores its matching digest and immutable safe model observation.
+10. Checkpoint replacement preserves the accepted configuration and digest without reapplying override merge rules; reconstruction follows the [owning resource contracts](#configuration-and-resource-references).
 11. `accepted` exists only before the first Attempt. Replacement Attempts and retry backoff keep the same Run `running`; a `failed` Run is sealed and never returns to `accepted`.
 12. Several retained same-Thread Runs can share one completed parent; only the Thread's selected head and current Run determine the active continuation branch, and at most one Run in that Thread is active.
 13. Before a Thread has selected any waiting or completed head, several failed or cancelled root-lineage Runs can precede another root-like acceptance; at most one root-lineage Run can be active or selected as waiting or completed.

@@ -275,7 +275,7 @@ If the drain deadline arrives before any terminal transaction commits, the execu
 
 ## Recovery and Budget Enforcement
 
-Only the Run row authorizes another attempt under its accepted recovery, handoff, elapsed-time, and usage limits. A first or failure/expiry replacement claim consumes `recovery_attempts_started`; a successful yield consumes `handoffs_completed`, and its planned-handoff successor consumes neither another handoff nor recovery count. Every claim still increments `attempts_started` for complete audit history. Claim and takeover consume their applicable authority before external preparation begins; preparation never reserves a future generation.
+The [Run budget contract](12-run-persistence.md#durable-run-model) owns limits and counter meaning. [Attempt allocation](#runattempt-allocation-within-a-run) and the [handoff transaction](#graceful-handoff-transaction) atomically consume that authority. Claim and takeover charge the applicable counters before external preparation begins; preparation never reserves a future generation.
 
 ### Lease-Expiry Recovery Sequence
 
@@ -474,7 +474,7 @@ Retries remain owned by the layer that knows the failed boundary:
 - a recovered Agent decision is an ordinary new tool call, not a replay command; and
 - Service does not guarantee reuse of a prior invocation or idempotency key across RunAttempts.
 
-Backoff uses the Run's exact durable `available_at`; Worker or process restart does not reset it. `attempts_started` counts RunAttempts separately from Harness ModelAttempts and ConnectorProvider retries. Recovery and planned-handoff limits are independent within the same Run-owned deadline and usage ceilings.
+Backoff uses the Run's exact durable `available_at`; Worker or process restart does not reset it. Attempt admission continues to enforce the [Run-owned counters and ceilings](12-run-persistence.md#durable-run-model).
 
 ## Failure Semantics
 
@@ -537,11 +537,11 @@ Keeping attempts as immutable audit rows increases relational retention but pres
 11. Drain or Runner rotation gates new claims but does not weaken current Attempt authority: heartbeat and renewal continue until a terminal commit succeeds or the drain deadline is reached.
 12. `yielded` is an Attempt terminal state, never a Harness result or Run terminal state; it preserves one complete latest `state.json` and permits a fresh planned-handoff Attempt under the same running Run.
 13. Yield and lease renewal serialize through the same selected Attempt CAS and fence. A failed yield CAS never by itself stops renewal or permits another Worker to execute the Run.
-14. `attempts_started` counts every generation, `recovery_attempts_started` counts the first and failure/expiry generations, and `handoffs_completed` counts successful planned yields.
+14. Allocation and yield atomically charge the applicable Run-owned counters; no Attempt independently grants recovery or handoff authority.
 15. Every Attempt executes for its Run's immutable authority Principal and re-evaluates that Principal's current status and grants before Harness entry; an internal claimant never becomes the product Principal.
 16. Every `WorkerExecutionLoop` uses the same bounded relational scan and transactional claim or takeover contract; PostgreSQL owns eligibility and Attempt state, while Redis owns no scheduling or inbox-consumption fact.
 17. Object, artifact, authorization, Environment, model, tool, and other external I/O never occurs inside a claim, takeover, or preparation-decision transaction.
-18. `accepted` is pre-first-attempt only. Replacement and backoff keep the same Run `running`; a sealed failed Run never returns to `accepted`.
+18. Claim, replacement, and backoff obey the [Run lifecycle](12-run-persistence.md#run-lifecycle); no Attempt transition reopens a sealed Run.
 19. An on-demand Worker claims only after exact additive compatibility preflight, and a Runner claims only an equal Runtime lock digest; neither scheduling nor recovery substitutes another Runtime.
 20. Service-drain build preference is bounded and advisory: compatibility and transactional claim remain mandatory, and same-build capacity becomes eligible after `handoff_preference_window`. Runner rotation has no build-preference delay.
 21. Every Attempt owner participates in the Harness-integration and active-control reconciliation points defined by their owning contracts; Redis consumer progress is only a wakeup optimization.
