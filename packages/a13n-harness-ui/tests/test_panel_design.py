@@ -82,7 +82,8 @@ def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() ->
     assert len(renderer.transcript.blocks) == 1
     text = _text(renderer.transcript)
     assert "Edit · file.py · +20 -20" in text
-    assert "more diff" in text and "edit-one" not in text
+    assert "more diff" not in text and "edit-one" not in text
+    assert text.count("+new") == 20 and text.count("-old") == 20
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
     expanded = _text(renderer.transcript)
@@ -120,7 +121,7 @@ def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> N
 
 
 @pytest.mark.parametrize("phase, label", [("exited", "failed"), ("timed_out", "timed out"), ("cancelled", "cancelled")])
-def test_long_command_cannot_hide_failure_in_clipped_panel_title(phase: str, label: str) -> None:
+def test_long_command_wraps_without_hiding_failure(phase: str, label: str) -> None:
     from a13n_harness_ui.interactive.panels import shell_result_preview
 
     transcript = Transcript()
@@ -132,7 +133,8 @@ def test_long_command_cannot_hide_failure_in_clipped_panel_title(phase: str, lab
     transcript.preview(block, preview)
     text = _text(transcript, 28)
     assert label in text
-    assert len(text.splitlines()) == 1
+    assert len(text.splitlines()) > 1
+    assert text.replace("\n", "").count("long-path/") == 40
     assert "exit 1" in text
     transcript.close()
 

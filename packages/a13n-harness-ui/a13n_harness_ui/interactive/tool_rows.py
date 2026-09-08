@@ -21,17 +21,31 @@ def arguments_object(text: str) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
 
 
+def _excerpt(value: object, default: str = "") -> str:
+    text = " ".join(value.split()) if isinstance(value, str) else ""
+    return (text[:499] + "…" if len(text) > 500 else text) or default
+
+
 def semantic_tool_row(name: str, arguments: str, directory: Path | None = None) -> tuple[str, str | None]:
+    """Build plain preview text; the renderer sanitizes it with terminal_text."""
     value = arguments_object(arguments)
 
+    if name in {"delegate", "steer_subagent"}:
+        if name == "delegate":
+            heading = "Delegate to " + _excerpt(value.get("subagent_name"), "subagent unavailable")
+            instruction = _excerpt(value.get("prompt"))
+        else:
+            heading = "Steer " + _excerpt(value.get("execution_id"), "target unavailable")
+            instruction = _excerpt(value.get("message"))
+        return heading + (f"\n  {instruction}" if instruction else ""), None
+
     def string(key: str, default: str = "") -> str:
-        item = value.get(key)
-        return " ".join(item.split())[:500] if isinstance(item, str) else default
+        return _excerpt(value.get(key), default)
 
     if name in {"view", "ls"}:
         raw = value.get("file_path" if name == "view" else "path")
         path = raw if isinstance(raw, str) else "path unavailable" if name == "view" else "."
-        shown = " ".join(display_path(path, directory).split())[:500]
+        shown = _excerpt(display_path(path, directory))
         return f"{'Read' if name == 'view' else 'List'} {shown}", raw if name == "view" and isinstance(
             raw, str
         ) else None
@@ -50,6 +64,44 @@ def semantic_tool_row(name: str, arguments: str, directory: Path | None = None) 
     if name == "note_get" and not target:
         target = "all notes"
     return f"Call {name}" + (f" {display_path(target, directory)}" if target else ""), None
+
+
+def subagent_result_row(name: str, semantic: str, result: str) -> str | None:
+    """Enrich a call preview with observed return facts, not live child state.
+
+    None leaves the original semantic row unchanged. Native failed/denied/retry
+    handling takes precedence in the caller, which also applies terminal_text.
+    """
+    if name not in {"delegate", "steer_subagent"}:
+        return None
+    value = arguments_object(result)
+    if "part_kind" in value:
+        if value.get("part_kind") != "tool-return" or value.get("outcome", "success") != "success":
+            return None
+        content = value.get("content")
+        value = content if isinstance(content, dict) else arguments_object(content) if isinstance(content, str) else {}
+    if value.get("ok") is False or "error" in value:
+        return None
+    execution_id = _excerpt(value.get("execution_id"))
+    if not execution_id:
+        return None
+    if name == "delegate":
+        status = value.get("status")
+        if status is None:
+            # Inline delegation can return an identity and output without status.
+            detail = execution_id
+        elif isinstance(status, str) and status in {"running", "succeeded", "failed", "cancelled", "lost"}:
+            detail = f"{execution_id} · {status} at return"
+        else:
+            return None
+    else:
+        accepted = value.get("accepted")
+        if not isinstance(accepted, bool) or semantic.partition("\n")[0] != f"Steer {execution_id}":
+            return None
+        # Admission to the guidance queue says nothing about child consumption.
+        detail = "accepted for delivery" if accepted else "not accepted"
+    heading, separator, instruction = semantic.partition("\n")
+    return heading + f" · {detail}" + separator + instruction
 
 
 def failure_reason(text: str, state: str) -> str:

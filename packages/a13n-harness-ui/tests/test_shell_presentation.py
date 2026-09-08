@@ -302,7 +302,8 @@ def test_long_commands_and_empty_output_cannot_hide_explicit_outcome(width: int,
     renderer.transcript.render(width)
     text = "\n".join("".join(part[1] for part in row) for row in renderer.transcript.rows)
     assert phase.replace("_", " ") in text
-    assert len(text.splitlines()) == 1
+    assert len(text.splitlines()) > 1
+    assert "long-command" in text
     renderer.transcript.close()
 
 
@@ -355,7 +356,7 @@ def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
 @pytest.mark.parametrize("name", ["shell_exec", "shell_wait"])
 @pytest.mark.parametrize("width", [28, 80, 120])
 @pytest.mark.parametrize("output", ["", "captured line\n", "captured line\n" * 100])
-def test_shell_exec_and_wait_are_one_row_regardless_of_capture(name: str, width: int, output: str) -> None:
+def test_shell_exec_and_wait_wrap_summary_without_dumping_capture(name: str, width: int, output: str) -> None:
     renderer = StreamRenderer(Status())
     if name == "shell_wait":
         _wait(renderer)
@@ -370,8 +371,11 @@ def test_shell_exec_and_wait_are_one_row_regardless_of_capture(name: str, width:
         },
     )
     text = _visible(renderer, width=width)
-    assert len(text.splitlines()) == 1
+    from prompt_toolkit.utils import get_cwidth
+
+    assert all(get_cwidth(line) <= width for line in text.splitlines())
     assert "captured line" not in text
+    assert "output partial" in " ".join(text.split())
     preview = next(iter(renderer.transcript.blocks.values())).preview
     assert preview is not None and preview.count("output partial") == 1
     if output:

@@ -77,7 +77,8 @@ class DecisionInteraction:
         request = self.request
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
-            return f"{question.header} · {self.question_index + 1}/{len(request.questions)}"
+            progress = f" · {self.question_index + 1}/{len(request.questions)}" if len(request.questions) > 1 else ""
+            return question.header + progress
         return (
             "Choose an action" if isinstance(request, ApprovalRequestView) else f"{request.tool_name} · result required"
         )

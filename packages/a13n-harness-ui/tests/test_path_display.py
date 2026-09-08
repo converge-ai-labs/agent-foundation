@@ -157,7 +157,7 @@ def test_shell_passes_explicit_directory_and_rendering_does_not_follow_chdir(
 
 @pytest.mark.parametrize("width", [28, 80])
 @pytest.mark.parametrize("name, key", [("view", "file_path"), ("write", "file_path"), ("ls", "path")])
-def test_long_tool_paths_are_ellipsized_instead_of_wrapping_out_of_view(width, name, key, tmp_path) -> None:
+def test_long_tool_paths_wrap_without_losing_the_relative_path(width, name, key, tmp_path) -> None:
     from prompt_toolkit.utils import get_cwidth
 
     relative = Path("packages") / ("long-directory-" * 8) / "file.py"
@@ -172,9 +172,10 @@ def test_long_tool_paths_are_ellipsized_instead_of_wrapping_out_of_view(width, n
                 renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": '{"ok":true}'})
             renderer.transcript.render(width)
             rows = ["".join(text for _, text in row) for row in renderer.transcript.rows]
-            assert len(rows) == 1
-            assert "pack" in rows[0] and rows[0].endswith("…")
-            assert get_cwidth(rows[0]) <= width
+            assert len(rows) > 1
+            assert str(relative) in "".join(rows)
+            assert all(get_cwidth(row) <= width for row in rows)
+            assert "…" not in "".join(rows) if completed else rows[-1].endswith("…")
             block = next(iter(renderer.transcript.blocks.values()))
             assert str(relative) in (block.preview or "")
             assert json.dumps({key: path}, ensure_ascii=False, indent=2) in block.source

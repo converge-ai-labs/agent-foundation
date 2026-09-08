@@ -17,7 +17,7 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, KeyPressEvent, merge_key_bindings
-from prompt_toolkit.key_binding.key_bindings import KeyBindingsBase
+from prompt_toolkit.key_binding.key_bindings import DynamicKeyBindings, KeyBindingsBase
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import Layout
 from prompt_toolkit.layout.containers import (
@@ -46,6 +46,7 @@ from .diagnostics import exception_report, pending_task_warning
 from .history import HistoryBrowser
 from .local_shell import run_local_shell, validate_local_shell_support
 from .pastes import PendingPastes
+from .questions import QuestionCard
 from .rendering import Status, StreamRenderer, terminal_text
 from .resume import ResumeBrowser
 from .selection import Choice, Selection, resolve_choice
@@ -100,6 +101,7 @@ class CliShell:
         self._input_task: asyncio.Task[None] | None = None
         self.interaction: DecisionInteraction | None = None
         self.selection: Selection | None = None
+        self.question_card: QuestionCard | None = None
         self.selector_focused = True
         self.menu_title = ""
         self.menu_handler: Callable[[str | tuple[str, ...]], Awaitable[None]] | None = None
@@ -146,6 +148,7 @@ class CliShell:
             filter=Condition(
                 lambda: (
                     self.app.output.get_size().rows >= 3
+                    and self.question_card is None
                     and (self.interaction is not None or self.selection is not None)
                 )
             ),
@@ -167,7 +170,11 @@ class CliShell:
                             ]
                         ),
                         filter=Condition(
-                            lambda: bool(self.renderer.tasks.lines()) and self.app.output.get_size().rows >= 16
+                            lambda: (
+                                self.question_card is None
+                                and bool(self.renderer.tasks.lines())
+                                and self.app.output.get_size().rows >= 16
+                            )
                         ),
                     ),
                     ConditionalContainer(
@@ -177,12 +184,28 @@ class CliShell:
                                 Window(FormattedTextControl(self._activity_text), height=1, style="class:status-bar"),
                             ]
                         ),
-                        filter=Condition(lambda: bool(self._activity_hint()) and self.app.output.get_size().rows >= 12),
+                        filter=Condition(
+                            lambda: (
+                                self.question_card is None
+                                and bool(self._activity_hint())
+                                and self.app.output.get_size().rows >= 12
+                            )
+                        ),
                     ),
                     panel,
                     ConditionalContainer(
+                        DynamicContainer(lambda: self.question_card.container if self.question_card else Window()),
+                        filter=Condition(lambda: self.question_card is not None),
+                    ),
+                    ConditionalContainer(
                         Window(FormattedTextControl(self._toolbar), height=1, style="class:status-bar"),
-                        filter=Condition(lambda: self.status.show_status and self.app.output.get_size().rows >= 8),
+                        filter=Condition(
+                            lambda: (
+                                self.question_card is None
+                                and self.status.show_status
+                                and self.app.output.get_size().rows >= 8
+                            )
+                        ),
                     ),
                     ConditionalContainer(
                         Window(
@@ -192,16 +215,16 @@ class CliShell:
                     ),
                     ConditionalContainer(
                         Window(FormattedTextControl(self._composer_header), height=1, style="class:input-area.border"),
-                        filter=Condition(lambda: self.app.output.get_size().rows >= 8),
+                        filter=Condition(lambda: self.question_card is None and self.app.output.get_size().rows >= 8),
                     ),
-                    self.composer,
+                    ConditionalContainer(self.composer, filter=Condition(lambda: self.question_card is None)),
                     ConditionalContainer(
                         Window(
                             FormattedTextControl(self._hints),
                             height=lambda: len(self._hints().splitlines()),
                             style="class:session-selector.hint",
                         ),
-                        filter=Condition(lambda: self.app.output.get_size().rows >= 12),
+                        filter=Condition(lambda: self.question_card is None and self.app.output.get_size().rows >= 12),
                     ),
                 ]
             ),
@@ -537,7 +560,9 @@ class CliShell:
         self.composer.buffer.reset()
 
     def _restore_draft(self) -> None:
+        self.question_card = None
         self.selection = None
+        self.app.layout.focus(self.composer)
         if self._saved_draft is not None:
             self.composer.buffer.document = self._saved_draft
             self._saved_draft = None
@@ -584,13 +609,68 @@ class CliShell:
         self.bell()
 
     def _emit_decision(self) -> None:
+        from a13n_harness_ui.surfaces import StructuredQuestionRequestView
+
         assert self.interaction is not None
+        self.selector_focused = True
+        if isinstance(self.interaction.request, StructuredQuestionRequestView):
+            self.renderer.register_questions(self.interaction.request)
+            assert self.selection is not None
+            self.question_card = QuestionCard(
+                self.interaction,
+                self.selection,
+                submit=self._submit_question,
+                cancel=self._cancel_question,
+            )
+            self.app.layout.focus(self.question_card.control)
+            self.app.invalidate()
+            return
+        self.question_card = None
+        self.app.layout.focus(self.composer)
         self.renderer.finish()
         self.renderer.transcript.append(
             terminal_text(self.interaction.display_prompt()), kind=self.interaction.prompt_kind
         )
         self.renderer.append(self.interaction.prompt() + "\n", display=False)
         self.app.invalidate()
+
+    def _cancel_question(self) -> None:
+        self.app.create_background_task(self.cancel())
+
+    def _submit_question(self, text: str) -> None:
+        if self.busy and not (text.startswith("/") and self.registry.lookup(text) is not None):
+            if self.question_card is not None:
+                self.question_card.error = "Wait for the current action to finish before confirming an answer."
+            return
+        if self._input_task is None or self._input_task.done():
+            self._input_task = asyncio.create_task(self._answer_question(text))
+
+    async def _answer_question(self, text: str) -> None:
+        card = self.question_card
+        if card is None:
+            return
+        if text.startswith("/") and self.registry.lookup(text) is not None:
+            try:
+                invocation = self.registry.parse(text, busy=self.busy)
+                if invocation.command.name not in {
+                    "help",
+                    "mode",
+                    "status",
+                    "quit",
+                    "cancel",
+                    "theme",
+                    "mouse",
+                    "review",
+                }:
+                    raise ValueError("Finish this interaction or /cancel first. Your input is preserved.")
+                self.emit(f"Command accepted: /{invocation.command.name}")
+                await self.command(invocation)
+            except Exception as exc:
+                card.error = str(exc)
+            return
+        if text.startswith("/"):
+            self.emit("No matching command; treating the original input as plain text.")
+        await self.decision_answer(text)
 
     def bell(self) -> None:
         with suppress(OSError):
@@ -874,6 +954,9 @@ class CliShell:
         def history(event: KeyPressEvent) -> None:
             self.open_history()
 
+        question_inspection_keys = KeyBindings()
+        question_inspection_keys.add("c-t")(history)
+        question_inspection_keys.add("c-o")(toggle)
         browser_keys = KeyBindings()
 
         @browser_keys.add("c-t")
@@ -914,9 +997,22 @@ class CliShell:
         return merge_key_bindings(
             [
                 ConditionalKeyBindings(
-                    keys, filter=Condition(lambda: self.history_browser is None and self.resume_browser is None)
+                    keys,
+                    filter=Condition(
+                        lambda: (
+                            self.question_card is None and self.history_browser is None and self.resume_browser is None
+                        )
+                    ),
                 ),
                 ConditionalKeyBindings(browser_keys, filter=Condition(lambda: self.history_browser is not None)),
+                ConditionalKeyBindings(
+                    question_inspection_keys,
+                    filter=Condition(lambda: self.question_card is not None and self.history_browser is None),
+                ),
+                ConditionalKeyBindings(
+                    DynamicKeyBindings(lambda: self.question_card.bindings if self.question_card else KeyBindings()),
+                    filter=Condition(lambda: self.question_card is not None and self.history_browser is None),
+                ),
             ]
         )
 
@@ -984,7 +1080,12 @@ class CliShell:
         if self.history_browser is not None:
             self.history_browser.close()
             self.history_browser = None
-            self.app.layout.focus(self.resume_browser.search if self.resume_browser else self.composer)
+            if self.question_card is not None:
+                self.app.layout.focus(
+                    self.question_card.editor if self.question_card.editing else self.question_card.control
+                )
+            else:
+                self.app.layout.focus(self.resume_browser.search if self.resume_browser else self.composer)
             self.app.invalidate()
 
     def _restore_resumed_history(self) -> None:
@@ -1462,15 +1563,22 @@ class CliShell:
         if self.backend is None or self.interaction is None:
             return
         try:
+            question_title = self.interaction.title() if self.question_card is not None else None
             response = self.interaction.accept(text)
+            if question_title is not None and response is None:
+                self.emit(f"Collected locally · {question_title} · batch not submitted", kind="info")
             if response == "review":
                 self.launch(self.backend.review(self.interaction.request.request_id), kind="review")
             else:
                 assert not isinstance(response, str)
                 self._finish_decision(response)
         except (ValueError, TypeError) as exc:
-            self.emit(f"Answer not submitted: {exc}")
-            self.composer.buffer.document = Document(text, len(text))
+            if self.question_card is not None:
+                self.question_card.error = f"Answer not submitted: {exc}"
+                self.question_card.top = len(self.question_card.rows(self.app.output.get_size().columns))
+            else:
+                self.emit(f"Answer not submitted: {exc}")
+                self.composer.buffer.document = Document(text, len(text))
 
     def _finish_decision(self, response: ThreadDeferredResponse | None) -> None:
         assert self.backend is not None and self.interaction is not None
@@ -1479,6 +1587,10 @@ class CliShell:
             self.composer.text = ""
             self._emit_decision()
         else:
+            from a13n_harness_ui.surfaces import StructuredQuestionRequestView
+
+            if any(isinstance(request, StructuredQuestionRequestView) for request in self.interaction.batch.requests):
+                self.emit("Submitting question responses · awaiting accepted results", kind="info")
             self.interaction = None
             self._restore_draft()
             self.launch(self.backend.execute(self.renderer, response=response, flush=self.flush), kind="run")

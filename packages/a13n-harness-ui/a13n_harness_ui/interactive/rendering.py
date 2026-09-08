@@ -18,6 +18,7 @@ from .tool_rows import (
     ExplorationMember,
     failure_reason,
     semantic_tool_row,
+    subagent_result_row,
 )
 from .transcript import Transcript
 
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 
     from a13n_harness_ui.storage.usage import UsageTotals
-    from a13n_harness_ui.surfaces import NotePage
+    from a13n_harness_ui.surfaces import NotePage, StructuredQuestionRequestView
 
     from .local_shell import LocalShellEvent
 
@@ -174,10 +175,27 @@ class _ToolPreview:
     block_id: int | None = None
     summary: str = ""
     edit_applied: bool = False
+    native_result_seen: bool = False
+    protocol_result_seen: bool = False
     semantic: str = ""
     read_path: str | None = None
     group: ExplorationGroup | None = None
     member: ExplorationMember | None = None
+
+
+@dataclass(slots=True)
+class _QuestionResult:
+    block_id: int | None = None
+    native_seen: bool = False
+    protocol_seen: bool = False
+
+
+@dataclass(slots=True)
+class _QuestionReceipt:
+    request: StructuredQuestionRequestView
+    arguments: str
+    block_id: int | None = None
+    attempts: dict[str, _QuestionResult] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -222,6 +240,124 @@ class StreamRenderer:
         self._exploration: ExplorationGroup | None = None
         self._context: dict[tuple[str, str], ContextActivity] = {}
         self._write_notices: dict[tuple[str, str, str], None] = {}
+        # Root deferred call IDs survive a fresh response Run. Other tools and
+        # child executions keep their ordinary Run-local correlation.
+        self._questions: dict[str, _QuestionReceipt] = {}
+
+    def register_questions(self, request: StructuredQuestionRequestView) -> None:
+        """Retain a typed root request, not a local answer or acceptance receipt.
+
+        The shell calls this when activating a pending question (including one
+        restored without live tool events). Registration never emits Answered.
+        """
+        if request.tool_name != "ask_user_question" or request.request_id in self._questions:
+            return
+        arguments = json.dumps(
+            {"questions": [question.model_dump(mode="json") for question in request.questions]}, ensure_ascii=False
+        )
+        self._questions[request.request_id] = _QuestionReceipt(request, arguments)
+        self._trim_questions()
+
+    def _trim_questions(self) -> None:
+        while (
+            len(self._questions) > 128
+            or sum(len(item.arguments.encode("utf-8")) for item in self._questions.values()) > self.transcript.max_bytes
+        ):
+            self._questions.pop(next(iter(self._questions)))
+
+    def _register_question_arguments(self, call_id: str, preview: _ToolPreview) -> None:
+        """Recognize replayed calls only by the public tool name and request schema."""
+        from a13n_harness.capabilities import AskUserQuestionRequest
+        from pydantic import ValidationError
+
+        from a13n_harness_ui.surfaces import QuestionView, StructuredQuestionRequestView
+
+        if preview.truncated:
+            return
+        try:
+            request = AskUserQuestionRequest.model_validate_json(preview.arguments)
+            view = StructuredQuestionRequestView(
+                request_id=call_id,
+                tool_name=preview.name,
+                questions=tuple(QuestionView.model_validate(question.model_dump()) for question in request.questions),
+            )
+        except ValidationError:
+            return
+        self.register_questions(view)
+        receipt = self._questions.get(call_id)
+        if receipt is not None:
+            receipt.block_id = receipt.block_id or preview.block_id
+            receipt.arguments = preview.arguments
+            self._trim_questions()
+
+    def _question_result(self, receipt: _QuestionReceipt, text: str, native_state: str | None, run_id: str) -> None:
+        """Deduplicate observations within one response attempt, not all future retries."""
+        from a13n_harness.toolsets.interaction import validate_user_question_result
+
+        attempt = receipt.attempts.get(run_id)
+        if attempt is None:
+            attempt = _QuestionResult(receipt.block_id if not receipt.attempts else None)
+            receipt.attempts[run_id] = attempt
+            while len(receipt.attempts) > 16:
+                receipt.attempts.pop(next(iter(receipt.attempts)))
+        native = native_state is not None
+        if (native and attempt.native_seen) or (not native and attempt.protocol_seen):
+            return
+        already_seen = attempt.native_seen or attempt.protocol_seen
+        # A native failure cannot be overwritten by a later success projection.
+        update_preview = native or not attempt.native_seen
+        attempt.native_seen |= native
+        attempt.protocol_seen |= not native
+        try:
+            value = json.loads(text)
+        except ValueError:
+            value = None
+        content = value.get("content") if native and isinstance(value, dict) else value
+        state = native_state or "returned"
+        if native and (
+            not isinstance(value, dict)
+            or value.get("part_kind") != "tool-return"
+            or value.get("outcome", "success") != "success"
+        ):
+            state = native_state if native_state != "returned" else "unavailable"
+        answers: dict[str, object] | None = None
+        if state == "returned":
+            try:
+                answers = validate_user_question_result(json.loads(receipt.arguments), content)
+            except ValueError:
+                state = "unavailable"
+        lines = []
+        for question in receipt.request.questions:
+            answer_text = "Result unavailable; Ctrl+O details"
+            if answers is not None:
+                values = answers["answers"]
+                answer = values.get(question.question, answers.get("response")) if isinstance(values, dict) else None
+                answer_text = ", ".join(str(item) for item in answer) if isinstance(answer, list) else str(answer)
+            elif state != "unavailable":
+                answer_text = content if isinstance(content, str) else failure_reason(text, state)
+            title = "Answered" if answers is not None else "Not answered"
+            lines.extend((f"{title} · {question.header}", question.question, f"→ {answer_text}"))
+        brief = terminal_text("\n".join(lines))
+        detail = terminal_text(f"{'Native result' if native else 'Tool result'}\n{text}\n")
+        block_id = attempt.block_id
+        if not already_seen or block_id not in self.transcript.blocks:
+            body = (
+                terminal_text(
+                    f"ask_user_question | {state}\nArguments | {receipt.request.request_id}\n{receipt.arguments}\n"
+                )
+                + detail
+            )
+            if block_id is None or not self.transcript.replace(block_id, body, kind="question_receipt"):
+                block_id = self.transcript.append(body, kind="question_receipt")
+            attempt.block_id = block_id
+        else:
+            self.transcript.extend(block_id, "\n" + detail)
+        if update_preview:
+            self.transcript.preview(block_id, brief, 64, limit=self.transcript.block_bytes)
+        self.transcript.blocks[block_id].concise_hidden = False
+        if not already_seen:
+            self.finish()
+            self.append(brief + "\n", display=False)
 
     def _shell_observation(self, run_id: str, process_id: str) -> _ShellObservation:
         key = (run_id, process_id)
@@ -535,8 +671,23 @@ class StreamRenderer:
                     self.assistant_seen = True
             return
         if event_type.startswith("TOOL_CALL"):
-            call_id = terminal_text(str(payload.get("tool_call_id", "unknown")))
+            raw_call_id = str(payload.get("tool_call_id", "unknown"))
+            call_id = terminal_text(raw_call_id)
             key = (run_id, call_id)
+            receipt = (
+                self._questions.get(raw_call_id)
+                if not child and payload.get("tool_call_name") in (None, "ask_user_question")
+                else None
+            )
+            if event_type.endswith("RESULT") and receipt is not None:
+                self._question_result(receipt, text, native_state, run_id)
+                for tool_key in tuple(self._tools):
+                    if tool_key[1] == call_id and self._tools[tool_key].name == "ask_user_question":
+                        self._tools.pop(tool_key)
+                if self.status.state != "cancelling":
+                    self.status.state = "working"
+                self.boundary = True
+                return
             preview = self._tools.get(key)
             label = f"{identity} / {call_id}" if child else call_id
             if event_type.endswith("START"):
@@ -561,7 +712,7 @@ class StreamRenderer:
                     if preview.name in {"edit", "multi_edit"}:
                         brief = header
                     self.transcript.preview(preview.block_id, brief)
-                    if preview.name in CONTEXT_TOOLS:
+                    if preview.name in CONTEXT_TOOLS or preview.name == "ask_user_question":
                         self.transcript.blocks[preview.block_id].concise_hidden = True
                     elif preview.name in EXPLORATION_TOOLS:
                         group_identity = (run_id, execution_id if child else None)
@@ -592,12 +743,18 @@ class StreamRenderer:
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
                 name = preview.name if preview else str(payload.get("tool_call_name", "tool"))[:60]
+                subagent_receipt = preview is not None and name in {"delegate", "steer_subagent"}
+                if subagent_receipt and preview is not None:
+                    if (native_state is not None and preview.native_result_seen) or (
+                        native_state is None and preview.protocol_result_seen
+                    ):
+                        return
                 if name.startswith("shell"):
                     command = self._shell_command(name, preview.arguments, run_id) if preview else ""
                     if preview and name in {"shell_exec", "shell_start", "shell_wait"}:
                         preview.summary = command
                     self._observe_shell_result(text, command if name in {"shell_exec", "shell_start"} else "", run_id)
-                if (not child or detailed) and (name != "ask_user_question" or detailed or native_state is not None):
+                if not child or detailed:
                     elapsed = f" | {time.monotonic() - preview.started:.1f}s" if preview else ""
                     result = tool_result(name, text)
                     state, _, output = result.partition("\n")
@@ -624,7 +781,7 @@ class StreamRenderer:
                         elif failed:
                             brief = f"{semantic.split(' ', 1)[0]} {state}: {failure_reason(text, state)} — {semantic}"
                         else:
-                            brief = semantic
+                            brief = subagent_result_row(name, semantic, text) or semantic
                             if name in {"note_write", "note_delete"} and state in {
                                 "created",
                                 "updated",
@@ -657,15 +814,39 @@ class StreamRenderer:
                     ):
                         block = self.transcript.blocks[block_id]
                         self.transcript.preview(
-                            block_id, (block.preview or "Edit applied") + f"\nTool result | {state}", 14
+                            block_id,
+                            (block.preview or "Edit applied") + f"\nTool result | {state}",
+                            54,
+                            limit=self.transcript.block_bytes,
                         )
                     if not applied_retained:
                         kind = "command" if name.startswith("shell") else "tool"
-                        if block_id is None or not self.transcript.replace(block_id, terminal_text(body), kind=kind):
-                            block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind=kind)
-                        self.transcript.preview(block_id, terminal_text(brief), 1)
+                        retained_subagent = (
+                            subagent_receipt
+                            and preview is not None
+                            and (preview.native_result_seen or preview.protocol_result_seen)
+                            and block_id is not None
+                            and self.transcript.extend(block_id, terminal_text(f"\nAdditional tool result\n{result}\n"))
+                        )
+                        if not retained_subagent:
+                            if block_id is None or not self.transcript.replace(
+                                block_id, terminal_text(body), kind=kind
+                            ):
+                                block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind=kind)
+                        assert block_id is not None
+                        if not (
+                            retained_subagent
+                            and preview is not None
+                            and preview.native_result_seen
+                            and native_state is None
+                        ):
+                            self.transcript.preview(block_id, terminal_text(brief), 1)
+                        if subagent_receipt and preview is not None:
+                            preview.block_id = block_id
                         if name in CONTEXT_TOOLS:
                             self.transcript.blocks[block_id].concise_hidden = not failed
+                        elif name == "ask_user_question":
+                            self.transcript.blocks[block_id].concise_hidden = False
                         if preview is not None and preview.group is not None and preview.member is not None:
                             preview.member.block_id = block_id
                             preview.member.brief = terminal_text(brief)
@@ -673,7 +854,16 @@ class StreamRenderer:
                             preview.member.failed = failed
                             preview.group.refresh(self.transcript)
                     self.append(header + elapsed + "\n", display=False)
-                self._tools.pop(key, None)
+                if subagent_receipt and preview is not None:
+                    # These receipts have both native and protocol observations;
+                    # keep bounded correlation without treating delivery as completion.
+                    preview.native_result_seen |= native_state is not None
+                    preview.protocol_result_seen |= native_state is None
+                    preview.arguments = ""
+                    preview.parts = None
+                    preview.size = 0
+                else:
+                    self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
                     self.status.state = "working"
                 self.boundary = True
@@ -682,6 +872,8 @@ class StreamRenderer:
                 if preview:
                     preview.arguments = "".join(preview.parts or ())
                     preview.parts = None
+                    if preview.name == "ask_user_question" and not child:
+                        self._register_question_arguments(raw_call_id, preview)
                     preview.semantic, preview.read_path = semantic_tool_row(
                         preview.name, preview.arguments, self.status.directory
                     )
@@ -848,10 +1040,15 @@ class StreamRenderer:
                             edit.edit_applied = True
                         if panel.kind == "edit":
                             lines = panel.body.splitlines()
-                            preview_body = "\n".join(lines[:8])
-                            if len(lines) > 8:
-                                preview_body += "\n… more diff · Ctrl+O details"
-                            self.transcript.preview(block_id, terminal_text(f"{panel.title}\n{preview_body}"), 12)
+                            preview_body = "\n".join(lines[:50])
+                            if len(lines) > 50:
+                                preview_body += f"\n… {len(lines) - 50} more diff lines · Ctrl+O details"
+                            self.transcript.preview(
+                                block_id,
+                                terminal_text(f"{panel.title}\n{preview_body}"),
+                                54,
+                                limit=self.transcript.block_bytes,
+                            )
                         elif panel.kind == "tool":
                             self.transcript.preview(block_id, terminal_text(panel.title))
                         self.append(source, display=False)

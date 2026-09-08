@@ -1,0 +1,292 @@
+"""Question receipts follow backend evidence across deferred response Runs."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+from a13n_harness_ui.surfaces import QuestionOptionView, QuestionView, StructuredQuestionRequestView
+
+
+@pytest.fixture
+def renderer():
+    value = StreamRenderer(Status())
+    yield value
+    value.transcript.close()
+
+
+def request(call_id="question-1", *, multiple=False):
+    return StructuredQuestionRequestView(
+        request_id=call_id,
+        tool_name="ask_user_question",
+        questions=(
+            QuestionView(
+                header="Language",
+                question="Which language should we use?",
+                options=(
+                    QuestionOptionView(label="Python", description="Python implementation"),
+                    QuestionOptionView(label="Rust", description="Rust implementation"),
+                ),
+                multi_select=multiple,
+            ),
+        ),
+    )
+
+
+def render(renderer, *, detailed=False, width=120):
+    renderer.transcript.detailed = detailed
+    renderer.transcript.dirty = True
+    renderer.transcript.render(width)
+    return "\n".join("".join(text for _, text in row) for row in renderer.transcript.rows).strip()
+
+
+def result(renderer, value, *, native=False, outcome="success", call_id="question-1", run_id="response-run"):
+    if native:
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": "a13n.pydantic_ai.function_tool_result",
+                "value": {
+                    "event": {
+                        "part": {
+                            "part_kind": "tool-return",
+                            "tool_name": "ask_user_question",
+                            "tool_call_id": call_id,
+                            "content": value,
+                            "outcome": outcome,
+                        }
+                    }
+                },
+            },
+            run_id=run_id,
+        )
+    else:
+        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": call_id, "content": json.dumps(value)}, run_id=run_id)
+
+
+def streamed_request(renderer, pending, *, run_id="question-run"):
+    renderer.ingest(
+        "TOOL_CALL_START",
+        {"tool_call_id": pending.request_id, "tool_call_name": pending.tool_name},
+        run_id=run_id,
+    )
+    renderer.ingest(
+        "TOOL_CALL_ARGS",
+        {
+            "tool_call_id": pending.request_id,
+            "delta": json.dumps({"questions": [item.model_dump() for item in pending.questions]}),
+        },
+        run_id=run_id,
+    )
+    renderer.ingest("TOOL_CALL_END", {"tool_call_id": pending.request_id}, run_id=run_id)
+
+
+def test_registration_and_run_finish_do_not_claim_an_answer(renderer):
+    renderer.register_questions(request())
+    renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
+    assert render(renderer) == ""
+    assert renderer.drain() == ""
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_typed_question_survives_fresh_response_run(renderer, native):
+    renderer.register_questions(request())
+    renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
+    result(renderer, {"answers": {request().questions[0].question: "Python"}}, native=native)
+    concise = render(renderer)
+    assert concise == "Answered · Language\nWhich language should we use?\n→ Python"
+    assert not any(word in concise for word in ("Call tool", "question-1", "ask_user_question", "returned"))
+    details = render(renderer, detailed=True)
+    assert "Arguments | question-1" in details
+    assert '"answers"' in details and "Python implementation" in details
+    assert render(renderer) == concise
+
+
+@pytest.mark.parametrize("first_native", [False, True])
+def test_native_and_protocol_results_share_one_receipt_and_preserve_raw_details(renderer, first_native):
+    renderer.register_questions(request())
+    answer = {"answers": {request().questions[0].question: "Python"}}
+    result(renderer, answer, native=first_native)
+    result(renderer, answer, native=not first_native)
+    result(renderer, answer, native=first_native)
+    assert len(renderer.transcript.blocks) == 1
+    assert render(renderer).count("Answered · Language") == 1
+    assert renderer.drain().count("Answered · Language") == 1
+    details = render(renderer, detailed=True)
+    assert details.count("Native result") == 1
+    assert details.count("Tool result") == 1
+    assert '"outcome": "success"' in details
+
+
+def test_history_tool_arguments_register_without_a_live_decision(renderer):
+    pending = request(multiple=True)
+    streamed_request(renderer, pending)
+    assert render(renderer) == ""
+    result(renderer, {"answers": {pending.questions[0].question: ["Python", "Rust"]}})
+    assert "→ Python, Rust" in render(renderer)
+    assert not renderer._tools
+
+
+@pytest.mark.parametrize("outcome", ["denied", "failed"])
+def test_native_failure_is_not_an_answer_even_with_valid_answer_content(renderer, outcome):
+    renderer.register_questions(request())
+    answer = {"answers": {request().questions[0].question: "Python"}}
+    result(renderer, answer, native=True, outcome=outcome)
+    # A duplicate projection must not replace the authoritative native failure.
+    result(renderer, answer)
+    assert "Not answered · Language" in render(renderer)
+    assert "Answered" not in render(renderer)
+    assert "Call " not in render(renderer)
+    assert f'"outcome": "{outcome}"' in render(renderer, detailed=True)
+
+
+def test_timeout_diagnostic_survives_without_claiming_success(renderer):
+    renderer.register_questions(request())
+    result(renderer, "Question timed out; no user answer or approval was received.", native=True, outcome="failed")
+    concise = render(renderer)
+    assert "Not answered · Language" in concise
+    assert "timed out" in concise and "no user answer or approval" in concise
+    assert "Answered" not in concise
+
+
+@pytest.mark.parametrize("value", [{"answers": {}}, {"ok": True}, {"answers": {"unknown": "Python"}}])
+def test_recognized_malformed_result_never_claims_an_answer(renderer, value):
+    renderer.register_questions(request())
+    result(renderer, value)
+    assert "Not answered · Language" in render(renderer)
+    assert "Result unavailable" in render(renderer)
+    assert "Answered" not in render(renderer)
+
+
+def test_unknown_result_shape_remains_generic(renderer):
+    answer = {"answers": {request().questions[0].question: "Python"}}
+    result(renderer, answer)
+    assert render(renderer) == "Call tool"
+    assert "Answered" not in render(renderer)
+
+
+def test_unknown_named_question_without_valid_request_remains_generic(renderer):
+    result(renderer, {"answers": {"question": "answer"}}, native=True)
+    assert render(renderer) == "Call ask_user_question"
+
+
+def test_equal_question_text_does_not_correlate_distinct_call_ids(renderer):
+    renderer.register_questions(request("question-1"))
+    result(renderer, {"answers": {request().questions[0].question: "Python"}}, call_id="question-2")
+    assert render(renderer) == "Call tool"
+
+
+def test_replayed_detailed_call_reuses_block_and_remains_concise(renderer):
+    renderer.status.mode = "detailed"
+    streamed_request(renderer, request())
+    assert "Call ask_user_question" not in render(renderer)
+    result(renderer, {"answers": {request().questions[0].question: "Python"}})
+    assert len(renderer.transcript.blocks) == 1
+    assert render(renderer).startswith("Answered · Language")
+
+
+def test_general_response_and_multiple_questions_are_readable(renderer):
+    pending = request()
+    second = pending.questions[0].model_copy(update={"header": "Scope", "question": "Which components?"})
+    pending = pending.model_copy(update={"questions": (*pending.questions, second)})
+    renderer.register_questions(pending)
+    result(renderer, {"answers": {}, "response": "Use the existing implementation."})
+    concise = render(renderer, width=32)
+    assert "Answered · Language" in concise and "Answered · Scope" in concise
+    assert concise.count("→ Use the existing") == 2
+    assert "implementation." in concise
+
+
+def test_question_correlation_is_root_only(renderer):
+    renderer.register_questions(request())
+    renderer.ingest(
+        "TOOL_CALL_RESULT",
+        {"tool_call_id": "question-1", "content": json.dumps({"answers": {request().questions[0].question: "Python"}})},
+        child=True,
+        run_id="child-run",
+    )
+    assert render(renderer) == ""
+
+
+def test_question_cache_is_bounded_and_reregistration_preserves_deduplication(renderer):
+    for index in range(130):
+        renderer.register_questions(request(f"question-{index}"))
+    assert len(renderer._questions) == 128
+    pending = request("question-129")
+    answer = {"answers": {pending.questions[0].question: "Python"}}
+    result(renderer, answer, call_id=pending.request_id)
+    renderer.register_questions(pending)
+    result(renderer, answer, call_id=pending.request_id)
+    assert render(renderer).count("Answered · Language") == 1
+
+
+def test_receipt_payload_is_literal_and_control_sequences_are_removed(renderer):
+    renderer.register_questions(request())
+    result(renderer, {"answers": {request().questions[0].question: "[bold]literal[/bold]\x1b[31m"}})
+    concise = render(renderer)
+    assert "[bold]literal[/bold]" in concise
+    assert "\x1b" not in concise
+
+
+def test_native_retry_is_not_an_answer(renderer):
+    renderer.register_questions(request())
+    renderer.ingest(
+        "CUSTOM",
+        {
+            "name": "a13n.pydantic_ai.function_tool_result",
+            "value": {
+                "event": {
+                    "part": {
+                        "part_kind": "retry-prompt",
+                        "tool_name": "ask_user_question",
+                        "tool_call_id": "question-1",
+                        "content": "Answer validation failed.",
+                    }
+                }
+            },
+        },
+    )
+    assert "Not answered · Language" in render(renderer)
+    assert "Answer validation failed." in render(renderer)
+    assert "Answered" not in render(renderer)
+
+
+def test_unknown_explicit_tool_name_does_not_match_registered_question(renderer):
+    renderer.register_questions(request())
+    renderer.ingest(
+        "TOOL_CALL_RESULT",
+        {
+            "tool_call_id": "question-1",
+            "tool_call_name": "other_tool",
+            "content": json.dumps({"answers": {request().questions[0].question: "Python"}}),
+        },
+    )
+    assert render(renderer) == "Call other_tool"
+
+
+def test_question_arguments_obey_aggregate_cache_budget(renderer):
+    renderer.transcript.max_bytes = 1024
+    for index in range(8):
+        streamed_request(renderer, request(f"question-{index}"))
+    assert sum(len(item.arguments.encode()) for item in renderer._questions.values()) <= 1024
+
+
+@pytest.mark.parametrize("first_outcome", ["failed", "success"])
+def test_explicit_response_retry_has_its_own_receipt_after_publication_failure(renderer, first_outcome):
+    pending = request()
+    renderer.register_questions(pending)
+    original = {"answers": {pending.questions[0].question: "Python"}}
+    changed = {"answers": {pending.questions[0].question: "Rust"}}
+    result(renderer, original, native=True, outcome=first_outcome, run_id="attempt-one")
+    # App still exposes the suspended continuation after publication failed.
+    renderer.register_questions(pending)
+    result(renderer, changed, native=True, run_id="attempt-two")
+    result(renderer, changed, run_id="attempt-two")
+    # Replayed observations of either attempt must not add or overwrite receipts.
+    result(renderer, original, native=True, outcome=first_outcome, run_id="attempt-one")
+    result(renderer, changed, native=True, run_id="attempt-two")
+    assert len(renderer.transcript.blocks) == 2
+    newest = next(reversed(renderer.transcript.blocks.values()))
+    assert newest.preview == "Answered · Language\nWhich language should we use?\n→ Rust"
+    assert render(renderer).count("→ Rust") == 1

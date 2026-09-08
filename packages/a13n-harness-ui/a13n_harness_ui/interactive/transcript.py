@@ -39,8 +39,22 @@ def bounded_text(text: str, limit: int) -> str:
 def _tool_row(source: str, theme: ResolvedTheme) -> Text:
     """Style the generated name/status fields, leaving the payload literal."""
     colors = activity_colors(theme)
-    if source.startswith(("Read ", "Find ", "Search ", "List ", "Run ", "Call ", "Modified:", "Exploring", "Explored")):
-        value = Text(no_wrap=True, overflow="ellipsis")
+    if source.startswith(
+        (
+            "Read ",
+            "Find ",
+            "Search ",
+            "List ",
+            "Run ",
+            "Call ",
+            "Delegate ",
+            "Steer ",
+            "Modified:",
+            "Exploring",
+            "Explored",
+        )
+    ):
+        value = Text(no_wrap=False, overflow="fold")
         for index, line in enumerate(source.splitlines()):
             if index:
                 value.append("\n")
@@ -49,7 +63,7 @@ def _tool_row(source: str, theme: ResolvedTheme) -> Text:
             value.append(detail, style="default")
         return value
     name, separator, remainder = source.partition(" | ")
-    value = Text(name, style=colors["muted"], no_wrap=True, overflow="ellipsis")
+    value = Text(name, style=colors["muted"], no_wrap=False, overflow="fold")
     if not separator:
         return value
     state, separator, detail = remainder.partition(" | ")
@@ -83,7 +97,7 @@ class Block:
     size: int = 0
     collapsed_lines: int | None = None
     collapsed_chars: int | None = None
-    preview_rows: list[StyleAndTextTuples] = field(default_factory=list)
+    preview_rows: Sequence[StyleAndTextTuples] = field(default_factory=list)
     preview: str | None = None
     streaming: bool = False
     concise_hidden: bool = False
@@ -98,6 +112,8 @@ class Block:
         return self._source
 
     def close(self) -> None:
+        if isinstance(self.preview_rows, RowStore):
+            self.preview_rows.close()
         if isinstance(self.rows, RowStore):
             self.rows.close()
         for _, rows in self.chunks:
@@ -334,6 +350,14 @@ class Transcript:
                 title, separator, detail = source.partition(" · Ctrl+O details")
                 value = Text(title, style=f"bold {colors['running']}", no_wrap=True, overflow="ellipsis")
                 value.append(separator + detail, style=f"not bold {colors['muted']}")
+            elif kind == "question_receipt" and folded:
+                colors = activity_colors(self.theme)
+                value = Text()
+                for line in source.rstrip("\n").splitlines(keepends=True):
+                    tone = "completed" if line.startswith("Answered · ") else "muted"
+                    value.append(
+                        line, style=colors[tone] if line.startswith(("Answered · ", "Not answered · ")) else "default"
+                    )
             elif kind in {"tool", "command"} and folded:
                 value = _tool_row(source.rstrip("\n"), self.theme)
             elif kind == "approval":
@@ -347,15 +371,20 @@ class Transcript:
                 title, _, body = source.rstrip("\n").partition("\n")
                 content: Text | TerminalMarkdown = Text(body, no_wrap=folded, overflow="ellipsis" if folded else "fold")
                 if kind == "edit":
-                    content = Text(no_wrap=folded, overflow="ellipsis" if folded else "fold")
+                    content = Text(no_wrap=False, overflow="fold")
                     for line in body.splitlines(keepends=True):
                         style = "green" if line.startswith("+") else "red" if line.startswith("-") else ""
                         content.append(line, style=style)
+                    # Rich panel titles are single-line; keep long paths in the
+                    # wrapping body so concise mode does not silently lose them.
+                    content = Text.assemble((title + "\n", "bold"), content)
                 elif markdown:
                     content = TerminalMarkdown(body, code_theme=self.theme.syntax_theme, hyperlinks=False)
                 value = Panel(
                     content,
-                    title=Text(
+                    title=None
+                    if kind == "edit"
+                    else Text(
                         title,
                         style=f"bold {activity_colors(self.theme)['running']}"
                         if kind == "notes"
@@ -445,13 +474,22 @@ class Transcript:
                         directory=self._cache_directory.name,
                         page_size=min(64, max(1, self.max_rows // 2)),
                     )
+                if isinstance(block.preview_rows, RowStore):
+                    block.preview_rows.close()
                 if block.preview is not None:
-                    block.preview_rows = list(
-                        islice(
-                            rows(block.preview, False, block.kind, folded=True),
-                            64 if block.kind in {"command", "edit", "info"} else block.collapsed_lines or 1,
+                    preview_rows = rows(block.preview, False, block.kind, folded=True)
+                    if block.kind in {"tool", "command", "edit", "question_receipt"}:
+                        # Preview text is already semantically bounded. Physical
+                        # wrapping must not discard continuations or later rows.
+                        block.preview_rows = RowStore(
+                            preview_rows,
+                            directory=self._cache_directory.name,
+                            page_size=min(64, max(1, self.max_rows // 2)),
                         )
-                    )
+                    else:
+                        block.preview_rows = list(
+                            islice(preview_rows, 64 if block.kind == "info" else block.collapsed_lines or 1)
+                        )
                 elif block.collapsed_chars is not None:
                     limit = block.collapsed_lines or 5
                     block.preview_rows = list(
@@ -507,6 +545,8 @@ class TranscriptControl(UIControl):
         for block in self.transcript.blocks.values():
             if isinstance(block.rows, RowStore):
                 block.rows.pages.clear()
+            if isinstance(block.preview_rows, RowStore):
+                block.preview_rows.pages.clear()
             for _, rows in block.chunks:
                 rows.pages.clear()
         self.transcript.render(width)

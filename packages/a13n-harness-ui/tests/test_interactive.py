@@ -1144,7 +1144,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
         assert len(renderer.tasks.tasks) == 1
         assert len((await app.thread_tasks(thread_id=backend.thread_id)).tasks) == 1
         interaction = await backend.interaction()
-        assert interaction is not None and interaction.title() == "Option · 1/1"
+        assert interaction is not None and interaction.title() == "Option"
         assert interaction.timeout_seconds == 30
         if timeout:
             interaction.question_started -= interaction.timeout_seconds
