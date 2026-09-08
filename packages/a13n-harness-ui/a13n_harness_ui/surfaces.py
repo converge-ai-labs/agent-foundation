@@ -27,6 +27,7 @@ class RunModelOverrides(SurfaceModel):
 
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
+    service_tier: Literal["auto", "default", "flex", "priority"] | None = None
 
 
 class ContextUsageView(SurfaceModel):

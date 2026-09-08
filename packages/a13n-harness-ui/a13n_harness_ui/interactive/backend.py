@@ -106,9 +106,12 @@ class SessionBackend:
         if model is None:
             self.status.model = "not configured"
             self.status.thinking = "default"
+            self.status.service_tier = None
             self.status.context_window = None
             return False
         self.status.model = model.route
+        tier = self.overrides.service_tier or model.settings.get("service_tier")
+        self.status.service_tier = tier if isinstance(tier, str) else None
         self.status.thinking = str(
             self.overrides.thinking
             if self.overrides.thinking is not None
@@ -180,10 +183,30 @@ class SessionBackend:
     async def thinking(self, selected: str | None) -> str:
         if selected is not None:
             self.overrides = RunModelOverrides.model_validate(
-                {"model_id": self.overrides.model_id, "thinking": None if selected == "default" else selected}
+                {**self.overrides.model_dump(), "thinking": None if selected == "default" else selected}
             )
             await self.refresh()
         return f"Reasoning · {self.status.thinking}"
+
+    async def fast(self, selected: str | None) -> str:
+        if not await self.refresh():
+            raise ValueError("Configure a model before selecting its service tier.")
+        action = selected or ("off" if self.status.service_tier == "priority" else "on")
+        tiers = {"on": "priority", "off": "default", "reset": None}
+        if action not in tiers:
+            raise ValueError("Usage: /fast [on|off|reset]")
+        self.overrides = RunModelOverrides.model_validate(
+            {**self.overrides.model_dump(), "service_tier": tiers[action]}
+        )
+        await self.refresh()
+        message = f"Service tier · {self.status.service_tier_text} · " + (
+            "Model configuration restored." if action == "reset" else "session only; configuration unchanged."
+        )
+        if self.status.service_tier == "priority":
+            message += (
+                " Priority requested; may use more quota or cost more. Provider support and speed are not guaranteed."
+            )
+        return message
 
     async def set_environment(self, selected: str | None) -> str:
         if selected is not None:
@@ -270,7 +293,10 @@ class SessionBackend:
         if self.overrides.model_id is None:
             # Historical usage never restores a temporary model selection.
             self.overrides = RunModelOverrides.model_validate(
-                {"thinking": usage.thinking if agent is not None and usage.model_id == agent.model else None}
+                {
+                    "thinking": usage.thinking if agent is not None and usage.model_id == agent.model else None,
+                    "service_tier": self.overrides.service_tier,
+                }
             )
         await self.refresh(thread=detail.thread)
         self.resumed_transcript = page

@@ -118,7 +118,7 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
     wizard.accept("gpt-5.6-sol")
-    for value in ("all", "extended", "medium", "no", "", "sandbox"):
+    for value in ("on", "all", "extended", "medium", "no", "", "sandbox"):
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
@@ -1219,6 +1219,7 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
         totals = (await app.thread_usage(thread_id=first_thread)).root
         assert totals.model_requests == 3  # Live + terminal reports count once.
         assert status.usage.input_tokens == dict(totals.tokens)["input_tokens"]
+        assert status.total_tokens == dict(totals.tokens)["input_tokens"] + dict(totals.tokens)["output_tokens"]
         latest_context = status.context_tokens
         assert latest_context == (await app.context_usage(first_thread)).latest_request_tokens
         assert latest_context < status.usage.input_tokens + status.usage.output_tokens
@@ -1232,6 +1233,7 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
         await backend.initialize()
         assert status.requests == 3
         assert status.usage.input_tokens == dict(totals.tokens)["input_tokens"]
+        assert status.total_tokens == dict(totals.tokens)["input_tokens"] + dict(totals.tokens)["output_tokens"]
         assert status.usage.cost is None
         assert status.context_tokens == latest_context
         await backend.new()
@@ -1317,3 +1319,68 @@ async def test_default_notes_are_injected_and_survive_resume_with_full_projectio
 
         with pytest.raises(ThreadError, match="continuation changed"):
             await app.thread_notes(thread_id=thread_id, expected_continuation_id="f" * 64)
+
+
+@pytest.mark.anyio
+async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(tmp_path: Path, monkeypatch) -> None:
+    import a13n_harness.model_auth as runtime
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/codex.yaml"
+    document = yaml.safe_load(model_path.read_text())
+    document["settings"]["service_tier"] = "priority"
+    model_path.write_text(yaml.safe_dump(document))
+    original = {item: item.read_bytes() for item in path.parent.rglob("*.yaml")}
+    observed = []
+
+    async def stream(messages, info):
+        observed.append(info.model_settings.get("service_tier"))
+        yield "Reply."
+
+    monkeypatch.setattr(runtime, "build_codex_model", lambda *a, **kw: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.status.service_tier == "priority"
+        await backend.thinking("low")
+        await backend.fast("off")
+        assert backend.overrides.thinking == "low"
+        assert backend.status.service_tier == "default"
+        renderer = StreamRenderer(backend.status)
+        try:
+            await backend.execute(renderer, prompt="Standard please")
+            thread_id = backend.thread_id
+            version = (await app.get_thread(thread_id)).thread.configuration.version
+            assert "Fast (priority)" in await backend.fast(None)
+            await backend.thinking("medium")
+            assert backend.overrides.thinking == "medium"
+            assert backend.overrides.service_tier == "priority"
+            await backend.execute(renderer, prompt="Priority please")
+            await backend.fast("reset")
+            assert backend.overrides.service_tier is None
+            assert backend.status.service_tier == "priority"  # Reset is not an off switch.
+            await backend.fast("off")
+            await backend.resume(thread_id)
+            assert backend.overrides.service_tier == "default"
+            assert backend.status.service_tier == "default"
+            assert (await app.get_thread(thread_id)).thread.configuration.version == version
+            restarted = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+            await restarted.initialize()
+            assert restarted.overrides.service_tier is None
+            assert restarted.status.service_tier == "priority"
+            before = backend.overrides
+            with pytest.raises(ValueError, match="Usage"):
+                await backend.fast("invalid")
+            assert backend.overrides == before
+            await backend.new()
+            assert backend.overrides.service_tier == "default"
+            await backend.models("default")
+            assert backend.overrides.service_tier is None
+            assert backend.status.service_tier == "priority"
+        finally:
+            renderer.transcript.close()
+    assert observed == ["default", "priority"]
+    assert all(item.read_bytes() == contents for item, contents in original.items())
