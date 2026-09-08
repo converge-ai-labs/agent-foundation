@@ -1137,6 +1137,46 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
             release.set()
             await asyncio.wait_for(task, 10)
         assert status.requests == 2
+        first_thread = backend.thread_id
+        release.clear()
+        second_request.clear()
+        task = asyncio.create_task(backend.execute(StreamRenderer(status), prompt="Continue", flush=flush))
+        try:
+            await asyncio.wait_for(second_request.wait(), 10)
+            assert not task.done()
+            assert status.requests == 2  # The next Run does not clear the Thread baseline.
+        finally:
+            release.set()
+            await asyncio.wait_for(task, 10)
+        assert status.requests == 3
+        totals = (await app.thread_usage(thread_id=first_thread)).root
+        assert totals.model_requests == 3  # Live + terminal reports count once.
+        assert status.usage.input_tokens == dict(totals.tokens)["input_tokens"]
+        latest_context = status.context_tokens
+        assert latest_context == (await app.context_usage(first_thread)).latest_request_tokens
+        assert latest_context < status.usage.input_tokens + status.usage.output_tokens
+
+    # A new App/terminal restores durable accounting, not just in-process state.
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        status = Status()
+        backend = SessionBackend(app, CliRequest(thread_id=first_thread), tmp_path, status)
+        await backend.initialize()
+        assert status.requests == 3
+        assert status.usage.input_tokens == dict(totals.tokens)["input_tokens"]
+        assert status.usage.cost is None
+        assert status.context_tokens == latest_context
+        await backend.new()
+        assert status.requests == 0 and status.usage is None and status.context_tokens is None
+        await backend.execute(StreamRenderer(status), prompt="Separate Thread")
+        other_thread = backend.thread_id
+        assert other_thread != first_thread and status.requests == 1
+        await backend.resume(first_thread)
+        assert status.requests == 3
+        assert status.context_tokens == latest_context
+        await backend.resume(other_thread)
+        assert status.requests == 1
 
 
 def test_add_agent_cli_routes_to_terminal_with_explicit_advanced_flag(monkeypatch: pytest.MonkeyPatch) -> None:

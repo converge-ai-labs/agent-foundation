@@ -244,8 +244,9 @@ class SessionBackend:
         page = await self.app.get_thread_transcript(
             thread_id=selected, expected_continuation_id=detail.continuation_id, limit=50
         )
+        totals = await self.app.thread_usage(thread_id=selected)
         self.thread_id = selected
-        self.status.reset_usage()
+        self.status.restore_usage(totals.root)
         self.overrides = RunModelOverrides()
         usage = await self.app.context_usage(selected)
         self.status.context_tokens = usage.latest_request_tokens
@@ -442,7 +443,10 @@ class SessionBackend:
         thread_id = await self.ensure_session()
         last_ordinal = -1
         custom_events = CustomEventAssembler()
-        self.status.reset_usage()
+        # Snapshot before admission, then add only this operation's live records.
+        # Never combine an in-flight ledger snapshot with the same live delta.
+        totals = await self.app.thread_usage(thread_id=thread_id)
+        self.status.restore_usage(totals.root)
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
             def ingest(event: LiveEvent) -> bool:
@@ -513,6 +517,10 @@ class SessionBackend:
                 except HarnessUiError:
                     renderer.gap = True
                 renderer.finish()
+                # The ledger includes terminal/failed/cancelled observations and
+                # repairs live gaps. Replace, rather than add, after draining.
+                totals = await self.app.thread_usage(thread_id=thread_id)
+                self.status.restore_usage(totals.root)
         usage = await self.app.context_usage(thread_id)
         self.status.context_tokens = usage.latest_request_tokens
         outcome = operation.outcome

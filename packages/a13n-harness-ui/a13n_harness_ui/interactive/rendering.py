@@ -14,6 +14,7 @@ from .transcript import Transcript
 if TYPE_CHECKING:
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 
+    from a13n_harness_ui.storage.usage import UsageTotals
     from a13n_harness_ui.surfaces import NotePage
 
     from .local_shell import LocalShellEvent
@@ -52,6 +53,17 @@ class Status:
         self.requests = 0
         self._usage_ids.clear()
 
+    def restore_usage(self, totals: UsageTotals) -> None:
+        """Replace the Thread baseline; live IDs belong only to the next operation."""
+        from a13n_harness.usage import BoundedRequestUsage
+
+        self.reset_usage()
+        self.requests = totals.model_requests
+        if self.requests:
+            self.usage = BoundedRequestUsage.model_validate(
+                {**dict(totals.tokens), "cost": None if totals.unknown_model_costs else totals.model_cost_usd}
+            )
+
     def record_usage(self, record: ModelUsageRecord) -> None:
         from a13n_harness.usage import BoundedRequestUsage
 
@@ -80,11 +92,11 @@ class Status:
 
     def usage_details(self) -> str:
         if self.usage is None:
-            return "Root Run usage: unavailable (no observed model response)."
+            return "Root Thread usage: unavailable (no observed model response)."
         usage = self.usage
         cost = "unknown" if usage.cost is None else f"USD {usage.cost:.6f} (model estimate, not subscription billing)"
         return (
-            f"Observed root Run: {self.requests} requests · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
+            f"Observed root Thread: {self.requests} requests · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
             f"Cache read {usage.cache_read_tokens:,} · cache write {usage.cache_write_tokens:,} (provider-reported counters)\n"
             f"Cache rate: {self.cache_rate_text} of input + output. "
             f"Cost: {cost}. Child and non-model usage excluded."

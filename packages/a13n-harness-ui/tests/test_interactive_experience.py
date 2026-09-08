@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -19,7 +20,8 @@ from a13n_harness_ui.interactive.diagnostics import exception_report
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.shell import CliShell
 from a13n_harness_ui.interactive.tasks import TaskPanel
-from a13n_harness_ui.surfaces import SkillCatalogView, TaskPage
+from a13n_harness_ui.storage.usage import UsageTotals
+from a13n_harness_ui.surfaces import RootOperationStatus, SkillCatalogView, TaskPage
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
@@ -96,6 +98,42 @@ def test_status_keeps_native_cache_counters_decimal_cost_and_unknown_cost() -> N
     assert status.usage.cost is None and "Cost: unknown" in status.usage_details()
     status.reset_usage()
     assert status.usage is None and status.requests == 0
+
+
+def _usage_totals(*, requests: int = 3, cost: Decimal = Decimal("0.3"), unknown: int = 0) -> UsageTotals:
+    return UsageTotals(
+        model_requests=requests,
+        provider_receipts=1,
+        tokens=(("input_tokens", 300), ("output_tokens", 60), ("cache_read_tokens", 180)),
+        model_cost_usd=cost,
+        unknown_model_costs=unknown,
+        provider_costs=(("USD", Decimal("99")),),
+        unknown_provider_costs=0,
+        omitted_currency_receipts=0,
+    )
+
+
+@pytest.mark.parametrize("cost", [Decimal("0"), Decimal("0.123456"), None])
+def test_status_restores_ledger_cost_coverage_without_provider_costs(cost: Decimal | None) -> None:
+    status = Status()
+    totals = _usage_totals(cost=Decimal("0.123456") if cost is None else cost, unknown=int(cost is None))
+    status.restore_usage(totals)
+    assert status.requests == 3
+    assert status.usage.cost == cost
+    assert status.cache_rate == 50
+    assert "Observed root Thread" in status.usage_details()
+    # Reconciliation replaces rather than adds the same durable observations.
+    status.restore_usage(totals)
+    assert status.requests == 3
+    assert status.usage.cost == cost
+    # A ledger with only provider receipts is not proven zero model usage.
+    status.restore_usage(_usage_totals(requests=0))
+    assert status.usage is None and status.requests == 0
+    assert "unavailable" in status.usage_details()
+    assert "cost --" in status.line()
+    status.restore_usage(replace(_usage_totals(requests=1, cost=Decimal("0")), tokens=()))
+    assert status.cache_rate is None
+    assert "$0.0000" in status.line()
 
 
 def test_task_panel_applies_distinct_tasks_at_same_version_and_ignores_stale() -> None:
@@ -235,10 +273,12 @@ def test_terminal_is_one_consumer_of_structured_media_input() -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("fragmented", [False, True])
-async def test_live_cost_and_zero_context_are_projected_before_completion(fragmented: bool, tmp_path: Path) -> None:
+@pytest.mark.parametrize("terminal_status", ["completed", "failed", "cancelled", "error"])
+async def test_live_cost_and_zero_context_are_projected_before_completion(
+    fragmented: bool, terminal_status: str, tmp_path: Path
+) -> None:
     from a13n_harness_ui.interactive.backend import SessionBackend
     from a13n_harness_ui.live import HarnessUiLiveHub
-    from a13n_harness_ui.surfaces import RootOperationStatus
     from a13n_stream_protocol import fragment_custom_event
     from ag_ui.core import CustomEvent
 
@@ -275,6 +315,8 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(fragme
     release, updated = asyncio.Event(), asyncio.Event()
 
     async def submit(**kwargs):
+        assert status.requests == 3  # The prior Runs stay visible at admission.
+        assert status.usage.cost == Decimal("0.3")
         await hub.publish(
             run_kind="root",
             root_thread_id="thread-one",
@@ -287,13 +329,20 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(fragme
 
     async def wait(receipt_id):
         await release.wait()
-        return SimpleNamespace(status=RootOperationStatus.cancelled, outcome=None, failure=None)
+        if terminal_status == "error":
+            raise RuntimeError("wait failed")
+        return SimpleNamespace(status=RootOperationStatus(terminal_status), outcome=None, failure=None)
 
+    final_totals = replace(
+        _usage_totals(requests=6, cost=Decimal("0.5")),
+        tokens=(("input_tokens", 500), ("output_tokens", 100), ("cache_read_tokens", 180)),
+    )
     app = SimpleNamespace(
         live_events=hub.subscribe,
         submit_thread=submit,
         wait_root_operation=wait,
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+        thread_usage=AsyncMock(side_effect=[SimpleNamespace(root=_usage_totals()), SimpleNamespace(root=final_totals)]),
     )
     status = Status(state="working", context_window=350000)
     backend = SessionBackend(app, CliRequest(), tmp_path, status)
@@ -310,16 +359,30 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(fragme
         await asyncio.wait_for(updated.wait(), 2)
         assert not task.done()
         assert not renderer.gap
-        assert status.requests == 2  # Duplicate and child records excluded.
-        assert status.usage.cost == Decimal("0.125")
+        assert status.requests == 5  # Three historical + two live; duplicate and child excluded.
+        assert status.usage.cost == Decimal("0.425")
+        assert status.cache_rate == 37.5  # Weighted counters, not average percentages.
         assert status.context_tokens == 0
-        assert "Working" in status.line(60) and "$0.1250" in status.line(60)
+        assert "Working" in status.line(60) and "$0.4250" in status.line(60)
         assert "ctx 0 (0%)" in status.line(60)
         assert "cache" in status.line(120) and "out " not in status.line(120)
     finally:
         release.set()
-        await asyncio.wait_for(task, 2)
-        await hub.close()
+        try:
+            if terminal_status == "error":
+                with pytest.raises(RuntimeError, match="wait failed"):
+                    await asyncio.wait_for(task, 2)
+            else:
+                await asyncio.wait_for(task, 2)
+        finally:
+            await hub.close()
+    # The terminal ledger also contains a response missed by the live stream.
+    assert status.requests == 6
+    assert status.usage.cost == Decimal("0.5")
+    assert status.cache_rate == 30
+    assert status.context_tokens == 0
+    assert not status._usage_ids
+    assert app.thread_usage.call_count == 2  # No ledger scans per live report.
 
 
 def test_agent_alias_is_an_exact_completion_and_never_an_independent_picker() -> None:
