@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
-STATE = Path(__file__).parent / ".state"
-CONFIG = STATE / "config.json"
+CONFIG = Path(os.environ.get("LIVE_TEST_CONFIG", Path(__file__).parent / ".state" / "config.json")).resolve()
+STATE = CONFIG.parent
 
 
 def local_origin(value: str) -> str:

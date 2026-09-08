@@ -28,6 +28,8 @@ def settings_for(config: dict, role: str) -> Settings:
         "secret_encryption_key_id": "live-test-1",
         "connectivity_public_origin": config["control_url"],
         "connectivity_http_origins": (config["control_url"],),
+        "connectivity_private_endpoint_cidrs": ("127.0.0.1/32",),
+        "connectivity_setup_correlation_secret": config["token"],
         "model_private_endpoint_cidrs": ("127.0.0.1/32",),
         "filesystem_root": Path(config["workspace_root"]).parent / role,
     }
@@ -36,21 +38,24 @@ def settings_for(config: dict, role: str) -> Settings:
 
 
 def bearer_authenticator(config: dict):
-    expected = ("Bearer " + config["token"]).encode("utf-8")
-    if not config["token"]:
+    identities = [config, *([config["other_identity"]] if "other_identity" in config else [])]
+    if any(not identity["token"] for identity in identities):
         raise ValueError("Live-test bearer token must not be empty")
-    actor = AuthenticatedActor(
-        principal=PrincipalRef(principal_type="user", principal_id=config["user_id"]),
-        auth_method="session",
-        credential_id="ses_live_test",
-        boundary_workspace_id=config["workspace_id"],
-    )
+    if len({identity["token"] for identity in identities}) != len(identities):
+        raise ValueError("Live-test identities must have distinct bearer tokens")
 
     async def authenticate(request: Request) -> AuthenticatedActor:
         values = request.headers.getlist("authorization")
-        if len(values) != 1 or not secrets.compare_digest(values[0].encode("utf-8"), expected):
-            raise AuthenticationError("Live-test bearer token required")
-        return actor
+        if len(values) == 1:
+            for identity in identities:
+                if secrets.compare_digest(values[0].encode("utf-8"), ("Bearer " + identity["token"]).encode("utf-8")):
+                    return AuthenticatedActor(
+                        principal=PrincipalRef(principal_type="user", principal_id=identity["user_id"]),
+                        auth_method="session",
+                        credential_id="ses_live_test",
+                        boundary_workspace_id=identity["workspace_id"],
+                    )
+        raise AuthenticationError("Live-test bearer token required")
 
     return authenticate
 
@@ -76,4 +81,9 @@ def local_app(config: dict, role: str):
     app = create_app(settings, components=Components(request_authenticator=authenticate))
     if role == "control":
         app.include_router(fixture_router(Path(config["workspace_root"]), authenticate))
+        from .fixture_connectivity import connectivity_router
+        from .fixture_telemetry import telemetry_router
+
+        app.include_router(connectivity_router(Path(config["workspace_root"]), config))
+        app.include_router(telemetry_router(Path(config["workspace_root"]), authenticate))
     return app

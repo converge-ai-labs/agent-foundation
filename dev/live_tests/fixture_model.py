@@ -19,8 +19,23 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import management_model, round_two_model
+
 CASE_ID = r"^[a-f0-9]{32}$"
-SCENARIOS = {"basic", "remember", "tools", "stream", "steer", "interrupt_model", "interrupt_tool", "approval"}
+SCENARIOS = (
+    {
+        "basic",
+        "remember",
+        "tools",
+        "stream",
+        "steer",
+        "interrupt_model",
+        "interrupt_tool",
+        "approval",
+    }
+    | round_two_model.SCENARIOS
+    | management_model.SCENARIOS
+)
 
 
 class Case(BaseModel):
@@ -56,12 +71,25 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
         if not await (path / "case.json").is_file():
             raise HTTPException(404, "Case not found")
         result = {}
-        for name in ("model_started", "model_closed", "tool_started", "tool_closed"):
+        for name in (
+            "model_started",
+            "model_closed",
+            "tool_started",
+            "tool_closed",
+            "management_ready",
+            *round_two_model.FLAGS,
+        ):
             result[name] = await (path / name).is_file()
         for name in ("output", "shell_read"):
             result[name] = await (path / name).read_text() if await (path / name).is_file() else ""
-        for name in ("model_requests", "approval_executions"):
+        for name in ("model_requests", "approval_executions", *round_two_model.COUNTERS):
             result[name] = len((await (path / name).read_text()).splitlines()) if await (path / name).is_file() else 0
+        deliveries = path / "result_deliveries"
+        result["result_deliveries"] = (
+            [json.loads(line) for line in (await deliveries.read_text()).splitlines()]
+            if await deliveries.is_file()
+            else []
+        )
         return result
 
     @router.post("/cases/{case_id}/release")
@@ -73,6 +101,7 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
         return {"released": True}
 
     @router.post("/model/v1/chat/completions")
+    @router.post("/model-alternate/v1/chat/completions")
     async def completion(request: Request):
         body = await request.json()
         texts = [_message_text(message) for message in body["messages"]]
@@ -87,6 +116,10 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
         async with await anyio.open_file(path / "model_requests", "a") as output:
             await output.write("request\n")
         tool_messages = [message for message in body["messages"] if message.get("role") == "tool"]
+        if case.scenario in management_model.SCENARIOS:
+            return await management_model.completion(case, path, body, request)
+        if case.scenario in round_two_model.SCENARIOS:
+            return await round_two_model.completion(case, path, body, texts, tool_messages)
         tool = None
         answer = case.token
         if case.scenario == "remember":
@@ -136,7 +169,7 @@ def _message_text(message: dict) -> str:
     return ""
 
 
-async def _chunks(case: Case, path: Path, answer: str, tool: dict | None):
+async def _chunks(case: Case, path: Path, answer: str, tool: dict | list[dict] | None):
     identifier, created = "chatcmpl_" + uuid4().hex, int(time.time())
 
     def frame(delta: dict, finish=None, *, usage=False):
@@ -157,7 +190,7 @@ async def _chunks(case: Case, path: Path, answer: str, tool: dict | None):
             with anyio.CancelScope(shield=True):
                 await anyio.Path(path / "model_closed").touch()
     if tool is not None:
-        yield frame({"tool_calls": [tool]})
+        yield frame({"tool_calls": tool if isinstance(tool, list) else [tool]})
         yield frame({}, "tool_calls")
     else:
         for offset in range(0, len(answer), 8):

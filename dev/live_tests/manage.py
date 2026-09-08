@@ -55,9 +55,10 @@ async def initialize() -> None:
                 print("Live-test identity already exists; retaining its credentials and resources.")
                 return
             now = datetime.now(UTC)
-            session.add(
-                OrganizationRecord(id=config["organization_id"], name="Live tests", created_at=now, updated_at=now)
-            )
+            if await session.get(OrganizationRecord, config["organization_id"]) is None:
+                session.add(
+                    OrganizationRecord(id=config["organization_id"], name="Live tests", created_at=now, updated_at=now)
+                )
             await session.flush()
             session.add(
                 UserRecord(
@@ -87,6 +88,8 @@ async def initialize() -> None:
                 ("organization", config["organization_id"]),
                 ("workspace", config["workspace_id"]),
             ):
+                if kind == "organization" and config.get("workspace_only"):
+                    continue
                 session.add(
                     RoleBindingRecord(
                         id=new_object_id("rb"),

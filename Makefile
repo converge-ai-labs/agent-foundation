@@ -97,7 +97,7 @@ dev: setup ## Upgrade the schema and run a13n Service
 	@bash scripts/dev.sh
 
 .PHONY: dev-down
-.PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-check live-test-auth-control
+.PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-check live-test-auth-control live-test-round-two live-test-management
 LIVE_TEST_RUN = uv run --locked $(if $(wildcard .env),--env-file .env,)
 
 live-test-auth-control: sync ## Run ordinary local Control settings with the private test authenticator
@@ -117,6 +117,12 @@ live-test-setup: sync ## Create live-test Model, Environment, Plugin, and Agents
 
 live-test: sync ## Run opt-in local HTTP journeys (LIVE_TEST_ARGS="-k basic" selects cases)
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+live-test-round-two: sync ## Run isolated HTTP fault/recovery journeys (requires compatible loopback S3 and Docker)
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+live-test-management: sync ## Run isolated Service/Harness management journeys (requires compatible loopback S3 and Docker)
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
 live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked ruff check --no-fix dev/live_tests

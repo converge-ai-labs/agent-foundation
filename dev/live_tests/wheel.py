@@ -9,19 +9,27 @@ from pathlib import Path
 
 
 def approval_wheel() -> tuple[str, bytes]:
-    source = Path(__file__).with_name("approval_plugin.py").read_bytes()
+    return fixture_wheel("approval")
+
+
+def fixture_wheel(kind: str) -> tuple[str, bytes]:
+    if kind not in {"approval", "resilience"}:
+        raise ValueError("Unknown fixture plugin")
+    source = Path(__file__).with_name(f"{kind}_plugin.py").read_bytes()
     # Changing fixture code produces another immutable version; restart the Worker after an update.
     version = "0.0.0+" + hashlib.sha256(source).hexdigest()[:12]
-    distribution = "a13n_live_approval"
+    distribution = f"a13n_live_{kind}"
     metadata = f"{distribution}-{version}.dist-info"
     files = {
         f"{distribution}/__init__.py": b"",
         f"{distribution}/factory.py": source,
         f"{metadata}/METADATA": (
-            f"Metadata-Version: 2.4\nName: a13n-live-approval\nVersion: {version}\nRequires-Python: >=3.13\n\n"
+            f"Metadata-Version: 2.4\nName: a13n-live-{kind}\nVersion: {version}\nRequires-Python: >=3.13\n\n"
         ).encode(),
         f"{metadata}/WHEEL": b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
-        f"{metadata}/entry_points.txt": b"[a13n_harness.plugins]\nlive.approval = a13n_live_approval.factory:Factory\n",
+        f"{metadata}/entry_points.txt": (
+            f"[a13n_harness.plugins]\nlive.{kind} = {distribution}.factory:Factory\n"
+        ).encode(),
     }
     record = io.StringIO(newline="")
     writer = csv.writer(record, lineterminator="\n")

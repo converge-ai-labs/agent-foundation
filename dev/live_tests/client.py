@@ -121,6 +121,14 @@ class LiveClient:
             await anyio.sleep(0.1)
         raise AssertionError(f"Timed out after {self.timeout}s: {description}")
 
+    async def assert_stable(self, fetch, expected, *, seconds: float) -> None:
+        deadline = monotonic() + seconds
+        while True:
+            assert await fetch() == expected, "An observation changed during the stability window"
+            if monotonic() >= deadline:
+                return
+            await anyio.sleep(0.1)
+
     async def finish(self, run_id: str, outcome: str = "completed") -> dict:
         run = await self.wait(lambda: self.run(run_id), lambda run: run["status"] not in ACTIVE, run_id)
         failure = run.get("failure") or {}
