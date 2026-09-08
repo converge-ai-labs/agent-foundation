@@ -150,7 +150,7 @@ class RunAttemptExecutor[OutputT]:
                 except AttemptAuthorityError:
                     raise
                 except Exception as error:
-                    if self._control.handoff_ready:
+                    if self._control.handoff_ready or self._control.pre_execution_outcome is not None:
                         raise
                     logger.warning(
                         "run_attempt_execution_failed",
@@ -177,6 +177,8 @@ class RunAttemptExecutor[OutputT]:
                     with CancelScope(shield=True):
                         await self._control.close_admission()
                         tasks.cancel_scope.cancel()
+            if finalization is None:
+                finalization = self._control.pre_execution_outcome
             if finalization is None:
                 raise AttemptAuthorityError("Attempt executor stopped without an authoritative finalization")
             return finalization

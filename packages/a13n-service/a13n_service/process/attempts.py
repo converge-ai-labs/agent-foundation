@@ -150,6 +150,7 @@ class WorkerAttempts:
                 workspace_id=workspace_id,
                 catalog=catalog,
                 control=control,
+                committer=self._committer,
                 payloads=self._payloads,
                 sources=sources,
                 inputs=inputs,

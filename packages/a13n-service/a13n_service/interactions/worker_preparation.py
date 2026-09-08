@@ -40,6 +40,7 @@ from .attempts import AttemptContext
 from .control_domain import WaitingRunContinueInput, WaitingRunFeedback
 from .control_models import ThreadInboxRecord
 from .domain import Run, RunInputKind
+from .harness_results import AttemptCommitter
 from .harness_runtime import (
     HarnessCollaborators,
     HarnessInvocation,
@@ -63,6 +64,7 @@ class WorkerAttemptPreparer:
         workspace_id: str,
         catalog: HarnessPluginFactoryCatalog,
         control: RunAttemptControl,
+        committer: AttemptCommitter,
         payloads: RunPayloadStore,
         sources: WorkerInputSources,
         inputs: WorkerInputMaterializer,
@@ -82,6 +84,7 @@ class WorkerAttemptPreparer:
         self._workspace_id = workspace_id
         self._catalog = catalog
         self._control = control
+        self._committer = committer
         self._payloads = payloads
         self._sources = sources
         self._inputs = inputs
@@ -222,7 +225,7 @@ class WorkerAttemptPreparer:
 
             async def continuation_factory(preparation: RunPreparationContext) -> RunInputValue:
                 self._sources.environment = preparation.environment
-                return await self._control.continuation_input()
+                return await self._control.continuation_input(self._committer)
 
             input_source = MaterializedHarnessInput(continuation_factory)
         return HarnessInvocation(

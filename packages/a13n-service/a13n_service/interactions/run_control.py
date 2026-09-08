@@ -17,6 +17,7 @@ from a13n_harness import (
 )
 from a13n_harness.errors import RunError
 from a13n_logging import get_logger
+from anyio import sleep_forever
 from pydantic_ai.capabilities import NodeResult
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
@@ -137,6 +138,7 @@ class RunAttemptControl:
             self._install_state(state)
         self._driver: HarnessControlDriver | None = None
         self._cancel_executor: Callable[[], None] | None = None
+        self._pre_execution_outcome: AttemptOutcome | None = None
 
     def _install_state(self, state: StoredRunState) -> None:
         self._require_open()
@@ -180,6 +182,12 @@ class RunAttemptControl:
             }
             if self._gate.delivery_gate is _DeliveryGate.open and missing:
                 await self._eligible_entries()
+
+    @property
+    def pre_execution_outcome(self) -> AttemptOutcome | None:
+        """Return the committed receipt when input preparation ended execution."""
+
+        return self._pre_execution_outcome
 
     @property
     def harness_identity(self) -> HarnessRunIdentity:
@@ -554,17 +562,29 @@ class RunAttemptControl:
                 self._gate.phase = _CoordinatorPhase.terminal
             return receipt
 
-    async def continuation_input(self) -> RunInputValue:
-        """Supply the first pending input after a completed checkpoint as a fresh prompt."""
+    async def continuation_input(self, committer: AttemptCommitter) -> RunInputValue:
+        """Supply pending input, or adopt the saved outcome if preparation outlived it."""
 
         async with self._gate.lock:
             self._require_open()
-            entries = await self._eligible_entries()
-            if not entries:
-                raise RuntimeError("Completion continuation has no eligible input")
-            entry = entries[0]
-            self._gate.offered[entry.receipt.inbox_entry_id] = entry
-            return entry.tagged_input(self._context.run_id)
+            while True:
+                entries = await self._eligible_entries()
+                if entries:
+                    entry = entries[0]
+                    self._gate.offered[entry.receipt.inbox_entry_id] = entry
+                    return entry.tagged_input(self._context.run_id)
+                receipt = await self._commit_outcome(committer)
+                if receipt.disposition is not AttemptDisposition.continuing:
+                    self._pre_execution_outcome = receipt
+                    break
+                # An input arrived between the FIFO read and the locked outcome decision.
+        cancel_executor = self._cancel_executor
+        if cancel_executor is None:
+            raise RuntimeError("Completion continuation requires a bound executor")
+        cancel_executor()
+        # Unwind the Harness input factory through its cancellation cleanup, before entry.
+        await sleep_forever()
+        raise AssertionError("cancelled continuation resumed")  # pragma: no cover
 
     async def fail_execution(self, committer: AttemptCommitter, failure: SafeFailure) -> AttemptOutcome:
         """Classify a root-task failure using current authority, including pre-Harness failures."""
