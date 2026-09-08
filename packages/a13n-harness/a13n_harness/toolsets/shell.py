@@ -10,6 +10,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.context import AgentContext
+from a13n_harness.environment._resources import EnvironmentResources
 from a13n_harness.environment.commands import (
     CommandEnvironment,
     CommandLimits,
@@ -20,6 +21,7 @@ from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 from a13n_harness.tools.metadata import (
+    CanonicalResource,
     HarnessTool,
     HarnessToolMetadata,
     ToolEffect,
@@ -63,9 +65,10 @@ class ShellToolset:
         if not isinstance(environment, BoundEnvironment):
             raise TypeError("environment must be a BoundEnvironment")
         self._environment = environment
+        self._resources = EnvironmentResources(environment)
         self._resource_resolver = resource_resolver
         self._execution_guard = execution_guard
-        self._process_controller = _ProcessController(environment, execution_guard=execution_guard)
+        self._process_controller = _ProcessController(environment, execution_guard=self._guard_execution)
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         arbitrary_command_effects: set[ToolEffect] = {
@@ -87,17 +90,46 @@ class ShellToolset:
         if EnvironmentAction.SHELL_EXEC in actions:
             tools.append(
                 self._tool(
-                    shell_callable, "environment.shell_exec", arbitrary_command_effects, "none", name="shell_exec"
+                    shell_callable,
+                    "environment.shell_exec",
+                    arbitrary_command_effects,
+                    "none",
+                    resources=self._command_resources,
+                    name="shell_exec",
                 )
             )
         if actions & {EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT}:
-            tools.append(self._tool(self.shell_info, "environment.process_info", {"read"}, "read_only"))
+            tools.append(
+                self._tool(
+                    self.shell_info, "environment.process_info", {"read"}, "read_only", resources=self._info_resources
+                )
+            )
         if {EnvironmentAction.PROCESS_WAIT, EnvironmentAction.PROCESS_READ_OUTPUT} <= actions:
-            tools.append(self._tool(self.shell_wait, "environment.process_wait", {"read"}, "read_only"))
+            tools.append(
+                self._tool(
+                    self.shell_wait,
+                    "environment.process_wait",
+                    {"read"},
+                    "read_only",
+                    resources=self._process_resources,
+                )
+            )
         if actions & {EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_CLOSE_STDIN}:
-            tools.append(self._tool(self.shell_input, "environment.process_input", {"write"}, "none"))
+            tools.append(
+                self._tool(
+                    self.shell_input, "environment.process_input", {"write"}, "none", resources=self._process_resources
+                )
+            )
         if actions & {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.PROCESS_KILL}:
-            tools.append(self._tool(self.shell_signal, "environment.process_signal", {"delete", "execute"}, "none"))
+            tools.append(
+                self._tool(
+                    self.shell_signal,
+                    "environment.process_signal",
+                    {"delete", "execute"},
+                    "none",
+                    resources=self._process_resources,
+                )
+            )
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
@@ -111,19 +143,14 @@ class ShellToolset:
         handler: Callable[[], Awaitable[Any]],
     ) -> Any:
         """Bind completion wake hints only while the outer native run is active."""
-        controller = self._process_controller
-        if controller is None:
-            return await handler()
-        async with controller.active_run(ctx):
+        async with self._process_controller.active_run(ctx):
             return await handler()
 
     async def close(self) -> None:
-        controller = self._process_controller
-        if controller is not None:
-            await controller.close()
+        await self._process_controller.close()
 
     def resolve_process_resource(self, process_id: str) -> str:
-        return self._require_process_controller().resource_id(process_id)
+        return self._process_controller.resource_id(process_id)
 
     async def shell_exec_foreground(
         self,
@@ -236,7 +263,7 @@ class ShellToolset:
                     alias=alias,
                     expected_mount_id=mount_id,
                 )
-            result = await self._require_process_controller().start(
+            result = await self._process_controller.start(
                 request,
                 alias=alias,
                 yield_time_seconds=yield_time_seconds,
@@ -268,7 +295,7 @@ class ShellToolset:
         """List native processes, or inspect one reference, without attaching or resetting output."""
         del ctx
         try:
-            return await self._require_process_controller().info(process_id, alias=alias, limit=limit)
+            return await self._process_controller.info(process_id, alias=alias, limit=limit)
         except EnvironmentError as exc:
             return cast(ProcessInfoResult, _environment_error_result(exc))
 
@@ -283,7 +310,7 @@ class ShellToolset:
     ) -> ProcessObservationResult:
         """Wait boundedly, or poll with zero, then read available output at explicit offsets."""
         try:
-            result = await self._require_process_controller().wait(
+            result = await self._process_controller.wait(
                 process_id,
                 stdout_offset=stdout_offset,
                 stderr_offset=stderr_offset,
@@ -315,7 +342,7 @@ class ShellToolset:
         """Write UTF-8 stdin and optionally close stdin without reading output."""
         del ctx
         try:
-            return await self._require_process_controller().write_input(
+            return await self._process_controller.write_input(
                 process_id,
                 data,
                 close_stdin=close_stdin,
@@ -332,9 +359,36 @@ class ShellToolset:
         """Control a live process without reading output."""
         del ctx
         try:
-            return await self._require_process_controller().signal(process_id, signal)
+            return await self._process_controller.signal(process_id, signal)
         except EnvironmentError as exc:
             return cast(ProcessSignalResult, _environment_error_result(exc))
+
+    async def _command_resources(
+        self, arguments: Mapping[str, object], *, context: AgentContext
+    ) -> tuple[CanonicalResource, ...]:
+        return (
+            await self._resources.binding(
+                _optional_string_argument(arguments, "alias"), "shell", path=_optional_string_argument(arguments, "cwd")
+            ),
+        )
+
+    async def _info_resources(
+        self, arguments: Mapping[str, object], *, context: AgentContext
+    ) -> tuple[CanonicalResource, ...]:
+        if arguments.get("process_id") is not None:
+            return await self._process_resources(arguments, context=context)
+        return (await self._resources.binding(_optional_string_argument(arguments, "alias"), "processes"),)
+
+    async def _process_resources(
+        self, arguments: Mapping[str, object], *, context: AgentContext
+    ) -> tuple[CanonicalResource, ...]:
+        return (
+            CanonicalResource(
+                namespace="environment",
+                kind="managed-process",
+                identifier=self.resolve_process_resource(_string_argument(arguments, "process_id")),
+            ),
+        )
 
     def _tool(
         self,
@@ -343,6 +397,7 @@ class ShellToolset:
         effects: set[ToolEffect],
         idempotency: Literal["none", "read_only"],
         *,
+        resources: ToolResourceResolver,
         name: str | None = None,
     ) -> HarnessTool:
         return HarnessTool(
@@ -359,7 +414,11 @@ class ShellToolset:
                     overflow="truncate",
                     redact=True,
                 ),
-                resource_resolver=(self._resource_resolver(tool_id) if self._resource_resolver is not None else None),
+                resource_resolver=(
+                    self._resource_resolver(tool_id)
+                    if self._resource_resolver is not None
+                    else self._resources.resolver(resources)
+                ),
                 shell_review=tool_id == "environment.shell_exec",
             ),
         )
@@ -395,15 +454,8 @@ class ShellToolset:
     def _guard_execution(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()
-
-    def _require_process_controller(self) -> _ProcessController:
-        controller = self._process_controller
-        if controller is None:
-            raise EnvironmentError(
-                "Process operations are unavailable.",
-                code="environment_unsupported",
-            )
-        return controller
+        elif self._resource_resolver is None:
+            self._resources.guard()
 
 
 def _project_capture(capture: EnvironmentOutputCapture) -> OutputPageProjection:
@@ -442,6 +494,28 @@ def _environment_error_result(error: EnvironmentError) -> ToolFailure:
     if error.retry_hint is not None:
         details["retry_hint"] = error.retry_hint
     return {"ok": False, "error": details}
+
+
+def _string_argument(arguments: Mapping[str, object], name: str) -> str:
+    value = arguments.get(name)
+    if not isinstance(value, str) or not value:
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return value
+
+
+def _optional_string_argument(arguments: Mapping[str, object], name: str) -> str | None:
+    value = arguments.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return value
 
 
 __all__ = ["ShellToolset"]

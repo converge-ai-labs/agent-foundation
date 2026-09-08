@@ -1776,6 +1776,7 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
     assert observed["error"]["code"] == "environment_stale_mount"
 
 
+@requires_posix_process_groups
 async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_flavors(tmp_path: Path) -> None:
     roots = {
         "posix": tmp_path / "posix",
@@ -1788,16 +1789,19 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
         mounts={
             "posix": _local_mount(
                 roots["posix"],
+                process_output=True,
                 environment_id="managed-resource-posix",
                 mount_path="/native/project",
             ),
             "drive": _local_mount(
                 roots["drive"],
+                process_output=True,
                 environment_id="managed-resource-drive",
                 mount_path="C:/Users/Example/Project",
             ),
             "unc": _local_mount(
                 roots["unc"],
+                process_output=True,
                 environment_id="managed-resource-unc",
                 mount_path="//server/share/project",
             ),
@@ -1819,8 +1823,8 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
             environment=environment,
         )
         context = cast(Any, SimpleNamespace(environment=environment))
-        shell_resources = capability._resource_resolver("environment.shell_exec")
-        port_resources = capability._resource_resolver("environment.port_inspect")
+        shell_tool = capability._shell_toolset.get_toolset().tools["shell_exec"]
+        shell_resources = shell_tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
         drive_mount_id = environment.resolve_path("C:/Users/Example/Project").mount_id
         unc_mount_id = environment.resolve_path("//server/share/project").mount_id
 
@@ -1837,7 +1841,6 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
             {"alias": "unc", "cwd": "//SERVER/SHARE/project/src"},
             context=context,
         )
-        unc_port = await port_resources({"alias": "unc"}, context=context)
 
         assert drive_binding[0].kind == "mount"
         assert drive_binding[0].identifier.startswith(f"{drive_mount_id}:")
@@ -1846,8 +1849,6 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
         assert drive_absolute == drive_relative
         assert unc_absolute[0].identifier.startswith(f"{unc_mount_id}:")
         assert unc_absolute[0].identifier.endswith(":/src")
-        assert unc_port[0].kind == "mount"
-        assert unc_port[0].identifier.startswith(f"{unc_mount_id}:")
         mismatch = await shell_resources(
             {"alias": "drive", "cwd": "//server/share/project/src"},
             context=context,
@@ -1878,7 +1879,8 @@ async def test_managed_authorization_is_fenced_by_mount_incarnation(tmp_path: Pa
             run_id="run-1",
             environment=environment,
         )
-        resolver = capability._resource_resolver("filesystem.view")
+        toolset = capability._file_toolset
+        resolver = toolset.get_toolset().tools["write"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
         resources = await resolver(
             {"file_path": "/workspace/relative.txt"},
             context=cast(Any, SimpleNamespace(environment=environment)),
@@ -1886,9 +1888,10 @@ async def test_managed_authorization_is_fenced_by_mount_incarnation(tmp_path: Pa
         assert len(resources) == 1
         await aggregate.replace("local", replacement)
 
-        with pytest.raises(Exception) as stale_authorization:
-            capability._assert_authorized_fence()
-        assert getattr(stale_authorization.value, "code", None) == "environment_stale_mount"
+        result = await toolset.write(cast(Any, None), "/workspace/relative.txt", "must not write")
+        assert result["ok"] is False
+        assert result["error"]["code"] == "environment_stale_mount"
+        assert not (tmp_path / "relative.txt").exists()
 
 
 async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_path: Path) -> None:
@@ -3163,3 +3166,138 @@ async def test_explicit_write_only_mount_without_default_has_usable_tools(
     assert result.output_or_raise() == "done"
     assert next(item for item in _tool_contents(seen) if isinstance(item, dict))["ok"] is True
     assert (tmp_path / "new.txt").read_text() == "new"
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments", "paths"),
+    [
+        ("view", {"file_path": "input.txt"}, ("/input.txt",)),
+        ("write", {"file_path": "output.txt"}, ("/output.txt",)),
+        ("edit", {"file_path": "output.txt"}, ("/output.txt",)),
+        ("multi_edit", {"file_path": "output.txt"}, ("/output.txt",)),
+        ("ls", {"path": "folder"}, ("/folder",)),
+        ("glob", {}, ("/",)),
+        ("grep", {"root": "folder"}, ("/folder",)),
+        ("mkdir", {"paths": ["one", "two", "one"]}, ("/one", "/two")),
+        ("delete", {"paths": ["one", "two"]}, ("/one", "/two")),
+        ("move", {"pairs": [{"src": "one", "dst": "two"}]}, ("/one", "/two")),
+        ("copy", {"pairs": [{"src": "one", "dst": "two"}, {"src": "one", "dst": "three"}]}, ("/one", "/two", "/three")),
+    ],
+)
+async def test_file_toolset_owns_resource_metadata_without_dynamic_capability(
+    tmp_path: Path, name: str, arguments: dict[str, Any], paths: tuple[str, ...]
+) -> None:
+    runtime = _local_binding(tmp_path)
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        tool = FileToolset(env.files, file_scopes=env).get_toolset().tools[name]
+        resolver = tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        resources = await resolver(arguments, context=cast(Any, None))
+        assert tuple(resource.approval_revision for resource in resources) == paths
+        assert all(resource.namespace == "environment" and resource.kind == "file" for resource in resources)
+
+
+@pytest.mark.parametrize("name", ["mkdir", "delete", "move", "copy"])
+async def test_file_batch_resources_do_not_swallow_unresolved_endpoints(tmp_path: Path, name: str) -> None:
+    runtime = _local_binding(tmp_path)
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        tool = FileToolset(env.files, file_scopes=env).get_toolset().tools[name]
+        resolver = tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        arguments = (
+            {"paths": ["valid", "/environment/missing/path"]}
+            if name in {"mkdir", "delete"}
+            else {"pairs": [{"src": "valid", "dst": "/environment/missing/path"}]}
+        )
+        with pytest.raises(EnvironmentError) as error:
+            await resolver(arguments, context=cast(Any, None))
+        assert error.value.code == "environment_selection_invalid"
+
+
+async def test_file_batch_fences_every_mount_with_task_local_isolation(tmp_path: Path) -> None:
+    roots = {name: tmp_path / name for name in ("source", "target")}
+    for root in roots.values():
+        root.mkdir()
+    runtime = create_environment_runtime(
+        mounts={name: _local_mount(root, environment_id=name) for name, root in roots.items()}, default_mount="source"
+    )
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        toolset = FileToolset(env.files, file_scopes=env)
+        tools = toolset.get_toolset().tools
+        copy_resolver = tools["copy"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        view_resolver = tools["view"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        authorized = asyncio.Event()
+        replaced = asyncio.Event()
+
+        async def authorize_copy() -> None:
+            resources = await copy_resolver(
+                {"pairs": [{"src": "/environment/source/one", "dst": "/environment/target/two"}]},
+                context=cast(Any, None),
+            )
+            assert len(resources) == 2
+            authorized.set()
+            await replaced.wait()
+            with pytest.raises(EnvironmentError) as error:
+                toolset._guard_execution()
+            assert error.value.code == "environment_stale_mount"
+
+        async def authorize_unaffected_read() -> None:
+            await authorized.wait()
+            await view_resolver({"file_path": "/environment/source/one"}, context=cast(Any, None))
+            await runtime.replace("target", _local_mount(roots["target"], environment_id="new-target"))
+            toolset._guard_execution()
+            replaced.set()
+
+        await asyncio.gather(authorize_copy(), authorize_unaffected_read())
+
+
+async def test_unresolved_resource_fence_rejects_a_new_mount_publication(tmp_path: Path) -> None:
+    runtime = _local_binding(tmp_path)
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        toolset = FileToolset(env.files, file_scopes=env)
+        resolver = toolset.get_toolset().tools["view"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        assert await resolver({"file_path": "/environment/missing/one"}, context=cast(Any, None)) == ()
+        toolset._guard_execution()
+        await runtime.replace("local", _local_mount(tmp_path, environment_id="replacement"))
+        with pytest.raises(EnvironmentError) as error:
+            toolset._guard_execution()
+        assert error.value.code == "environment_stale_mount"
+
+
+async def test_file_resource_defaults_preserve_direct_scopes_and_explicit_overrides(tmp_path: Path) -> None:
+    async def custom_resolver(arguments, *, context):
+        return ()
+
+    runtime = _local_binding(tmp_path)
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        for scopes in (
+            None,
+            SimpleNamespace(select_files=env.select_files, resolve_files=env.resolve_files, open_files=env.open_files),
+        ):
+            toolset = FileToolset(env.files, file_scopes=cast(Any, scopes))
+            assert all(
+                tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver is None
+                for tool in toolset.get_toolset().tools.values()
+            )
+
+        calls: list[str] = []
+        toolset = FileToolset(env.files, file_scopes=env, resource_resolver=lambda tool_id: custom_resolver)
+        assert all(
+            tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver is custom_resolver
+            for tool in toolset.get_toolset().tools.values()
+        )
+        toolset._guard_execution()
+        toolset = FileToolset(env.files, file_scopes=env, execution_guard=lambda: calls.append("guard"))
+        resolver = toolset.get_toolset().tools["view"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        await resolver({"file_path": "one"}, context=cast(Any, None))
+        await runtime.replace("local", _local_mount(tmp_path, environment_id="replacement"))
+        toolset._guard_execution()
+        assert calls == ["guard"]

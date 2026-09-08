@@ -14,8 +14,8 @@ def local_backing_identity(*, provider_key: str, roots: tuple[Path, ...], policy
 
     This is workspace continuity evidence, not a content digest or a race-free
     filesystem lease. Directory timestamps deliberately do not participate:
-    normal writes must not invalidate a pending approval. Missing file IDs fail
-    closed to the Harness's connection-local approval revision.
+    normal writes do not replace the backing target. Missing file IDs mean
+    stable backing evidence is unavailable.
     """
     try:
         host = platform.node()

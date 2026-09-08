@@ -994,9 +994,21 @@ async def test_web_fetch_body_deadline_is_finite() -> None:
 
 @pytest.mark.parametrize("tool_name", ["download", "pdf_convert", "office_to_markdown"])
 @pytest.mark.parametrize("change", ["same", "backing", "deny", "legacy"])
-async def test_content_tool_approval_tracks_backing_across_connections(tmp_path: Path, tool_name: str, change: str):
+@pytest.mark.parametrize("has_backing_identity", [True, False])
+async def test_content_tool_approval_is_independent_of_backing_identity(
+    tmp_path: Path,
+    tool_name: str,
+    change: str,
+    has_backing_identity: bool,
+    monkeypatch: pytest.MonkeyPatch,
+):
     from a13n_harness import DeferredToolResume
     from a13n_harness.tools.approval import RESOURCE_APPROVAL_KEY
+
+    if not has_backing_identity:
+        # Exercise real file scopes across fresh bindings without continuity evidence,
+        # as with Remote Envd. Dispatch still has independent mount/generation fences.
+        monkeypatch.setattr("a13n_environment.direct_local.provider.local_backing_identity", lambda **kwargs: None)
 
     original, replacement = tmp_path / "original", tmp_path / "replacement"
     original.mkdir()
@@ -1083,15 +1095,17 @@ async def test_content_tool_approval_tracks_backing_across_connections(tmp_path:
         ),
     )
     assert resumed.output_or_raise() == "done"
-    assert bool(client.requests if is_download else converter.requests) == (change == "same")
-    if change == "same":
+    allowed = change in {"same", "backing"}
+    assert bool(client.requests if is_download else converter.requests) == allowed
+    if allowed:
         assert captured[0][0].identifier != captured[-1][0].identifier
         assert captured[0][0].approval_revision == captured[-1][0].approval_revision
         # User-published output is not a run-private spill and survives cleanup.
+        target = replacement if change == "backing" else original
         if is_download:
-            assert [path.read_bytes() for path in (original / "downloads").iterdir()] == [b"download"]
+            assert [path.read_bytes() for path in (target / "downloads").iterdir()] == [b"download"]
         else:
-            assert list(original.glob("export_*/**/*.md"))
+            assert list(target.glob("export_*/**/*.md"))
     else:
         assert not list(original.glob("export_*"))
         assert not (original / "downloads").exists()

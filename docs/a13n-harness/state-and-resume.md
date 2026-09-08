@@ -126,7 +126,7 @@ Resume validates that:
 - overridden arguments validate again;
 - fresh policy and provider enforcement still allow dispatch.
 
-A prior approval does not bypass current policy. Environment-backed approvals also bind the selected backing identity and path: reconnecting to the same backing can continue, but a changed target or path requires new approval. Downloads bind their destination directory; document conversion binds its source and output parent directory. Pending download/document approvals created without these revision facts cannot be resumed as approved after this change; inspect the current target and request approval again.
+A prior approval does not bypass current policy. Standard Environment-backed approvals bind the tool, arguments, resource kinds, and resolved paths, not mount IDs, connection generations, or backing identities. Reconnecting or replacing the backing environment does not by itself invalidate approval during HITL resume. Harness does not guarantee that the same path still refers to the same underlying target; Hosts needing that restriction use their invocation policy or approval verifier. Downloads bind their destination directory; document conversion binds its source and output parent directory. Pending approvals recorded with the old backing- or mount-based revisions, and legacy download/document approvals without revision facts, require fresh approval once.
 
 This resume flow is root-only. Child invocations remove declaratively deferred tools and convert dynamic deferral into `ToolDenied` results while continuing the same run. A Host must not persist or submit `DeferredToolResume` for a child.
 

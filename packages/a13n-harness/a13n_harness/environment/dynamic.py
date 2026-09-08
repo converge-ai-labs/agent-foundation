@@ -17,7 +17,6 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
 )
-from a13n_harness.tools.metadata import ToolResourceResolver
 from a13n_harness.toolsets.file_media import (
     AgentMediaUnderstandingProvider,
     MediaUnderstandingProvider,
@@ -98,21 +97,10 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         super().__init__(configuration)
         self._run_id = run_id
         self._environment = environment
-        self._shell_toolset = ShellToolset(
-            environment,
-            resource_resolver=lambda tool_id: self._dynamic_context._resource_resolver(tool_id),
-            execution_guard=lambda: self._dynamic_context._assert_authorized_fence(),
-        )
-        self._dynamic_context = _DynamicEnvironmentContext(
-            configuration,
-            run_id=run_id,
-            environment=environment,
-            resolve_process_resource=self._shell_toolset.resolve_process_resource,
-        )
+        self._shell_toolset = ShellToolset(environment)
+        self._dynamic_context = _DynamicEnvironmentContext()
         self._file_toolset = FileToolset(
             environment.files,
-            resource_resolver=self._dynamic_context._resource_resolver,
-            execution_guard=self._dynamic_context._assert_authorized_fence,
             file_scopes=environment,
             media_understanding=_resolve_file_media_understanding,
         )
@@ -182,13 +170,6 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         handler: ModelContextNext,
     ) -> ModelContextProjection:
         return await self._dynamic_context.wrap_model_context(ctx, request, handler)
-
-    # Package-private seams used by focused authorization tests.
-    def _resource_resolver(self, tool_id: str) -> ToolResourceResolver:
-        return self._dynamic_context._resource_resolver(tool_id)
-
-    def _assert_authorized_fence(self) -> None:
-        self._dynamic_context._assert_authorized_fence()
 
     async def _close_processes(self) -> None:
         await self._shell_toolset.close()

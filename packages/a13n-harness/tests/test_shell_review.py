@@ -515,18 +515,20 @@ def test_plugin_cannot_contribute_reserved_shell_review_capability() -> None:
 
 def test_shell_toolset_marks_only_command_launch_for_review() -> None:
     toolset = cast(Any, object.__new__(ShellToolset))
-    toolset._resource_resolver = None
+    toolset._resource_resolver = lambda tool_id: None
     command = toolset._tool(
         lambda: None,
         "environment.shell_exec",
         {"execute"},
         "none",
+        resources=cast(Any, None),
     )
     wait = toolset._tool(
         lambda: None,
         "environment.process_wait",
         {"read"},
         "none",
+        resources=cast(Any, None),
     )
 
     assert command.metadata[HARNESS_TOOL_METADATA_KEY].shell_review is True

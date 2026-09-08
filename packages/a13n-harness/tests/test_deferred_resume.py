@@ -394,7 +394,7 @@ async def test_resume_rejects_non_native_approval_values_and_non_finite_override
 
 
 @pytest.mark.parametrize("replacement", [False, True])
-async def test_deferred_approval_binds_backing_revision_across_run_connections(replacement):
+async def test_custom_resource_revision_can_bind_backing_across_run_connections(replacement):
     from a13n_harness.tools import CanonicalResource
 
     executed = []
@@ -429,3 +429,48 @@ async def test_deferred_approval_binds_backing_revision_across_run_connections(r
     assert executed == ([] if replacement else [1]), (result.output, suspended.deferred)
     if replacement:
         assert "Approved resources changed" in result.output
+
+
+@pytest.mark.parametrize("kind", ["file", "mount"])
+@pytest.mark.parametrize("change", ["connection", "path", "arguments", "deny"])
+async def test_environment_approval_ignores_connection_identity(kind, change):
+    from a13n_harness.environment._resources import selection_resource
+    from a13n_harness.environment.models import EnvironmentPath
+    from a13n_harness.environment.providers import FileScopeSelection
+
+    executed = []
+    selection = FileScopeSelection(
+        logical_path="/workspace/work",
+        resolved_path=EnvironmentPath(mount_id="mount-first", path="/work"),
+        observed_generation="generation-first",
+    )
+
+    async def resources(arguments, *, context):
+        return (selection_resource(selection, kind=kind),)
+
+    executable = _build(executed, resolver=resources, requires_approval=False)
+    first = await _suspend(executable, _Policy(InvocationPolicyDecision.require_approval(), []))
+    selection = FileScopeSelection(
+        logical_path="/workspace/work",
+        resolved_path=EnvironmentPath(mount_id="mount-resumed", path="/other" if change == "path" else "/work"),
+        observed_generation="generation-resumed",
+    )
+    requests = first.deferred
+    assert requests is not None
+    results = requests.build_results(approve_all=True)
+    if change == "arguments":
+        results = DeferredToolResults(
+            approvals={requests.approvals[0].tool_call_id: ToolApproved(override_args={"value": 2})}
+        )
+    fresh_policy = _Policy(
+        InvocationPolicyDecision.deny("current denial") if change == "deny" else InvocationPolicyDecision.allow(), []
+    )
+    result = await executable.run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(requests, results),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=fresh_policy),)),
+    )
+    assert result.status == "completed"
+    # Mount resources do not bind a cwd. File resources still bind the selected path.
+    allowed = change == "connection" or (kind == "mount" and change == "path")
+    assert executed == ([1] if allowed else [])

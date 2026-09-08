@@ -125,7 +125,7 @@ async def test_local_envd_uses_fresh_private_generation_and_non_destructive_clos
     assert tmp_path.is_dir()
 
 
-async def test_local_envd_approval_backing_is_independent_of_daemon_generation(
+async def test_local_envd_backing_identity_is_independent_of_daemon_generation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "workspace"

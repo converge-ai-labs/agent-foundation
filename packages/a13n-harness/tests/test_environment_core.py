@@ -1900,8 +1900,8 @@ async def test_command_cwd_resource_prepares_shell_without_file_facet() -> None:
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from a13n_harness.environment import DynamicEnvironmentConfiguration
-    from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
+    from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
+    from a13n_harness.toolsets.shell import ShellToolset
 
     provider = _Binding(
         "shell-only",
@@ -1914,13 +1914,12 @@ async def test_command_cwd_resource_prepares_shell_without_file_facet() -> None:
         default_mount="local",
     )
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as env:
-        capability = _DynamicEnvironmentRunCapability(
-            DynamicEnvironmentConfiguration(), run_id="run-1", environment=env
-        )
-        resources = await capability._resource_resolver("environment.shell_exec")(
+        tool = ShellToolset(env).get_toolset().tools["shell_exec"]
+        resolver = tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        resources = await resolver(
             {"command": "true", "cwd": "/workspace/work"},
             context=SimpleNamespace(environment=env),
         )
         assert provider.bound.ready_calls == [frozenset({"shell"})]
-        assert resources[0].approval_revision.endswith(":/work")
+        assert resources[0].approval_revision == "/work"
         assert resources[0].kind == "file"

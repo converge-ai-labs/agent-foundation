@@ -16,6 +16,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._json import redact_json
 from a13n_harness.context import AgentContext, ToolMetadataKey
+from a13n_harness.environment._resources import EnvironmentResources
 from a13n_harness.environment.files import (
     FileMetadata,
     FileOperator,
@@ -23,11 +24,12 @@ from a13n_harness.environment.files import (
     FileTextSearchRequest,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPath
-from a13n_harness.environment.providers import FileScopeProvider
+from a13n_harness.environment.providers import BoundEnvironment, FileScopeProvider
 from a13n_harness.errors import HarnessError
 from a13n_harness.events import FileChangeProjection, FilesystemChangedValue, emit_tool_event
 from a13n_harness.spec import ModelCapability
 from a13n_harness.tools.metadata import (
+    CanonicalResource,
     HarnessTool,
     HarnessToolMetadata,
     ToolEffect,
@@ -207,6 +209,7 @@ class FileToolset:
         self._files = files
         self._file_access = ScopedFileAccess(files, file_scopes)
         self._has_file_scopes = file_scopes is not None
+        self._resources = EnvironmentResources(file_scopes) if isinstance(file_scopes, BoundEnvironment) else None
         self._resource_resolver = resource_resolver
         self._execution_guard = execution_guard
         self._media_understanding = media_understanding
@@ -243,6 +246,7 @@ class FileToolset:
                 "filesystem.view",
                 {"read"},
                 "read_only",
+                resources=self._path_resources(lambda arguments: (_string_argument(arguments, "file_path"),)),
                 name="view",
                 description="Read bounded text segments or attach common image, video, and audio files natively.",
                 max_output_bytes=_MAX_MODEL_MEDIA_BYTES,
@@ -252,6 +256,7 @@ class FileToolset:
                 "filesystem.write",
                 {"write"},
                 "none",
+                resources=self._path_resources(lambda arguments: (_string_argument(arguments, "file_path"),)),
                 name="write",
                 description="Write, overwrite, or append text to a file.",
             ),
@@ -260,6 +265,7 @@ class FileToolset:
                 "filesystem.edit",
                 {"read", "write"},
                 "none",
+                resources=self._path_resources(lambda arguments: (_string_argument(arguments, "file_path"),)),
                 name="edit",
                 description="Perform one exact string replacement; an empty old_string creates a file.",
             ),
@@ -268,6 +274,7 @@ class FileToolset:
                 "filesystem.multi_edit",
                 {"read", "write"},
                 "none",
+                resources=self._path_resources(lambda arguments: (_string_argument(arguments, "file_path"),)),
                 name="multi_edit",
                 description="Apply multiple exact replacements to one file in sequence.",
             ),
@@ -276,6 +283,9 @@ class FileToolset:
                 "filesystem.mkdir",
                 {"write"},
                 "none",
+                resources=self._path_resources(
+                    lambda arguments: _string_sequence_argument(arguments, "paths"), allow_unresolved=False
+                ),
                 name="mkdir",
                 description="Create multiple directories in one bounded batch.",
             ),
@@ -284,6 +294,7 @@ class FileToolset:
                 "filesystem.move",
                 {"read", "write", "delete"},
                 "none",
+                resources=self._path_resources(_pair_paths, allow_unresolved=False),
                 name="move",
                 description="Move files or directories using source and destination pairs.",
                 superseded_by_tool_ids={"environment.shell_exec"} if shell_active else None,
@@ -293,6 +304,7 @@ class FileToolset:
                 "filesystem.copy",
                 {"read", "write"},
                 "none",
+                resources=self._path_resources(_pair_paths, allow_unresolved=False),
                 name="copy",
                 description="Copy files, including streaming copies across Environment mounts.",
                 superseded_by_tool_ids={"environment.shell_exec"} if shell_active else None,
@@ -302,6 +314,9 @@ class FileToolset:
                 "filesystem.remove",
                 {"delete"},
                 "none",
+                resources=self._path_resources(
+                    lambda arguments: _string_sequence_argument(arguments, "paths"), allow_unresolved=False
+                ),
                 name="delete",
                 description="Delete files or directories with explicit recursive and force controls.",
                 superseded_by_tool_ids={"environment.shell_exec"} if shell_active else None,
@@ -311,6 +326,7 @@ class FileToolset:
                 "filesystem.ls",
                 {"read"},
                 "read_only",
+                resources=self._path_resources(lambda arguments: (_string_argument(arguments, "path"),)),
                 name="ls",
                 description="List one directory with bounded file metadata.",
             ),
@@ -319,6 +335,9 @@ class FileToolset:
                 "filesystem.glob",
                 {"read"},
                 "read_only",
+                resources=self._path_resources(
+                    lambda arguments: (_optional_string_argument(arguments, "root") or ".",)
+                ),
                 name="glob",
                 description="Find paths by glob pattern; bare patterns match recursively.",
             ),
@@ -327,6 +346,9 @@ class FileToolset:
                 "filesystem.grep",
                 {"read"},
                 "read_only",
+                resources=self._path_resources(
+                    lambda arguments: (_optional_string_argument(arguments, "root") or ".",)
+                ),
                 name="grep",
                 description="Search text file contents with a regular expression.",
             ),
@@ -352,6 +374,7 @@ class FileToolset:
         effects: set[ToolEffect],
         idempotency: Literal["none", "read_only"],
         *,
+        resources: ToolResourceResolver | None,
         name: str,
         description: str,
         max_output_bytes: int = 4 * 1024 * 1024,
@@ -370,12 +393,29 @@ class FileToolset:
                     overflow="truncate",
                     redact=True,
                 ),
-                resource_resolver=(self._resource_resolver(tool_id) if self._resource_resolver is not None else None),
+                resource_resolver=(
+                    self._resource_resolver(tool_id) if self._resource_resolver is not None else resources
+                ),
                 superseded_by_tool_ids=frozenset(superseded_by_tool_ids or ()),
             ),
             name=name,
             description=description,
         )
+
+    def _path_resources(
+        self,
+        paths: Callable[[Mapping[str, object]], tuple[str, ...]],
+        *,
+        allow_unresolved: bool = True,
+    ) -> ToolResourceResolver | None:
+        resources = self._resources
+        if resources is None:
+            return None
+
+        async def resolve(arguments: Mapping[str, object], *, context: AgentContext) -> tuple[CanonicalResource, ...]:
+            return await resources.paths(paths(arguments))
+
+        return resources.resolver(resolve, allow_unresolved=allow_unresolved)
 
     async def view(
         self,
@@ -1092,6 +1132,8 @@ class FileToolset:
     def _guard_execution(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()
+        elif self._resource_resolver is None and self._resources is not None:
+            self._resources.guard()
 
     def _guard_unscoped_step(self) -> None:
         if not self._has_file_scopes:
@@ -1408,6 +1450,70 @@ def _matches_file_glob(path: str, *, root: str, pattern: str) -> bool:
     if "/" not in pattern:
         return fnmatch.fnmatchcase(posixpath.basename(normalized_path), pattern)
     return PurePosixPath(normalized_path).full_match(pattern)
+
+
+def _string_argument(arguments: Mapping[str, object], name: str) -> str:
+    value = arguments.get(name)
+    if not isinstance(value, str) or not value:
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return value
+
+
+def _optional_string_argument(arguments: Mapping[str, object], name: str) -> str | None:
+    value = arguments.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return value
+
+
+def _string_sequence_argument(arguments: Mapping[str, object], name: str) -> tuple[str, ...]:
+    value = arguments.get(name)
+    if not isinstance(value, list | tuple) or not value or not all(isinstance(item, str) and item for item in value):
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return tuple(value)
+
+
+def _path_pair_sequence_argument(arguments: Mapping[str, object], name: str) -> tuple[FilePathPair, ...]:
+    value = arguments.get(name)
+    if not isinstance(value, list | tuple) or not value:
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    pairs: list[FilePathPair] = []
+    for item in value:
+        if isinstance(item, FilePathPair):
+            pairs.append(item)
+            continue
+        if isinstance(item, Mapping):
+            try:
+                pairs.append(FilePathPair.model_validate(item, strict=True))
+            except ValueError as exc:
+                raise EnvironmentError(
+                    f"Environment tool argument {name!r} is invalid.",
+                    code="environment_request_invalid",
+                ) from exc
+            continue
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return tuple(pairs)
+
+
+def _pair_paths(arguments: Mapping[str, object]) -> tuple[str, ...]:
+    return tuple(path for pair in _path_pair_sequence_argument(arguments, "pairs") for path in (pair.src, pair.dst))
 
 
 __all__ = ["FILE_VIEW_RULES", "FilePathPair", "FileTextEdit", "FileToolset", "FileViewRule"]

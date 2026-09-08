@@ -610,7 +610,7 @@ async def test_input_close_permission_is_checked_before_writing(tmp_path: Path, 
             execution_timeout_seconds=None,
             keep_stdin_open=True,
         )
-        started = await toolset._require_process_controller().start(request, alias=None, yield_time_seconds=0)
+        started = await toolset._process_controller.start(request, alias=None, yield_time_seconds=0)
         result = await toolset.shell_input(_ctx(), started["process_id"], "not-written", close_stdin=True)
         assert not result["ok"]
         assert result["error"]["code"] == "environment_denied"
@@ -658,4 +658,50 @@ async def test_discovered_reference_cleanup_tolerates_retired_mount_but_inspect_
         inspected = await toolset.shell_info(_ctx(), reference)
         assert not inspected["ok"]
         assert inspected["error"]["code"] == "environment_stale_mount"
+        await toolset.close()
+
+
+async def test_shell_toolset_owns_binding_and_process_resources(tmp_path: Path) -> None:
+    from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
+
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        tools = toolset.get_toolset().tools
+        ctx = _ctx()
+        command_resolver = tools["shell_exec"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        bindings = await command_resolver({"command": "cat"}, context=ctx.deps)
+        assert len(bindings) == 1
+        assert bindings[0].kind == "mount"
+        info_resolver = tools["shell_info"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        assert await info_resolver({}, context=ctx.deps) == bindings
+        started = await toolset.shell_exec(ctx, "cat", yield_time_seconds=0)
+        try:
+            process_id = started["process_id"]
+            for name in ("shell_info", "shell_wait", "shell_input", "shell_signal"):
+                resolver = tools[name].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+                resources = await resolver({"process_id": process_id}, context=ctx.deps)
+                assert len(resources) == 1
+                assert resources[0].kind == "managed-process"
+                assert resources[0].identifier == toolset.resolve_process_resource(process_id)
+        finally:
+            await toolset.close()
+
+
+async def test_shell_resource_and_guard_callbacks_remain_overrides(tmp_path: Path) -> None:
+    from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
+
+    async def resolve(arguments, *, context):
+        return ()
+
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment, resource_resolver=lambda tool_id: resolve)
+        assert all(
+            tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver is resolve
+            for tool in toolset.get_toolset().tools.values()
+        )
+        calls: list[str] = []
+        toolset = ShellToolset(environment, execution_guard=lambda: calls.append("guard"))
+        result = await toolset.shell_exec(_ctx(), "true")
+        assert result["ok"] is True
+        assert calls
         await toolset.close()
