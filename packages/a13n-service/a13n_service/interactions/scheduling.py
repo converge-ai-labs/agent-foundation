@@ -37,7 +37,6 @@ class WorkerClaim:
     organization_id: str
     worker_id: str
     worker_build_id: str
-    runtime_lock_digest: str
     lease_duration: timedelta
     handoff_preference_window: timedelta
     draining: bool = False
@@ -100,7 +99,6 @@ class AttemptScheduler:
         yielded_ready = and_(
             predecessor.status == RunAttemptStatus.yielded.value,
             or_(
-                predecessor.yield_reason == "runner_rotation",
                 predecessor.worker_build_id != claim.worker_build_id,
                 same_build_service_drain_ready,
             ),
@@ -143,7 +141,6 @@ class AttemptScheduler:
                 RunRecord.organization_id == claim.organization_id,
                 local_backend_eligible(),
                 RunRecord.queue_name == queue_name,
-                RunRecord.runtime_lock_digest == claim.runtime_lock_digest,
                 eligible,
             )
             .order_by(
@@ -194,8 +191,6 @@ class AttemptScheduler:
                 )
                 if eligible_environment is None:
                     return None
-            if run.runtime_lock_digest != claim.runtime_lock_digest:
-                raise AttemptSchedulingError("claimant Runtime lock does not match the accepted Run")
 
             predecessor = await self._lock_predecessor(database, run)
             classification = _classify_candidate(run, predecessor, claim, now)
@@ -247,7 +242,6 @@ class AttemptScheduler:
                 start_reason=None if classification == "initial" else classification,
                 worker_id=claim.worker_id,
                 worker_build_id=claim.worker_build_id,
-                runtime_lock_digest=claim.runtime_lock_digest,
                 model_execution_observation=run.to_resource().model_execution_observation,
                 lease_token_digest=_token_digest(token),
                 lease_expires_at=now + claim.lease_duration,

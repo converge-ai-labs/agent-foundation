@@ -31,7 +31,6 @@ dependencies = [
     "openai>=3.5,<4",
     "opentelemetry-exporter-otlp>=1.39,<2",
     "opentelemetry-sdk>=1.39,<2",
-    "packaging>=25,<26",
     "pydantic[email]>=2.12,<3",
     "pydantic-ai>=2.41.0,<3",
     "pydantic-core>=2.41,<3",

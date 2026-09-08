@@ -36,7 +36,6 @@ from .domain import (
     AgentSource,
     BuiltinAgentRegistration,
     JsonObject,
-    PluginRuntimeMode,
     ResolvedRevisionContent,
 )
 from .errors import (
@@ -169,7 +168,6 @@ def new_revision(
     *,
     revision_id: str,
     version: int,
-    mode: PluginRuntimeMode,
     config: AgentConfig,
     resolved: ResolvedRevisionContent,
     source_revision_id: str | None,
@@ -180,7 +178,6 @@ def new_revision(
     resolved_payload = resolved.model_dump(mode="json", by_alias=True)
     content_digest = digest_request(
         {
-            "plugin_runtime_mode": mode.value,
             "config": config_payload,
             "resolved": resolved_payload,
         }
@@ -191,12 +188,10 @@ def new_revision(
         workspace_id=agent.workspace_id,
         agent_id=agent.id,
         version=version,
-        plugin_runtime_mode=mode.value,
         config=config_payload,
         config_digest=digest_request(config),
         resolved_model=resolved.resolved_model.model_dump(mode="json"),
-        resolved_plugin_versions=[item.model_dump(mode="json") for item in resolved.resolved_plugin_versions],
-        runtime_lock_digest=resolved.runtime_lock_digest,
+        resolved_plugins=[item.model_dump(mode="json") for item in resolved.resolved_plugins],
         resolved_skills=[item.model_dump(mode="json") for item in resolved.resolved_skills],
         connector_tools=[item.model_dump(mode="json") for item in resolved.connector_tools],
         mcp_tools=[item.model_dump(mode="json") for item in resolved.mcp_tools],
@@ -225,12 +220,10 @@ def copy_revision(
         workspace_id=source.workspace_id,
         agent_id=agent_id or source.agent_id,
         version=version,
-        plugin_runtime_mode=source.plugin_runtime_mode,
         config=source.config,
         config_digest=source.config_digest,
         resolved_model=source.resolved_model,
-        resolved_plugin_versions=source.resolved_plugin_versions,
-        runtime_lock_digest=source.runtime_lock_digest,
+        resolved_plugins=source.resolved_plugins,
         resolved_skills=source.resolved_skills,
         connector_tools=source.connector_tools,
         mcp_tools=source.mcp_tools,

@@ -8,8 +8,6 @@ from a13n_service.object_retention.collector import ObjectCollector
 from a13n_service.object_retention.models import ObjectPublicationRecord
 from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.object_retention.publication import PublicationObjectStore
-from a13n_service.plugins.models import PluginRuntimeLockRecord
-from a13n_service.plugins.objects import plugin_artifact_key
 from a13n_service.skills.models import SkillUploadRecord
 from a13n_service.skills.package import skill_package_object_key
 from a13n_service.storage import ObjectConflict, ObjectNotFound, ObjectStoreUnavailable, short_session, transaction
@@ -51,7 +49,7 @@ def _upload(key_digest, now):
     )
 
 
-async def test_collect_only_unowned_namespaces_and_keep_runtime_lock_artifacts(collection_sessions, object_store):
+async def test_collect_only_unowned_namespaces(collection_sessions, object_store):
     sessions = collection_sessions
     await seed_run_and_secret(sessions)
     clock = _Clock(utc_now())
@@ -59,27 +57,15 @@ async def test_collect_only_unowned_namespaces_and_keep_runtime_lock_artifacts(c
     retained = f"organizations/{ORGANIZATION_ID}/runs/{RUN_ID}/state.json"
     orphan = f"organizations/{ORGANIZATION_ID}/runs/run_orphan/state.json"
     unknown = f"organizations/{ORGANIZATION_ID}/unknown/data"
-    wheel = plugin_artifact_key("b" * 64)
-    for key in (retained, orphan, unknown, wheel):
+    for key in (retained, orphan, unknown):
         await writer.put(key, b"body", if_none_match=True)
-    async with transaction(sessions) as database:
-        await require_object_publications(database, (wheel,))
-        database.add(
-            PluginRuntimeLockRecord(
-                digest="c" * 64,
-                schema_version="1",
-                mode="runner",
-                manifest={"distributions": [{"artifact_ref": wheel}]},
-                created_at=clock.now,
-            )
-        )
     clock.now += timedelta(days=2)
     collector = _collector(sessions, object_store, clock)
     assert (await collector.scan()).completed == 1
     assert (await collector.scan()).completed == 0
     with pytest.raises(ObjectNotFound):
         await object_store.stat(orphan)
-    for key in (retained, unknown, wheel):
+    for key in (retained, unknown):
         assert (await object_store.stat(key)).size == 4
 
 

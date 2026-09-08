@@ -211,7 +211,6 @@ def _run_payload(
             "agent_id": resource.agent_id,
             "agent_revision_id": resource.agent_revision_id,
             "effective_agent_config_digest": resource.effective_agent_config_digest,
-            "runtime_lock_digest": resource.runtime_lock_digest,
             "available_at": resource.available_at.isoformat(),
         }
     if event_type == "run.running":

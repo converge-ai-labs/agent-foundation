@@ -25,18 +25,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.port == 8000
     assert settings.database_backend is DatabaseBackend.postgresql
     assert settings.asset_max_size_bytes == 100 * 1024 * 1024
-    assert settings.plugin_runtime_command_poll_interval_seconds == 1
-    assert settings.plugin_runtime_command_lease_seconds == 300
-    assert settings.plugin_runtime_resolver_executable == "uv"
-    assert settings.plugin_runtime_default_index_url.get_secret_value() == "https://pypi.org/simple"
-    assert settings.plugin_runtime_index_urls == ()
-    assert settings.plugin_runtime_resolver_timeout_seconds == 120
-    assert settings.plugin_runtime_resolver_max_packages == 512
-    assert settings.plugin_runtime_max_materialized_bytes == 4 * 1024 * 1024 * 1024
-    assert settings.plugin_runner_ready_timeout_seconds == 60
-    assert settings.plugin_runner_command_timeout_seconds == 30
-    assert settings.plugin_runner_shutdown_timeout_seconds == 30
-    assert settings.plugin_runner_max_processes == 8
     assert settings.observability_query_provider == "none"
     assert settings.connectivity_retention_batch_size == 25
     assert settings.connectivity_max_redirects == 3
@@ -46,46 +34,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
 def test_asset_size_bound_must_be_positive_and_finite() -> None:
     with pytest.raises(ValueError):
         Settings(_env_file=None, asset_max_size_bytes=0)
-
-
-@pytest.mark.parametrize(
-    "values",
-    [
-        {"plugin_runtime_command_poll_interval_seconds": 0},
-        {"plugin_runtime_command_poll_interval_seconds": 61},
-        {"plugin_runtime_command_lease_seconds": 3},
-        {"plugin_runtime_command_lease_seconds": 3601},
-        {"plugin_runtime_resolver_timeout_seconds": 0},
-        {"plugin_runtime_resolver_timeout_seconds": 901},
-        {"plugin_runtime_resolver_max_packages": 0},
-        {"plugin_runtime_resolver_max_packages": 4097},
-        {"plugin_runtime_max_materialized_bytes": 0},
-        {"plugin_runtime_max_materialized_bytes": 128 * 1024 * 1024 * 1024 + 1},
-        {"plugin_runner_ready_timeout_seconds": 0},
-        {"plugin_runner_ready_timeout_seconds": 301},
-        {"plugin_runner_command_timeout_seconds": 0},
-        {"plugin_runner_command_timeout_seconds": 301},
-        {"plugin_runner_shutdown_timeout_seconds": 0},
-        {"plugin_runner_shutdown_timeout_seconds": 301},
-        {"plugin_runner_max_processes": 0},
-        {"plugin_runner_max_processes": 257},
-    ],
-)
-def test_plugin_runtime_command_timing_is_bounded(values: dict[str, object]) -> None:
-    with pytest.raises(ValueError):
-        Settings(_env_file=None, **values)
-
-
-def test_plugin_runtime_package_indexes_are_redacted() -> None:
-    settings = Settings(
-        _env_file=None,
-        plugin_runtime_default_index_url="https://user:default-secret@packages.example/simple",
-        plugin_runtime_index_urls=["https://user:extra-secret@private.example/simple"],
-    )
-
-    rendered = repr(settings)
-    assert "default-secret" not in rendered
-    assert "extra-secret" not in rendered
 
 
 def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:

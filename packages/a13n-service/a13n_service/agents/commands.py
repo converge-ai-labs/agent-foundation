@@ -167,7 +167,6 @@ class AgentCommands:
                     record,
                     revision_id=revision_id,
                     version=1,
-                    mode=self._resolver.plugin_runtime_mode,
                     config=request.config,
                     resolved=resolved,
                     source_revision_id=None,

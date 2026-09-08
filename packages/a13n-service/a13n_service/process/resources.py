@@ -14,7 +14,6 @@ from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.settings import settings_schema
-from a13n_service.plugins.objects import PluginObjectStore
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.skills.objects import SkillPackageStore
 
@@ -29,7 +28,6 @@ class ExecutionResources:
     live_model_providers: LiveProviderResolver
     native_model_factory: NativeModelFactory
     skill_package_store: SkillPackageStore
-    plugin_objects: PluginObjectStore
 
 
 async def build_execution_resources(
@@ -62,7 +60,6 @@ async def build_execution_resources(
             shared.storage.sessions, model_provider_registry, model_endpoint_policy, shared.secret_protector
         ),
         skill_package_store=SkillPackageStore(shared.storage.objects),
-        plugin_objects=PluginObjectStore(shared.storage.objects),
     )
 
 

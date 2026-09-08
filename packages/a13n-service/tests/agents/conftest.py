@@ -10,7 +10,6 @@ from a13n_service.agents.domain import (
     Agent,
     AgentConfig,
     AgentRevisionCreateResult,
-    PluginRuntimeMode,
 )
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
@@ -238,12 +237,10 @@ async def agent_management(
     resolver = AgentResolver(
         agent_sessions,
         model_selector,
-        plugin_runtime_mode=PluginRuntimeMode.on_demand,
     )
     invocation_resolver = AgentInvocationResolver(
         agent_sessions,
         model_selector,
-        plugin_runtime_mode=PluginRuntimeMode.on_demand,
     )
     yield AgentManagement(
         agent_sessions,
@@ -264,5 +261,4 @@ async def agent_invocation_resolver(
     yield AgentInvocationResolver(
         agent_sessions,
         model_selector,
-        plugin_runtime_mode=PluginRuntimeMode.on_demand,
     )

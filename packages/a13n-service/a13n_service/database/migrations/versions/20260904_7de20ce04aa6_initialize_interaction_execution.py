@@ -158,7 +158,6 @@ def upgrade() -> None:
         sa.Column("agent_id", sa.String(length=72), nullable=False),
         sa.Column("agent_revision_id", sa.String(length=72), nullable=False),
         sa.Column("effective_agent_config_digest", sa.String(length=64), nullable=False),
-        sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
         sa.Column("model_execution_observation_json", sa.JSON(), nullable=False),
         sa.Column("connector_connection_selections_json", sa.JSON(), nullable=False),
         sa.Column("mcp_connection_selections_json", sa.JSON(), nullable=False),
@@ -278,7 +277,6 @@ def upgrade() -> None:
             "length(effective_agent_config_digest) = 64", name=op.f("ck_runs_effective_config_digest_sha256")
         ),
         sa.CheckConstraint("length(request_fingerprint) = 64", name=op.f("ck_runs_request_fingerprint_sha256")),
-        sa.CheckConstraint("length(runtime_lock_digest) = 64", name=op.f("ck_runs_runtime_lock_digest_sha256")),
         sa.CheckConstraint(
             "max_attempts >= 0 AND max_handoffs >= 0 AND attempts_started >= 0 AND attempts_charged >= 0 AND handoffs_completed >= 0",
             name=op.f("ck_runs_execution_values_non_negative"),
@@ -402,7 +400,6 @@ def upgrade() -> None:
         sa.Column("start_reason", sa.String(length=256), nullable=True),
         sa.Column("worker_id", sa.String(length=256), nullable=False),
         sa.Column("worker_build_id", sa.String(length=256), nullable=False),
-        sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
         sa.Column("harness_run_id", sa.String(length=256), nullable=True),
         sa.Column("model_execution_observation_json", sa.JSON(), nullable=False),
         sa.Column("lease_token_digest", sa.String(length=64), nullable=False),
@@ -436,12 +433,11 @@ def upgrade() -> None:
             name=op.f("ck_run_attempts_status_valid"),
         ),
         sa.CheckConstraint(
-            "yield_reason IS NULL OR yield_reason IN ('service_drain', 'runner_rotation')",
+            "yield_reason IS NULL OR yield_reason = 'service_drain'",
             name=op.f("ck_run_attempts_yield_reason_valid"),
         ),
         sa.CheckConstraint("attempt_number >= 1", name=op.f("ck_run_attempts_attempt_number_positive")),
         sa.CheckConstraint("length(lease_token_digest) = 64", name=op.f("ck_run_attempts_lease_token_digest_sha256")),
-        sa.CheckConstraint("length(runtime_lock_digest) = 64", name=op.f("ck_run_attempts_runtime_lock_digest_sha256")),
         sa.CheckConstraint(
             "length(worker_build_id) BETWEEN 1 AND 256", name=op.f("ck_run_attempts_worker_build_id_bounded")
         ),

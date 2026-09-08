@@ -6,8 +6,10 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
+from functools import partial
 
-from anyio import create_task_group, move_on_after
+from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
+from anyio import create_task_group, move_on_after, to_thread
 from pydantic_ai import prices
 
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
@@ -80,8 +82,13 @@ async def open_process_runtime(
                 ),
                 secret_protector=settings.secret_protector(),
             )
+            plugin_catalog = components.plugin_factory_catalog
+            if plugin_catalog is None:
+                plugin_catalog = await to_thread.run_sync(
+                    partial(build_harness_plugin_factory_catalog, plugin_keys=settings.plugin_keys)
+                )
             agent_resources = (
-                build_agent_resources(settings, components, shared, model_provider_registry)
+                build_agent_resources(components, shared, model_provider_registry, plugin_catalog)
                 if owns_control(settings.role) or owns_connectivity_data(settings.role)
                 else None
             )
@@ -112,6 +119,7 @@ async def open_process_runtime(
                     environment_catalog,
                     stack,
                     components.connector_provider_registry,
+                    plugin_catalog=plugin_catalog,
                     observability=observability,
                 )
             control = None
@@ -124,7 +132,6 @@ async def open_process_runtime(
                     components,
                     shared,
                     execution,
-                    worker,
                     environment_catalog,
                     agent_resources,
                     trace_query_provider_registry,

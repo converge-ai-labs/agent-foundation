@@ -31,8 +31,6 @@ from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.router import router as model_router
-from a13n_service.plugins.on_demand import OnDemandPluginRuntime
-from a13n_service.plugins.router import router as plugin_router
 from a13n_service.process.components import Components, snapshot_components
 from a13n_service.process.lifecycle import open_process_runtime
 from a13n_service.process.roles import owns_connectivity_data, owns_control
@@ -129,20 +127,6 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
                 detail="service not ready",
             )
         storage = runtime.shared.storage
-        on_demand_runtime = (
-            runtime.worker.plugin_runtime
-            if runtime.worker is not None and isinstance(runtime.worker.plugin_runtime, OnDemandPluginRuntime)
-            else None
-        )
-        if on_demand_runtime is not None and not on_demand_runtime.ready:
-            logger.warning(
-                "plugin_runtime_readiness_failed",
-                extra={"event": "plugin_runtime_readiness_failed", "role": resolved_settings.role.value},
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="plugin runtime unavailable",
-            )
         try:
             with fail_after(resolved_settings.database_readiness_timeout_seconds):
                 async with short_session(storage.sessions) as session:
@@ -172,7 +156,6 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(thread_router)
         app.include_router(asset_router)
         app.include_router(model_router)
-        app.include_router(plugin_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
         app.include_router(account_router)

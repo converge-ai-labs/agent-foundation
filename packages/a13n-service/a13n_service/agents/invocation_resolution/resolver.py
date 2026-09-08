@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.models.runtime import AcceptedModelSelector
 
-from ..domain import PluginRuntimeMode
-from ..plugin_resolution import AgentPluginSelectionResolver
 from ..validation import AgentProtocolPolicy
 from .freezing import AgentInvocationFreezer
 from .preparation import AgentInvocationPreparer
@@ -24,28 +23,21 @@ class AgentInvocationResolver:
         sessions: async_sessionmaker[AsyncSession],
         model_selector: AcceptedModelSelector,
         *,
-        plugin_runtime_mode: PluginRuntimeMode,
-        plugin_resolver: AgentPluginSelectionResolver | None = None,
+        plugin_catalog: HarnessPluginFactoryCatalog | None = None,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
-        plugins = plugin_resolver or AgentPluginSelectionResolver(
-            sessions,
-            runtime_mode=plugin_runtime_mode,
-        )
+        plugins = plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(())
         policy = protocol_policy or AgentProtocolPolicy()
         connectivity = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self.preparation = AgentInvocationPreparer(
             sessions,
             model_selector,
-            plugin_runtime_mode=plugin_runtime_mode,
-            plugin_resolver=plugins,
+            plugin_catalog=plugins,
             connectivity_resolver=connectivity,
             protocol_policy=policy,
         )
         self.freezing = AgentInvocationFreezer(
             model_selector,
-            plugin_runtime_mode=plugin_runtime_mode,
-            plugin_resolver=plugins,
             connectivity_resolver=connectivity,
         )

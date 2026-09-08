@@ -76,7 +76,6 @@ class RunResource(_Resource):
     agent_id: str
     agent_revision_id: str
     effective_agent_config_digest: str
-    runtime_lock_digest: str
     environment_id: str | None
     environment_access: str | None
     status: RunStatus
@@ -679,7 +678,6 @@ def _run(record: RunRecord) -> RunResource:
         agent_id=resource.agent_id,
         agent_revision_id=resource.agent_revision_id,
         effective_agent_config_digest=resource.effective_agent_config_digest,
-        runtime_lock_digest=resource.runtime_lock_digest,
         environment_id=resource.environment_id,
         environment_access=resource.environment_access,
         status=resource.status,

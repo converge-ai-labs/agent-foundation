@@ -124,7 +124,6 @@ def _initial_envelope(
         protocol_context=seed.protocol_context,
         secret_bindings=seed.secret_bindings,
         usage_limits=seed.usage_limits,
-        runtime_lock_digest=seed.effective_agent_config.runtime_lock_digest,
         harness_schema_version=harness.schema_version,
         harness=harness,
         host=host,
@@ -149,7 +148,6 @@ class FrozenRunFields(TypedDict):
     agent_id: str
     agent_revision_id: str
     effective_agent_config_digest: str
-    runtime_lock_digest: str
     model_execution_observation: ModelExecutionObservation
     connector_connection_selections: tuple[JsonObject, ...]
     mcp_connection_selections: tuple[JsonObject, ...]
@@ -162,7 +160,6 @@ def frozen_run_fields(invocation: FrozenAgentInvocation) -> FrozenRunFields:
         agent_id=invocation.agent_id,
         agent_revision_id=invocation.agent_revision_id,
         effective_agent_config_digest=config.content_digest,
-        runtime_lock_digest=config.runtime_lock_digest,
         model_execution_observation=config.resolved_model.execution.observation(),
         connector_connection_selections=tuple(
             item.model_dump(mode="json") for item in invocation.connector_connection_selections

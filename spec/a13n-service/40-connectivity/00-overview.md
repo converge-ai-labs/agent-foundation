@@ -59,7 +59,7 @@ An allocated prefix identifies the object kind only. It conveys no provider, org
 
 ## Outbound Endpoint Policy
 
-Every ConnectorProvider and Remote MCP request uses one Connectivity-subsystem-owned outbound endpoint policy in whichever role performs the request, including Control, Worker, and Runner. Production endpoints use HTTPS. Plain HTTP is accepted only for an exact operator-allowed development or private self-hosted origin. DNS is resolved and every resulting address is checked before each request; loopback, link-local, multicast, unspecified, cloud-metadata, and private addresses are denied unless the exact origin or network is operator-allowed under this policy. Model endpoint allowlists and their management permissions do not apply.
+Every ConnectorProvider and Remote MCP request uses one Connectivity-subsystem-owned outbound endpoint policy in whichever role performs the request, including Control, Worker, and Connectivity. Production endpoints use HTTPS. Plain HTTP is accepted only for an exact operator-allowed development or private self-hosted origin. DNS is resolved and every resulting address is checked before each request; loopback, link-local, multicast, unspecified, cloud-metadata, and private addresses are denied unless the exact origin or network is operator-allowed under this policy. Model endpoint allowlists and their management permissions do not apply.
 
 Redirects are followed manually for at most three hops. Every destination is normalized, resolved, and checked independently; an HTTPS-to-HTTP downgrade is denied. A bearer value, static application header, ConnectorProvider API key, cookie, or other credential is sent only to the exact origin for which it was resolved and is never forwarded after an origin-changing redirect. Standards-discovered MCP authorization endpoints and operator-configured Lark or GitHub Enterprise origins are subject to the same checks. Endpoint query strings, discovery headers, redirect locations, and remote bodies remain bounded and are omitted from ordinary diagnostics.
 
@@ -77,7 +77,7 @@ flowchart LR
 
     Input --> Run[Agent Thread and Run]
 
-    subgraph AgentTools[Worker or Runner tool execution]
+    subgraph AgentTools[Worker tool execution]
         Toolset[Effective Toolset]
         A13nMCP[Per-source in-process a13n MCP groups]
         RemoteClient[Harness Remote MCP client]
@@ -91,7 +91,7 @@ flowchart LR
     A13nMCP -->|Connector adapter| ConnectorService[External integration service] --> SaaS[External SaaS]
 ```
 
-The `connectivity` process role receives provider traffic and invokes shared application operations for durable admission. The current `RunAttemptExecutor` in a Worker or Runner invokes Harness, constructs per-source MCP capabilities, and executes outbound native and Connector actions. Remote clients connect directly to selected MCP endpoints. These roles share durable authority without a private cross-pod Service API; Connectivity does not execute Agents or own a parallel Run lifecycle.
+The `connectivity` process role receives provider traffic and invokes shared application operations for durable admission. The current `RunAttemptExecutor` in a Worker invokes Harness, constructs per-source MCP capabilities, and executes outbound native and Connector actions. Remote clients connect directly to selected MCP endpoints. These roles share durable authority without a private cross-pod Service API; Connectivity does not execute Agents or own a parallel Run lifecycle.
 
 Inbound completion means that an event was rejected safely, ignored by policy, or durably admitted for Service input processing. It never waits for Agent execution. Outbound completion is one independently authorized tool outcome.
 

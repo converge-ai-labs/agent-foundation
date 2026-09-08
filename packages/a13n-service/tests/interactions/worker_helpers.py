@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, Mock
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_service.models.provider_runtime import LiveProviderResolver
-from a13n_service.plugins.on_demand import OnDemandPluginRuntime, PreparedOnDemandPluginRuntime
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.process.worker import build_worker_runtime
@@ -41,14 +40,13 @@ async def accepted_running_attempt(sessions, objects):
 
 
 @asynccontextmanager
-async def worker_runtime(sessions, objects, path, monkeypatch, *, settings, lock, model_factory, connectors=None):
-    preflight = AsyncMock(return_value=PreparedOnDemandPluginRuntime(lock.digest, HarnessPluginFactoryCatalog(())))
-    monkeypatch.setattr(OnDemandPluginRuntime, "prepare_for_claim", preflight)
+async def worker_runtime(
+    sessions, objects, path, monkeypatch, *, settings, model_factory, connectors=None, plugin_catalog=None
+):
     resources = Mock(spec=ExecutionResources)
     resources.native_model_factory = model_factory
     resources.live_model_providers = Mock(spec=LiveProviderResolver)
     resources.live_model_providers.resolve = AsyncMock(return_value=Mock())
-    resources.plugin_objects = Mock()
     resources.skill_package_store = Mock()
     resources.model_provider_registry = Mock()
     resources.model_endpoint_policy = Mock()
@@ -60,8 +58,14 @@ async def worker_runtime(sessions, objects, path, monkeypatch, *, settings, lock
             SecretProtector(key=b"k" * 32, encryption_key_id="test"),
         )
         runtime, background = await build_worker_runtime(
-            settings, shared, resources, EnvironmentProviderCatalog(), stack, connectors
+            settings,
+            shared,
+            resources,
+            EnvironmentProviderCatalog(),
+            stack,
+            connectors,
+            plugin_catalog=plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(()),
         )
         assert runtime.execution_loop is not None
         assert any(component.run == runtime.execution_loop.run for component in background)
-        yield runtime, shared, preflight
+        yield runtime, shared

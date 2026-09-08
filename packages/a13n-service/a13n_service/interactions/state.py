@@ -118,7 +118,6 @@ class RunCheckpoint(StrictModel):
         default=(), max_length=128, exclude_if=lambda value: not value
     )
     usage_limits: UsageLimits | None = None
-    runtime_lock_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     harness_schema_version: SchemaVersion
     harness: HarnessState
     host: HostContinuationState = Field(default_factory=HostContinuationState)
@@ -134,8 +133,6 @@ class RunCheckpoint(StrictModel):
             raise ValueError("Run state and Harness Thread identities must match")
         if self.harness_schema_version != self.harness.schema_version:
             raise ValueError("declared Harness schema version must match Harness state")
-        if self.runtime_lock_digest != self.effective_agent_config.runtime_lock_digest:
-            raise ValueError("Run state Runtime lock must match effective Agent configuration")
         attempt_present = self.last_checkpoint_run_attempt_id is not None
         if attempt_present != (self.last_checkpoint_fence > 0):
             raise ValueError("checkpoint Attempt identity and positive fencing number must be present together")
@@ -240,7 +237,6 @@ def validate_state_successor(
         ("thread_id", previous.thread_id, successor.thread_id),
         ("agent_id", previous.agent_id, successor.agent_id),
         ("agent_revision_id", previous.agent_revision_id, successor.agent_revision_id),
-        ("runtime_lock_digest", previous.runtime_lock_digest, successor.runtime_lock_digest),
         ("harness_schema_version", previous.harness_schema_version, successor.harness_schema_version),
         ("effective_agent_config", previous.effective_agent_config, successor.effective_agent_config),
         ("usage_limits", previous.usage_limits, successor.usage_limits),

@@ -110,7 +110,6 @@ class ProcessRuntimeFactory:
             ControlRuntime(
                 trace_queries=trace_queries if trace_queries is not None else placeholder,
                 environments=placeholder,
-                plugins=placeholder,
                 skill_uploads=placeholder,
                 skill_publication=placeholder,
                 skill_catalog=placeholder,

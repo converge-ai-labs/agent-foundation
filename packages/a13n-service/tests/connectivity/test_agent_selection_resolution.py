@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from a13n_service.agents.application import AgentManagement
-from a13n_service.agents.domain import AgentConfig, CreateAgentRequest, PluginRuntimeMode
+from a13n_service.agents.domain import AgentConfig, CreateAgentRequest
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
@@ -36,13 +36,11 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
     revision_resolver = AgentResolver(
         connectivity_sessions,
         models,
-        plugin_runtime_mode=PluginRuntimeMode.on_demand,
         connectivity_resolver=connectivity,
     )
     invocation_resolver = AgentInvocationResolver(
         connectivity_sessions,
         models,
-        plugin_runtime_mode=PluginRuntimeMode.on_demand,
         connectivity_resolver=connectivity,
     )
     service = AgentManagement(

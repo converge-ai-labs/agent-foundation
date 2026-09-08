@@ -4,7 +4,7 @@
 
 Service selects authorized external resources and binds their current execution context. Harness and its upstream MCP client own protocol handling, tool discovery, filtering, invocation, and deferred capability loading. Service composes these through `RunBindings.capabilities`; it does not implement another MCP client or model-facing tool catalog.
 
-The a13n MCP is an in-process implementation for Application Account actions, protected inbound replies, and Connector-backed tools. Each executing Worker or Runner binds a separate local Toolset for each authorized source in its RunAttempt and exposes it through Harness `MCP(local=Toolset)`. The Toolset calls the bound adapter directly: they require no listening port, subprocess, network MCP deployment, internal service credential, or persisted MCP invocation grant.
+The a13n MCP is an in-process implementation for Application Account actions, protected inbound replies, and Connector-backed tools. Each executing Worker binds a separate local Toolset for each authorized source in its RunAttempt and exposes it through Harness `MCP(local=Toolset)`. The Toolset calls the bound adapter directly: they require no listening port, subprocess, network MCP deployment, internal service credential, or persisted MCP invocation grant.
 
 Each selected [`MCPConnection`](06-remote-mcp-connections.md) produces a separate Harness MCP client that connects directly from the executing process to that Remote MCP endpoint. The a13n MCP does not proxy those servers. Remote execution remains Worker-controlled rather than delegated to a model provider's native MCP facility.
 
@@ -13,7 +13,7 @@ Each selected [`MCPConnection`](06-remote-mcp-connections.md) produces a separat
 ```mermaid
 flowchart LR
     Config[Accepted connection selections and protected native contexts] --> Compose
-    subgraph Worker[Executing Worker or Runner]
+    subgraph Worker[Executing Worker]
         Compose[Fresh per-Attempt capability composition] --> Harness
         Harness --> AccountMCP[Account MCP capability per account]
         AccountMCP --> AccountActions[Scoped proactive actions]
@@ -38,7 +38,7 @@ flowchart LR
 | Agent defaults and Run overrides        | [Agent Management](../28-agent-management.md#agentconfig) | Select connection IDs, tool scopes, and deferred loading                                 |
 | Inbound events and admission            | Connectivity role                                         | Authenticate events, normalize, route, batch, and invoke durable Run or Steer acceptance |
 | Resource setup and management discovery | Control role                                              | Own connections, credential setup, safe metadata, and advisory discovery                 |
-| Outbound tool composition and authority | Executing Worker or Runner                                | Bind current Attempt and source; reauthorize effects and resolve current credentials     |
+| Outbound tool composition and authority | Executing Worker                                          | Bind current Attempt and source; reauthorize effects and resolve current credentials     |
 | MCP protocol and tool presentation      | Harness and upstream MCP primitives                       | Discover, filter, namespace, load, invoke, and close the composed toolsets               |
 | Native or Connector action meaning      | Trusted source adapter                                    | Preserve provider-specific schemas, results, receipts, and failure semantics             |
 
@@ -126,7 +126,7 @@ Deferred loading operates at capability granularity. It reduces initially model-
 
 The local Connector adapter discovers its bound source's current tools and exposes them through a source-bound Toolset. Harness owns capability loading and invocation; its existing MCP client discovers each remote source. Local tool definitions preserve source input/output schemas and annotations, and validate arguments and bounded results without an intermediate MCP server. Source tool descriptions and schemas remain untrusted bounded input. Management discovery can help users select tools but is advisory rather than an immutable execution contract.
 
-Service persists source identity and selection policy, not external tool definitions, catalog digests, or an `MCPToolSnapshot`. An explicit allowlist limits names but does not pin their schemas. A Connector or Remote MCP all-tools selection permits newly discovered tools within the same authorized source. Supported session caches, reconnects, and list-change invalidation may update definitions under the same selection; replacement Attempts discover current definitions again. Neither an accepted Run nor its replay promises schema equality with an earlier Attempt. Unrelated Model execution snapshots, Skill and Plugin locks, fixed Environment selections and template revisions, and continuation contracts retain their own guarantees. A retained pending approval or client-tool request still validates its exact pending identity and contract; fresh discovery cannot make an old approval authorize changed arguments or action semantics.
+Service persists source identity and selection policy, not external tool definitions, catalog digests, or an `MCPToolSnapshot`. An explicit allowlist limits names but does not pin their schemas. A Connector or Remote MCP all-tools selection permits newly discovered tools within the same authorized source. Supported session caches, reconnects, and list-change invalidation may update definitions under the same selection; replacement Attempts discover current definitions again. Neither an accepted Run nor its replay promises schema equality with an earlier Attempt. Unrelated Model execution snapshots, Skill locks and frozen Plugin configuration, fixed Environment selections and template revisions, and continuation contracts retain their own guarantees. A retained pending approval or client-tool request still validates its exact pending identity and contract; fresh discovery cannot make an old approval authorize changed arguments or action semantics.
 
 If a selected tool disappears, discovery fails, a current schema rejects retained arguments, or a source becomes incompatible, preparation or the affected call fails explicitly. Recovery never changes the selected account, endpoint identity, native target, or whitelist to obtain a successful result. Upstream API versions needed for a specific discovery and execution belong to that source's current runtime binding; they do not create a durable Run schema lock. Credentials and authorization remain current even when a session reuses discovered definitions.
 

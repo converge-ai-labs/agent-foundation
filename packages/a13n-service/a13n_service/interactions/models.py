@@ -329,7 +329,6 @@ class RunRecord(Base):
             name="current_attempt_lifecycle_valid",
         ),
         CheckConstraint("length(effective_agent_config_digest) = 64", name="effective_config_digest_sha256"),
-        CheckConstraint("length(runtime_lock_digest) = 64", name="runtime_lock_digest_sha256"),
         CheckConstraint("length(request_fingerprint) = 64", name="request_fingerprint_sha256"),
         CheckConstraint(
             "(input_object_digest_sha256 IS NULL OR length(input_object_digest_sha256) = 64) AND "
@@ -424,7 +423,6 @@ class RunRecord(Base):
         String(72), ForeignKey("agent_revisions.id", ondelete="RESTRICT"), nullable=False
     )
     effective_agent_config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     connector_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     mcp_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
@@ -503,7 +501,6 @@ class RunRecord(Base):
             "agent_id": self.agent_id,
             "agent_revision_id": self.agent_revision_id,
             "effective_agent_config_digest": self.effective_agent_config_digest,
-            "runtime_lock_digest": self.runtime_lock_digest,
             "model_execution_observation": _MODEL_OBSERVATION_ADAPTER.validate_python(
                 self.model_execution_observation_json
             ),
@@ -615,10 +612,9 @@ class RunAttemptRecord(Base):
             name="status_valid",
         ),
         CheckConstraint(
-            "yield_reason IS NULL OR yield_reason IN ('service_drain', 'runner_rotation')",
+            "yield_reason IS NULL OR yield_reason = 'service_drain'",
             name="yield_reason_valid",
         ),
-        CheckConstraint("length(runtime_lock_digest) = 64", name="runtime_lock_digest_sha256"),
         CheckConstraint("length(lease_token_digest) = 64", name="lease_token_digest_sha256"),
         CheckConstraint("length(worker_id) BETWEEN 1 AND 256", name="worker_id_bounded"),
         CheckConstraint("length(worker_build_id) BETWEEN 1 AND 256", name="worker_build_id_bounded"),
@@ -677,7 +673,6 @@ class RunAttemptRecord(Base):
     start_reason: Mapped[str | None] = mapped_column(String(256))
     worker_id: Mapped[str] = mapped_column(String(256), nullable=False)
     worker_build_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     harness_run_id: Mapped[str | None] = mapped_column(String(256))
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     lease_token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -703,7 +698,6 @@ class RunAttemptRecord(Base):
             start_reason=self.start_reason,
             worker_id=self.worker_id,
             worker_build_id=self.worker_build_id,
-            runtime_lock_digest=self.runtime_lock_digest,
             harness_run_id=self.harness_run_id,
             model_execution_observation=_MODEL_OBSERVATION_ADAPTER.validate_python(
                 self.model_execution_observation_json

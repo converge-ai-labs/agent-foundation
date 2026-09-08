@@ -25,11 +25,6 @@ if TYPE_CHECKING:
     from a13n_service.models.provider_service import ModelProviderService
     from a13n_service.models.service import ModelService
     from a13n_service.observability import ObservabilityRuntime
-    from a13n_service.plugins.materialization import PluginRuntimeMaterializer
-    from a13n_service.plugins.on_demand import OnDemandPluginRuntime
-    from a13n_service.plugins.runner_bootstrap import BootstrappedPluginRuntime
-    from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
-    from a13n_service.plugins.service import PluginService
     from a13n_service.run_stream import RedisRunStream, RunReplayStore
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import Settings
@@ -57,7 +52,6 @@ class ControlRuntime:
 
     trace_queries: TraceQueryService
     environments: EnvironmentService
-    plugins: PluginService
     skill_uploads: SkillUploadService
     skill_publication: SkillPublicationService
     skill_catalog: SkillCatalogService
@@ -78,8 +72,6 @@ class WorkerRuntime:
     """Worker-owned execution components."""
 
     external_tools: ExternalToolRuntime
-    plugin_materializer: PluginRuntimeMaterializer
-    plugin_runtime: OnDemandPluginRuntime | PluginRunnerSupervisor | BootstrappedPluginRuntime
     native_model_factory: NativeModelFactory
     skill_runtime: SkillRuntimePreparer
     environment_maintenance: EnvironmentMaintenanceLoop

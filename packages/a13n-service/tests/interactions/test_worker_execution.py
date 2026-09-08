@@ -31,8 +31,6 @@ from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, WorkerClaim
 from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
 from a13n_service.models.model_factory import NativeModelFactory
-from a13n_service.plugins.models import PluginRuntimeLockRecord
-from a13n_service.plugins.runtime import PluginRuntimeLock, default_runtime_target, installed_harness_version
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
 from anyio import create_task_group, fail_after, sleep
@@ -44,7 +42,7 @@ from sqlalchemy import select
 from tests.lifecycle_support import test_lifecycle_writer
 
 from . import test_attempt_execution as acceptance
-from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID, effective_agent_config
+from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
 from .test_agent_secrets import TEST_VALUE, _binding, _secret, _SecretTool
 from .worker_helpers import worker_runtime
 
@@ -62,15 +60,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     late_input,
     handoff=False,
 ):
-    lock = PluginRuntimeLock(
-        mode="on_demand",
-        runtime_target=default_runtime_target(),
-        worker_release="test",
-        harness_version=installed_harness_version(),
-        digest="0" * 64,
-    )
-    lock = lock.model_copy(update={"digest": lock.computed_digest()})
-    config = effective_agent_config().model_copy(update={"runtime_lock_digest": lock.digest})
+    config = acceptance.effective_agent_config()
     config = config.model_copy(
         update={
             "asset_publication": AssetPublicationConfig(),
@@ -102,15 +92,6 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     async with transaction(interaction_sessions) as session:
         revision = await session.get(AgentRevisionRecord, run.agent_revision_id)
         revision.config = {**revision.config, "asset_publication": {"enabled": True}}
-        session.add(
-            PluginRuntimeLockRecord(
-                digest=lock.digest,
-                schema_version="1",
-                mode="on_demand",
-                manifest=lock.model_dump(mode="json"),
-                created_at=NOW,
-            )
-        )
         session.add(
             UserRecord(
                 id=USER_ID,
@@ -174,7 +155,6 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 organization_id=ORGANIZATION_ID,
                 worker_id="prior",
                 worker_build_id="test",
-                runtime_lock_digest=lock.digest,
                 lease_duration=timedelta(seconds=30),
                 handoff_preference_window=timedelta(seconds=30),
             ),
@@ -284,9 +264,8 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         tmp_path,
         monkeypatch,
         settings=settings,
-        lock=lock,
         model_factory=model_factory,
-    ) as (runtime, _shared, preflight):
+    ) as (runtime, _shared):
         loop = runtime.execution_loop
         assert loop is not None
         with fail_after(20 if handoff else 15):
@@ -364,8 +343,6 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 )
                 assert asset is not None and asset.filename == "result.txt"
             assert published and published[0]["asset_id"] == asset.id
-        assert preflight.await_count == (2 if late_input and not recover_candidate else 1) + int(handoff)
-        assert all(call.args == (lock,) for call in preflight.await_args_list)
 
 
 @pytest.mark.parametrize("recover_candidate", [False, True])

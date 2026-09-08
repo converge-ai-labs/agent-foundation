@@ -4,12 +4,11 @@ import hashlib
 import json
 
 import pytest
-from a13n_service.agents.domain import PluginKey as SelectedPluginKey
+from a13n_service.agents.domain import PluginSelection
 from a13n_service.assets.domain import normalize_media_type
 from a13n_service.digests import digest_request
 from a13n_service.ids import ObjectId
-from a13n_service.plugins.artifact import _parse_entry_points
-from a13n_service.plugins.domain import PluginKey
+from a13n_service.settings import Settings
 from pydantic import TypeAdapter, ValidationError
 
 
@@ -21,16 +20,19 @@ def test_object_ids_fit_the_relational_identifier_width() -> None:
 
 
 @pytest.mark.parametrize("key", ["foo", "foo.bar", "a_", "a" * 128])
-def test_plugin_admission_and_agent_selection_accept_the_same_keys(key: str) -> None:
-    assert TypeAdapter(PluginKey).validate_python(key) == TypeAdapter(SelectedPluginKey).validate_python(key)
-    assert _parse_entry_points(f"[a13n_harness.plugins]\n{key} = plugin:factory\n".encode())[0] == key
+def test_plugin_key_and_agent_selection_accept_the_same_keys(key: str) -> None:
+    assert (
+        PluginSelection(instance_name="instance", plugin_key=key).plugin_key
+        == Settings(_env_file=None, plugin_keys=(key,)).plugin_keys[0]
+    )
 
 
 @pytest.mark.parametrize("key", ["1foo.bar", "a", "Foo.bar", "a" * 129])
-def test_plugin_selection_rejects_keys_that_cannot_be_uploaded(key: str) -> None:
-    for annotation in (PluginKey, SelectedPluginKey):
-        with pytest.raises(ValidationError):
-            TypeAdapter(annotation).validate_python(key)
+def test_plugin_selection_rejects_invalid_plugin_keys(key: str) -> None:
+    with pytest.raises(ValidationError):
+        PluginSelection(instance_name="instance", plugin_key=key)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, plugin_keys=(key,))
 
 
 def test_media_type_bound_applies_after_defaulting_to_all_callers() -> None:

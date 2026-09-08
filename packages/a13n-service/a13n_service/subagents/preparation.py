@@ -377,7 +377,6 @@ def _child_run(
         agent_id=child_agent_id,
         agent_revision_id=child_agent_revision_id,
         effective_agent_config_digest=child_effective_config.content_digest,
-        runtime_lock_digest=child_effective_config.runtime_lock_digest,
         model_execution_observation=child_effective_config.resolved_model.execution.observation(),
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
@@ -426,7 +425,6 @@ def _validate_resume_source(
         or source_state.agent_id != source_run.agent_id
         or source_state.agent_revision_id != source_run.agent_revision_id
         or source_state.effective_agent_config.content_digest != source_run.effective_agent_config_digest
-        or source_state.runtime_lock_digest != source_run.runtime_lock_digest
     ):
         raise ValueError("resumed child execution is not a selected completed child head")
 

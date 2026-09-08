@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -266,7 +266,6 @@ dependencies = [
     { name = "openai" },
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
-    { name = "packaging" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-ai" },
@@ -311,7 +310,6 @@ requires-dist = [
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.39,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
-    { name = "packaging", specifier = ">=25,<26" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.12,<3" },
     { name = "pydantic-ai", specifier = ">=2.41.0,<3" },

@@ -33,7 +33,7 @@ Organize business code by feature and add layers only for a real capability; do 
 - Application services own use-case orchestration and short transaction boundaries. They do not import FastAPI or encode HTTP status.
 - Repositories own SQLAlchemy queries, may flush, and never commit. ORM objects stay inside the persistence boundary and are not API responses or Harness contracts.
 - Durable asynchronous lifecycles use idempotent reconcilers and fenced workers. Model, tool, queue, and stream waits happen outside database transactions.
-- Process-role wiring selects routers, reconcilers, and workers; `control`, `worker`, and `connectivity` do not duplicate feature or domain models. Connectivity loads trusted inbound Ingress adapters; the executing Worker or Runner loads trusted native-action and Connector runtime adapters for in-process MCP tool groups. Control loads ConnectorProvider clients for management operations; `all` composes these role contributions without duplicating shared resources.
+- Process-role wiring selects routers, reconcilers, and workers; `control`, `worker`, and `connectivity` do not duplicate feature or domain models. Connectivity loads trusted inbound Ingress adapters; the executing Worker loads trusted native-action and Connector runtime adapters for in-process MCP tool groups. Control loads ConnectorProvider clients for management operations; `all` composes these role contributions without duplicating shared resources.
 
 ### Naming
 

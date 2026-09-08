@@ -20,11 +20,10 @@ from a13n_service.models.runtime import PreparedModelExecution
 from ..domain import (
     AgentRevision,
     EffectiveAgentConfig,
-    ResolvedPluginVersion,
+    PluginSelection,
     ResolvedSubagentEdge,
 )
 from ..invocation import MergedAgentRunConfig
-from ..plugin_resolution import PreparedPluginSelections
 from ..skill_resolution import (
     PreparedSkillLock,
 )
@@ -61,9 +60,8 @@ class PreparedAgentInvocation:
     revision: AgentRevision
     merged: MergedAgentRunConfig
     model: PreparedModelExecution
-    plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillLock, ...]
-    resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
+    resolved_plugins: tuple[PluginSelection, ...]
     subagents: tuple[PreparedChildInvocation, ...]
     connectivity: PreparedConnectivity
 

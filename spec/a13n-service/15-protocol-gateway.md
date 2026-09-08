@@ -4,7 +4,7 @@
 
 a13n Service Protocol Gateway is the public protocol boundary of the `control` and `all` roles. It exposes Service-owned Native APIs, hosted AG-UI, and A2A without introducing another interaction model, execution authority, or independently deployed proxy. Each adapter validates and maps its own wire protocol, then calls the same Service application commands, queries, and authorized subscription ports.
 
-The [External Connectivity subsystem](40-connectivity/README.md) owns provider event ingress on `connectivity` and `all` roles. Its in-process a13n MCP tool groups execute inside Workers or Runners and have no HTTP listener. Neither is a Protocol Gateway adapter or Native `/api/v1` operation.
+The [External Connectivity subsystem](40-connectivity/README.md) owns provider event ingress on `connectivity` and `all` roles. Its in-process a13n MCP tool groups execute inside Workers and have no HTTP listener. Neither is a Protocol Gateway adapter or Native `/api/v1` operation.
 
 The Gateway does not own Agent execution, Run scheduling, persistence, or authorization policy. The durable [`Session`, `Thread`, `Run`, and `Item`](../interaction-model.md) model, current [IAM](33-identity-and-access-management.md), and the owning domain use case remain authoritative regardless of which protocol accepted or delivered the operation.
 

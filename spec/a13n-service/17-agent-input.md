@@ -135,13 +135,13 @@ Service canonicalizes the complete accepted value as UTF-8 RFC 8785 JSON. It sto
 
 ## Input Adapter and Harness Mapping
 
-Every `AgentConfig` stores one trusted input adapter key and bounded configuration. Revision creation validates them against the selected Plugin Runtime profile and freezes them in the immutable AgentRevision. The Revision does not carry an input-type declaration or per-input limits.
+Every `AgentConfig` stores one trusted input adapter key and bounded configuration. Revision creation validates them against the installed factory catalog and freezes them in the immutable AgentRevision. The Revision does not carry an input-type declaration or per-input limits.
 
 [Agent Management](28-agent-management.md#protocol-configuration) can define an optional `ProtocolConfig.input_data_schema` for non-null `structured_content`. Absent structured content remains valid, and the schema does not restrict text or binary blocks, media types, sources, or deliveries. Acceptance validates the wire, Service hard limits, source authority, content policy, delivery feasibility, and any applicable structured-content schema.
 
-The immutable AgentRevision freezes the trusted adapter key and configuration; the Run pins that Revision and one compatible Runtime lock. After verifying both, the Worker preserves block order, maps `TextContent` to native user text, applies the delivery table above to binary content, and lets only the locked adapter incorporate `structured_content` into Harness `RunInputValue`.
+The immutable AgentRevision freezes the trusted adapter key and configuration; the Run pins that Revision. After validating the frozen configuration, the Worker preserves block order, maps `TextContent` to native user text, applies the delivery table above to binary content, and lets only the locked adapter incorporate `structured_content` into Harness `RunInputValue`.
 
-The adapter returns `None` only for accepted empty input. It receives no credential or ambient authority and cannot widen frozen execution or content policy. Replacement Workers use the same accepted input, Revision, and Runtime lock; an unavailable or incompatible adapter fails before model or tool work.
+The adapter returns `None` only for accepted empty input. It receives no credential or ambient authority and cannot widen frozen execution or content policy. Replacement Workers use the same accepted input, Revision,; an unavailable or incompatible adapter fails before model or tool work.
 
 ## Use by Control Operation
 
@@ -190,7 +190,7 @@ This optional field is supported by both existing input versions. Empty bindings
 1. `AgentInput` is the single ordinary caller- or Host-submitted semantic-input protocol for root invocation, continuation, queued submission, fork, active steering, Ingress input, and input sent to an asynchronous child; a returning child result retains its separate typed Agent provenance.
 2. Accepted binary input persists only a normalized caller URL, authorized Environment-path description, or exact immutable `asset_id`; it never persists inline bytes or an object-storage key.
 3. `structured_content` is bounded JSON, follows the optional frozen protocol schema when non-null, carries no authority, and never becomes implicit model JSON.
-4. Harness mapping uses the pinned Revision and Runtime lock and fails closed rather than substituting input representation.
+4. Harness mapping uses the pinned Revision and fails closed rather than substituting input representation.
 5. Only `environment_path` writes binary input into an Environment, always below the reserved default-workspace input root and only through the Environment file interface.
 6. Same-Run Environment-file rematerialization is derived from existing model-request usage, while pending steer rematerialization is derived from existing inbox consumption evidence; neither adds a materialization field.
 7. An Asset ID is an exact immutable content selection while active; Run acceptance stores no Asset revision, body snapshot, or Asset-specific Run state.

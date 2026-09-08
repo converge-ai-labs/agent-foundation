@@ -1,7 +1,7 @@
 """initialize agents and revisions.
 
 Revision ID: f20843000572
-Revises: dfb52272d80a
+Revises: 951f75b187a9
 Create Date: 2026-09-04 08:21:21.266510+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f20843000572"
-down_revision: str | Sequence[str] | None = "dfb52272d80a"
+down_revision: str | Sequence[str] | None = "951f75b187a9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -73,12 +73,10 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("agent_id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("plugin_runtime_mode", sa.String(length=16), nullable=False),
         sa.Column("config", sa.JSON(), nullable=False),
         sa.Column("config_digest", sa.String(length=64), nullable=False),
         sa.Column("resolved_model", sa.JSON(), nullable=False),
-        sa.Column("resolved_plugin_versions", sa.JSON(), nullable=False),
-        sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
+        sa.Column("resolved_plugins", sa.JSON(), nullable=False),
         sa.Column("resolved_skills", sa.JSON(), nullable=False),
         sa.Column("connector_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
         sa.Column("mcp_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
@@ -92,14 +90,8 @@ def upgrade() -> None:
             "created_by_type IN ('user', 'service_account', 'system')",
             name=op.f("ck_agent_revisions_created_by_type_valid"),
         ),
-        sa.CheckConstraint(
-            "plugin_runtime_mode IN ('on_demand', 'runner')", name=op.f("ck_agent_revisions_plugin_runtime_mode_valid")
-        ),
         sa.CheckConstraint("length(config_digest) = 64", name=op.f("ck_agent_revisions_config_digest_sha256")),
         sa.CheckConstraint("length(content_digest) = 64", name=op.f("ck_agent_revisions_content_digest_sha256")),
-        sa.CheckConstraint(
-            "length(runtime_lock_digest) = 64", name=op.f("ck_agent_revisions_runtime_lock_digest_sha256")
-        ),
         sa.CheckConstraint("version >= 1", name=op.f("ck_agent_revisions_version_positive")),
         sa.ForeignKeyConstraint(
             ["agent_id", "organization_id", "workspace_id"],

@@ -23,13 +23,6 @@ from a13n_service.connectivity.cursors import decode_cursor as decode_connectivi
 from a13n_service.connectivity.cursors import encode_cursor as encode_connectivity_cursor
 from a13n_service.models.cursors import CursorError as ModelCursorError
 from a13n_service.models.cursors import decode_model_cursor, encode_model_cursor
-from a13n_service.plugins.cursors import (
-    PluginCursorError,
-    decode_plugin_cursor,
-    decode_plugin_version_cursor,
-    encode_plugin_cursor,
-    encode_plugin_version_cursor,
-)
 from a13n_service.skills.cursors import (
     SkillCursorError,
     decode_reference_cursor,
@@ -97,31 +90,6 @@ def test_agent_cursors_preserve_legacy_wire() -> None:
         decode_agent_cursor(_replace_payload_field(agent, "id", "wrong"), scope=_SCOPE)
     with pytest.raises(AgentCursorError, match=_INVALID_CURSOR):
         decode_agent_revision_cursor(_replace_payload_field(revision, "number", 0), scope=_SCOPE)
-
-
-def test_plugin_cursors_preserve_legacy_wire() -> None:
-    plugin = (
-        "eyJpZCI6InBsZ18xMjM0NTY3ODkwYWJjZGVmIiwia2luZCI6InBsdWdpbiIsInNjb3BlIjoiZDdmNTY5MmE1MzE2N2Q3"
-        "ZjBhNTQxZWY0ODQ5N2ZjMTlhZjVmODg1NWNkYmQ3N2ZmNmZiYmQ0NTllMDlmODY0OCIsInRpbWUiOiIyMDI0LTAxLTAxVDIx"
-        "OjM0OjA1LjEyMzQ1NloiLCJ2IjoiMSJ9"
-    )
-    version = (
-        "eyJpZCI6InBsZ3ZfMTIzNDU2Nzg5MGFiY2RlZiIsImtpbmQiOiJwbHVnaW4tdmVyc2lvbiIsInNjb3BlIjoiZDdmNTY5MmE1"
-        "MzE2N2Q3ZjBhNTQxZWY0ODQ5N2ZjMTlhZjVmODg1NWNkYmQ3N2ZmNmZiYmQ0NTllMDlmODY0OCIsInRpbWUiOiIyMDI0LTAx"
-        "LTAxVDIxOjM0OjA1LjEyMzQ1NloiLCJ2IjoiMSJ9"
-    )
-
-    assert encode_plugin_cursor(updated_at=_STAMP, plugin_id="plg_1234567890abcdef", scope=_SCOPE) == plugin
-    assert decode_plugin_cursor(plugin, scope=_SCOPE) == (_UTC_STAMP, "plg_1234567890abcdef")
-    assert encode_plugin_version_cursor(created_at=_STAMP, version_id="plgv_1234567890abcdef", scope=_SCOPE) == version
-    assert decode_plugin_version_cursor(version, scope=_SCOPE) == (_UTC_STAMP, "plgv_1234567890abcdef")
-    _assert_public_errors(PluginCursorError, lambda value, scope: decode_plugin_cursor(value, scope=scope), plugin)
-    with pytest.raises(PluginCursorError, match=_MISMATCHED_CURSOR):
-        decode_plugin_cursor(_replace_payload_field(plugin, "kind", "plugin-version"), scope=_SCOPE)
-    with pytest.raises(PluginCursorError, match=_INVALID_CURSOR):
-        decode_plugin_cursor(_replace_payload_field(plugin, "id", "wrong"), scope=_SCOPE)
-    with pytest.raises(PluginCursorError, match=_INVALID_CURSOR):
-        decode_plugin_version_cursor(_replace_payload_field(version, "id", "wrong"), scope=_SCOPE)
 
 
 def test_skill_cursors_preserve_legacy_wire() -> None:

@@ -204,7 +204,6 @@ def _context(thread_id: str) -> AttemptContext:
         lease_token="lease-token",
         worker_id="worker-1",
         worker_build_id="build-1",
-        runtime_lock_digest="a" * 64,
         lease_duration=timedelta(seconds=30),
         renewal_interval=timedelta(seconds=10),
         renewal_timeout=timedelta(seconds=5),

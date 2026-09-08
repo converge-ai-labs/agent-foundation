@@ -352,3 +352,21 @@ Container-owned integration tests exercise PostgreSQL, Redis, and S3 HTTP behavi
 Ordinary retryable management commands accept `Idempotency-Key` values containing 1–512 visible ASCII bytes. Reuse the same key and semantic request after a lost response: for 24 hours from the original commit, an authorized replay returns the original accepted result before checking mutable version preconditions. A changed request with the same scoped key conflicts. Replaying does not extend expiry; after expiry, inspect the resource and apply its current preconditions before deciding to repeat a mutation. AG-UI/A2A external IDs and durable execution identities have their own retention contracts.
 
 MCP mutation responses preserve the accepted connection snapshot. Read the connection to observe subsequent discovery readiness. Run overrides select managed resources and reject direct credential fields; the owning resource resolves its current credentials.
+
+## Installed Harness Plugins
+
+Package custom plugins and their dependencies into the Service image, then select their installed `a13n_harness.plugins` entry points with `A13N_SERVICE_PLUGIN_KEYS='["support.audit"]'`. Use the same selection across Control, Worker, and Connectivity roles. Startup loads and validates the catalog once; an invalid selection prevents readiness.
+
+Agent configuration selects an instance, key, and credential-free configuration:
+
+```json
+{
+  "plugins": [
+    {"instance_name": "audit", "plugin_key": "support.audit", "config": {}}
+  ]
+}
+```
+
+Update code by building and rolling out a new image. Deploy compatible Workers before accepting configuration that needs the new code. Existing Runs keep normalized configuration and checkpoint state, while each Attempt records the actual Worker build. Compatible new code may resume them; incompatible configuration or state requires migration or completion with compatible capacity before replacement. Service has no runtime Wheel upload, dependency installation, version activation, or plugin subprocess.
+
+See [Installed Harness Plugins](../../spec/a13n-service/36-installed-harness-plugins.md) for the compatibility and trust contract.

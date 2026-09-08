@@ -17,14 +17,12 @@ from a13n_service.iam import (
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
-from a13n_service.plugins.runtime import PluginRuntimeLockError
 
 from ..connectivity_resolution import freeze_invocation_connectivity
 from ..domain import (
     ChildAgentExecution,
     EffectiveAgentConfig,
     EffectiveAgentModel,
-    PluginRuntimeMode,
 )
 from ..errors import (
     agent_revision_not_executable,
@@ -32,14 +30,12 @@ from ..errors import (
     map_authorization_error,
     map_model_error,
 )
-from ..plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError
 from .contracts import (
     AgentSelectorKind,
     FrozenAgentInvocation,
     PreparedAgentInvocation,
 )
 from .queries import load_agent_record, load_revision_record, require_invocable_agent
-from .signatures import runtime_selection_unchanged
 from .skills import freeze_skills
 
 
@@ -50,13 +46,9 @@ class AgentInvocationFreezer:
         self,
         model_selector: AcceptedModelSelector,
         *,
-        plugin_runtime_mode: PluginRuntimeMode,
-        plugin_resolver: AgentPluginSelectionResolver,
         connectivity_resolver: ConnectivitySelectionResolver,
     ) -> None:
         self._model_selector = model_selector
-        self._plugin_runtime_mode = plugin_runtime_mode
-        self._plugin_resolver = plugin_resolver
         self._connectivity_resolver = connectivity_resolver
 
     async def freeze_in_transaction(
@@ -102,11 +94,7 @@ class AgentInvocationFreezer:
                 revision_id=prepared.agent_revision_id,
                 for_update=True,
             )
-            if (
-                revision_record.content_digest != prepared.revision_content_digest
-                or revision_record.runtime_lock_digest != prepared.revision.runtime_lock_digest
-                or revision_record.plugin_runtime_mode != self._plugin_runtime_mode.value
-            ):
+            if revision_record.content_digest != prepared.revision_content_digest:
                 raise agent_revision_not_executable("revision_changed")
             await authorize_workspace(
                 session,
@@ -119,15 +107,6 @@ class AgentInvocationFreezer:
             except ModelError as error:
                 raise map_model_error(error) from error
             skills = await freeze_skills(session, prepared)
-            try:
-                plugins = await self._plugin_resolver.freeze_in_transaction(
-                    session,
-                    actor=prepared.actor,
-                    workspace_id=prepared.workspace_id,
-                    prepared=prepared.plugins,
-                )
-            except PluginSelectionError as error:
-                raise agent_revision_not_executable(error.reason) from error
             connectivity = await freeze_invocation_connectivity(
                 self._connectivity_resolver,
                 session,
@@ -137,24 +116,6 @@ class AgentInvocationFreezer:
             raise map_authorization_error(error) from error
 
         resolved_subagents = tuple(item.edge for item in prepared.subagents)
-        try:
-            if runtime_selection_unchanged(prepared, plugins, resolved_subagents):
-                runtime_lock = await self._plugin_resolver.runtime_locks.require(
-                    session,
-                    prepared.revision.runtime_lock_digest,
-                    mode=prepared.revision.plugin_runtime_mode.value,
-                )
-            else:
-                runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
-                    session,
-                    prepared=prepared.plugins,
-                    child_lock_digests=tuple(
-                        item.invocation.revision.runtime_lock_digest for item in prepared.subagents
-                    ),
-                    use_active_catalog=True,
-                )
-        except PluginRuntimeLockError as error:
-            raise agent_revision_not_executable(error.reason) from error
         child_configs = {}
         for item in prepared.subagents:
             child = item.invocation
@@ -177,8 +138,7 @@ class AgentInvocationFreezer:
                 ),
                 characteristics=prepared.merged.model.characteristics,
             ),
-            "resolved_plugin_versions": plugins,
-            "runtime_lock_digest": runtime_lock.digest,
+            "resolved_plugins": prepared.resolved_plugins,
             "skills": skills,
             "connector_tools": prepared.merged.connector_tools,
             "mcp_tools": prepared.merged.mcp_tools,

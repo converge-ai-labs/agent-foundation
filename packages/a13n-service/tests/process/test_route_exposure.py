@@ -36,8 +36,6 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         "Asset",
         "AccountTarget",
         "Model",
-        "Plugin",
-        "PluginVersion",
         "Skill",
         "SkillPackageManifest",
         "SkillRevision",
@@ -57,12 +55,12 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert request(app, "/docs/oauth2-redirect").status_code == 404
     assert "/api/v1/workspaces/{workspace_id}/traces" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/traces/{trace_id}" in document["paths"]
-    assert "/api/v1/plugins" in document["paths"]
-    assert "/api/v1/plugins/{plugin_id}/versions" in document["paths"]
-    assert "/api/v1/plugin-versions/{plugin_version_id}" in document["paths"]
-    assert "/api/v1/plugin-versions/{plugin_version_id}/activate" in document["paths"]
-    assert "/api/v1/plugins/{plugin_id}/deactivate" in document["paths"]
-    assert "/api/v1/operations/{operation_id}" in document["paths"]
+    assert "/api/v1/plugins" not in document["paths"]
+    assert "/api/v1/plugins/{plugin_id}/versions" not in document["paths"]
+    assert "/api/v1/plugin-versions/{plugin_version_id}" not in document["paths"]
+    assert "/api/v1/plugin-versions/{plugin_version_id}/activate" not in document["paths"]
+    assert "/api/v1/plugins/{plugin_id}/deactivate" not in document["paths"]
+    assert "/api/v1/operations/{operation_id}" not in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/hook-subscriptions" in document["paths"]
     assert "/api/v1/hook-subscriptions/{subscription_id}" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/events" in document["paths"]

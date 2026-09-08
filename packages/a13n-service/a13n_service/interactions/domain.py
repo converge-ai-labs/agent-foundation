@@ -98,7 +98,6 @@ class RunAttemptStatus(StrEnum):
 
 class RunAttemptYieldReason(StrEnum):
     service_drain = "service_drain"
-    runner_rotation = "runner_rotation"
 
 
 class RunPayloadObjectRef(StrictModel):
@@ -263,7 +262,6 @@ class Run(StrictModel):
     environment_access: Literal["read_only", "read_write", "full"] | None = None
     environment_use_started_at: UtcDateTime | None = None
     effective_agent_config_digest: Sha256Digest
-    runtime_lock_digest: Sha256Digest
     model_execution_observation: ModelExecutionObservation
     connector_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     mcp_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
@@ -370,7 +368,6 @@ class RunAttempt(StrictModel):
     start_reason: BoundedText | None = None
     worker_id: BoundedText
     worker_build_id: BoundedText
-    runtime_lock_digest: Sha256Digest
     harness_run_id: BoundedText | None = None
     model_execution_observation: ModelExecutionObservation
     lease_token_digest: Sha256Digest
@@ -490,7 +487,6 @@ def accepted_run(
     environment_id: ObjectId | None = None,
     environment_access: Literal["read_only", "read_write", "full"] | None = None,
     effective_agent_config_digest: Sha256Digest,
-    runtime_lock_digest: Sha256Digest,
     model_execution_observation: ModelExecutionObservation,
     connector_connection_selections: tuple[JsonObject, ...] = (),
     mcp_connection_selections: tuple[JsonObject, ...] = (),
@@ -526,7 +522,6 @@ def accepted_run(
         environment_id=environment_id,
         environment_access=environment_access,
         effective_agent_config_digest=effective_agent_config_digest,
-        runtime_lock_digest=runtime_lock_digest,
         model_execution_observation=model_execution_observation,
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,

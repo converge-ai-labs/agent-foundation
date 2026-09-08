@@ -9,7 +9,6 @@ import httpx2
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 
-from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.publication import AssetPublisher
 from a13n_service.assets.runtime import AssetRuntime
@@ -27,17 +26,6 @@ from a13n_service.ids import new_object_id
 from a13n_service.interactions.scheduling import AttemptScheduler
 from a13n_service.interactions.worker import WorkerExecutionLoop
 from a13n_service.observability import ObservabilityRuntime
-from a13n_service.plugins.materialization import PluginRuntimeMaterializer
-from a13n_service.plugins.on_demand import OnDemandPluginRuntime
-from a13n_service.plugins.runner_bootstrap import BootstrappedPluginRuntime
-from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
-from a13n_service.plugins.runtime import (
-    PluginRuntimeLock,
-    WorkerReleaseManifest,
-    default_runtime_target,
-    installed_distribution_versions,
-    installed_harness_version,
-)
 from a13n_service.process.attempts import WorkerAttempts
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.resources import ExecutionResources
@@ -57,43 +45,10 @@ async def build_worker_runtime(
     stack: AsyncExitStack,
     connector_providers: ConnectorProviderRegistry | None = None,
     *,
-    runner: BootstrappedPluginRuntime | None = None,
+    plugin_catalog: HarnessPluginFactoryCatalog,
     observability: ObservabilityRuntime | None = None,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
-
-    materializer = await PluginRuntimeMaterializer.create(
-        shared.storage.files_root,
-        execution.plugin_objects,
-        WorkerReleaseManifest(
-            worker_release=settings.build_version,
-            harness_version=installed_harness_version(),
-            runtime_target=default_runtime_target(),
-            distributions=installed_distribution_versions(),
-        ),
-        executable=settings.plugin_runtime_resolver_executable,
-        max_wheel_bytes=settings.plugin_max_wheel_bytes,
-        max_expanded_bytes=settings.plugin_max_expanded_bytes,
-        max_archive_members=settings.plugin_max_archive_members,
-        max_runtime_bytes=settings.plugin_runtime_max_materialized_bytes,
-        timeout_seconds=settings.plugin_runtime_resolver_timeout_seconds,
-        limiter=shared.storage.file_limiter,
-    )
-    if runner is not None:
-        plugin_runtime: OnDemandPluginRuntime | PluginRunnerSupervisor | BootstrappedPluginRuntime = runner
-    elif settings.plugin_runtime_mode is PluginRuntimeMode.runner:
-        plugin_runtime = await stack.enter_async_context(
-            PluginRunnerSupervisor(
-                materializer,
-                ready_timeout_seconds=settings.plugin_runner_ready_timeout_seconds,
-                command_timeout_seconds=settings.plugin_runner_command_timeout_seconds,
-                shutdown_timeout_seconds=settings.plugin_runner_shutdown_timeout_seconds,
-                max_processes=settings.plugin_runner_max_processes,
-                execution_settings=settings,
-            )
-        )
-    else:
-        plugin_runtime = OnDemandPluginRuntime(materializer)
 
     environments = EnvironmentLifecycle(
         shared.storage.sessions,
@@ -178,7 +133,7 @@ async def build_worker_runtime(
     execution_loop = WorkerExecutionLoop(
         shared.storage.sessions,
         AttemptScheduler(shared.storage.sessions, lifecycle=shared.lifecycle),
-        _WorkerRuntimePreflight(plugin_runtime),
+        plugin_catalog,
         WorkerAttempts(
             shared,
             execution,
@@ -198,12 +153,9 @@ async def build_worker_runtime(
         lease_seconds=settings.worker_lease_seconds,
         cleanup_seconds=settings.worker_cleanup_seconds,
         drain_seconds=settings.worker_drain_seconds,
-        runtime_lock_digest=None if runner is None else runner.runtime_lock.digest,
     )
     runtime = WorkerRuntime(
         external_tools=external_tools,
-        plugin_materializer=materializer,
-        plugin_runtime=plugin_runtime,
         native_model_factory=execution.native_model_factory,
         skill_runtime=skills,
         environment_maintenance=environment_maintenance,
@@ -213,8 +165,6 @@ async def build_worker_runtime(
         execution_loop=execution_loop,
     )
     execution_task = BackgroundTask("RunAttempt execution", execution_loop.run, execution_loop.is_draining)
-    if runner is not None:
-        return runtime, (execution_task,)
     return runtime, (
         execution_task,
         BackgroundTask(
@@ -224,21 +174,6 @@ async def build_worker_runtime(
         ),
         BackgroundTask("lifecycle Run Stream projector", lifecycle_projector.run),
     )
-
-
-class _WorkerRuntimePreflight:
-    def __init__(self, runtime: OnDemandPluginRuntime | PluginRunnerSupervisor | BootstrappedPluginRuntime) -> None:
-        self._runtime = runtime
-
-    async def prepare(self, lock: PluginRuntimeLock) -> HarnessPluginFactoryCatalog | None:
-        if isinstance(self._runtime, OnDemandPluginRuntime):
-            return (await self._runtime.prepare_for_claim(lock)).factory_catalog
-        if isinstance(self._runtime, BootstrappedPluginRuntime):
-            if lock != self._runtime.runtime_lock:
-                raise ValueError("Runner cannot execute another Runtime lock")
-            return self._runtime.factory_catalog
-        await self._runtime.ensure_execution_runtime(lock)
-        return None
 
 
 __all__ = ["build_worker_runtime"]

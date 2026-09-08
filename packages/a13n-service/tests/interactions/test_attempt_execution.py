@@ -666,7 +666,6 @@ async def _accept_root(
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config_digest=config.content_digest,
-        runtime_lock_digest=config.runtime_lock_digest,
         model_execution_observation=config.resolved_model.execution.observation(),
         priority=0,
         queue_name="default",
@@ -732,7 +731,6 @@ def _worker(
         organization_id=ORGANIZATION_ID,
         worker_id=worker_id,
         worker_build_id=build_id,
-        runtime_lock_digest="a" * 64,
         lease_duration=timedelta(seconds=lease_seconds),
         handoff_preference_window=timedelta(seconds=30),
     )
@@ -754,7 +752,6 @@ def _authority(
         lease_token=claim.lease_token if lease_token is None else lease_token,
         worker_id=claim.attempt.worker_id,
         worker_build_id=claim.attempt.worker_build_id,
-        runtime_lock_digest=claim.attempt.runtime_lock_digest,
         lease_duration=lease_duration,
         renewal_interval=lease_duration / 3,
         renewal_timeout=lease_duration / 6,

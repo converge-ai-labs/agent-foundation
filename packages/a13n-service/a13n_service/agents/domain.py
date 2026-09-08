@@ -31,11 +31,11 @@ from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
-from a13n_service.plugins.domain import PluginKey
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
+PluginKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")]
 JsonObject = dict[str, JsonValue]
 
 
@@ -73,11 +73,6 @@ class AgentSource(StrEnum):
     custom = "custom"
 
 
-class PluginRuntimeMode(StrEnum):
-    on_demand = "on_demand"
-    runner = "runner"
-
-
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -88,21 +83,10 @@ class AgentModel(StrictModel):
     characteristics: HarnessModelCharacteristics = Field(default_factory=HarnessModelCharacteristics)
 
 
-class OnDemandPluginSelection(StrictModel):
-    mode: Literal[PluginRuntimeMode.on_demand] = PluginRuntimeMode.on_demand
-    instance_name: BoundedKey
-    plugin_version_id: ObjectId
-    config: JsonObject = Field(default_factory=dict)
-
-
-class RunnerPluginSelection(StrictModel):
-    mode: Literal[PluginRuntimeMode.runner] = PluginRuntimeMode.runner
+class PluginSelection(StrictModel):
     instance_name: BoundedKey
     plugin_key: PluginKey
     config: JsonObject = Field(default_factory=dict)
-
-
-PluginSelection = Annotated[OnDemandPluginSelection | RunnerPluginSelection, Field(discriminator="mode")]
 
 
 class SkillSelection(StrictModel):
@@ -314,18 +298,6 @@ class EffectiveAgentModel(StrictModel):
     characteristics: HarnessModelCharacteristics
 
 
-class ResolvedPluginVersion(StrictModel):
-    instance_name: BoundedKey
-    plugin_id: ObjectId
-    plugin_version_id: ObjectId
-    plugin_key: PluginKey
-    distribution_name: str = Field(min_length=1, max_length=256)
-    version: str = Field(min_length=1, max_length=256)
-    top_level_package: str = Field(min_length=1, max_length=256)
-    wheel_digest: Sha256Digest
-    config: JsonObject = Field(default_factory=dict)
-
-
 class ResolvedSkillBinding(StrictModel):
     skill_id: ObjectId
     skill_key: SkillKey
@@ -344,8 +316,7 @@ class ResolvedSubagentEdge(StrictModel):
 
 class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
     resolved_model: ResolvedModelT
-    resolved_plugin_versions: tuple[ResolvedPluginVersion, ...] = ()
-    runtime_lock_digest: Sha256Digest
+    resolved_plugins: tuple[PluginSelection, ...] = ()
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
@@ -408,12 +379,10 @@ class AgentRevision(StrictModel):
     workspace_id: ObjectId
     agent_id: ObjectId
     version: int = Field(ge=1)
-    plugin_runtime_mode: PluginRuntimeMode
     config: AgentConfig
     config_digest: Sha256Digest
     resolved_model: ResolvedAgentModel
-    resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
-    runtime_lock_digest: Sha256Digest
+    resolved_plugins: tuple[PluginSelection, ...]
     resolved_skills: tuple[ResolvedSkillBinding, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()

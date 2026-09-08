@@ -429,12 +429,10 @@ async def test_references_include_disabled_unarchived_current_agents_and_block_d
                 workspace_id=WORKSPACE_ID,
                 agent_id=agent_id,
                 version=1,
-                plugin_runtime_mode="on_demand",
                 config={},
                 config_digest="1" * 64,
                 resolved_model={},
-                resolved_plugin_versions=[],
-                runtime_lock_digest="2" * 64,
+                resolved_plugins=[],
                 resolved_skills=[
                     {
                         "skill_id": created.result.skill.id,

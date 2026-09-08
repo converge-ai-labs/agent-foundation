@@ -32,16 +32,15 @@ from .domain import (
     AgentSource,
     ConnectorConnectionToolSelection,
     MCPConnectionToolSelection,
-    PluginRuntimeMode,
+    PluginSelection,
     ResolvedAgentModel,
-    ResolvedPluginVersion,
     ResolvedSkillBinding,
     ResolvedSubagentEdge,
 )
 
 _CONFIG_ADAPTER = TypeAdapter(AgentConfig)
 _MODEL_ADAPTER = TypeAdapter(ResolvedAgentModel)
-_PLUGINS_ADAPTER = TypeAdapter(tuple[ResolvedPluginVersion, ...])
+_PLUGINS_ADAPTER = TypeAdapter(tuple[PluginSelection, ...])
 _SKILLS_ADAPTER = TypeAdapter(tuple[ResolvedSkillBinding, ...])
 _CONNECTOR_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectorConnectionToolSelection, ...])
 _MCP_TOOLS_ADAPTER = TypeAdapter(tuple[MCPConnectionToolSelection, ...])
@@ -119,9 +118,7 @@ class AgentRevisionRecord(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint("version >= 1", name="version_positive"),
-        CheckConstraint("plugin_runtime_mode IN ('on_demand', 'runner')", name="plugin_runtime_mode_valid"),
         CheckConstraint("length(config_digest) = 64", name="config_digest_sha256"),
-        CheckConstraint("length(runtime_lock_digest) = 64", name="runtime_lock_digest_sha256"),
         CheckConstraint("length(content_digest) = 64", name="content_digest_sha256"),
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         UniqueConstraint("agent_id", "version", name="uq_agent_revisions_agent_number"),
@@ -139,12 +136,10 @@ class AgentRevisionRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     agent_id: Mapped[str] = mapped_column(String(72), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    plugin_runtime_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     resolved_model: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    resolved_plugin_versions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    resolved_plugins: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     resolved_skills: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     connector_tools: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON,
@@ -170,12 +165,10 @@ class AgentRevisionRecord(Base):
             workspace_id=self.workspace_id,
             agent_id=self.agent_id,
             version=self.version,
-            plugin_runtime_mode=PluginRuntimeMode(self.plugin_runtime_mode),
             config=_CONFIG_ADAPTER.validate_python(self.config),
             config_digest=self.config_digest,
             resolved_model=_MODEL_ADAPTER.validate_python(self.resolved_model),
-            resolved_plugin_versions=_PLUGINS_ADAPTER.validate_python(self.resolved_plugin_versions),
-            runtime_lock_digest=self.runtime_lock_digest,
+            resolved_plugins=_PLUGINS_ADAPTER.validate_python(self.resolved_plugins),
             resolved_skills=_SKILLS_ADAPTER.validate_python(self.resolved_skills),
             connector_tools=_CONNECTOR_TOOLS_ADAPTER.validate_python(self.connector_tools),
             mcp_tools=_MCP_TOOLS_ADAPTER.validate_python(self.mcp_tools),

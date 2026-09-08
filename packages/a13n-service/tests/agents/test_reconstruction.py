@@ -22,9 +22,8 @@ from a13n_service.agents.domain import (
     EffectiveAgentConfig,
     EffectiveAgentModel,
     MCPConnectionToolSelection,
-    PluginRuntimeMode,
+    PluginSelection,
     ResolvedAgentModel,
-    ResolvedPluginVersion,
     ResolvedRevisionContent,
     ResolvedSubagentEdge,
 )
@@ -117,16 +116,10 @@ def _effective_model(config: AgentConfig) -> EffectiveAgentModel:
     )
 
 
-def _plugin_selection(*, instance_name: str = "audit") -> ResolvedPluginVersion:
-    return ResolvedPluginVersion(
+def _plugin_selection(*, instance_name: str = "audit") -> PluginSelection:
+    return PluginSelection(
         instance_name=instance_name,
-        plugin_id=PLUGIN_ID,
-        plugin_version_id=PLUGIN_VERSION_ID,
         plugin_key="test.plugin",
-        distribution_name="test-plugin",
-        version="1.2.3",
-        top_level_package="test_plugin",
-        wheel_digest="b" * 64,
         config={"label": instance_name},
     )
 
@@ -140,15 +133,14 @@ def _config(**updates: object) -> AgentConfig:
 def _effective(
     config: AgentConfig,
     *,
-    plugins: tuple[ResolvedPluginVersion, ...] = (),
+    plugins: tuple[PluginSelection, ...] = (),
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = (),
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = (),
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
 ) -> EffectiveAgentConfig:
     candidate = EffectiveAgentConfig(
         resolved_model=_effective_model(config),
-        resolved_plugin_versions=plugins,
-        runtime_lock_digest="a" * 64,
+        resolved_plugins=plugins,
         skills=(),
         connector_tools=connector_tools,
         mcp_tools=mcp_tools,
@@ -172,7 +164,7 @@ def _revision(
     revision_id: str = CHILD_REVISION_ID,
     agent_id: str = CHILD_AGENT_ID,
     config: AgentConfig | None = None,
-    plugins: tuple[ResolvedPluginVersion, ...] = (),
+    plugins: tuple[PluginSelection, ...] = (),
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = (),
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = (),
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
@@ -180,8 +172,7 @@ def _revision(
     selected_config = config or agent_config(instructions="Handle delegated work.")
     resolved = ResolvedRevisionContent(
         resolved_model=_resolved_model(selected_config),
-        resolved_plugin_versions=plugins,
-        runtime_lock_digest="c" * 64,
+        resolved_plugins=plugins,
         resolved_skills=(),
         connector_tools=connector_tools,
         mcp_tools=mcp_tools,
@@ -189,7 +180,6 @@ def _revision(
     )
     digest = digest_request(
         {
-            "plugin_runtime_mode": PluginRuntimeMode.on_demand.value,
             "config": selected_config.model_dump(mode="json", by_alias=True),
             "resolved": resolved.model_dump(mode="json", by_alias=True),
         }
@@ -200,12 +190,10 @@ def _revision(
         workspace_id="ws_1234567890abcdef",
         agent_id=agent_id,
         version=1,
-        plugin_runtime_mode=PluginRuntimeMode.on_demand,
         config=selected_config,
         config_digest=digest_request(selected_config),
         resolved_model=resolved.resolved_model,
-        resolved_plugin_versions=resolved.resolved_plugin_versions,
-        runtime_lock_digest=resolved.runtime_lock_digest,
+        resolved_plugins=resolved.resolved_plugins,
         resolved_skills=resolved.resolved_skills,
         connector_tools=resolved.connector_tools,
         mcp_tools=resolved.mcp_tools,
@@ -244,7 +232,7 @@ def _with_children(effective: EffectiveAgentConfig, children: Mapping[str, Agent
             revision_content_digest=revision.content_digest,
             effective_config=_effective(
                 revision.config,
-                plugins=revision.resolved_plugin_versions,
+                plugins=revision.resolved_plugins,
                 connector_tools=revision.connector_tools,
                 mcp_tools=revision.mcp_tools,
                 subagents=revision.resolved_subagents,
@@ -428,9 +416,8 @@ def test_reconstructs_each_subagent_occurrence_with_fresh_plugin_instances() -> 
         instructions="Handle the child task.",
         plugins=[
             {
-                "mode": "on_demand",
                 "instance_name": "audit",
-                "plugin_version_id": PLUGIN_VERSION_ID,
+                "plugin_key": "test.plugin",
                 "config": {"label": "audit"},
             }
         ],
@@ -488,7 +475,7 @@ def test_reconstruction_rejects_missing_or_mismatched_child_revision() -> None:
     assert mismatch.value.reason == "subagent_agent_mismatch"
 
 
-def test_reconstruction_rejects_tampered_child_and_plugin_provenance() -> None:
+def test_reconstruction_rejects_tampered_child_and_missing_plugin() -> None:
     effective = _effective(agent_config(), subagents=(_edge("reviewer"),))
     child = _revision()
     effective = _with_children(effective, {child.id: child})
@@ -502,10 +489,10 @@ def test_reconstruction_rejects_tampered_child_and_plugin_provenance() -> None:
 
     config = agent_config()
     plugin_effective = _effective(config, plugins=(_plugin_selection(),))
-    wrong_catalog, _factory = _catalog(distribution_name="other-plugin")
+    wrong_catalog = HarnessPluginFactoryCatalog(())
     with pytest.raises(AgentDefinitionReconstructionError) as provenance:
         _reconstruct(plugin_effective, catalog=wrong_catalog)
-    assert provenance.value.reason == "plugin_factory_provenance_mismatch"
+    assert provenance.value.reason == "plugin_factory_missing"
 
 
 def test_reconstruction_rejects_unknown_and_recursive_output_resources() -> None:
@@ -535,7 +522,7 @@ def test_reconstruction_rejects_unknown_and_recursive_output_resources() -> None
 
 
 @pytest.mark.parametrize("distribution", ["test-plugin", "wrong-plugin"])
-def test_recovery_validation_checks_factory_identity_without_constructing_plugins(distribution):
+def test_recovery_accepts_compatible_repackaged_factory_without_constructing_plugins(distribution):
     catalog, factory = _catalog(distribution_name=distribution)
     effective = _effective(_config(), plugins=(_plugin_selection(),))
     reconstructor = AgentReconstructor(catalog)
@@ -545,9 +532,5 @@ def test_recovery_validation_checks_factory_identity_without_constructing_plugin
         effective_config=effective,
         subagent_capability=SubagentCapability(),
     )
-    if distribution == "test-plugin":
-        reconstructor.validate(**arguments)
-    else:
-        with pytest.raises(AgentDefinitionReconstructionError, match="plugin_factory_provenance_mismatch"):
-            reconstructor.validate(**arguments)
+    reconstructor.validate(**arguments)
     assert factory.created == []

@@ -9,8 +9,6 @@ from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegi
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.lifecycle.service import LifecycleEventService
-from a13n_service.plugins.materialization import PluginRuntimeMaterializer
-from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.process.background import run_critical_component
 from a13n_service.process.components import snapshot_components
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
@@ -103,9 +101,6 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(local_sett
 
         assert isinstance(runtime.worker.external_tools, ExternalToolRuntime)
         assert isinstance(runtime.worker.skill_runtime, SkillRuntimePreparer)
-        assert runtime.control.plugins is not None
-        assert isinstance(runtime.worker.plugin_materializer, PluginRuntimeMaterializer)
-        assert isinstance(runtime.worker.plugin_runtime, OnDemandPluginRuntime)
         assert isinstance(runtime.worker.environment_maintenance, EnvironmentMaintenanceLoop)
         assert runtime.control.trace_queries is not None
 

@@ -159,7 +159,6 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
                     agent_id=AGENT_ID,
                     agent_revision_id=AGENT_REVISION_ID,
                     effective_agent_config_digest=config.content_digest,
-                    runtime_lock_digest=config.runtime_lock_digest,
                     model_execution_observation=config.resolved_model.execution.observation(),
                     priority=0,
                     queue_name="default",

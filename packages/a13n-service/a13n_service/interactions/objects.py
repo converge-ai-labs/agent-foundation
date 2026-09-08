@@ -366,7 +366,6 @@ def validate_run_state_reference(run: Run, state: StoredRunState) -> None:
         or envelope.thread_id != run.thread_id
         or envelope.agent_id != run.agent_id
         or envelope.agent_revision_id != run.agent_revision_id
-        or envelope.runtime_lock_digest != run.runtime_lock_digest
         or envelope.effective_agent_config.content_digest != run.effective_agent_config_digest
         or digest_request(
             envelope.effective_agent_config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})

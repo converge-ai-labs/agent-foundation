@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -12,13 +13,12 @@ from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
-from a13n_service.plugins.runtime import PluginRuntimeLockError
 from a13n_service.storage import short_session
 
 from .connectivity_resolution import freeze_revision_connectivity, prepare_revision_connectivity
 from .domain import (
     AgentConfig,
-    PluginRuntimeMode,
+    PluginSelection,
     ResolvedAgentModel,
     ResolvedRevisionContent,
     ResolvedSkillBinding,
@@ -27,7 +27,7 @@ from .domain import (
 )
 from .errors import AgentError, agent_revision_create_failed
 from .models import AgentRecord, AgentRevisionRecord
-from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
+from .plugin_resolution import PluginSelectionError, validate_plugin_selections
 from .skill_resolution import (
     PreparedSkillBinding,
     SkillSelectionInvalid,
@@ -46,7 +46,6 @@ class PreparedSubagent:
     selection: SubagentSelection
     child_revision_id: str
     child_revision_digest: str
-    child_runtime_lock_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +56,7 @@ class PreparedRevisionResolution:
     agent_id: str
     config: AgentConfig
     model: PreparedModelExecution
-    plugins: PreparedPluginSelections
+    plugins: tuple[PluginSelection, ...]
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
     connectivity: PreparedConnectivity
@@ -71,19 +70,14 @@ class AgentResolver:
         sessions: async_sessionmaker[AsyncSession],
         model_selector: AcceptedModelSelector,
         *,
-        plugin_runtime_mode: PluginRuntimeMode,
-        plugin_resolver: AgentPluginSelectionResolver | None = None,
+        plugin_catalog: HarnessPluginFactoryCatalog | None = None,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
-        self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
-            sessions,
-            runtime_mode=plugin_runtime_mode,
-        )
+        self._plugin_catalog = plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(())
         self._connectivity_resolver = connectivity_resolver or ConnectivitySelectionResolver(sessions)
-        self.plugin_runtime_mode = plugin_runtime_mode
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
 
     async def prepare(
@@ -111,12 +105,7 @@ class AgentResolver:
                 action=WorkspaceAction.agent_revision_create,
             )
             try:
-                plugins = await self._plugin_resolver.prepare(
-                    session,
-                    actor=actor,
-                    workspace_id=workspace_id,
-                    selections=config.plugins,
-                )
+                plugins = validate_plugin_selections(self._plugin_catalog, config.plugins)
             except PluginSelectionError as error:
                 raise agent_revision_create_failed(error.reason, path=error.path) from error
             skills = await self._prepare_skills(
@@ -169,27 +158,9 @@ class AgentResolver:
             action=WorkspaceAction.agent_revision_create,
         )
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
-        try:
-            plugins = await self._plugin_resolver.freeze_in_transaction(
-                session,
-                actor=prepared.actor,
-                workspace_id=prepared.workspace_id,
-                prepared=prepared.plugins,
-            )
-        except PluginSelectionError as error:
-            raise agent_revision_create_failed(error.reason, path=error.path) from error
         skills = await self._freeze_skills(session, prepared)
         subagents = await self._freeze_subagents(session, prepared)
         await freeze_revision_connectivity(self._connectivity_resolver, session, prepared.connectivity)
-        try:
-            runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
-                session,
-                prepared=prepared.plugins,
-                child_lock_digests=tuple(item.child_runtime_lock_digest for item in prepared.subagents),
-                use_active_catalog=True,
-            )
-        except PluginRuntimeLockError as error:
-            raise agent_revision_create_failed(error.reason, path=error.path) from error
         return ResolvedRevisionContent(
             resolved_model=ResolvedAgentModel(
                 model_id=model.model_id,
@@ -197,8 +168,7 @@ class AgentResolver:
                 settings=prepared.config.model.settings,
                 characteristics=prepared.config.model.characteristics,
             ),
-            resolved_plugin_versions=plugins,
-            runtime_lock_digest=runtime_lock.digest,
+            resolved_plugins=prepared.plugins,
             resolved_skills=skills,
             connector_tools=prepared.config.connector_tools,
             mcp_tools=prepared.config.mcp_tools,
@@ -299,7 +269,6 @@ class AgentResolver:
                     selection=selection,
                     child_revision_id=revision.id,
                     child_revision_digest=revision.content_digest,
-                    child_runtime_lock_digest=revision.runtime_lock_digest,
                 )
             )
         return tuple(result)
@@ -382,11 +351,7 @@ class AgentResolver:
                 )
                 .with_for_update()
             )
-            if (
-                revision is None
-                or revision.content_digest != expected.child_revision_digest
-                or revision.runtime_lock_digest != expected.child_runtime_lock_digest
-            ):
+            if revision is None or revision.content_digest != expected.child_revision_digest:
                 raise agent_revision_create_failed("subagent_revision_changed", path=f"subagents.{expected.name}")
             result.append(
                 ResolvedSubagentEdge(

@@ -628,8 +628,6 @@ def validate_run_state_selection(run: Run, state: RunCheckpoint) -> None:
         raise ValueError("Run effective configuration digest does not match state")
     if effective.resolved_model.execution.observation() != run.model_execution_observation:
         raise ValueError("Run model observation does not match state")
-    if state.runtime_lock_digest != run.runtime_lock_digest:
-        raise ValueError("Run Runtime lock does not match state")
 
 
 def _validate_new_thread(thread: Thread, run: Run, session: Session | None) -> None:
@@ -866,7 +864,6 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         source.agent_id,
         source.agent_revision_id,
         source.effective_agent_config_digest,
-        source.runtime_lock_digest,
         source.model_execution_observation,
         source.connector_connection_selections,
         source.mcp_connection_selections,
@@ -877,7 +874,6 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         candidate.agent_id,
         candidate.agent_revision_id,
         candidate.effective_agent_config_digest,
-        candidate.runtime_lock_digest,
         candidate.model_execution_observation,
         candidate.connector_connection_selections,
         candidate.mcp_connection_selections,

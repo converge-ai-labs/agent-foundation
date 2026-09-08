@@ -42,7 +42,6 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_management: Ag
     assert created.agent.current_revision_id == created.revision.id
     assert created.revision.config == request.config
     assert created.revision.config_digest == digest_request(request.config)
-    assert len(created.revision.runtime_lock_digest) == 64
     assert created.revision.connector_tools == ()
     assert created.revision.mcp_tools == ()
 

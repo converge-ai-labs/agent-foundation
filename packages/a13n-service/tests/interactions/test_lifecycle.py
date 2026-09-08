@@ -179,7 +179,6 @@ async def _seed_run(sessions: async_sessionmaker[AsyncSession]) -> None:
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config_digest="a" * 64,
-        runtime_lock_digest="b" * 64,
         model_execution_observation=effective_agent_config().resolved_model.execution.observation(),
         priority=0,
         queue_name="default",

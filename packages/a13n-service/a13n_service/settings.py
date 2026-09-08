@@ -13,7 +13,7 @@ from a13n_logging import LogFormat
 from pydantic import EmailStr, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from a13n_service.agents.domain import PluginRuntimeMode
+from a13n_service.agents.domain import PluginKey
 from a13n_service.connectivity.bounds import (
     MAX_REDIRECTS,
     PROVIDER_REQUEST_MAX_BYTES,
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     iam_smtp_sender: EmailStr | None = None
     iam_smtp_tls: Literal["starttls", "tls"] = "starttls"
 
-    plugin_runtime_mode: PluginRuntimeMode = PluginRuntimeMode.on_demand
+    plugin_keys: tuple[PluginKey, ...] = Field(default=(), max_length=128)
     worker_concurrency: int = Field(default=8, ge=1, le=1024)
     subagent_reconcile_drain_seconds: float = Field(default=30, gt=0, le=3600)
     subagent_reconcile_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
@@ -96,30 +96,6 @@ class Settings(BaseSettings):
     worker_lease_seconds: float = Field(default=30, ge=12, le=3600)
     worker_cleanup_seconds: float = Field(default=10, gt=0, le=300)
     worker_drain_seconds: float = Field(default=30, gt=0, le=3600)
-    plugin_max_wheel_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
-    plugin_max_expanded_bytes: int = Field(default=200 * 1024 * 1024, ge=1, le=4 * 1024 * 1024 * 1024)
-    plugin_max_archive_members: int = Field(default=20_000, ge=1, le=1_000_000)
-    plugin_runtime_command_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
-    plugin_runtime_command_lease_seconds: float = Field(default=300, gt=3, le=3600)
-    plugin_runtime_resolver_executable: str = Field(default="uv", min_length=1, max_length=1024)
-    plugin_runtime_default_index_url: SecretStr = Field(
-        default=SecretStr("https://pypi.org/simple"),
-        min_length=1,
-        max_length=4096,
-        repr=False,
-    )
-    plugin_runtime_index_urls: tuple[SecretStr, ...] = Field(default=(), repr=False)
-    plugin_runtime_resolver_timeout_seconds: float = Field(default=120, gt=0, le=900)
-    plugin_runtime_resolver_max_packages: int = Field(default=512, ge=1, le=4096)
-    plugin_runtime_max_materialized_bytes: int = Field(
-        default=4 * 1024 * 1024 * 1024,
-        ge=1,
-        le=128 * 1024 * 1024 * 1024,
-    )
-    plugin_runner_ready_timeout_seconds: float = Field(default=60, gt=0, le=300)
-    plugin_runner_command_timeout_seconds: float = Field(default=30, gt=0, le=300)
-    plugin_runner_shutdown_timeout_seconds: float = Field(default=30, gt=0, le=300)
-    plugin_runner_max_processes: int = Field(default=8, ge=1, le=256)
     environment_provider_builtins: tuple[str, ...] = (
         "a13n.direct-local",
         "a13n.local-envd",

@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, Mock
 import httpx2
 import pytest
 from a13n_service.agents.domain import ChildAgentExecution, EffectiveAgentConfig, ResolvedSubagentEdge
-from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.connectivity import execution as tool_execution
 from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
@@ -21,8 +20,6 @@ from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.models.model_factory import NativeModelFactory
-from a13n_service.plugins.models import PluginRuntimeLockRecord
-from a13n_service.plugins.runtime import PluginRuntimeLock, default_runtime_target, installed_harness_version
 from a13n_service.process import worker as worker_composition
 from a13n_service.process.control.subagent import build_subagent_maintenance
 from a13n_service.secrets import SecretProtector
@@ -44,7 +41,7 @@ from ..connectivity.selection_helpers import (
 from ..connectivity.test_mcp_service import MCP_ENDPOINT
 from ..connectivity.test_remote_execution import ToolServer
 from . import test_attempt_execution as acceptance
-from .conftest import MODEL_ID, NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID, effective_agent_config
+from .conftest import MODEL_ID, ORGANIZATION_ID, USER_ID, WORKSPACE_ID, effective_agent_config
 from .test_subagent_acceptance import CHILD_AGENT_ID, CHILD_REVISION_ID, _grant_and_seed_child
 from .worker_helpers import worker_runtime
 
@@ -60,7 +57,7 @@ def rehash(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
     )
 
 
-def frozen_graph(mode, lock, request_limit=None):
+def frozen_graph(mode, request_limit=None):
     connector = ConnectorConnectionRunSelection(
         connector_connection_id=CONNECTOR_CONNECTION_ID,
         connector_provider_id=CONNECTOR_ID,
@@ -71,7 +68,6 @@ def frozen_graph(mode, lock, request_limit=None):
     child = rehash(
         base.model_copy(
             update={
-                "runtime_lock_digest": lock.digest,
                 "resolved_model": base.resolved_model.model_copy(
                     update={
                         "execution": base.resolved_model.execution.model_copy(
@@ -100,7 +96,6 @@ def frozen_graph(mode, lock, request_limit=None):
     return rehash(
         base.model_copy(
             update={
-                "runtime_lock_digest": lock.digest,
                 "subagent_mode": mode,
                 "resolved_subagents": (edge,),
                 "child_configs": {
@@ -127,14 +122,6 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
     request_limit,
     caplog,
 ):
-    lock = PluginRuntimeLock(
-        mode="on_demand",
-        runtime_target=default_runtime_target(),
-        worker_release="test",
-        harness_version=installed_harness_version(),
-        digest="0" * 64,
-    )
-    lock = lock.model_copy(update={"digest": lock.computed_digest()})
     parse_contexts = Mock(wraps=tool_execution.parse_native_contexts)
     monkeypatch.setattr(tool_execution, "parse_native_contexts", parse_contexts)
     failures = []
@@ -145,7 +132,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         return await original_failure(self, *args, **kwargs)
 
     monkeypatch.setattr(RunAttemptControl, "fail_execution", capture_failure)
-    config = frozen_graph(mode, lock, request_limit)
+    config = frozen_graph(mode, request_limit)
     await _grant_and_seed_child(interaction_sessions)
     await seed_selection_sources(
         interaction_sessions,
@@ -155,16 +142,6 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
     )
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
     async with transaction(interaction_sessions) as database:
-        database.add(
-            PluginRuntimeLockRecord(
-                digest=lock.digest,
-                schema_version="1",
-                mode="on_demand",
-                manifest=lock.model_dump(mode="json"),
-                created_at=NOW,
-            )
-        )
-        (await database.get(AgentRevisionRecord, CHILD_REVISION_ID)).runtime_lock_digest = lock.digest
         (await database.get(RoleBindingRecord, "rbac_3333333333333333")).role_key = "admin"
         provider = await database.get(ConnectorProviderRecord, CONNECTOR_ID)
         provider.configuration_json = {"endpoint": "https://connector.example", "tenant": "tenant-1"}
@@ -242,10 +219,9 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         tmp_path,
         monkeypatch,
         settings=settings,
-        lock=lock,
         model_factory=factory,
         connectors=fake_registry(FakeConnectorBackend()),
-    ) as (runtime, shared, _):
+    ) as (runtime, shared):
         loop = runtime.execution_loop
         assert loop is not None
         maintenance = build_subagent_maintenance(settings, shared, runtime.run_replay)

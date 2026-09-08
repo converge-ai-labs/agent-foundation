@@ -51,16 +51,12 @@ class ObjectCollector:
         self._limit = batch_limit
         self._timeout = item_timeout_seconds
         self._clock = clock
-        self._prefixes = ("organizations/", "plugins/artifacts/v1/")
-        self._prefix_index = 0
-        self._cursors: dict[str, str | None] = dict.fromkeys(self._prefixes)
+        self._cursor: str | None = None
         self._after_recovery_key = ""
 
     async def scan(self) -> Sweep:
-        prefix = self._prefixes[self._prefix_index]
-        self._prefix_index = (self._prefix_index + 1) % len(self._prefixes)
-        page = await self._objects.list(prefix=prefix, cursor=self._cursors[prefix], limit=self._limit)
-        self._cursors[prefix] = page.cursor
+        page = await self._objects.list(prefix="organizations/", cursor=self._cursor, limit=self._limit)
+        self._cursor = page.cursor
         cutoff = self._clock() - self._minimum_age
         keys = tuple(item.key for item in page.items if assume_utc(item.modified_at) < cutoff)
         result = await self._process(keys)

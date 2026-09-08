@@ -133,7 +133,6 @@ class BuiltinAgents:
                     record,
                     revision_id=revision_id,
                     version=1 if created else record.version + 1,
-                    mode=self._resolver.plugin_runtime_mode,
                     config=registration.config,
                     resolved=resolved,
                     source_revision_id=None,

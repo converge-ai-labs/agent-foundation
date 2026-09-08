@@ -131,7 +131,7 @@ No plaintext credential enters Agent configuration, Run state, discovered tool d
 
 ## Tool Discovery and Run Selection
 
-Tool discovery is authorization-dependent: two MCPConnections for the same endpoint can expose different tools. Management discovery is advisory and isolated by exact connection and current authorization. Run acceptance checks the configured resource and policy without remote discovery or a mandatory durable catalog. The executing Worker or Runner constructs a fresh Harness MCP client for each selected MCPConnection and discovers current tools directly from that endpoint.
+Tool discovery is authorization-dependent: two MCPConnections for the same endpoint can expose different tools. Management discovery is advisory and isolated by exact connection and current authorization. Run acceptance checks the configured resource and policy without remote discovery or a mandatory durable catalog. The executing Worker constructs a fresh Harness MCP client for each selected MCPConnection and discovers current tools directly from that endpoint.
 
 The conceptual accepted selection is:
 

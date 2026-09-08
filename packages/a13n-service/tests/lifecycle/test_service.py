@@ -225,7 +225,6 @@ async def test_run_attempt_lifecycle_resolves_authority_through_owning_run(
                 status=RunAttemptStatus.leased,
                 worker_id="worker-1",
                 worker_build_id="build-1",
-                runtime_lock_digest=run.runtime_lock_digest,
                 model_execution_observation=run.to_resource().model_execution_observation,
                 lease_token_digest="d" * 64,
                 lease_expires_at=NOW + timedelta(minutes=5),

@@ -8,18 +8,18 @@ Creating an Agent atomically creates Revision v1. Creating a genuinely different
 
 A Run selects one exact `AgentRevision` at durable acceptance. Its current `RunAttemptExecutor` reconstructs process-local Harness `AgentDefinition`, `SubagentDefinition`, `ExecutableAgent`, and Plugin objects from the Run's complete frozen `EffectiveAgentConfig` graph. Those Python values are never management resources or durable payloads.
 
-[Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) owns Plugin and PluginVersion identity, selection, lifecycle, commands, artifacts, and Runtime behavior. Agent Management embeds only typed Plugin selections and exact resolved locks into Agent configuration and Revisions.
+[Installed Harness Plugins](36-installed-harness-plugins.md) owns installed factory selection, configuration compatibility, and rolling code updates. Agent Management freezes authored and normalized plugin configuration without pinning executable code.
 
 ```mermaid
 flowchart LR
     Config[Complete AgentConfig] -->|Create or create Revision| Revision[Immutable AgentRevision]
     Revision -->|Advance atomically| Current[Agent current Revision]
-    Plugins[Managed Plugin selections] --> Revision
+    Plugins[Installed Plugin selections] --> Revision
     Current --> Acceptance[Implicit Run selection]
     Revision -->|Frozen bindings and policy| Acceptance
     Override[Typed AgentRunOverride] --> Acceptance
     Acceptance --> Run[Persisted Run with exact Revision and effective config]
-    Run -->|Pins lock digest| Worker[Worker or Runner execution process]
+    Run -->|Frozen configuration| Worker[Worker execution process]
     Worker --> Definition[Process-local AgentDefinition graph]
     Definition --> Harness[Agent Harness]
 ```
@@ -29,7 +29,7 @@ flowchart LR
 | Concern                                                                           | Owner                                                                                                                                                                                                                                                               | Relationship                                                                |
 | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Agent identity, Revisions, current selection, lifecycle, Duplicate, and overrides | This document                                                                                                                                                                                                                                                       | Defines the durable Agent management model                                  |
-| Plugin identity, Versions, selection, lifecycle, commands, artifacts, and Runtime | [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md)                                                                                                                                                                                    | Supplies typed selections and exact resolved locks to Agents                |
+| Installed plugin selection, configuration compatibility, and deployment           | [Installed Harness Plugins](36-installed-harness-plugins.md)                                                                                                                                                                                                        | Supplies typed selections and normalized configuration to Agents            |
 | Plugin factories, configured instances, middleware, and Capability contribution   | [Harness Plugin System](../a13n-harness/05-plugin-system.md)                                                                                                                                                                                                        | Builds concrete process-local plugins from an explicitly selected catalog   |
 | Agent execution, state, and process-local subagent graph                          | Agent Harness                                                                                                                                                                                                                                                       | Receives reconstructed definitions and fresh run bindings                   |
 | Run identity, acceptance, persistence, lineage, and recovery                      | [Agent Interaction and Execution Model](10-agent-interaction-and-execution-model.md), [Agent Control](18-agent-control-input-and-continuation.md), [Durable Run State](12-run-persistence.md), and [RunAttempt Recovery](13-run-attempt-scheduling-and-recovery.md) | Persist and reuse the exact selected Revision and effective config          |
@@ -180,7 +180,7 @@ class AgentConfig:
     protocol: ProtocolConfig
 ```
 
-The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Service- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key. Primary Environment selection is independent Thread/Run context under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection). `ChildEnvironmentPolicy.template_revision_id` is required exactly for `dedicated`; `shared` uses the spawning Run's Environment and `none` supplies no environment. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
+The [`PluginSelection` contract](36-installed-harness-plugins.md#configuration-and-recovery) selects an installed factory key, instance name, and bounded configuration. `instructions` is the Agent's stable system prompt; Service- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key. Primary Environment selection is independent Thread/Run context under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection). `ChildEnvironmentPolicy.template_revision_id` is required exactly for `dedicated`; `shared` uses the spawning Run's Environment and `none` supplies no environment. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
 
 `connector_tools` and `mcp_tools` are ordered lists keyed semantically by their managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within either category are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
@@ -190,7 +190,7 @@ The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent
 
 The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, Environment adapter, attachment session, entered facade, arbitrary artifact URL, or other process-local value. Revision creation is the sole authoritative resolve-and-build validation path.
 
-`input_adapter` selects one trusted adapter key and bounded configuration. Every Revision accepts the common [`AgentInput`](17-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the pinned Runtime lock before invoking the adapter. Replacement execution attempts reuse the same Revision, adapter configuration, accepted input, and Runtime lock.
+`input_adapter` selects one trusted adapter key and bounded configuration. Every Revision accepts the common [`AgentInput`](17-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the frozen configuration and state before invoking the adapter. Replacement execution attempts reuse the same Revision, adapter configuration, accepted input,.
 
 When `asset_publication` is present, the trusted Service `AssetCapability` exposes `publish_asset`. Each execution attempt binds only its current authorized Environment; the tool fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable it.
 
@@ -212,7 +212,7 @@ candidate = (overridden Agent selections when inherit_agent else empty) + includ
 effective = candidate intersect current authorization and deployment policy
 ```
 
-`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, instructions, output contract, Plugins, subagents, Runtime lock, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
+`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, instructions, output contract, Plugins, subagents, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
 
 The accepted Run retains the complete effective selections and the revision locks required by each capability owner. Connection selections retain source identity, tool scope, and deferred-loading policy; [external tool discovery](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery) supplies current schemas without a durable tool snapshot. Replacement RunAttempts preserve those selections and locks while revalidating authority and discovering current external tools. Model input and tool output cannot create or modify an overlay.
 
@@ -272,7 +272,7 @@ Within `model`, an absent `model_key` inherits the Agent selection; a supplied k
 
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
-Plugin override replacement and resolution follow the [managed Plugin selection contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Run overrides select managed resources and accept no direct credential values. The owning resource domain resolves current credentials at its execution boundary.
+Plugin override replacement and resolution follow the [installed Plugin selection contract](36-installed-harness-plugins.md#configuration-and-recovery). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Run overrides select managed resources and accept no direct credential values. The owning resource domain resolves current credentials at its execution boundary.
 
 The resolved non-secret result has this conceptual shape:
 
@@ -284,8 +284,7 @@ class EffectiveAgentConfig:
     model: EffectiveAgentModel
     instructions: str
     input_adapter: InputAdapterConfig
-    plugins: tuple[ResolvedPluginVersion, ...]
-    runtime_lock_digest: str
+    plugins: tuple[PluginSelection, ...]
     skills: tuple[SkillRevisionLock, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
@@ -301,7 +300,7 @@ class EffectiveAgentConfig:
 
 `subagent_mode` selects one standard Harness Tool surface for the accepted Run. The default `inline` executes the entire descendant graph in the parent Attempt and borrows its Environment facade. `async` delegates each direct child as an independent durable Run; when that child is claimed, its own accepted `subagent_mode` governs its descendants. A single Harness invocation does not mix the inline and asynchronous Tool surfaces. This field is selected by the Agent Revision, not a Run override.
 
-Each `child_configs` entry contains the child `agent_id`, `revision_content_digest`, complete recursive `effective_config`, and frozen `connector_connection_selections` and `mcp_connection_selections`. Its key is the exact child Revision ID from a resolved edge. The parent acceptance prepares the complete finite graph and revalidates all prepared evidence in the final transaction. Each node freezes its own Model execution, merged settings, Skill locks, Plugin lock, and connection selections. The root digest covers these descendant snapshots. A child never substitutes the parent's Model or selectable capabilities. Asynchronous child admission copies the accepted child snapshot and rejects a changed config or connection scope; a retained child continuation preserves its own source snapshot.
+Each `child_configs` entry contains the child `agent_id`, `revision_content_digest`, complete recursive `effective_config`, and frozen `connector_connection_selections` and `mcp_connection_selections`. Its key is the exact child Revision ID from a resolved edge. The parent acceptance prepares the complete finite graph and revalidates all prepared evidence in the final transaction. Each node freezes its own Model execution, merged settings, Skill locks, normalized Plugin configuration, and connection selections. The root digest covers these descendant snapshots. A child never substitutes the parent's Model or selectable capabilities. Asynchronous child admission copies the accepted child snapshot and rejects a changed config or connection scope; a retained child continuation preserves its own source snapshot.
 
 Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. Its Skill entries are the exact five-field [`SkillRevisionLock`](31-skill-management.md#agent-selection-and-run-locking) values selected at that acceptance boundary. Retry, waiting Continue, deferred-action completion, and other successor operations preserve the source snapshot when their owning contract requires it; Worker replacement of the same accepted Run always reuses it. No execution attempt re-reads an Agent or Skill head or reapplies merge rules. Input, Environment selection, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
 
@@ -324,12 +323,10 @@ class AgentRevision:
     workspace_id: WorkspaceId
     agent_id: AgentId
     version: int
-    plugin_runtime_mode: Literal["on_demand", "runner"]
     config: AgentConfig
     config_digest: str
     resolved_model: ResolvedAgentModel
-    resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
-    runtime_lock_digest: str
+    resolved_plugins: tuple[PluginSelection, ...]
     resolved_skills: tuple[ResolvedSkillBinding, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
@@ -340,9 +337,9 @@ class AgentRevision:
     created_at: datetime
 ```
 
-Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, stable managed-resource binding and selection policy, Runtime lock, and subagent Revision. For an unpinned Skill, it covers `skill_id`, `skill_key`, and the absence of a version, not whichever current SkillRevision a later Run resolves. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
+Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, stable managed-resource binding and selection policy, and subagent Revision. For an unpinned Skill, it covers `skill_id`, `skill_key`, and the absence of a version, not whichever current SkillRevision a later Run resolves. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
 
-`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The resolved Model field retains only stable Model identity, Agent-authored setting overrides, and characteristics; Run acceptance resolves the latest Model execution selection and effective settings under Model Management. Resolved Skill bindings freeze stable `skill_id` identity and pinned-or-current policy; only a pinned binding identifies versioned content before Run acceptance. The other resolved fields freeze ConnectorConnection and MCPConnection selections, and the complete child Revision graph with exact dedicated Environment template revisions. Secret values, current authorization, current Model and Provider configuration/lifecycle, an unpinned Skill's current Revision, live ConnectorProvider availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
+`resolved_plugins` freezes normalized installed-plugin configuration under the [plugin contract](36-installed-harness-plugins.md#configuration-and-recovery). The resolved Model field retains only stable Model identity, Agent-authored setting overrides, and characteristics; Run acceptance resolves the latest Model execution selection and effective settings under Model Management. Resolved Skill bindings freeze stable `skill_id` identity and pinned-or-current policy; only a pinned binding identifies versioned content before Run acceptance. The other resolved fields freeze ConnectorConnection and MCPConnection selections, and the complete child Revision graph with exact dedicated Environment template revisions. Secret values, current authorization, current Model and Provider configuration/lifecycle, an unpinned Skill's current Revision, live ConnectorProvider availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
 
 ## Creation, Revision, and Restore
 
@@ -352,7 +349,7 @@ Create Revision accepts `expected_version` and one complete replacement `config`
 
 1. authorize the operation and every referenced resource;
 2. verify the expected Agent version;
-3. resolve exact Model identity, Plugin versions, stable Skill bindings, ConnectorConnection, and subagent dependencies, including dedicated child Environment template revisions;
+3. resolve exact Model identity, normalized installed Plugin configuration, stable Skill bindings, ConnectorConnection, and subagent dependencies, including dedicated child Environment template revisions;
 4. verify schemas, the finite acyclic subagent graph, Plugin evidence, and reconstruction compatibility;
 5. canonicalize the frozen content and compute its digests;
 6. return the current Agent and Revision unchanged for a semantic no-op; or
@@ -383,7 +380,7 @@ A parent config declares each named child edge with a stable `agent_id`, optiona
 
 Advancing a child Agent later does not change an existing parent Revision. The parent adopts new child behavior only through another parent Revision. Workers recursively reconstruct the exact finite graph into Harness `SubagentDefinition` values. A Run Override may patch the managed child roster by stable local name; acceptance resolves and freezes the complete resulting graph before work starts.
 
-An asynchronous hosted child receives its own Thread, Run, RunAttempts, fresh `RunBindings`, the Environment selected through its frozen child policy, the exact child Revision, and a compatible Runtime lock under [Async Subagents](34-async-subagents.md). Shared children use the spawning Run's Environment; dedicated children allocate from their exact template revision. Preparation is eager or lazy under that Environment's policy. Inline children borrow the active Harness facade.
+An asynchronous hosted child receives its own Thread, Run, RunAttempts, fresh `RunBindings`, the Environment selected through its frozen child policy, the exact child Revision, under [Async Subagents](34-async-subagents.md). Shared children use the spawning Run's Environment; dedicated children allocate from their exact template revision. Preparation is eager or lazy under that Environment's policy. Inline children borrow the active Harness facade.
 
 ## Run Selection and Reconstruction
 
@@ -395,17 +392,17 @@ Durable acceptance:
 2. requires the Agent to be enabled and unarchived;
 3. validates that the exact Revision belongs to the Agent, remains retained and executable, and satisfies current authorization and compatibility requirements;
 4. applies the typed config override and capability overlay and resolves every final selection, including every Skill binding to an exact Revision lock;
-5. freezes the complete non-secret `EffectiveAgentConfig` and exact Runtime lock;
+5. freezes the complete non-secret `EffectiveAgentConfig`;
 6. when an Environment is selected, fixes the Run's Environment ID and access ceiling independently of `EffectiveAgentConfig`, and updates the Thread default; and
-7. persists `agent_id`, exact `agent_revision_id`, selector kind, effective-config digest, and `runtime_lock_digest` on the accepted execution state.
+7. persists `agent_id`, exact `agent_revision_id`, selector kind, effective-config digest on the accepted execution state.
 
 Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Their pinned Skill selections remain exact; their unpinned selections resolve current Revisions within the `skill_id` bindings frozen in that historical AgentRevision. Account reception and Schedule definitions store the stable Agent identity and resolve the current AgentRevision for each occurrence. Retry, waiting feedback, and other successor operations preserve source Skill locks where required but still pass current Skill lifecycle gates before a new Run is accepted. Recovery and Worker replacement of an already accepted Run use its exact Revision and effective configuration.
 
-For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and a ready or transparently lazy Environment operation object, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, effective model settings, Plugin code, dependencies, other managed-resource Revisions, child graph, external tool source selections and scopes, output contract, logical Environment selection, or retry budgets. Model catalog profile and limits remain descriptive metadata under Model Management rather than frozen execution settings.
+For each outbound model request, the Worker rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker validates frozen configuration and state against the installed build, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and a ready or transparently lazy Environment operation object, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, effective model settings, other managed-resource Revisions, child graph, external tool source selections and scopes, output contract, logical Environment selection, or retry budgets. Model catalog profile and limits remain descriptive metadata under Model Management rather than frozen execution settings.
 
 ## Managed Harness Plugin Reference
 
-`AgentConfig.plugins`, `AgentRunOverride.plugins`, `AgentRevision.plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` use the canonical [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) contract. That document exclusively owns Plugin and PluginVersion identity, selection variants, lifecycle, commands, Wheel and dependency artifacts, Runtime locks, loading, activation, and failure semantics. This document owns only where selections and immutable results are embedded in Agent configuration, Revision creation, Run overrides, and reconstruction.
+`AgentConfig.plugins` and `AgentRunOverride.plugins` select installed keys and configurations. `AgentRevision.resolved_plugins` and the effective Run configuration freeze normalized selections under [Installed Harness Plugins](36-installed-harness-plugins.md). The Worker constructs fresh plugin instances from that configuration; compatible code may change between Attempts through rolling deployment.
 
 ## Persistence
 
@@ -465,4 +462,4 @@ Atomically creating and advancing immutable Revisions removes a mutable draft/de
 07. Historical AgentRevision invocation never falls back to another AgentRevision; only explicitly unpinned Skill bindings and other owner-defined mutable selections resolve at new Run acceptance.
 08. Restore copies retained content into a new later Revision and never moves the Agent head backward.
 09. ProtocolConfig is Agent-owned Revision content rather than another resource, digest, or per-Agent protocol switch.
-10. Plugin identity and lifecycle remain owned exclusively by the managed Plugin contract; Agent Management stores only typed selections and resolved locks.
+10. Plugin code and dependencies belong to the Service build; Agent Management stores typed selections and normalized configuration under the installed Plugin contract.

@@ -45,7 +45,6 @@ class AttemptContext:
     lease_token: str = field(repr=False)
     worker_id: str
     worker_build_id: str
-    runtime_lock_digest: str
     lease_duration: timedelta
     renewal_interval: timedelta
     renewal_timeout: timedelta
@@ -439,8 +438,6 @@ def _validate_lease(
         or attempt.attempt_number != authority.attempt_number
         or attempt.worker_id != authority.worker_id
         or attempt.worker_build_id != authority.worker_build_id
-        or run.runtime_lock_digest != authority.runtime_lock_digest
-        or attempt.runtime_lock_digest != authority.runtime_lock_digest
         or not token_matches
         or assume_utc(attempt.lease_expires_at) <= now
     ):

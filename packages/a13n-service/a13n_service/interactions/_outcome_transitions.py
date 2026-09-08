@@ -54,7 +54,6 @@ def validate_outcome_candidate_scope(
         or envelope.agent_id != run.agent_id
         or envelope.agent_revision_id != run.agent_revision_id
         or envelope.effective_agent_config.content_digest != run.effective_agent_config_digest
-        or envelope.runtime_lock_digest != run.runtime_lock_digest
     ):
         raise RunOutcomeError("state candidate scope or frozen execution selection does not match the Run")
 

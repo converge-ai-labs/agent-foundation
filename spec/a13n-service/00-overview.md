@@ -6,7 +6,7 @@ a13n Service is the optional modular durable Host for Agent Foundation. It keeps
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item`. Service persists each hosted Thread as an independent versioned relational resource, uses `Run` as the durable Agent-work, scheduling, recovery, state, outcome, and authority-Principal boundary, and uses `RunAttempt` as one replaceable fenced worker generation. Every Service-managed Agent invocation accepts a Run with one immutable User or Service Account Principal whose current authority is re-evaluated for execution; Service defines no separate durable Execution resource.
 
-The worker embeds the public Harness Python API through the deployment's selected [Plugin Runtime profile](36-managed-harness-plugins-and-runtime.md). Run acceptance pins an internal Runtime lock. The default on-demand `WorkerExecutionLoop` preflights exact PluginVersions before claim; the optional runner profile starts clean lock-scoped child processes whose loops scan only their exact lock. After reserving bounded local capacity, a winning claim starts one process-local `RunAttemptExecutor` root task with `LeaseMonitor` and `ControlWatcher` as its only Service child tasks. One non-task `RunAttemptControl` facade serializes local control through a private gate, while one non-task `HarnessDriver` runs in the root task and owns every Harness stream call. Each Capability hook borrows its raw Harness context only long enough for the driver to wrap it in a callback-scoped `HarnessHookBoundary`; the control facade receives only that boundary. The executor reconstructs process-local Agent values, materializes exact [managed Skill revisions](31-skill-management.md) as inert Environment content, and supplies a fresh ready or lazy operation object for the Run's fixed logical Environment. The shared Provider implementation prepares targets and connections. Service coordinates creation, resume, confirmed-loss rebuild, keepalive and separate stop/delete deadlines for idle and approval waiting; Harness only binds and closes local scopes. [Environment Management](29-environment-management.md) owns this lifecycle. Service supplies no hosted-process run capability: background shell uses the Harness Run-owned controller, receives active-Run completion readiness, and has no cross-Run lookup or idle wake. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
+The Worker embeds the public Harness Python API and uses its startup-loaded [installed plugin catalog](36-installed-harness-plugins.md). Plugin code and dependencies update only through image rolling deployment. After reserving bounded local capacity, a winning claim starts one process-local `RunAttemptExecutor` root task with `LeaseMonitor` and `ControlWatcher` as its only Service child tasks. One non-task `RunAttemptControl` facade serializes local control through a private gate, while one non-task `HarnessDriver` runs in the root task and owns every Harness stream call. Each Capability hook borrows its raw Harness context only long enough for the driver to wrap it in a callback-scoped `HarnessHookBoundary`; the control facade receives only that boundary. The executor reconstructs process-local Agent values, materializes exact [managed Skill revisions](31-skill-management.md) as inert Environment content, and supplies a fresh ready or lazy operation object for the Run's fixed logical Environment. The shared Provider implementation prepares targets and connections. Service coordinates creation, resume, confirmed-loss rebuild, keepalive and separate stop/delete deadlines for idle and approval waiting; Harness only binds and closes local scopes. [Environment Management](29-environment-management.md) owns this lifecycle. Service supplies no hosted-process run capability: background shell uses the Harness Run-owned controller, receives active-Run completion readiness, and has no cross-Run lookup or idle wake. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -41,7 +41,7 @@ flowchart LR
     ControlBus[Thread control signal Redis Streams]
 
     subgraph WorkerRole[Worker role]
-        Loop[WorkerExecutionLoop<br/>on-demand or lock-scoped Runner]
+        Loop[WorkerExecutionLoop<br/>installed plugin catalog]
         Keeper[EnvironmentMaintenanceLoop<br/>Worker lifecycle coordination]
         Executor[RunAttemptExecutor]
         Reconstruct[Trusted reconstruction]
@@ -70,7 +70,7 @@ flowchart LR
     Authoring & Interaction & Lifecycle & ConnectivityControl & Feedback & Queue & ActiveControl --> Database
     AsyncResult -->|scan pending results and accept eligible Runs| Database
     ActiveControl -. best-effort wakeup .-> ControlBus --> Executor
-    Loop -->|scan, preflight, claim, and takeover| Database
+    Loop -->|scan, claim, and takeover| Database
     Loop -->|reserved slot and claimed Attempt| Executor
     Keeper -->|scan and claim due Environments| Database
     Keeper -->|keepalive, stop, or delete outside transaction| LifecycleProvider
@@ -155,7 +155,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Worker["Service Worker"]
-        Loop["WorkerExecutionLoop<br/>scan · preflight · capacity · claim"]
+        Loop["WorkerExecutionLoop<br/>scan · capacity · claim"]
 
         subgraph Executor["one RunAttemptExecutor async scope"]
             Root["Executor root task<br/>lifecycle · outcome · cleanup"]
@@ -207,7 +207,7 @@ flowchart TB
 | Organization, Workspace, identity, and resource authorization           | [Service IAM](33-identity-and-access-management.md)                                                   | Applies to every public and internal product operation                                                             |
 | Agents, immutable Revisions, stable managed Skill bindings, and Models  | Service control plane                                                                                 | Selects exact Agent inputs and freezes current Model and Skill configuration per Run                               |
 | Immutable Workspace Assets                                              | [Asset Management](32-asset-management.md)                                                            | Publishes exact binary identity and supplies authorized Run input, output, and protocol references                 |
-| Managed Harness plugin artifacts and Runtime locks                      | Service control plane and Worker runtime                                                              | Preflights on demand or stages exact trusted Runner environments                                                   |
+| Installed Harness plugins                                               | Service build and Worker process                                                                      | Validates frozen configuration against the startup-loaded factory catalog                                          |
 | Inbound event admission and outbound external tools                     | [External Connectivity](40-connectivity/README.md)                                                    | Connectivity handles inbound events; Workers execute local MCP groups and remote clients under shared authority    |
 | Durable Thread resource                                                 | Service                                                                                               | Owns Session membership, origin, current Run, continuation head, and version                                       |
 | Run and RunAttempt                                                      | Service                                                                                               | Own durable scheduling, state, fencing, recovery, and outcome                                                      |
@@ -255,7 +255,7 @@ sequenceDiagram
     Control->>Control: authorize, resolve Agent Revision and typed override into EffectiveAgentConfig
     Control->>DB: publish initial state and commit Thread advancement and Run
     Control-->>Caller: durable acceptance
-    Loop->>DB: scan and profile-preflight eligible Runtime lock
+    Loop->>DB: scan eligible Runs
     Loop->>Loop: reserve bounded executor capacity
     Loop->>DB: transactionally claim next compatible RunAttempt generation
     Loop->>Executor: start one async task with AttemptContext

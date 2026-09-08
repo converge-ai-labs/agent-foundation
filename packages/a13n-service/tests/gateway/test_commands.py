@@ -65,8 +65,10 @@ def _actor() -> AuthenticatedActor:
     )
 
 
-def _frozen(*, runtime_lock_digest: str = "a" * 64) -> FrozenAgentInvocation:
-    config = effective_agent_config().model_copy(update={"runtime_lock_digest": runtime_lock_digest})
+def _frozen(*, content_digest: str | None = None) -> FrozenAgentInvocation:
+    config = effective_agent_config()
+    if content_digest is not None:
+        config = config.model_copy(update={"content_digest": content_digest})
     return FrozenAgentInvocation(
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
@@ -373,7 +375,7 @@ async def test_start_rejects_final_invocation_drift_without_committing_run(
         interaction_sessions,
         interaction_object_store,
         _Preparation(),
-        _Freezing([_frozen(), _frozen(runtime_lock_digest="b" * 64)]),
+        _Freezing([_frozen(), _frozen(content_digest="b" * 64)]),
     )
 
     with pytest.raises(InteractionCommandError) as captured:

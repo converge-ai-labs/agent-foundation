@@ -84,7 +84,6 @@ def prepare_async_result_successor(
         agent_id=selected_parent.agent_id,
         agent_revision_id=selected_parent.agent_revision_id,
         effective_agent_config_digest=config.content_digest,
-        runtime_lock_digest=selected_parent.runtime_lock_digest,
         model_execution_observation=selected_parent.model_execution_observation,
         connector_connection_selections=selected_parent.connector_connection_selections,
         mcp_connection_selections=selected_parent.mcp_connection_selections,
@@ -120,7 +119,6 @@ def _validate_authority(
         or selected_parent_state.agent_id != selected_parent.agent_id
         or selected_parent_state.agent_revision_id != selected_parent.agent_revision_id
         or selected_parent_state.effective_agent_config.content_digest != selected_parent.effective_agent_config_digest
-        or selected_parent_state.runtime_lock_digest != selected_parent.runtime_lock_digest
     ):
         raise ValueError("selected parent state does not match its sealed Run")
     if (

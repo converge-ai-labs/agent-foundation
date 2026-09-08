@@ -26,5 +26,3 @@ def test_workspace_roles_grant_connectivity_actions_explicitly() -> None:
     assert WorkspaceAction.skill_revision_publish in builder
     assert admin_only.isdisjoint(builder)
     assert admin_only <= admin
-    assert WorkspaceAction.plugin_manage not in admin
-    assert WorkspaceAction.plugin_runtime_manage not in admin

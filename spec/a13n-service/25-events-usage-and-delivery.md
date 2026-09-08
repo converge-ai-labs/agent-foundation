@@ -117,7 +117,7 @@ Public Workspace UsageRecord List authorizes `usage.read` from the IAM [stable a
 
 - Organization, Workspace, Session, Thread, and Run;
 - originating RunAttempt and Harness Run;
-- stable Agent, exact AgentRevision, effective-config digest, and Runtime lock digest; and
+- stable Agent, exact AgentRevision, effective-config digest, digest; and
 - accepted `model_id`, provider type, and model name from the RunAttempt observation, plus model/provider identity and measures from the record.
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Service deduplicates all paths by immutable `record_id` and rejects conflicting content for the same identity.

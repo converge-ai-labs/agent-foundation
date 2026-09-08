@@ -3,13 +3,12 @@
 import re
 from datetime import datetime
 
-from sqlalchemy import String, cast, exists, or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.assets.models import AssetRecord
 from a13n_service.gateway.models import AguiRunBindingRecord
 from a13n_service.interactions.models import RunRecord
-from a13n_service.plugins.models import PluginRuntimeLockRecord, PluginVersionRecord
 from a13n_service.skills.models import SkillRevisionRecord, SkillUploadRecord
 
 _RUN = re.compile(
@@ -18,7 +17,6 @@ _RUN = re.compile(
 _AGUI = re.compile(r"organizations/([^/]+)/gateway/hosted-agui/([^/]+)/replay/version-1\.json")
 _ASSET = re.compile(r"organizations/([^/]+)/workspaces/([^/]+)/assets/version-1/([^/]+)/content")
 _SKILL = re.compile(r"organizations/([^/]+)/workspaces/([^/]+)/skills/packages/version-1/([0-9a-f]{64})\.zip")
-_WHEEL = re.compile(r"plugins/artifacts/v1/sha256/[0-9a-f]{64}\.whl")
 
 
 async def retained_owner(database: AsyncSession, key: str, *, now: datetime) -> bool | None:
@@ -26,7 +24,7 @@ async def retained_owner(database: AsyncSession, key: str, *, now: datetime) -> 
 
     A retained Run owns its state, replay, and payload namespace: payloads may
     still be referenced inside a retained checkpoint, beyond the public Run row.
-    Neither Run history nor successful Skill/Plugin publications has a new TTL.
+    Neither Run history nor successful Skill publications has a new TTL.
     """
     if match := _RUN.fullmatch(key):
         organization_id, run_id = match.groups()
@@ -82,17 +80,6 @@ async def retained_owner(database: AsyncSession, key: str, *, now: datetime) -> 
                             SkillUploadRecord.expires_at > now,
                             SkillUploadRecord.manifest["content_digest"].as_string() == digest,
                         ),
-                    )
-                )
-            )
-        )
-    if _WHEEL.fullmatch(key):
-        return bool(
-            await database.scalar(
-                select(
-                    or_(
-                        exists().where(PluginVersionRecord.artifact_ref == key),
-                        exists().where(cast(PluginRuntimeLockRecord.manifest, String).contains(key)),
                     )
                 )
             )

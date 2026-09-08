@@ -261,7 +261,6 @@ class AgentRevisions:
                     record,
                     revision_id=new_agent_revision_id(),
                     version=record.version + 1,
-                    mode=self._resolver.plugin_runtime_mode,
                     config=prepared.config,
                     resolved=resolved,
                     source_revision_id=source_revision_id,

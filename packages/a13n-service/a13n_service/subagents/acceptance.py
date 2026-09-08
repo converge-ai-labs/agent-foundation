@@ -595,12 +595,11 @@ async def _reauthorize(
         if (
             child_agent is None
             or child_revision is None
-            or child_revision.runtime_lock_digest != child.runtime_lock_digest
             or child_definition_id != f"agent-config-{child_revision.content_digest[:24]}"
         ):
             raise ChildRunAcceptanceError(
                 "child_run_revision_unavailable",
-                "Frozen child Agent revision or Runtime lock is no longer executable",
+                "Frozen child Agent revision is no longer executable",
             )
     except AuthorizationError as error:
         raise ChildRunAcceptanceError(

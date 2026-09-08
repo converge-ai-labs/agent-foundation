@@ -20,12 +20,11 @@ from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.iam.runtime import build_identity_runtime, initialize_identity
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
-from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.agents import AgentResources
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
-from a13n_service.process.runtime import ControlRuntime, SharedRuntime, WorkerRuntime
+from a13n_service.process.runtime import ControlRuntime, SharedRuntime
 from a13n_service.process.submission import build_input_commands
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
 from a13n_service.settings import Settings
@@ -37,7 +36,6 @@ from .collection import build_collection_tasks
 from .environment import build_environment_service
 from .hook import build_hook_bundle
 from .model import build_model_bundle
-from .plugin import build_plugin_bundle
 from .recovery import build_recovery_tasks
 from .skill import build_skill_bundle
 from .subagent import build_subagent_maintenance
@@ -49,7 +47,6 @@ async def build_control_runtime(
     components: Components,
     shared: SharedRuntime,
     execution: ExecutionResources,
-    worker: WorkerRuntime | None,
     environment_catalog: EnvironmentProviderCatalog,
     agent_resources: AgentResources,
     trace_query_provider_registry: TraceQueryProviderRegistry,
@@ -69,24 +66,9 @@ async def build_control_runtime(
         stack,
     )
     environments = build_environment_service(shared, environment_catalog)
-    local_runner = (
-        worker.plugin_runtime
-        if worker is not None and isinstance(worker.plugin_runtime, PluginRunnerSupervisor)
-        else None
-    )
-    plugins = await build_plugin_bundle(
-        settings,
-        components,
-        shared,
-        execution,
-        local_runner,
-        agent_resources.plugins,
-        stack,
-    )
     skills = await build_skill_bundle(components, shared, execution, stack)
     models = build_model_bundle(settings, components, shared, execution)
     agents = build_agent_management(
-        settings,
         components,
         shared,
         agent_resources,
@@ -212,7 +194,6 @@ async def build_control_runtime(
     runtime = ControlRuntime(
         trace_queries=trace_queries,
         environments=environments,
-        plugins=plugins.service,
         skill_uploads=skills.uploads,
         skill_publication=skills.publication,
         skill_catalog=skills.catalog,
@@ -237,8 +218,6 @@ async def build_control_runtime(
     background_tasks.extend(build_collection_tasks(settings, shared))
     if a2a_publisher is not None:
         background_tasks.append(BackgroundTask("A2A push publisher", a2a_publisher.run))
-    if plugins.background_task is not None:
-        background_tasks.append(plugins.background_task)
     return runtime, tuple(background_tasks)
 
 

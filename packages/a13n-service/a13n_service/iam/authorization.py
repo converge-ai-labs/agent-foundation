@@ -29,9 +29,6 @@ class WorkspaceAction(StrEnum):
     asset_delete = "asset.delete"
     models_read = "models.read"
     models_manage = "models.manage"
-    plugin_read = "plugin.read"
-    plugin_manage = "plugin.manage"
-    plugin_runtime_manage = "plugin.runtime.manage"
     secrets_read = "secrets.read"
     secrets_manage = "secrets.manage"
     skill_read = "skill.read"
@@ -97,7 +94,6 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.asset_read,
         WorkspaceAction.agent_read,
         WorkspaceAction.models_read,
-        WorkspaceAction.plugin_read,
         WorkspaceAction.secrets_read,
         WorkspaceAction.skill_read,
         WorkspaceAction.environment_provider_read,

@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from a13n_environment import EnvironmentProviderCatalog
+from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
-from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
@@ -16,12 +16,6 @@ from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
 from a13n_service.connectivity.providers import built_in_ingress_adapter_registry
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.models.service import ModelConnectionTester
-from a13n_service.plugins.builtins import BuiltinPluginArtifact
-from a13n_service.plugins.commands import (
-    PluginRuntimeCandidateResolver,
-    PluginRuntimeCommandDispatcher,
-    PluginRuntimeStagingAuthority,
-)
 from a13n_service.process.roles import owns_connectivity_data, owns_control, owns_worker
 from a13n_service.settings import Settings
 from a13n_service.skills.github import GitHubSkillAcquirer
@@ -37,10 +31,6 @@ class Components:
     request_authenticator: RequestAuthenticator | None = None
     agent_resolver: AgentResolver | None = None
     agent_invocation_resolver: AgentInvocationResolver | None = None
-    agent_plugin_selection_resolver: AgentPluginSelectionResolver | None = None
-    plugin_runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None
-    plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
-    plugin_runtime_staging_authority: PluginRuntimeStagingAuthority | None = None
     model_connection_tester: ModelConnectionTester | None = None
     environment_provider_catalog: EnvironmentProviderCatalog | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
@@ -50,7 +40,7 @@ class Components:
     ingress_adapter_registry: AdapterRegistry[IngressAdapter] | None = None
     connector_provider_registry: ConnectorProviderRegistry | None = None
     input_acceptor: InputAcceptor | None = None
-    builtin_plugin_artifacts: tuple[BuiltinPluginArtifact, ...] = ()
+    plugin_factory_catalog: HarnessPluginFactoryCatalog | None = None
 
 
 def snapshot_components(settings: Settings, components: Components) -> Components:

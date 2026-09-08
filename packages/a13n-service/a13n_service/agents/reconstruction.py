@@ -23,7 +23,6 @@ from a13n_harness.errors import HarnessError
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
     HarnessPluginFactoryContext,
-    HarnessPluginFactoryRegistration,
 )
 from a13n_harness.plugins import AbstractHarnessPlugin
 from a13n_harness.tools.client import (
@@ -31,7 +30,6 @@ from a13n_harness.tools.client import (
     ClientToolsetDefinition,
     ClientToolsSpec,
 )
-from packaging.utils import canonicalize_name
 from pydantic_ai.agent.abstract import AgentRetries
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.output import StructuredDict
@@ -44,8 +42,9 @@ from a13n_service.digests import digest_request
 from .domain import (
     EffectiveAgentConfig,
     OutputSpec,
-    ResolvedPluginVersion,
+    PluginSelection,
 )
+from .plugin_resolution import PluginSelectionError, validate_plugin_selections
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
 
 _CLIENT_TOOLSET_ID = "service"
@@ -95,7 +94,6 @@ class AgentReconstructor:
             raise TypeError("plugin_catalog must be a HarnessPluginFactoryCatalog")
         self._plugin_catalog = plugin_catalog
         self._capability_provider = capability_provider
-        self._registrations = {item.plugin_key: item for item in plugin_catalog.registrations}
 
     def reconstruct(
         self,
@@ -150,11 +148,10 @@ class AgentReconstructor:
             self._verify_effective_config(config)
             if set(config.child_configs) != {edge.child_agent_revision_id for edge in config.resolved_subagents}:
                 raise AgentDefinitionReconstructionError("subagent_snapshot_mismatch")
-            for selection in config.resolved_plugin_versions:
-                if not _registration_matches(self._registrations.get(selection.plugin_key), selection):
-                    raise AgentDefinitionReconstructionError(
-                        "plugin_factory_provenance_mismatch", path=f"plugins.{selection.instance_name}"
-                    )
+            try:
+                validate_plugin_selections(self._plugin_catalog, config.resolved_plugins, retained=True)
+            except PluginSelectionError as error:
+                raise AgentDefinitionReconstructionError(error.reason, path=error.path) from error
             _output_type(config.output_spec)
             for edge in config.resolved_subagents:
                 child = config.child_configs[edge.child_agent_revision_id]
@@ -222,7 +219,7 @@ class AgentReconstructor:
             capabilities.append(subagent_capability)
 
         try:
-            plugins = tuple(self._create_plugin(selection) for selection in config.resolved_plugin_versions)
+            plugins = tuple(self._create_plugin(selection) for selection in config.resolved_plugins)
             output_type = _output_type(config.output_spec)
             retries = (
                 None
@@ -267,7 +264,7 @@ class AgentReconstructor:
             raise AgentDefinitionReconstructionError("capability_provider_invalid")
         return capabilities
 
-    def _create_plugin(self, selection: ResolvedPluginVersion) -> AbstractHarnessPlugin:
+    def _create_plugin(self, selection: PluginSelection) -> AbstractHarnessPlugin:
         try:
             return self._plugin_catalog.create_plugin(
                 HarnessPluginFactoryContext(
@@ -288,23 +285,6 @@ class AgentReconstructor:
         payload = config.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
         if digest_request(payload) != config.content_digest:
             raise AgentDefinitionReconstructionError("effective_config_digest_mismatch")
-
-
-def _registration_matches(
-    registration: HarnessPluginFactoryRegistration | None,
-    selection: ResolvedPluginVersion,
-) -> bool:
-    return bool(
-        registration is not None
-        and registration.distribution_name is not None
-        and str(canonicalize_name(registration.distribution_name))
-        == str(canonicalize_name(selection.distribution_name))
-        and registration.distribution_version == selection.version
-        and (
-            registration.class_module == selection.top_level_package
-            or registration.class_module.startswith(f"{selection.top_level_package}.")
-        )
-    )
 
 
 def _output_type(spec: OutputSpec | None) -> Any:
