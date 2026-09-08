@@ -918,6 +918,57 @@ async def test_cancellation_during_terminal_pump_cleanup_stays_primary() -> None
         await run_task
 
 
+async def test_repeated_cancellation_while_draining_queue_reader_still_stops_response_pump() -> None:
+    model_started = asyncio.Event()
+    model_closed = asyncio.Event()
+
+    async def model_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        try:
+            model_started.set()
+            await asyncio.Event().wait()
+            yield "unreachable"
+        finally:
+            model_closed.set()
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model_stream),
+    )
+    stream = executable.stream("hello", bindings=RunBindings.embedded())
+
+    async def consume() -> None:
+        async with stream:
+            async for _ in stream:
+                pass
+
+    consumer = asyncio.create_task(consume())
+    await asyncio.wait_for(model_started.wait(), timeout=2)
+    async with asyncio.timeout(2):
+        while True:
+            reader = stream._response_next_task
+            if reader is not None and not reader.done() and stream._response_queue.empty():
+                break
+            await asyncio.sleep(0)
+    pump = stream._response_pump_task
+    assert reader is not None
+    assert pump is not None
+    # Inject another cancellation exactly while cleanup is draining its queue reader.
+    reader.add_done_callback(lambda _: consumer.cancel())
+    consumer.cancel()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(consumer, timeout=2)
+        assert pump.done()
+        assert model_closed.is_set()
+        assert stream._response_pump_task is None
+    finally:
+        if not pump.done():
+            pump.cancel()
+        await asyncio.gather(pump, return_exceptions=True)
+
+
 async def test_early_close_installs_mount_mutation_fence_before_plugin_cleanup() -> None:
     cleanup_started = asyncio.Event()
     release_cleanup = asyncio.Event()

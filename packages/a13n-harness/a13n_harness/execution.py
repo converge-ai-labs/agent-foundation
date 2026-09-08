@@ -1765,14 +1765,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if pending_cancellation is not None:
             raise pending_cancellation
 
-    async def _cancel_logical_source_tasks(self) -> None:
+    async def _cancel_response_next_task(self) -> None:
         task = self._response_next_task
         self._response_next_task = None
         if task is not None:
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        await self._stop_response_pump()
 
     def _public_event(self, item: Any) -> HarnessEvent:
         if isinstance(item, HarnessExtensionEvent):
@@ -2595,7 +2594,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 # Cleanup code may suppress or translate the injected CancelledError.
                 capture_pending_cancellation()
 
-        await finish_cleanup(self._cancel_logical_source_tasks())
+        # Repeated cancellation while draining the reader must not skip its producer.
+        await finish_cleanup(self._cancel_response_next_task())
+        await finish_cleanup(self._stop_response_pump())
         await finish_cleanup(self._close_registered_responses())
         outcome = outcome or self._last_valid_outcome
         with CancelScope(shield=True):
