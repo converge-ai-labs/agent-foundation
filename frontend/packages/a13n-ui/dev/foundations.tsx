@@ -1,11 +1,14 @@
 import type { Translate } from "./showcase";
 const colors = [
+  "app",
   "canvas",
+  "elevated",
   "surface",
   "text",
   "secondary",
   "muted",
   "border",
+  "selected",
   "accent",
   "success",
   "warning",

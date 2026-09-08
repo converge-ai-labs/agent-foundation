@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Select } from "a13n-ui";
+import { SelectField } from "a13n-ui";
 import styles from "./app.module.css";
 export function App() {
   const { t, i18n } = useTranslation();
@@ -10,7 +10,7 @@ export function App() {
   return (
     <main className={`a13n-root ${styles.main}`}>
       <h1>{t("welcome")}</h1>
-      <Select
+      <SelectField
         label={t("language")}
         placeholder={t("language")}
         value={i18n.resolvedLanguage}

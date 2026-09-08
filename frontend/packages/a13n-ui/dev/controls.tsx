@@ -6,13 +6,15 @@ import {
   Checkbox,
   Dialog,
   Input,
-  Select,
+  Picker,
+  SelectField,
   Spinner,
   Switch,
   Tooltip,
 } from "../src";
 import type { Translate } from "./showcase";
 export function Controls({ t }: { t: Translate }) {
+  const [selection, setSelection] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const options = [
@@ -99,7 +101,7 @@ export function Controls({ t }: { t: Translate }) {
             />
           </div>
           <div className="stack">
-            <Select
+            <SelectField
               label={t("Option", "选项")}
               placeholder={t("Choose an option", "选择一个选项")}
               options={options}
@@ -132,10 +134,18 @@ export function Controls({ t }: { t: Translate }) {
         >
           <div className="stack">
             <Input label={t("Name", "名称")} />
-            <Select
+            <SelectField
               label={t("Option", "选项")}
               placeholder={t("Choose an option", "选择一个选项")}
               options={options}
+            />
+            <Picker
+              label={t("Search options", "搜索选项")}
+              placeholder={t("Find an option", "查找选项")}
+              emptyMessage={t("No options found", "没有匹配选项")}
+              value={selection}
+              onValueChange={setSelection}
+              groups={[{ label: t("Options", "选项"), options }]}
             />
           </div>
         </Dialog>

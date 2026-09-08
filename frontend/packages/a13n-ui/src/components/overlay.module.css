@@ -15,9 +15,9 @@
   overflow: auto;
   padding: var(--a13n-space-6);
   border: 1px solid var(--a13n-border);
-  border-radius: var(--a13n-radius);
+  border-radius: var(--a13n-radius-lg);
   box-shadow: var(--a13n-shadow);
-  background: var(--a13n-canvas);
+  background: var(--a13n-elevated);
   color: var(--a13n-text);
   font: var(--a13n-text-body)/var(--a13n-leading) var(--a13n-font);
 }
@@ -47,7 +47,7 @@
 .tooltip {
   z-index: var(--a13n-tooltip-layer);
   max-width: min(280px, calc(100vw - 16px));
-  background: var(--a13n-canvas);
+  background: var(--a13n-elevated);
   color: var(--a13n-text);
   border: 1px solid var(--a13n-border);
   box-shadow: var(--a13n-shadow);
