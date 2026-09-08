@@ -294,7 +294,7 @@ class BoundEnvironment(ABC):
         """Capture one exact mount incarnation for a logical file path."""
 
     async def resolve_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
-        """Prepare the selected files mount before capturing an authorization generation."""
+        """Prepare the selected files mount and return current resource metadata."""
         selected = self.select_files(path, alias=alias)
         async with self.open_files(selected):
             return self.select_files(path, alias=alias)
@@ -353,10 +353,6 @@ class BoundEnvironment(ABC):
     @abstractmethod
     def _change_sequence(self) -> int:
         """Return the current run-local change sequence for Harness event fencing."""
-
-    @abstractmethod
-    def _is_mount_current(self, mount_id: str, observed_generation: str) -> bool:
-        """Check one opaque mount incarnation for internal authorization fencing."""
 
     @abstractmethod
     async def _read_changes(

@@ -984,7 +984,6 @@ class WebToolset:
                         raise WebProviderError("web_body_too_large")
                     yield chunk
 
-            self._file_access.guard(save_dir)
             async with asyncio.timeout(_remaining_seconds(deadline)):
                 written = await files.write_bytes_stream(
                     save_path,

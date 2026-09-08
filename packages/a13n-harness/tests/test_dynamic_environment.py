@@ -81,6 +81,7 @@ from a13n_harness.toolsets import (
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
 )
+from a13n_harness.toolsets._scoped_files import ScopedFileAccess
 from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.output import (
     disclose_sequence_field,
@@ -1715,12 +1716,19 @@ async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_p
     assert result.usage.requests == 4
 
 
-async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(tmp_path: Path) -> None:
+@pytest.mark.parametrize("change", ["same_root", "replacement", "default", "denied"])
+@pytest.mark.parametrize("tool", ["view", pytest.param("shell_exec", marks=requires_posix_process_groups)])
+async def test_managed_dispatch_selects_current_route_after_policy_wait(tmp_path: Path, change: str, tool: str) -> None:
     (tmp_path / "value.txt").write_text("value")
-    aggregate = _local_binding(tmp_path)
+    aggregate = _local_binding(tmp_path, process_output=True)
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "value.txt").write_text("new value")
     replacement = _local_mount(
-        tmp_path,
+        tmp_path if change == "same_root" else other,
         environment_id="dynamic-environment-test-replacement",
+        process_output=True,
+        operations=frozenset() if change == "denied" else frozenset(EnvironmentAction),
     )
 
     class RefreshOnAuthorize:
@@ -1730,7 +1738,11 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
             del invocation, metadata, context
             if not self.applied:
                 self.applied = True
-                await aggregate.replace("local", replacement)
+                if change == "default":
+                    await aggregate.mount("other", replacement)
+                    await aggregate.set_default("other")
+                else:
+                    await aggregate.replace("local", replacement)
             return InvocationPolicyDecision.allow()
 
     observed: dict[str, Any] = {}
@@ -1747,8 +1759,10 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
         if not returns:
             yield {
                 0: DeltaToolCall(
-                    name="view",
-                    json_args=json.dumps({"file_path": "/workspace/value.txt"}),
+                    name=tool,
+                    json_args=json.dumps(
+                        {"file_path": "/workspace/value.txt"} if tool == "view" else {"command": "cat value.txt"}
+                    ),
                     tool_call_id="stat-refresh-1",
                 )
             }
@@ -1772,8 +1786,12 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
     )
 
     assert result.output_or_raise() == "done"
-    assert observed["ok"] is False
-    assert observed["error"]["code"] == "environment_stale_mount"
+    if change == "denied":
+        assert observed["ok"] is False
+        assert observed["error"]["code"] == "environment_denied"
+    else:
+        content = observed["content"] if tool == "view" else observed["stdout"]["text"]
+        assert content == ("value" if change == "same_root" else "new value")
 
 
 @requires_posix_process_groups
@@ -1859,7 +1877,7 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
         assert mismatch_error.value.code == "environment_selection_invalid"
 
 
-async def test_managed_authorization_is_fenced_by_mount_incarnation(tmp_path: Path) -> None:
+async def test_resource_metadata_does_not_bind_execution_to_mount_incarnation(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path)
     run_bindings = RunBindings.embedded(environment=aggregate)
     replacement = _local_mount(
@@ -1888,10 +1906,9 @@ async def test_managed_authorization_is_fenced_by_mount_incarnation(tmp_path: Pa
         assert len(resources) == 1
         await aggregate.replace("local", replacement)
 
-        result = await toolset.write(cast(Any, None), "/workspace/relative.txt", "must not write")
-        assert result["ok"] is False
-        assert result["error"]["code"] == "environment_stale_mount"
-        assert not (tmp_path / "relative.txt").exists()
+        result = await toolset.write(cast(Any, None), "/workspace/relative.txt", "current operation")
+        assert result["ok"] is True
+        assert (tmp_path / "relative.txt").read_text() == "current operation"
 
 
 async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_path: Path) -> None:
@@ -2179,7 +2196,6 @@ async def test_cross_mount_copy_uses_plain_stream_completion(source_fails: bool)
             current_incarnation = 2
         yield _PreparedFile(
             selected=selected,
-            observed_generation="generation-source" if source else "generation-destination",
             backend=source_backend if source else destination_backend,
             validate_result=lambda value: None,
             virtualize_path=lambda path: path,
@@ -3216,7 +3232,7 @@ async def test_file_batch_resources_do_not_swallow_unresolved_endpoints(tmp_path
         assert error.value.code == "environment_selection_invalid"
 
 
-async def test_file_batch_fences_every_mount_with_task_local_isolation(tmp_path: Path) -> None:
+async def test_file_batch_resources_are_observations_without_execution_authority(tmp_path: Path) -> None:
     roots = {name: tmp_path / name for name in ("source", "target")}
     for root in roots.values():
         root.mkdir()
@@ -3241,9 +3257,14 @@ async def test_file_batch_fences_every_mount_with_task_local_isolation(tmp_path:
             assert len(resources) == 2
             authorized.set()
             await replaced.wait()
-            with pytest.raises(EnvironmentError) as error:
-                toolset._guard_execution()
-            assert error.value.code == "environment_stale_mount"
+            toolset._guard_execution()
+            current = await copy_resolver(
+                {"pairs": [{"src": "/environment/source/one", "dst": "/environment/target/two"}]},
+                context=cast(Any, None),
+            )
+            assert resources[0] == current[0]
+            assert resources[1].identifier != current[1].identifier
+            assert resources[1].approval_revision == current[1].approval_revision
 
         async def authorize_unaffected_read() -> None:
             await authorized.wait()
@@ -3255,19 +3276,28 @@ async def test_file_batch_fences_every_mount_with_task_local_isolation(tmp_path:
         await asyncio.gather(authorize_copy(), authorize_unaffected_read())
 
 
-async def test_unresolved_resource_fence_rejects_a_new_mount_publication(tmp_path: Path) -> None:
+@pytest.mark.parametrize("add_missing", [False, True])
+async def test_unresolved_resource_metadata_does_not_retain_a_publication_fence(
+    tmp_path: Path, add_missing: bool
+) -> None:
     runtime = _local_binding(tmp_path)
     bindings = RunBindings.embedded(environment=runtime)
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
         await runtime._activate()
         toolset = FileToolset(env.files, file_scopes=env)
-        resolver = toolset.get_toolset().tools["view"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
+        resolver = toolset.get_toolset().tools["write"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
         assert await resolver({"file_path": "/environment/missing/one"}, context=cast(Any, None)) == ()
-        toolset._guard_execution()
-        await runtime.replace("local", _local_mount(tmp_path, environment_id="replacement"))
-        with pytest.raises(EnvironmentError) as error:
-            toolset._guard_execution()
-        assert error.value.code == "environment_stale_mount"
+        if add_missing:
+            await runtime.mount("missing", _local_mount(tmp_path, environment_id="new-mount"))
+        else:
+            await runtime.replace("local", _local_mount(tmp_path, environment_id="replacement"))
+        result = await toolset.write(cast(Any, None), "/environment/missing/one", "current operation")
+        if add_missing:
+            assert result["ok"] is True
+            assert (tmp_path / "one").read_text() == "current operation"
+        else:
+            assert result["ok"] is False
+            assert result["error"]["code"] == "environment_selection_invalid"
 
 
 async def test_file_resource_defaults_preserve_direct_scopes_and_explicit_overrides(tmp_path: Path) -> None:
@@ -3301,3 +3331,38 @@ async def test_file_resource_defaults_preserve_direct_scopes_and_explicit_overri
         await runtime.replace("local", _local_mount(tmp_path, environment_id="replacement"))
         toolset._guard_execution()
         assert calls == ["guard"]
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_file_scope_metadata_is_execution_local_and_restored_on_exit(tmp_path: Path, cancelled: bool) -> None:
+    roots = {name: tmp_path / name for name in ("first", "second")}
+    for root in roots.values():
+        root.mkdir()
+    runtime = create_environment_runtime(
+        mounts={name: _local_mount(root, environment_id=name) for name, root in roots.items()},
+        default_mount="first",
+    )
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
+        await runtime._activate()
+        access = ScopedFileAccess(env.files, env)
+        resolver = access.resource_resolver("file_path")
+        assert resolver is not None
+        await resolver({"file_path": "file.txt"}, context=cast(Any, None))
+        assert not access.has_mount_root_parent("file.txt")
+        first = access.resolved_path("file.txt")
+        try:
+            async with access.scope("file.txt"):
+                assert access.has_mount_root_parent("file.txt")
+                await runtime.set_default("second")
+                assert access.resolved_path("file.txt") == first
+                async with access.scope("file.txt"):
+                    assert access.resolved_path("file.txt") != first
+                assert access.resolved_path("file.txt") == first
+                if cancelled:
+                    raise asyncio.CancelledError
+        except asyncio.CancelledError:
+            assert cancelled
+        assert not access.has_mount_root_parent("file.txt")
+        assert access.resolved_path("file.txt") != first
+        assert not access.has_mount_root_parent("file.txt")

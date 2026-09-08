@@ -137,7 +137,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._operation_tasks: dict[asyncio.Task[Any], int] = {}
         self._mount_tasks: dict[_MountKey, dict[asyncio.Task[Any], int]] = {}
         self._mount_drained: dict[_MountKey, asyncio.Event] = {}
-        self._process_start_leases: dict[_MountKey, int] = {}
         self._active_process_handles: dict[_MountKey, set[BoundProcessHandle]] = {}
         self._readiness_tasks: dict[tuple[str, str, str], asyncio.Task[None]] = {}
         self._readiness_waiters: dict[asyncio.Task[None], int] = {}
@@ -346,12 +345,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
     @property
     def _change_sequence(self) -> int:
         return self._journal.current_sequence
-
-    def _is_mount_current(self, mount_id: str, observed_generation: str) -> bool:
-        return any(
-            entered.mount_id == mount_id and entered.public.descriptor.generation == observed_generation
-            for entered in self._entered.values()
-        )
 
     @staticmethod
     def _mount_key(entered: _EnteredMount) -> _MountKey:
@@ -599,7 +592,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         async with self._operation_lock:
             self._mount_drained.pop(key, None)
             self._active_process_handles.pop(key, None)
-            self._process_start_leases.pop(key, None)
 
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
         """Resolve one aggregate or relative path to a provider-local path."""
@@ -835,7 +827,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
                 yield _PreparedFile(
                     selected=selected,
-                    observed_generation=entered.public.descriptor.generation,
                     backend=entered.operations.files,
                     validate_result=lambda value: _validate_provider_artifacts(entered, value),
                     virtualize_path=lambda provider_path: self._virtualize_scoped_file_path(
@@ -891,7 +882,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
             root = _preferred_mount_path(entered.public, self._snapshot.default_mount)
             yield _PreparedFile(
                 selected=selected,
-                observed_generation=entered.public.descriptor.generation,
                 backend=entered.operations.files,
                 validate_result=lambda value: _validate_provider_artifacts(entered, value),
                 virtualize_path=lambda provider_path: _virtualize_path(root, provider_path),
@@ -1078,9 +1068,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._refresh_mount_drained(key)
 
     def _mount_retirement_ready(self, key: _MountKey) -> bool:
-        return not self._mount_tasks.get(key) and (
-            self._closed or (not self._active_process_handles.get(key) and self._process_start_leases.get(key, 0) == 0)
-        )
+        return not self._mount_tasks.get(key) and (self._closed or not self._active_process_handles.get(key))
 
     def _refresh_mount_drained(self, key: _MountKey) -> None:
         drained = self._mount_drained.setdefault(key, asyncio.Event())
@@ -1116,7 +1104,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 timeout_seconds + DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
             )
         )
-        key = self._mount_key(entered)
         if action not in entered.public.permission_ceiling.operations:
             raise EnvironmentError(
                 "Environment operation is denied by the mount permission ceiling.",
@@ -1124,41 +1111,27 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 details={"action": action.value, "mount_id": entered.mount_id},
             )
         async with self._mount_slot(entered, allow_retired=allow_retired):
-            if action is EnvironmentAction.PROCESS_START:
-                self._process_start_leases[key] = self._process_start_leases.get(key, 0) + 1
-                self._refresh_mount_drained(key)
             try:
-                try:
-                    async with asyncio.timeout(timeout):
-                        previous_generation = entered.public.descriptor.generation
-                        await self._ensure_provider_family(entered, family)
-                        entered = self._current_publication(entered)
-                        if previous_generation not in {"unprepared", entered.public.descriptor.generation}:
-                            raise EnvironmentError(
-                                "Environment changed before dispatch", code="environment_stale_mount"
-                            )
-                        self.require_action(entered.mount_id, action)
-                        self._validate_live_observation(
-                            entered,
-                            entered.provider.availability,
-                            frozenset({family}),
-                        )
-                        yield entered
-                except TimeoutError as exc:
-                    raise EnvironmentError(
-                        "Environment operation timed out.",
-                        code=timeout_code,
-                        details={"timeout_seconds": timeout},
-                        retry_hint="dependency_change",
-                    ) from exc
-            finally:
-                if action is EnvironmentAction.PROCESS_START:
-                    remaining = self._process_start_leases.get(key, 0) - 1
-                    if remaining > 0:
-                        self._process_start_leases[key] = remaining
-                    else:
-                        self._process_start_leases.pop(key, None)
-                    self._refresh_mount_drained(key)
+                async with asyncio.timeout(timeout):
+                    previous_generation = entered.public.descriptor.generation
+                    await self._ensure_provider_family(entered, family)
+                    entered = self._current_publication(entered)
+                    if previous_generation not in {"unprepared", entered.public.descriptor.generation}:
+                        raise EnvironmentError("Environment changed before dispatch", code="environment_stale_mount")
+                    self.require_action(entered.mount_id, action)
+                    self._validate_live_observation(
+                        entered,
+                        entered.provider.availability,
+                        frozenset({family}),
+                    )
+                    yield entered
+            except TimeoutError as exc:
+                raise EnvironmentError(
+                    "Environment operation timed out.",
+                    code=timeout_code,
+                    details={"timeout_seconds": timeout},
+                    retry_hint="dependency_change",
+                ) from exc
 
     def _current_publication(self, entered: _EnteredMount) -> _EnteredMount:
         current = self._entered_by_id.get(entered.mount_id)

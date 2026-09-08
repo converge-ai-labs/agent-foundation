@@ -192,6 +192,10 @@ Three decisions remain separate:
 
 Without an explicit Invocation Policy, managed Environment tools default to allow at the Harness boundary. That default does not create Provider capability, credentials, approval, or mount access. Tool injection improves discovery and cannot replace execution-time checks.
 
+Authorization applies to the requested operation and arguments, not a reserved backend. Canonical resources describe the mount and path observed during policy evaluation. If the Host replaces a mount or changes the default while policy or approval is waiting, execution selects the current route and checks its current permissions. Resource metadata and custom approval revisions do not guarantee that dispatch uses the observed backend; exact-target Host policy must also be enforced on the execution path, such as by the Provider or a Host-controlled stable binding.
+
+After execution starts, compound file work stays on its selected scope. Document conversion retains that scope from source read through output publication, and downloads retain it while fetching and writing. Replacing a mount does not move an in-flight operation to another backend. Exact process handles, generation validation, Provider draining, and the prohibition on automatically replaying unknown outcomes remain unchanged.
+
 The tool surface follows the effective actions of current mounts. With the standard access presets:
 
 - `read_only` exposes `view`, `ls`, `glob`, and `grep`;

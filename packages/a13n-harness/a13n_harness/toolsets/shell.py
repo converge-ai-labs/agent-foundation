@@ -454,8 +454,6 @@ class ShellToolset:
     def _guard_execution(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()
-        elif self._resource_resolver is None:
-            self._resources.guard()
 
 
 def _project_capture(capture: EnvironmentOutputCapture) -> OutputPageProjection:

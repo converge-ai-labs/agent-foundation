@@ -17,7 +17,7 @@ from a13n_harness.tools.metadata import CanonicalResource, ToolResourceResolver
 
 
 class ScopedFileAccess:
-    """Bind managed resource authorization to one mount-incarnation-pinned file scope."""
+    """Keep compound execution on one selected file scope, separate from resource metadata."""
 
     def __init__(
         self,
@@ -49,7 +49,6 @@ class ScopedFileAccess:
                     code="environment_request_invalid",
                 )
             selection = await scopes.resolve_files(path)
-            self._selection.set(selection)
             resources = [selection_resource(selection)]
             if include_parent:
                 parent = scopes.select_files(posixpath.dirname(path) or ".")
@@ -132,13 +131,12 @@ class ScopedFileAccess:
             return await source_files.copy(source, destination, replace=replace)
 
     def resolved_path(self, path: str) -> EnvironmentPath | None:
-        """Return the current mount-incarnation-pinned Environment path when scopes are available."""
+        """Return the execution-local path, or project the current route outside a scope."""
         if self._scopes is None:
             return None
         selection = self._selection.get()
         if selection is None or selection.logical_path != path:
             selection = self._scopes.select_files(path)
-            self._selection.set(selection)
         return selection.resolved_path
 
     def has_mount_root_parent(self, path: str) -> bool:
@@ -150,37 +148,18 @@ class ScopedFileAccess:
             and posixpath.dirname(selection.resolved_path.path) == "/"
         )
 
-    def guard(self, path: str) -> None:
-        selection = self._selection.get()
-        if selection is None or self._scopes is None:
-            return
-        current = self._scopes.select_files(path)
-        if (
-            current.resolved_path != selection.resolved_path
-            or current.observed_generation != selection.observed_generation
-        ):
-            raise EnvironmentError(
-                "Environment mount changed after managed resource authorization.",
-                code="environment_stale_mount",
-            )
-
     @asynccontextmanager
-    async def scope(
-        self,
-        path: str,
-        *,
-        prefer_authorized_selection: bool = True,
-    ) -> AsyncGenerator[FileOperator]:
+    async def scope(self, path: str) -> AsyncGenerator[FileOperator]:
         if self._scopes is None:
             yield self._files
             return
-        selection = self._selection.get() if prefer_authorized_selection else None
-        if selection is None or selection.logical_path != path:
-            selection = self._scopes.select_files(path)
-            self._selection.set(selection)
-        self.guard(path)
-        async with self._scopes.open_files(selection) as files:
-            yield files
+        selection = self._scopes.select_files(path)
+        token = self._selection.set(selection)
+        try:
+            async with self._scopes.open_files(selection) as files:
+                yield files
+        finally:
+            self._selection.reset(token)
 
 
 __all__ = ["ScopedFileAccess"]

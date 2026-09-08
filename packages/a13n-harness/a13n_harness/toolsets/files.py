@@ -443,10 +443,7 @@ class FileToolset:
         media_type = _MEDIA_TYPES.get(extension)
         if media_type is not None:
             try:
-                async with self._file_access.scope(
-                    file_path,
-                    prefer_authorized_selection=False,
-                ) as files:
+                async with self._file_access.scope(file_path) as files:
                     self._guard_execution()
                     metadata = await files.stat(file_path)
                     if metadata.kind != "file":
@@ -648,7 +645,7 @@ class FileToolset:
         async with self._mutation_lock:
             for path in paths:
                 try:
-                    async with self._file_access.scope(path, prefer_authorized_selection=False) as files:
+                    async with self._file_access.scope(path) as files:
                         self._guard_execution()
                         await files.mkdir(path, parents=parents, exist_ok=False)
                     results.append({"ok": True, "path": path})
@@ -757,7 +754,7 @@ class FileToolset:
         async with self._mutation_lock:
             for path in paths:
                 try:
-                    async with self._file_access.scope(path, prefer_authorized_selection=False) as files:
+                    async with self._file_access.scope(path) as files:
                         self._guard_execution()
                         await files.remove(path, recursive=recursive)
                     results.append({"ok": True, "path": path})
@@ -1098,10 +1095,7 @@ class FileToolset:
         observe: Callable[[T], Awaitable[None]] | None = None,
     ) -> Any:
         try:
-            async with self._file_access.scope(
-                path,
-                prefer_authorized_selection=False,
-            ) as files:
+            async with self._file_access.scope(path) as files:
                 self._guard_execution()
                 result = await operation(files)
         except EnvironmentError as exc:
@@ -1132,8 +1126,6 @@ class FileToolset:
     def _guard_execution(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()
-        elif self._resource_resolver is None and self._resources is not None:
-            self._resources.guard()
 
     def _guard_unscoped_step(self) -> None:
         if not self._has_file_scopes:

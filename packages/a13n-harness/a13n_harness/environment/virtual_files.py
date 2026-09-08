@@ -26,7 +26,6 @@ from .models import EnvironmentAction, EnvironmentError, EnvironmentPath
 @dataclass(frozen=True, slots=True)
 class _PreparedFile:
     selected: EnvironmentPath
-    observed_generation: str
     backend: Any
     validate_result: Callable[[Any], None]
     virtualize_path: Callable[[str], str]

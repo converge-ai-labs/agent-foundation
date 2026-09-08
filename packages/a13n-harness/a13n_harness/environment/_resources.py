@@ -1,10 +1,8 @@
-"""Canonical Environment resources and invocation-local publication fences."""
+"""Canonical Environment resource metadata for invocation policy and observation."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from contextvars import ContextVar
-from dataclasses import dataclass
 
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import (
@@ -29,34 +27,15 @@ def selection_resource(selection: FileScopeSelection, *, kind: str = "file") -> 
     )
 
 
-@dataclass(frozen=True, slots=True)
-class _MountFence:
-    mount_id: str
-    observed_generation: str
-
-
-@dataclass(frozen=True, slots=True)
-class _AuthorizationFence:
-    change_sequence: int
-    mounts: tuple[_MountFence, ...]
-    unresolved: bool = False
-
-
 class EnvironmentResources:
-    """Project selected resources and fence dispatch against their mount publications.
+    """Project current resources without retaining execution authority.
 
-    Toolsets supply argument parsing; this helper only owns Environment selection,
-    readiness, and invocation-local fencing. Each Toolset owns one instance.
+    Toolsets own argument parsing. Metadata describes selection at resolution time;
+    operation admission independently selects and checks the current Environment.
     """
 
     def __init__(self, environment: BoundEnvironment) -> None:
         self._environment = environment
-        self._authorization_fence: ContextVar[_AuthorizationFence | None] = ContextVar(
-            "environment_authorization_fence", default=None
-        )
-        self._fence_builder: ContextVar[list[_MountFence] | None] = ContextVar(
-            "environment_fence_builder", default=None
-        )
 
     def resolver(
         self, resolve_resources: ToolResourceResolver, *, allow_unresolved: bool = True
@@ -66,11 +45,8 @@ class EnvironmentResources:
             *,
             context: AgentContext,
         ) -> tuple[CanonicalResource, ...]:
-            change_sequence = self._environment._change_sequence
-            fences: list[_MountFence] = []
-            token = self._fence_builder.set(fences)
             try:
-                resources = await resolve_resources(arguments, context=context)
+                return await resolve_resources(arguments, context=context)
             except EnvironmentError as exc:
                 if not allow_unresolved:
                     raise
@@ -81,20 +57,9 @@ class EnvironmentResources:
                     "environment_unavailable",
                 }:
                     raise
-                self._authorization_fence.set(
-                    _AuthorizationFence(change_sequence=change_sequence, mounts=(), unresolved=True)
-                )
+                # Ordinary tools report unavailable routes at execution. Batch
+                # resolvers opt out so invalid endpoints cannot be hidden.
                 return ()
-            finally:
-                self._fence_builder.reset(token)
-            self._authorization_fence.set(
-                _AuthorizationFence(
-                    change_sequence=change_sequence,
-                    mounts=tuple(dict.fromkeys(fences)),
-                    unresolved=False,
-                )
-            )
-            return resources
 
         return resolve
 
@@ -111,8 +76,6 @@ class EnvironmentResources:
         alias: str | None = None,
     ) -> CanonicalResource:
         selection = await self._environment.resolve_files(path, alias=alias)
-        selected = selection.resolved_path
-        self._record_fence(selected.mount_id, selection.observed_generation)
         return selection_resource(selection)
 
     async def binding(
@@ -130,29 +93,4 @@ class EnvironmentResources:
                 EnvironmentReadinessRequirement(mounts=frozenset({mount.name}), operations=frozenset({family}))
             )
         selection = self._environment.select_files(path or ".", alias=alias)
-        selected = selection.resolved_path
-        self._record_fence(selected.mount_id, selection.observed_generation)
         return selection_resource(selection, kind="file" if path is not None else "mount")
-
-    def _record_fence(self, mount_id: str, generation: str) -> None:
-        builder = self._fence_builder.get()
-        if builder is not None:
-            builder.append(_MountFence(mount_id, generation))
-
-    def guard(self) -> None:
-        fence = self._authorization_fence.get()
-        if fence is None:
-            return
-        if fence.unresolved:
-            if self._environment._change_sequence != fence.change_sequence:
-                raise EnvironmentError(
-                    "Environment mounts changed after managed resource authorization.",
-                    code="environment_stale_mount",
-                )
-            return
-        for expected in fence.mounts:
-            if not self._environment._is_mount_current(expected.mount_id, expected.observed_generation):
-                raise EnvironmentError(
-                    "Environment mount changed after managed resource authorization.",
-                    code="environment_stale_mount",
-                )

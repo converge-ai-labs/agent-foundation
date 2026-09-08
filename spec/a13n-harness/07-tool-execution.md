@@ -334,7 +334,7 @@ Approval uses Pydantic AI `ApprovalRequired`, `DeferredToolRequests.approvals`, 
 
 The host-owned approval record binds stable tool identity, effective argument digest, any resolved semantic resources, effect classes, approver provenance, scope, expiry, and constraints. Overrides pass through schema validation, optional resource resolution, policy, and credential resolution again.
 
-Approval does not reserve a credential or override a current deny. Definition, argument, resource, or relevant Environment changes can invalidate the prior decision. An approved function tool later executes under fresh server authority; an external client tool never becomes server-executable merely because another deferred entry was approved.
+Approval does not reserve a credential or override a current deny. Environment resources are current observations, not reserved execution targets. Standard Environment dispatch selects its current route after invocation waits; exact-target Host policy must be enforced on the execution path rather than inferred from canonical metadata. Execution-local scopes and handles retain their own identity independently of approval. Definition, argument, resource, or relevant Environment changes can invalidate the prior decision. An approved function tool later executes under fresh server authority; an external client tool never becomes server-executable merely because another deferred entry was approved.
 
 ### Structured User Questions
 

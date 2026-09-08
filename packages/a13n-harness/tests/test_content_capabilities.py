@@ -592,18 +592,28 @@ async def test_documents_capability_removes_partial_staging_tree(tmp_path: Path)
     assert not list(tmp_path.glob(".export_broken.a13n-*"))
 
 
-async def test_documents_rejects_stale_revision_before_publication(tmp_path: Path) -> None:
+@pytest.mark.parametrize("change", ["replacement", "default"])
+@pytest.mark.parametrize("kind", ["pdf", "office"])
+async def test_documents_retains_operation_scope_through_conversion_and_publication(
+    tmp_path: Path, change: str, kind: str
+) -> None:
     root_a = tmp_path / "revision-a"
     root_b = tmp_path / "revision-b"
     root_a.mkdir()
     root_b.mkdir()
-    (root_a / "report.pdf").write_bytes(b"revision-a")
+    filename = "report.pdf" if kind == "pdf" else "report.docx"
+    (root_a / filename).write_bytes(b"revision-a")
     binding = _binding(root_a)
 
     class RefreshingConverter:
         async def convert(self, request: DocumentConversionRequest) -> DocumentConversionResult:
             assert request.source_bytes == b"revision-a"
-            await binding.replace("local", _replacement_mount(root_b))
+            if change == "default":
+                await binding.mount("other", _replacement_mount(root_b), make_default=True)
+            else:
+                await binding.replace("local", _replacement_mount(root_b))
+            if kind == "office":
+                return DocumentConversionResult(markdown="# Revision A")
             return DocumentConversionResult(
                 markdown="# Revision A",
                 total_pages=1,
@@ -624,7 +634,11 @@ async def test_documents_rejects_stale_revision_before_publication(tmp_path: Pat
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
-        model=_one_tool_model("pdf_convert", {"file_path": "/workspace/report.pdf"}, seen=seen),
+        model=_one_tool_model(
+            "pdf_convert" if kind == "pdf" else "office_to_markdown",
+            {"file_path": f"/workspace/{filename}"},
+            seen=seen,
+        ),
         capabilities=(DocumentsCapability(),),
     )
     result = await executable.run(
@@ -640,16 +654,16 @@ async def test_documents_rejects_stale_revision_before_publication(tmp_path: Pat
 
     assert result.output_or_raise() == "done"
     tool_result = next(item for item in _tool_contents(seen) if isinstance(item, dict))
-    assert tool_result["ok"] is False
-    assert tool_result["error"]["code"] == "environment_stale_mount"
+    assert tool_result["ok"] is True
     assert len(resources) == 2
     assert all(resource.approval_revision for resource in resources)
     assert resources[0].kind == "file"
-    assert not list(root_a.glob("export_*"))
+    assert [path.read_text() for path in root_a.glob("export_*/report.md")] == ["# Revision A"]
     assert not list(root_b.glob("export_*"))
 
 
-async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path) -> None:
+@pytest.mark.parametrize("change", ["replacement", "default"])
+async def test_web_download_retains_operation_scope_through_request_and_writing(tmp_path: Path, change: str) -> None:
     root_a = tmp_path / "revision-a"
     root_b = tmp_path / "revision-b"
     root_a.mkdir()
@@ -659,7 +673,10 @@ async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path
     class RefreshingClient:
         async def request(self, request: WebRequest, *, policy) -> WebResponse:
             del request, policy
-            await binding.replace("local", _replacement_mount(root_b))
+            if change == "default":
+                await binding.mount("other", _replacement_mount(root_b), make_default=True)
+            else:
+                await binding.replace("local", _replacement_mount(root_b))
             return WebResponse(
                 status_code=200,
                 final_url="https://example.com/file.txt",
@@ -700,11 +717,10 @@ async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path
 
     assert result.output_or_raise() == "done"
     tool_result = next(item for item in _tool_contents(seen) if isinstance(item, list))
-    assert tool_result[0]["ok"] is False
-    assert tool_result[0]["error"]["code"] == "environment_stale_mount"
+    assert tool_result[0]["ok"] is True
     assert len(resources) == 1
     assert resources[0].kind == "file"
-    assert list((root_a / "downloads").iterdir()) == []
+    assert [path.read_bytes() for path in (root_a / "downloads").iterdir()] == [b"payload"]
     assert not (root_b / "downloads").exists()
 
 
@@ -1111,3 +1127,103 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
         assert not (original / "downloads").exists()
         assert not list(replacement.glob("export_*"))
         assert not (replacement / "downloads").exists()
+
+
+@pytest.mark.parametrize("tool", ["pdf_convert", "office_to_markdown", "download"])
+@pytest.mark.parametrize("change", ["same_root", "replacement", "default", "denied"])
+async def test_content_dispatch_uses_current_route_after_policy_wait(tmp_path: Path, tool: str, change: str) -> None:
+    original, replacement = tmp_path / "original", tmp_path / "replacement"
+    original.mkdir()
+    replacement.mkdir()
+    filename = "report.pdf" if tool == "pdf_convert" else "report.docx"
+    (original / filename).write_bytes(b"original")
+    (replacement / filename).write_bytes(b"replacement")
+    binding = _binding(original)
+    target = original if change == "same_root" else replacement
+    mount = _replacement_mount(target)
+    if change == "denied":
+        mount = EnvironmentRuntimeMount(
+            binding=mount.binding,
+            permission_ceiling=EnvironmentPermissionSet(operations=frozenset()),
+            working_directory="/",
+        )
+    resources: list[Any] = []
+
+    class ChangeOnAuthorize:
+        async def __call__(self, invocation, metadata, *, context):
+            del metadata, context
+            resources.extend(invocation.resources)
+            if change == "default":
+                await binding.mount("other", mount, make_default=True)
+            else:
+                await binding.replace("local", mount)
+            return InvocationPolicyDecision.allow()
+
+    converter = _DocumentConverter(
+        DocumentConversionResult(markdown="# Converted", total_pages=1, converted_pages=1, page_start=1, page_end=1)
+        if tool == "pdf_convert"
+        else DocumentConversionResult(markdown="# Converted")
+    )
+    client = _WebClient(
+        [
+            WebResponse(
+                status_code=200,
+                final_url="https://example.com/file.txt",
+                canonical_url="https://example.com/file.txt",
+                headers={"content-type": "text/plain"},
+                body=_body(b"payload"),
+            )
+        ]
+    )
+    download = tool == "download"
+    seen: list[list[ModelMessage]] = []
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_one_tool_model(
+            tool,
+            {"urls": ["https://example.com/file.txt"], "save_dir": "/workspace/downloads"}
+            if download
+            else {"file_path": f"/workspace/{filename}"},
+            seen=seen,
+        ),
+        capabilities=(
+            WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="off")))
+            if download
+            else DocumentsCapability(),
+        ),
+    )
+    result = await executable.run(
+        "Execute",
+        bindings=RunBindings.embedded(
+            environment=binding,
+            capabilities=(
+                InvocationPolicyCapability(evaluator=ChangeOnAuthorize(), max_dispatch_retries=0),
+                WebRunCapability(client=client, policy=_WebPolicy())
+                if download
+                else DocumentsRunCapability(converter=converter),
+            ),
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    contents = _tool_contents(seen)
+    outcome = next(item for item in contents if isinstance(item, list if download else dict))
+    if download:
+        outcome = outcome[0]
+    assert resources
+    if change == "denied":
+        assert outcome["error"]["code"] == "environment_denied"
+        assert not client.requests
+        assert not converter.requests
+        assert not (target / "downloads").exists()
+        assert not list(target.glob("export_*"))
+    else:
+        assert outcome["ok"] is True
+        if download:
+            assert [path.read_bytes() for path in (target / "downloads").iterdir()] == [b"payload"]
+        else:
+            assert converter.requests[0].source_bytes == (b"original" if change == "same_root" else b"replacement")
+            assert [path.read_text() for path in target.glob("export_*/report.md")] == ["# Converted"]
+        if target != original:
+            assert not (original / "downloads").exists()
+            assert not list(original.glob("export_*"))

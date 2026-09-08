@@ -260,36 +260,34 @@ class DocumentsToolset:
                     files.read_bytes_stream(file_path),
                     self.configuration.max_source_bytes,
                 )
-            request = DocumentConversionRequest(
-                kind=kind,
-                source_name=f"{stem}{extension}",
-                source_bytes=source,
-                page_start=page_start,
-                page_end=page_end,
-                max_markdown_bytes=self.configuration.max_markdown_bytes,
-                max_asset_bytes=self.configuration.max_asset_bytes,
-                max_total_asset_bytes=self.configuration.max_total_asset_bytes,
-                max_assets=self.configuration.max_assets,
-                deadline_seconds=self.configuration.deadline_seconds,
-            )
-            async with asyncio.timeout(self.configuration.deadline_seconds):
-                raw_result = await converter.convert(request)
-            result = DocumentConversionResult.model_validate(raw_result)
-            for usage in result.usage:
-                await ctx.deps.record_provider_usage(
-                    usage,
-                    source="documents.converter",
-                    tool_id=f"document.{kind}_convert" if kind == "pdf" else "document.office_to_markdown",
-                    tool_call_id=ctx.tool_call_id,
+                request = DocumentConversionRequest(
+                    kind=kind,
+                    source_name=f"{stem}{extension}",
+                    source_bytes=source,
+                    page_start=page_start,
+                    page_end=page_end,
+                    max_markdown_bytes=self.configuration.max_markdown_bytes,
+                    max_asset_bytes=self.configuration.max_asset_bytes,
+                    max_total_asset_bytes=self.configuration.max_total_asset_bytes,
+                    max_assets=self.configuration.max_assets,
+                    deadline_seconds=self.configuration.deadline_seconds,
                 )
-            self._validate_result(
-                result,
-                kind=kind,
-                requested_page_start=page_start,
-                requested_page_end=page_end,
-            )
-            self._file_access.guard(file_path)
-            async with self._file_access.scope(file_path) as files:
+                async with asyncio.timeout(self.configuration.deadline_seconds):
+                    raw_result = await converter.convert(request)
+                result = DocumentConversionResult.model_validate(raw_result)
+                for usage in result.usage:
+                    await ctx.deps.record_provider_usage(
+                        usage,
+                        source="documents.converter",
+                        tool_id=f"document.{kind}_convert" if kind == "pdf" else "document.office_to_markdown",
+                        tool_call_id=ctx.tool_call_id,
+                    )
+                self._validate_result(
+                    result,
+                    kind=kind,
+                    requested_page_start=page_start,
+                    requested_page_end=page_end,
+                )
                 return await self._publish(files, stem=stem, parent=parent, kind=kind, result=result)
         except TimeoutError:
             return _document_error("document_timeout", retry_hint="retry")
