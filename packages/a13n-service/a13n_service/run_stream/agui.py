@@ -54,6 +54,7 @@ class HarnessAguiRunStreamWriter:
         run_id: str,
         thread_id: str,
         run_attempt_id: str,
+        attempt_number: int,
         harness_run_id: str,
         observer: HarnessAguiObserver | None = None,
         source_thread_id: str,
@@ -64,6 +65,7 @@ class HarnessAguiRunStreamWriter:
         self._thread_id = thread_id
         self._source_thread_id = source_thread_id
         self._run_attempt_id = run_attempt_id
+        self._attempt_number = attempt_number
         self._harness_run_id = harness_run_id
         self._observer = HarnessAguiObserver() if observer is None else observer
         self._item_first_stream_ids: dict[str, str] = {}
@@ -101,6 +103,7 @@ class HarnessAguiRunStreamWriter:
                     occurred_at=event.occurred_at,
                     payload=payload,
                 ),
+                attempt_number=self._attempt_number,
             )
             if item is None:
                 continue
@@ -160,6 +163,7 @@ class HarnessAguiRunStreamWriter:
                 occurred_at=event.occurred_at,
                 payload=payload,
             ),
+            attempt_number=self._attempt_number,
         )
 
 

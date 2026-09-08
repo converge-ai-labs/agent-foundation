@@ -126,6 +126,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         states,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=3),
+        lifecycle=test_lifecycle_writer(),
     )
 
     altered_config = child_config.model_copy(update={"instructions": "Changed after parent acceptance"})
@@ -236,6 +237,7 @@ async def test_child_acceptance_rejects_stale_fence_before_publishing_state(
             states,
             RunPayloadStore(interaction_object_store),
             clock=lambda: NOW + timedelta(seconds=2),
+            lifecycle=test_lifecycle_writer(),
         ).accept(prepared, authority)
 
     with pytest.raises(ObjectNotFound):
@@ -275,6 +277,7 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
         states,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     )
     async with transaction(interaction_sessions) as database:
         binding = await database.scalar(select(RoleBindingRecord).where(RoleBindingRecord.principal_id == USER_ID))
@@ -326,6 +329,7 @@ async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postg
         states,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     )
 
     receipts = await asyncio.gather(*(service.accept(candidate, authority) for candidate in candidates))
@@ -379,6 +383,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         states,
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     )
     accepted = await service.accept(first, parent_authority)
     child_claim = await AttemptScheduler(

@@ -71,6 +71,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         RunReplayStore(interaction_object_store),
         run_id_factory=lambda _organization, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted"
@@ -165,6 +166,7 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         replays,
         run_id_factory=lambda _organization, _entry, _parent: "run_2424242424242424",
         clock=lambda: NOW + timedelta(seconds=7),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted" and receipt.successor is not None
@@ -224,6 +226,7 @@ async def test_oldest_result_accepts_successor_and_later_result_binds_in_fifo_or
         RunReplayStore(interaction_object_store),
         run_id_factory=lambda _organization, _entry, _parent: "run_1414141414141414",
         clock=lambda: NOW + timedelta(seconds=7),
+        lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     assert receipt.outcome == "run_accepted" and receipt.successor is not None
@@ -280,6 +283,7 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
             RunReplayStore(interaction_object_store),
             run_id_factory=lambda _organization, _entry, _parent: "run_1818181818181818",
             clock=lambda: NOW + timedelta(seconds=6),
+            lifecycle=test_lifecycle_writer(),
         ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
 
     async with short_session(interaction_sessions) as database:
@@ -316,6 +320,7 @@ async def test_concurrent_postgresql_successor_reconciliation_accepts_one_run(
         RunReplayStore(interaction_object_store),
         run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=6),
+        lifecycle=test_lifecycle_writer(),
     )
 
     receipts = await asyncio.gather(
@@ -371,6 +376,7 @@ async def _accept_another_child(
         states,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
+        lifecycle=test_lifecycle_writer(),
     ).accept(prepared, authority)
     return accepted.child_run_id
 
@@ -428,7 +434,11 @@ async def test_periodic_recovery_expires_bound_result_and_releases_capacity(
         assert entry.target_run_id == parent.id
         entry.expires_at = NOW + timedelta(seconds=6)
     reconciler = AsyncSubagentSuccessorReconciler(
-        interaction_sessions, states, replays, clock=lambda: NOW + timedelta(seconds=7)
+        interaction_sessions,
+        states,
+        replays,
+        clock=lambda: NOW + timedelta(seconds=7),
+        lifecycle=test_lifecycle_writer(),
     )
     assert (await reconciler.scan()).completed == 1
     assert (await reconciler.scan()).completed == 0

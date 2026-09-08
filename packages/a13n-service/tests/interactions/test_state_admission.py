@@ -190,6 +190,7 @@ async def _executor(admission, sessions, objects):
     )
     capacity = Mock()
     executor = RunAttemptExecutor(
+        activate_publication=AsyncMock(),
         context=control.current_context,
         control=control,
         driver=driver,

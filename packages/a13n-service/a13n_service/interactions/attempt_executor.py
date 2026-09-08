@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
@@ -11,6 +11,7 @@ from a13n_logging import get_logger
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
 from anyio.abc import TaskStatus
 
+from a13n_service.run_stream.domain import PublicationUnavailable
 from a13n_service.skills.runtime import SkillRuntimeError
 from a13n_service.storage.object_store import ObjectStoreUnavailable
 
@@ -116,6 +117,7 @@ class RunAttemptExecutor[OutputT]:
         adapter: Callable[[], HarnessOutcomeAdapter],
         committer: AttemptCommitter,
         capacity_slot: CapacitySlot,
+        activate_publication: Callable[[AttemptContext], Awaitable[None]],
     ) -> None:
         if control.current_context is not context:
             raise ValueError("executor, control, and monitor must share one Attempt context")
@@ -127,6 +129,7 @@ class RunAttemptExecutor[OutputT]:
         self._adapter = adapter
         self._committer = committer
         self._capacity_slot = capacity_slot
+        self._activate_publication = activate_publication
 
     async def run(self) -> AttemptOutcome | AttemptMutationReceipt | AttemptPreparationRejected:
         finalization: AttemptOutcome | AttemptMutationReceipt | AttemptPreparationRejected | None = None
@@ -136,6 +139,7 @@ class RunAttemptExecutor[OutputT]:
                 try:
                     await tasks.start(LeaseMonitor(self._context, self._control).run)
                     await tasks.start(ControlWatcher(self._context, self._control, self._wakeups).run)
+                    await self._activate_publication(self._control.current_context)
                     await self._preparer.claim_state_writer()
                     await self._preparer.validate_dependencies(self._control.current_context)
                     decision = await self._control.commit_preparation()
@@ -148,6 +152,7 @@ class RunAttemptExecutor[OutputT]:
                         if finalization is None:
                             finalization = await self._execute(decision)
                 except AttemptAuthorityError:
+                    await self._control.authority_lost()
                     raise
                 except Exception as error:
                     if self._control.handoff_ready or self._control.pre_execution_outcome is not None:
@@ -163,7 +168,8 @@ class RunAttemptExecutor[OutputT]:
                     if isinstance(error, SkillRuntimeError):
                         code = error.code
                     elif isinstance(
-                        error, (ObjectStoreUnavailable, OSError, TimeoutError, StateClaimExhausted)
+                        error,
+                        (ObjectStoreUnavailable, OSError, TimeoutError, StateClaimExhausted, PublicationUnavailable),
                     ) and not isinstance(error, PermissionError):
                         code = "attempt_dependency_unavailable"
                     else:

@@ -171,11 +171,12 @@ It uses the existing `RunStreamEvent` envelope with the same Run and Thread, the
 
 Version `1` has the serialized payload `{"reason": "lease_expired"}`, with this finite reason registry:
 
-| Reason                | Owning claim classification                                               |
-| --------------------- | ------------------------------------------------------------------------- |
-| `lease_expired`       | Replacement of an expired selected Attempt; does not prove a Worker crash |
-| `retry_after_failure` | Retry after a known retryable Attempt failure                             |
-| `planned_handoff`     | Successor to a yielded Attempt                                            |
+| Reason                | Owning claim classification                                                |
+| --------------------- | -------------------------------------------------------------------------- |
+| `lease_expired`       | Replacement of an expired selected Attempt; does not prove a Worker crash  |
+| `retry_after_failure` | Retry after a known retryable Attempt failure                              |
+| `planned_handoff`     | Successor to a yielded Attempt                                             |
+| `pending_input`       | Successor after an Attempt succeeded while accepted input remained pending |
 
 Native live delivery, reconnect, and retained replay preserve the event's identity and source position before replacement observations. Replay includes it only when it follows the supplied cursor within available history; a cursor past the boundary never causes another recovery event. Missing history follows the existing explicit gap rules. [Hosted AG-UI recovery](22-hosted-ag-ui.md#recovery-projection) owns the safe custom projection and informative client guidance. The source event carries no public fence or lease proof.
 

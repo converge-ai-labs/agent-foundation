@@ -20,7 +20,7 @@ dependencies = [
     "a13n-logging",
     "a13n-stream-protocol",
     "ag-ui-protocol>=0.1.18,<0.2",
-    "fakeredis>=2.31,<3",
+    "fakeredis[lua]>=2.31,<3",
     "fastapi>=0.116,<1",
     "fastmcp>=3.0,<4",
     "mcp>=1.26,<2",

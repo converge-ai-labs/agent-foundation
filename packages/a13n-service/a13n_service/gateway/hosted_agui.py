@@ -60,6 +60,7 @@ from a13n_service.run_stream import (
     RunStreamError,
     RunStreamReplayGap,
 )
+from a13n_service.run_stream.domain import RecoveryPayload
 from a13n_service.storage import ObjectNotFound, short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -579,7 +580,7 @@ class HostedAguiService:
                 closed = True
             for entry in entries:
                 native_cursor = entry.stream_id
-                projected = _project_event(entry)
+                projected = _project_event(entry, external_run_id=binding.external_run_id)
                 if projected is None:
                     continue
                 if ordinal > attachment.after_ordinal:
@@ -1136,7 +1137,11 @@ def _build_replay_snapshot(
             }
         )
     ]
-    events.extend(projected for entry in entries if (projected := _project_event(entry)) is not None)
+    events.extend(
+        projected
+        for entry in entries
+        if (projected := _project_event(entry, external_run_id=binding.external_run_id)) is not None
+    )
     terminal = _terminal_event(binding, run)
     if terminal is None:
         raise HostedAguiReplayUnavailable("The Hosted AG-UI Run has no sealed delivery boundary")
@@ -1378,7 +1383,7 @@ def _messages_from_entries(entries: Sequence[RunStreamEntry]) -> tuple[dict[str,
     assistants: dict[str, dict[str, Any]] = {}
     tool_calls: dict[str, dict[str, Any]] = {}
     for entry in entries:
-        projected = _project_event(entry)
+        projected = _project_observation(entry)
         if projected is None:
             continue
         event_type = projected["type"]
@@ -1435,7 +1440,25 @@ def _messages_from_entries(entries: Sequence[RunStreamEntry]) -> tuple[dict[str,
     return tuple(messages)
 
 
-def _project_event(entry: RunStreamEntry) -> dict[str, Any] | None:
+def _project_event(entry: RunStreamEntry, *, external_run_id: str) -> dict[str, Any] | None:
+    if entry.event.event_type == "run.recovery":
+        payload = RecoveryPayload.model_validate(entry.event.payload)
+        return _standard_event(
+            {
+                "type": "CUSTOM",
+                "name": "a13n.service.run_recovery",
+                "value": {
+                    "schema_version": "1",
+                    "event_id": entry.event.event_id,
+                    "runId": external_run_id,
+                    "reason": payload.reason,
+                },
+            }
+        )
+    return _project_observation(entry)
+
+
+def _project_observation(entry: RunStreamEntry) -> dict[str, Any] | None:
     prefix, separator, name = entry.event.event_type.partition(".")
     if prefix != "agui" or not separator or name not in _VISIBLE_EVENTS:
         return None

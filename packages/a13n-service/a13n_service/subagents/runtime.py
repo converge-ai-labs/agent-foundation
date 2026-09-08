@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.inbox import ThreadInboxStore
+from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.run_control import RunAttemptControl
@@ -24,10 +25,12 @@ class ServiceSubagents:
         payloads: RunPayloadStore,
         inbox: ThreadInboxStore,
         outcomes: RunOutcomeService,
+        *,
+        lifecycle: LifecycleWriter,
     ) -> None:
         self._sessions = sessions
         self._admission = ChildRunAdmissionPreparer(sessions, states)
-        self._acceptance = ChildRunAcceptanceService(sessions, states, payloads)
+        self._acceptance = ChildRunAcceptanceService(sessions, states, payloads, lifecycle=lifecycle)
         self._inbox = inbox
         self._outcomes = outcomes
 

@@ -396,6 +396,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
             read.assert_not_awaited()
 
     executor = RunAttemptExecutor(
+        activate_publication=AsyncMock(side_effect=lambda context: trace.append("publication:activate")),
         context=context,
         control=control,
         driver=driver,
@@ -419,6 +420,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         assert isinstance(receipt, AttemptOutcome)
         assert receipt.disposition is AttemptDisposition.completed
         assert projector.events
+    assert trace.index("publication:activate") < trace.index("attempt:claim-state")
     assert execution.heartbeat_seen.is_set()
     assert wakeups.acknowledged.is_set()
     if reject_preparation:
@@ -559,6 +561,7 @@ async def test_handoff_closes_runtime_while_renewing_before_yield(
         monkeypatch.setattr(execution, "yield_attempt", AsyncMock(side_effect=RuntimeError("PG unavailable")))
     await control.request_handoff(RunAttemptYieldReason.service_drain)
     executor = RunAttemptExecutor(
+        activate_publication=AsyncMock(side_effect=lambda context: trace.append("publication:activate")),
         context=context,
         control=control,
         driver=driver,

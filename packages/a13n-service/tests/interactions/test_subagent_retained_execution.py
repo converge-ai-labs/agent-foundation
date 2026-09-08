@@ -459,6 +459,7 @@ def _operator_for_parent(
                 states,
                 RunPayloadStore(objects),
                 clock=lambda: NOW + timedelta(seconds=8),
+                lifecycle=test_lifecycle_writer(),
             ),
             ThreadInboxStore(sessions, clock=lambda: NOW + timedelta(seconds=8)),
             RunOutcomeService(

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness import AgentDefinition, AgentIdentityRef, AgentInstanceContext, AgentSpec, HarnessBuilder
@@ -139,6 +140,7 @@ async def test_completed_recovery_rechecks_input_after_runtime_preparation(
     capacity = _CapacitySlot(trace)
     projector = _Projector()
     executor = RunAttemptExecutor(
+        activate_publication=AsyncMock(),
         context=context,
         control=control,
         driver=HarnessDriver(HarnessBuilder(instrumentation=None), control=control, projector=projector),

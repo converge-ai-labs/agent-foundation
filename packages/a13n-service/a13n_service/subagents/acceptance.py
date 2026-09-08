@@ -23,6 +23,7 @@ from a13n_service.interactions.environment_selection import (
     RetainedRunEnvironment,
     child_environment_choice,
 )
+from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
@@ -67,12 +68,14 @@ class ChildRunAcceptanceService:
         states: RunStateStore,
         payloads: RunPayloadStore,
         *,
+        lifecycle: LifecycleWriter,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
         self._clock = clock
+        self._lifecycle = lifecycle
 
     async def accept(
         self,
@@ -144,13 +147,14 @@ class ChildRunAcceptanceService:
                     else prepared.run
                 )
                 database.add(thread_record(prepared.thread))
-                await add_run_with_environment(
+                child_record = await add_run_with_environment(
                     database,
                     run=child_run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
                     intent=ExplicitEnvironment(choice),
                 )
+                await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
                 )
@@ -292,13 +296,14 @@ class ChildRunAcceptanceService:
                     source_child=source_run.to_resource(),
                     workspace_id=session.workspace_id,
                 )
-                await add_run_with_environment(
+                child_record = await add_run_with_environment(
                     database,
                     run=prepared.run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
                     intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
                 )
+                await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
                 )
