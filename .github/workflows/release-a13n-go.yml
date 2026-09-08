@@ -39,7 +39,7 @@ jobs:
     name: Publish Go module tag
     needs: validate
     runs-on: ubuntu-latest
-    environment: a13n-go-github
+    environment: sdk-go-github
     permissions:
       contents: write
     steps:
