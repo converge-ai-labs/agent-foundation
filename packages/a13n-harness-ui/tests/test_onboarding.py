@@ -59,7 +59,6 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
         configuration_path=path,
         codex_login=unexpected,
-        codex_refresh=unexpected,
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
     assert asked == ["provider", "model", "fast", "environment"]

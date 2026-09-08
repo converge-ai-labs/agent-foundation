@@ -158,7 +158,7 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream_model, profile={"supports_thinking": True}),
     )
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data", scratch_retention_seconds=1.0))

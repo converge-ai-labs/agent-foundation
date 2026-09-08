@@ -16,7 +16,7 @@ import httpx2
 from a13n_environment import EnvironmentProvider
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
-from a13n_harness.model_auth import CodexCredentials, GrokCredentials
+from a13n_harness.model_auth import GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
@@ -231,7 +231,6 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
-        codex_refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -258,7 +257,6 @@ class HarnessUiApp:
         self._grok_account = grok_account
         self._grok_account_error = grok_account_error
         self._codex_login = codex_login
-        self._codex_refresh = codex_refresh
         self._grok_login = grok_login
         self._candidate_error = candidate_error
         self._configuration_seen = configuration_path is not None and configuration_path.exists()
@@ -1376,7 +1374,7 @@ class HarnessUiApp:
             account = self._account(Provider.CODEX)
             assert isinstance(account, CodexAccountStore)
             async with httpx2.AsyncClient() as client:
-                return await CodexUsageClient(account, client, refresh=self._codex_refresh).read()
+                return await CodexUsageClient(account, client).read()
 
     async def redeem_codex_reset(self, request: ResetRequest) -> ResetResult:
         """Consume the explicitly selected credit on the confirmed account only."""
@@ -1388,7 +1386,6 @@ class HarnessUiApp:
                     account,
                     client,
                     expected_account_id=request.account_id,
-                    refresh=self._codex_refresh,
                 ).redeem(request)
 
     def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore:
@@ -1491,7 +1488,6 @@ async def open_harness_ui_app(
     configuration_path: Path | None = None,
     host_mode: Literal["local", "webui"] = "local",
     configuration_error: ConfigurationError | None = None,
-    codex_refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None,
     codex_login: CodexLoginCallback | None = None,
     grok_scope: str | None = None,
     grok_refresh: Callable[[GrokCredentials], Awaitable[GrokCredentials]] | None = None,
@@ -1583,9 +1579,7 @@ async def open_harness_ui_app(
                 grok_account_error = exc
             subscription_sources: dict[str, SubscriptionSource] = {}
             if codex_account is not None:
-                subscription_sources["codex_subscription"] = CodexSubscriptionSource(
-                    source=codex_account, refresh=codex_refresh
-                )
+                subscription_sources["codex_subscription"] = CodexSubscriptionSource(source=codex_account)
             if grok_account is not None:
                 subscription_sources["grok_subscription"] = GrokSubscriptionSource(
                     source=grok_account,
@@ -1644,9 +1638,7 @@ async def open_harness_ui_app(
                 discovered_grok: GrokAccountStore | None = None
                 try:
                     discovered_codex = CodexAccountStore(await resolve_codex_policy())
-                    sources["codex_subscription"] = CodexSubscriptionSource(
-                        source=discovered_codex, refresh=codex_refresh
-                    )
+                    sources["codex_subscription"] = CodexSubscriptionSource(source=discovered_codex)
                 except AccountStoreError as exc:
                     errors[Provider.CODEX] = exc
                 try:
@@ -1681,7 +1673,6 @@ async def open_harness_ui_app(
                 grok_account=grok_account,
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,
-                codex_refresh=codex_refresh,
                 grok_login=grok_login,
                 candidate_error=candidate_error,
             )

@@ -322,7 +322,7 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         seen.append((messages, info.instructions))
         yield "done"
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -386,7 +386,7 @@ async def test_session_overrides_capture_native_context_and_resume(
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
     )
     async with open_harness_ui_app(
@@ -468,7 +468,7 @@ async def test_model_selection_is_session_only_and_preserves_agent(
     async def stream(messages, info):
         yield "Reply from the selected model."
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -524,7 +524,7 @@ async def test_cancel_is_receipt_owned_and_session_is_reusable(tmp_path: Path, m
         await asyncio.sleep(60)
         yield "Never reached"
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -581,7 +581,7 @@ async def test_native_compaction_is_active_not_only_written_to_config(
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(function=reply, stream_function=stream_reply),
     )
     async with open_harness_ui_app(
@@ -707,7 +707,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_json_object_output": True}),
     )
     envd = EnvdRuntimeSettings(executable=Path(os.environ["A13N_ENVD_EXECUTABLE"]) if mode == "sandbox" else None)
@@ -761,7 +761,7 @@ async def test_native_image_input_reaches_model_and_survives_continuation(
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream_model, profile={"supports_thinking": True}),
     )
     async with open_harness_ui_app(
@@ -840,7 +840,7 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
             yield "Guidance received"
 
     monkeypatch.setattr(
-        runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
+        runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
     )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
@@ -962,7 +962,7 @@ async def test_configured_codeact_executes_and_disabled_questions_are_not_expose
             assert "2" in str(results[0].content)
             yield "CodeAct completed."
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -1032,7 +1032,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
                 assert "No answer or approval was provided" in str(messages)
             yield "Choice applied."
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -1084,7 +1084,7 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
             assert returned[-1].content == 2
             yield "Stored value is available."
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -1122,7 +1122,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
     )
     async with open_harness_ui_app(
@@ -1181,7 +1181,7 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
             await release.wait()
             yield "Done"
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -1301,7 +1301,7 @@ async def test_default_notes_are_injected_and_survive_resume_with_full_projectio
             )
             yield "Note saved."
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
@@ -1341,7 +1341,7 @@ async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
         observed.append(info.model_settings.get("service_tier"))
         yield "Reply."
 
-    monkeypatch.setattr(runtime, "build_codex_model", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:

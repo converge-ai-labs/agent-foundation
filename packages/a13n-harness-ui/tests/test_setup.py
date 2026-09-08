@@ -369,7 +369,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_requests_approval(
             else FunctionModel(stream_function=main_stream, profile={"supports_thinking": True})
         )
 
-    monkeypatch.setattr(runtime, "build_codex_model", build)
+    monkeypatch.setattr(runtime, "CodexRequestModel", build)
     path = tmp_path / "config" / "config.yaml"
     selection = _selection(tmp_path, providers=("codex",))
     preview = await preview_setup(path, selection, validate_candidate=_validate())
@@ -518,7 +518,7 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
 
     monkeypatch.setattr(
         runtime,
-        "build_codex_model",
+        "CodexRequestModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
     )
     path = tmp_path / "config" / "config.yaml"

@@ -2,47 +2,29 @@
 
 from __future__ import annotations
 
-import weakref
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator, Mapping
-from contextlib import asynccontextmanager, contextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, cast
 from urllib.parse import urljoin, urlsplit
 
 import httpx2
 from anyio import CancelScope, Event, Lock
-from pydantic_ai import RunContext, UserError
-from pydantic_ai.messages import ModelMessage, ModelResponse
-from pydantic_ai.models import ModelRequestParameters, StreamedResponse
+from pydantic_ai import UserError
 from pydantic_ai.models.openai import OpenAIResponsesModel
-from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.settings import ModelSettings
-from pydantic_ai.usage import RequestUsage, RunUsage
 
 from .models import (
-    CodexCredentials,
-    CodexCredentialSource,
     CredentialPersistenceError,
     CredentialRefreshError,
     GrokCredentials,
     GrokCredentialSource,
     ModelAuthenticationError,
 )
-from .oauth import refresh_codex_credentials, refresh_grok_credentials
+from .oauth import refresh_grok_credentials
 
 type Refresh[CredentialT] = Callable[[CredentialT], Awaitable[CredentialT]]
-_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 _GROK_BASE_URL = "https://api.x.ai/v1"
 _DEFAULT_REFRESH_WINDOW = timedelta(minutes=5)
-_CODEX_ROUTING_HINT_HEADER = "x-codex-routing-hint"
-_CODEX_TURN_STATE_HEADER = "x-codex-turn-state"
-_CODEX_DYNAMIC_HEADERS = frozenset({_CODEX_ROUTING_HINT_HEADER, _CODEX_TURN_STATE_HEADER})
-_CODEX_UNSUPPORTED_SETTINGS = frozenset(
-    {"max_tokens", "temperature", "top_p", "openai_top_logprobs", "openai_truncation", "openai_user"}
-)
 
 
 class _CredentialSource[CredentialT](Protocol):
@@ -228,8 +210,6 @@ class _ModelOAuthAuth[CredentialT](httpx2.Auth):
         base_url: str,
         headers: Callable[[CredentialT], Mapping[str, str]],
         protected_headers: tuple[str, ...],
-        replace_headers: tuple[str, ...] = (),
-        capture_response_headers: Callable[[Mapping[str, str]], None] | None = None,
     ) -> None:
         parsed = urlsplit(base_url)
         if parsed.scheme != "https" or parsed.hostname is None:
@@ -240,8 +220,6 @@ class _ModelOAuthAuth[CredentialT](httpx2.Auth):
         self._port = parsed.port or 443
         self._headers = headers
         self._protected_headers = protected_headers
-        self._replace_headers = replace_headers
-        self._capture_response_headers = capture_response_headers
 
     def sync_auth_flow(self, request: httpx2.Request):
         del request
@@ -257,12 +235,10 @@ class _ModelOAuthAuth[CredentialT](httpx2.Auth):
         self._apply(request, credentials)
         response = yield request
         if response.status_code != 401:
-            self._capture_successful_response(response)
             return
         await response.aread()
         self._apply(request, await replay())
-        response = yield request
-        self._capture_successful_response(response)
+        yield request
 
     def _matches_origin(self, url: str) -> bool:
         parsed = urlsplit(url)
@@ -280,13 +256,7 @@ class _ModelOAuthAuth[CredentialT](httpx2.Auth):
         for name in self._protected_headers:
             request.headers.pop(name, None)
 
-    def _capture_successful_response(self, response: httpx2.Response) -> None:
-        if self._capture_response_headers is not None and response.is_success:
-            self._capture_response_headers(response.headers)
-
     def _apply(self, request: httpx2.Request, credentials: CredentialT) -> None:
-        for name in self._replace_headers:
-            request.headers.pop(name, None)
         for name, value in self._headers(credentials).items():
             request.headers[name] = value
 
@@ -315,292 +285,6 @@ class _ModelOAuthOpenAIProvider(OpenAIProvider):
     @property
     def name(self) -> str:
         return self._provider_name
-
-
-@dataclass(slots=True)
-class _CodexTurnState:
-    value: str | None = None
-
-    def capture(self, headers: Mapping[str, str]) -> None:
-        if self.value is not None:
-            return
-        for name in headers:
-            if name.lower() != _CODEX_TURN_STATE_HEADER:
-                continue
-            try:
-                value = headers[name]
-            except LookupError:
-                return
-            if normalized := value.strip():
-                self.value = normalized
-            return
-
-
-@dataclass(slots=True)
-class _CodexRequestScope:
-    turn_state: _CodexTurnState | None
-    routing_hint: str | None = None
-
-
-class _CodexRequestHeaders:
-    def __init__(self, model_name: str) -> None:
-        self._model_name = model_name
-        self._turn_states: dict[str, tuple[weakref.ReferenceType[RunUsage], _CodexTurnState]] = {}
-        self._active_request: ContextVar[_CodexRequestScope | None] = ContextVar(
-            f"a13n_harness.codex_request_headers.{id(self)}",
-            default=None,
-        )
-
-    @contextmanager
-    def scope(self, run_context: RunContext[Any] | None) -> Iterator[None]:
-        token = self._active_request.set(_CodexRequestScope(turn_state=self._state_for_run(run_context)))
-        try:
-            yield
-        finally:
-            self._active_request.reset(token)
-
-    def apply(self, model_settings: ModelSettings) -> ModelSettings:
-        settings: dict[str, Any] = dict(model_settings)
-        raw_headers = cast(Mapping[str, str] | None, settings.get("extra_headers"))
-        headers = {
-            name: value for name, value in (raw_headers or {}).items() if name.lower() not in _CODEX_DYNAMIC_HEADERS
-        }
-        service_tier = settings.get("openai_service_tier") or settings.get("service_tier")
-        routing_hint = f"model={self._model_name}"
-        if isinstance(service_tier, str) and service_tier:
-            routing_hint = f"{routing_hint};tier={service_tier}"
-        active_request = self._active_request.get()
-        if active_request is None:
-            raise RuntimeError("Codex request headers must be prepared inside a request scope")
-        active_request.routing_hint = routing_hint
-        settings["extra_headers"] = headers
-        return cast(ModelSettings, settings)
-
-    def current(self) -> Mapping[str, str]:
-        active_request = self._active_request.get()
-        if active_request is None or active_request.routing_hint is None:
-            return {}
-        headers = {_CODEX_ROUTING_HINT_HEADER: active_request.routing_hint}
-        if active_request.turn_state is not None and active_request.turn_state.value is not None:
-            headers[_CODEX_TURN_STATE_HEADER] = active_request.turn_state.value
-        return headers
-
-    def capture(self, headers: Mapping[str, str]) -> None:
-        active_request = self._active_request.get()
-        if active_request is not None and active_request.turn_state is not None:
-            active_request.turn_state.capture(headers)
-
-    def _state_for_run(self, run_context: RunContext[Any] | None) -> _CodexTurnState | None:
-        if not isinstance(run_context, RunContext) or not run_context.run_id:
-            return None
-        run_id = run_context.run_id
-        existing = self._turn_states.get(run_id)
-        if existing is not None and existing[0]() is run_context.usage:
-            return existing[1]
-
-        state = _CodexTurnState()
-        owner_ref = weakref.ref(self)
-
-        def remove_state(usage_ref: weakref.ReferenceType[RunUsage]) -> None:
-            owner = owner_ref()
-            if owner is None:
-                return
-            current = owner._turn_states.get(run_id)
-            if current is not None and current[0] is usage_ref:
-                owner._turn_states.pop(run_id, None)
-
-        usage_ref = weakref.ref(run_context.usage, remove_state)
-        self._turn_states[run_id] = (usage_ref, state)
-        return state
-
-
-class CodexSubscriptionModel(WrapperModel):
-    """Apply the Codex Responses dialect, routing, turn state, and Thread affinity."""
-
-    def __init__(self, wrapped: OpenAIResponsesModel, request_headers: _CodexRequestHeaders | None = None) -> None:
-        super().__init__(wrapped)
-        self._request_headers = request_headers or _CodexRequestHeaders(wrapped.model_name)
-
-    @staticmethod
-    def _codex_settings(model_settings: ModelSettings | None) -> ModelSettings:
-        settings: dict[str, Any] = dict(model_settings or {})
-        for name in _CODEX_UNSUPPORTED_SETTINGS:
-            settings.pop(name, None)
-        settings["openai_store"] = False
-        raw_headers = cast(Mapping[str, str] | None, settings.get("extra_headers"))
-        headers = dict(raw_headers or {})
-        lower = {name.lower() for name in headers}
-        thread_id = next((value for name, value in headers.items() if name.lower() == "x-session-id"), None)
-        if thread_id is not None:
-            for name in ("session-id", "thread-id", "x-client-request-id"):
-                if name not in lower:
-                    headers[name] = thread_id
-        settings["extra_headers"] = headers
-        return cast(ModelSettings, settings)
-
-    async def request(
-        self,
-        messages: list[ModelMessage],
-        model_settings: ModelSettings | None,
-        model_request_parameters: ModelRequestParameters,
-    ) -> ModelResponse:
-        async with self.request_stream(messages, model_settings, model_request_parameters) as response:
-            async for _ in response:
-                pass
-            return response.get()
-
-    @asynccontextmanager
-    async def request_stream(
-        self,
-        messages: list[ModelMessage],
-        model_settings: ModelSettings | None,
-        model_request_parameters: ModelRequestParameters,
-        run_context: RunContext[Any] | None = None,
-    ) -> AsyncGenerator[StreamedResponse]:
-        with self._request_headers.scope(run_context):
-            settings = self._request_headers.apply(self._codex_settings(model_settings))
-            async with self.wrapped.request_stream(
-                messages,
-                settings,
-                model_request_parameters,
-                run_context,
-            ) as response:
-                yield response
-
-    async def count_tokens(
-        self,
-        messages: list[ModelMessage],
-        model_settings: ModelSettings | None,
-        model_request_parameters: ModelRequestParameters,
-    ) -> RequestUsage:
-        del messages, model_settings, model_request_parameters
-        raise UserError("Server-side token counting is unavailable for Codex subscription models.")
-
-
-def _codex_credential_manager(
-    credential_source: CodexCredentialSource,
-    refresh: Refresh[CodexCredentials],
-    refresh_window: timedelta,
-) -> _CredentialManager[CodexCredentials]:
-    return _CredentialManager(
-        credential_source,
-        provider="openai-codex",
-        credential_type=CodexCredentials,
-        refresh=refresh,
-        identity=lambda value: (value.account_id,),
-        expires_at=lambda value: value.expires_at,
-        validate=lambda value: bool(
-            value.account_id
-            and value.access_token
-            and value.refresh_token
-            and (value.id_token is None or value.id_token)
-        ),
-        refresh_window=refresh_window,
-    )
-
-
-def build_codex_account_auth(
-    *,
-    credential_source: CodexCredentialSource,
-    http_client: httpx2.AsyncClient,
-    expected_account_id: str | None = None,
-    refresh: Refresh[CodexCredentials] | None = None,
-) -> httpx2.Auth:
-    """Reuse request-fresh subscription authentication for the ChatGPT account API.
-
-    The caller owns the client, disables redirects, and supplies stable request
-    identities for mutations. A 401 can replay once after refresh; this is not a
-    retry of a timeout or an ambiguous server response.
-    """
-
-    async def selected_refresh(credentials: CodexCredentials) -> CodexCredentials:
-        if refresh is not None:
-            return await refresh(credentials)
-        return await refresh_codex_credentials(credentials, http_client=http_client)
-
-    def headers(credentials: CodexCredentials) -> Mapping[str, str]:
-        if expected_account_id is not None and credentials.account_id != expected_account_id:
-            raise UserError("The Codex account changed. Refresh usage and confirm again; no reset was sent.")
-        return {
-            "Authorization": f"Bearer {credentials.access_token}",
-            "ChatGPT-Account-Id": credentials.account_id,
-        }
-
-    return _ModelOAuthAuth(
-        _codex_credential_manager(credential_source, selected_refresh, _DEFAULT_REFRESH_WINDOW),
-        base_url="https://chatgpt.com/backend-api",
-        headers=headers,
-        protected_headers=("Authorization", "ChatGPT-Account-Id"),
-    )
-
-
-def build_codex_model(
-    model_name: str,
-    *,
-    credential_source: CodexCredentialSource,
-    refresh: Refresh[CodexCredentials] | None = None,
-    refresh_window: timedelta = _DEFAULT_REFRESH_WINDOW,
-    http_client: httpx2.AsyncClient | None = None,
-    originator: str = "a13n-harness",
-) -> CodexSubscriptionModel:
-    """Build one Codex Responses Model backed by an application credential source."""
-
-    owns_http_client = http_client is None
-    client = http_client or httpx2.AsyncClient()
-    if client.auth is not None:
-        raise UserError("The Model OAuth HTTP client must not already have authentication configured.")
-    client.follow_redirects = False
-    client_ref = [client]
-
-    async def selected_refresh(credentials: CodexCredentials) -> CodexCredentials:
-        if refresh is not None:
-            return await refresh(credentials)
-        return await refresh_codex_credentials(credentials, http_client=client_ref[0])
-
-    manager = _codex_credential_manager(credential_source, selected_refresh, refresh_window)
-    request_headers = _CodexRequestHeaders(model_name)
-    auth = _ModelOAuthAuth(
-        manager,
-        base_url=_CODEX_BASE_URL,
-        headers=lambda value: {
-            "Authorization": f"Bearer {value.access_token}",
-            "chatgpt-account-id": value.account_id,
-            "originator": originator,
-            **request_headers.current(),
-        },
-        protected_headers=(
-            "Authorization",
-            "chatgpt-account-id",
-            "originator",
-            _CODEX_ROUTING_HINT_HEADER,
-            _CODEX_TURN_STATE_HEADER,
-        ),
-        replace_headers=(_CODEX_ROUTING_HINT_HEADER, _CODEX_TURN_STATE_HEADER),
-        capture_response_headers=request_headers.capture,
-    )
-    client.auth = auth
-    client.event_hooks["response"].append(auth.protect_redirect)
-
-    def create_http_client() -> httpx2.AsyncClient:
-        reopened = httpx2.AsyncClient(
-            auth=auth,
-            follow_redirects=False,
-            event_hooks={"response": [auth.protect_redirect]},
-        )
-        client_ref[0] = reopened
-        return reopened
-
-    provider = _ModelOAuthOpenAIProvider(
-        provider_name="openai-codex",
-        base_url=_CODEX_BASE_URL,
-        http_client=client,
-        owns_http_client=owns_http_client,
-        http_client_factory=create_http_client,
-    )
-    return CodexSubscriptionModel(
-        OpenAIResponsesModel(cast(Any, model_name), provider=provider),
-        request_headers=request_headers,
-    )
 
 
 def build_grok_model(
@@ -673,4 +357,4 @@ def build_grok_model(
     return OpenAIResponsesModel(cast(Any, model_name), provider=provider)
 
 
-__all__ = ["CodexSubscriptionModel", "build_codex_model", "build_grok_model"]
+__all__ = ["build_grok_model"]

@@ -59,7 +59,7 @@ A **working budget** controls local reminders and compaction. It does not increa
 
 Reasoning choices are `low`, `medium`, `high`, and `xhigh`. `/thinking default` returns to the selected Model's configured value. High reasoning is independent of detailed display: you can use high reasoning while seeing concise output. Only provider-exposed reasoning is shown, and some providers do not return it.
 
-Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The native subscription adapter strips unsupported settings such as `max_tokens`; `openai_store` is forced false.
+Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The official Pydantic AI Codex profile strips unsupported generic settings such as `max_tokens`; `openai_store` is forced false. Explicit `openai_*` settings otherwise follow upstream validation rather than a separate Harness filter.
 
 ## Fast mode and service tiers
 
@@ -166,7 +166,9 @@ These values guide Harness behavior; they do not give a model modalities or toke
 
 ### Account-store locations
 
-Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Native use refreshes supported expiring credentials through the shared account integration.
+Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use Pydantic AI 2.41 or later with an explicit shared-store credential source. A provider caches credentials within its lifetime and rereads storage before refresh, not on every request. A new Run or account operation gets a fresh provider. If refreshed credentials cannot be saved, the request fails, but the provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
+
+Harness retains device login, Thread affinity, routing hints, and per-run turn state where the official Codex provider has no equivalent. Browser PKCE and callback handling use the official flow; a small login-exchange adapter retains the real ID token required by native Codex `auth.json`. New login and account switching write that ID token, and same-account refresh preserves it. No second subscription store is created.
 
 ```console
 a13n-harness-ui auth status codex --format json

@@ -12,10 +12,7 @@ from enum import Enum
 from pathlib import Path
 
 import click
-from a13n_harness.model_auth import (
-    CodexCredentials,
-    GrokCredentials,
-)
+from a13n_harness.model_auth import CodexLoginResult, GrokCredentials
 from a13n_logging import LogFormat, configure_logging
 from anyio import fail_after
 from pydantic import BaseModel
@@ -143,7 +140,7 @@ def _present_login(**values: object) -> None:
     click.echo("Waiting for authorization (Ctrl+C to cancel)...", err=True)
 
 
-async def _codex_cli_login(request: object, *, device_code: bool = True) -> CodexCredentials:
+async def _codex_cli_login(request: object, *, device_code: bool = True) -> CodexLoginResult:
     from a13n_harness_ui.model_accounts.codex import CodexLoginRequest
     from a13n_harness_ui.model_accounts.login import authorize_codex
 

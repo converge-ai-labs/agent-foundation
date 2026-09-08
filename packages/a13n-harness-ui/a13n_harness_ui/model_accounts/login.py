@@ -8,9 +8,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from a13n_harness.model_auth import (
-    CodexCredentials,
-    CodexDeviceAuthorizationFlow,
-    CodexOAuthFlow,
+    CodexLoginResult,
     DeviceAuthorizationError,
     GrokCredentials,
     GrokDeviceAuthorizationFlow,
@@ -58,18 +56,21 @@ class _Session:
     done: Event
 
 
-async def authorize_codex(request: CodexLoginRequest, method: str, present: Callable[..., None]) -> CodexCredentials:
+async def authorize_codex(request: CodexLoginRequest, method: str, present: Callable[..., None]) -> CodexLoginResult:
+    from a13n_harness.model_auth import CodexDeviceAuthorizationFlow, CodexLoginFlow
+
     del request
     if method == "device":
         grant = await CodexDeviceAuthorizationFlow.start()
         present(verification_url=grant.verification_uri, user_code=grant.user_code, expires_in=grant.expires_in)
-        return await grant.wait_for_credentials()
-    flow = CodexOAuthFlow()
+        return await grant.wait_for_login()
+    flow = CodexLoginFlow()
     present(
         verification_url=flow.authorization_url(),
         message="The browser must reach this Host at localhost:1455. Use device authorization for a remote Host.",
     )
-    return await flow.exchange_code_from_callback(timeout_seconds=900)
+    with fail_after(900):
+        return await flow.exchange_login_from_callback()
 
 
 async def authorize_grok(request: GrokLoginRequest, method: str, present: Callable[..., None]) -> GrokCredentials:

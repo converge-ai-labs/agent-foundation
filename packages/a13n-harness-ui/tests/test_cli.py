@@ -8,11 +8,12 @@ import a13n_harness_ui.cli as cli_module
 import a13n_harness_ui.cli_runtime as runtime_module
 import a13n_harness_ui.terminal as terminal_module
 import pytest
-from a13n_harness.model_auth import CodexCredentials, GrokCredentials
+from a13n_harness.model_auth import CodexLoginResult, GrokCredentials
 from a13n_harness_ui.cli import CliRequest, OutputFormat, cli, main
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.model_accounts import DEFAULT_GROK_OAUTH_SCOPE, GrokLoginRequest
 from click.testing import CliRunner
+from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 
 
 def test_defaults_to_interactive_cli(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,22 +223,23 @@ async def test_codex_cli_login_uses_harness_oauth_flow(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    credentials = CodexCredentials(
-        account_id="account-1",
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
-        access_token="access-secret",
-        refresh_token="refresh-secret",
+    credentials = CodexLoginResult(
+        credentials=OpenAICodexCredentials(
+            account_id="account-1",
+            access_token="access-secret",
+            refresh_token="refresh-secret",
+        ),
+        id_token="access-secret",
     )
 
     class Flow:
         def authorization_url(self) -> str:
             return "https://auth.example/authorize"
 
-        async def exchange_code_from_callback(self, *, timeout_seconds: float) -> CodexCredentials:
-            assert timeout_seconds == 900
+        async def exchange_login_from_callback(self) -> CodexLoginResult:
             return credentials
 
-    monkeypatch.setattr("a13n_harness_ui.model_accounts.login.CodexOAuthFlow", Flow)
+    monkeypatch.setattr("a13n_harness.model_auth.CodexLoginFlow", Flow)
 
     from a13n_harness_ui.model_accounts.codex import CodexLoginRequest
 

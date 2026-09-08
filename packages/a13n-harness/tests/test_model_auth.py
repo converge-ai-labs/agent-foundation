@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import time
 from collections.abc import Iterator, Mapping
@@ -14,25 +13,23 @@ import httpx2
 import jwt
 import pytest
 from a13n_harness.model_auth import (
-    CodexCredentials,
-    CodexOAuthFlow,
-    CodexSubscriptionModel,
+    CodexRequestModel,
     CredentialPersistenceError,
     CredentialRefreshError,
     GrokCredentials,
     GrokDeviceAuthorizationFlow,
     GrokOAuthFlow,
     ModelAuthenticationError,
-    build_codex_model,
     build_grok_model,
     refresh_grok_credentials,
 )
-from a13n_harness.model_auth import runtime as model_auth_runtime
+from a13n_harness.model_auth import codex as model_auth_runtime
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIResponsesModelSettings
+from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
@@ -67,13 +64,11 @@ def _responses_sse() -> bytes:
     return "".join(f"data: {json.dumps(event)}\n\n" for event in events).encode()
 
 
-def _codex_credentials(*, marker: str, expires_at: datetime) -> CodexCredentials:
-    return CodexCredentials(
+def _codex_credentials(*, marker: str, expires_at: datetime) -> OpenAICodexCredentials:
+    return OpenAICodexCredentials(
         account_id="account-1",
-        expires_at=expires_at,
         access_token=f"codex-access-{marker}",
         refresh_token=f"codex-refresh-{marker}",
-        id_token=f"codex-id-{marker}",
     )
 
 
@@ -91,19 +86,19 @@ def _grok_credentials(*, marker: str, expires_at: datetime) -> GrokCredentials:
 
 
 class _CodexSource:
-    def __init__(self, current: CodexCredentials, *, fail_save: bool = False) -> None:
+    def __init__(self, current: OpenAICodexCredentials, *, fail_save: bool = False) -> None:
         self.current = current
         self.fail_save = fail_save
         self.loads = 0
-        self.saved: list[CodexCredentials] = []
+        self.saved: list[OpenAICodexCredentials] = []
         self.events: list[str] = []
 
-    async def load(self) -> CodexCredentials:
+    async def load(self) -> OpenAICodexCredentials:
         self.loads += 1
         self.events.append("load")
         return self.current
 
-    async def save(self, credentials: CodexCredentials) -> None:
+    async def save(self, credentials: OpenAICodexCredentials) -> None:
         self.events.append("save")
         self.saved.append(credentials)
         if self.fail_save:
@@ -127,48 +122,24 @@ class _RepeatedValueHeaders(Mapping[str, str]):
 
 
 class _GrokSource:
-    def __init__(self, current: GrokCredentials) -> None:
+    def __init__(self, current: GrokCredentials, *, fail_save: bool = False) -> None:
         self.current = current
+        self.fail_save = fail_save
         self.loads = 0
         self.saved: list[GrokCredentials] = []
+        self.events: list[str] = []
 
     async def load(self) -> GrokCredentials:
         self.loads += 1
+        self.events.append("load")
         return self.current
 
     async def save(self, credentials: GrokCredentials) -> None:
+        self.events.append("save")
         self.saved.append(credentials)
+        if self.fail_save:
+            raise OSError("credential store unavailable")
         self.current = credentials
-
-
-async def test_source_is_loaded_for_each_request_and_headers_stay_on_exact_origin() -> None:
-    credentials = _codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1))
-    source = _CodexSource(credentials)
-    seen: list[tuple[str, str | None, str | None, str | None]] = []
-
-    async def handle(request: httpx2.Request) -> httpx2.Response:
-        seen.append(
-            (
-                request.url.host,
-                request.headers.get("authorization"),
-                request.headers.get("chatgpt-account-id"),
-                request.headers.get("originator"),
-            )
-        )
-        return httpx2.Response(200)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, http_client=client)
-        await client.get(f"{_CODEX_BASE_URL}/models")
-        await client.get(f"{_CODEX_BASE_URL}/responses")
-        await client.get("https://example.com/not-the-provider")
-
-    assert source.loads == 2
-    assert seen == [
-        ("chatgpt.com", "Bearer codex-access-current", "account-1", "a13n-harness"),
-        ("chatgpt.com", "Bearer codex-access-current", "account-1", "a13n-harness"),
-        ("example.com", None, None, None),
-    ]
 
 
 async def test_model_authentication_disables_redirect_following() -> None:
@@ -183,7 +154,7 @@ async def test_model_authentication_disables_redirect_following() -> None:
         transport=httpx2.MockTransport(handle),
         follow_redirects=True,
     ) as client:
-        build_codex_model("gpt-5", credential_source=source, http_client=client)
+        CodexRequestModel("gpt-5", credential_source=source, http_client=client)
         response = await client.get(f"{_CODEX_BASE_URL}/responses")
 
     assert response.status_code == 302
@@ -208,7 +179,7 @@ async def test_per_request_redirect_override_cannot_forward_protected_headers() 
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, http_client=client)
+        CodexRequestModel("gpt-5", credential_source=source, http_client=client)
         response = await client.get(
             f"{_CODEX_BASE_URL}/responses",
             headers={
@@ -230,22 +201,22 @@ async def test_per_request_redirect_override_cannot_forward_protected_headers() 
 
 
 async def test_stale_credentials_are_saved_before_the_rotated_token_is_sent() -> None:
-    source = _CodexSource(_codex_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
-    refreshed = _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
+    source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
+    refreshed = _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
-        assert credentials.access_token == "codex-access-old"
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
+        assert credentials.access_token == "grok-access-old"
         source.events.append("refresh")
         return refreshed
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
         source.events.append("send")
-        assert request.headers["authorization"] == "Bearer codex-access-new"
+        assert request.headers["authorization"] == "Bearer grok-access-new"
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
-        response = await client.post(f"{_CODEX_BASE_URL}/responses", content=b"request-body")
+        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        response = await client.post(f"{_GROK_BASE_URL}/responses", content=b"request-body")
 
     assert response.status_code == 200
     assert source.saved == [refreshed]
@@ -253,11 +224,11 @@ async def test_stale_credentials_are_saved_before_the_rotated_token_is_sent() ->
 
 
 async def test_refresh_adopts_a_newer_same_account_source_value() -> None:
-    old = _codex_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1))
-    sibling = _codex_credentials(marker="sibling", expires_at=datetime.now(UTC) + timedelta(hours=1))
+    old = _grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1))
+    sibling = _grok_credentials(marker="sibling", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
-    class SequencedSource(_CodexSource):
-        async def load(self) -> CodexCredentials:
+    class SequencedSource(_GrokSource):
+        async def load(self) -> GrokCredentials:
             credentials = old if self.loads == 0 else sibling
             self.current = credentials
             return await super().load()
@@ -265,25 +236,25 @@ async def test_refresh_adopts_a_newer_same_account_source_value() -> None:
     source = SequencedSource(old)
     refreshes = 0
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         nonlocal refreshes
         del credentials
         refreshes += 1
-        return _codex_credentials(marker="callback", expires_at=datetime.now(UTC) + timedelta(hours=1))
+        return _grok_credentials(marker="callback", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
-        assert request.headers["authorization"] == "Bearer codex-access-sibling"
+        assert request.headers["authorization"] == "Bearer grok-access-sibling"
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model(
+        build_grok_model(
             "gpt-5",
             credential_source=source,
             refresh=refresh,
             refresh_window=timedelta(hours=2),
             http_client=client,
         )
-        response = await client.get(f"{_CODEX_BASE_URL}/responses")
+        response = await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert response.status_code == 200
     assert refreshes == 0
@@ -292,7 +263,7 @@ async def test_refresh_adopts_a_newer_same_account_source_value() -> None:
 
 
 async def test_live_model_rejects_a_source_account_switch() -> None:
-    source = _CodexSource(_codex_credentials(marker="first", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    source = _GrokSource(_grok_credentials(marker="first", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     sends = 0
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
@@ -302,30 +273,30 @@ async def test_live_model_rejects_a_source_account_switch() -> None:
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, http_client=client)
-        await client.get(f"{_CODEX_BASE_URL}/responses")
-        source.current = CodexCredentials(
+        build_grok_model("gpt-5", credential_source=source, http_client=client)
+        await client.get(f"{_GROK_BASE_URL}/responses")
+        source.current = replace(
+            source.current,
             account_id="account-2",
-            expires_at=datetime.now(UTC) + timedelta(hours=1),
             access_token="account-2-access",
             refresh_token="account-2-refresh",
         )
         with pytest.raises(ModelAuthenticationError, match="active Model account changed"):
-            await client.get(f"{_CODEX_BASE_URL}/responses")
+            await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert sends == 1
 
 
 async def test_persistence_failure_prevents_the_rotated_token_from_being_sent() -> None:
-    source = _CodexSource(
-        _codex_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)),
+    source = _GrokSource(
+        _grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)),
         fail_save=True,
     )
     sends = 0
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         del credentials
-        return _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
+        return _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
         nonlocal sends
@@ -334,40 +305,40 @@ async def test_persistence_failure_prevents_the_rotated_token_from_being_sent() 
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
         with pytest.raises(CredentialPersistenceError) as failed:
-            await client.get(f"{_CODEX_BASE_URL}/responses")
+            await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert str(failed.value) == "The refreshed Model credentials could not be persisted."
     assert failed.value.__cause__ is None
     assert sends == 0
-    assert source.current.access_token == "codex-access-old"
+    assert source.current.access_token == "grok-access-old"
 
 
 async def test_later_request_retries_a_transient_proactive_refresh_failure() -> None:
-    source = _CodexSource(_codex_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
+    source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
     refreshes = 0
     sends = 0
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         nonlocal refreshes
         del credentials
         refreshes += 1
         if refreshes == 1:
             raise OSError("temporary refresh failure")
-        return _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
+        return _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
         nonlocal sends
         sends += 1
-        assert request.headers["authorization"] == "Bearer codex-access-new"
+        assert request.headers["authorization"] == "Bearer grok-access-new"
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
         with pytest.raises(CredentialRefreshError):
-            await client.get(f"{_CODEX_BASE_URL}/responses")
-        response = await client.get(f"{_CODEX_BASE_URL}/responses")
+            await client.get(f"{_GROK_BASE_URL}/responses")
+        response = await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert response.status_code == 200
     assert refreshes == 2
@@ -375,29 +346,29 @@ async def test_later_request_retries_a_transient_proactive_refresh_failure() -> 
 
 
 async def test_concurrent_stale_requests_share_failure_and_a_later_request_retries() -> None:
-    source = _CodexSource(_codex_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
+    source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
     refreshes = 0
     failures: list[CredentialRefreshError] = []
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         nonlocal refreshes
         del credentials
         refreshes += 1
         await anyio.sleep(0.02)
         if refreshes == 1:
             raise OSError("temporary refresh failure")
-        return _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
+        return _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
-        assert request.headers["authorization"] == "Bearer codex-access-new"
+        assert request.headers["authorization"] == "Bearer grok-access-new"
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
 
         async def send() -> None:
             try:
-                await client.get(f"{_CODEX_BASE_URL}/responses")
+                await client.get(f"{_GROK_BASE_URL}/responses")
             except CredentialRefreshError as exc:
                 failures.append(exc)
 
@@ -406,7 +377,7 @@ async def test_concurrent_stale_requests_share_failure_and_a_later_request_retri
                 tasks.start_soon(send)
 
         assert refreshes == 1
-        recovered = await client.get(f"{_CODEX_BASE_URL}/responses")
+        recovered = await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert recovered.status_code == 200
     assert refreshes == 2
@@ -414,13 +385,12 @@ async def test_concurrent_stale_requests_share_failure_and_a_later_request_retri
 
 
 async def test_invalid_refreshed_credentials_are_not_saved_or_sent() -> None:
-    source = _CodexSource(_codex_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
+    source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
     sends = 0
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
-        return CodexCredentials(
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
+        return GrokCredentials(
             account_id=credentials.account_id,
-            expires_at=datetime.now(),
             access_token="new-access",
             refresh_token="new-refresh",
         )
@@ -432,24 +402,24 @@ async def test_invalid_refreshed_credentials_are_not_saved_or_sent() -> None:
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
         with pytest.raises(CredentialRefreshError):
-            await client.get(f"{_CODEX_BASE_URL}/responses")
+            await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert source.saved == []
     assert sends == 0
 
 
 async def test_one_401_refreshes_and_replays_the_same_request_body_once() -> None:
-    source = _CodexSource(_codex_credentials(marker="old", expires_at=datetime.now(UTC) + timedelta(hours=1)))
-    refreshed = _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
+    source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    refreshed = _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
     requests: list[tuple[str, bytes]] = []
     refreshes = 0
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         nonlocal refreshes
         refreshes += 1
-        assert credentials.access_token == "codex-access-old"
+        assert credentials.access_token == "grok-access-old"
         return refreshed
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
@@ -457,13 +427,13 @@ async def test_one_401_refreshes_and_replays_the_same_request_body_once() -> Non
         return httpx2.Response(401)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
-        response = await client.post(f"{_CODEX_BASE_URL}/responses", content=b"request-body")
+        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        response = await client.post(f"{_GROK_BASE_URL}/responses", content=b"request-body")
 
     assert response.status_code == 401
     assert requests == [
-        ("Bearer codex-access-old", b"request-body"),
-        ("Bearer codex-access-new", b"request-body"),
+        ("Bearer grok-access-old", b"request-body"),
+        ("Bearer grok-access-new", b"request-body"),
     ]
     assert refreshes == 1
     assert source.saved == [refreshed]
@@ -542,24 +512,24 @@ async def test_grok_refresh_rejects_mismatched_discovery_issuer_before_token_exc
 
 
 async def test_concurrent_401s_share_failure_and_a_later_request_retries() -> None:
-    source = _CodexSource(_codex_credentials(marker="old", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     refreshes = 0
     initial_requests = 0
     all_started = anyio.Event()
     request_lock = anyio.Lock()
     failures: list[CredentialRefreshError] = []
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
+    async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         nonlocal refreshes
         del credentials
         refreshes += 1
         if refreshes == 1:
             raise OSError("temporary refresh failure")
-        return _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
+        return _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
         nonlocal initial_requests
-        if request.headers["authorization"] == "Bearer codex-access-new":
+        if request.headers["authorization"] == "Bearer grok-access-new":
             return httpx2.Response(200)
         async with request_lock:
             initial_requests += 1
@@ -569,11 +539,11 @@ async def test_concurrent_401s_share_failure_and_a_later_request_retries() -> No
         return httpx2.Response(401)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_codex_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
 
         async def send() -> None:
             try:
-                await client.get(f"{_CODEX_BASE_URL}/responses")
+                await client.get(f"{_GROK_BASE_URL}/responses")
             except CredentialRefreshError as exc:
                 failures.append(exc)
 
@@ -582,7 +552,7 @@ async def test_concurrent_401s_share_failure_and_a_later_request_retries() -> No
                 tasks.start_soon(send)
 
         assert refreshes == 1
-        recovered = await client.get(f"{_CODEX_BASE_URL}/responses")
+        recovered = await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert recovered.status_code == 200
     assert refreshes == 2
@@ -624,26 +594,6 @@ async def test_concurrent_stale_requests_share_one_process_local_refresh() -> No
     assert authorizations == ["Bearer grok-access-new"] * 8
 
 
-async def test_builder_owned_client_closes_and_reopens_with_model_lifecycle() -> None:
-    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
-    model = build_codex_model("gpt-5", credential_source=source)
-    provider = model.provider
-    assert provider is not None
-    assert provider.name == "openai-codex"
-    assert provider.client.max_retries == 0
-    original = provider.client._client  # pyright: ignore[reportPrivateUsage]
-
-    async with model:
-        assert original.is_closed is False
-    assert original.is_closed is True
-
-    async with model:
-        reopened = provider.client._client  # pyright: ignore[reportPrivateUsage]
-        assert reopened is not original
-        assert reopened.is_closed is False
-    assert reopened.is_closed is True
-
-
 async def test_caller_owned_client_stays_open_after_model_lifecycle() -> None:
     source = _GrokSource(_grok_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     client = httpx2.AsyncClient()
@@ -662,18 +612,8 @@ async def test_builder_rejects_a_client_that_already_has_authentication() -> Non
     source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
 
     async with httpx2.AsyncClient(auth=httpx2.BasicAuth("name", "secret")) as client:
-        with pytest.raises(UserError, match="must not already have authentication"):
-            build_codex_model("gpt-5", credential_source=source, http_client=client)
-
-
-def test_codex_credentials_hide_all_tokens_from_representations() -> None:
-    credentials = _codex_credentials(marker="secret", expires_at=datetime.now(UTC) + timedelta(hours=1))
-    rendered = repr(credentials)
-
-    assert "codex-access-secret" not in rendered
-    assert "codex-refresh-secret" not in rendered
-    assert "codex-id-secret" not in rendered
-    assert "account-1" in rendered
+        with pytest.raises(UserError, match="already has auth configured"):
+            CodexRequestModel("gpt-5", credential_source=source, http_client=client)
 
 
 def test_grok_credentials_hide_all_tokens_from_representations() -> None:
@@ -683,28 +623,6 @@ def test_grok_credentials_hide_all_tokens_from_representations() -> None:
     assert "grok-access-secret" not in rendered
     assert "grok-refresh-secret" not in rendered
     assert "account-1" in rendered
-
-
-def test_codex_pkce_authorization_url_contains_challenge_but_not_verifier() -> None:
-    flow = CodexOAuthFlow(state="state-value")
-    query = parse_qs(urlsplit(flow.authorization_url()).query)
-    expected_challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(flow.code_verifier.encode()).digest()).rstrip(b"=").decode()
-    )
-
-    assert query["state"] == ["state-value"]
-    assert query["response_type"] == ["code"]
-    assert query["code_challenge_method"] == ["S256"]
-    assert query["code_challenge"] == [expected_challenge]
-    assert query["redirect_uri"] == [flow.redirect_uri]
-    assert flow.code_verifier not in flow.authorization_url()
-
-
-def test_oauth_extra_params_cannot_replace_flow_security_parameters() -> None:
-    flow = CodexOAuthFlow(state="state-value")
-
-    with pytest.raises(UserError, match="cannot override OAuth parameter: state"):
-        flow.authorization_url(extra_params={"state": "replacement"})
 
 
 def test_codex_turn_state_capture_skips_unrelated_repeated_headers() -> None:
@@ -740,7 +658,7 @@ async def test_codex_routing_hint_and_turn_state_follow_effective_run() -> None:
             _CODEX_TURN_STATE_HEADER: "client-stale-state",
         },
     ) as client:
-        model = build_codex_model("gpt-5", credential_source=source, http_client=client)
+        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client)
         run_one_usage = RunUsage()
         contexts = [
             RunContext(deps=object(), model=model, usage=run_one_usage, run_id="run-one"),
@@ -797,11 +715,16 @@ async def test_codex_turn_state_ignores_401_and_captures_successful_replay() -> 
     refreshed = _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
     request_headers: list[httpx2.Headers] = []
 
-    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
-        assert credentials.access_token == "codex-access-old"
-        return refreshed
-
     async def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/oauth/token":
+            return httpx2.Response(
+                200,
+                json={
+                    "access_token": refreshed.access_token,
+                    "refresh_token": refreshed.refresh_token,
+                    "account_id": refreshed.account_id,
+                },
+            )
         request_headers.append(request.headers.copy())
         if len(request_headers) == 1:
             return httpx2.Response(401, headers={_CODEX_TURN_STATE_HEADER: "unauthorized-state"})
@@ -816,10 +739,9 @@ async def test_codex_turn_state_ignores_401_and_captures_successful_replay() -> 
         transport=httpx2.MockTransport(handle),
         headers={_CODEX_TURN_STATE_HEADER: "client-stale-state"},
     ) as client:
-        model = build_codex_model(
+        model = CodexRequestModel(
             "gpt-5",
             credential_source=source,
-            refresh=refresh,
             http_client=client,
         )
         usage = RunUsage()
@@ -864,7 +786,7 @@ async def test_codex_turn_state_is_isolated_between_concurrent_runs() -> None:
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        model = build_codex_model("gpt-5", credential_source=source, http_client=client)
+        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client)
         contexts = {
             run: RunContext(deps=object(), model=model, usage=RunUsage(), run_id=f"run-{run}") for run in ("one", "two")
         }
@@ -1148,13 +1070,13 @@ def test_codex_subscription_settings_use_harness_thread_affinity() -> None:
         },
     )
 
-    settings = CodexSubscriptionModel._codex_settings(original)
+    settings = CodexRequestModel._affinity_settings(original)
 
-    assert settings["openai_store"] is False
-    assert "max_tokens" not in settings
-    assert "temperature" not in settings
-    assert "top_p" not in settings
-    assert "openai_user" not in settings
+    assert settings["openai_store"] is True
+    assert settings["max_tokens"] == original["max_tokens"]
+    assert settings["temperature"] == original["temperature"]
+    assert settings["top_p"] == original["top_p"]
+    assert settings["openai_user"] == original["openai_user"]
     assert settings["extra_headers"] == {
         "X-Session-ID": "thread-1",
         "Thread-ID": "explicit-thread",
@@ -1205,6 +1127,7 @@ async def test_codex_device_authorization_uses_vendor_protocol_and_device_redire
                 "access_token": _unsigned_jwt({"exp": 2000000000}),
                 "refresh_token": "refresh-secret",
                 "account_id": "account-device",
+                "id_token": _unsigned_jwt({"account_id": "account-device"}),
             },
         )
 
@@ -1213,8 +1136,9 @@ async def test_codex_device_authorization_uses_vendor_protocol_and_device_redire
         grant = await CodexDeviceAuthorizationFlow.start(http_client=client)
         assert "device-secret" not in repr(grant)
         assert grant.verification_uri == "https://auth.openai.com/codex/device"
-        credentials = await grant.wait_for_credentials()
-        assert credentials.account_id == "account-device"
+        login = await grant.wait_for_login()
+        assert login.credentials.account_id == "account-device"
+        assert login.id_token not in repr(login)
     assert attempts == 3
 
 
@@ -1234,8 +1158,129 @@ async def test_codex_device_unsupported_expiry_and_cancellation(monkeypatch: pyt
     ) as client:
         grant = await CodexDeviceAuthorizationFlow.start(http_client=client)
         with pytest.raises(DeviceAuthorizationError) as caught:
-            await replace(grant, _expires_at=time.monotonic() - 1).wait_for_credentials()
+            await replace(grant, _expires_at=time.monotonic() - 1).wait_for_login()
         assert caught.value.reason == "expired"
         with anyio.move_on_after(0.01) as scope:
-            await grant.wait_for_credentials()
+            await grant.wait_for_login()
         assert scope.cancel_called
+
+
+async def test_codex_official_dialect_and_cached_credentials_are_used_for_nonstreaming_calls() -> None:
+    from pydantic_ai.providers.openai_codex import OpenAICodexProvider
+
+    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    bodies = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(request.content))
+        assert request.headers["originator"] == "pydantic-ai"
+        assert request.headers["session-id"] == "thread-native"
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_responses_sse())
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client)
+        assert isinstance(model.provider, OpenAICodexProvider)
+        settings = OpenAIResponsesModelSettings(
+            max_tokens=10,
+            temperature=0.1,
+            top_p=0.1,
+            openai_store=True,
+            extra_headers={"x-session-id": "thread-native"},
+        )
+        for _ in range(2):
+            await model.request([], settings, ModelRequestParameters())
+        with pytest.raises(UserError):
+            await model.count_tokens([], None, ModelRequestParameters())
+        async with model:
+            pass
+        assert not client.is_closed
+    assert source.loads == 1
+    assert len(bodies) == 2
+    for body in bodies:
+        assert body["stream"] is True and body["store"] is False
+        assert not {"max_output_tokens", "temperature", "top_p"} & body.keys()
+
+
+async def test_codex_official_refresh_persistence_failure_keeps_rotated_memory() -> None:
+    from pydantic_ai.providers.openai_codex import CredentialsPersistenceError, OpenAICodexProvider
+
+    old = OpenAICodexCredentials(
+        account_id="account-1",
+        access_token=_unsigned_jwt({"exp": 1}),
+        refresh_token="old-refresh",
+    )
+    new = OpenAICodexCredentials(
+        account_id="account-1",
+        access_token=_unsigned_jwt({"exp": 2000000000}),
+        refresh_token="new-refresh",
+    )
+    source = _CodexSource(old, fail_save=True)
+    requests = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request.url.path)
+        if request.url.path == "/oauth/token":
+            return httpx2.Response(200, json={"access_token": new.access_token, "refresh_token": new.refresh_token})
+        assert request.headers["authorization"] == f"Bearer {new.access_token}"
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_responses_sse())
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client)
+        with pytest.raises(CredentialsPersistenceError):
+            await model.request([], None, ModelRequestParameters())
+        assert isinstance(model.provider, OpenAICodexProvider)
+        assert model.provider.credentials == new
+        assert requests == ["/oauth/token"]
+        await model.request([], None, ModelRequestParameters())
+    assert source.current == old
+    assert source.saved == [new]
+    assert requests == ["/oauth/token", "/backend-api/codex/responses"]
+
+
+async def test_codex_owned_client_supports_nested_entry_and_reopening() -> None:
+    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    model = CodexRequestModel("gpt-5", credential_source=source)
+    assert model.provider is not None
+    original = model.provider.client
+    async with model:
+        async with model:
+            assert not original.is_closed()
+        assert not original.is_closed()
+    assert original.is_closed()
+    async with model:
+        assert model.provider is not None
+        reopened = model.provider.client
+        assert reopened is not original
+        assert not reopened.is_closed()
+    assert reopened.is_closed()
+    assert source.loads == 0
+
+
+async def test_codex_login_retains_id_token_using_upstream_pkce(monkeypatch: pytest.MonkeyPatch) -> None:
+    from a13n_harness.model_auth import CodexLoginFlow, codex_login
+    from pydantic_ai.providers.openai_codex import OpenAICodexOAuthFlow
+
+    flow = CodexLoginFlow()
+    assert isinstance(flow, OpenAICodexOAuthFlow)
+    params = parse_qs(urlsplit(flow.authorization_url()).query)
+    assert params["redirect_uri"] == ["http://localhost:1455/auth/callback"]
+    assert params["code_challenge_method"] == ["S256"]
+    assert flow.code_verifier not in flow.authorization_url()
+    identity = _unsigned_jwt({"https://api.openai.com/auth": {"chatgpt_account_id": "account-1"}})
+    calls = []
+
+    async def exchange(url, form):
+        calls.append((url, form))
+        assert form["code_verifier"] == flow.code_verifier
+        return {"access_token": "fixture-access", "refresh_token": "fixture-refresh", "id_token": identity}
+
+    async def callback(self):
+        return await self.exchange_code("callback-secret")
+
+    monkeypatch.setattr(codex_login, "_post_token", exchange)
+    monkeypatch.setattr(OpenAICodexOAuthFlow, "exchange_code_from_callback", callback)
+    login = await flow.exchange_login_from_callback()
+    assert login.credentials.account_id == "account-1"
+    assert login.id_token == identity
+    assert identity not in repr(login)
+    assert len(calls) == 1
