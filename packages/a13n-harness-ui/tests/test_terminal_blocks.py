@@ -104,8 +104,10 @@ def test_large_edit_bypasses_unbounded_diff_work(monkeypatch) -> None:
         "a13n.filesystem.edit_applied", {"file_path": "a.py", "before": before, "after": before + "last"}
     )
     assert panel is not None
-    assert "comparison budget exceeded" in panel.body
-    assert before in panel.body and panel.body.endswith("last")
+    assert panel.kind == "tool"
+    assert "diff preview omitted" in panel.title
+    assert json.loads(panel.body)["before"] == before
+    assert json.loads(panel.body)["after"] == before + "last"
 
 
 def test_regular_tool_folds_without_discarding_full_result() -> None:

@@ -2684,6 +2684,7 @@ async def test_shell_toolset_is_foreground_only_without_process_actions(tmp_path
         properties = tools["shell_exec"].function_schema.json_schema["properties"]
         assert "background" not in properties
         assert "yield_time_seconds" not in properties
+        assert "not a command or process label" in properties["alias"]["description"]
 
 
 async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: Path) -> None:
@@ -2703,6 +2704,11 @@ async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: P
         properties = tools["shell_exec"].function_schema.json_schema["properties"]
         assert "background" not in properties
         assert "yield_time_seconds" in properties
+        assert "not a command or process label" in properties["alias"]["description"]
+        info_schema = tools["shell_info"].function_schema.json_schema
+        assert "process_id" in info_schema["required"]
+        assert "limit" not in info_schema["properties"]
+        assert "not a command or process label" in info_schema["properties"]["alias"]["description"]
         signal_metadata = tools["shell_signal"].metadata[HARNESS_TOOL_METADATA_KEY]
         assert signal_metadata.effects == frozenset({"delete", "execute"})
         await toolset.close()
@@ -2729,6 +2735,56 @@ async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_er
     assert (tmp_path / "three" / "four" / "value.txt").read_text() == "created"
     assert missing["ok"] is False
     assert missing["error"]["code"] == "environment_not_found"
+
+
+async def test_file_failures_distinguish_unmounted_existing_path_from_missing_mounted_path(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    sibling = tmp_path / "sibling-worktree"
+    sibling.mkdir()
+    (sibling / "README.md").write_text("keep in place")
+    runtime = _local_binding(root, mount_path=root.as_posix())
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}
+    ) as environment:
+        await runtime._activate()
+        toolset = FileToolset(environment.files, file_scopes=environment)
+        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(environment=environment), capabilities={}))
+        outside = await toolset.ls(ctx, sibling.as_posix())
+        missing = await toolset.view(ctx, "spec/harness-ui/README.md")
+        assert outside["error"]["code"] == "environment_selection_invalid"
+        assert outside["error"]["details"]["reason"] == "path_outside_mounts"
+        assert "existence was not checked" in outside["error"]["details"]["hint"]
+        assert "Do not move files or worktrees" in outside["error"]["details"]["hint"]
+        assert missing["error"]["code"] == "environment_not_found"
+        assert missing["error"]["details"]["reason"] == "path_not_found"
+        assert "ls or glob" in missing["error"]["details"]["hint"]
+        assert "not an outside-mount" in missing["error"]["details"]["hint"]
+        with pytest.raises(EnvironmentError) as invalid_alias:
+            environment.resolve_path("README.md", alias="invented")
+        assert invalid_alias.value.details["reason"] == "mount_selection_unavailable"
+    assert not tuple(root.iterdir())
+    assert (sibling / "README.md").read_text() == "keep in place"
+
+
+def test_file_failure_hints_preserve_specific_diagnostics_without_raw_provider_details() -> None:
+    from a13n_harness.toolsets.files import _environment_error_result
+
+    result = _environment_error_result(
+        EnvironmentError(
+            "private OS exception text",
+            code="environment_not_found",
+            details={"hint": "Check the selected source.", "reason": "specific_lookup", "private": "secret"},
+        )
+    )
+    assert result == {
+        "ok": False,
+        "error": {
+            "code": "environment_not_found",
+            "details": {"hint": "Check the selected source.", "reason": "specific_lookup"},
+        },
+    }
 
 
 async def test_file_toolset_rechecks_authorization_between_compound_operations(tmp_path: Path) -> None:

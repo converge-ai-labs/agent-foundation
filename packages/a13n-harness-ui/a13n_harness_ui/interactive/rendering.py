@@ -836,7 +836,9 @@ class StreamRenderer:
                         self.finish()
                         source = terminal_text(f"{panel.title}\n{panel.body}\n")
                         edit = (
-                            self._tools.get((run_id, str(event.get("tool_call_id")))) if panel.kind == "edit" else None
+                            self._tools.get((run_id, str(event.get("tool_call_id"))))
+                            if name == "a13n.filesystem.edit_applied"
+                            else None
                         )
                         block_id = edit.block_id if edit is not None else None
                         if block_id is None or not self.transcript.replace(block_id, source, kind=panel.kind):
@@ -850,6 +852,8 @@ class StreamRenderer:
                             if len(lines) > 8:
                                 preview_body += "\n… more diff · Ctrl+O details"
                             self.transcript.preview(block_id, terminal_text(f"{panel.title}\n{preview_body}"), 12)
+                        elif panel.kind == "tool":
+                            self.transcript.preview(block_id, terminal_text(panel.title))
                         self.append(source, display=False)
                     return
                 if event.get("event_kind") == "capability":

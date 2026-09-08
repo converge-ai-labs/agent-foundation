@@ -1396,6 +1396,14 @@ def _environment_error_result(exc: EnvironmentError) -> ToolFailure:
         value = exc.details.get(key)
         if isinstance(value, str):
             safe_details[key] = value
+    if exc.code == "environment_not_found":
+        safe_details.setdefault("reason", "path_not_found")
+        safe_details.setdefault(
+            "hint",
+            "File or directory was not found in the selected mount. Verify the path and use ls or glob on an "
+            "existing parent to locate it; do not assume a guessed repository path is correct. "
+            "This is not an outside-mount routing error.",
+        )
     error = ToolError(code=exc.code, details=safe_details)
     if exc.retry_hint is not None:
         error["retry_hint"] = exc.retry_hint

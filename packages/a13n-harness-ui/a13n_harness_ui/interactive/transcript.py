@@ -45,13 +45,8 @@ def _tool_row(source: str, theme: ResolvedTheme) -> Text:
             if index:
                 value.append("\n")
             label, separator, detail = line.partition(" ")
-            tone = (
-                "failed"
-                if any(marker in line[:80] for marker in ("failed:", "denied:", "Run failed", "Run timed out"))
-                else "muted"
-            )
-            value.append(label + separator, style=colors[tone])
-            value.append(detail, style=colors[tone] if tone == "failed" else "default")
+            value.append(label + separator, style=colors["muted"])
+            value.append(detail, style="default")
         return value
     name, separator, remainder = source.partition(" | ")
     value = Text(name, style=colors["muted"], no_wrap=True, overflow="ellipsis")
@@ -59,7 +54,7 @@ def _tool_row(source: str, theme: ResolvedTheme) -> Text:
         return value
     state, separator, detail = remainder.partition(" | ")
     if state.startswith(("failed", "denied", "timed out", "cancelled", "interrupted")):
-        tone = "failed"
+        tone = "muted"
     elif state in {"completed", "created", "updated", "deleted", "already absent", "finished", "exit 0"}:
         tone = "completed"
     elif state == "running":

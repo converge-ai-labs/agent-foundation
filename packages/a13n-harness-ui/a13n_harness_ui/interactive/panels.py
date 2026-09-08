@@ -58,12 +58,11 @@ def capability_panel(
         if not isinstance(before, str) or not isinstance(after, str) or not isinstance(path, str):
             return None
         path = display_path(path, directory)
-        if len(before) + len(after) > 128 * 1024 or before.count("\n") + after.count("\n") > 2000:
+        if len(before) + len(after) > 512 * 1024 or before.count("\n") + after.count("\n") > 10_000:
             return CapabilityPanel(
-                f"Edit · {path} · applied",
-                "Unified diff omitted: comparison budget exceeded. Actual before/after text follows.\n"
-                + f"Before:\n{before}\nAfter:\n{after}",
-                "edit",
+                f"Modified: {path} · diff preview omitted (size limit)",
+                json.dumps(dict(event), ensure_ascii=False, indent=2),
+                "tool",
             )
         lines = difflib.unified_diff(
             before.splitlines(keepends=True), after.splitlines(keepends=True), fromfile=path, tofile=path

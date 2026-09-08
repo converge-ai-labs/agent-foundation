@@ -223,12 +223,12 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         ("running", "running"),
         ("waiting", "waiting"),
         ("retry", "waiting"),
-        ("denied", "failed"),
+        ("denied", "muted"),
         ("completed", "completed"),
         ("exit 0", "completed"),
-        ("failed", "failed"),
-        ("timed out", "failed"),
-        ("cancelled", "failed"),
+        ("failed", "muted"),
+        ("timed out", "muted"),
+        ("cancelled", "muted"),
         ("returned", "muted"),
         ("status unavailable", "muted"),
     ],
@@ -250,6 +250,31 @@ def test_tool_rows_use_status_colors_without_bold_or_payload_markup(theme, kind,
         assert any(text == state and f"fg:{expected}" in style for style, text in fragments)
         assert any(text == payload and not style.strip() for style, text in fragments)
         assert all("bold" not in style.split() for style, _ in fragments)
+    finally:
+        transcript.close()
+
+
+@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
+@pytest.mark.parametrize(
+    "preview",
+    [
+        "Run failed · exit 1 · python3 -u -c 'print(1)'",
+        "Run timed out · sleep 120",
+        "Call mkdir failed: permission denied",
+        "Read file.py denied: environment_denied",
+        "Explored 2 files\n  Read file.py failed: not found",
+    ],
+)
+def test_semantic_tool_failures_keep_text_without_error_emphasis(theme: str, preview: str) -> None:
+    transcript = Transcript()
+    transcript.theme = resolve_theme(theme)
+    block = transcript.append("Expanded details", kind="tool")
+    transcript.preview(block, preview, lines=len(preview.splitlines()))
+    try:
+        assert _text(transcript, 120) == preview
+        assert all(
+            "ansired" not in style and "bold" not in style.split() for row in transcript.rows for style, _ in row
+        )
     finally:
         transcript.close()
 

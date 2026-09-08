@@ -369,6 +369,103 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
         assert child.definition.model_recovery == reconstructed.executable.definition.model_recovery
 
 
+@pytest.mark.parametrize("profile", ["native", "sandbox", "custom"])
+@pytest.mark.parametrize("tools", [None, (), ("mkdir", "shell_exec")])
+async def test_native_default_tool_policy_respects_profile_and_per_node_selection(
+    tmp_path: Path, profile: str, tools: tuple[str, ...] | None
+) -> None:
+    from a13n_harness_ui.composition.reconstruction import _NativeDefaultToolsCapability
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    environment = composition.environment_profile
+    if profile != "native":
+        environment = environment.model_copy(
+            update={"profile_id": SANDBOX_PROFILE_ID if profile == "sandbox" else "environment-custom"}
+        )
+    root = composition.root.model_copy(update={"tools": tools})
+    composition = composition.model_copy(update={"root": root, "environment_profile": environment})
+    rebuilt = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    nodes = [(composition.root, rebuilt.executable)] + [
+        (child.definition, rebuilt.executable.subagents[child.name]) for child in composition.root.children
+    ]
+    for node, executable in nodes:
+        assert any(isinstance(item, _NativeDefaultToolsCapability) for item in executable.definition.capabilities) == (
+            profile == "native" and node.tools is None
+        )
+
+
+@pytest.mark.parametrize("shell", ["managed", "absent", "unmanaged", "unavailable"])
+async def test_native_default_tools_use_prepared_managed_ids(shell: str) -> None:
+    from collections.abc import AsyncIterator
+
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+    from a13n_harness_ui.composition.reconstruction import _NativeDefaultToolsCapability
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.messages import ModelMessage
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+    from pydantic_ai.tools import Tool
+    from pydantic_ai.toolsets import FunctionToolset
+
+    observed: set[str] = set()
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        observed.update(tool.name for tool in info.function_tools)
+        yield "done"
+
+    def implementation() -> str:
+        return "unused"
+
+    async def unavailable(ctx, tool_def):
+        return None
+
+    def managed(name: str, tool_id: str, **kwargs: Any) -> HarnessTool:
+        return HarnessTool(
+            implementation,
+            name=name,
+            harness_metadata=HarnessToolMetadata(
+                tool_id=tool_id,
+                effects=frozenset({"read"}),
+                credential_audiences=(),
+                idempotency="read_only",
+                output_policy=ToolOutputPolicy(max_inline_bytes=512, max_output_bytes=1024),
+            ),
+            **kwargs,
+        )
+
+    mutations = {"make_directory", "remove_file", "copy_file", "move_file"}
+    tools = [
+        managed("make_directory", "filesystem.mkdir"),
+        managed("remove_file", "filesystem.remove"),
+        managed("copy_file", "filesystem.copy"),
+        managed("move_file", "filesystem.move"),
+        managed("view", "filesystem.read"),
+        managed("mkdir", "plugin.mkdir"),
+        Tool(implementation, name="delete"),
+    ]
+    if shell in {"managed", "unavailable"}:
+        tools.append(
+            managed(
+                "run_command",
+                "environment.shell_exec",
+                prepare=unavailable if shell == "unavailable" else None,
+            )
+        )
+    elif shell == "unmanaged":
+        tools.append(Tool(implementation, name="shell_exec"))
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(Capability(toolsets=[FunctionToolset(tools)]), _NativeDefaultToolsCapability()),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert {"view", "mkdir", "delete"} <= observed
+    assert mutations.intersection(observed) == (set() if shell == "managed" else mutations)
+
+
 async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     workspace_2 = tmp_path / "workspace-2"

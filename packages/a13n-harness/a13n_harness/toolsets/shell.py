@@ -50,6 +50,16 @@ _SHELL_INSTRUCTION = tool_instruction("environment-shell")
 _NonNegativeOffset = Annotated[int, Field(ge=0)]
 _PositiveTimeout = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 _NonNegativeTimeout = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+_MountAlias = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Existing Environment mount name from the active context, not a command or process label. "
+            "Do not invent an alias. Omit for the default mount; an absolute command cwd or a process_id "
+            "selects its own mount."
+        )
+    ),
+]
 
 
 class ShellToolset:
@@ -101,7 +111,12 @@ class ShellToolset:
         if actions & {EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT}:
             tools.append(
                 self._tool(
-                    self.shell_info, "environment.process_info", {"read"}, "read_only", resources=self._info_resources
+                    self.shell_info if EnvironmentAction.PROCESS_LIST in actions else self.shell_inspect,
+                    "environment.process_info",
+                    {"read"},
+                    "read_only",
+                    resources=self._info_resources,
+                    name="shell_info",
                 )
             )
         if {EnvironmentAction.PROCESS_WAIT, EnvironmentAction.PROCESS_READ_OUTPUT} <= actions:
@@ -160,7 +175,7 @@ class ShellToolset:
         cwd: str | None = None,
         environment: Mapping[str, str] | None = None,
         execution_timeout_seconds: _PositiveTimeout | None = None,
-        alias: str | None = None,
+        alias: _MountAlias = None,
     ) -> ShellExecToolResult:
         """Execute one command to completion and return captured output."""
         try:
@@ -233,7 +248,7 @@ class ShellToolset:
         environment: Mapping[str, str] | None = None,
         yield_time_seconds: _NonNegativeTimeout = 10,
         execution_timeout_seconds: _PositiveTimeout | None = None,
-        alias: str | None = None,
+        alias: _MountAlias = None,
     ) -> ShellExecToolResult:
         """Start a command and automatically yield a Run-local process reference when still live."""
         try:
@@ -289,15 +304,25 @@ class ShellToolset:
         ctx: RunContext[AgentContext],
         process_id: str | None = None,
         *,
-        alias: str | None = None,
+        alias: _MountAlias = None,
         limit: Annotated[int, Field(ge=1, le=1000)] = 50,
     ) -> ProcessInfoResult:
-        """List native processes, or inspect one reference, without attaching or resetting output."""
+        """List processes on a mount permitting process.list, or inspect a Run-local process reference."""
         del ctx
         try:
             return await self._process_controller.info(process_id, alias=alias, limit=limit)
         except EnvironmentError as exc:
             return cast(ProcessInfoResult, _environment_error_result(exc))
+
+    async def shell_inspect(
+        self,
+        ctx: RunContext[AgentContext],
+        process_id: str,
+        *,
+        alias: _MountAlias = None,
+    ) -> ProcessInfoResult:
+        """Inspect a Run-local process_id from shell_exec; native process listing is unavailable."""
+        return await self.shell_info(ctx, process_id, alias=alias)
 
     async def shell_wait(
         self,
@@ -489,6 +514,11 @@ def _environment_error_result(error: EnvironmentError) -> ToolFailure:
         code=error.code,
         outcome_known=error.code != "environment_unknown_outcome",
     )
+    safe_details = {
+        key: value for key in ("field", "reason", "hint") if isinstance(value := error.details.get(key), str)
+    }
+    if safe_details:
+        details["details"] = cast(dict[str, JsonValue], safe_details)
     if error.retry_hint is not None:
         details["retry_hint"] = error.retry_hint
     return {"ok": False, "error": details}
