@@ -68,7 +68,7 @@ App lifetimes enable Pydantic AI's background price updates by default. Startup 
 Disable downloads in the selected root YAML and restart the App:
 
 ```yaml
-schema_version: "2"
+schema_version: "1"
 process:
   pricing_auto_update: false
 ```

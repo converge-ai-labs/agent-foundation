@@ -88,7 +88,7 @@ def _write_source(tmp_path: Path) -> Path:
     workspace.mkdir()
     root = tmp_path / "a13n-harness-ui.yaml"
     root.write_text(
-        'schema_version: "2"\n'
+        'schema_version: "1"\n'
         "defaults:\n"
         "  project: project-main\n"
         "  agent: agent-assistant\n"
@@ -304,7 +304,7 @@ async def test_global_guidance_and_default_file_context_are_captured_for_root_an
     nodes = [composition.root, *(child.definition for child in composition.root.children)]
     for node in nodes:
         assert "Global instruction revision one" in node.global_guidance[0]
-        for default in ("file_context", "working_state", "user_interaction"):
+        for default in ("file_context", "working_state", "user_interaction", "codeact"):
             assert sum(item.capability == default for item in node.capabilities) == 1
     (tmp_path / "AGENTS.md").write_text("Global instruction revision two")
     refreshed = AgentCompositionResolver(_catalog()).resolve_run(

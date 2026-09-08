@@ -32,13 +32,52 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
     selection = _selection(tmp_path)
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     assert not path.parent.exists()
+    root = yaml.safe_load(preview.files[path.name])
+    assert root["schema_version"] == "1"
+    assert root["tools"] == {
+        "enable_user_input": True,
+        "user_input_timeout_seconds": 120,
+        "enable_codeact": True,
+    }
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
     result = await publish_setup(path, selection, validate_candidate=_validate())
     assert result.completed
     assert result.published_paths[-1] == path.name
     source = await load_harness_ui_configuration(path)
     assert source.document.defaults.agent == "agent-codex"
+    assert yaml.safe_load(path.read_text())["tools"] == root["tools"]
+    assert source.document.tools.enable_codeact is True
     assert len(source.agents) == 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "authored_tools",
+    [
+        {},
+        {"enable_codeact": False},
+        {"enable_user_input": False, "user_input_timeout_seconds": 45},
+        {"enable_user_input": False, "user_input_timeout_seconds": 30, "enable_codeact": False},
+    ],
+)
+async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_values(
+    tmp_path: Path, authored_tools: dict[str, object]
+) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump({"schema_version": "1", "tools": authored_tools}))
+    expected = {
+        "enable_user_input": True,
+        "user_input_timeout_seconds": 120,
+        "enable_codeact": True,
+        **authored_tools,
+    }
+    selection = _selection(tmp_path)
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    assert yaml.safe_load(preview.files[path.name])["tools"] == expected
+    assert yaml.safe_load(path.read_text())["tools"] == authored_tools
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    assert yaml.safe_load(path.read_text())["tools"] == expected
+    assert (await preview_setup(path, selection, validate_candidate=_validate())).files[path.name] == path.read_text()
 
 
 @pytest.mark.anyio
@@ -143,7 +182,7 @@ async def test_setup_uses_current_configuration_after_preview(tmp_path: Path) ->
     path = tmp_path / "config.yaml"
     selection = _selection(tmp_path)
     await preview_setup(path, selection, validate_candidate=_validate())
-    path.write_text('schema_version: "2"\nprocess: {log_level: DEBUG}\n')
+    path.write_text('schema_version: "1"\nprocess: {log_level: DEBUG}\n')
     result = await publish_setup(path, selection, validate_candidate=_validate())
     assert result.completed
     assert "DEBUG" in path.read_text()
@@ -201,10 +240,10 @@ async def test_setup_publication_is_last_write_wins(
     from a13n_harness_ui.configuration import setup
 
     path = tmp_path / "config.yaml"
-    path.write_text('schema_version: "2"\n')
+    path.write_text('schema_version: "1"\n')
     selection = _selection(tmp_path)
     publish = setup._publish_content
-    external = 'schema_version: "2"\nprocess: {log_level: DEBUG}\n'
+    external = 'schema_version: "1"\nprocess: {log_level: DEBUG}\n'
 
     def racing_publish(target: Path, content: bytes) -> None:
         if target == path and not external_last:

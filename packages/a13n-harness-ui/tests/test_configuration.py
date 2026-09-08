@@ -14,7 +14,7 @@ pytestmark = pytest.mark.anyio
 def _write_source_tree(
     tmp_path: Path,
     *,
-    root: str = 'schema_version: "2"\n',
+    root: str = 'schema_version: "1"\n',
     resources: dict[str, str] | None = None,
 ) -> Path:
     config = tmp_path / "a13n-harness-ui.yaml"
@@ -24,6 +24,27 @@ def _write_source_tree(
         target.parent.mkdir(exist_ok=True)
         target.write_text(content.lstrip())
     return config
+
+
+async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path: Path) -> None:
+    loaded = await load_harness_ui_configuration(_write_source_tree(tmp_path))
+    empty = configuration_loader.empty_harness_ui_configuration()
+    assert loaded.document == empty.document
+    assert empty.document.schema_version == "1"
+    assert empty.document.tools.model_dump() == {
+        "enable_user_input": True,
+        "user_input_timeout_seconds": 120,
+        "enable_codeact": True,
+    }
+    assert empty.sources[0].content == 'schema_version: "1"'
+
+
+@pytest.mark.parametrize("version", ["2", "3"])
+async def test_rejects_unsupported_root_schema_version(tmp_path: Path, version: str) -> None:
+    config = _write_source_tree(tmp_path, root=f'schema_version: "{version}"\n')
+    with pytest.raises(ConfigurationError) as invalid:
+        await load_harness_ui_configuration(config)
+    assert invalid.value.code == "settings_invalid"
 
 
 async def test_global_agents_guidance_is_generation_owned_and_only_loads_agents_md(tmp_path: Path) -> None:
@@ -54,7 +75,7 @@ async def test_loads_multi_file_resources_and_canonical_markdown_set(tmp_path: P
     config = _write_source_tree(
         tmp_path,
         root="""
-schema_version: "2"
+schema_version: "1"
 process:
   log_level: debug
 defaults:
@@ -131,7 +152,7 @@ Inspect the relevant code and report evidence.
 
     loaded = await load_harness_ui_configuration(config)
 
-    assert loaded.document.schema_version == "2"
+    assert loaded.document.schema_version == "1"
     assert loaded.document.process.log_level == "DEBUG"
     assert set(loaded.models) == {"model-primary"}
     assert set(loaded.harness_plugins) == {"plugin-memory"}
@@ -163,12 +184,12 @@ Inspect the relevant code and report evidence.
     ("root", "resources", "error_code"),
     [
         (
-            'schema_version: "2"\nunknown: true\n',
+            'schema_version: "1"\nunknown: true\n',
             {},
             "settings_invalid",
         ),
         (
-            'schema_version: "2"\n',
+            'schema_version: "1"\n',
             {
                 "models/primary.yaml": """
 schema_version: "1"
@@ -184,7 +205,7 @@ settings:
             "configuration_resource_invalid",
         ),
         (
-            'schema_version: "2"\n',
+            'schema_version: "1"\n',
             {
                 "models/primary.yaml": """
 schema_version: "1"
@@ -261,7 +282,7 @@ subagents: [{markdown: subagent-missing}]
 async def test_accepts_release_owned_sandbox_as_global_default(tmp_path: Path) -> None:
     config = _write_source_tree(
         tmp_path,
-        root='schema_version: "2"\ndefaults:\n  environment_profile: environment-sandbox\n',
+        root='schema_version: "1"\ndefaults:\n  environment_profile: environment-sandbox\n',
     )
 
     loaded = await load_harness_ui_configuration(config)
@@ -326,7 +347,7 @@ async def test_retries_when_final_yaml_fingerprint_changes(
 
     loaded = await load_harness_ui_configuration(config)
 
-    assert loaded.document.schema_version == "2"
+    assert loaded.document.schema_version == "1"
     assert calls == 3
 
 

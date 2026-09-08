@@ -22,7 +22,7 @@ async def test_markdown_import_has_explicit_deterministic_preview_and_no_sync(
 ) -> None:
     configuration = tmp_path / "config/a13n-harness-ui.yaml"
     configuration.parent.mkdir()
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     project = tmp_path / "project"
     source_directory = project / directory / "agents"
     source_directory.mkdir(parents=True)
@@ -96,7 +96,7 @@ Review the change and cite exact paths.
 async def test_import_publishes_captured_preview_over_racing_target(tmp_path: Path) -> None:
     configuration = tmp_path / "config/a13n-harness-ui.yaml"
     configuration.parent.mkdir()
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     project = tmp_path / "project"
     source = project / ".claude/agents/explorer.md"
     source.parent.mkdir(parents=True)
@@ -136,7 +136,7 @@ async def test_import_publishes_captured_preview_over_racing_target(tmp_path: Pa
 async def test_codex_registry_preview_reports_unrepresented_behavior(tmp_path: Path) -> None:
     configuration = tmp_path / "config/a13n-harness-ui.yaml"
     configuration.parent.mkdir()
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     project = tmp_path / "project"
     codex = project / ".codex"
     (codex / "agents").mkdir(parents=True)

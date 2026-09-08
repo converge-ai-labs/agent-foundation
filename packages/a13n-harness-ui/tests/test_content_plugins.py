@@ -298,7 +298,7 @@ async def test_uninstall_rejects_unknown_plugin(tmp_path: Path) -> None:
 def _configuration(path: Path) -> Path:
     path.mkdir(parents=True)
     configuration = path / "a13n-harness-ui.yaml"
-    configuration.write_text('schema_version: "2"\n', encoding="utf-8")
+    configuration.write_text('schema_version: "1"\n', encoding="utf-8")
     models = path / "models"
     models.mkdir()
     (models / "primary.yaml").write_text(

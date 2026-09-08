@@ -84,7 +84,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
     notes.mkdir()
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     path.parent.mkdir()
-    path.write_text('schema_version: "2"\n')
+    path.write_text('schema_version: "1"\n')
     project = path.parent / "projects" / "custom.yaml"
     project.parent.mkdir()
     project.write_text(

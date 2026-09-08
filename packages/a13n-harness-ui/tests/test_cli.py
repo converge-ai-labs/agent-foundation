@@ -33,7 +33,7 @@ def test_defaults_to_interactive_cli(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
     settings = tmp_path / "settings.yaml"
-    settings.write_text('schema_version: "2"\n')
+    settings.write_text('schema_version: "1"\n')
 
     # Exercise the real application and JSON boundary without another cold
     # interpreter startup; test_entrypoint covers the executable boundary.

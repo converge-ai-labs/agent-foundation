@@ -436,7 +436,12 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
 
 
 @pytest.mark.parametrize("tool_choice", [None, "auto", "none"])
-async def test_compaction_uses_same_agent_plain_text_run_without_handoff(tool_choice: str | None) -> None:
+@pytest.mark.parametrize("codeact_enabled", [False, True])
+async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
+    tool_choice: str | None, codeact_enabled: bool
+) -> None:
+    from a13n_harness.capabilities import CodeActCapability
+
     calls: list[tuple[list[ModelMessage], AgentInfo]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -500,7 +505,10 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff(tool_ch
         AgentSpec(model_settings={"tool_choice": tool_choice} if tool_choice is not None else None),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
+        capabilities=(
+            CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),
+            *((CodeActCapability(),) if codeact_enabled else ()),
+        ),
     )
     result = await executable.run(
         "Continue",

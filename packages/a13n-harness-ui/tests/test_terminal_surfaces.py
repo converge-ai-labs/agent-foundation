@@ -27,7 +27,7 @@ def _write_configuration(
     skills: bool = False,
 ) -> Path:
     configuration = root / "a13n-harness-ui.yaml"
-    configuration.write_text(f'schema_version: "2"\ndefaults:\n  project: {projects[0][0]}\n  agent: agent-main\n')
+    configuration.write_text(f'schema_version: "1"\ndefaults:\n  project: {projects[0][0]}\n  agent: agent-main\n')
     resources = {
         "models/main.yaml": """
 schema_version: "1"

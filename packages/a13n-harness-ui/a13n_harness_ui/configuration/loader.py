@@ -144,7 +144,7 @@ def empty_harness_ui_configuration(
 ) -> LoadedHarnessUiConfiguration:
     """Return an empty onboarding generation when the default root is absent."""
 
-    content = 'schema_version: "2"\n'
+    content = 'schema_version: "1"\n'
     root_digest = hashlib.sha256(content.encode()).hexdigest()
     source = SourceDocument(
         relative_path="a13n-harness-ui.yaml",

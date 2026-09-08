@@ -33,7 +33,7 @@ Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mc
 This example shows every root option. Replace the example default IDs with resources you actually created, or leave those selections `null`.
 
 ```yaml
-schema_version: "2"
+schema_version: "1"
 process:
   pricing_auto_update: true
   terminal_update_check: true
@@ -55,7 +55,7 @@ display:
 tools:
   enable_user_input: true
   user_input_timeout_seconds: 120
-  enable_codeact: false
+  enable_codeact: true
 subagents:
   include: []
 ```
@@ -116,8 +116,10 @@ Display defaults are read at startup. `--display` and live `/mode` override the 
 | ---------------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
 | `tools.enable_user_input`          | `true`  | Include native `ask_user_question` in newly resolved Runs                                           |
 | `tools.user_input_timeout_seconds` | `120`   | Positive finite seconds for each displayed terminal question, not shell approval or model execution |
-| `tools.enable_codeact`             | `false` | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                     |
+| `tools.enable_codeact`             | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                     |
 | `subagents.include`                | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                    |
+
+Setup writes all three `tools` fields explicitly into the selected root YAML (by default `~/.a13n-harness-ui/a13n-harness-ui.yaml`), filling omitted fields with these defaults and preserving existing values.
 
 Global disabled tool switches take precedence over explicit Agent capability selections. Tool allowlists still apply. The terminal question timeout does not choose an answer or approve a command; [decision handling](everyday-use.md#approvals-and-questions) explains recovery.
 

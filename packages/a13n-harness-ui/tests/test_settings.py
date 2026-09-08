@@ -43,7 +43,7 @@ async def test_loads_one_strict_full_settings_yaml(tmp_path: Path) -> None:
     data_root = tmp_path / "data"
     settings_path.write_text(
         """
-schema_version: "2"
+schema_version: "1"
 process:
   log_level: debug
   pricing_auto_update: false
@@ -99,7 +99,7 @@ async def test_settings_yaml_reports_duplicate_keys_and_explicit_missing_file(
     tmp_path: Path,
 ) -> None:
     duplicate = tmp_path / "duplicate.yaml"
-    duplicate.write_text('schema_version: "2"\nprocess:\n  log_level: INFO\nprocess:\n  log_level: DEBUG\n')
+    duplicate.write_text('schema_version: "1"\nprocess:\n  log_level: INFO\nprocess:\n  log_level: DEBUG\n')
 
     source = await load_harness_ui_settings(duplicate)
 

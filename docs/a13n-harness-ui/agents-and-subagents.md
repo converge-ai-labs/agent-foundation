@@ -63,7 +63,7 @@ The listed capabilities enable file/shell work, Skill discovery, context reminde
 Edit the root `a13n-harness-ui.yaml`, preserving other settings:
 
 ```yaml
-schema_version: "2"
+schema_version: "1"
 defaults:
   agent: agent-coder
   environment_profile: environment-native

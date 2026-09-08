@@ -121,12 +121,12 @@ Configure built-in tools in the root `a13n-harness-ui.yaml`:
 tools:
   enable_user_input: true
   user_input_timeout_seconds: 120
-  enable_codeact: false
+  enable_codeact: true
 ```
 
 `ask_user_question` is enabled by default. Set `enable_user_input: false` to omit it from later Runs. Each displayed question waits up to `user_input_timeout_seconds` (a positive finite number). On timeout, the question call is returned as failed with an explicit no-answer message; no option is selected and no shell request is approved. A mixed batch still waits for its remaining decisions. `/cancel` keeps the request pending instead of returning a timeout.
 
-CodeAct is disabled by default. Set `enable_codeact: true` to enable the Harness's restricted Python `run_code` and `run_program` tools, plus `store`, `load`, and `forget` for explicit values retained in the saved continuation. This is not an unrestricted host Python shell: host effects still go through eligible tools and their ordinary policy. Advanced native runner settings can be authored with an Agent `codeact` Capability configuration. Both global switches take precedence over authored capability selections; existing tool visibility filters still apply. Accepted edits affect later Runs, not already captured execution. Question waiting policy applies only while the TUI is collecting answers; one-shot and HTTP callers retain their own interaction lifecycle.
+CodeAct is enabled by default, providing the Harness's restricted Python `run_code` and `run_program` tools, plus `store`, `load`, and `forget` for explicit values retained in the saved continuation. Set `enable_codeact: false` to omit them from later Runs. This is not an unrestricted host Python shell: host effects still go through eligible tools and their ordinary policy. Advanced native runner settings can be authored with an Agent `codeact` Capability configuration. Both global switches take precedence over authored capability selections; existing tool visibility filters still apply. Accepted edits affect later Runs, not already captured execution. Question waiting policy applies only while the TUI is collecting answers; one-shot and HTTP callers retain their own interaction lifecycle.
 
 ### Approvals and questions
 

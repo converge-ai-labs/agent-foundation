@@ -81,7 +81,7 @@ def _write_configuration(tmp_path: Path, *, instructions: str = "Help the user."
     workspace = tmp_path / "workspace"
     workspace.mkdir(exist_ok=True)
     root = tmp_path / "a13n-harness-ui.yaml"
-    root.write_text('schema_version: "2"\ndefaults:\n  project: project-main\n  agent: agent-assistant\n')
+    root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: agent-assistant\n')
     resources = {
         "models/primary.yaml": """
 schema_version: "1"

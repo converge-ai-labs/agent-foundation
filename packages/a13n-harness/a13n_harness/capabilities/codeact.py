@@ -51,7 +51,10 @@ class CodeActCapability(AbstractModelContextCapability):
         if existing is not None:
             if not isinstance(existing, CodeActCapability):
                 raise DefinitionError("CodeAct has an incompatible run replacement.", code="capability_type_mismatch")
-            existing._require_context(ctx)
+            # Nested same-agent runs resolve replacements before ctx.capabilities
+            # is finalized. Execution hooks still check the finalized identity.
+            if existing._context is not ctx.deps:
+                raise DefinitionError("CodeAct state cannot cross logical runs.", code="capability_scope_invalid")
             return existing
         replacement = CodeActCapability(self.config)
         replacement._context = ctx.deps

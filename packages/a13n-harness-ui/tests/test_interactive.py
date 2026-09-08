@@ -1032,13 +1032,16 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
 
 
 @pytest.mark.anyio
-async def test_configured_codeact_executes_and_disabled_questions_are_not_exposed(tmp_path: Path, monkeypatch) -> None:
+async def test_default_codeact_executes_and_disabled_questions_are_not_exposed(tmp_path: Path, monkeypatch) -> None:
     import a13n_harness.model_auth as runtime
+    import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
-    path.write_text(path.read_text() + "\ntools:\n  enable_user_input: false\n  enable_codeact: true\n")
+    root = yaml.safe_load(path.read_text())
+    root["tools"]["enable_user_input"] = False
+    path.write_text(yaml.safe_dump(root))
 
     async def stream(messages, info):
         names = {tool.name for tool in info.function_tools}
@@ -1074,16 +1077,20 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     tmp_path: Path, monkeypatch, timeout: bool
 ) -> None:
     import a13n_harness.model_auth as runtime
+    import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
-    path.write_text(path.read_text() + "\ntools:\n  user_input_timeout_seconds: 30\n")
+    root = yaml.safe_load(path.read_text())
+    root["tools"]["user_input_timeout_seconds"] = 30
+    path.write_text(yaml.safe_dump(root))
 
     async def stream(messages, info):
         names = {tool.name for tool in info.function_tools}
         assert {"task_create", "task_update", "task_list", "ask_user_question"} <= names
-        assert not {"run_code", "run_program", "store", "load", "forget", "note"} & names
+        assert {"run_code", "run_program", "store", "load", "forget"} <= names
+        assert "note" not in names
         returned = [
             part.tool_name
             for message in messages
@@ -1157,7 +1164,6 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
-    path.write_text(path.read_text() + "\ntools:\n  enable_codeact: true\n")
     requests = 0
 
     async def stream(messages, info):

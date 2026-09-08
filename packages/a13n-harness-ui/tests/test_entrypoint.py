@@ -176,5 +176,5 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
 
 def _write_settings(tmp_path: Path) -> Path:
     settings = tmp_path / "settings.yaml"
-    settings.write_text('schema_version: "2"\n')
+    settings.write_text('schema_version: "1"\n')
     return settings

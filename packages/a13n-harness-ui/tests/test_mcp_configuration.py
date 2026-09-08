@@ -27,7 +27,7 @@ pytestmark = pytest.mark.anyio
 
 def _source(tmp_path: Path, document: dict, *, suffix: str = "json") -> tuple[Path, Path]:
     root = tmp_path / "a13n-harness-ui.yaml"
-    root.write_text('schema_version: "2"\n')
+    root.write_text('schema_version: "1"\n')
     directory = tmp_path / "mcp"
     directory.mkdir(exist_ok=True)
     source = directory / f"servers.{suffix}"
@@ -348,7 +348,7 @@ def test_cli_config_show_omits_literal_mcp_values_and_reload_retains_last_valid_
             }
         },
     )
-    root.write_text('schema_version: "2"\nprocess:\n  pricing_auto_update: false\n')
+    root.write_text('schema_version: "1"\nprocess:\n  pricing_auto_update: false\n')
     args = ["--config", str(root), "--data-root", str(tmp_path / "state"), "config", "show", "--format", "json"]
     runner = CliRunner()
     shown = runner.invoke(cli, args)

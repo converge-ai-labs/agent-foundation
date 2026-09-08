@@ -74,7 +74,7 @@ def _stop(process: subprocess.Popen[bytes], master: int) -> None:
 def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path: Path, command: list[str]) -> None:
     configuration = tmp_path / ".a13n-harness-ui"
     configuration.mkdir()
-    (configuration / "a13n-harness-ui.yaml").write_text('schema_version: "2"\nprocess:\n  pricing_auto_update: false\n')
+    (configuration / "a13n-harness-ui.yaml").write_text('schema_version: "1"\nprocess:\n  pricing_auto_update: false\n')
     process, master = _spawn(f"from a13n_harness_ui.cli import main; main({command!r})", tmp_path)
     try:
         output = _read_until(master, b"Connect a model")

@@ -22,7 +22,7 @@ def _subagent(name: str, description: str = "Inspect code.") -> str:
 
 async def test_create_and_update_without_source_preconditions(tmp_path: Path) -> None:
     configuration = tmp_path / "a13n-harness-ui.yaml"
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     target = tmp_path / "subagents/explorer.md"
     for description, action in (("First", "created"), ("Second", "updated")):
         content = _subagent("explorer", description)
@@ -38,7 +38,7 @@ async def test_create_and_update_without_source_preconditions(tmp_path: Path) ->
 
 async def test_update_overwrites_external_edit_during_validation(tmp_path: Path) -> None:
     configuration = tmp_path / "a13n-harness-ui.yaml"
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     target = tmp_path / "subagents/explorer.md"
     target.parent.mkdir()
     target.write_text(_subagent("explorer", "First"))
@@ -47,7 +47,7 @@ async def test_update_overwrites_external_edit_during_validation(tmp_path: Path)
     def external_edit(candidate):
         assert candidate.subagents["subagent-explorer"].description == "Requested"
         target.write_text(_subagent("explorer", "External"))
-        configuration.write_text('schema_version: "2"\nprocess: {log_level: DEBUG}\n')
+        configuration.write_text('schema_version: "1"\nprocess: {log_level: DEBUG}\n')
 
     result = await mutate_configuration_source(
         configuration,
@@ -64,7 +64,7 @@ async def test_later_external_write_is_loaded_without_post_write_conflict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     configuration = tmp_path / "a13n-harness-ui.yaml"
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     target = tmp_path / "subagents/explorer.md"
     publish = mutation._publish_content
     external = _subagent("explorer", "External last writer")
@@ -83,7 +83,7 @@ async def test_later_external_write_is_loaded_without_post_write_conflict(
 
 async def test_update_uses_atomic_replace_and_invalid_candidate_is_not_published(tmp_path: Path) -> None:
     configuration = tmp_path / "a13n-harness-ui.yaml"
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     target = tmp_path / "subagents/explorer.md"
     target.parent.mkdir()
     original = _subagent("explorer", "First")
@@ -108,7 +108,7 @@ async def test_update_uses_atomic_replace_and_invalid_candidate_is_not_published
 
 async def test_delete_validates_then_removes_current_source_and_is_idempotent(tmp_path: Path) -> None:
     configuration = tmp_path / "a13n-harness-ui.yaml"
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     target = tmp_path / "subagents/explorer.md"
     target.parent.mkdir()
     target.write_text(_subagent("explorer"))
@@ -127,7 +127,7 @@ async def test_delete_validates_then_removes_current_source_and_is_idempotent(tm
 
 async def test_mutation_preserves_global_guidance(tmp_path: Path) -> None:
     configuration = tmp_path / "a13n-harness-ui.yaml"
-    configuration.write_text('schema_version: "2"\n')
+    configuration.write_text('schema_version: "1"\n')
     guidance = tmp_path / "AGENTS.md"
     content = "# Guidance\r\nPreserve authored instructions — 研究.\r\n".encode()
     guidance.write_bytes(content)

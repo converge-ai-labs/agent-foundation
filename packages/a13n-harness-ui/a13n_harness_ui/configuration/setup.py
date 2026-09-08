@@ -25,10 +25,10 @@ from a13n_harness_ui.resource_names import coding_agent_name, model_name
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _read_bounded_stable, _scan_directory, load_harness_ui_configuration
-from .models import ApiKeyAuthentication, ModelCharacteristics, ResourceId, StrictModel
+from .models import ApiKeyAuthentication, ModelCharacteristics, ResourceId, StrictModel, ToolsConfiguration
 from .mutation import CandidateValidator, _publish_content
 
-_EMPTY_ROOT = b'schema_version: "2"\n'
+_EMPTY_ROOT = b'schema_version: "1"\n'
 _DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "subagents")
 
 
@@ -424,6 +424,10 @@ async def preview_setup(
                     files[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
     root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
     if not selection.is_addition:
+        tools = root.setdefault("tools", {})
+        if isinstance(tools, dict):
+            for name, value in ToolsConfiguration().model_dump(mode="json").items():
+                tools.setdefault(name, value)
         root.setdefault(
             "display",
             {"mode": "concise", "show_status": True, "max_tool_result_lines": 5, "max_tool_argument_chars": 8192},

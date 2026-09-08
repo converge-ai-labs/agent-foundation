@@ -28,7 +28,7 @@ def no_real_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _source(tmp_path: Path, include: tuple[str, ...]) -> Path:
     path = tmp_path / "a13n-harness-ui.yaml"
-    path.write_text(yaml.safe_dump({"schema_version": "2", "subagents": {"include": list(include)}}))
+    path.write_text(yaml.safe_dump({"schema_version": "1", "subagents": {"include": list(include)}}))
     resources = {
         "models/main.yaml": {
             "kind": "model",
@@ -87,7 +87,7 @@ async def test_named_inclusion_captures_inheriting_leaf_children_without_local_f
     assert not (tmp_path / "subagents").exists()
     assert not (tmp_path / "built-in-subagents").exists()
     captured = composition.model_dump_json()
-    path.write_text('schema_version: "2"\nsubagents: {include: []}\n')
+    path.write_text('schema_version: "1"\nsubagents: {include: []}\n')
     assert not _resolve(await load_harness_ui_configuration(path)).root.children
     assert ResolvedRunComposition.model_validate_json(captured) == composition
 
