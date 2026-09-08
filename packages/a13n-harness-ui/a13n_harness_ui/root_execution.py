@@ -41,6 +41,7 @@ from a13n_harness_ui.composition import (
     ThreadCompositionSelection,
 )
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
@@ -176,6 +177,7 @@ class RootRunExecutor:
         result: HarnessRunResult[str] | None = None
         stream: HarnessRunStream[str] | None = None
         run_error: BaseException | None = None
+        excerpts: ExcerptCollector | None = None
         try:
             stream = reconstructed.executable.stream(
                 prompt,
@@ -183,6 +185,7 @@ class RootRunExecutor:
                 previous_state=previous_state,
                 deferred_resume=deferred_resume,
             )
+            excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)
             if on_stream is not None:
                 await on_stream(stream)
             observer = HarnessAguiObserver()
@@ -194,6 +197,7 @@ class RootRunExecutor:
             ):
                 async with stream:
                     async for item in stream:
+                        excerpts.observe(item)
                         await self._store.usage.observe(thread_id=thread.thread_id, item=item)
                         try:
                             await self._publish_live(
@@ -244,6 +248,8 @@ class RootRunExecutor:
                     composition=published.reference,
                     state=result.state,
                     deferred=result.deferred,
+                    excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
+                    activity_changed=excerpts is not None and excerpts.changed,
                 )
             elif stream is not None:
                 try:
@@ -251,7 +257,13 @@ class RootRunExecutor:
                 except Exception as exc:
                     continuation = RootContinuationSelection(status="failed", error=exc)
                 else:
-                    continuation = await self._select_state(thread=thread, composition=published.reference, state=state)
+                    continuation = await self._select_state(
+                        thread=thread,
+                        composition=published.reference,
+                        state=state,
+                        excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
+                        activity_changed=excerpts is not None and excerpts.changed,
+                    )
             else:
                 continuation = RootContinuationSelection(status="not_available")
             if continuation.error is not None:
@@ -336,6 +348,8 @@ class RootRunExecutor:
         composition: ObjectRef,
         state: HarnessState | None,
         deferred: DeferredToolRequests | None = None,
+        excerpt: ConversationExcerpt,
+        activity_changed: bool,
     ) -> RootContinuationSelection:
         if state is None:
             return RootContinuationSelection(status="not_available")
@@ -348,6 +362,7 @@ class RootRunExecutor:
                         harness_release=harness_version,
                         run_composition=composition,
                         harness_state=state,
+                        excerpt=excerpt,
                         deferred_requests=deferred,
                         created_at=datetime.now(UTC),
                     ),
@@ -357,6 +372,8 @@ class RootRunExecutor:
                 thread_id=thread.thread_id,
                 expected=thread.continuation,
                 replacement=published_ref,
+                excerpt=excerpt,
+                activity_changed=activity_changed,
             )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)

@@ -9,6 +9,7 @@ from typing import Annotated, Literal, Self
 from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
+from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.live import LiveEvent
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource
 
@@ -97,6 +98,8 @@ class ThreadSummary(SurfaceModel):
     updated_at: datetime
     metadata_version: int = Field(ge=1)
     title: str | None = Field(default=None, max_length=512)
+    excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
+    activity_at: datetime | None = None
     archived: bool
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]

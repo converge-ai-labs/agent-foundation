@@ -776,6 +776,8 @@ class HarnessUiApp:
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        project_ids: tuple[str, ...] | None = None,
+        sort: Literal["updated", "activity"] = "updated",
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadPage:
@@ -784,6 +786,8 @@ class HarnessUiApp:
                 query=query,
                 project_id=project_id,
                 include_archived=include_archived,
+                project_ids=project_ids,
+                sort=sort,
                 cursor=cursor,
                 limit=limit,
             )

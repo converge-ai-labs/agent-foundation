@@ -20,7 +20,14 @@ from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, KeyP
 from prompt_toolkit.key_binding.key_bindings import KeyBindingsBase
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import Layout
-from prompt_toolkit.layout.containers import ConditionalContainer, Float, FloatContainer, HSplit, Window
+from prompt_toolkit.layout.containers import (
+    ConditionalContainer,
+    DynamicContainer,
+    Float,
+    FloatContainer,
+    HSplit,
+    Window,
+)
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
@@ -40,6 +47,7 @@ from .history import HistoryBrowser
 from .local_shell import run_local_shell, validate_local_shell_support
 from .pastes import PendingPastes
 from .rendering import Status, StreamRenderer, terminal_text
+from .resume import ResumeBrowser
 from .selection import Choice, Selection, resolve_choice
 from .theme import prompt_toolkit_style_rules, resolve_theme
 from .transcript import TranscriptControl
@@ -84,6 +92,7 @@ class CliShell:
         self._subagent_total: int | None = 0
         self.pending_codex_reset: ResetRequest | None = None
         self.history_browser: HistoryBrowser | None = None
+        self.resume_browser: ResumeBrowser | None = None
         self.ready = False
         self.closing = False
         self.job: asyncio.Task[None] | None = None
@@ -205,7 +214,24 @@ class CliShell:
         )
         layout = HSplit(
             [
-                ConditionalContainer(layout, filter=Condition(lambda: self.history_browser is None)),
+                ConditionalContainer(
+                    layout, filter=Condition(lambda: self.history_browser is None and self.resume_browser is None)
+                ),
+                ConditionalContainer(
+                    HSplit(
+                        [
+                            DynamicContainer(
+                                lambda: self.resume_browser.container if self.resume_browser else Window()
+                            ),
+                            Window(
+                                FormattedTextControl(self._hints),
+                                height=lambda: len(self._hints().splitlines()),
+                                style="class:session-selector.hint",
+                            ),
+                        ]
+                    ),
+                    filter=Condition(lambda: self.resume_browser is not None and self.history_browser is None),
+                ),
                 ConditionalContainer(
                     HSplit(
                         [
@@ -437,6 +463,21 @@ class CliShell:
         size = self.app.output.get_size()
         if self.history_browser is not None:
             hints = ["Ctrl+T/q close", "↑↓/PgUp/PgDn scroll", "Home page top", "End latest", "Ctrl+O details"]
+        elif self.resume_browser is not None:
+            hints = (
+                ["Enter save name", "Esc cancel name", "Empty name uses first input"]
+                if self.resume_browser.renaming
+                else [
+                    "Enter resume",
+                    "Esc back",
+                    "↑↓ select",
+                    "Ctrl+T history",
+                    "Ctrl+A scope",
+                    "F2 rename",
+                    "PgUp/PgDn pages",
+                    "F5 refresh",
+                ]
+            )
         elif self.composer.buffer.complete_state is not None:
             hints = [
                 "Enter complete",
@@ -873,18 +914,56 @@ class CliShell:
 
         return merge_key_bindings(
             [
-                ConditionalKeyBindings(keys, filter=Condition(lambda: self.history_browser is None)),
+                ConditionalKeyBindings(
+                    keys, filter=Condition(lambda: self.history_browser is None and self.resume_browser is None)
+                ),
                 ConditionalKeyBindings(browser_keys, filter=Condition(lambda: self.history_browser is not None)),
             ]
         )
 
-    def open_history(self) -> None:
+    def open_resume(self) -> None:
+        if self.backend is None or self.resume_browser is not None:
+            return
+        if self.busy or self.interaction is not None or self.menu_handler is not None:
+            raise ValueError("Finish active work or /cancel before browsing sessions.")
+
+        async def resume(thread_id: str) -> None:
+            async def switch() -> str:
+                result = await self._resume(thread_id)
+                self.close_resume()
+                return result
+
+            def failed(exc: Exception) -> None:
+                browser.message = f"{exc} · F5 refreshes"
+
+            self.launch(switch(), discard_images=True, on_error=failed)
+            if self.job is not None:
+                await self.job
+
+        browser = ResumeBrowser(self.backend, self.app, resume, self.close_resume, self.open_history)
+        self.resume_browser = browser
+        self.app.layout.update_parents_relations()
+        self.app.layout.focus(browser.search)
+        self.app.create_background_task(browser.initialize())
+        self.app.invalidate()
+
+    def close_resume(self) -> None:
+        if self.resume_browser is not None:
+            self.resume_browser.shutdown()
+            self.resume_browser = None
+            self.app.layout.focus(self.composer)
+            self.app.invalidate()
+
+    def open_history(self, thread_id: str | None = None) -> None:
         if self.history_browser is not None:
             return
-        if self.backend is None or self.backend.thread_id is None:
+        if self.backend is None:
+            return
+        thread_id = thread_id or self.backend.thread_id
+        if thread_id is None:
             self.emit("No saved messages yet.")
             return
-        backend, thread_id = self.backend, self.backend.thread_id
+        backend = self.backend
 
         async def load(cursor: str | None, continuation_id: str | None):
             return await backend.app.get_thread_transcript(
@@ -906,7 +985,7 @@ class CliShell:
         if self.history_browser is not None:
             self.history_browser.close()
             self.history_browser = None
-            self.app.layout.focus(self.composer)
+            self.app.layout.focus(self.resume_browser.search if self.resume_browser else self.composer)
             self.app.invalidate()
 
     def _restore_resumed_history(self) -> None:
@@ -930,7 +1009,7 @@ class CliShell:
         self.view.latest()
         self.backend.resumed_transcript = None
 
-    async def _resume(self, selected: str | None) -> str:
+    async def _resume(self, selected: str) -> str:
         assert self.backend is not None
         result = await self.backend.resume(selected)
         self._restore_resumed_history()
@@ -1005,6 +1084,7 @@ class CliShell:
             loop.set_exception_handler(previous_handler)
             self.closing = True
             self.close_history()
+            self.close_resume()
             await self.cancel()
             if self._input_task is not None and not self._input_task.done():
                 self._input_task.cancel()
@@ -1058,6 +1138,7 @@ class CliShell:
         kind: str = "command",
         failure_input: str | None = None,
         discard_images: bool = False,
+        on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         if self.busy:
             operation.close()
@@ -1096,6 +1177,8 @@ class CliShell:
                         directory=self.directory,
                     )
                 )
+                if on_error is not None:
+                    on_error(exc)
                 if failure_input is not None:
                     self._restore_rejected_command(failure_input, generation, images)
             finally:
@@ -1510,7 +1593,9 @@ class CliShell:
             assert argument is not None
             result = await self.backend.steer(argument)
             self.emit(result)
-        elif name in {"agent", "model", "thinking", "environment", "resume"} and argument is None:
+        elif name == "resume" and argument is None:
+            self.open_resume()
+        elif name in {"agent", "model", "thinking", "environment"} and argument is None:
             choices = await self.backend.choices(name)
             if not choices:
                 self.emit("No choices available.")
@@ -1538,6 +1623,7 @@ class CliShell:
             self.renderer.clear_process_observations()
             self.launch(self.backend.new(), failure_input=invocation.source, discard_images=True)
         elif name == "resume":
+            assert argument is not None
             self.launch(self._resume(argument), failure_input=invocation.source, discard_images=True)
         elif name == "review":
             assert argument is not None

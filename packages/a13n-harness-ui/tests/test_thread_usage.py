@@ -17,7 +17,7 @@ from a13n_harness_ui.storage.models import ThreadRecord
 from a13n_harness_ui.storage.usage import ThreadUsageRepository
 from alembic import command
 from pydantic_ai.usage import RunUsage
-from sqlalchemy import create_engine, select
+from sqlalchemy import MetaData, Table, create_engine, select
 
 pytestmark = pytest.mark.anyio
 _NOW = datetime(2026, 9, 7, tzinfo=UTC)
@@ -219,7 +219,9 @@ async def test_startup_automatically_upgrades_populated_previous_revision_and_is
     try:
         with engine.begin() as connection:
             connection.execute(
-                ThreadRecord.__table__.insert().values(
+                Table("thread", MetaData(), autoload_with=connection)
+                .insert()
+                .values(
                     thread_id="thread-existing",
                     title="Keep this",
                     archived=False,

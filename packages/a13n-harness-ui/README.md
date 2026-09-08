@@ -38,7 +38,7 @@ First use opens a single-screen setup wizard before chat: choose a connection, a
 
 `/mode concise|detailed` or Ctrl+O switches output live. Concise mode emphasizes text and necessary results; detailed mode includes exposed reasoning, file/tool calls, and bounded results. Display mode never changes model reasoning or tool permissions.
 
-The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` lists this directory's saved conversations. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history; `/model` is its alias. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the Hello World page does not call that API, and the CLI does not contain a second execution engine.
+The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` opens a searchable, paginated browser with saved input/reply previews. Ctrl+T inspects a selected conversation without switching, F2 edits its name, and Ctrl+A toggles current/all-directory scope. Enter resumes; Escape preserves the original conversation and draft. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history; `/model` is its alias. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the Hello World page does not call that API, and the CLI does not contain a second execution engine.
 
 ```console
 a13n-harness-ui --environment-mode sandbox

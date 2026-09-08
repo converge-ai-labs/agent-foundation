@@ -122,6 +122,17 @@ def test_thread_metadata_migration_backfills_existing_rows(tmp_path: Path) -> No
                 ).scalar_one()
                 == 1
             )
+            row = connection.execute(
+                text(
+                    "SELECT search_text, first_input, latest_reply, activity_at, initial_state_digest FROM thread WHERE thread_id = 'thread-existing'"
+                )
+            ).one()
+            assert row.search_text == "thread-existing\nexisting"
+            assert row.first_input == row.latest_reply == ""
+            assert row.activity_at is None
+            assert row.initial_state_digest == "1" * 64
+        migrator.upgrade()
+        migrator.verify_current()
     finally:
         engine.dispose()
 

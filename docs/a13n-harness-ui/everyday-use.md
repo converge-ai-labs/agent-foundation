@@ -12,7 +12,7 @@
 | Switch concise/detailed display                     | Ctrl+O or `/mode concise`, `/mode detailed`      |
 | Explain commands                                    | `/help` or `/help command`                       |
 | Start a new conversation without deleting history   | `/new`                                           |
-| List recent conversations in this workspace         | `/resume`                                        |
+| Search and preview saved conversations              | `/resume`                                        |
 | Resume one saved conversation                       | `/resume session-id`                             |
 | Read saved messages and tool details                | Ctrl+T or `/history`                             |
 | List/select configured Agents                       | `/agent`, `/agent agent-codex`, `/agent default` |
@@ -29,7 +29,31 @@
 
 `/model` opens a separate picker of configured Model resources. `/model <model-id>` temporarily overrides only the model without switching Agent or saving configuration. It applies to subsequent turns throughout this TUI session, including after `/new`, `/resume`, or `/agent`; restarting the TUI does not restore the override. `/model default` returns to the selected Agent's model. Selecting a Model or Agent clears temporary reasoning and service-tier settings. Both selection commands are unavailable during active work.
 
-`--resume` and `/resume` restore recent messages as well as session settings. The initial screen is bounded to the latest 50 saved messages, at most 100 visible parts and 256 KiB, with explicit truncation notices. Live conversation display also evicts old content at 500 blocks or 2 MiB; this does not delete saved history. Press Ctrl+T to browse retained messages without mixing them into live output. Up/PageUp at the top loads an older page; Down/PageDown at the bottom loads a newer page. Home goes to the current page top, End reloads latest, and Ctrl+T, q, Escape or Ctrl+C closes the viewer and restores your draft. The viewer keeps one bounded page, not the whole conversation. It cannot recover messages already absent from the saved continuation after context compaction.
+### Find a saved conversation
+
+`/resume` opens a session browser without changing your current conversation or draft. Rows use a manual name, or the first saved input when unnamed, and are ordered by saved conversation activity. The selected row immediately previews its latest saved input and reply. These are bounded excerpts, not AI-generated summaries; unfinished replies are labeled as progress.
+
+| Browser action                                                 | Key               |
+| -------------------------------------------------------------- | ----------------- |
+| Search names, IDs, and saved input/reply excerpts              | Type in Search    |
+| Select a row                                                   | Up / Down         |
+| Load another result page                                       | PageUp / PageDown |
+| Toggle current directory / all directories                     | Ctrl+A            |
+| Inspect selected session's retained messages without switching | Ctrl+T            |
+| Edit its name; an empty name restores the first-input label    | F2, then Enter    |
+| Refresh results after changes or an error                      | F5                |
+| Resume the selected session                                    | Enter             |
+| Cancel naming or return to the original conversation           | Escape            |
+
+Search covers all matching saved metadata, not just the visible page, and treats `%` and `_` literally. The default scope includes all Projects whose first root matches this directory. All-directories mode also lets you inspect other, unresolved, or projectless sessions; it does not retarget their execution directory. For a session in another configured directory, Enter shows the launch command to use there. Active sessions cannot be resumed.
+
+Search, naming, preview, and history inspection make no model requests. Closing history returns to the same browser selection. Cancelling the browser or a failed resume preserves composer text, cursor, folded pastes, and attachments. A successful resume retains the existing policy of discarding only unchanged prior attachments.
+
+Existing conversations remain resumable after upgrade. Older sessions have no saved excerpts until subsequent execution; they remain searchable by name and ID, and Ctrl+T still reads their retained messages. The upgrade does not scan or rewrite conversation checkpoints.
+
+### Read retained history
+
+`--resume <id>`, `/resume <id>`, and confirmation in the browser restore recent messages as well as session settings. The initial screen is bounded to the latest 50 saved messages, at most 100 visible parts and 256 KiB, with explicit truncation notices. Live conversation display also evicts old content at 500 blocks or 2 MiB; this does not delete saved history. Press Ctrl+T to browse retained messages without mixing them into live output. Up/PageUp at the top loads an older page; Down/PageDown at the bottom loads a newer page. Home goes to the current page top, End reloads latest, and Ctrl+T, q, Escape or Ctrl+C closes the viewer and restores your draft. The viewer keeps one bounded page, not the whole conversation. It cannot recover messages already absent from the saved continuation after context compaction.
 
 Type `$` to list available Skills with short descriptions, then filter and complete the name. `$name` can appear within an ordinary prompt; `/` is reserved for commands.
 

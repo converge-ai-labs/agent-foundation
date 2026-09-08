@@ -67,6 +67,8 @@ class _ThreadCursor(SurfaceModel):
     kind: Literal["threads"] = "threads"
     query: str | None
     project_id: str | None = None
+    project_ids: tuple[str, ...] | None = None
+    sort: Literal["updated", "activity"] = "updated"
     include_archived: bool
     updated_at: datetime
     thread_id: str
@@ -114,10 +116,14 @@ class ThreadProjectionService:
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        project_ids: tuple[str, ...] | None = None,
+        sort: Literal["updated", "activity"] = "updated",
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadPage:
         normalized_query = _normalize_query(query)
+        if project_ids is not None:
+            project_ids = tuple(sorted(set(project_ids)))
         if not 1 <= limit <= 100:
             raise ThreadError("Thread page is outside supported bounds.", code="thread_page_invalid")
         before: tuple[datetime, str] | None = None
@@ -127,6 +133,8 @@ class ThreadProjectionService:
                 decoded.query != normalized_query
                 or decoded.project_id != project_id
                 or decoded.include_archived is not include_archived
+                or decoded.project_ids != project_ids
+                or decoded.sort != sort
             ):
                 raise ThreadError("Thread cursor belongs to another query.", code="thread_cursor_mismatch")
             before = (decoded.updated_at, decoded.thread_id)
@@ -134,6 +142,8 @@ class ThreadProjectionService:
             query=normalized_query,
             project_id=project_id,
             include_archived=include_archived,
+            project_ids=project_ids,
+            sort=sort,
             before=before,
             limit=limit + 1,
         )
@@ -150,7 +160,9 @@ class ThreadProjectionService:
                     query=normalized_query,
                     project_id=project_id,
                     include_archived=include_archived,
-                    updated_at=last.updated_at,
+                    updated_at=last.updated_at if sort == "updated" else (last.activity_at or last.created_at),
+                    project_ids=project_ids,
+                    sort=sort,
                     thread_id=last.thread_id,
                 )
             )
@@ -291,6 +303,8 @@ class ThreadProjectionService:
             updated_at=thread.updated_at,
             metadata_version=thread.metadata_version,
             title=thread.title,
+            excerpt=thread.excerpt,
+            activity_at=thread.activity_at,
             archived=thread.archived,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",

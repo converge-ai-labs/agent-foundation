@@ -919,6 +919,11 @@ async def test_application_creates_and_runs_root_thread(tmp_path: Path) -> None:
         selected = await app.get_thread(thread.thread_id)
         assert selected.continuation_id is not None
         assert selected.continuation_id == operation.outcome.continuation.continuation_id
+        assert selected.thread.excerpt.first_input == "hello"
+        assert selected.thread.excerpt.latest_input == "hello"
+        assert selected.thread.excerpt.latest_reply == "root complete"
+        assert selected.thread.excerpt.reply_kind == "final"
+        assert selected.thread.activity_at is not None
         transcript = await app.get_thread_transcript(thread_id=thread.thread_id, limit=1)
         assert transcript.total >= 1
         assert transcript.entries[0].position == transcript.total - 1
@@ -975,6 +980,9 @@ async def test_application_retains_failed_and_interrupted_history(
         assert operation.status is (RootOperationStatus.cancelled if interrupted else RootOperationStatus.failed)
         selected = await app.get_thread(thread.thread_id)
         assert selected.continuation_id is not None
+        assert selected.thread.excerpt.first_input == "original task"
+        assert selected.thread.excerpt.latest_input == "original task"
+        assert selected.thread.excerpt.reply_kind != "final"
         if not interrupted:
             assert operation.outcome is not None
             assert operation.outcome.execution.failure is not None
@@ -1072,7 +1080,10 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         assert failed.outcome is not None
         assert failed.outcome.execution.status == "completed"
         assert failed.outcome.continuation.status == "failed"
-        assert (await app.get_thread(thread.thread_id)).continuation_id == prior
+        retained = await app.get_thread(thread.thread_id)
+        assert retained.continuation_id == prior
+        assert retained.thread.excerpt.first_input == "first"
+        assert retained.thread.excerpt.latest_input == "first"
 
 
 async def test_focused_watch_cuts_over_before_snapshot_and_summary_stream_invalidates(tmp_path: Path) -> None:
@@ -1505,3 +1516,81 @@ async def test_webui_create_reports_created_identity_when_admission_fails(tmp_pa
         assert result["error"]["code"] == "run_rejected"
         assert (await app.get_thread(result["thread_id"])).thread.thread_id == result["thread_id"]
         assert (await app.list_threads()).total == 2
+
+
+async def test_resume_search_pages_saved_excerpts_without_loading_history(tmp_path: Path, monkeypatch) -> None:
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        first = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=first.thread_id, prompt="Original STRAẞE task 100%")
+        await app.wait_root_operation(receipt.receipt_id)
+        receipt = await app.submit_thread(thread_id=first.thread_id, prompt="Latest searchable input")
+        await app.wait_root_operation(receipt.receipt_id)
+        saved = (await app.get_thread(first.thread_id)).thread
+        assert saved.excerpt.first_input == "Original STRAẞE task 100%"
+        assert saved.excerpt.latest_input == "Latest searchable input"
+        newer = await app.create_thread(title="Newer")
+        await app.update_thread_metadata(
+            thread_id=first.thread_id,
+            mutation=ThreadMetadataMutation(
+                expected_version=first.metadata_version, patch=ThreadMetadataPatch(title="Renamed")
+            ),
+        )
+        assert (await app.get_thread(first.thread_id)).thread.activity_at == saved.activity_at
+
+        async def forbidden_read(*args, **kwargs):
+            raise AssertionError("Session list must not hydrate history")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(app._store.objects, "read_model", forbidden_read)
+            for query in ("strasse", "100%", "latest searchable", "ROOT COMPLETE", "Renamed", first.thread_id):
+                page = await app.list_threads(query=query, sort="activity")
+                assert [item.thread_id for item in page.threads] == [first.thread_id]
+            page = await app.list_threads(project_ids=("project-main",), sort="activity", limit=1)
+            assert page.threads[0].thread_id == newer.thread_id
+            assert page.total == 2
+            assert page.next_cursor is not None
+            tail = await app.list_threads(
+                project_ids=("project-main",), sort="activity", cursor=page.next_cursor, limit=1
+            )
+            assert tail.threads[0].thread_id == first.thread_id
+            assert tail.next_cursor is None
+            assert (await app.list_threads(project_ids=(), sort="activity")).total == 0
+            with pytest.raises(ThreadError, match="another query"):
+                await app.list_threads(project_ids=("project-main",), sort="updated", cursor=page.next_cursor)
+
+    async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+        restored = (await reopened.get_thread(first.thread_id)).thread
+        assert restored.excerpt == saved.excerpt
+        assert restored.title == "Renamed"
+        assert restored.activity_at == saved.activity_at
+
+
+async def test_conflicting_checkpoint_cannot_overwrite_excerpts(tmp_path: Path, monkeypatch) -> None:
+    from a13n_harness_ui.conversation import ConversationExcerpt
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="First question")
+        await app.wait_root_operation(first.receipt_id)
+        previous = await app._store.threads.get(thread.thread_id)
+        assert previous is not None
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="Second question")
+        await app.wait_root_operation(second.receipt_id)
+        current = await app._store.threads.get(thread.thread_id)
+        assert current is not None and current.continuation is not None
+        with pytest.raises(StoreConflictError):
+            await app._store.threads.select_continuation(
+                thread_id=thread.thread_id,
+                expected=previous.continuation,
+                replacement=current.continuation,
+                excerpt=ConversationExcerpt(first_input="Incorrect", latest_input="Stale write"),
+            )
+        retained = await app._store.threads.get(thread.thread_id)
+        assert retained is not None
+        assert retained.excerpt == current.excerpt
+        assert retained.activity_at == current.activity_at

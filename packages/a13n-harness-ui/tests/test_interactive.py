@@ -202,7 +202,7 @@ async def test_exact_cwd_project_never_retargets_saved_project(tmp_path: Path, m
         other = SessionBackend(app, CliRequest(), tmp_path, Status())
         with pytest.raises(ValueError, match="another Project"):
             await other.resume(thread_id)
-        assert thread_id in await backend.resume()
+        assert thread_id in {item.thread_id for item in (await backend.resume_sessions()).threads}
 
 
 @pytest.mark.anyio
@@ -292,8 +292,7 @@ async def test_cli_reuses_and_resumes_projects_after_adding_roots(
         assert resolver.resolve_run(after, selection).project_roots == (str(directory), str(extra))
 
         resumed = SessionBackend(app, CliRequest(), directory, Status())
-        assert thread_id in await resumed.resume()
-        assert thread_id in {choice.value for choice in await resumed.choices("resume")}
+        assert thread_id in {item.thread_id for item in (await resumed.resume_sessions()).threads}
         await resumed.resume(thread_id)
         assert await resumed.ensure_session() == thread_id
         fresh = SessionBackend(app, CliRequest(), directory, Status())
@@ -1484,3 +1483,111 @@ async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
             renderer.transcript.close()
     assert observed == ["default", "priority"]
     assert all(item.read_bytes() == contents for item, contents in original.items())
+
+
+@pytest.mark.anyio
+async def test_resume_browser_end_to_end_with_saved_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import a13n_harness.model_auth as runtime
+    from a13n_harness_ui.interactive.shell import CliShell
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    path = await _seed(tmp_path, monkeypatch)
+    calls = []
+
+    async def stream(messages, info):
+        calls.append(messages)
+        yield "The saved answer to find"
+
+    async def until(predicate):
+        async with asyncio.timeout(5):
+            while not predicate():
+                await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        renderer = StreamRenderer(backend.status)
+        try:
+            await backend.execute(renderer, prompt="Find this original question")
+        finally:
+            renderer.transcript.close()
+        target = backend.thread_id
+        # The target is outside the initial result page; search must reach stored metadata.
+        for _ in range(21):
+            await backend.new()
+            await backend.ensure_session()
+        current = backend.thread_id
+        assert target not in {item.thread_id for item in (await backend.resume_sessions()).threads}
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            shell = CliShell(CliRequest(), directory=tmp_path, status=backend.status)
+            shell.backend = backend
+            terminal = asyncio.create_task(shell.app.run_async())
+            try:
+                await until(lambda: shell.app.is_running)
+                shell.open_resume()
+                await until(lambda: shell.resume_browser.selected is not None)
+                browser = shell.resume_browser
+                pipe.send_text("saved answer")
+                await until(lambda: browser.selected is not None and browser.selected.thread_id == target)
+                assert browser.page.total == 1 and "original question" in browser.preview()
+                assert backend.thread_id == current and len(calls) == 1
+                pipe.send_text("\x14")
+                await until(lambda: shell.history_browser is not None and shell.history_browser.page is not None)
+                assert backend.thread_id == current
+                pipe.send_text("q")
+                await until(lambda: shell.history_browser is None)
+                pipe.send_text("\x1bOQNamed session\r")
+                await until(
+                    lambda: (
+                        browser.renaming is None and not browser.loading and browser.selected.title == "Named session"
+                    )
+                )
+                assert len(calls) == 1
+                pipe.send_text("\r")
+                await until(lambda: shell.resume_browser is None and not shell.busy)
+                assert backend.thread_id == target
+                assert "The saved answer" in "\n".join(
+                    block.source for block in shell.renderer.transcript.blocks.values()
+                )
+                assert len(calls) == 1
+            finally:
+                shell.close_history()
+                shell.close_resume()
+                shell.app.exit()
+                await terminal
+                shell.renderer.transcript.close()
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        page = await backend.resume_sessions(query="Named session")
+        assert page.total == 1 and page.threads[0].thread_id == target
+        assert page.threads[0].excerpt.first_input == "Find this original question"
+        await backend.resume(target)
+        assert backend.thread_id == target and len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_resume_usage_read_failure_keeps_current_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    path = await _seed(tmp_path, monkeypatch)
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        target = await backend.ensure_session()
+        await backend.new()
+        current = await backend.ensure_session()
+        status = (backend.status.session_id, backend.status.agent, backend.status.context_tokens)
+        monkeypatch.setattr(app, "context_usage", AsyncMock(side_effect=OSError("read failed")))
+        with pytest.raises(OSError, match="read failed"):
+            await backend.resume(target)
+        assert backend.thread_id == current
+        assert (backend.status.session_id, backend.status.agent, backend.status.context_tokens) == status
+        assert backend.resumed_transcript is None

@@ -367,11 +367,12 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=500)] = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        sort: Literal["updated", "activity"] = "updated",
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadPage:
         return await app().list_threads(
-            query=query, project_id=project_id, include_archived=include_archived, cursor=cursor, limit=limit
+            query=query, project_id=project_id, include_archived=include_archived, sort=sort, cursor=cursor, limit=limit
         )
 
     @server.post("/api/threads", response_model=ThreadSummary, openapi_extra=_body(CreateThreadRequest))

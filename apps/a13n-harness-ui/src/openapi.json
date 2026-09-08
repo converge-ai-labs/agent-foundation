@@ -519,6 +519,20 @@
             }
           },
           {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "updated",
+                "activity"
+              ],
+              "type": "string",
+              "default": "updated",
+              "title": "Sort"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -1771,6 +1785,42 @@
           "status"
         ],
         "title": "ContinuationSelectionView"
+      },
+      "ConversationExcerpt": {
+        "properties": {
+          "first_input": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "First Input",
+            "default": ""
+          },
+          "latest_input": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Latest Input",
+            "default": ""
+          },
+          "latest_reply": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Latest Reply",
+            "default": ""
+          },
+          "reply_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "progress",
+              "final"
+            ],
+            "title": "Reply Kind",
+            "default": "none"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConversationExcerpt",
+        "description": "Small saved display values, independent of model-history compaction."
       },
       "DecisionBatchView": {
         "properties": {
@@ -3817,6 +3867,21 @@
               }
             ],
             "title": "Title"
+          },
+          "excerpt": {
+            "$ref": "#/components/schemas/ConversationExcerpt"
+          },
+          "activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity At"
           },
           "archived": {
             "type": "boolean",

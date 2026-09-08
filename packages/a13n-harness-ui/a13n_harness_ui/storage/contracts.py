@@ -10,6 +10,8 @@ from a13n_harness import HarnessState, SafeFailure
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai.tools import DeferredToolRequests
 
+from a13n_harness_ui.conversation import ConversationExcerpt
+
 from .objects import ObjectKind, ObjectRef
 
 type Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -103,6 +105,8 @@ class Thread(StoredContract):
     updated_at: datetime
     metadata_version: int = Field(ge=1)
     title: str | None = Field(default=None, max_length=512)
+    excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
+    activity_at: datetime | None = None
     archived: bool = False
     configuration: ThreadConfiguration
     initial_state: ObjectRef
@@ -134,6 +138,7 @@ class StoredContinuation(StoredContract):
     harness_release: str = Field(min_length=1, max_length=128)
     run_composition: ObjectRef
     harness_state: HarnessState
+    excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
     created_at: datetime
 

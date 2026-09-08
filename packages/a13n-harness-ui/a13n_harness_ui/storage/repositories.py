@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 
 from .contracts import (
@@ -171,6 +172,7 @@ class ThreadRepository:
                 parent_thread_id=parent_thread_id,
                 metadata_version=1,
                 title=title,
+                search_text=f"{thread_id}\n{title or ''}".casefold(),
                 archived=False,
                 created_at=now,
                 updated_at=now,
@@ -202,6 +204,8 @@ class ThreadRepository:
         project_id: str | None = None,
         include_children: bool = False,
         include_archived: bool = False,
+        project_ids: tuple[str, ...] | None = None,
+        sort: Literal["updated", "activity"] = "updated",
         before: tuple[datetime, str] | None = None,
         limit: int = 20,
     ) -> tuple[tuple[Thread, ...], int]:
@@ -209,10 +213,17 @@ class ThreadRepository:
             raise ValueError("Thread page is outside supported bounds")
         if before is not None and (not before[1] or before[0].tzinfo is None or before[0].utcoffset() is None):
             raise ValueError("Thread page cursor is invalid")
+        if project_id is not None and project_ids is not None:
+            raise ValueError("Choose project_id or project_ids, not both")
+        order_time = (
+            ThreadRecord.updated_at
+            if sort == "updated"
+            else func.coalesce(ThreadRecord.activity_at, ThreadRecord.created_at)
+        )
         async with short_session(self._sessions) as session:
             statement = select(ThreadRecord)
             count_statement = select(func.count()).select_from(ThreadRecord)
-            if project_id is not None:
+            if project_id is not None or project_ids is not None:
                 statement = statement.join(
                     ThreadConfigurationRecord,
                     ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
@@ -224,6 +235,8 @@ class ThreadRepository:
             predicates = []
             if project_id is not None:
                 predicates.append(ThreadConfigurationRecord.project_id == project_id)
+            if project_ids is not None:
+                predicates.append(ThreadConfigurationRecord.project_id.in_(project_ids))
             if not include_children:
                 predicates.append(ThreadRecord.parent_thread_id.is_(None))
             if not include_archived:
@@ -231,12 +244,7 @@ class ThreadRepository:
             normalized = None if query is None else query.strip().casefold()
             if normalized:
                 pattern = f"%{_escape_like(normalized)}%"
-                predicates.append(
-                    or_(
-                        func.lower(ThreadRecord.thread_id).like(pattern, escape="\\"),
-                        func.lower(func.coalesce(ThreadRecord.title, "")).like(pattern, escape="\\"),
-                    )
-                )
+                predicates.append(ThreadRecord.search_text.like(pattern, escape="\\"))
             if predicates:
                 statement = statement.where(*predicates)
                 count_statement = count_statement.where(*predicates)
@@ -244,9 +252,9 @@ class ThreadRepository:
                 before_updated_at, before_thread_id = before
                 statement = statement.where(
                     or_(
-                        ThreadRecord.updated_at < before_updated_at,
+                        order_time < before_updated_at,
                         and_(
-                            ThreadRecord.updated_at == before_updated_at,
+                            order_time == before_updated_at,
                             ThreadRecord.thread_id < before_thread_id,
                         ),
                     )
@@ -254,7 +262,7 @@ class ThreadRepository:
             records = tuple(
                 (
                     await session.execute(
-                        statement.order_by(ThreadRecord.updated_at.desc(), ThreadRecord.thread_id.desc()).limit(limit)
+                        statement.order_by(order_time.desc(), ThreadRecord.thread_id.desc()).limit(limit)
                     )
                 ).scalars()
             )
@@ -325,6 +333,7 @@ class ThreadRepository:
                 return _thread_value(record, _configuration_value(configuration))
             record.metadata_version += 1
             record.title = title
+            record.search_text = _search_text(record)
             record.archived = archived
             record.updated_at = now
             await session.flush()
@@ -364,6 +373,8 @@ class ThreadRepository:
         thread_id: str,
         expected: ObjectRef | None,
         replacement: ObjectRef,
+        excerpt: ConversationExcerpt | None = None,
+        activity_changed: bool = True,
         updated_at: datetime | None = None,
     ) -> Thread:
         _require_kind(replacement, ObjectKind.continuation)
@@ -382,6 +393,14 @@ class ThreadRepository:
                 )
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
+            if excerpt is not None:
+                record.first_input = excerpt.first_input
+                record.latest_input = excerpt.latest_input
+                record.latest_reply = excerpt.latest_reply
+                record.reply_kind = excerpt.reply_kind
+            record.search_text = _search_text(record)
+            if activity_changed:
+                record.activity_at = now
             record.updated_at = now
             await session.flush()
             return _thread_value(record, _configuration_value(configuration))
@@ -760,6 +779,12 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
     )
 
 
+def _search_text(record: ThreadRecord) -> str:
+    return "\n".join(
+        (record.thread_id, record.title or "", record.first_input, record.latest_input, record.latest_reply)
+    ).casefold()
+
+
 def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> Thread:
     return Thread(
         thread_id=record.thread_id,
@@ -768,6 +793,15 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
         updated_at=record.updated_at,
         metadata_version=record.metadata_version,
         title=record.title,
+        excerpt=ConversationExcerpt.model_validate(
+            {
+                "first_input": record.first_input,
+                "latest_input": record.latest_input,
+                "latest_reply": record.latest_reply,
+                "reply_kind": record.reply_kind,
+            }
+        ),
+        activity_at=record.activity_at,
         archived=record.archived,
         configuration=configuration,
         initial_state=ObjectRef(

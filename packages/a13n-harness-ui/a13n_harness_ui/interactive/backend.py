@@ -14,7 +14,11 @@ from a13n_stream_protocol import CustomEventAssembler
 
 from a13n_harness_ui.app import HarnessUiApp
 from a13n_harness_ui.cli import CliRequest
-from a13n_harness_ui.configuration import ExternalSubagentImportPreview, ResourceMutationRequest
+from a13n_harness_ui.configuration import (
+    ExternalSubagentImportPreview,
+    LoadedHarnessUiConfiguration,
+    ResourceMutationRequest,
+)
 from a13n_harness_ui.environment_profiles import (
     environment_profile_id_for_mode,
     local_sandbox_supported,
@@ -30,6 +34,7 @@ from a13n_harness_ui.surfaces import (
     SkillCatalogView,
     SkillReference,
     ThreadDeferredResponse,
+    ThreadPage,
     ThreadSummary,
     TranscriptPage,
 )
@@ -90,9 +95,13 @@ class SessionBackend:
         configuration = await self.app.current_configuration()
         if configuration is None:
             return False
-        agent_id = self.agent_id or configuration.document.defaults.agent
         if self.thread_id is not None:
             thread = thread or (await self.app.get_thread(self.thread_id)).thread
+        return self._refresh_status(configuration, thread)
+
+    def _refresh_status(self, configuration: LoadedHarnessUiConfiguration, thread: ThreadSummary | None) -> bool:
+        agent_id = self.agent_id or configuration.document.defaults.agent
+        if thread is not None:
             agent_id = thread.configuration.agent_source.id
             self.status.session_id = self.thread_id
             self.environment = thread.configuration.environment_profile_id
@@ -252,24 +261,19 @@ class SessionBackend:
         await self.refresh()
         return "New session."
 
-    async def resume(self, selected: str | None = None) -> str:
+    async def resume_sessions(
+        self, *, query: str = "", all_directories: bool = False, cursor: str | None = None
+    ) -> ThreadPage:
+        projects = None if all_directories else tuple(sorted(await self.app.cwd_project_ids(self.directory)))
+        return await self.app.list_threads(
+            query=query or None, project_ids=projects, sort="activity", cursor=cursor, limit=20
+        )
+
+    async def resume(self, selected: str) -> str:
         configuration = await self.app.current_configuration()
         if configuration is None:
             raise ValueError("Use `a13n-harness-ui setup` first.")
         matches = await self.app.cwd_project_ids(self.directory)
-        if selected is None:
-            sessions = []
-            for project_id in sorted(matches):
-                page = await self.app.list_threads(project_id=project_id, limit=20)
-                sessions.extend(page.threads)
-            sessions.sort(key=lambda item: item.updated_at, reverse=True)
-            return (
-                "\n".join(
-                    f"{item.thread_id}  {item.updated_at:%Y-%m-%d %H:%M}  {item.title or '(untitled)'}"
-                    for item in sessions[:20]
-                )
-                or "No saved sessions in this directory."
-            )
         detail = await self.app.get_thread(selected)
         if detail.thread.parent_thread_id is not None or detail.thread.archived:
             raise ValueError("Only non-archived root sessions can be resumed.")
@@ -284,9 +288,10 @@ class SessionBackend:
             thread_id=selected, expected_continuation_id=detail.continuation_id, limit=50
         )
         totals = await self.app.thread_usage(thread_id=selected)
+        usage = await self.app.context_usage(selected)
+        # All fallible I/O precedes the local selection change.
         self.thread_id = selected
         self.status.restore_usage(totals.root)
-        usage = await self.app.context_usage(selected)
         self.status.context_tokens = usage.latest_request_tokens
         agent = configuration.agents.get(detail.thread.configuration.agent_source.id)
         self.agent_id = detail.thread.configuration.agent_source.id
@@ -298,7 +303,7 @@ class SessionBackend:
                     "service_tier": self.overrides.service_tier,
                 }
             )
-        await self.refresh(thread=detail.thread)
+        self._refresh_status(configuration, detail.thread)
         self.resumed_transcript = page
         return f"Resumed {selected}."
 
@@ -483,19 +488,6 @@ class SessionBackend:
                     if local_sandbox_supported()
                     else ()
                 ),
-            )
-        if kind == "resume":
-            configuration = await self.app.current_configuration()
-            if configuration is None:
-                return ()
-            sessions = []
-            for project_id in await self.app.cwd_project_ids(self.directory):
-                page = await self.app.list_threads(project_id=project_id, limit=20)
-                sessions.extend(item for item in page.threads if item.parent_thread_id is None and not item.archived)
-            sessions.sort(key=lambda item: item.updated_at, reverse=True)
-            return tuple(
-                Choice(item.thread_id, item.title or "Untitled", f"{item.updated_at:%Y-%m-%d %H:%M} · {item.thread_id}")
-                for item in sessions[:20]
             )
         raise ValueError("Unknown selector.")
 

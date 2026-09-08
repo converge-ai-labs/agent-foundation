@@ -124,7 +124,7 @@ COMMANDS = (
         choices=("full-control", "sandbox"),
     ),
     Command("new", "Start a fresh session; keep all saved history."),
-    Command("resume", "List recent sessions in this workspace or resume one.", "[session-id]", maximum=1),
+    Command("resume", "Search, preview, and name saved sessions, or resume one by ID.", "[session-id]", maximum=1),
     Command("history", "Browse retained messages (Ctrl+T)."),
     Command("notes", "Show saved notes with full contents within display budgets."),
     Command("config", "Find your configuration files."),
