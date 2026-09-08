@@ -14,9 +14,9 @@ from .compiler import compile_descriptor
 from .model import OptionReader, build_index, data_frame_profile
 from .python_renderer import GENERATED_HEADER, write_python_surface
 
-DESCRIPTOR_PATH = Path("crates/agent-envd/protocol/eip/v1/descriptor.pb")
-PYTHON_PATH = Path("packages/agent-envd-client/a13n_envd_client/eip/v1")
-ARTIFACT_PATH = Path("proto/agent-envd/eip/v1/artifacts")
+DESCRIPTOR_PATH = Path("crates/a13n-envd/protocol/eip/v1/descriptor.pb")
+PYTHON_PATH = Path("packages/a13n-envd-client/a13n_envd_client/eip/v1")
+ARTIFACT_PATH = Path("proto/a13n-envd/eip/v1/artifacts")
 MANIFEST_PATH = ARTIFACT_PATH / "generated-files.json"
 ALLOWED_ROOTS = (DESCRIPTOR_PATH.parent, PYTHON_PATH, ARTIFACT_PATH)
 

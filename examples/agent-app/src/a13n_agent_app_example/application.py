@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, aclosing
 from pathlib import Path
 
-from a13n_environment_provider import Environment
+from a13n_environment import Environment
 from a13n_harness import (
     AgentSpec,
     HarnessBuilder,

@@ -5,7 +5,7 @@ requires-python = ">=3.13"
 [[package]]
 name = "a13n-envd-client"
 version = "0.0.0"
-source = { editable = "../../packages/agent-envd-client" }
+source = { editable = "../../packages/a13n-envd-client" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
@@ -23,11 +23,12 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "a13n-environment-provider"
+name = "a13n-environment"
 version = "0.0.0"
-source = { editable = "../../packages/agent-environment-provider" }
+source = { editable = "../../packages/a13n-environment" }
 dependencies = [
     { name = "a13n-envd-client" },
+    { name = "anyio" },
     { name = "docker" },
     { name = "e2b" },
     { name = "pathspec" },
@@ -37,7 +38,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-envd-client", editable = "../../packages/agent-envd-client" },
+    { name = "a13n-envd-client", editable = "../../packages/a13n-envd-client" },
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "docker", specifier = ">=7.2,<8" },
     { name = "e2b", specifier = ">=2.46.4,<3" },
     { name = "pathspec", specifier = ">=1.1,<2" },
@@ -52,11 +54,11 @@ test = [
 ]
 
 [[package]]
-name = "a13n-environment-provider-example"
+name = "a13n-environment-example"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
-    { name = "a13n-environment-provider" },
+    { name = "a13n-environment" },
     { name = "pydantic" },
     { name = "websockets" },
 ]
@@ -70,7 +72,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
+    { name = "a13n-environment", editable = "../../packages/a13n-environment" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]

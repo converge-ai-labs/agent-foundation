@@ -3,6 +3,9 @@ discussion/
 local-reference/
 tmp/
 
+# Local runtime storage and caches
+/var/
+
 # Python bytecode and native extensions
 __pycache__/
 *.py[cod]
@@ -18,6 +21,7 @@ wheels/
 
 # Python environments
 .env
+/dev/live_tests/.state/
 .env.*
 !.env.example
 !.env.harness.example
@@ -52,8 +56,8 @@ target/
 # Frontend tooling
 node_modules/
 *.tsbuildinfo
-/apps/harness-ui/dist/
-/packages/agent-ui/a13n_ui/static/
+/apps/a13n-harness-ui/dist/
+/packages/a13n-harness-ui/a13n_harness_ui/static/
 
 # Editors and operating systems
 .DS_Store

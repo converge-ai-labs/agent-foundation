@@ -1,0 +1,437 @@
+name: Release a13n-envd
+
+on:
+  push:
+    tags:
+      - "release/a13n-envd-v*"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SANDBOX_IMAGE: ghcr.io/converge-ai-labs/a13n-sandbox
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-a13n-envd
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  prepare:
+    name: Validate a13n-envd release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Install Linux isolation dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Prepare release version
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#release/a13n-envd-v}"
+          python3 scripts/prepare-release-version.py a13n-envd "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run EIP protocol gate
+        run: make eip-check
+
+      - name: Create release version patch
+        run: |
+          git diff --check
+          git diff --binary -- \
+            Cargo.toml \
+            Cargo.lock \
+            packages/a13n-envd-client/pyproject.toml \
+            uv.lock > release-version.patch
+          test -s release-version.patch
+
+      - name: Upload release version patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-version-a13n-envd
+          path: release-version.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  build-client:
+    name: Build Python client distributions
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download release version patch
+        uses: actions/download-artifact@v4
+        with:
+          name: release-version-a13n-envd
+          path: .
+
+      - name: Apply release version patch
+        run: |
+          git apply --whitespace=error release-version.patch
+          git clean -f -- release-version.patch
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Build Python client distributions
+        run: make a13n-envd-client-build
+
+      - name: Upload Python client distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: envd-client-python-dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            cross_linux: false
+            windows: false
+          - os: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+            cross_linux: true
+            windows: false
+          - os: macos-15
+            target: x86_64-apple-darwin
+            cross_linux: false
+            windows: false
+          - os: macos-15
+            target: aarch64-apple-darwin
+            cross_linux: false
+            windows: false
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            cross_linux: false
+            windows: true
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            cross_linux: false
+            windows: true
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download release version patch
+        uses: actions/download-artifact@v4
+        with:
+          name: release-version-a13n-envd
+          path: .
+
+      - name: Apply release version patch
+        run: |
+          git apply --whitespace=error release-version.patch
+          git clean -f -- release-version.patch
+
+      - name: Install Linux cross compiler
+        if: matrix.cross_linux
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-a13n-envd-${{ matrix.target }}
+
+      - name: Build Unix binary archive
+        if: matrix.windows == false
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cargo build --release --locked --package a13n-envd --target "$TARGET"
+          mkdir -p staging
+          cp "target/$TARGET/release/a13n-envd" staging/a13n-envd
+          cp LICENSE staging/LICENSE
+          archive="a13n-envd-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$archive" -C staging a13n-envd LICENSE
+
+      - name: Verify native Linux isolation
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          "target/${{ matrix.target }}/release/a13n-envd" isolation probe --json
+
+      - name: Build Windows binary archive
+        if: matrix.windows
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cargo build --release --locked --package a13n-envd --target $env:TARGET
+          New-Item -ItemType Directory -Force staging | Out-Null
+          Copy-Item "target/$env:TARGET/release/a13n-envd.exe" staging/a13n-envd.exe
+          Copy-Item LICENSE staging/LICENSE
+          $archive = "a13n-envd-$env:VERSION-$env:TARGET.zip"
+          Compress-Archive -Path staging/a13n-envd.exe, staging/LICENSE -DestinationPath $archive
+
+      - name: Upload binary archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: a13n-envd-${{ matrix.target }}
+          path: a13n-envd-*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify crate package
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo package --locked --allow-dirty --package a13n-envd
+
+  publish-crate:
+    name: Publish crate
+    needs: [prepare, build-client, build-binaries]
+    runs-on: ubuntu-latest
+    environment: a13n-envd-crates-io
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download release version patch
+        uses: actions/download-artifact@v4
+        with:
+          name: release-version-a13n-envd
+          path: .
+
+      - name: Apply release version patch
+        run: |
+          git apply --whitespace=error release-version.patch
+          git clean -f -- release-version.patch
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Package crate
+        run: cargo package --locked --allow-dirty --package a13n-envd
+
+      - name: Resolve crate publication state
+        id: crate-status
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --user-agent "a13n-envd-release/$GITHUB_RUN_ID" \
+            "https://crates.io/api/v1/crates/a13n-envd/$VERSION")"
+          case "$status" in
+            200)
+              curl --fail --location --silent --show-error \
+                --user-agent "a13n-envd-release/$GITHUB_RUN_ID" \
+                --output published.crate \
+                "https://crates.io/api/v1/crates/a13n-envd/$VERSION/download"
+              local_crate="target/package/a13n-envd-$VERSION.crate"
+              if ! cmp --silent "$local_crate" published.crate; then
+                echo "Published a13n-envd $VERSION does not match this release tag" >&2
+                sha256sum "$local_crate" published.crate >&2
+                exit 1
+              fi
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unexpected crates.io status: $status" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Publish crate to crates.io
+        if: steps.crate-status.outputs.published != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked --allow-dirty --package a13n-envd
+
+  publish-client:
+    name: Publish Python client
+    needs: [prepare, build-client, build-binaries]
+    runs-on: ubuntu-latest
+    environment: a13n-envd-client-pypi
+    steps:
+      - name: Download Python client distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: envd-client-python-dist
+          path: dist
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Publish Python client to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --check-url https://pypi.org/simple/ dist/*
+
+  publish-image:
+    name: Publish sandbox image
+    needs: [prepare, build-binaries, publish-crate, publish-client]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download release version patch
+        uses: actions/download-artifact@v4
+        with:
+          name: release-version-a13n-envd
+          path: .
+
+      - name: Apply release version patch
+        run: |
+          git apply --whitespace=error release-version.patch
+          git clean -f -- release-version.patch
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image tags
+        id: image-tags
+        env:
+          IMAGE: ${{ env.SANDBOX_IMAGE }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          {
+            echo "tags<<EOF"
+            echo "$IMAGE:$VERSION"
+            if [[ "$VERSION" != *-rc.* ]]; then
+              echo "$IMAGE:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/containers/sandbox/Dockerfile
+          # Release publishing is intentionally native amd64 only; other architectures build locally.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image-tags.outputs.tags }}
+          build-args: |
+            BUILD_VERSION=${{ needs.prepare.outputs.version }}
+            BUILD_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=release-sandbox
+          cache-to: type=gha,mode=max,scope=release-sandbox
+
+      - name: Verify published image tags
+        env:
+          IMAGE: ${{ env.SANDBOX_IMAGE }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}')"
+          test -n "$version_digest"
+          if [[ "$VERSION" != *-rc.* ]]; then
+            latest_digest="$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest.Digest}}')"
+            test "$version_digest" = "$latest_digest"
+          fi
+
+  create-release:
+    name: Create GitHub Release
+    needs: [prepare, build-client, build-binaries, publish-crate, publish-client, publish-image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag and history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download binary archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: a13n-envd-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download Python client distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: envd-client-python-dist
+          path: dist
+
+      - name: Create checksums
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > ../SHA256SUMS
+          mv ../SHA256SUMS SHA256SUMS
+
+      - name: Create release with channel-scoped notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: >-
+          python3 scripts/create-github-release.py a13n-envd "$VERSION"
+          "a13n-envd $VERSION" dist/*

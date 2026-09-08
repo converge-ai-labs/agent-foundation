@@ -13,13 +13,23 @@ Agent Foundation is a Python-first open-source toolkit for building agents and m
 
 ## Choose your path
 
-| You want to...                   | Start with                                                                                 | You get                                                                                            |
-| -------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| Build Agents into an application | [Agent Harness](https://agent-foundation-docs.converge.ai/agent-harness/) (`a13n-harness`) | A code-first Python library for composing, running, resuming, and observing Agents                 |
-| Run Agents on your own machine   | [Agent UI](packages/agent-ui/README.md) (`a13n-ui`)                                        | A local single-user experience with continuation-backed Sessions and CLI/WebUI interaction         |
-| Operate managed Agents           | [Foundation Service](packages/foundation-service/README.md) (`a13n-service`)               | A durable service with APIs, managed definitions, authorization, persistence, and scalable workers |
+| You want to...                   | Start with                                                                                | You get                                                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Build Agents into an application | [Agent Harness](https://agent-foundation-docs.converge.ai/a13n-harness/) (`a13n-harness`) | A code-first Python library for composing, running, resuming, and observing Agents                 |
+| Run Agents on your own machine   | [Harness UI](packages/a13n-harness-ui/README.md) (`a13n-harness-ui`)                      | A local single-user experience with continuation-backed Sessions and full-terminal interaction     |
+| Operate managed Agents           | [a13n Service](packages/a13n-service/README.md) (`a13n-service`)                          | A durable service with APIs, managed definitions, authorization, persistence, and scalable workers |
 
-Agent UI and Foundation Service both build on Agent Harness. `a13n` is short for Agent Foundation, so the managed service distribution is simply `a13n-service`.
+Harness UI and a13n Service both embed Agent Harness, but they own different lifecycles:
+
+| Direct Agent use                                                                                | Managed Agent use                                                                                                               |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| An application embeds `a13n-harness`, or a person runs `a13n-harness-ui`.                       | A client calls `a13n-service` through the `a13n` SDK or `a13n-service-cli`.                                                     |
+| The application or UI owns execution, configuration, continuation storage, and recovery policy. | The Service owns managed resources and revisions, durable acceptance, scheduling, Runs and Attempts, permissions, and recovery. |
+| Models and execution Environments may still be remote.                                          | The Service may still run on the same machine as its client.                                                                    |
+
+`a13n` is the Service client SDK, not an umbrella package and not another Agent execution engine. A future Service management UI may use the conceptual name `a13n-service-ui`; this repository does not currently provide one.
+
+Harness UI interaction is provided by the terminal CLI. Its optional `a13n-harness-ui webui` server retains the HTTP API, but the bundled browser page currently displays only Hello World; it is not a browser chat or management application.
 
 ## Highlights
 
@@ -32,6 +42,20 @@ Agent UI and Foundation Service both build on Agent Harness. `a13n` is short for
 
 ## Quick start
 
+### Use Harness UI
+
+Install the published CLI with [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then launch it in your project:
+
+```bash
+uv tool install a13n-harness-ui
+cd your-repository
+a13n-harness-ui
+```
+
+For a shorter command, add `alias anui='a13n-harness-ui'` to your Bash or Zsh configuration. Update whenever you choose with `a13n-harness-ui update` (or `anui update`). See the [Harness UI README](packages/a13n-harness-ui/README.md#install-and-run) for setup, PATH help, and update behavior.
+
+### Work from Source
+
 The documentation tracks `main` and the next 0.x releases. To work against the current source:
 
 ```bash
@@ -41,19 +65,19 @@ cd agent-foundation
 
 Then choose a path from the repository root:
 
-| Path               | Command                                   | Continue with                                                      |
-| ------------------ | ----------------------------------------- | ------------------------------------------------------------------ |
-| Agent Harness      | `uv sync --locked --package a13n-harness` | [Getting Started](docs/agent-harness/getting-started.md)           |
-| Agent UI           | `make a13n-ui`                            | [Agent UI guide](packages/agent-ui/README.md)                      |
-| Foundation Service | `make dev`                                | [Service development guide](packages/foundation-service/README.md) |
-| Runnable examples  | `make examples-check-all`                 | [Examples](examples/README.md)                                     |
+| Path              | Command                                   | Continue with                                                |
+| ----------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| Agent Harness     | `uv sync --locked --package a13n-harness` | [Getting Started](docs/a13n-harness/getting-started.md)      |
+| Harness UI        | `make a13n-harness-ui`                    | [Harness UI guide](packages/a13n-harness-ui/README.md)       |
+| a13n Service      | `make dev`                                | [Service development guide](packages/a13n-service/README.md) |
+| Runnable examples | `make examples-check-all`                 | [Examples](examples/README.md)                               |
 
-Working from source requires Git, Python 3.13, and [`uv`](https://docs.astral.sh/uv/). The Agent UI, Foundation Service, and example commands use Make; Foundation Service development also requires Node.js 24 and Docker. See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete toolchain and validation workflow.
+Working from source requires Git, Python 3.13, and [`uv`](https://docs.astral.sh/uv/). The Harness UI, a13n Service, and example commands use Make; a13n Service development also requires Node.js 24 and Docker. See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete toolchain and validation workflow.
 
 ## Documentation
 
 - [User documentation](https://agent-foundation-docs.converge.ai/)
-- [Agent Harness getting started](docs/agent-harness/getting-started.md)
+- [Agent Harness getting started](docs/a13n-harness/getting-started.md)
 - [Runnable examples](examples/README.md)
 - [Accepted architecture and specifications](spec/README.md)
 - [Development standards](DEVELOPMENT.md)

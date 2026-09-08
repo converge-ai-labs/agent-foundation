@@ -6,8 +6,8 @@ on:
     paths:
       - ".github/workflows/ci-examples.yml"
       - "examples/**"
-      - "packages/agent-environment-provider/**"
-      - "packages/agent-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-harness/**"
       - "pyproject.toml"
       - "uv.lock"
   push:
@@ -15,8 +15,8 @@ on:
     paths:
       - ".github/workflows/ci-examples.yml"
       - "examples/**"
-      - "packages/agent-environment-provider/**"
-      - "packages/agent-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-harness/**"
       - "pyproject.toml"
       - "uv.lock"
   workflow_dispatch:

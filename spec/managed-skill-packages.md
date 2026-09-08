@@ -4,7 +4,7 @@
 
 A managed Skill package is a bounded directory whose root contains exactly one Harness-compatible `SKILL.md`. This contract is independent of any one Host or acquisition source. A Host can support any subset of the shared ZIP and GitHub sources and can define additional explicitly authorized sources, provided every accepted input normalizes to the same manifest and content digest. Accepted content becomes immutable Host-owned content before an Agent can select it. Upload receipts, repository refs, and local paths are never runtime authority.
 
-This document owns the portable package, the metadata projected from its root `SKILL.md`, shared ZIP and GitHub source normalization, content digest, and safety limits. The [Harness](agent-harness/09-context-and-memory.md#skills-and-discovery) owns runtime discovery, selection, instructions, and `SkillPath` values. Each Host owns resource identity, APIs, authorization, storage, retention, and runtime materialization, including which source forms it accepts. Hosts and Harness parse the shared document contract independently; package admission does not depend on a Harness SDK parser API.
+This document owns the portable package, the metadata projected from its root `SKILL.md`, shared ZIP and GitHub source normalization, content digest, and safety limits. The [Harness](a13n-harness/09-context-and-memory.md#skills-and-discovery) owns runtime discovery, selection, instructions, and `SkillPath` values. Each Host owns resource identity, APIs, authorization, storage, retention, and runtime materialization, including which source forms it accepts. Hosts and Harness parse the shared document contract independently; package admission does not depend on a Harness SDK parser API.
 
 ## Package Model
 

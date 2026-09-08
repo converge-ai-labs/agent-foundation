@@ -10,21 +10,21 @@ from dataclasses import dataclass
 from pathlib import Path
 
 COMPONENTS = (
-    "harness",
-    "agent-ui",
-    "foundation",
-    "agent-envd",
-    "foundation-cli",
-    "sdk-python",
-    "sdk-go",
-    "sdk-rust",
-    "sdk-typescript",
+    "a13n-harness",
+    "a13n-harness-ui",
+    "a13n-service",
+    "a13n-envd",
+    "a13n-service-cli",
+    "a13n-python",
+    "a13n-go",
+    "a13n-rust",
+    "a13n-typescript",
 )
-ENVIRONMENT_PROVIDER_MANIFEST = Path("packages/agent-environment-provider/pyproject.toml")
-ENVIRONMENT_PROVIDER_PACKAGE = "a13n-environment-provider"
-HARNESS_MANIFEST = Path("packages/agent-harness/pyproject.toml")
+ENVIRONMENT_PROVIDER_MANIFEST = Path("packages/a13n-environment/pyproject.toml")
+ENVIRONMENT_PROVIDER_PACKAGE = "a13n-environment"
+HARNESS_MANIFEST = Path("packages/a13n-harness/pyproject.toml")
 HARNESS_PACKAGE = "a13n-harness"
-STREAM_PROTOCOL_MANIFEST = Path("packages/agent-stream-protocol/pyproject.toml")
+STREAM_PROTOCOL_MANIFEST = Path("packages/a13n-stream-protocol/pyproject.toml")
 HARNESS_MANIFESTS = (
     ENVIRONMENT_PROVIDER_MANIFEST,
     HARNESS_MANIFEST,
@@ -35,33 +35,33 @@ HARNESS_PACKAGES = (
     HARNESS_PACKAGE,
     "a13n-stream-protocol",
 )
-AGENT_UI_MANIFEST = Path("packages/agent-ui/pyproject.toml")
-AGENT_UI_PACKAGE = "a13n-ui"
-AGENT_UI_RELEASE_TOOL = "tool.a13n.agent-ui-release"
-AGENT_UI_ENVD_RELEASE_MANIFEST = Path("packages/agent-ui/a13n_ui/assets/agent-envd-release.json")
-FOUNDATION_MANIFESTS = (
+HARNESS_UI_MANIFEST = Path("packages/a13n-harness-ui/pyproject.toml")
+HARNESS_UI_PACKAGE = "a13n-harness-ui"
+HARNESS_UI_RELEASE_TOOL = "tool.a13n.harness-ui-release"
+HARNESS_UI_ENVD_RELEASE_MANIFEST = Path("packages/a13n-harness-ui/a13n_harness_ui/assets/a13n-envd-release.json")
+A13N_SERVICE_MANIFESTS = (
     Path("pyproject.toml"),
-    Path("packages/logging/pyproject.toml"),
-    Path("packages/foundation-service/pyproject.toml"),
+    Path("packages/a13n-logging/pyproject.toml"),
+    Path("packages/a13n-service/pyproject.toml"),
 )
-FOUNDATION_PACKAGES = (
+A13N_SERVICE_PACKAGES = (
     "a13n-workspace",
     "a13n-logging",
     "a13n-service",
 )
 ROOT_UV_LOCK = Path("uv.lock")
-AGENT_ENVD_WORKSPACE_MANIFEST = Path("Cargo.toml")
-AGENT_ENVD_MANIFEST = Path("crates/agent-envd/Cargo.toml")
-AGENT_ENVD_LOCK = Path("Cargo.lock")
-AGENT_ENVD_CLIENT_MANIFEST = Path("packages/agent-envd-client/pyproject.toml")
-AGENT_ENVD_CLIENT_PACKAGE = "a13n-envd-client"
+A13N_ENVD_WORKSPACE_MANIFEST = Path("Cargo.toml")
+A13N_ENVD_MANIFEST = Path("crates/a13n-envd/Cargo.toml")
+A13N_ENVD_LOCK = Path("Cargo.lock")
+A13N_ENVD_CLIENT_MANIFEST = Path("packages/a13n-envd-client/pyproject.toml")
+A13N_ENVD_CLIENT_PACKAGE = "a13n-envd-client"
 SDK_PYTHON_MANIFEST = Path("sdk/python/pyproject.toml")
 SDK_PYTHON_LOCK = Path("sdk/python/uv.lock")
 SDK_RUST_MANIFEST = Path("sdk/rust/Cargo.toml")
 SDK_RUST_LOCK = Path("sdk/rust/Cargo.lock")
-FOUNDATION_CLI_MANIFEST = Path("sdk/rust/agent-foundation-cli/Cargo.toml")
-FOUNDATION_CLI_LOCK = Path("sdk/rust/agent-foundation-cli/Cargo.lock")
-FOUNDATION_CLI_PACKAGE = "agent-foundation-cli"
+A13N_SERVICE_CLI_MANIFEST = Path("sdk/rust/a13n-service-cli/Cargo.toml")
+A13N_SERVICE_CLI_LOCK = Path("sdk/rust/a13n-service-cli/Cargo.lock")
+A13N_SERVICE_CLI_PACKAGE = "a13n-service-cli"
 SDK_TYPESCRIPT_MANIFEST = Path("sdk/typescript/package.json")
 SDK_TYPESCRIPT_LOCK = Path("sdk/typescript/package-lock.json")
 RELEASE_VERSION_PATTERN = re.compile(
@@ -182,34 +182,34 @@ def _project_dependency_requirement(root: Path, relative_path: Path, package_nam
     return matches[0]
 
 
-def _agent_ui_release_selection(root: Path, key: str, label: str) -> ReleaseVersion:
-    data = _load_toml(root, AGENT_UI_MANIFEST)
-    tool = _mapping(data.get("tool"), f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}")
-    a13n = _mapping(tool.get("a13n"), f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}")
+def _harness_ui_release_selection(root: Path, key: str, label: str) -> ReleaseVersion:
+    data = _load_toml(root, HARNESS_UI_MANIFEST)
+    tool = _mapping(data.get("tool"), f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}")
+    a13n = _mapping(tool.get("a13n"), f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}")
     release = _mapping(
-        a13n.get("agent-ui-release"),
-        f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}",
+        a13n.get("harness-ui-release"),
+        f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}",
     )
-    version = _string(release.get(key), f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}")
+    version = _string(release.get(key), f"{HARNESS_UI_RELEASE_TOOL}.{key} in {HARNESS_UI_MANIFEST}")
     selected = parse_release_version(version)
     if selected.canonical == "0.0.0":
         raise ReleaseVersionError(
-            f"Select a published {label} release in {AGENT_UI_MANIFEST} before releasing Agent UI"
+            f"Select a published {label} release in {HARNESS_UI_MANIFEST} before releasing Harness UI"
         )
     return selected
 
 
-def _agent_ui_harness_release(root: Path) -> ReleaseVersion:
-    return _agent_ui_release_selection(root, "harness-version", "Harness")
+def _harness_ui_harness_release(root: Path) -> ReleaseVersion:
+    return _harness_ui_release_selection(root, "harness-version", "Harness")
 
 
-def _agent_ui_envd_release(root: Path) -> ReleaseVersion:
-    selected = _agent_ui_release_selection(root, "envd-version", "agent-envd")
-    manifest = _load_json(root, AGENT_UI_ENVD_RELEASE_MANIFEST)
-    actual = _string(manifest.get("release"), f"release in {AGENT_UI_ENVD_RELEASE_MANIFEST}")
+def _harness_ui_envd_release(root: Path) -> ReleaseVersion:
+    selected = _harness_ui_release_selection(root, "envd-version", "a13n-envd")
+    manifest = _load_json(root, HARNESS_UI_ENVD_RELEASE_MANIFEST)
+    actual = _string(manifest.get("release"), f"release in {HARNESS_UI_ENVD_RELEASE_MANIFEST}")
     if actual != selected.canonical:
         raise ReleaseVersionError(
-            f"Expected {AGENT_UI_ENVD_RELEASE_MANIFEST} release {selected.canonical}, found {actual}"
+            f"Expected {HARNESS_UI_ENVD_RELEASE_MANIFEST} release {selected.canonical}, found {actual}"
         )
     return selected
 
@@ -221,27 +221,27 @@ def _cargo_package_version(root: Path, relative_path: Path) -> str:
 
 def _workspace_package_version(root: Path) -> str:
     workspace = _mapping(
-        _load_toml(root, AGENT_ENVD_WORKSPACE_MANIFEST).get("workspace"),
-        f"workspace.package.version in {AGENT_ENVD_WORKSPACE_MANIFEST}",
+        _load_toml(root, A13N_ENVD_WORKSPACE_MANIFEST).get("workspace"),
+        f"workspace.package.version in {A13N_ENVD_WORKSPACE_MANIFEST}",
     )
     package = _mapping(
         workspace.get("package"),
-        f"workspace.package.version in {AGENT_ENVD_WORKSPACE_MANIFEST}",
+        f"workspace.package.version in {A13N_ENVD_WORKSPACE_MANIFEST}",
     )
     return _string(
         package.get("version"),
-        f"workspace.package.version in {AGENT_ENVD_WORKSPACE_MANIFEST}",
+        f"workspace.package.version in {A13N_ENVD_WORKSPACE_MANIFEST}",
     )
 
 
-def _validate_agent_envd_inheritance(root: Path) -> None:
+def _validate_a13n_envd_inheritance(root: Path) -> None:
     package = _mapping(
-        _load_toml(root, AGENT_ENVD_MANIFEST).get("package"),
-        f"package.version.workspace in {AGENT_ENVD_MANIFEST}",
+        _load_toml(root, A13N_ENVD_MANIFEST).get("package"),
+        f"package.version.workspace in {A13N_ENVD_MANIFEST}",
     )
     version = package.get("version")
     if not isinstance(version, dict) or version.get("workspace") is not True:
-        raise ReleaseVersionError(f"Expected package.version.workspace = true in {AGENT_ENVD_MANIFEST}")
+        raise ReleaseVersionError(f"Expected package.version.workspace = true in {A13N_ENVD_MANIFEST}")
 
 
 def _lock_package_version(root: Path, relative_path: Path, package_name: str) -> str:
@@ -277,7 +277,7 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
     if component not in COMPONENTS:
         raise ReleaseVersionError(f"Unknown release component: {component}")
 
-    if component == "harness":
+    if component == "a13n-harness":
         versions = {str(path): _project_version(root, path) for path in HARNESS_MANIFESTS}
         versions.update(
             {
@@ -290,17 +290,17 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
             }
         )
         return versions
-    if component == "agent-ui":
+    if component == "a13n-harness-ui":
         return {
-            str(AGENT_UI_MANIFEST): _project_version(root, AGENT_UI_MANIFEST),
-            f"{ROOT_UV_LOCK} package {AGENT_UI_PACKAGE}": _lock_package_version(
+            str(HARNESS_UI_MANIFEST): _project_version(root, HARNESS_UI_MANIFEST),
+            f"{ROOT_UV_LOCK} package {HARNESS_UI_PACKAGE}": _lock_package_version(
                 root,
                 ROOT_UV_LOCK,
-                AGENT_UI_PACKAGE,
+                HARNESS_UI_PACKAGE,
             ),
         }
-    if component == "foundation":
-        versions = {str(path): _project_version(root, path) for path in FOUNDATION_MANIFESTS}
+    if component == "a13n-service":
+        versions = {str(path): _project_version(root, path) for path in A13N_SERVICE_MANIFESTS}
         versions.update(
             {
                 f"{ROOT_UV_LOCK} package {package_name}": _lock_package_version(
@@ -308,55 +308,55 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
                     ROOT_UV_LOCK,
                     package_name,
                 )
-                for package_name in FOUNDATION_PACKAGES
+                for package_name in A13N_SERVICE_PACKAGES
             }
         )
         return versions
-    if component == "agent-envd":
-        _validate_agent_envd_inheritance(root)
+    if component == "a13n-envd":
+        _validate_a13n_envd_inheritance(root)
         return {
-            f"{AGENT_ENVD_WORKSPACE_MANIFEST} workspace package": _workspace_package_version(root),
-            f"{AGENT_ENVD_MANIFEST} inherited workspace package": _workspace_package_version(root),
-            f"{AGENT_ENVD_LOCK} package agent-envd": _lock_package_version(
+            f"{A13N_ENVD_WORKSPACE_MANIFEST} workspace package": _workspace_package_version(root),
+            f"{A13N_ENVD_MANIFEST} inherited workspace package": _workspace_package_version(root),
+            f"{A13N_ENVD_LOCK} package a13n-envd": _lock_package_version(
                 root,
-                AGENT_ENVD_LOCK,
-                "agent-envd",
+                A13N_ENVD_LOCK,
+                "a13n-envd",
             ),
-            str(AGENT_ENVD_CLIENT_MANIFEST): _project_version(root, AGENT_ENVD_CLIENT_MANIFEST),
-            f"{ROOT_UV_LOCK} package {AGENT_ENVD_CLIENT_PACKAGE}": _lock_package_version(
+            str(A13N_ENVD_CLIENT_MANIFEST): _project_version(root, A13N_ENVD_CLIENT_MANIFEST),
+            f"{ROOT_UV_LOCK} package {A13N_ENVD_CLIENT_PACKAGE}": _lock_package_version(
                 root,
                 ROOT_UV_LOCK,
-                AGENT_ENVD_CLIENT_PACKAGE,
+                A13N_ENVD_CLIENT_PACKAGE,
             ),
         }
-    if component == "sdk-python":
+    if component == "a13n-python":
         return {
             str(SDK_PYTHON_MANIFEST): _project_version(root, SDK_PYTHON_MANIFEST),
-            f"{SDK_PYTHON_LOCK} package a13n-sdk": _lock_package_version(
+            f"{SDK_PYTHON_LOCK} package a13n": _lock_package_version(
                 root,
                 SDK_PYTHON_LOCK,
-                "a13n-sdk",
+                "a13n",
             ),
         }
-    if component == "sdk-rust":
+    if component == "a13n-rust":
         return {
             str(SDK_RUST_MANIFEST): _cargo_package_version(root, SDK_RUST_MANIFEST),
-            f"{SDK_RUST_LOCK} package a13n-sdk": _lock_package_version(
+            f"{SDK_RUST_LOCK} package a13n": _lock_package_version(
                 root,
                 SDK_RUST_LOCK,
-                "a13n-sdk",
+                "a13n",
             ),
         }
-    if component == "foundation-cli":
+    if component == "a13n-service-cli":
         return {
-            str(FOUNDATION_CLI_MANIFEST): _cargo_package_version(root, FOUNDATION_CLI_MANIFEST),
-            f"{FOUNDATION_CLI_LOCK} package {FOUNDATION_CLI_PACKAGE}": _lock_package_version(
+            str(A13N_SERVICE_CLI_MANIFEST): _cargo_package_version(root, A13N_SERVICE_CLI_MANIFEST),
+            f"{A13N_SERVICE_CLI_LOCK} package {A13N_SERVICE_CLI_PACKAGE}": _lock_package_version(
                 root,
-                FOUNDATION_CLI_LOCK,
-                FOUNDATION_CLI_PACKAGE,
+                A13N_SERVICE_CLI_LOCK,
+                A13N_SERVICE_CLI_PACKAGE,
             ),
         }
-    if component == "sdk-typescript":
+    if component == "a13n-typescript":
         return {
             str(SDK_TYPESCRIPT_MANIFEST): _npm_version(root, SDK_TYPESCRIPT_MANIFEST),
             str(SDK_TYPESCRIPT_LOCK): _npm_version(root, SDK_TYPESCRIPT_LOCK),
@@ -370,12 +370,12 @@ def _expected_component_versions(
     release_version: ReleaseVersion,
     labels: tuple[str, ...],
 ) -> dict[str, str]:
-    if component in {"harness", "agent-ui", "foundation", "sdk-python"}:
+    if component in {"a13n-harness", "a13n-harness-ui", "a13n-service", "a13n-python"}:
         return {label: release_version.python_package for label in labels}
-    if component == "agent-envd":
+    if component == "a13n-envd":
         python_labels = {
-            str(AGENT_ENVD_CLIENT_MANIFEST),
-            f"{ROOT_UV_LOCK} package {AGENT_ENVD_CLIENT_PACKAGE}",
+            str(A13N_ENVD_CLIENT_MANIFEST),
+            f"{ROOT_UV_LOCK} package {A13N_ENVD_CLIENT_PACKAGE}",
         }
         return {
             label: release_version.python_package if label in python_labels else release_version.canonical
@@ -401,7 +401,7 @@ def validate_component_version(root: Path, component: str, version: str) -> None
 
     if release_version.canonical == "0.0.0":
         return
-    if component == "harness":
+    if component == "a13n-harness":
         for manifest, package_name in (
             (HARNESS_MANIFEST, ENVIRONMENT_PROVIDER_PACKAGE),
             (STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),
@@ -410,14 +410,14 @@ def validate_component_version(root: Path, component: str, version: str) -> None
             actual = _project_dependency_requirement(root, manifest, package_name)
             if actual != expected:
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
-    elif component == "agent-ui":
-        selected = _agent_ui_harness_release(root).python_package
-        _agent_ui_envd_release(root)
+    elif component == "a13n-harness-ui":
+        selected = _harness_ui_harness_release(root).python_package
+        _harness_ui_envd_release(root)
         for package_name in HARNESS_PACKAGES:
             expected = f"{package_name}=={selected}"
-            actual = _project_dependency_requirement(root, AGENT_UI_MANIFEST, package_name)
+            actual = _project_dependency_requirement(root, HARNESS_UI_MANIFEST, package_name)
             if actual != expected:
-                raise ReleaseVersionError(f"Expected {AGENT_UI_MANIFEST} dependency {expected}, found {actual}")
+                raise ReleaseVersionError(f"Expected {HARNESS_UI_MANIFEST} dependency {expected}, found {actual}")
 
 
 def _replace_table_version(content: str, table_name: str, version: str, path: Path) -> str:
@@ -571,7 +571,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
     component_versions(root, component)
     planned: dict[Path, str] = {}
 
-    if component == "harness":
+    if component == "a13n-harness":
         for path in HARNESS_MANIFESTS:
             planned[path] = _replace_table_version(
                 _read_text(root, path),
@@ -598,31 +598,31 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
                 ROOT_UV_LOCK,
             )
         planned[ROOT_UV_LOCK] = lock_content
-    elif component == "agent-ui":
-        selected_harness_version = _agent_ui_harness_release(root).python_package
-        _agent_ui_envd_release(root)
+    elif component == "a13n-harness-ui":
+        selected_harness_version = _harness_ui_harness_release(root).python_package
+        _harness_ui_envd_release(root)
         ui_content = _replace_table_version(
-            _read_text(root, AGENT_UI_MANIFEST),
+            _read_text(root, HARNESS_UI_MANIFEST),
             "project",
             python_version,
-            AGENT_UI_MANIFEST,
+            HARNESS_UI_MANIFEST,
         )
         for package_name in HARNESS_PACKAGES:
             ui_content = _replace_project_dependency(
                 ui_content,
                 package_name,
                 f"{package_name}=={selected_harness_version}",
-                AGENT_UI_MANIFEST,
+                HARNESS_UI_MANIFEST,
             )
-        planned[AGENT_UI_MANIFEST] = ui_content
+        planned[HARNESS_UI_MANIFEST] = ui_content
         planned[ROOT_UV_LOCK] = _replace_lock_package_version(
             _read_text(root, ROOT_UV_LOCK),
-            AGENT_UI_PACKAGE,
+            HARNESS_UI_PACKAGE,
             python_version,
             ROOT_UV_LOCK,
         )
-    elif component == "foundation":
-        for path in FOUNDATION_MANIFESTS:
+    elif component == "a13n-service":
+        for path in A13N_SERVICE_MANIFESTS:
             planned[path] = _replace_table_version(
                 _read_text(root, path),
                 "project",
@@ -630,7 +630,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
                 path,
             )
         lock_content = _read_text(root, ROOT_UV_LOCK)
-        for package_name in FOUNDATION_PACKAGES:
+        for package_name in A13N_SERVICE_PACKAGES:
             lock_content = _replace_lock_package_version(
                 lock_content,
                 package_name,
@@ -638,32 +638,32 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
                 ROOT_UV_LOCK,
             )
         planned[ROOT_UV_LOCK] = lock_content
-    elif component == "agent-envd":
-        planned[AGENT_ENVD_WORKSPACE_MANIFEST] = _replace_table_version(
-            _read_text(root, AGENT_ENVD_WORKSPACE_MANIFEST),
+    elif component == "a13n-envd":
+        planned[A13N_ENVD_WORKSPACE_MANIFEST] = _replace_table_version(
+            _read_text(root, A13N_ENVD_WORKSPACE_MANIFEST),
             "workspace.package",
             canonical_version,
-            AGENT_ENVD_WORKSPACE_MANIFEST,
+            A13N_ENVD_WORKSPACE_MANIFEST,
         )
-        planned[AGENT_ENVD_LOCK] = _replace_lock_package_version(
-            _read_text(root, AGENT_ENVD_LOCK),
-            "agent-envd",
+        planned[A13N_ENVD_LOCK] = _replace_lock_package_version(
+            _read_text(root, A13N_ENVD_LOCK),
+            "a13n-envd",
             canonical_version,
-            AGENT_ENVD_LOCK,
+            A13N_ENVD_LOCK,
         )
-        planned[AGENT_ENVD_CLIENT_MANIFEST] = _replace_table_version(
-            _read_text(root, AGENT_ENVD_CLIENT_MANIFEST),
+        planned[A13N_ENVD_CLIENT_MANIFEST] = _replace_table_version(
+            _read_text(root, A13N_ENVD_CLIENT_MANIFEST),
             "project",
             python_version,
-            AGENT_ENVD_CLIENT_MANIFEST,
+            A13N_ENVD_CLIENT_MANIFEST,
         )
         planned[ROOT_UV_LOCK] = _replace_lock_package_version(
             _read_text(root, ROOT_UV_LOCK),
-            AGENT_ENVD_CLIENT_PACKAGE,
+            A13N_ENVD_CLIENT_PACKAGE,
             python_version,
             ROOT_UV_LOCK,
         )
-    elif component == "sdk-python":
+    elif component == "a13n-python":
         planned[SDK_PYTHON_MANIFEST] = _replace_table_version(
             _read_text(root, SDK_PYTHON_MANIFEST),
             "project",
@@ -672,11 +672,11 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         )
         planned[SDK_PYTHON_LOCK] = _replace_lock_package_version(
             _read_text(root, SDK_PYTHON_LOCK),
-            "a13n-sdk",
+            "a13n",
             python_version,
             SDK_PYTHON_LOCK,
         )
-    elif component == "sdk-rust":
+    elif component == "a13n-rust":
         planned[SDK_RUST_MANIFEST] = _replace_table_version(
             _read_text(root, SDK_RUST_MANIFEST),
             "package",
@@ -685,24 +685,24 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         )
         planned[SDK_RUST_LOCK] = _replace_lock_package_version(
             _read_text(root, SDK_RUST_LOCK),
-            "a13n-sdk",
+            "a13n",
             canonical_version,
             SDK_RUST_LOCK,
         )
-    elif component == "foundation-cli":
-        planned[FOUNDATION_CLI_MANIFEST] = _replace_table_version(
-            _read_text(root, FOUNDATION_CLI_MANIFEST),
+    elif component == "a13n-service-cli":
+        planned[A13N_SERVICE_CLI_MANIFEST] = _replace_table_version(
+            _read_text(root, A13N_SERVICE_CLI_MANIFEST),
             "package",
             canonical_version,
-            FOUNDATION_CLI_MANIFEST,
+            A13N_SERVICE_CLI_MANIFEST,
         )
-        planned[FOUNDATION_CLI_LOCK] = _replace_lock_package_version(
-            _read_text(root, FOUNDATION_CLI_LOCK),
-            FOUNDATION_CLI_PACKAGE,
+        planned[A13N_SERVICE_CLI_LOCK] = _replace_lock_package_version(
+            _read_text(root, A13N_SERVICE_CLI_LOCK),
+            A13N_SERVICE_CLI_PACKAGE,
             canonical_version,
-            FOUNDATION_CLI_LOCK,
+            A13N_SERVICE_CLI_LOCK,
         )
-    elif component == "sdk-typescript":
+    elif component == "a13n-typescript":
         planned[SDK_TYPESCRIPT_MANIFEST] = _replace_json_versions(
             _read_text(root, SDK_TYPESCRIPT_MANIFEST),
             canonical_version,

@@ -4,12 +4,12 @@ This standalone project demonstrates the supported configuration and direct-code
 
 ## Composition Matrix
 
-| Boundary                  | Declarative or installed-package mode                                                                                                           | Explicit code mode                                                                                         |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Custom Capability         | Authorize an exact type with `CapabilityTypeCatalog`, then select its serialization name in `AgentSpec.capabilities`                            | Construct the Capability and place it in `AgentDefinition.capabilities`                                    |
-| Environment provider      | Explicitly enable an `EnvironmentProvider` from `a13n_environment_provider.providers`, then validate configuration and construct fresh adapters | Register an `EnvironmentProvider` object directly, then use the same validation and construction path      |
-| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                       | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
-| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build  | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
+| Boundary                  | Declarative or installed-package mode                                                                                                          | Explicit code mode                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Custom Capability         | Authorize an exact type with `CapabilityTypeCatalog`, then select its serialization name in `AgentSpec.capabilities`                           | Construct the Capability and place it in `AgentDefinition.capabilities`                                    |
+| Environment provider      | Explicitly enable an `EnvironmentProvider` from `a13n_environment.providers`, then validate configuration and construct fresh adapters         | Register an `EnvironmentProvider` object directly, then use the same validation and construction path      |
+| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                      | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
+| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
 
 Entry-point metadata provides only a stable key and import target. Harness middleware configuration uses the Harness-owned versioned envelope; YAML is preferred for files, JSON is supported for files and inline environment values, and each plugin package owns only the typed `configuration` payload.
 
@@ -49,8 +49,8 @@ The project is intentionally outside the root release workspace. Its independent
 
 ```toml
 [tool.uv.sources]
-a13n-environment-provider = { path = "../../packages/agent-environment-provider", editable = true }
-a13n-harness = { path = "../../packages/agent-harness", editable = true }
+a13n-environment = { path = "../../packages/a13n-environment", editable = true }
+a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 ```
 
 A standalone integration distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
@@ -60,7 +60,7 @@ A standalone integration distribution should remove those development sources an
 The distribution registers one no-argument Provider class:
 
 ```toml
-[project.entry-points."a13n_environment_provider.providers"]
+[project.entry-points."a13n_environment.providers"]
 "example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProvider"
 ```
 
@@ -339,7 +339,7 @@ builder = HarnessBuilder(configured_plugins_enabled=True)
 
 A Host may install a complete plugin distribution into a fresh directory that is not yet searchable, publish that directory on Python's package search path while the Host remains alive, invalidate Python's import caches, and construct a new builder. The new builder sees the current entry-point metadata. Existing builders retain their selected factories and create fresh plugin instances from them on later builds; existing executables retain their already constructed plugin graphs. This supports adding plugins without rebuilding the Host image or restarting its Python process, but it does not define in-place reload or replacement of an already imported module.
 
-Use `PYTHONPATH` or `sys.path` for Python packages; the shell executable `PATH` is unrelated. Never install incrementally into a directory already exposed to the running process. The completed distribution must include `.dist-info` entry-point metadata rather than only the import module. See the [Harness plugin guide](../../docs/agent-harness/plugins.md#use-a-host-managed-plugin-directory) for the complete Host sequence and rollout boundaries.
+Use `PYTHONPATH` or `sys.path` for Python packages; the shell executable `PATH` is unrelated. Never install incrementally into a directory already exposed to the running process. The completed distribution must include `.dist-info` entry-point metadata rather than only the import module. See the [Harness plugin guide](../../docs/a13n-harness/plugins.md#use-a-host-managed-plugin-directory) for the complete Host sequence and rollout boundaries.
 
 ### Explicit code mode
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from a13n_environment_provider import (
+from a13n_environment import (
     EnvironmentProvider,
     EnvironmentProviderCatalog,
     build_environment_provider_catalog,

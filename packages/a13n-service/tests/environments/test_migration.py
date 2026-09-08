@@ -1,0 +1,70 @@
+from pathlib import Path
+
+from a13n_service.database.default_comparison import compare_server_default
+from a13n_service.database.metadata import service_metadata
+from a13n_service.database.migration import DatabaseMigrator
+from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
+from a13n_service.storage.relational import sync_database_url
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
+from sqlalchemy import create_engine, inspect
+
+ENVIRONMENT_TABLES = {
+    "environment_providers",
+    "environment_templates",
+    "environments",
+    "environment_commands",
+    "environment_template_revisions",
+}
+
+
+def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
+    engine = create_engine(sync_database_url(config))
+    try:
+        tables = set(inspect(engine).get_table_names())
+        if present:
+            assert ENVIRONMENT_TABLES <= tables
+            assert "expires_at" in {column["name"] for column in inspect(engine).get_columns("environments")}
+            assert "ix_environments_capacity" in {
+                index["name"] for index in inspect(engine).get_indexes("environments")
+            }
+            with engine.connect() as connection:
+                context = MigrationContext.configure(
+                    connection,
+                    opts={
+                        "compare_server_default": compare_server_default,
+                        "include_object": lambda _object, name, kind, _reflected, _comparison: (
+                            name in ENVIRONMENT_TABLES if kind == "table" else True
+                        ),
+                    },
+                )
+                assert compare_metadata(context, service_metadata()) == []
+            revision_columns = {
+                column["name"] for column in inspect(engine).get_columns("environment_template_revisions")
+            }
+            assert {"recipe", "template_id", "provider_id"} <= revision_columns
+            assert "provider" not in revision_columns
+            conditions = {c["name"]: c["sqltext"] for c in inspect(engine).get_check_constraints("environments")}
+            condition = conditions["ck_environments_retention_condition_valid"]
+            assert "active" in condition and "idle" in condition and "waiting_approval" not in condition
+        else:
+            assert ENVIRONMENT_TABLES.isdisjoint(tables)
+    finally:
+        engine.dispose()
+
+
+def _exercise_migration(config: PostgreSQLConfig | SQLiteConfig) -> None:
+    migrator = DatabaseMigrator(config)
+    migrator.upgrade()
+    migrator.current(check_heads=True, verbose=False)
+    _assert_tables(config, present=True)
+    migrator.downgrade("base")
+    _assert_tables(config, present=False)
+
+
+def test_environment_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None:
+    _exercise_migration(SQLiteConfig(path=tmp_path / "environment-migrations.sqlite3"))
+
+
+def test_environment_schema_migrates_up_and_down_on_postgresql(pg_url: str) -> None:
+    _exercise_migration(PostgreSQLConfig(url=pg_url))

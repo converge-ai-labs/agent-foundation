@@ -1,0 +1,304 @@
+name: a13n-envd CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-a13n-envd.yml"
+      - ".github/workflows/release-a13n-envd.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/a13n-envd/**"
+      - "deploy/containers/sandbox/Dockerfile"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-environment/a13n_environment/eip/**"
+      - "packages/a13n-environment/a13n_environment/local_envd/**"
+      - "packages/a13n-environment/tests/test_local_envd.py"
+      - "proto/a13n-envd/eip/**"
+      - "pyproject.toml"
+      - "scripts/eip_codegen/**"
+      - "scripts/tests/test_eip_codegen.py"
+      - "spec/a13n-envd/01-daemon-lifecycle-and-configuration.md"
+      - "spec/a13n-envd/02-eip-protocol.md"
+      - "spec/a13n-envd/05-command-and-process-execution.md"
+      - "spec/a13n-envd/07-execution-isolation.md"
+      - "spec/a13n-envd/08-protocol-source-client-and-generation.md"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-a13n-envd.yml"
+      - ".github/workflows/release-a13n-envd.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/a13n-envd/**"
+      - "deploy/containers/sandbox/Dockerfile"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-environment/a13n_environment/eip/**"
+      - "packages/a13n-environment/a13n_environment/local_envd/**"
+      - "packages/a13n-environment/tests/test_local_envd.py"
+      - "proto/a13n-envd/eip/**"
+      - "pyproject.toml"
+      - "scripts/eip_codegen/**"
+      - "scripts/tests/test_eip_codegen.py"
+      - "spec/a13n-envd/01-daemon-lifecycle-and-configuration.md"
+      - "spec/a13n-envd/02-eip-protocol.md"
+      - "spec/a13n-envd/05-command-and-process-execution.md"
+      - "spec/a13n-envd/07-execution-isolation.md"
+      - "spec/a13n-envd/08-protocol-source-client-and-generation.md"
+      - "uv.lock"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect a13n-envd changes
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    outputs:
+      client: ${{ steps.filter.outputs.client }}
+      daemon: ${{ steps.filter.outputs.daemon }}
+      protocol: ${{ steps.filter.outputs.protocol }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            daemon:
+              - '.github/workflows/ci-a13n-envd.yml'
+              - '.github/workflows/release-a13n-envd.yml'
+              - 'crates/a13n-envd/**'
+              - 'deploy/containers/sandbox/Dockerfile'
+              - 'spec/a13n-envd/01-daemon-lifecycle-and-configuration.md'
+              - 'spec/a13n-envd/05-command-and-process-execution.md'
+              - 'spec/a13n-envd/07-execution-isolation.md'
+              - 'proto/a13n-envd/eip/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            client:
+              - '.github/workflows/ci-a13n-envd.yml'
+              - '.github/workflows/release-a13n-envd.yml'
+              - 'packages/a13n-envd-client/**'
+              - 'proto/a13n-envd/eip/**'
+              - 'scripts/eip_codegen/**'
+              - 'scripts/tests/test_eip_codegen.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            protocol:
+              - '.github/workflows/ci-a13n-envd.yml'
+              - '.github/workflows/release-a13n-envd.yml'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/a13n-envd/**'
+              - 'crates/a13n-envd/Cargo.toml'
+              - 'crates/a13n-envd/build.rs'
+              - 'crates/a13n-envd/build_support/**'
+              - 'crates/a13n-envd/protocol/eip/**'
+              - 'crates/a13n-envd/src/eip/**'
+              - 'crates/a13n-envd/src/lib.rs'
+              - 'packages/a13n-envd-client/pyproject.toml'
+              - 'packages/a13n-envd-client/a13n_envd_client/eip/**'
+              - 'packages/a13n-envd-client/tests/eip/**'
+              - 'packages/a13n-environment/a13n_environment/eip/**'
+              - 'packages/a13n-environment/a13n_environment/local_envd/**'
+              - 'packages/a13n-environment/tests/test_local_envd.py'
+              - 'proto/a13n-envd/eip/**'
+              - 'scripts/eip_codegen/**'
+              - 'scripts/tests/test_eip_codegen.py'
+              - 'spec/a13n-envd/02-eip-protocol.md'
+              - 'spec/a13n-envd/08-protocol-source-client-and-generation.md'
+              - 'pyproject.toml'
+              - 'uv.lock'
+
+  protocol:
+    name: EIP protocol
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Install Linux isolation dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          shared-key: eip-protocol
+
+      - name: Verify generated protocol and shared integration
+        run: make eip-verify eip-integration-test
+
+      - name: Type-check EIP generator
+        run: uv run --locked pyright scripts/eip_codegen
+
+  client:
+    name: a13n-envd client
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Synchronize Python workspace
+        run: uv sync --locked --all-packages
+
+      - name: Type-check a13n-envd client
+        run: uv run --locked pyright packages/a13n-envd-client/a13n_envd_client
+
+      - name: Test a13n-envd client
+        run: uv run --locked python -m pytest packages/a13n-envd-client/tests
+
+      - name: Build a13n-envd client distribution
+        run: uv build --package a13n-envd-client --out-dir dist/a13n-envd-client
+
+  daemon:
+    name: a13n-envd (${{ matrix.name }})
+    needs: [changes, protocol]
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true') &&
+      (needs.protocol.result == 'success' || needs.protocol.result == 'skipped')
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+            cache-key: linux-x86_64
+            complete: true
+            linux: true
+            components: clippy, rustfmt
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+            cache-key: linux-aarch64
+            complete: false
+            linux: true
+            components: ""
+          - name: Windows
+            runner: windows-2025
+            cache-key: windows
+            complete: false
+            linux: false
+            components: ""
+          # macOS exercises the Seatbelt-backed execution-isolation path.
+          - name: macOS
+            runner: macos-15
+            cache-key: macos
+            complete: false
+            linux: false
+            components: ""
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Linux isolation dependency
+        if: matrix.linux
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: ${{ matrix.components }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          shared-key: a13n-envd-${{ matrix.cache-key }}
+
+      - name: Run complete a13n-envd checks
+        if: matrix.complete
+        run: make rust-check-all
+
+      - name: Run a13n-envd tests
+        if: matrix.complete == false
+        run: cargo test --locked --package a13n-envd
+
+      - name: Set up Python for native Windows EIP tests
+        if: matrix.runner == 'windows-2025'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv for native Windows EIP tests
+        if: matrix.runner == 'windows-2025'
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Exercise native Windows EIP process ownership and fail-closed isolation
+        if: matrix.runner == 'windows-2025'
+        env:
+          A13N_ENVD_TEST_BINARY: ${{ github.workspace }}\target\debug\a13n-envd.exe
+        run: >-
+          uv run --locked --package a13n-envd-client --group test --no-default-groups python -m pytest
+          packages/a13n-envd-client/tests/eip/test_windows_process_e2e.py
+          packages/a13n-envd-client/tests/eip/test_stdio_e2e.py
+          -k "windows_eip_job_lifecycle or configured_daemon_command_process_and_output_plane or required_isolation_default_fails_closed"
+          -q

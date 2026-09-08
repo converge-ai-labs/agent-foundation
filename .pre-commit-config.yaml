@@ -49,21 +49,21 @@ repos:
         entry: cargo fmt --manifest-path sdk/rust/Cargo.toml
         language: system
         files: ^sdk/rust/.*\.rs$
-        exclude: ^sdk/rust/agent-foundation-cli/
+        exclude: ^sdk/rust/a13n-service-cli/
         pass_filenames: false
 
-      - id: foundation-cli-rustfmt
-        name: rustfmt (Foundation CLI)
-        entry: cargo fmt --manifest-path sdk/rust/agent-foundation-cli/Cargo.toml
+      - id: a13n-service-cli-rustfmt
+        name: rustfmt (a13n Service CLI)
+        entry: cargo fmt --manifest-path sdk/rust/a13n-service-cli/Cargo.toml
         language: system
-        files: ^sdk/rust/agent-foundation-cli/.*\.rs$
+        files: ^sdk/rust/a13n-service-cli/.*\.rs$
         pass_filenames: false
 
-      - id: harness-ui-prettier
-        name: Prettier (Harness UI)
-        entry: npm exec --offline --prefix apps/harness-ui -- prettier --write
+      - id: a13n-harness-ui-webui-prettier
+        name: Prettier (Harness UI WebUI)
+        entry: npm exec --offline --prefix apps/a13n-harness-ui -- prettier --write --ignore-path apps/a13n-harness-ui/.prettierignore
         language: system
-        files: ^apps/harness-ui/.*\.(css|html|js|json|jsx|md|mjs|ts|tsx|yaml|yml)$
+        files: ^apps/a13n-harness-ui/.*\.(css|html|js|json|jsx|md|mjs|ts|tsx|yaml|yml)$
 
       - id: sdk-typescript-prettier
         name: Prettier (TypeScript SDK)

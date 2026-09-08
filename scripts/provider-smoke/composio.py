@@ -1,4 +1,4 @@
-"""Browse Composio toolkits and tools, authorize an account, and test a call without Foundation Service."""
+"""Browse Composio toolkits and tools, authorize an account, and test a call without a13n Service."""
 
 from __future__ import annotations
 
@@ -140,14 +140,18 @@ async def use_connection(
             if input("Type CALL to execute this exact request, or press Enter to stop: ").strip() != "CALL":
                 print("Stopped before tool execution.")
                 return 0
-        # Recheck ownership and readiness after the user has reviewed the request.
-        await inspect_connection(connection, require_ready=True)
+
+        async def before_dispatch() -> None:
+            # Recheck ownership and readiness after the user has reviewed the request.
+            await inspect_connection(connection, require_ready=True)
+
         started = monotonic()
         outcome = await connection.execute_tool(
             tool_key=selected.key,
             provider_version=selected.provider_version,
             arguments=arguments,
             request_id=request_id,
+            before_dispatch=before_dispatch,
         )
         show({"elapsed_seconds": round(monotonic() - started, 2), **outcome.model_dump(mode="json")})
         if outcome.kind == "outcome_unknown":
@@ -289,7 +293,7 @@ ownership, readiness, and the current tool definition before dispatch.
 Use --endpoint URL to select a compatible Composio endpoint.
 Private endpoints also need --allow-private-domain HOST (including localhost if used).
 Calls are never automatically retried. --execute authorizes the selected tool call.
-The scripts do not load .env files or use Foundation Service authentication/storage.
+The scripts do not load .env files or use a13n Service authentication/storage.
 """,
     )
     parser.set_defaults(provider="composio")

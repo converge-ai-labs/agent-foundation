@@ -1,0 +1,192 @@
+name: Release a13n Service CLI
+
+on:
+  push:
+    tags:
+      - "release/a13n-service-cli-v*"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-a13n-service-cli
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  prepare:
+    name: Validate a13n Service CLI release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare release version
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#release/a13n-service-cli-v}"
+          python3 scripts/prepare-release-version.py a13n-service-cli "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create release version patch
+        run: |
+          git diff --check
+          git diff --binary -- \
+            sdk/rust/a13n-service-cli/Cargo.toml \
+            sdk/rust/a13n-service-cli/Cargo.lock > release-version.patch
+
+      - name: Upload release version patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-version-a13n-service-cli
+          path: release-version.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            cross_linux: false
+            windows: false
+          - os: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+            cross_linux: true
+            windows: false
+          - os: macos-15
+            target: x86_64-apple-darwin
+            cross_linux: false
+            windows: false
+          - os: macos-15
+            target: aarch64-apple-darwin
+            cross_linux: false
+            windows: false
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            cross_linux: false
+            windows: true
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            cross_linux: false
+            windows: true
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download release version patch
+        uses: actions/download-artifact@v4
+        with:
+          name: release-version-a13n-service-cli
+          path: .
+
+      - name: Apply release version patch
+        shell: bash
+        run: |
+          if [[ -s release-version.patch ]]; then
+            git apply --whitespace=error release-version.patch
+          fi
+          rm release-version.patch
+
+      - name: Install Linux cross compiler
+        if: matrix.cross_linux
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk/rust/a13n-service-cli -> target
+          shared-key: release-a13n-service-cli-${{ matrix.target }}
+
+      - name: Build Unix binary archive
+        if: matrix.windows == false
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cargo build --release --locked \
+            --manifest-path sdk/rust/a13n-service-cli/Cargo.toml \
+            --target "$TARGET"
+          mkdir -p staging
+          cp "sdk/rust/a13n-service-cli/target/$TARGET/release/a13n-service-cli" staging/a13n-service-cli
+          cp LICENSE staging/LICENSE
+          archive="a13n-service-cli-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$archive" -C staging a13n-service-cli LICENSE
+
+      - name: Build Windows binary archive
+        if: matrix.windows
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cargo build --release --locked `
+            --manifest-path sdk/rust/a13n-service-cli/Cargo.toml `
+            --target $env:TARGET
+          New-Item -ItemType Directory -Force staging | Out-Null
+          Copy-Item "sdk/rust/a13n-service-cli/target/$env:TARGET/release/a13n-service-cli.exe" staging/a13n-service-cli.exe
+          Copy-Item LICENSE staging/LICENSE
+          $archive = "a13n-service-cli-$env:VERSION-$env:TARGET.zip"
+          Compress-Archive -Path staging/a13n-service-cli.exe, staging/LICENSE -DestinationPath $archive
+
+      - name: Upload binary archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: a13n-service-cli-${{ matrix.target }}
+          path: a13n-service-cli-*
+          if-no-files-found: error
+          retention-days: 7
+
+  create-release:
+    name: Create GitHub Release
+    needs: [prepare, build-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag and history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download binary archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: a13n-service-cli-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create checksums
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > ../SHA256SUMS
+          mv ../SHA256SUMS SHA256SUMS
+
+      - name: Create release with channel-scoped notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: >-
+          python3 scripts/create-github-release.py a13n-service-cli "$VERSION"
+          "a13n Service CLI $VERSION" dist/*

@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "agent-envd"
+name = "a13n-envd"
 version = "0.0.0"
 dependencies = [
  "base64",
@@ -36,6 +36,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-tungstenite",
  "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

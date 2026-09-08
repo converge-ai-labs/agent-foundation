@@ -1,0 +1,122 @@
+name: Release a13n Harness Packages
+
+on:
+  push:
+    tags:
+      - "release/a13n-harness-v*"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-a13n-harness
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  build-python:
+    name: Build same-version Harness distributions
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Prepare release version
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#release/a13n-harness-v}"
+          python scripts/prepare-release-version.py a13n-harness "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build and verify Harness distributions
+        run: make a13n-harness-release-build
+
+      - name: Verify all Harness artifacts use one version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python scripts/check-release-version.py a13n-harness "$VERSION"
+          python_version="${VERSION/-rc./rc}"
+          test -f "dist/a13n_environment-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_environment-${python_version}.tar.gz"
+          test -f "dist/a13n_harness-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_harness-${python_version}.tar.gz"
+          test -f "dist/a13n_stream_protocol-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_stream_protocol-${python_version}.tar.gz"
+          test "$(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 6
+
+      - name: Upload Harness distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: a13n-harness-python-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-python:
+    name: Publish Harness distributions
+    needs: build-python
+    runs-on: ubuntu-latest
+    environment: a13n-harness-pypi
+    steps:
+      - name: Download Harness distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: a13n-harness-python-dist
+          path: dist
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Publish packages to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --check-url https://pypi.org/simple/ dist/*
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-python, publish-python]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag and history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download Harness distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: a13n-harness-python-dist
+          path: dist
+
+      - name: Create release with channel-scoped notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-python.outputs.version }}
+        run: >-
+          python3 scripts/create-github-release.py a13n-harness "$VERSION"
+          "a13n Harness $VERSION" dist/*

@@ -13,7 +13,7 @@ from tempfile import TemporaryDirectory
 from threading import Lock
 from typing import Any, Literal
 
-from a13n_environment_provider import DirectLocalProviderConfiguration, DirectLocalRootConfiguration
+from a13n_environment import DirectLocalProviderConfiguration, DirectLocalRootConfiguration
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -554,7 +554,7 @@ def _observation_context(scenario: Scenario) -> HarnessObservationContext:
     return HarnessObservationContext(
         name=f"observation-{scenario}",
         session_id="observation-demo-2026-08",
-        labels=("agent-harness", "observation-demo", f"scenario:{scenario}"),
+        labels=("a13n-harness", "observation-demo", f"scenario:{scenario}"),
         metadata={
             "scenario": scenario,
             "evaluation": "synthetic-pass",

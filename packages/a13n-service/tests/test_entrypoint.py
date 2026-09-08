@@ -1,0 +1,90 @@
+import os
+import subprocess
+from pathlib import Path
+
+ENTRYPOINT = Path(__file__).parents[3] / "scripts" / "docker-entrypoint.sh"
+
+
+def _run_entrypoint(
+    tmp_path: Path,
+    *,
+    role: str,
+    auto_migrate: str,
+    serve_args: tuple[str, ...] = (),
+) -> list[str]:
+    calls = tmp_path / "calls"
+    executable = tmp_path / "a13n-service"
+    executable.write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\n')
+    executable.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "A13N_SERVICE_ROLE": role,
+        "A13N_SERVICE_AUTO_MIGRATE": auto_migrate,
+    }
+
+    subprocess.run(
+        [str(ENTRYPOINT), "a13n-service", "serve", *serve_args],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return calls.read_text().splitlines()
+
+
+def test_worker_role_never_migrates(tmp_path: Path) -> None:
+    assert _run_entrypoint(tmp_path, role="worker", auto_migrate="true") == [
+        "db current --check-heads",
+        "serve",
+    ]
+
+
+def test_connectivity_role_never_migrates(tmp_path: Path) -> None:
+    assert _run_entrypoint(tmp_path, role="connectivity", auto_migrate="true") == [
+        "db current --check-heads",
+        "serve",
+    ]
+
+
+def test_all_role_auto_migrates_when_enabled(tmp_path: Path) -> None:
+    assert _run_entrypoint(tmp_path, role="all", auto_migrate="true") == ["db upgrade", "serve"]
+
+
+def test_control_role_checks_heads_when_auto_migrate_is_disabled(tmp_path: Path) -> None:
+    assert _run_entrypoint(tmp_path, role="control", auto_migrate="false") == [
+        "db current --check-heads",
+        "serve",
+    ]
+
+
+def test_cli_role_override_cannot_accidentally_migrate_worker(tmp_path: Path) -> None:
+    assert _run_entrypoint(
+        tmp_path,
+        role="all",
+        auto_migrate="true",
+        serve_args=("--role", "worker"),
+    ) == ["db current --check-heads", "serve --role worker"]
+
+
+def test_invalid_role_fails_before_running_database_commands(tmp_path: Path) -> None:
+    executable = tmp_path / "a13n-service"
+    executable.write_text("#!/bin/sh\nexit 99\n")
+    executable.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "A13N_SERVICE_ROLE": "invalid",
+        "A13N_SERVICE_AUTO_MIGRATE": "true",
+    }
+
+    result = subprocess.run(
+        [str(ENTRYPOINT), "a13n-service", "serve"],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "Invalid A13N_SERVICE_ROLE" in result.stderr

@@ -1,10 +1,22 @@
 # Development Standards
 
-This file explains the engineering choices shared by deployable Python services. Product semantics and subsystem ownership belong in `spec/`; contributor workflow belongs in [CONTRIBUTING.md](CONTRIBUTING.md); package command catalogs and exhaustive configuration references belong in the nearest package README. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
+This guide defines code quality principles for all repository code and engineering conventions for the components they concern. Service rules apply within their stated boundaries. Product semantics and subsystem ownership belong in `spec/`, contribution workflow in [CONTRIBUTING.md](CONTRIBUTING.md), and component setup and commands in package READMEs. Stable repository workflows and safety-critical settings are named here only when they are part of the engineering contract.
+
+## Code Quality and Design
+
+Good code expresses the problem clearly and makes behavior and change easy to follow. Apply these principles to features, bug fixes, refactoring, and reviews while meeting required capabilities, reliability, and performance:
+
+- Use consistent domain terms and clear responsibilities. Give shared rules one owner, preserving real lifecycle, protocol, and security differences rather than abstracting merely similar code.
+- Prefer direct flows and cohesive modules. Make interfaces predictable and state ownership, side effects, resource lifetimes, and failure handling easy to trace.
+- Justify abstractions, options, and extra paths with current needs. Reduce what maintainers must understand and change together; line counts and layer counts alone do not establish quality.
+- Explain necessary concepts and prerequisites. Keep common workflows understandable without first learning unrelated mechanisms or exceptional cases; use realistic tasks to assess ease of use and change.
+- Fix faulty rules at their owner, check affected callers, and update related contracts, tests, and documentation. Remove artifacts that no longer serve a requirement, keeping unrelated cleanup outside the task.
+
+Consider runtime, recovery, operational, and maintenance costs. Support performance trade-offs with measurements or an explicit capacity model. Match explanation and validation to the change; routine fixes do not need a separate design exercise.
 
 ## Service Shape
 
-`foundation-service` ships one package and container image with three independently deployable roles and their all-in-one composition:
+`a13n-service` ships one package and container image with three independently deployable roles and their all-in-one composition:
 
 - `all`: control, worker, and connectivity capabilities in one process;
 - `control`: APIs, scheduling, and control-plane maintenance;
@@ -37,11 +49,11 @@ Formatters and general-purpose naming rules can enforce syntax and casing, but t
 
 ## HTTP Namespace
 
-Product-facing HTTP APIs use the `/api` namespace. Keep OpenAPI schemas and interactive API documentation under the same prefix. Individual resource layouts remain owned by their API contracts; the prefix is not permission to introduce an unversioned compatibility promise for every implementation route. Protocol daemons such as `agent-envd` retain their owning transport contracts rather than inheriting this product-API convention.
+Product-facing HTTP APIs use the `/api` namespace. Keep OpenAPI schemas and interactive API documentation under the same prefix. Individual resource layouts remain owned by their API contracts; the prefix is not permission to introduce an unversioned compatibility promise for every implementation route. Protocol daemons such as `a13n-envd` retain their owning transport contracts rather than inheriting this product-API convention.
 
 Operational liveness and readiness probes use explicit paths such as `/healthz` and `/readyz` outside `/api`. They expose only bounded process and dependency state and are not product resources. Unknown product API paths return API errors rather than an HTML application response.
 
-Foundation Service exposes APIs and operational probes without hosting browser assets. Worker- and connectivity-only roles do not expose product APIs. Browser clients follow the shared ingress Origin, cookie, and CSRF contract; local tooling does not justify permissive CORS.
+a13n Service exposes APIs and operational probes without hosting browser assets. Worker- and connectivity-only roles do not expose product APIs. Browser clients follow the shared ingress Origin, cookie, and CSRF contract; local tooling does not justify permissive CORS.
 
 ## Generated Code and Static Analysis
 
@@ -77,7 +89,7 @@ Complete authentication, authorization, and initial reads in a short session tha
 
 ## Migrations
 
-Each Foundation Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; Foundation Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change migration contents.
+Each a13n Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; a13n Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change migration contents.
 
 The OSS artifact resolves its registry from `a13n_service.database.metadata` and its service revision location. A private EE or Cloud artifact adds reviewed model and revision contributions through its own fixed descriptor before invoking the same generator and runner contract. Generation, current-head verification, migration application, and readiness must consume the same resolved composition.
 
@@ -97,12 +109,12 @@ The shared image enables auto migration by default for `all` and `control`, with
 
 PostgreSQL migrations use a dedicated synchronous `NullPool` connection and a service-scoped session advisory lock. The same connection holds the lock across revision inspection, transactional DDL, reviewed autocommit blocks, and stamping. Advisory-lock waiting temporarily uses `lock_timeout=0` and its own bounded `statement_timeout`; after acquisition, the normal short DDL lock timeout is restored. This keeps replica serialization independent from table-lock safety.
 
-| Setting                                                 | Default | Reason                                              |
-| ------------------------------------------------------- | ------- | --------------------------------------------------- |
-| `FOUNDATION_MIGRATION_ADVISORY_LOCK_TIMEOUT_SECONDS`    | `900`   | Never wait forever for another migration runner     |
-| `FOUNDATION_MIGRATION_LOCK_TIMEOUT_SECONDS`             | `3`     | Fail quickly when application traffic blocks DDL    |
-| `FOUNDATION_MIGRATION_STATEMENT_TIMEOUT_SECONDS`        | `900`   | Bound each migration statement                      |
-| `FOUNDATION_MIGRATION_IDLE_TRANSACTION_TIMEOUT_SECONDS` | `30`    | Prevent abandoned transactions from retaining locks |
+| Setting                                                   | Default | Reason                                              |
+| --------------------------------------------------------- | ------- | --------------------------------------------------- |
+| `A13N_SERVICE_MIGRATION_ADVISORY_LOCK_TIMEOUT_SECONDS`    | `900`   | Never wait forever for another migration runner     |
+| `A13N_SERVICE_MIGRATION_LOCK_TIMEOUT_SECONDS`             | `3`     | Fail quickly when application traffic blocks DDL    |
+| `A13N_SERVICE_MIGRATION_STATEMENT_TIMEOUT_SECONDS`        | `900`   | Bound each migration statement                      |
+| `A13N_SERVICE_MIGRATION_IDLE_TRANSACTION_TIMEOUT_SECONDS` | `30`    | Prevent abandoned transactions from retaining locks |
 
 These values apply only to migration connections. Override them only for a reviewed migration plan. A timeout stops startup; do not retry in a tight loop or stamp past failed work. The advisory lock serializes runners only—it does not pause traffic or make incompatible DDL safe.
 
@@ -116,6 +128,6 @@ Prefer stable event names and structured fields. Include service, role, build ve
 
 Build one reproducible multi-stage image from `uv.lock` for all roles. Run as non-root, keep credentials and environment configuration outside the image, use an init process when needed, and `exec` the final command so signals propagate. The runtime image installs the platform CA bundle, verifies `/etc/ssl/certs/ca-certificates.crt` at build time, and sets `SSL_CERT_FILE` to that path so `httpx2` uses a stable complete trust store instead of mutating a shared `truststore` OpenSSL context under concurrency. Do not remove or override it unless the replacement contains the deployment's complete CA set. Liveness reports process health; readiness verifies dependencies and schema compatibility. Stop accepting new work before draining or relinquishing ownership.
 
-Image changes must verify build, non-root startup, role selection, migration ownership, health/readiness, and SIGTERM handling. Package-specific commands are documented in [packages/foundation-service/README.md](packages/foundation-service/README.md).
+Image changes must verify build, non-root startup, role selection, migration ownership, health/readiness, and SIGTERM handling. Package-specific commands are documented in [packages/a13n-service/README.md](packages/a13n-service/README.md).
 
-The separate sandbox image is a non-root Debian runtime with `agent-envd`, process supervision, the system CA bundle, and a small set of common command-line tools. It is built from the same source revision rather than downloading an unverified latest binary.
+The separate sandbox image is a non-root Debian runtime with `a13n-envd`, process supervision, the system CA bundle, and a small set of common command-line tools. It is built from the same source revision rather than downloading an unverified latest binary.

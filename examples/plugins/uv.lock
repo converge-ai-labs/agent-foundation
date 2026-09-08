@@ -11,7 +11,7 @@ resolution-markers = [
 [[package]]
 name = "a13n-envd-client"
 version = "0.0.0"
-source = { editable = "../../packages/agent-envd-client" }
+source = { editable = "../../packages/a13n-envd-client" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
@@ -29,11 +29,12 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "a13n-environment-provider"
+name = "a13n-environment"
 version = "0.0.0"
-source = { editable = "../../packages/agent-environment-provider" }
+source = { editable = "../../packages/a13n-environment" }
 dependencies = [
     { name = "a13n-envd-client" },
+    { name = "anyio" },
     { name = "docker" },
     { name = "e2b" },
     { name = "pathspec" },
@@ -43,7 +44,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-envd-client", editable = "../../packages/agent-envd-client" },
+    { name = "a13n-envd-client", editable = "../../packages/a13n-envd-client" },
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "docker", specifier = ">=7.2,<8" },
     { name = "e2b", specifier = ">=2.46.4,<3" },
     { name = "pathspec", specifier = ">=1.1,<2" },
@@ -60,9 +62,9 @@ test = [
 [[package]]
 name = "a13n-harness"
 version = "0.0.0"
-source = { editable = "../../packages/agent-harness" }
+source = { editable = "../../packages/a13n-harness" }
 dependencies = [
-    { name = "a13n-environment-provider" },
+    { name = "a13n-environment" },
     { name = "a13n-logging" },
     { name = "anyio" },
     { name = "genai-prices" },
@@ -80,8 +82,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
-    { name = "a13n-logging", editable = "../../packages/logging" },
+    { name = "a13n-environment", editable = "../../packages/a13n-environment" },
+    { name = "a13n-logging", editable = "../../packages/a13n-logging" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "genai-prices", specifier = ">=0.1.6,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
@@ -105,7 +107,7 @@ test = [
 [[package]]
 name = "a13n-logging"
 version = "0.0.0"
-source = { editable = "../../packages/logging" }
+source = { editable = "../../packages/a13n-logging" }
 dependencies = [
     { name = "rich" },
 ]
@@ -118,7 +120,7 @@ name = "a13n-plugin-examples"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
-    { name = "a13n-environment-provider" },
+    { name = "a13n-environment" },
     { name = "a13n-harness" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
@@ -133,8 +135,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
-    { name = "a13n-harness", editable = "../../packages/agent-harness" },
+    { name = "a13n-environment", editable = "../../packages/a13n-environment" },
+    { name = "a13n-harness", editable = "../../packages/a13n-harness" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.38,<3" },
 ]
