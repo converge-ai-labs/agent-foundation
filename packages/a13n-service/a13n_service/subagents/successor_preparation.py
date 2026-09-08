@@ -55,6 +55,8 @@ def prepare_async_result_successor(
             agent_id=selected_parent.agent_id,
             agent_revision_id=selected_parent.agent_revision_id,
             effective_agent_config=config,
+            protocol_context=selected_parent_state.protocol_context,
+            secret_bindings=selected_parent_state.secret_bindings,
         ),
         selected_parent_state,
     )

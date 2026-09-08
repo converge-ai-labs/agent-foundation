@@ -9,6 +9,7 @@ from a13n_service.hooks.domain import InlineHookRequest, InlineHookSubscriptionI
 
 from .domain import StrictModel
 from .input import AgentInput
+from .protocol_context import ProtocolInputContext
 
 
 class StartRunIntent(StrictModel):
@@ -23,6 +24,7 @@ class StartRunIntent(StrictModel):
 
 class StartRunCommand(StartRunIntent):
     environment: EnvironmentSelection | Omitted | None = Omitted.UNSET
+    protocol_context: ProtocolInputContext | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ContinueRunIntent(StrictModel):
@@ -37,12 +39,14 @@ class ContinueRunIntent(StrictModel):
 
 class ContinueRunCommand(ContinueRunIntent):
     environment: EnvironmentSelection | Omitted | None = Omitted.UNSET
+    protocol_context: ProtocolInputContext | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class WaitingContinueRunCommand(InlineHookRequest):
     expected_thread_version: int = Field(ge=1)
     sealed_state_digest_sha256: str
     input: AgentInput
+    protocol_context: ProtocolInputContext | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class RetryRunCommand(InlineHookRequest):
@@ -60,3 +64,4 @@ class ForkRunIntent(StrictModel):
 
 class ForkRunCommand(ForkRunIntent):
     environment: EnvironmentSelection | Omitted | None = Omitted.UNSET
+    protocol_context: ProtocolInputContext | None = Field(default=None, exclude_if=lambda value: value is None)

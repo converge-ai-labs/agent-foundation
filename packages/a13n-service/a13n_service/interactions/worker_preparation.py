@@ -24,12 +24,15 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
+from a13n_service.assets.publication import AgentAssetPublisher, AssetCapability, AssetPublicationScope
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
+from a13n_service.secrets.agent_inputs import graph_secret_requirements
+from a13n_service.secrets.agent_runtime import AgentSecretRuntime, BoundAgentSecrets
 from a13n_service.skills.runtime import PreparedSkillRuntime, SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
@@ -49,6 +52,7 @@ from .harness_runtime import (
 )
 from .input import AcceptedAgentInput, AgentInputMapper, native_input_adapter
 from .objects import RunPayloadStore
+from .protocol_context import ProtocolContextCapability
 from .run_control import RunAttemptControl
 from .worker_input import WorkerInputCapability, WorkerInputSources
 
@@ -71,8 +75,13 @@ class WorkerAttemptPreparer:
         environments: EnvironmentLifecycle,
         external_tools: ExternalToolRuntime,
         subagent_capability: Callable[[], SubagentCapability],
+        asset_publisher: AgentAssetPublisher | None = None,
+        secrets: AgentSecretRuntime | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
+        self._asset_publisher = asset_publisher
+        self._secrets = secrets
+        self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
         self._external_tools = external_tools
         self._sessions = sessions
@@ -92,6 +101,18 @@ class WorkerAttemptPreparer:
         """Claim the final recovery state and validate it before admitting continuation."""
         await self._control.claim_state(self._run)
         config = self._control.current_state.envelope.effective_agent_config
+        bindings = self._control.current_state.envelope.secret_bindings
+        if bindings or graph_secret_requirements(config):
+            if self._secrets is None:
+                raise RuntimeError("Agent Secret runtime is unavailable")
+            self._bound_secrets = self._secrets.bind(
+                run=self._run,
+                workspace_id=self._workspace_id,
+                config=config,
+                bindings=bindings,
+                current_attempt=lambda: self._control.current_context,
+            )
+            await self._bound_secrets.validate()
         AgentReconstructor(self._catalog).validate(
             agent_id=self._run.agent_id,
             agent_revision_id=self._run.agent_revision_id,
@@ -141,6 +162,21 @@ class WorkerAttemptPreparer:
 
         def capabilities(context: AgentDefinitionReconstructionContext):
             selected = resources.for_definition(context)
+            protocol_context = self._control.current_state.envelope.protocol_context
+            if context.is_root and protocol_context is not None:
+                selected = (*selected, ProtocolContextCapability(protocol_context))
+            if context.config.asset_publication is not None:
+                if self._asset_publisher is None:
+                    raise RuntimeError("Asset publication runtime is unavailable")
+                selected = (
+                    *selected,
+                    AssetCapability(
+                        self._asset_publisher,
+                        AssetPublicationScope(
+                            lambda: self._control.current_context, self._workspace_id, context.agent_id
+                        ),
+                    ),
+                )
             return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
         definition = AgentReconstructor(self._catalog, capability_provider=capabilities).reconstruct(
@@ -222,6 +258,7 @@ class WorkerAttemptPreparer:
             deferred_resume=resume,
             collaborators=HarnessCollaborators(
                 instance=instance,
+                capabilities=() if self._bound_secrets is None else (self._bound_secrets.capability(),),
                 model_resolver=SnapshotRunModelResolver(
                     snapshots=resources.models,
                     organization_id=run.organization_id,
