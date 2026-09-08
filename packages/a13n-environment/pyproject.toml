@@ -30,7 +30,7 @@ build-backend = "hatchling.build"
 packages = ["a13n_environment"]
 
 [tool.a13n.release-dependencies]
-a13n-envd-client = ">=0.0.5,<0.1.0"
+a13n-envd-client = ">=0.0.6,<0.1.0"
 
 [tool.deptry]
 known_first_party = ["a13n_environment"]

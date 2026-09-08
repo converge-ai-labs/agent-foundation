@@ -479,7 +479,7 @@ def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     ("component", "manifest", "dependency", "constraint"),
     [
-        ("a13n-harness", "a13n-environment", "a13n-envd-client", ">=0.0.5,<0.1.0"),
+        ("a13n-harness", "a13n-environment", "a13n-envd-client", ">=0.0.6,<0.1.0"),
         ("a13n-harness", "a13n-harness", "a13n-logging", ">=0.1.0,<0.2.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-logging", ">=0.1.0,<0.2.0"),
     ],
@@ -505,7 +505,7 @@ def test_independent_dependency_ranges_are_injected_and_checked(
 def test_invalid_independent_dependency_policy_is_atomic(tmp_path: Path, constraint: str) -> None:
     copy_release_files(tmp_path)
     path = tmp_path / "packages/a13n-environment/pyproject.toml"
-    path.write_text(path.read_text().replace(">=0.0.5,<0.1.0", constraint))
+    path.write_text(path.read_text().replace(">=0.0.6,<0.1.0", constraint))
     before = snapshot(tmp_path)
     result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")
     assert result.returncode != 0

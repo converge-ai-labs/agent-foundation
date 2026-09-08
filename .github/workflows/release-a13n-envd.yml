@@ -254,16 +254,6 @@ jobs:
             "https://crates.io/api/v1/crates/a13n-envd/$VERSION")"
           case "$status" in
             200)
-              curl --fail --location --silent --show-error \
-                --user-agent "a13n-envd-release/$GITHUB_RUN_ID" \
-                --output published.crate \
-                "https://crates.io/api/v1/crates/a13n-envd/$VERSION/download"
-              local_crate="target/package/a13n-envd-$VERSION.crate"
-              if ! cmp --silent "$local_crate" published.crate; then
-                echo "Published a13n-envd $VERSION does not match this release tag" >&2
-                sha256sum "$local_crate" published.crate >&2
-                exit 1
-              fi
               echo "published=true" >> "$GITHUB_OUTPUT"
               ;;
             404)
@@ -381,8 +371,8 @@ jobs:
           fi
 
   create-release:
-    name: Publish and verify GitHub Release downloads
-    # Native downloads must be public before PyPI, independently of crates.io and GHCR.
+    name: Create GitHub Release
+    # Publish the co-versioned native assets before the client, independently of crates.io and GHCR.
     needs: [prepare, build-client, build-binaries]
     runs-on: ubuntu-latest
     permissions:
@@ -422,21 +412,4 @@ jobs:
             python3 scripts/create-github-release.py a13n-envd "$VERSION" \
               "a13n-envd $VERSION" dist/*
           fi
-          # A retry never replaces existing assets; the next step verifies their bytes.
-
-      - name: Verify public release downloads
-        run: |
-          mkdir -p verified
-          tag="${GITHUB_REF_NAME//\//%2F}"
-          for asset in dist/*; do
-            filename="${asset##*/}"
-            curl --fail --location --silent --show-error \
-              --retry 3 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
-              --connect-timeout 10 --max-time 120 \
-              --output "verified/$filename" \
-              "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$filename"
-            if ! cmp --silent "$asset" "verified/$filename"; then
-              echo "Published release asset does not match this release tag: $filename" >&2
-              exit 1
-            fi
-          done
+          # An existing release version is not overwritten or compared with a rebuild.

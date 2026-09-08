@@ -46,13 +46,13 @@ def test_minimum_constraints_come_from_owning_manifests(tmp_path: Path) -> None:
         shutil.copy2(ROOT / relative, destination)
     # Changing a policy floor must change the smoke constraints without editing this workflow.
     manifest = tmp_path / "packages/a13n-environment/pyproject.toml"
-    manifest.write_text(manifest.read_text().replace(">=0.0.5,<0.1.0", ">=0.0.6,<0.1.0"))
+    manifest.write_text(manifest.read_text().replace(">=0.0.6,<0.1.0", ">=0.0.7,<0.1.0"))
     result = subprocess.run(
         ["bash", "-eo", "pipefail", "-c", step["run"]], cwd=tmp_path, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
     assert set((tmp_path / "minimum-constraints.txt").read_text().splitlines()) == {
-        "a13n-envd-client==0.0.6",
+        "a13n-envd-client==0.0.7",
         "a13n-environment==0.0.5",
         "a13n-harness==0.0.5",
         "a13n-stream-protocol==0.0.5",

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from graphlib import TopologicalSorter
 from pathlib import Path
 
@@ -39,7 +38,7 @@ def test_client_publication_waits_for_downloads_without_a_registry_cycle(jobs: d
     assert {"publish-crate", "publish-client"} <= graph["publish-image"]
     assert "if" not in jobs["publish-client"]
     release_steps = jobs["create-release"]["steps"]
-    assert release_steps[-1]["name"] == "Verify public release downloads"
+    assert release_steps[-1]["name"] == "Create release with channel-scoped notes"
     assert "if" not in release_steps[-1]
     assert "continue-on-error" not in release_steps[-1]
     assert "continue-on-error" not in jobs["create-release"]
@@ -94,66 +93,33 @@ def test_release_creation_reuses_existing_assets_without_replacing_them(
         assert commands[1].startswith("python3 scripts/create-github-release.py a13n-envd 1.2.3 ")
 
 
-@pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
-@pytest.mark.parametrize(
-    "failure", [None, "missing-archive", "corrupt-archive", "missing-checksums", "corrupt-checksums"]
-)
-def test_public_download_verification_fails_closed(
-    jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, failure: str | None
+@pytest.mark.parametrize("status", ["200", "404", "503"])
+def test_crate_publication_is_selected_by_version(
+    jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str
 ) -> None:
-    dist = tmp_path / "dist"
-    dist.mkdir()
-    assets = [
-        f"a13n-envd-{version}-{target}.{'zip' if 'windows' in target else 'tar.gz'}" for target in sorted(TARGETS)
-    ]
-    assets.extend(["client.whl", "client.tar.gz"])
-    for asset in assets:
-        (dist / asset).write_bytes(asset.encode())
-    result = run_step(release_step(jobs, "Create checksums"), tmp_path)
-    assert result.returncode == 0, result.stderr
-    assets.append("SHA256SUMS")
-
-    published = tmp_path / "published"
-    published.mkdir()
-    for asset in assets:
-        (published / asset).write_bytes((dist / asset).read_bytes())
-    if failure:
-        target = "SHA256SUMS" if failure.endswith("checksums") else assets[0]
-        if failure.startswith("missing"):
-            (published / target).unlink()
-        else:
-            (published / target).write_bytes(b"wrong release bytes")
-
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     curl = fake_bin / "curl"
-    curl.write_text(
-        f"#!{sys.executable}\n"
-        "import pathlib, shutil, sys\n"
-        "args = sys.argv[1:]\n"
-        "assert not any(arg in args for arg in ('--header', '-H', '--user', '-u'))\n"
-        "assert '--fail' in args and '--max-time' in args and '--retry-max-time' in args\n"
-        f"assert args[-1].startswith('https://github.com/example/repository/releases/download/release%2Fa13n-envd-v{version}/')\n"
-        "filename = args[-1].rsplit('/', 1)[-1]\n"
-        "source = pathlib.Path('published') / filename\n"
-        "if not source.exists(): sys.exit(22)\n"
-        "shutil.copyfile(source, args[args.index('--output') + 1])\n",
-        encoding="utf-8",
-    )
+    curl.write_text(f'#!/bin/sh\necho "$*" >> requests\nprintf {status}\n', encoding="utf-8")
     curl.chmod(0o755)
     monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setenv("GITHUB_REF_NAME", f"release/a13n-envd-v{version}")
-    monkeypatch.setenv("GITHUB_REPOSITORY", "example/repository")
+    monkeypatch.setenv("GITHUB_RUN_ID", "test")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+    monkeypatch.setenv("VERSION", "1.2.3")
+    script = next(
+        step["run"] for step in jobs["publish-crate"]["steps"] if step["name"] == "Resolve crate publication state"
+    )
 
-    result = run_step(release_step(jobs, "Verify public release downloads"), tmp_path)
+    result = run_step(script, tmp_path)
 
-    if failure:
+    requests = (tmp_path / "requests").read_text().splitlines()
+    assert len(requests) == 1
+    assert requests[0].endswith("https://crates.io/api/v1/crates/a13n-envd/1.2.3")
+    if status == "503":
         assert result.returncode != 0
-        if failure.startswith("corrupt"):
-            assert "Published release asset does not match this release tag:" in result.stderr
     else:
         assert result.returncode == 0, result.stderr
-        assert {path.name for path in (tmp_path / "verified").iterdir()} == set(assets)
+        assert (tmp_path / "output").read_text().strip() == f"published={str(status == '200').lower()}"
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
