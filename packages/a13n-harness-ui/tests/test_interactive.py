@@ -72,7 +72,7 @@ def test_renderer_modes_switch_without_replay_and_preserve_control_safety() -> N
     renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "edit-1", "content": "edited"})
     result = renderer.drain()
     assert "public reasoning" in result
-    tool = next(block for block in renderer.transcript.blocks.values() if "edit · result" in block.source)
+    tool = next(block for block in renderer.transcript.blocks.values() if "edit | returned" in block.source)
     assert "edited" in tool.source and "file_path" not in tool.source
     assert "hidden summary" not in result
     assert "\x1b" not in terminal_text("unsafe\x1b]52;c;YQ==\x07")
@@ -100,7 +100,7 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
     for run_id in ("child-b", "child-a"):
         renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": "done"}, child=True, run_id=run_id)
     result = renderer.drain()
-    assert "edit · result" in result and "child-a" in result
+    assert "edit | returned" in result and "child-a" in result
     assert "child-b" in result
     for index in range(256):
         renderer.ingest("TOOL_CALL_START", {"tool_call_id": str(index), "tool_call_name": "edit"})

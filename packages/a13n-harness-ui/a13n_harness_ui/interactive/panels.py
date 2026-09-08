@@ -150,13 +150,13 @@ def tool_result(name: str, text: str) -> str:
         value = json.loads(text)
     except (ValueError, TypeError):
         value = None
-    state = "result"
+    state = "returned"
     if isinstance(value, dict):
         if value.get("ok") is False:
-            state = "failed · no edit confirmed" if name in {"edit", "multi_edit"} else "failed"
-        elif value.get("ok") is True and name in {"edit", "multi_edit"}:
+            state = "failed | no edit confirmed" if name in {"edit", "multi_edit"} else "failed"
+        elif value.get("ok") is True and not name.startswith("shell"):
             state = "completed"
-        elif value.get("ok") is True and name in {"note_write", "note_get", "note_delete"}:
+        if value.get("ok") is True and name in {"note_write", "note_get", "note_delete"}:
             action = value.get("action")
             state = (
                 action.replace("_", " ")
@@ -208,4 +208,4 @@ def shell_result_preview(text: str, command: str) -> str:
     if value.get("disclosure"):
         state.append("output disclosure")
     title = " ".join(command.split())[:500] or "command unavailable"
-    return " · ".join((*state, title))
+    return " | ".join((*state, title))

@@ -59,7 +59,7 @@ def test_edit_diff_and_summary_keep_content_beyond_old_preview_limit() -> None:
     assert "proposed replacement snippets" not in source
     assert "Edit · applied" not in source
     assert "LAST ORIGINAL LINE" not in source
-    assert "failed · no edit confirmed" in source
+    assert "failed | no edit confirmed" in source
     summary = "A full summary.\n" * 1000 + "SUMMARY END"
     renderer.ingest(
         "CUSTOM",
@@ -107,7 +107,7 @@ def test_regular_tool_folds_without_discarding_full_result() -> None:
     transcript.render(80)
     assert "Folded" not in _text(transcript)
     assert len(transcript.blocks) == 1
-    assert "read · result" in _text(transcript)
+    assert "read | returned" in _text(transcript)
     assert "line 99" not in _text(transcript)
     assert "line 99" in _source(renderer)
     transcript.detailed = True
@@ -355,7 +355,7 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_with_exit_c
     )
     renderer.transcript.render(80)
     text = _text(renderer.transcript)
-    assert text == "shell_exec · failed · exit 7 · output partial · pytest -q"
+    assert text == "shell_exec | failed | exit 7 | output partial | pytest -q"
     assert "test failure" not in text and "test output" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True

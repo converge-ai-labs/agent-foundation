@@ -111,7 +111,7 @@ def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> N
         },
     )
     text = _text(renderer.transcript)
-    assert text == "shell_exec · failed · exit 1 · output partial · pytest -q"
+    assert text == "shell_exec | failed | exit 1 | output partial | pytest -q"
     assert "line-2" not in text and "line-19" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
@@ -213,3 +213,165 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         assert any(corner in text for corner in ("╭", "┌"))
         assert any(corner in text for corner in ("╰", "└"))
         shell.renderer.transcript.close()
+
+
+@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
+@pytest.mark.parametrize("kind", ["tool", "command"])
+@pytest.mark.parametrize(
+    "state, tone",
+    [
+        ("running", "running"),
+        ("waiting", "waiting"),
+        ("retry", "waiting"),
+        ("denied", "failed"),
+        ("completed", "completed"),
+        ("exit 0", "completed"),
+        ("failed", "failed"),
+        ("timed out", "failed"),
+        ("cancelled", "failed"),
+        ("returned", "muted"),
+        ("status unavailable", "muted"),
+    ],
+)
+def test_tool_rows_use_status_colors_without_bold_or_payload_markup(theme, kind, state, tone) -> None:
+    from a13n_harness_ui.interactive.theme import activity_colors
+
+    transcript = Transcript()
+    transcript.theme = resolve_theme(theme)
+    payload = "cat [bold]file[/bold] | grep 'failed · result'"
+    block = transcript.append("Expanded details", kind=kind)
+    transcript.preview(block, f"tool_name | {state} | {payload}")
+    try:
+        assert _text(transcript, 120) == f"tool_name | {state} | {payload}"
+        fragments = transcript.rows[0]
+        colors = activity_colors(transcript.theme)
+        expected = colors[tone]
+        expected = expected if expected.startswith("#") else "ansi" + expected.replace("_", "")
+        assert any(text == state and f"fg:{expected}" in style for style, text in fragments)
+        assert any(text == payload and not style.strip() for style, text in fragments)
+        assert all("bold" not in style.split() for style, _ in fragments)
+    finally:
+        transcript.close()
+
+
+@pytest.mark.parametrize(
+    "result, state",
+    [
+        ('{"ok":true,"content":"output-marker"}', "completed"),
+        ('{"ok":false,"error":"output-marker"}', "failed"),
+        ('{"content":"output-marker"}', "returned"),
+        ('{"ok":1,"content":"output-marker"}', "returned"),
+        ("output-marker", "returned"),
+    ],
+)
+def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_success(result, state) -> None:
+    renderer = StreamRenderer(Status())
+    try:
+        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "view"})
+        assert _text(renderer.transcript) == "view | running"
+        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": '{"file_path":"file.py"}'})
+        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
+        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": result})
+        text = _text(renderer.transcript)
+        assert text.startswith(f"view | {state} | file.py | ")
+        assert "{" not in text and "output-marker" not in text
+        assert len(renderer.transcript.blocks) == 1
+        renderer.transcript.detailed = True
+        renderer.transcript.dirty = True
+        expanded = _text(renderer.transcript)
+        assert "output-marker" in expanded and '"file_path": "file.py"' in expanded
+    finally:
+        renderer.transcript.close()
+
+
+@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
+def test_expanded_shell_title_keeps_normal_weight(theme) -> None:
+    transcript = Transcript()
+    transcript.theme = resolve_theme(theme)
+    transcript.append("shell_exec | returned\n[bold]literal output[/bold]", kind="command")
+    try:
+        text = _text(transcript)
+        assert "shell_exec | returned" in text and "[bold]literal output[/bold]" in text
+        assert all("bold" not in style.split() for row in transcript.rows for style, _ in row)
+    finally:
+        transcript.close()
+
+
+@pytest.mark.parametrize("name", ["task_create", "shell_exec", "ask_user_question"])
+@pytest.mark.parametrize("with_start", [False, True])
+@pytest.mark.parametrize("state", ["retry", "failed", "denied"])
+def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with_start, state) -> None:
+    renderer = StreamRenderer(Status())
+    arguments = {"command": "echo test"} if name == "shell_exec" else {"subject": "Test task"}
+    part = {
+        "tool_name": name,
+        "tool_call_id": "one",
+        "part_kind": "retry-prompt" if state == "retry" else "tool-return",
+        "content": [{"type": "extra_forbidden", "loc": ["status"], "msg": "Extra inputs are not permitted"}],
+        **({"outcome": state} if state != "retry" else {}),
+    }
+    try:
+        if with_start:
+            renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": name})
+            renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps(arguments)})
+            renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
+        renderer.ingest(
+            "CUSTOM",
+            {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}},
+        )
+        assert len(renderer.transcript.blocks) == 1
+        text = _text(renderer.transcript)
+        assert text.startswith(f"{name} | {state}") and len(text.splitlines()) == 1
+        assert "{" not in text and "extra_forbidden" not in text and "native result/retry" not in text
+        assert not renderer._tools and renderer.status.state == "working"
+        renderer.transcript.detailed = True
+        renderer.transcript.dirty = True
+        assert "extra_forbidden" in _text(renderer.transcript)
+        block = next(iter(renderer.transcript.blocks.values()))
+        assert json.dumps(part, ensure_ascii=False, indent=2) in block.source
+        if with_start:
+            assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
+    finally:
+        renderer.transcript.close()
+
+
+@pytest.mark.parametrize("mode", ["concise", "detailed"])
+def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -> None:
+    renderer = StreamRenderer(Status(mode=mode))
+    try:
+        for run in ("root", "child"):
+            renderer.ingest(
+                "TOOL_CALL_START",
+                {"tool_call_id": "same", "tool_call_name": "task_create"},
+                run_id=run,
+                child=run == "child",
+            )
+        renderer.status.state = "cancelling"
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": "a13n.pydantic_ai.function_tool_result",
+                "value": {
+                    "event": {
+                        "part": {
+                            "tool_call_id": "same",
+                            "tool_name": "task_create",
+                            "part_kind": "retry-prompt",
+                            "content": "child retry details",
+                        }
+                    }
+                },
+            },
+            run_id="child",
+            child=True,
+        )
+        assert ("root", "same") in renderer._tools and ("child", "same") not in renderer._tools
+        assert renderer.status.state == "cancelling"
+        text = _text(renderer.transcript)
+        if mode == "detailed":
+            assert "task_create | retry | child" in text
+        else:
+            assert "retry" not in text
+        assert len(renderer.transcript.blocks) == (2 if mode == "detailed" else 1)
+    finally:
+        renderer.transcript.close()

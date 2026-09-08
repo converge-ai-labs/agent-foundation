@@ -53,7 +53,7 @@ def test_running_and_completed_tool_labels_keep_raw_payloads(name: str, key: str
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps(arguments)})
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
         block = next(iter(renderer.transcript.blocks.values()))
-        assert block.preview == f"{name} · running · {Path('src/file.py')}"
+        assert block.preview == f"{name} | running | {Path('src/file.py')}"
         assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
         renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": json.dumps(result)})
         assert str(tmp_path) not in (block.preview or "")
@@ -104,9 +104,11 @@ def test_interleaved_child_paths_keep_invocation_base_and_run_identity(tmp_path:
                 "TOOL_CALL_RESULT", {"tool_call_id": "same", "content": "done"}, run_id=run, child=run == "child"
             )
         root, child = renderer.transcript.blocks.values()
-        assert " · file.py · done" in (root.preview or "")
+        assert " | file.py | " in (root.preview or "")
+        assert "done" not in (root.preview or "") and "done" in root.source
         assert str(tmp_path) not in (root.preview or "")
-        assert f" · child · {paths['child']} · done" in (child.preview or "")
+        assert f" | child | {paths['child']} | " in (child.preview or "")
+        assert "done" not in (child.preview or "") and "done" in child.source
     finally:
         renderer.transcript.close()
 
@@ -151,3 +153,30 @@ def test_shell_passes_explicit_directory_and_rendering_does_not_follow_chdir(
             assert block.source.startswith("Edit · file.py · +1 -1\n")
         finally:
             shell.renderer.transcript.close()
+
+
+@pytest.mark.parametrize("width", [28, 80])
+@pytest.mark.parametrize("name, key", [("view", "file_path"), ("write", "file_path"), ("ls", "path")])
+def test_long_tool_paths_are_ellipsized_instead_of_wrapping_out_of_view(width, name, key, tmp_path) -> None:
+    from prompt_toolkit.utils import get_cwidth
+
+    relative = Path("packages") / ("long-directory-" * 8) / "file.py"
+    path = str(tmp_path / relative)
+    renderer = StreamRenderer(Status(directory=tmp_path))
+    try:
+        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": name})
+        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps({key: path})})
+        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
+        for completed in (False, True):
+            if completed:
+                renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": '{"ok":true}'})
+            renderer.transcript.render(width)
+            rows = ["".join(text for _, text in row) for row in renderer.transcript.rows]
+            assert len(rows) == 1
+            assert "pack" in rows[0] and rows[0].endswith("…")
+            assert get_cwidth(rows[0]) <= width
+            block = next(iter(renderer.transcript.blocks.values()))
+            assert str(relative) in (block.preview or "")
+            assert path in block.source
+    finally:
+        renderer.transcript.close()
