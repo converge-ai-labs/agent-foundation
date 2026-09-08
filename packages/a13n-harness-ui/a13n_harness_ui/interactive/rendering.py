@@ -6,6 +6,7 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
@@ -34,6 +35,7 @@ class Status:
     model: str = "not configured"
     thinking: str = "default"
     environment: str = "not selected"
+    directory: Path | None = None
     context_window: int | None = None
     context_tokens: int | None = None
     mode: str = "concise"
@@ -511,12 +513,11 @@ class StreamRenderer:
                     )
                     shell_preview = None
                     if name.startswith("shell"):
-                        shell_preview = shell_result_preview(text, summary, self.status.max_tool_result_lines)
+                        shell_preview = shell_result_preview(text, summary)
                     if shell_preview is not None:
                         brief = f"{name} · {shell_preview}"
                         if child:
-                            heading, separator, output_preview = brief.partition("\n")
-                            brief = f"{heading} · {identity}{separator}{output_preview}"
+                            brief += f" · {identity}"
                     arguments = preview.arguments if preview else ""
                     body = header + "\n" + (f"Arguments · {label}\n{arguments}\n" if arguments else "") + result + "\n"
                     block_id = preview.block_id if preview is not None else None
@@ -535,9 +536,7 @@ class StreamRenderer:
                         kind = "command" if shell_preview is not None else "tool"
                         if block_id is None or not self.transcript.replace(block_id, terminal_text(body), kind=kind):
                             block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind=kind)
-                        self.transcript.preview(
-                            block_id, terminal_text(brief), len(brief.splitlines()) if shell_preview is not None else 1
-                        )
+                        self.transcript.preview(block_id, terminal_text(brief), 1)
                     self.append(header + "\n", display=False)
                 self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
@@ -548,7 +547,9 @@ class StreamRenderer:
                 if preview:
                     preview.arguments = "".join(preview.parts or ())
                     preview.parts = None
-                    preview.summary = tool_preview(preview.arguments)
+                    preview.summary = tool_preview(
+                        preview.arguments, name=preview.name, directory=self.status.directory
+                    )
                     if preview.name in {"shell_exec", "shell_start", "shell_wait"}:
                         preview.summary = self._shell_command(preview.name, preview.arguments, run_id)
                     if preview.name in {"edit", "multi_edit", "summarize", "compact"}:
@@ -609,7 +610,7 @@ class StreamRenderer:
                     # Recognized routine statuses are intentionally quiet, not
                     # unknown capability events to render as raw JSON.
                     return
-                panel = capability_panel(name, event)
+                panel = capability_panel(name, event, directory=self.status.directory)
                 if panel is not None:
                     if not child or detailed:
                         self.finish()

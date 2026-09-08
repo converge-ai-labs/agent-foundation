@@ -6,6 +6,7 @@ import difflib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import PurePath
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,7 +16,26 @@ class CapabilityPanel:
     kind: str
 
 
-def capability_panel(name: object, event: Mapping[str, object]) -> CapabilityPanel | None:
+def display_path(path: str, directory: PurePath | None) -> str:
+    """Shorten lexical descendants only, without resolving files or consulting cwd.
+
+    Keep parent traversal untouched: collapsing it could change meaning across
+    symlinks. Outside paths and paths from another filesystem remain verbatim.
+    """
+    if directory is None or not directory.is_absolute():
+        return path
+    candidate = type(directory)(path)
+    if not candidate.is_absolute() or ".." in candidate.parts or ".." in directory.parts:
+        return path
+    try:
+        return str(candidate.relative_to(directory))
+    except ValueError:
+        return path
+
+
+def capability_panel(
+    name: object, event: Mapping[str, object], *, directory: PurePath | None = None
+) -> CapabilityPanel | None:
     """Interpret known native facts here, never in the shared stream protocol."""
     if name in {"a13n.context.compaction_summary", "a13n.context.handoff_summary"}:
         summary = event.get("summary")
@@ -31,6 +51,7 @@ def capability_panel(name: object, event: Mapping[str, object]) -> CapabilityPan
         before, after, path = event.get("before"), event.get("after"), event.get("file_path")
         if not isinstance(before, str) or not isinstance(after, str) or not isinstance(path, str):
             return None
+        path = display_path(path, directory)
         if len(before) + len(after) > 128 * 1024 or before.count("\n") + after.count("\n") > 2000:
             return CapabilityPanel(
                 f"Edit · {path} · applied",
@@ -70,7 +91,7 @@ def tool_arguments(name: str, arguments: str) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2)
 
 
-def tool_preview(arguments: str) -> str:
+def tool_preview(arguments: str, *, name: str = "", directory: PurePath | None = None) -> str:
     try:
         value = json.loads(arguments)
     except ValueError:
@@ -78,7 +99,10 @@ def tool_preview(arguments: str) -> str:
     if isinstance(value, dict):
         for key in ("command", "file_path", "path", "query", "pattern", "subject", "process_id"):
             if isinstance(value.get(key), str):
-                return value[key][:500]
+                summary = value[key]
+                if key in {"file_path", "path"} and name in {"view", "write", "edit", "multi_edit", "ls"}:
+                    summary = display_path(summary, directory)
+                return summary[:500]
         return ", ".join(value)[:160]
     return str(value)[:160]
 
@@ -119,31 +143,29 @@ def tool_result(name: str, text: str) -> str:
     return f"{state}\n{text}"
 
 
-def shell_result_preview(text: str, command: str, max_lines: int) -> str | None:
-    """Read native Shell facts: a successful API call can still exit nonzero."""
+def shell_result_preview(text: str, command: str) -> str:
+    """Summarize native status only; captured output belongs in expanded details."""
     try:
         value = json.loads(text)
     except ValueError:
-        return None
-    if not isinstance(value, dict) or not isinstance(value.get("status"), dict):
-        return None
-    status = value["status"]
+        value = None
+    if not isinstance(value, dict):
+        value = {}
+    status = value.get("status")
+    if not isinstance(status, dict):
+        status = {}
     phase = status.get("phase")
-    if not isinstance(phase, str):
-        return None
-    outcome = shell_outcome(status) or ("failed" if value.get("ok") is False else "")
+    outcome = shell_outcome(status)
+    state = ["failed"] if value.get("ok") is False else []
+    if outcome and outcome not in state:
+        state.append(outcome)
     code = status.get("exit_code")
-    state = [outcome] if outcome else []
     if isinstance(code, int) and not isinstance(code, bool):
         state.append(f"exit {code}")
     elif not state:
-        state.append("running" if phase == "running" else "finished" if phase == "exited" else phase)
-    # Keep status ahead of the command so narrow terminals and long commands
-    # cannot hide failure or the exit code. Empty capture needs no body at all.
-    title = " ".join(command.split())[:500] or "command unavailable"
-    lines = [" · ".join((*state, title))]
-    output_lines: list[str] = []
-    more_output = False
+        state.append("running" if phase == "running" else "finished" if phase == "exited" else "status unavailable")
+    # Inline diagnostics precede the command and are deduplicated across streams.
+    # No output text is inspected, interpreted, or copied into the concise row.
     for stream in ("stderr", "stdout"):
         page = value.get(stream)
         if not isinstance(page, dict):
@@ -151,24 +173,13 @@ def shell_result_preview(text: str, command: str, max_lines: int) -> str | None:
         coverage = page.get("coverage")
         if coverage in {"partial", "unknown"} or page.get("content_complete") is False:
             coverage = coverage if coverage in {"partial", "unknown"} else "incomplete"
-            lines.append(f"[output {coverage} · {stream}]")
+            label = f"output {coverage}"
+            if label not in state:
+                state.append(label)
         omitted = page.get("omitted_before_bytes")
-        if isinstance(omitted, int) and omitted > 0:
-            lines.append(f"[{stream} · {omitted} earlier bytes omitted]")
-        output = page.get("text")
-        if isinstance(output, str) and output.strip():
-            # Never parse redirected/merged stdout as stderr, Markdown, or a
-            # structured tool result. Preserve literal content and indentation.
-            parts = output.splitlines()
-            limit = min(max_lines, 3)
-            if stream == "stderr":
-                output_lines.append("stderr:")
-            output_lines.extend(parts[:limit])
-            more_output |= len(parts) > limit
+        if isinstance(omitted, int) and omitted > 0 and "output omitted" not in state:
+            state.append("output omitted")
     if value.get("disclosure"):
-        lines.append("[Output disclosure · Ctrl+O details]")
-    if more_output:
-        lines.append("… more output · Ctrl+O details")
-    # Coverage and omission facts must survive the transcript preview budget,
-    # even when a captured line is very long.
-    return "\n".join((*lines, *output_lines))
+        state.append("output disclosure")
+    title = " ".join(command.split())[:500] or "command unavailable"
+    return " · ".join((*state, title))

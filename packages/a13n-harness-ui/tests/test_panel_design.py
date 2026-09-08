@@ -111,10 +111,8 @@ def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> N
         },
     )
     text = _text(renderer.transcript)
-    assert "shell_exec · failed · exit 1 · pytest -q" in text
-    assert "stdout  " not in text and "stderr  " not in text
-    assert "stderr:" in text and "partial" in text and "more output" in text
-    assert "line-2" in text and "line-19" not in text
+    assert text == "shell_exec · failed · exit 1 · output partial · pytest -q"
+    assert "line-2" not in text and "line-19" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
     assert "line-19" in _text(renderer.transcript)
@@ -127,7 +125,7 @@ def test_long_command_cannot_hide_failure_in_clipped_panel_title(phase: str, lab
 
     transcript = Transcript()
     preview = shell_result_preview(
-        json.dumps({"status": {"phase": phase, "exit_code": 1}}), "pytest " + "long-path/" * 40, 3
+        json.dumps({"status": {"phase": phase, "exit_code": 1}}), "pytest " + "long-path/" * 40
     )
     assert preview is not None
     block = transcript.append("Details", kind="command")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from a13n_harness_ui.interactive.panels import capability_panel, shell_result_preview
+from a13n_harness_ui.interactive.panels import capability_panel, shell_result_preview, tool_result
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
 
@@ -83,6 +83,6 @@ def test_rendered_edit_panel_shows_only_one_path_and_no_hunk_coordinates(detaile
 def test_shell_diff_output_retains_file_headers_and_hunk_coordinates() -> None:
     diff = "--- file.py\n+++ file.py\n@@ -1 +1 @@\n-old\n+new\n"
     result = json.dumps({"status": {"phase": "exited", "exit_code": 0}, "stdout": {"text": diff}})
-    preview = shell_result_preview(result, "git diff", 3)
-    assert preview is not None
-    assert "--- file.py\n+++ file.py\n@@ -1 +1 @@" in preview
+    assert shell_result_preview(result, "git diff") == "exit 0 · git diff"
+    _, _, expanded = tool_result("shell_exec", result).partition("\n")
+    assert json.loads(expanded)["stdout"]["text"] == diff

@@ -355,14 +355,14 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_with_exit_c
     )
     renderer.transcript.render(80)
     text = _text(renderer.transcript)
-    assert "shell_exec · failed · exit 7 · pytest -q" in text
-    assert "exited" not in text
-    assert text.index("test failure") < text.index("test output")
-    assert "output partial" in text
+    assert text == "shell_exec · failed · exit 7 · output partial · pytest -q"
+    assert "test failure" not in text and "test output" not in text
     renderer.transcript.detailed = True
     renderer.transcript.dirty = True
     renderer.transcript.render(80)
-    assert '"exit_code": 7' in _text(renderer.transcript)
+    expanded = _text(renderer.transcript)
+    assert '"exit_code": 7' in expanded
+    assert "test failure" in expanded and "test output" in expanded
     renderer.transcript.close()
 
 

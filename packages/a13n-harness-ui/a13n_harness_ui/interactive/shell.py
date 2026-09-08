@@ -76,6 +76,7 @@ class CliShell:
         self.directory = directory or Path.cwd()
         self.registry = CommandRegistry()
         self.status = status or Status(mode=request.display or "concise", mode_explicit=request.display is not None)
+        self.status.directory = self.directory.absolute()
         self.renderer = StreamRenderer(self.status)
         self.backend: SessionBackend | None = None
         self._activity_thread: str | None = None
@@ -520,7 +521,7 @@ class CliShell:
             and self.backend.receipt_id is not None
         )
 
-    def emit(self, text: str, *, kind: str = "text") -> None:
+    def emit(self, text: str, *, kind: str = "notice") -> None:
         self.renderer.finish()
         self.renderer.append(text + "\n", kind=kind)
         self.app.invalidate()
@@ -1343,7 +1344,7 @@ class CliShell:
             if self.backend is None:
                 self.emit("Subagent inspection is unavailable while preparing.")
             else:
-                self.emit(await self.backend.subagents(argument), kind="info")
+                self.emit(await self.backend.subagents(argument), kind="subagents")
                 await self._refresh_activities()
         elif name == "help":
             self.renderer.append(self.registry.help(argument) + "\n", markdown=True, kind="notice")

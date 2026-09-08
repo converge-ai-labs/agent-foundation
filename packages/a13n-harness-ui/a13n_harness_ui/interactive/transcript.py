@@ -16,14 +16,14 @@ from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 from rich.color import ColorType
-from rich.console import Console
+from rich.console import Console, Group
 from rich.segment import Segment
 from rich.style import Style as RichStyle
 from rich.text import Text
 
 from .markdown import TerminalMarkdown
 from .rows import RowStore
-from .theme import ResolvedTheme, resolve_theme
+from .theme import ResolvedTheme, activity_colors, resolve_theme
 
 _TRUNCATED = "[Display truncated; /history reads retained content]\n"
 
@@ -282,7 +282,16 @@ class Transcript:
                 if markdown
                 else Text(source.rstrip("\n"))
             )
-            if kind == "command" and folded:
+            if kind == "notice":
+                colors = activity_colors(self.theme)
+                label = Text("System", style=f"bold {colors['running']}")
+                if markdown:
+                    value = Group(label, value)
+                else:
+                    label.append(" · ", style=colors["muted"])
+                    label.append(source.rstrip("\n"), style=f"not bold {colors['muted']}")
+                    value = label
+            elif kind == "command" and folded:
                 title, _, body = source.rstrip("\n").partition("\n")
                 value = Text(title, style="bold", no_wrap=True, overflow="ellipsis")
                 if body:
@@ -312,6 +321,10 @@ class Transcript:
                 from .processes import process_panel
 
                 value = process_panel(source, self.theme)
+            elif kind == "subagents":
+                from .subagents import subagent_panel
+
+                value = subagent_panel(source, self.theme)
             # Stream Rich lines into a disposable disk cache, not a giant padded grid.
             for line in Segment.split_and_crop_lines(
                 console.render(value, console.options), width, pad=False, include_new_lines=False
@@ -327,7 +340,7 @@ class Transcript:
                     accent = "fg:ansibrightblack"
                 elif kind == "shell":
                     accent = "fg:ansicyan"
-                elif not markdown and text.startswith("["):
+                elif kind != "notice" and not markdown and text.startswith("["):
                     accent = "fg:ansicyan bold"
                 elif kind == "edit" and text.startswith(("+", "-")):
                     accent = "fg:ansigreen" if text.startswith("+") else "fg:ansired"
