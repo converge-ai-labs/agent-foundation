@@ -55,7 +55,7 @@ The reviewer is tool-free and uses the Harness-owned bounded review lifecycle. R
 
 ## MCP Servers
 
-One file under `mcp/` defines a reusable MCP server:
+Files under `mcp/` use lower-case `.yaml` or `.json`. Either format accepts one canonical reusable MCP server:
 
 ```yaml
 schema_version: "1"
@@ -70,23 +70,49 @@ transport:
       env: GITHUB_TOKEN
 ```
 
-Supported transport forms are:
+Either format also accepts a top-level `mcpServers` object with no other top-level fields:
+
+```json
+{
+  "mcpServers": {
+    "local": {
+      "command": "python",
+      "args": ["server.py"],
+      "env": {"API_TOKEN": "example-token", "REGION": "${SERVICE_REGION}"}
+    },
+    "remote": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": {"Authorization": "Bearer ${API_TOKEN}"}
+    }
+  }
+}
+```
+
+Each named entry normalizes to a version-1 `mcp_server` resource. Its name is preserved for display; its ID lowercases the name, replaces runs outside `[a-z0-9]` with `-`, trims surrounding hyphens, and adds `mcp-` unless already present. If no ASCII alphanumeric characters remain, the suffix is the first 12 lowercase hex characters of the original name's UTF-8 SHA-256 digest. Names are non-empty and at most 256 characters; resulting IDs meet the ordinary 128-character resource ID constraint. Normalized-name collisions and cross-file ID duplicates reject the candidate, with no precedence rule.
+
+Entries use `command`, optional `args`/`env`, or `url`/optional `headers`, never both transports. Optional `type` is `stdio` for commands or `http`/`streamable-http` for remote servers; omission infers the type. `args` and `env` normalize to `arguments` and `environment`. Unknown fields, including `disabled` and legacy SSE transport selection, fail explicitly. Discovery never enables a server. This compatibility surface does not claim every client's configuration dialect or OAuth workflow.
+
+Serialized input values in `environment`/`env` and `headers` accept literal strings or the existing `{env: VARIABLE}` object. Strings replace each `${NAME}` occurrence with a non-empty process environment value at fresh Run construction; NAME matches `[A-Za-z_][A-Za-z0-9_]*`. Expansion is single-pass with no shell or default syntax. Empty literal strings and whitespace are preserved. Missing/empty referenced variables fail before dispatch. Commands, arguments, and URLs are not interpolated. Internal file-source references are not accepted as user-authored value objects.
+
+After loading, normalized transport forms contain only value sources (environment references or captured file-field references under [Credentials](01-configuration-and-resource-catalog.md#credentials)):
+
+Conceptual normalized schemas:
 
 ```python
 class CommandTransport(BaseModel):
     command: str
     arguments: tuple[str, ...]
-    environment: dict[str, EnvironmentVariableSource]
+    environment: dict[str, McpValueSource]
 
 
 class RemoteTransport(BaseModel):
     url: str
-    headers: dict[str, EnvironmentVariableSource]
+    headers: dict[str, McpValueSource]
 ```
 
-Literal credentials are forbidden. Remote URLs are credential-free HTTPS values. Plain HTTP is permitted only for a literal loopback host and only when `headers` is empty; Harness UI never sends secret-backed headers over plaintext transport. Redirects cannot weaken this rule or forward configured headers to another origin. Command arguments and environment names are bounded. An MCP file has no global `enabled` flag: an Agent or Thread exact selection enables it.
+Literal environment/header credentials are permitted in user-owned source files, but not copied into normalized resources, configuration display, or Run compositions. Remote URLs remain credential-free HTTPS values. Plain HTTP is permitted only for a literal loopback host and only when `headers` is empty; Harness UI never sends secret-backed headers over plaintext transport. Redirects cannot weaken this rule or forward configured headers to another origin. Command arguments and environment names are bounded. An MCP file has no global `enabled` flag: an Agent or Thread exact selection enables it.
 
-Every Run creates fresh MCP clients or Toolsets. MCP process handles, sessions, credentials, and discovered tools never enter files, SQLite, or continuation state. Disabling an MCP server removes it from later Run compositions; re-enabling the same resource uses its current file definition.
+Every Run creates fresh MCP clients or Toolsets. MCP process handles, sessions, resolved credentials, and discovered tools never enter managed snapshot files, SQLite, or continuation state. Disabling an MCP server removes it from later Run compositions; re-enabling the same resource uses its current file definition.
 
 ## Agent Resources
 

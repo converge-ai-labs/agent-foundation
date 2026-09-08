@@ -32,7 +32,7 @@ See the [user guide](../../docs/a13n-harness-ui/index.md) for setup, all slash c
 
 ## Configuration
 
-Harness UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-harness-ui/a13n-harness-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain one YAML resource per Model, extension, MCP server, Agent, or Project, plus one canonical Markdown file per `subagents/` definition. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.
+Harness UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-harness-ui/a13n-harness-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain YAML Model, extension, MCP server, Agent, and Project resources, plus canonical Markdown `subagents/` definitions. MCP files also support `.json` and multi-server `mcpServers` objects, with literal or environment-referenced header/environment values. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.
 
 App-owned file mutations require expected source digests and reject stale writes. SQLite stores accepted-generation indexes and mutable Thread/runtime heads, but files remain desired-configuration authority. The data root is resolved before root-YAML parsing from `--data-root`, `A13N_HARNESS_UI_DATA_ROOT`, or the config directory's `data/` default.
 

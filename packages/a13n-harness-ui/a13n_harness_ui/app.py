@@ -1554,7 +1554,13 @@ async def open_harness_ui_app(
             resources.push_async_callback(thread_files.close)
             await thread_files.prune()
             environment_service = EnvironmentRunService(store, environment_reconstructor, thread_files=thread_files)
-            agent_reconstructor = AgentReconstructor(catalog, api_keys=ApiKeyStore(store.layout.root / "auth.json"))
+            agent_reconstructor = AgentReconstructor(
+                catalog,
+                api_keys=ApiKeyStore(store.layout.root / "auth.json"),
+                configuration_root=configuration_path.expanduser().resolve().parent
+                if configuration_path is not None
+                else None,
+            )
             live_hub = HarnessUiLiveHub()
             summary_hub = HarnessUiSummaryHub(epoch=live_hub.epoch)
             cleanup_timeout = min(

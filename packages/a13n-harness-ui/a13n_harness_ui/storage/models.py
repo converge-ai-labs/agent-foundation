@@ -51,16 +51,14 @@ class ConfigurationSourceRecord(Base):
 
 class ResourceIndexRecord(Base):
     __tablename__ = "resource_index"
-    __table_args__ = (UniqueConstraint("generation_digest", "resource_kind", "resource_id", name="resource_identity"),)
-
     generation_digest: Mapped[str] = mapped_column(
         String(_DIGEST),
         ForeignKey("accepted_configuration.generation_digest", ondelete="CASCADE"),
         primary_key=True,
     )
-    relative_path: Mapped[str] = mapped_column(Text, primary_key=True)
-    resource_kind: Mapped[str] = mapped_column(String(64), nullable=False)
-    resource_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    resource_kind: Mapped[str] = mapped_column(String(64), primary_key=True)
+    resource_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     source_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)

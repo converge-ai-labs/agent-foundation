@@ -20,6 +20,7 @@ An explicit `--config <path>` selects the root YAML. Otherwise Harness UI select
     <resource>.yaml
   mcp/
     <resource>.yaml
+    <servers>.json
   agents/
     <resource>.yaml
   subagents/
@@ -28,7 +29,7 @@ An explicit `--config <path>` selects the root YAML. Otherwise Harness UI select
     <resource>.yaml
 ```
 
-Each resource file defines exactly one resource. Harness UI scans immediate lower-case `.yaml` files in the YAML directories and immediate non-README `.md` files in `subagents/`. Local Markdown subagents override an installed Content Plugin contribution with the same ID; plugin-to-plugin duplicates use deterministic precedence with diagnostics. It does not recurse, follow a symlinked directory, follow file symlinks, walk parent directories, process YAML includes, or discover ambient product configuration as a live layer.
+Each resource file defines one resource except MCP files, which also accept a multi-server `mcpServers` object under [MCP Servers](02-agent-composition-and-snapshots.md#mcp-servers). Harness UI scans immediate lower-case `.yaml` files in the YAML directories, additionally `.json` files in `mcp/`, and immediate non-README `.md` files in `subagents/`. A physical MCP file has one source digest and zero or more indexed resource IDs; each server has its own resource index entry pointing to that file. JSON rejects duplicate keys, non-finite numbers, comments, trailing commas, and non-object documents; source size, nesting, and node limits are bounded as for YAML. Local Markdown subagents override an installed Content Plugin contribution with the same ID; plugin-to-plugin duplicates use deterministic precedence with diagnostics. It does not recurse, follow a symlinked directory, follow file symlinks, walk parent directories, process YAML includes, or discover ambient product configuration as a live layer.
 
 The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its exact UTF-8 content participates in the accepted generation fingerprint and source digest, under the same stable regular-file read and size limits as other primary sources. Edits and removal take effect on later accepted generations; captured Runs remain immutable. `RULES.md` and `AGENTS.override.md` are not instruction sources. Harness UI does not import guidance from ambient Codex configuration. [Composition](02-agent-composition-and-snapshots.md#resolution) owns injection and capture.
 
@@ -88,7 +89,7 @@ class ResourceDocument(BaseModel):
     name: str
 ```
 
-`ResourceId` is a stable concise kind-prefixed identity such as `agent-reviewer`, `mcp-github`, or `project-foundation`. A filename is presentation only and need not equal the ID. IDs are unique within one resource kind. Renaming a file or display name does not change identity. Changing `id` creates a different logical resource and can leave existing Thread selections unresolved.
+`ResourceId` is a stable concise kind-prefixed identity such as `agent-reviewer`, `mcp-github`, or `project-foundation`. A filename is presentation only and need not equal the ID. IDs are unique within one resource kind. Renaming a file or an explicit resource's display name does not change identity. MCP wrapper keys derive their resource IDs, so changing a key can change identity under the MCP normalization rules. Changing `id` creates a different logical resource and can leave existing Thread selections unresolved.
 
 Unknown fields, duplicate IDs, duplicate YAML keys, aliases, anchors, merge keys, custom tags, non-finite values, excessive nesting, oversized sources, invalid UTF-8, and unsupported schema versions fail the candidate generation.
 
@@ -121,7 +122,7 @@ sequenceDiagram
     Loader->>DB: compare-and-select accepted generation digest
 ```
 
-The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures release-owned built-in Markdown sources and their exact digests, plus current Content Plugin metadata, editable directory paths, diagnostics, and usable canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the ordered source-relative identities and exact source digests, not timestamps. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
+The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures release-owned built-in Markdown sources and their exact digests, plus current Content Plugin metadata, editable directory paths, diagnostics, and usable canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the normalization-format revision, ordered source-relative identities, exact source digests, and plugin diagnostics, not timestamps. Changing normalized serialization advances the normalization revision, so unchanged user files can be accepted after an upgrade without colliding with historical immutable objects. Per-file byte digests and existing historical generations remain unchanged. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
 
 Acceptance is all-or-nothing. Publishing immutable content can leave harmless unreferenced objects, but SQLite selects a generation only after every selected resource, catalog key, graph, credential reference, and default validates. A failed candidate never removes or partially updates the previous accepted generation.
 
@@ -174,14 +175,14 @@ Collection defaults are ordered exact resource IDs. Empty means select none. A m
 
 ## Credentials
 
-Resource files contain credential references, never credential bytes:
+Model and Provider resources contain credential references, never credential bytes. MCP environment and header fields additionally accept literal strings in user-owned YAML/JSON sources:
 
 ```python
 class EnvironmentVariableSource(BaseModel):
     env: str
 ```
 
-Model API-key authentication, MCP headers, MCP command environments, and Provider adapter credentials can name environment variables. Subscription Model authentication names a provider-compatible account-store kind under the rules in [Model Authentication and Compatible Account Stores](02a-model-authentication-and-account-stores.md). A Run resolves current credential material immediately before or during native use. Resolved values never enter configuration files, accepted generations, SQLite, immutable compositions, model context, diagnostics, or telemetry.
+Model API-key authentication, MCP headers, MCP command environments, and Provider adapter credentials can name environment variables. Subscription Model authentication names a provider-compatible account-store kind under the rules in [Model Authentication and Compatible Account Stores](02a-model-authentication-and-account-stores.md). A Run resolves current credential material immediately before or during native use. Resolved values never enter accepted generations, SQLite, immutable compositions, model context, diagnostics, or telemetry. User-authored MCP sources may contain literal values; the loader replaces these with exact source-field references and omits MCP source text from captured source documents and configuration display. References retain the relative file path, source byte digest, and field path, not the value. Runtime reads require the original file to remain available with the captured digest; missing or changed sources fail before dispatch rather than using redacted values or silently changing captured configuration. A new generation and Run can use edited literals. Environment-variable references retain their existing runtime-rotation behavior.
 
 ## Dynamic Values
 
@@ -213,15 +214,15 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 
 ## Compatibility
 
-The root `schema_version` governs tree layout and global fields. Every resource carries its own kind schema version. A format migration writes ordinary inspectable files through the same expected-digest/no-clobber boundary. Existing content is never reinterpreted under a new version.
+The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. MCP `mcpServers` wrappers omit version/kind metadata and normalize to the same version-1 MCP resources. A format migration writes ordinary inspectable files through the same expected-digest/no-clobber boundary. Existing content is never reinterpreted under a new version.
 
 ## Invariants
 
 1. Files are the only editable desired-resource authority.
-2. One resource file defines one stable resource ID.
+2. Each resource has one stable ID; an MCP source file can define multiple resources without duplicate physical source rows.
 3. One accepted generation is complete and coherent across the whole tree.
 4. Invalid intermediate edits never partially replace the accepted generation.
 5. Managed writes require expected source content and never knowingly clobber a newer observed revision; the CLI exposes no generic desired-resource write.
 6. Global defaults initialize new Threads and never live-update existing Threads.
-7. Credentials remain references until fresh Run construction.
+7. Normalized generations and compositions contain only credential references until fresh Run construction; user-owned MCP sources may hold literal credentials.
 8. Installed runtime-package or Content Plugin availability never grants selection.

@@ -16,17 +16,17 @@ The default root is `~/.a13n-harness-ui/a13n-harness-ui.yaml`. `--config PATH` s
 
 The root file's directory also contains:
 
-| Path                | Purpose                                               | Detailed reference                                                    |
-| ------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
-| `AGENTS.md`         | Optional global contextual guidance                   | [Guidance](agents-and-subagents.md#instructions-and-guidance)         |
-| `models/*.yaml`     | Reusable Models and credential references             | [Models](models-and-authentication.md#model-file-reference)           |
-| `agents/*.yaml`     | Agent definitions and child rosters                   | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files) |
-| `subagents/*.md`    | Your lightweight child instructions                   | [Markdown children](agents-and-subagents.md#write-a-markdown-child)   |
-| `projects/*.yaml`   | Named ordered workspace roots                         | [Projects](environments-and-projects.md#project-file-reference)       |
-| `extensions/*.yaml` | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                   |
-| `mcp/*.yaml`        | MCP server definitions                                | [MCP](extensions-and-mcp.md#mcp-servers)                              |
+| Path                       | Purpose                                               | Detailed reference                                                    |
+| -------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
+| `AGENTS.md`                | Optional global contextual guidance                   | [Guidance](agents-and-subagents.md#instructions-and-guidance)         |
+| `models/*.yaml`            | Reusable Models and credential references             | [Models](models-and-authentication.md#model-file-reference)           |
+| `agents/*.yaml`            | Agent definitions and child rosters                   | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files) |
+| `subagents/*.md`           | Your lightweight child instructions                   | [Markdown children](agents-and-subagents.md#write-a-markdown-child)   |
+| `projects/*.yaml`          | Named ordered workspace roots                         | [Projects](environments-and-projects.md#project-file-reference)       |
+| `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                   |
+| `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](extensions-and-mcp.md#mcp-servers)                              |
 
-Only immediate lowercase `.yaml` or `.md` files are scanned; `subagents/README.md` is ignored. Filenames are for people; the resource `id` owns references. There is no recursive scan, YAML include, ancestor configuration merge, or symlink-based resource discovery. One YAML file defines one resource. Unknown fields, unsupported schema versions, duplicate IDs/keys, aliases, anchors, and invalid references reject the candidate configuration.
+Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mcp/`; `subagents/README.md` is ignored. Filenames are for people; the resource `id` owns references. There is no recursive scan, YAML include, ancestor configuration merge, or symlink-based resource discovery. One file defines one resource, except MCP files may contain a multi-server `mcpServers` object. MCP environment/header values accept literals and environment references; see [MCP configuration](extensions-and-mcp.md#mcp-servers). Unknown fields, unsupported schema versions, duplicate IDs/keys, aliases, anchors, and invalid references reject the candidate configuration.
 
 ## Complete root document
 
