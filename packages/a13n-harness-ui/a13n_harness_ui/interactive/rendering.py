@@ -127,12 +127,12 @@ class Status:
         cost = "cost --" if self.usage is None or self.usage.cost is None else f"${self.usage.cost:.4f}"
         compact = width is not None and width < 60
         total = self.total_tokens
-        token_count = "--" if total is None else f"{total:,}"
-        if compact and total is not None:
+        token_count = "--"
+        if total is not None:
             token_count = (
-                f"{total / 1_000_000:.1f}m"
+                f"{total / 1_000_000:.1f}M"
                 if total >= 1_000_000
-                else f"{total / 1_000:.1f}k"
+                else f"{total / 1_000:.1f}K"
                 if total >= 1000
                 else str(total)
             )

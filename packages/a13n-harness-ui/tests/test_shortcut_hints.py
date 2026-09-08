@@ -252,10 +252,8 @@ async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
         assert "--" in line
     elif tokens == 0:
         assert " 0" in line
-    elif width < 60:
-        assert ("12.3k" if tokens == 12345 else "1.2m") in line
     else:
-        assert f"{tokens:,}" in line
+        assert ("12.3K" if tokens == 12345 else "1.2M") in line
     if width >= 80:
         assert "ctx 1,200 (0%)" in line
     with set_app(shell.app):

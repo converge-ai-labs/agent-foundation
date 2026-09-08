@@ -4354,6 +4354,21 @@
             "title": "Codex Thinking",
             "default": "high"
           },
+          "codex_service_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "default"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codex Service Tier"
+          },
           "codex_context_window": {
             "type": "integer",
             "maximum": 872000.0,
