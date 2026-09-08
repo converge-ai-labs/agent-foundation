@@ -177,6 +177,6 @@ def test_long_tool_paths_are_ellipsized_instead_of_wrapping_out_of_view(width, n
             assert get_cwidth(rows[0]) <= width
             block = next(iter(renderer.transcript.blocks.values()))
             assert str(relative) in (block.preview or "")
-            assert path in block.source
+            assert json.dumps({key: path}, ensure_ascii=False, indent=2) in block.source
     finally:
         renderer.transcript.close()
