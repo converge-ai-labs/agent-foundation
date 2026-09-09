@@ -67,6 +67,14 @@ different TOML file; an explicitly selected missing file is an error. Keep custo
 files outside Git too. Keys are never taken implicitly from application `.env`
 settings, existing Provider records or previous test state.
 
+If a trusted local proxy resolves a configured model hostname to a private or
+reserved address, explicitly set `LIVE_TEST_MODEL_PRIVATE_ENDPOINT_DOMAINS` to a
+JSON array of those operator-approved domains, such as `["openrouter.ai"]`.
+This uses the normal Service endpoint allowlist only in disposable lab processes;
+the default is empty and HTTPS validation remains enabled. Real Provider journeys
+allow 90 seconds per Control HTTP request for cloud catalog discovery; local
+deterministic journeys retain their shorter timeout.
+
 | Parameter                   | Meaning when enabled                                                   | Empty/default behavior                                                                                             |
 | --------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `environment.type`          | `a13n.e2b`, the native E2B Environment implementation                  | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
@@ -363,7 +371,7 @@ Foundation passes the corresponding contract.
 
 ## Management integration: Service configuration to Harness execution
 
-This round adds 33 live variants in 11 independently selectable files. Cases 19,
+This round adds 34 live variants in 11 independently selectable files. Cases 19,
 28, 29 and 30 are intentionally excluded. All management resources are created
 through public HTTP APIs, and each enabled test uses its own isolated lab with
 the same automatic RustFS setup and optional loopback S3 override as round two.

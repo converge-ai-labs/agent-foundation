@@ -312,30 +312,6 @@ async def update_connector_connection(
 
 
 @router.post(
-    "/api/v1/connector-connections/{connection_id}/{action}",
-    response_model=ConnectorConnection,
-)
-async def change_connector_connection_lifecycle(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    connection_id: str,
-    action: Literal["enable", "disable"],
-    body: ConnectorConnectionCommandRequest,
-    idempotency_key: IdempotencyKey,
-) -> ConnectorConnection:
-    resource = await _connections(request).set_enabled(
-        actor=actor,
-        connection_id=connection_id,
-        enabled=action == "enable",
-        expected_version=body.expected_version,
-        idempotency_key=idempotency_key,
-    )
-    _etag(response, resource)
-    return resource
-
-
-@router.post(
     "/api/v1/connector-connections/{connection_id}/reconnect",
     response_model=ConnectorSetupLaunch,
 )
@@ -375,6 +351,31 @@ async def revoke_connector_connection(
         expected_version=body.expected_version,
         idempotency_key=idempotency_key,
     )
+
+
+# Register this catch-all after named commands so it cannot shadow them.
+@router.post(
+    "/api/v1/connector-connections/{connection_id}/{action}",
+    response_model=ConnectorConnection,
+)
+async def change_connector_connection_lifecycle(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    connection_id: str,
+    action: Literal["enable", "disable"],
+    body: ConnectorConnectionCommandRequest,
+    idempotency_key: IdempotencyKey,
+) -> ConnectorConnection:
+    resource = await _connections(request).set_enabled(
+        actor=actor,
+        connection_id=connection_id,
+        enabled=action == "enable",
+        expected_version=body.expected_version,
+        idempotency_key=idempotency_key,
+    )
+    _etag(response, resource)
+    return resource
 
 
 @router.delete(

@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import anyio
+import httpx2
 
 from .client import ACTIVE
 from .management_support import ManagementJourney
@@ -111,6 +112,8 @@ async def cleanup_provider_lab(journey):
 @asynccontextmanager
 async def configured_provider_lab(section, settings):
     async with open_lab(suite="management") as lab:
+        # Cloud catalog discovery can outlast the local peers' 15-second HTTP budget.
+        lab.client.http.timeout = httpx2.Timeout(90)
         journey = ManagementJourney(lab)
         try:
             resource = await provision_provider(journey, section, settings)

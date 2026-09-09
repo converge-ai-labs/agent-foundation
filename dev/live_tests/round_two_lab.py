@@ -250,6 +250,9 @@ async def open_lab(*, suite="round-two", websocket_envd=False):
                 "A13N_SERVICE_WORKER_CLEANUP_SECONDS": "3",
                 "A13N_SERVICE_WORKER_POLL_INTERVAL_SECONDS": "0.2",
                 "A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS": '["127.0.0.1/32"]',
+                "A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_DOMAINS": os.environ.get(
+                    "LIVE_TEST_MODEL_PRIVATE_ENDPOINT_DOMAINS", "[]"
+                ),
                 "A13N_SERVICE_DATABASE_CONNECT_TIMEOUT_SECONDS": "2",
                 "A13N_SERVICE_DATABASE_STATEMENT_TIMEOUT_SECONDS": "3",
                 "A13N_SERVICE_REDIS_CONNECT_TIMEOUT_SECONDS": "1",

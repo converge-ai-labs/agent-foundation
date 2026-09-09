@@ -33,7 +33,7 @@ def settings_for(config: dict, role: str) -> Settings:
             "pricing": {"auto_update": False},
             "secrets": {"master_key_base64": config["encryption_key"], "encryption_key_id": "live-test-1"},
             "connectivity": {
-                "public_origin": config["control_url"],
+                "public_origin": config.get("peer_url", config["control_url"]),
                 "http_origins": (config["control_url"],),
                 "private_endpoint_cidrs": ("127.0.0.1/32",),
                 "setup_correlation_secret": config["token"],
