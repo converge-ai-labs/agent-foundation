@@ -306,10 +306,12 @@ async def test_rolls_back_lifecycle_fact_with_owning_mutation(
     assert page.items == ()
 
 
+@pytest.mark.parametrize("outcome", ["completed", "waiting", "failed", "cancelled"])
 async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
+    outcome: str,
 ) -> None:
     await _seed_run(interaction_sessions)
     async with transaction(interaction_sessions) as database:
@@ -317,10 +319,10 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
         terminal = await append_lifecycle_event(
             database,
             _draft(
-                event_type="run.completed",
+                event_type=f"run.{outcome}",
                 mutation_id="mut_2222222222222222",
                 entity_version=2,
-                payload={"status": "completed"},
+                payload={"status": outcome},
             ),
         )
 
@@ -349,8 +351,8 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     terminal_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
     snapshot = await replay.read(ORGANIZATION_ID, RUN_ID)
     assert terminal_page.closed
-    assert tuple(entry.event.event_type for entry in terminal_page.items) == ("run.accepted", "run.completed")
-    assert tuple(entry.event.event_type for entry in snapshot.events) == ("run.accepted", "run.completed")
+    assert tuple(entry.event.event_type for entry in terminal_page.items) == ("run.accepted", f"run.{outcome}")
+    assert tuple(entry.event.event_type for entry in snapshot.events) == ("run.accepted", f"run.{outcome}")
     assert len(terminal_projections) == 1
     projected_event, projected_source = terminal_projections[0]
     assert projected_event.id == terminal.id
@@ -363,11 +365,13 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     assert projection_states == ("projected", "projected")
 
 
+@pytest.mark.parametrize("outcome", ["completed", "waiting", "failed", "cancelled"])
 @pytest.mark.parametrize("close_failure", ["before", "receipts", "retention"])
 async def test_terminal_projection_interrupts_open_items_before_stream_close(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
+    outcome: str,
     close_failure: str,
 ) -> None:
     await _seed_run(interaction_sessions)
@@ -376,10 +380,10 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
         terminal = await append_lifecycle_event(
             database,
             _draft(
-                event_type="run.completed",
+                event_type=f"run.{outcome}",
                 mutation_id="mut_2222222222222222",
                 entity_version=2,
-                payload={"status": "completed"},
+                payload={"status": outcome},
             ),
         )
     stream = _FailOnceCloseRunStream(redis_client) if close_failure == "before" else RedisRunStream(redis_client)
@@ -439,7 +443,7 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
         "run.accepted",
         "run_attempt.leased",
         "agui.text_message_start",
-        "run.completed",
+        f"run.{outcome}",
         "item.interrupted",
     )
     assert interrupted.event.lifecycle_event_id == terminal.id

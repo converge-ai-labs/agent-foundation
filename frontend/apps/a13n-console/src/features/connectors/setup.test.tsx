@@ -10,7 +10,10 @@ import { clearAuthorization, readAuthorization } from "./authorization-context";
 const http = vi.hoisted(() => ({ POST: vi.fn(), GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" } }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "ws_test" },
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({

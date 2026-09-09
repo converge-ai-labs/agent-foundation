@@ -17,6 +17,7 @@ on:
       - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
+      - "scripts/tests/test_envd_ci_workflow.py"
       - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
@@ -40,6 +41,7 @@ on:
       - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
+      - "scripts/tests/test_envd_ci_workflow.py"
       - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
@@ -118,3 +120,4 @@ jobs:
           scripts/tests/test_image_workflows.py
           scripts/tests/test_prepare_harness_ui_image.py
           scripts/tests/test_harness_ui_release_workflow.py
+          scripts/tests/test_envd_ci_workflow.py

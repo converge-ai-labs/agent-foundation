@@ -208,6 +208,7 @@ class SkillAgentReference(BaseModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     agent_name: str = Field(min_length=1, max_length=128)
+    agent_key: str
 
 
 class SkillAgentReferenceCollection(BaseModel):

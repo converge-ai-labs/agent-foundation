@@ -31,7 +31,9 @@ async def selected_model(request, connectivity_sessions, credential_protector):
     if scenario == "foreign_organization":
         organization_id = "org_foreign1234567890"
         async with transaction(connectivity_sessions) as session:
-            session.add(OrganizationRecord(id=organization_id, name="Foreign", created_at=NOW, updated_at=NOW))
+            session.add(
+                OrganizationRecord(id=organization_id, key="foreign", name="Foreign", created_at=NOW, updated_at=NOW)
+            )
             await session.flush()
             session.add(
                 RoleBindingRecord(

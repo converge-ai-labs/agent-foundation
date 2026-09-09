@@ -144,7 +144,7 @@ All routes are below `/api/v1`, are exposed only by `control` and `all`, and fol
 ### Upload
 
 ```http
-POST /api/v1/workspaces/{workspace_id}/assets?filename=report.pdf&media_type=application%2Fpdf
+POST /api/v1/workspaces/{workspace}/assets?filename=report.pdf&media_type=application%2Fpdf
 Content-Type: application/octet-stream
 Idempotency-Key: opaque-caller-key
 ```
@@ -156,7 +156,7 @@ Every distinct accepted request creates a fresh Asset ID. Uploading identical by
 ### Read and Delete
 
 ```http
-GET /api/v1/workspaces/{workspace_id}/assets?limit=50&cursor=opaque
+GET /api/v1/workspaces/{workspace}/assets?limit=50&cursor=opaque
 GET /api/v1/assets/{asset_id}
 GET /api/v1/assets/{asset_id}/content
 DELETE /api/v1/assets/{asset_id}

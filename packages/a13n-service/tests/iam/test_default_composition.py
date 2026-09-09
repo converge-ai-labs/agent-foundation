@@ -60,7 +60,7 @@ def test_operator_reissue_invalidates_old_link(tmp_path, monkeypatch):
     import a13n_service.cli as cli
 
     settings = local_settings(tmp_path, role=ProcessRole.control)
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "_settings", lambda: settings)
     runner = CliRunner()
     first = runner.invoke(main, ["iam", "reissue-bootstrap"])
     assert first.exit_code == 0, first.output

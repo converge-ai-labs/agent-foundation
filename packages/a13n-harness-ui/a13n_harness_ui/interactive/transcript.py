@@ -319,7 +319,10 @@ class Transcript:
         if not self.dirty and self.width == width:
             return
         self.width = width
-        console = Console(file=StringIO(), width=width, force_terminal=True, color_system="truecolor")
+        # Rich produces styled segments for prompt_toolkit, not terminal output.
+        console = Console(
+            file=StringIO(), width=width, force_terminal=False, force_jupyter=False, color_system="truecolor"
+        )
         # Rich may reserve a column in legacy Windows mode. Budget previews
         # against the width it actually renders, not the requested terminal width.
         width = console.width

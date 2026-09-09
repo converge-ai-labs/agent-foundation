@@ -144,7 +144,7 @@ Run-table indexes for Worker claims, Run listing, search, and DAG traversal rema
 
 ## Thread Creation
 
-`POST /workspaces/{workspace_id}/threads` creates an empty root Thread and selects or creates its Session under Session uniqueness and authorization. The request can select an Agent for its default template and an explicit environment choice. In one short transaction it allocates the Thread, optional Environment record and inbox counter, sets `version=1`, `queue_version=0`, and leaves both Run references null. No Harness execution or Provider preparation occurs. First Run acceptance creates `HarnessState.new(thread_id=thread.id)` and advances the existing Thread.
+`POST /workspaces/{workspace}/threads` creates an empty root Thread and selects or creates its Session under Session uniqueness and authorization. The request can select an Agent for its default template and an explicit environment choice. In one short transaction it allocates the Thread, optional Environment record and inbox counter, sets `version=1`, `queue_version=0`, and leaves both Run references null. No Harness execution or Provider preparation occurs. First Run acceptance creates `HarnessState.new(thread_id=thread.id)` and advances the existing Thread.
 
 The combined root Run command uses the same allocation rules and commits the new Thread, selected Environment and first Run together. [Agent Control](18-agent-control-input-and-continuation.md) owns root/Fork authorization and [Async Subagents](34-async-subagents.md) owns child creation. An existing Thread's default changes only under authorized Run acceptance; accepted Runs retain their own fixed selection. Physical Thread deletion releases its default reference but never implicitly deletes a shared target.
 

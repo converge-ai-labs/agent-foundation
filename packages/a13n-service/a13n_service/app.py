@@ -66,8 +66,8 @@ def _lifespan(
             trace_query_provider_registry=trace_query_provider_registry,
             model_provider_registry=built_in_provider_registry(),
             model_endpoint_policy=EndpointPolicy.from_operator_allowlist(
-                private_domains=settings.model_private_endpoint_domains,
-                private_cidrs=settings.model_private_endpoint_cidrs,
+                private_domains=settings.models.private_endpoint_domains,
+                private_cidrs=settings.models.private_endpoint_cidrs,
             ),
         ) as runtime:
             app.state.runtime = runtime
@@ -91,7 +91,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         registered_provider_keys=(*trace_query_provider_registry.keys(), "langfuse")
     )
     process_status = ProcessStatus()
-    serves_control_plane = owns_control(resolved_settings.role)
+    serves_control_plane = owns_control(resolved_settings.service.role)
     app = FastAPI(
         title="a13n Service",
         version=__version__,
@@ -120,7 +120,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
 
     @app.get("/healthz", include_in_schema=False)
     async def health() -> dict[str, str]:
-        return {"status": "ok", "role": resolved_settings.role.value}
+        return {"status": "ok", "role": resolved_settings.service.role.value}
 
     @app.get("/readyz", include_in_schema=False)
     async def readiness(request: Request) -> dict[str, str]:
@@ -132,23 +132,23 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
             )
         storage = runtime.shared.storage
         try:
-            with fail_after(resolved_settings.database_readiness_timeout_seconds):
+            with fail_after(resolved_settings.database.readiness_timeout_seconds):
                 async with short_session(storage.sessions) as session:
                     await session.execute(text("SELECT 1"))
                 await storage.redis.ping()
         except Exception as exc:
             logger.warning(
                 "storage_readiness_failed",
-                extra={"event": "storage_readiness_failed", "role": resolved_settings.role.value},
+                extra={"event": "storage_readiness_failed", "role": resolved_settings.service.role.value},
                 exc_info=True,
             )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="required storage unavailable",
             ) from exc
-        return {"status": "ready", "role": resolved_settings.role.value}
+        return {"status": "ready", "role": resolved_settings.service.role.value}
 
-    if owns_connectivity_data(resolved_settings.role):
+    if owns_connectivity_data(resolved_settings.service.role):
         app.include_router(ingress_data_router)
 
     if serves_control_plane:
@@ -165,14 +165,15 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(search_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
-        app.include_router(account_router)
+        # Match /targets before the Account lifecycle /{action} route.
         app.include_router(target_router)
+        app.include_router(account_router)
         app.include_router(connector_router)
         app.include_router(mcp_router)
         app.include_router(hook_router)
         app.include_router(lifecycle_router)
         app.include_router(gateway_router)
-        if resolved_settings.a2a_enabled:
+        if resolved_settings.gateway.a2a_enabled:
             app.include_router(a2a_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)

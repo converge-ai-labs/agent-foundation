@@ -11,10 +11,10 @@ export function searchApi(client: Client, scope: SearchScope) {
       org
         ? client.http
             .GET(
-              "/api/v1/organizations/{organization_id}/search-providers/{provider_id}/references",
+              "/api/v1/organizations/{organization}/search-providers/{provider_id}/references",
               {
                 params: {
-                  path: { organization_id, provider_id },
+                  path: { organization: organization_id, provider_id },
                   query: { cursor, limit: 30 },
                 },
                 signal,
@@ -23,10 +23,10 @@ export function searchApi(client: Client, scope: SearchScope) {
             .then(data)
         : client.http
             .GET(
-              "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}/references",
+              "/api/v1/workspaces/{workspace}/search-providers/{provider_id}/references",
               {
                 params: {
-                  path: { workspace_id, provider_id },
+                  path: { workspace: workspace_id, provider_id },
                   query: { cursor, limit: 30 },
                 },
                 signal,
@@ -36,17 +36,20 @@ export function searchApi(client: Client, scope: SearchScope) {
     providers: (signal: AbortSignal, cursor?: string) =>
       org
         ? client.http
-            .GET("/api/v1/organizations/{organization_id}/search-providers", {
+            .GET("/api/v1/organizations/{organization}/search-providers", {
               params: {
-                path: { organization_id },
+                path: { organization: organization_id },
                 query: { cursor, limit: 100 },
               },
               signal,
             })
             .then(data)
         : client.http
-            .GET("/api/v1/workspaces/{workspace_id}/search-providers", {
-              params: { path: { workspace_id }, query: { cursor, limit: 100 } },
+            .GET("/api/v1/workspaces/{workspace}/search-providers", {
+              params: {
+                path: { workspace: workspace_id },
+                query: { cursor, limit: 100 },
+              },
               signal,
             })
             .then(data),
@@ -54,27 +57,35 @@ export function searchApi(client: Client, scope: SearchScope) {
       org
         ? client.http
             .GET(
-              "/api/v1/organizations/{organization_id}/search-providers/{provider_id}",
-              { params: { path: { organization_id, provider_id } }, signal },
+              "/api/v1/organizations/{organization}/search-providers/{provider_id}",
+              {
+                params: {
+                  path: { organization: organization_id, provider_id },
+                },
+                signal,
+              },
             )
             .then(representation)
         : client.http
             .GET(
-              "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}",
-              { params: { path: { workspace_id, provider_id } }, signal },
+              "/api/v1/workspaces/{workspace}/search-providers/{provider_id}",
+              {
+                params: { path: { workspace: workspace_id, provider_id } },
+                signal,
+              },
             )
             .then(representation),
     createProvider: (body: Schema["CreateSearchProviderRequest"]) =>
       org
         ? client.http
-            .POST("/api/v1/organizations/{organization_id}/search-providers", {
-              params: { path: { organization_id } },
+            .POST("/api/v1/organizations/{organization}/search-providers", {
+              params: { path: { organization: organization_id } },
               body,
             })
             .then(data)
         : client.http
-            .POST("/api/v1/workspaces/{workspace_id}/search-providers", {
-              params: { path: { workspace_id } },
+            .POST("/api/v1/workspaces/{workspace}/search-providers", {
+              params: { path: { workspace: workspace_id } },
               body,
             })
             .then(data),
@@ -86,10 +97,10 @@ export function searchApi(client: Client, scope: SearchScope) {
       org
         ? client.http
             .PATCH(
-              "/api/v1/organizations/{organization_id}/search-providers/{provider_id}",
+              "/api/v1/organizations/{organization}/search-providers/{provider_id}",
               {
                 params: {
-                  path: { organization_id, provider_id },
+                  path: { organization: organization_id, provider_id },
                   header: { "If-Match": etag },
                 },
                 body,
@@ -98,10 +109,10 @@ export function searchApi(client: Client, scope: SearchScope) {
             .then(data)
         : client.http
             .PATCH(
-              "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}",
+              "/api/v1/workspaces/{workspace}/search-providers/{provider_id}",
               {
                 params: {
-                  path: { workspace_id, provider_id },
+                  path: { workspace: workspace_id, provider_id },
                   header: { "If-Match": etag },
                 },
                 body,
@@ -112,14 +123,22 @@ export function searchApi(client: Client, scope: SearchScope) {
       org
         ? client.http
             .POST(
-              "/api/v1/organizations/{organization_id}/search-providers/{provider_id}/test",
-              { params: { path: { organization_id, provider_id } }, body: {} },
+              "/api/v1/organizations/{organization}/search-providers/{provider_id}/test",
+              {
+                params: {
+                  path: { organization: organization_id, provider_id },
+                },
+                body: {},
+              },
             )
             .then(data)
         : client.http
             .POST(
-              "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}/test",
-              { params: { path: { workspace_id, provider_id } }, body: {} },
+              "/api/v1/workspaces/{workspace}/search-providers/{provider_id}/test",
+              {
+                params: { path: { workspace: workspace_id, provider_id } },
+                body: {},
+              },
             )
             .then(data),
   };

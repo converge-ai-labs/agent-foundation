@@ -214,13 +214,13 @@ function AppContent() {
                 ))}
                 <Route element={<Authenticated />}>
                   <Route
-                    path="/workspaces/:workspaceId"
+                    path="/:organizationKey/:workspaceKey"
                     element={<WorkspaceShell />}
                   >
                     <Route index element={<Navigate to="agents" replace />} />
                     <Route path="agents" element={<Agents />} />
                     <Route path="agents/new" element={<CreateAgent />} />
-                    <Route path="agents/:agentId" element={<AgentDetail />} />
+                    <Route path="agents/:agentKey" element={<AgentDetail />} />
                     <Route path="sessions" element={<ConversationsPage />}>
                       <Route path="new" element={<NewConversation />} />
                       <Route path=":sessionId" element={<SessionLayout />}>
@@ -284,7 +284,7 @@ function AppContent() {
                       element={<PersonalSettings />}
                     />
                     <Route
-                      path="/organization/settings"
+                      path="/:organizationKey/settings"
                       element={<OrganizationSettings />}
                     />
                   </Route>

@@ -63,6 +63,10 @@ def _segment(value: str) -> str:
     return quote(value, safe="")
 
 
+class _CredentialContext(BaseModel):
+    workspace_id: str | None = None
+
+
 class _EmptyRequest(BaseModel):
     pass
 
@@ -177,6 +181,13 @@ class Client:
             if task:
                 self._tasks.discard(task)
 
+    async def workspace(self) -> "WorkspaceClient":
+        """Bind operations to the API key's Workspace, sharing this transport."""
+        context = (await self._request("GET", "/auth/context", _CredentialContext)).value
+        if not context.workspace_id:
+            raise ValueError("Workspace operations require a Workspace-bound credential")
+        return WorkspaceClient(self, context.workspace_id)
+
     async def search_provider_types(self) -> Page[SearchProviderDefinition]:
         return (await self._request("GET", "/search-provider-types", Page[SearchProviderDefinition])).value
 
@@ -235,3 +246,47 @@ class Client:
                 "GET", f"{scope.path}/{_segment(provider_id)}/references", Page[SearchProviderReference], params=params
             )
         ).value
+
+
+class WorkspaceClient:
+    """Search operations bound to an immutable Workspace ID by Client.workspace()."""
+
+    def __init__(self, client: Client, workspace_id: str):
+        self._client = client
+        self._scope = SearchScope("workspace", workspace_id)
+
+    async def search_providers(
+        self,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+        type: str | None = None,
+        enabled: bool | None = None,
+    ) -> Page[SearchProvider]:
+        return await self._client.search_providers(self._scope, cursor=cursor, limit=limit, type=type, enabled=enabled)
+
+    async def search_provider(self, provider_id: str) -> Representation[SearchProvider]:
+        return await self._client.search_provider(self._scope, provider_id)
+
+    async def create_search_provider(self, request: CreateSearchProviderRequest) -> Representation[SearchProvider]:
+        return await self._client.create_search_provider(self._scope, request)
+
+    async def update_search_provider(
+        self,
+        provider_id: str,
+        etag: str,
+        request: UpdateSearchProviderRequest,
+    ) -> Representation[SearchProvider]:
+        return await self._client.update_search_provider(self._scope, provider_id, etag, request)
+
+    async def test_search_provider(self, provider_id: str) -> SearchProviderTestResult:
+        return await self._client.test_search_provider(self._scope, provider_id)
+
+    async def search_provider_references(
+        self,
+        provider_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[SearchProviderReference]:
+        return await self._client.search_provider_references(self._scope, provider_id, cursor=cursor, limit=limit)

@@ -18,13 +18,13 @@ from a13n_service.skills.retention import SkillUploadRetention
 
 def build_collection_tasks(settings: Settings, shared: SharedRuntime) -> tuple[BackgroundTask, ...]:
     sessions = shared.storage.sessions
-    limit = settings.control_collection_batch_limit
+    limit = settings.control.collection_batch_limit
     objects = ObjectCollector(
         sessions,
         shared.storage.objects,
-        minimum_age=timedelta(hours=settings.object_orphan_minimum_age_hours),
+        minimum_age=timedelta(hours=settings.objects.orphan_minimum_age_hours),
         batch_limit=limit,
-        item_timeout_seconds=settings.control_collection_timeout_seconds,
+        item_timeout_seconds=settings.control.collection_timeout_seconds,
     )
     scans = (
         ("identity_token_cleanup", IdentityTokenCleanup(sessions, batch_limit=limit).scan),
@@ -32,7 +32,9 @@ def build_collection_tasks(settings: Settings, shared: SharedRuntime) -> tuple[B
         (
             "asset_tombstone_retention",
             AssetRetention(
-                sessions, minimum_age=timedelta(days=settings.asset_tombstone_minimum_retention_days), batch_limit=limit
+                sessions,
+                minimum_age=timedelta(days=settings.assets.tombstone_minimum_retention_days),
+                batch_limit=limit,
             ).scan,
         ),
         ("secret_owner_cleanup", SecretOwnerCleanup(sessions, batch_limit=limit).scan),
@@ -41,7 +43,7 @@ def build_collection_tasks(settings: Settings, shared: SharedRuntime) -> tuple[B
         (
             "hook_history_retention",
             HookRetention(
-                sessions, minimum_age=timedelta(days=settings.hook_history_minimum_retention_days), batch_limit=limit
+                sessions, minimum_age=timedelta(days=settings.hooks.history_minimum_retention_days), batch_limit=limit
             ).scan,
         ),
         ("orphan_object_collection", objects.scan),
@@ -53,8 +55,8 @@ def build_collection_tasks(settings: Settings, shared: SharedRuntime) -> tuple[B
             PeriodicTask(
                 name,
                 scan,
-                interval_seconds=settings.control_collection_poll_interval_seconds,
-                timeout_seconds=(settings.control_collection_timeout_seconds + 1) * limit,
+                interval_seconds=settings.control.collection_poll_interval_seconds,
+                timeout_seconds=(settings.control.collection_timeout_seconds + 1) * limit,
             ).run,
         )
         for name, scan in scans

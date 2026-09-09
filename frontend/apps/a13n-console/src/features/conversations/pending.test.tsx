@@ -13,7 +13,11 @@ vi.mock("../../auth/context", () => ({
   useClient: () => ({ http: { POST: post } }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => true }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "workspace" },
+    can: () => true,
+  }),
 }));
 vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("react-i18next", () => ({

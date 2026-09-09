@@ -182,9 +182,7 @@ async def test_new_worker_uses_retained_configuration_and_validates_state(
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=respond)
-    settings = Settings(
-        _env_file=None, build_version="build-b", worker_concurrency=1, worker_poll_interval_seconds=0.01
-    )
+    settings = Settings(service={"build_version": "build-b"}, worker={"concurrency": 1, "poll_interval_seconds": 0.01})
     async with worker_runtime(
         interaction_sessions,
         interaction_object_store,

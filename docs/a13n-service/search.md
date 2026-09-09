@@ -46,16 +46,18 @@ Each subagent uses its own accepted selection. It does not inherit its parent's 
 
 Both ownership scopes expose the same account operations:
 
-| Operation              | Workspace route (under `/api/v1`)                                               |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| List types             | `GET /search-provider-types`                                                    |
-| Read one type          | `GET /search-provider-types/{type}`                                             |
-| Create / list accounts | `POST` / `GET /workspaces/{workspace_id}/search-providers`                      |
-| Read / update account  | `GET` / `PATCH /workspaces/{workspace_id}/search-providers/{provider_id}`       |
-| Test saved account     | `POST /workspaces/{workspace_id}/search-providers/{provider_id}/test` with `{}` |
-| Inspect references     | `GET /workspaces/{workspace_id}/search-providers/{provider_id}/references`      |
+| Operation              | Workspace route (under `/api/v1`)                                            |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| List types             | `GET /search-provider-types`                                                 |
+| Read one type          | `GET /search-provider-types/{type}`                                          |
+| Create / list accounts | `POST` / `GET /workspaces/{workspace}/search-providers`                      |
+| Read / update account  | `GET` / `PATCH /workspaces/{workspace}/search-providers/{provider_id}`       |
+| Test saved account     | `POST /workspaces/{workspace}/search-providers/{provider_id}/test` with `{}` |
+| Inspect references     | `GET /workspaces/{workspace}/search-providers/{provider_id}/references`      |
 
-For organization ownership, replace `workspaces/{workspace_id}` with `organizations/{organization_id}`. List responses contain `items` and `next_cursor`; pass a returned cursor to read the next page. Account lists accept exact `type` and `enabled` filters. Reference lists include only Agent revisions the caller can read.
+Workspace and Organization path references accept either an immutable ID or the current URL key. Search Provider references remain immutable account IDs.
+
+For organization ownership, replace `workspaces/{workspace}` with `organizations/{organization}`. List responses contain `items` and `next_cursor`; pass a returned cursor to read the next page. Account lists accept exact `type` and `enabled` filters. Reference lists include only Agent revisions the caller can read.
 
 Create with `type`, `name`, and a write-only `credential` string; `configuration` is currently `{}` and `enabled` defaults to `true`. API keys must be nonblank and at most 4,096 UTF-8 bytes. Account type cannot be changed. Read/create/update responses include an `ETag`. Send the latest strong ETag as `If-Match` when updating; a missing precondition returns 428, and a stale one returns 412. Omitting `credential` preserves the key; sending a replacement rotates it. Null credentials are rejected.
 
@@ -68,13 +70,13 @@ The Python, Go, Rust, and TypeScript SDK source projects expose Search Provider 
 ```python
 import os
 
-from a13n import Client, CreateSearchProviderRequest, SearchScope
+from a13n import Client, CreateSearchProviderRequest
 from pydantic import SecretStr
 
 async def create_account():
     async with Client(os.environ["A13N_URL"], os.environ["A13N_TOKEN"]) as client:
-        saved = await client.create_search_provider(
-            SearchScope("workspace", os.environ["A13N_WORKSPACE_ID"]),
+        workspace = await client.workspace()
+        saved = await workspace.create_search_provider(
             CreateSearchProviderRequest(
                 type="brave",
                 name="Research search",
@@ -84,6 +86,8 @@ async def create_account():
         # Save this reference in the Agent through Console or the Native API.
         return {"provider_id": saved.value.id}, saved.etag
 ```
+
+API Key clients bind their Workspace once through `/auth/context`: use `await client.workspace()` in Python, `client.workspace().await?` in Rust, `client.Workspace(ctx)` in Go, or `await client.workspaceHttp()` in TypeScript. Bound operations share the parent transport and shutdown; they do not ask for a Workspace argument. Organization-bound browser clients retain explicit scopes.
 
 Python preserves omission with `AgentRunOverride().to_wire()`, disabling with `AgentRunOverride(search=None).to_wire()`, and replacement with `AgentRunOverride(search=SearchSelection(provider_id=account_id)).to_wire()`. Use `to_wire()` when sending these configuration wrappers.
 

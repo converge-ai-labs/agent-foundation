@@ -298,8 +298,8 @@ def test_docker_bootstrap_uses_current_envd_file_configuration_contract() -> Non
     ]
     assert payload["shell_profiles"] == [
         {
-            "profile_id": "bash",
-            "display_name": "bash",
+            "profile_id": "default",
+            "display_name": "default",
             "native_executable": "/bin/bash",
             "fixed_arguments": ["-c"],
             "safe_base_environment": {},

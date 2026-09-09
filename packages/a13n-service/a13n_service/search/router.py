@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_control_runtime
 
@@ -70,11 +71,11 @@ async def get_type(request: Request, actor: Actor, provider_type: str) -> Search
     )
 
 
-@router.get("/workspaces/{workspace_id}/search-providers")
+@router.get("/workspaces/{workspace}/search-providers")
 async def list_workspace_provider(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Limit = 50,
     cursor: Cursor = None,
     provider_type: Annotated[str | None, Query(alias="type", max_length=64)] = None,
@@ -86,29 +87,29 @@ async def list_workspace_provider(
     return result
 
 
-@router.post("/workspaces/{workspace_id}/search-providers", status_code=201)
+@router.post("/workspaces/{workspace}/search-providers", status_code=201)
 async def create_workspace_provider(
-    request: Request, actor: Actor, workspace_id: str, response: Response, body: CreateSearchProviderRequest
+    request: Request, actor: Actor, workspace_id: WorkspaceId, response: Response, body: CreateSearchProviderRequest
 ) -> SearchProvider:
     result = await _service(request).create(actor=actor, workspace_id=workspace_id, request=body)
     response.headers["ETag"] = resource_etag(result.id, result.updated_at)
     return result
 
 
-@router.get("/workspaces/{workspace_id}/search-providers/{provider_id}")
+@router.get("/workspaces/{workspace}/search-providers/{provider_id}")
 async def get_workspace_provider(
-    request: Request, actor: Actor, workspace_id: str, response: Response, provider_id: str
+    request: Request, actor: Actor, workspace_id: WorkspaceId, response: Response, provider_id: str
 ) -> SearchProvider:
     result = await _service(request).get(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
     response.headers["ETag"] = resource_etag(result.id, result.updated_at)
     return result
 
 
-@router.patch("/workspaces/{workspace_id}/search-providers/{provider_id}")
+@router.patch("/workspaces/{workspace}/search-providers/{provider_id}")
 async def update_workspace_provider(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     response: Response,
     provider_id: str,
     body: UpdateSearchProviderRequest,
@@ -121,9 +122,9 @@ async def update_workspace_provider(
     return result
 
 
-@router.post("/workspaces/{workspace_id}/search-providers/{provider_id}/test")
+@router.post("/workspaces/{workspace}/search-providers/{provider_id}/test")
 async def test_workspace_provider(
-    request: Request, actor: Actor, workspace_id: str, provider_id: str, body: SearchConfiguration
+    request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, body: SearchConfiguration
 ) -> SearchProviderTestResult:
     result = await test_account(
         _service(request), actor=actor, workspace_id=workspace_id, provider_id=provider_id, transport=SearchTransport()
@@ -131,9 +132,14 @@ async def test_workspace_provider(
     return result
 
 
-@router.get("/workspaces/{workspace_id}/search-providers/{provider_id}/references")
+@router.get("/workspaces/{workspace}/search-providers/{provider_id}/references")
 async def references_workspace_provider(
-    request: Request, actor: Actor, workspace_id: str, provider_id: str, limit: Limit = 50, cursor: Cursor = None
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    provider_id: str,
+    limit: Limit = 50,
+    cursor: Cursor = None,
 ) -> SearchProviderReferenceCollection:
     result = await _service(request).references(
         actor=actor, workspace_id=workspace_id, provider_id=provider_id, limit=limit, cursor=cursor
@@ -141,11 +147,11 @@ async def references_workspace_provider(
     return result
 
 
-@router.get("/organizations/{organization_id}/search-providers")
+@router.get("/organizations/{organization}/search-providers")
 async def list_organization_provider(
     request: Request,
     actor: Actor,
-    organization_id: str,
+    organization_id: OrganizationId,
     limit: Limit = 50,
     cursor: Cursor = None,
     provider_type: Annotated[str | None, Query(alias="type", max_length=64)] = None,
@@ -158,9 +164,13 @@ async def list_organization_provider(
     return result
 
 
-@router.post("/organizations/{organization_id}/search-providers", status_code=201)
+@router.post("/organizations/{organization}/search-providers", status_code=201)
 async def create_organization_provider(
-    request: Request, actor: Actor, organization_id: str, response: Response, body: CreateSearchProviderRequest
+    request: Request,
+    actor: Actor,
+    organization_id: OrganizationId,
+    response: Response,
+    body: CreateSearchProviderRequest,
 ) -> SearchProvider:
     require_organization_boundary(actor, organization_id)
     result = await _service(request).create(actor=actor, workspace_id=None, request=body)
@@ -168,9 +178,9 @@ async def create_organization_provider(
     return result
 
 
-@router.get("/organizations/{organization_id}/search-providers/{provider_id}")
+@router.get("/organizations/{organization}/search-providers/{provider_id}")
 async def get_organization_provider(
-    request: Request, actor: Actor, organization_id: str, response: Response, provider_id: str
+    request: Request, actor: Actor, organization_id: OrganizationId, response: Response, provider_id: str
 ) -> SearchProvider:
     require_organization_boundary(actor, organization_id)
     result = await _service(request).get(actor=actor, workspace_id=None, provider_id=provider_id)
@@ -178,11 +188,11 @@ async def get_organization_provider(
     return result
 
 
-@router.patch("/organizations/{organization_id}/search-providers/{provider_id}")
+@router.patch("/organizations/{organization}/search-providers/{provider_id}")
 async def update_organization_provider(
     request: Request,
     actor: Actor,
-    organization_id: str,
+    organization_id: OrganizationId,
     response: Response,
     provider_id: str,
     body: UpdateSearchProviderRequest,
@@ -196,9 +206,9 @@ async def update_organization_provider(
     return result
 
 
-@router.post("/organizations/{organization_id}/search-providers/{provider_id}/test")
+@router.post("/organizations/{organization}/search-providers/{provider_id}/test")
 async def test_organization_provider(
-    request: Request, actor: Actor, organization_id: str, provider_id: str, body: SearchConfiguration
+    request: Request, actor: Actor, organization_id: OrganizationId, provider_id: str, body: SearchConfiguration
 ) -> SearchProviderTestResult:
     require_organization_boundary(actor, organization_id)
     result = await test_account(
@@ -207,9 +217,14 @@ async def test_organization_provider(
     return result
 
 
-@router.get("/organizations/{organization_id}/search-providers/{provider_id}/references")
+@router.get("/organizations/{organization}/search-providers/{provider_id}/references")
 async def references_organization_provider(
-    request: Request, actor: Actor, organization_id: str, provider_id: str, limit: Limit = 50, cursor: Cursor = None
+    request: Request,
+    actor: Actor,
+    organization_id: OrganizationId,
+    provider_id: str,
+    limit: Limit = 50,
+    cursor: Cursor = None,
 ) -> SearchProviderReferenceCollection:
     require_organization_boundary(actor, organization_id)
     result = await _service(request).references(

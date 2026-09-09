@@ -176,3 +176,59 @@ test("Run stream preserves cursor and rejects replay gaps without canceling exec
   assert.equal(requests[0].headers.get("Last-Event-ID"), "1-0");
   assert.equal(requests[0].method, "GET");
 });
+
+test("workspace HTTP discovers the API key boundary and omits workspace arguments", async () => {
+  const requests = [];
+  const client = createClient({
+    baseUrl: `${baseUrl}/prefix`,
+    auth: { type: "bearer", token: "private" },
+    fetch: async (request) => {
+      requests.push(request);
+      return json(
+        request.url.endsWith("/auth/context")
+          ? { workspace_id: "ws_1234567890abcdef", organization_id: null }
+          : { items: [] },
+      );
+    },
+  });
+  const http = await client.workspaceHttp();
+  await http.GET("/agents");
+  await http.GET("/agents/{agent}", {
+    params: { path: { agent: "reviewer" } },
+  });
+  await http.PATCH("/agents/{agent}", {
+    params: {
+      path: { agent: "ap_1234567890abcdef" },
+      header: { "If-Match": '"v1"' },
+    },
+    body: { key: "reviewer" },
+  });
+  assert.deepEqual(
+    requests.map((request) => request.url),
+    [
+      `${baseUrl}/prefix/api/v1/auth/context`,
+      `${baseUrl}/prefix/api/v1/workspaces/ws_1234567890abcdef/agents`,
+      `${baseUrl}/prefix/api/v1/workspaces/ws_1234567890abcdef/agents/reviewer`,
+      `${baseUrl}/prefix/api/v1/workspaces/ws_1234567890abcdef/agents/ap_1234567890abcdef`,
+    ],
+  );
+  assert.ok(
+    requests.every(
+      (request) => request.headers.get("Authorization") === "Bearer private",
+    ),
+  );
+  assert.equal(requests[3].headers.get("If-Match"), '"v1"');
+  client.close();
+  await assert.rejects(http.GET("/agents"), { name: "AbortError" });
+});
+
+test("workspace HTTP does not invent a boundary for an organization session", async () => {
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    fetch: async () =>
+      json({ workspace_id: null, organization_id: "org_1234567890abcdef" }),
+  });
+  await assert.rejects(client.workspaceHttp(), /Workspace-bound credential/);
+  client.close();
+});

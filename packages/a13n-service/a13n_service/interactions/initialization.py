@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import TypedDict
 
 from a13n_harness import HarnessState
@@ -11,10 +13,23 @@ from pydantic_ai.usage import UsageLimits
 from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.digests import digest_request
+from a13n_service.iam import PrincipalRef
 from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.secrets.domain import AgentSecretBinding
 
-from .domain import JsonObject, ObjectId, RunInputKind, RunLineageKind, StrictModel, ThreadId
+from .domain import (
+    ExecutionBudget,
+    JsonObject,
+    ObjectId,
+    Run,
+    RunInputKind,
+    RunLineageKind,
+    StrictModel,
+    ThreadId,
+    accepted_run,
+)
+from .input import AcceptedAgentInput, input_text
+from .origin import SubmissionOrigin
 from .protocol_context import ProtocolInputContext
 from .state import HostContinuationState, RunCheckpoint
 
@@ -192,7 +207,55 @@ def frozen_run_fields(invocation: FrozenAgentInvocation) -> FrozenRunFields:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class NewRunPolicy:
+    """Current scheduling defaults for new input, never for inherited execution."""
+
+    priority: int
+    queue_name: str
+    execution_budget: ExecutionBudget
+
+    def create(
+        self,
+        *,
+        now: datetime,
+        id: str,
+        organization_id: str,
+        authority_principal: PrincipalRef,
+        session_id: str,
+        thread_id: str,
+        parent_run_id: str | None,
+        lineage_kind: RunLineageKind,
+        invocation: FrozenAgentInvocation,
+        input: AcceptedAgentInput,
+        request_fingerprint: str,
+        origin: SubmissionOrigin,
+    ) -> Run:
+        return accepted_run(
+            now=now,
+            id=id,
+            organization_id=organization_id,
+            authority_principal=authority_principal,
+            session_id=session_id,
+            thread_id=thread_id,
+            parent_run_id=parent_run_id,
+            retry_of_run_id=None,
+            lineage_kind=lineage_kind,
+            trigger_type=origin.trigger_type,
+            native_tool_contexts=origin.native_tool_contexts,
+            **frozen_run_fields(invocation),
+            priority=self.priority,
+            queue_name=self.queue_name,
+            execution_budget=self.execution_budget,
+            request_fingerprint=request_fingerprint,
+            input_kind=RunInputKind.agent_input,
+            input=input.model_dump(mode="json", by_alias=True, exclude_none=True),
+            input_text=input_text(input),
+        )
+
+
 __all__ = [
+    "NewRunPolicy",
     "RunStateSeed",
     "frozen_run_fields",
     "initialize_completed_continuation_state",

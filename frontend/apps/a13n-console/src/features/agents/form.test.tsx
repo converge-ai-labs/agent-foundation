@@ -20,7 +20,10 @@ vi.mock("./choices", () => ({
   }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" } }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "workspace" },
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({

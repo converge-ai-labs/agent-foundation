@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
@@ -42,13 +43,13 @@ def _set_etag(response: Response, subscription: HookSubscription) -> None:
 
 
 @router.get(
-    "/workspaces/{workspace_id}/hook-subscriptions",
+    "/workspaces/{workspace}/hook-subscriptions",
     response_model=HookSubscriptionCollection,
 )
 async def list_hook_subscriptions(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> HookSubscriptionCollection:
@@ -61,7 +62,7 @@ async def list_hook_subscriptions(
 
 
 @router.post(
-    "/workspaces/{workspace_id}/hook-subscriptions",
+    "/workspaces/{workspace}/hook-subscriptions",
     response_model=HookSubscription,
     status_code=status.HTTP_201_CREATED,
 )
@@ -69,7 +70,7 @@ async def create_hook_subscription(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: CreateHookSubscriptionRequest,
 ) -> HookSubscription:
     subscription = await _service(request).create(

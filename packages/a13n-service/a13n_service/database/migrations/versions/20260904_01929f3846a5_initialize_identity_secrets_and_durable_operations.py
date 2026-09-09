@@ -22,10 +22,12 @@ def upgrade() -> None:
         "organizations",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_organizations")),
     )
+    op.create_index("uq_organizations_key", "organizations", ["key"], unique=True)
     op.create_table(
         "outbox_records",
         sa.Column("id", sa.String(length=72), nullable=False),
@@ -121,7 +123,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("normalized_name", sa.String(length=384), nullable=False),
+        sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
@@ -134,12 +136,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_workspaces")),
     )
     op.create_index(
-        "uq_workspaces_active_organization_normalized_name",
+        "uq_workspaces_organization_key",
         "workspaces",
-        ["organization_id", "normalized_name"],
+        ["organization_id", "key"],
         unique=True,
-        postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_index("uq_workspaces_id_organization_id", "workspaces", ["id", "organization_id"], unique=True)
     op.create_table(
@@ -351,12 +351,7 @@ def downgrade() -> None:
     op.drop_index("ix_idempotency_evidence_expiry", table_name="idempotency_evidence")
     op.drop_table("idempotency_evidence")
     op.drop_index("uq_workspaces_id_organization_id", table_name="workspaces")
-    op.drop_index(
-        "uq_workspaces_active_organization_normalized_name",
-        table_name="workspaces",
-        postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
-    )
+    op.drop_index("uq_workspaces_organization_key", table_name="workspaces")
     op.drop_table("workspaces")
     op.drop_table("users")
     op.drop_index("ix_security_audit_workspace_time", table_name="security_audit_events")
@@ -364,4 +359,5 @@ def downgrade() -> None:
     op.drop_index("ix_outbox_records_due", table_name="outbox_records")
     op.drop_index("ix_outbox_records_destination", table_name="outbox_records")
     op.drop_table("outbox_records")
+    op.drop_index("uq_organizations_key", table_name="organizations")
     op.drop_table("organizations")

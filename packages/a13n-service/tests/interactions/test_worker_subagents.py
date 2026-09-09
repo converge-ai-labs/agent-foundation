@@ -207,11 +207,9 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
     factory = Mock(spec=NativeModelFactory)
     factory.build.side_effect = build
     settings = Settings(
-        _env_file=None,
-        build_version="test",
-        worker_concurrency=1,
-        worker_poll_interval_seconds=0.02,
-        subagent_reconcile_poll_interval_seconds=0.02,
+        service={"build_version": "test"},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.02},
+        subagents={"reconcile_poll_interval_seconds": 0.02},
     )
     async with worker_runtime(
         interaction_sessions,

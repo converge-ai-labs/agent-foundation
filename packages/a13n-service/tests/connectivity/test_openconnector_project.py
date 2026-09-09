@@ -286,3 +286,61 @@ async def test_registered_provider_managed_connection_lifecycle(
             actor=actor(), connection_id=connection.id, expected_version=version, idempotency_key="delete"
         )
         assert receipt.local_status == "deleted" and receipt.remote_status == "failed"
+
+
+@pytest.mark.parametrize("keyword", ["allOf", "anyOf", "oneOf"])
+async def test_composed_object_schemas_survive_mcp_discovery_and_native_validation(project_server, keyword):
+    from jsonschema import Draft202012Validator
+
+    _state, _requests, respond = project_server
+    schema = {
+        keyword: [{"type": "object", "properties": {"login": {"type": "string"}}, "required": ["login"]}],
+        "description": "Native composition",
+    }
+
+    def composed(request):
+        response = respond(request)
+        if request.url.path == "/v1/actions":
+            value = response.json()
+            value["data"][0]["inputSchema"] = schema
+            value["data"][0]["outputSchema"] = schema
+            return httpx2.Response(200, json=value)
+        return response
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(composed)) as http:
+        runtime = provider(http)
+        tools, version = await discover_tools(runtime.tool_catalog("github"))
+        assert tools[0].input_schema == {**schema, "type": "object"}
+        assert tools[0].output_schema == {**schema, "type": "object"}
+        validator = Draft202012Validator(tools[0].input_schema)
+        assert validator.is_valid({"login": "team"})
+        assert not validator.is_valid({})
+        assert not validator.is_valid({"login": 42})
+        native = await runtime._catalog.actions("github")
+        assert native[0].input_schema == schema
+        assert native[0].output_schema == schema
+        assert (await discover_tools(runtime.tool_catalog("github")))[1] == version
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"anyOf": [{"type": "object"}, {"type": "string"}]},
+        {"allOf": [{"properties": {"login": {"type": "string"}}}]},
+        {"allOf": [{"type": "object"}, {"$ref": "https://untrusted.example/schema"}]},
+    ],
+)
+async def test_schema_projection_does_not_weaken_native_schema_safety(project_server, schema):
+    _state, _requests, respond = project_server
+
+    def incompatible(request):
+        response = respond(request)
+        if request.url.path == "/v1/actions":
+            value = response.json()
+            value["data"][0]["outputSchema"] = schema
+            return httpx2.Response(200, json=value)
+        return response
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(incompatible)) as http:
+        with pytest.raises((ValueError, ConnectorProviderError)):
+            await discover_tools(provider(http).tool_catalog("github"))

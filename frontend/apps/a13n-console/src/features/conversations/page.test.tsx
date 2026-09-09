@@ -9,7 +9,11 @@ import { ConversationsPage } from "./page";
 let client: Client;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => false }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "workspace" },
+    can: () => false,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -55,12 +59,10 @@ it("renders a full Session page from collection previews without per-row Thread 
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter
-        initialEntries={["/workspaces/workspace/sessions/session_0"]}
-      >
+      <MemoryRouter initialEntries={["/acme/design/sessions/session_0"]}>
         <Routes>
           <Route
-            path="/workspaces/:workspaceId/sessions"
+            path="/:organizationKey/:workspaceKey/sessions"
             element={<ConversationsPage />}
           >
             <Route path=":sessionId" element={<p>Session detail</p>} />
@@ -75,7 +77,7 @@ it("renders a full Session page from collection previews without per-row Thread 
   expect(screen.getByText("Open session")).toBeTruthy();
   expect(
     screen.getByRole("link", { name: /Question 0/ }).getAttribute("href"),
-  ).toBe("/workspaces/workspace/sessions/session_0");
+  ).toBe("/acme/design/sessions/session_0");
   expect(requests).toEqual(["/api/v1/workspaces/workspace/sessions"]);
   cleanup();
   cache.clear();

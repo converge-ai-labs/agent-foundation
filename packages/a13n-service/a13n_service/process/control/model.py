@@ -43,16 +43,16 @@ def build_model_bundle(
             shared.storage.sessions,
             execution.model_provider_registry,
             connection_tester=connection_tester,
-            connection_test_timeout_seconds=settings.model_connection_test_timeout_seconds,
+            connection_test_timeout_seconds=settings.models.connection_test_timeout_seconds,
         ),
         providers=ModelProviderService(
             shared.storage.sessions,
             execution.model_provider_registry,
             execution.model_endpoint_policy,
             shared.secret_protector,
-            resolve_dns_on_save=settings.model_resolve_dns_on_save,
+            resolve_dns_on_save=settings.models.resolve_dns_on_save,
             operations=provider_operations,
-            command_timeout_seconds=settings.model_connection_test_timeout_seconds,
+            command_timeout_seconds=settings.models.connection_test_timeout_seconds,
         ),
     )
 

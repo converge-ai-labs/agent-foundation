@@ -42,6 +42,10 @@ Request types and serializers preserve omitted fields separately from explicit `
 
 Search Provider clients expose the type catalog, scoped account create/list/get/update, saved-account tests, and authorized reference reads under [Search Provider Management](41-search-provider-management.md#management-api). Agent types carry `SearchSelection`; Run overrides preserve omission for inheritance, null for disabling, and a complete object for replacement. Credential fields are write-only and absent from resource types and diagnostic representations. SDKs preserve account ETags and do not automatically replay create, credential replacement, or quota-consuming tests after an uncertain response. Account creation, testing, and Agent revision publication remain separate operations and results.
 
+## Workspace Binding
+
+API Key callers do not supply a Workspace to each SDK operation. The SDK reads `/api/v1/auth/context` and binds the Workspace operation surface to the authenticated Workspace ID. A key change does not affect that ID. In TypeScript, `await client.workspaceHttp()` returns the generated Workspace API with its parent path and Workspace parameter removed; `GET("/agents/{agent}", …)` accepts either an Agent ID or key. Python and Rust expose `workspace()` and Go exposes `Workspace(ctx)` with the same credential-derived binding for their implemented search operations. This binding shares the parent client's transport and shutdown. Switching credentials to another Workspace requires a new binding. Organization-bound browser clients retain explicit resource paths on `http`.
+
 ## Transport Lifetime
 
 Each client instance owns its connection pools and long-lived transports and has an explicit close operation. Closing an iterator, stream, WebSocket, SDK client, page traversal, or process stops only local delivery and network resources. It never submits a Run interrupt command implicitly.

@@ -313,3 +313,60 @@ async fn close_cancels_an_inflight_request() {
     client.close();
     assert!(matches!(task.await.unwrap(), Err(Error::Closed)));
 }
+
+#[tokio::test]
+async fn workspace_binding_resolves_once_and_shares_shutdown() {
+    let mut server = server(|request| {
+        Some((
+            200,
+            if request.target.ends_with("/auth/context") {
+                json!({"workspace_id":"ws_test", "workspace_key":"renamed"})
+            } else {
+                json!({"items":[provider()],"next_cursor":null})
+            },
+        ))
+    })
+    .await;
+    let client = Client::new(&server.url, Secret::new("token")).unwrap();
+    let workspace = client.workspace().await.unwrap();
+    assert_eq!(
+        server.requests.recv().await.unwrap().target,
+        "/prefix/api/v1/auth/context"
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            workspace
+                .search_providers(&SearchListOptions::default())
+                .await
+                .unwrap()
+                .value
+                .items[0]
+                .id,
+            "sp_test"
+        );
+        assert_eq!(
+            server.requests.recv().await.unwrap().target,
+            "/prefix/api/v1/workspaces/ws_test/search-providers"
+        );
+    }
+    client.close();
+    assert!(matches!(
+        workspace
+            .search_providers(&SearchListOptions::default())
+            .await,
+        Err(Error::Closed)
+    ));
+}
+
+#[tokio::test]
+async fn workspace_binding_requires_workspace_credential() {
+    for context in [
+        json!({}),
+        json!({"workspace_id":null}),
+        json!({"workspace_id":""}),
+    ] {
+        let server = server(move |_| Some((200, context.clone()))).await;
+        let client = Client::new(&server.url, Secret::new("token")).unwrap();
+        assert!(matches!(client.workspace().await, Err(Error::InvalidInput)));
+    }
+}

@@ -44,8 +44,8 @@ export function AgentCapabilities({
   setConnectors: Dispatch<SetStateAction<Connectors>>;
 }) {
   const { t } = useTranslation(),
-    { workspace } = useWorkspace();
-  const base = `/workspaces/${workspace.id}`;
+    { workspace, basePath } = useWorkspace();
+  const base = `${basePath}`;
   return (
     <section className={styles.capabilitySection}>
       <header>

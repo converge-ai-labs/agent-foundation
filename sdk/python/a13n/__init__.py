@@ -24,10 +24,11 @@ __all__ = [
     "SearchSelection",
     "TransportError",
     "UpdateSearchProviderRequest",
+    "WorkspaceClient",
     "__version__",
 ]
 
-from .client import ApiError, Client, ProtocolError, SearchScope, TransportError
+from .client import ApiError, Client, ProtocolError, SearchScope, TransportError, WorkspaceClient
 from .models import (
     AgentConfig,
     AgentRunOverride,

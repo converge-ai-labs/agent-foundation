@@ -30,7 +30,7 @@ export function PendingFeedback({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     navigate = useNavigate(),
     cache = useQueryClient();
   const [answers, setAnswers] = useState<
@@ -102,7 +102,7 @@ export function PendingFeedback({
           runId: receipt.run_id,
         },
       );
-      navigate(runPath(workspace.id, receipt));
+      navigate(runPath(basePath, receipt));
     },
   });
   function change(

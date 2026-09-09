@@ -150,7 +150,7 @@ async def test_provider_cleanup_precedes_lab_teardown_after_failure(monkeypatch,
     @asynccontextmanager
     async def lab(**kwargs):
         try:
-            yield SimpleNamespace(client=SimpleNamespace(config={"workspace_id": "ws_owned"}))
+            yield SimpleNamespace(client=SimpleNamespace(config={"workspace_id": "ws_owned"}, http=SimpleNamespace()))
         finally:
             events.append("lab removed")
 

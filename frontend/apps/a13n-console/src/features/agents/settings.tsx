@@ -13,6 +13,7 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
+import { ResourceKeyField } from "../../shared/resource-key";
 import { ErrorNotice } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
@@ -29,11 +30,12 @@ export function AgentSettings({
   const { value: agent, etag } = snapshot,
     client = useClient(),
     { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     cache = useQueryClient(),
     navigate = useNavigate(),
     idempotency = useIdempotency();
   const [name, setName] = useState(agent.name),
+    [key, setKey] = useState(agent.key),
     [description, setDescription] = useState(agent.description ?? ""),
     [environment, setEnvironment] = useState(
       agent.default_environment_template_id ?? "none",
@@ -43,9 +45,9 @@ export function AgentSettings({
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
-          .GET("/api/v1/workspaces/{workspace_id}/environment-templates", {
+          .GET("/api/v1/workspaces/{workspace}/environment-templates", {
             params: {
-              path: { workspace_id: workspace.id },
+              path: { workspace: workspace.id },
               query: { cursor, limit: 100 },
             },
             signal,
@@ -59,18 +61,33 @@ export function AgentSettings({
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      await client.http.PATCH("/api/v1/agents/{agent_id}", {
-        params: { path: { agent_id: agent.id }, header: { "If-Match": etag } },
-        headers: workspaceHeaders(workspace.id),
-        body: {
-          name,
-          description: description || null,
-          default_environment_template_id:
-            environment === "none" ? null : environment,
-        },
-      });
+      return client.http
+        .PATCH("/api/v1/workspaces/{workspace}/agents/{agent}", {
+          params: {
+            path: { workspace: workspace.id, agent: agent.id },
+            header: { "If-Match": etag },
+          },
+          headers: workspaceHeaders(workspace.id),
+          body: {
+            name,
+            key,
+            description: description || null,
+            default_environment_template_id:
+              environment === "none" ? null : environment,
+          },
+        })
+        .then(data);
     },
-    onSuccess: reload,
+    onSuccess: async (result) => {
+      await cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
+      await cache.invalidateQueries({
+        queryKey: ["agent-by-id", workspace.id],
+      });
+      if (result.key !== agent.key) {
+        cache.removeQueries({ queryKey: ["agent", workspace.id, agent.key] });
+        navigate(`${basePath}/agents/${result.key}`, { replace: true });
+      } else reload();
+    },
   });
   const action = async (
     action: "enable" | "disable" | "archive" | "unarchive",
@@ -79,18 +96,21 @@ export function AgentSettings({
       throw new Error(
         t("Version information is unavailable. Reload this page."),
       );
-    await client.http.POST("/api/v1/agents/{agent_id}/{action}", {
-      params: {
-        path: { agent_id: agent.id, action },
-        header: {
-          ...commandHeaders(
-            workspace.id,
-            idempotency.forBody({ action, etag }),
-          ),
-          "If-Match": etag,
+    await client.http.POST(
+      "/api/v1/workspaces/{workspace}/agents/{agent}/{action}",
+      {
+        params: {
+          path: { workspace: workspace.id, agent: agent.id, action },
+          header: {
+            ...commandHeaders(
+              workspace.id,
+              idempotency.forBody({ action, etag }),
+            ),
+            "If-Match": etag,
+          },
         },
       },
-    });
+    );
     idempotency.reset();
     reload();
   };
@@ -105,6 +125,11 @@ export function AgentSettings({
       >
         <fieldset className="fieldset-reset" disabled={!can("agent.update")}>
           <div className={styles.stack}>
+            <ResourceKeyField
+              value={key}
+              onChange={setKey}
+              disabled={save.isPending}
+            />
             <FormField className="min-w-0 w-full" label={t("Name")}>
               <Input
                 required={true}
@@ -179,10 +204,10 @@ export function AgentSettings({
                 };
                 const result = data(
                   await client.http.POST(
-                    "/api/v1/agents/{agent_id}/duplicate",
+                    "/api/v1/workspaces/{workspace}/agents/{agent}/duplicate",
                     {
                       params: {
-                        path: { agent_id: agent.id },
+                        path: { workspace: workspace.id, agent: agent.id },
                         header: commandHeaders(
                           workspace.id,
                           idempotency.forBody(body),
@@ -194,7 +219,7 @@ export function AgentSettings({
                 );
                 idempotency.reset();
                 void cache.invalidateQueries();
-                navigate(`/workspaces/${workspace.id}/agents/${result.id}`);
+                navigate(`${basePath}/agents/${result.key}`);
               }}
             />
           )}

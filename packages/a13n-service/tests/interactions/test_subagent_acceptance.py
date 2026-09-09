@@ -688,7 +688,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Child Agent",
-                normalized_name="child agent",
+                key="child-agent",
                 description=None,
                 version=1,
                 current_revision_id=CHILD_REVISION_ID,

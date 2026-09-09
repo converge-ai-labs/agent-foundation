@@ -243,11 +243,11 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
     from a13n_environment import DirectLocalEnvironmentProvider
     from a13n_service.environments.domain import ReplaceCredentialRequest
     from a13n_service.environments.models import EnvironmentProviderRecord
-    from pydantic import BaseModel, ConfigDict
+    from pydantic import BaseModel, ConfigDict, SecretStr
 
     class Credential(BaseModel):
         model_config = ConfigDict(extra="forbid")
-        token: str
+        token: SecretStr
 
     monkeypatch.setattr(DirectLocalEnvironmentProvider, "credential_model", Credential)
     provider = await environment_service.create_provider(
@@ -259,7 +259,10 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
     async with short_session(environment_sessions) as session:
         stored = await session.get(EnvironmentProviderRecord, provider.id)
         assert b"initial-token" not in stored.ciphertext
-        assert Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token == "initial-token"
+        assert (
+            Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token.get_secret_value()
+            == "initial-token"
+        )
         generation = stored.credential_generation
     changed = await environment_service.replace_credential(
         actor=actor(),
@@ -270,7 +273,10 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
     async with short_session(environment_sessions) as session:
         stored = await session.get(EnvironmentProviderRecord, provider.id)
         assert stored.credential_generation == generation + 1
-        assert Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token == "rotated-token"
+        assert (
+            Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token.get_secret_value()
+            == "rotated-token"
+        )
     assert "rotated-token" not in changed.model_dump_json()
 
 

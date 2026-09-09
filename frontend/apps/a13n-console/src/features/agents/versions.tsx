@@ -28,9 +28,9 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
     queryKey: ["agent-revisions", workspace.id, agent.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/agents/{agent_id}/revisions", {
+        .GET("/api/v1/workspaces/{workspace}/agents/{agent}/revisions", {
           params: {
-            path: { agent_id: agent.id },
+            path: { workspace: workspace.id, agent: agent.id },
             query: { cursor: page.cursor, limit: 20 },
           },
           headers: workspaceHeaders(workspace.id),
@@ -80,10 +80,14 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
                   action={async () => {
                     const body = { expected_version: agent.version };
                     await client.http.POST(
-                      "/api/v1/agents/{agent_id}/revisions/{revision_id}/restore",
+                      "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore",
                       {
                         params: {
-                          path: { agent_id: agent.id, revision_id: item.id },
+                          path: {
+                            workspace: workspace.id,
+                            agent: agent.id,
+                            revision_id: item.id,
+                          },
                           header: commandHeaders(
                             workspace.id,
                             idempotency.forBody({ ...body, revision: item.id }),

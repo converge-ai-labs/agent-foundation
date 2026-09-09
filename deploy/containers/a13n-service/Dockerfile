@@ -53,6 +53,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 COPY --chown=app:app scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chown=app:app deploy/containers/a13n-service/service.toml /app/service.toml
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /app/var/files /app/var/objects \
     && chown -R app:app /app/var
@@ -60,24 +61,14 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
-    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
-    A13N_SERVICE_HOST=0.0.0.0 \
-    A13N_SERVICE_PORT=8000 \
-    A13N_SERVICE_ROLE=all \
-    A13N_SERVICE_DATABASE_BACKEND=postgresql \
-    A13N_SERVICE_REDIS_BACKEND=redis \
-    A13N_SERVICE_OBJECT_BACKEND=local \
-    A13N_SERVICE_OBJECT_LOCAL_ROOT=/app/var/objects \
-    A13N_SERVICE_FILESYSTEM_ROOT=/app/var/files \
-    A13N_SERVICE_AUTO_MIGRATE=true \
-    A13N_SERVICE_LOG_FORMAT=json
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # BUILD_VERSION labels the artifact; the package itself owns its runtime version.
 RUN python -c 'import importlib.metadata, os; v = importlib.metadata.version("a13n-service"); expected = os.environ["BUILD_VERSION"]; assert expected == "dev" or v == expected.replace("-rc.", "rc"), (v, expected)'
 
 USER app
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ['A13N_SERVICE_PORT']}/healthz\", timeout=2)"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD ["a13n-service", "--config", "/app/service.toml", "config", "healthcheck"]
 ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
-CMD ["a13n-service", "serve"]
+CMD ["a13n-service", "--config", "/app/service.toml", "serve"]

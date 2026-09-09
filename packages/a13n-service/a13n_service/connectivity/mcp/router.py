@@ -12,6 +12,7 @@ from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.authentication import authenticate_mutation
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_connectivity_control_runtime, get_process_runtime
 
 from .domain import (
@@ -69,13 +70,13 @@ async def mcp_client_metadata(request: Request) -> MCPClientMetadata:
         )
     return MCPClientMetadata(
         client_id=oauth.client_metadata_url,
-        client_name=runtime.settings.connectivity_oauth_client_name,
+        client_name=runtime.settings.connectivity.oauth_client_name,
         redirect_uris=(oauth.redirect_uri,),
     )
 
 
 @router.post(
-    "/api/v1/workspaces/{workspace_id}/mcp-connections",
+    "/api/v1/workspaces/{workspace}/mcp-connections",
     response_model=MCPConnection,
     status_code=status.HTTP_201_CREATED,
 )
@@ -83,7 +84,7 @@ async def create_mcp_connection(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: CreateMCPConnectionRequest,
     idempotency_key: IdempotencyKey,
 ) -> MCPConnection:
@@ -97,11 +98,11 @@ async def create_mcp_connection(
     return resource
 
 
-@router.get("/api/v1/workspaces/{workspace_id}/mcp-connections", response_model=MCPConnectionCollection)
+@router.get("/api/v1/workspaces/{workspace}/mcp-connections", response_model=MCPConnectionCollection)
 async def list_mcp_connections(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> MCPConnectionCollection:

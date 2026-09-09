@@ -36,8 +36,8 @@ async def build_hook_bundle(
     """Construct Hook APIs and the bounded publisher owned by Control roles."""
 
     endpoint_policy = EndpointPolicy.from_operator_allowlist(
-        private_domains=settings.webhook_private_endpoint_domains,
-        private_cidrs=settings.webhook_private_endpoint_cidrs,
+        private_domains=settings.webhooks.private_endpoint_domains,
+        private_cidrs=settings.webhooks.private_endpoint_cidrs,
     )
 
     async def validate_request(request: httpx2.Request) -> None:
@@ -46,12 +46,12 @@ async def build_hook_bundle(
     subscriptions = HookSubscriptionService(
         shared.storage.sessions,
         endpoint_policy,
-        validation_timeout_seconds=settings.webhook_request_timeout_seconds,
+        validation_timeout_seconds=settings.webhooks.request_timeout_seconds,
     )
     http_client = await stack.enter_async_context(
         httpx2.AsyncClient(
             follow_redirects=False,
-            timeout=settings.webhook_request_timeout_seconds,
+            timeout=settings.webhooks.request_timeout_seconds,
             event_hooks={"request": [validate_request]},
         )
     )
@@ -60,22 +60,22 @@ async def build_hook_bundle(
         http_client,
         endpoint_policy,
         shared.secret_protector,
-        poll_interval_seconds=settings.webhook_poll_interval_seconds,
-        lease_seconds=settings.webhook_claim_lease_seconds,
-        claim_limit=settings.webhook_claim_limit,
-        max_attempts=settings.webhook_max_attempts,
-        retry_base_seconds=settings.webhook_retry_base_seconds,
-        retry_max_seconds=settings.webhook_retry_max_seconds,
-        delivery_timeout_seconds=settings.webhook_request_timeout_seconds,
-        max_response_bytes=settings.webhook_max_response_bytes,
+        poll_interval_seconds=settings.webhooks.poll_interval_seconds,
+        lease_seconds=settings.webhooks.claim_lease_seconds,
+        claim_limit=settings.webhooks.claim_limit,
+        max_attempts=settings.webhooks.max_attempts,
+        retry_base_seconds=settings.webhooks.retry_base_seconds,
+        retry_max_seconds=settings.webhooks.retry_max_seconds,
+        delivery_timeout_seconds=settings.webhooks.request_timeout_seconds,
+        max_response_bytes=settings.webhooks.max_response_bytes,
     )
     retention = LifecycleRetentionReconciler(
         shared.storage.sessions,
-        event_horizon=timedelta(days=settings.lifecycle_retention_days),
-        published_delivery_horizon=timedelta(days=settings.lifecycle_published_delivery_retention_days),
-        dead_letter_horizon=timedelta(days=settings.lifecycle_dead_letter_retention_days),
-        poll_interval_seconds=settings.lifecycle_retention_poll_interval_seconds,
-        batch_limit=settings.lifecycle_retention_batch_limit,
+        event_horizon=timedelta(days=settings.lifecycle.retention_days),
+        published_delivery_horizon=timedelta(days=settings.lifecycle.published_delivery_retention_days),
+        dead_letter_horizon=timedelta(days=settings.lifecycle.dead_letter_retention_days),
+        poll_interval_seconds=settings.lifecycle.retention_poll_interval_seconds,
+        batch_limit=settings.lifecycle.retention_batch_limit,
     )
     return _HookBundle(
         inline_validator=InlineHookValidator(endpoint_policy),

@@ -50,6 +50,7 @@ class Agent:
     workspace_id: WorkspaceId
     source: Literal["builtin", "custom"]
     name: str
+    key: str
     description: str | None
     version: int
     current_revision_id: AgentRevisionId
@@ -66,7 +67,7 @@ class Agent:
 
 `Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Service never exposes an Agent without an executable Revision.
 
-`name`, `description` and `default_environment_template_id` are mutable head metadata. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+`name`, `key`, `description` and `default_environment_template_id` are mutable head metadata. Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
 
 ## AgentConfig
 
@@ -189,7 +190,7 @@ The [`PluginSelection` contract](36-installed-harness-plugins.md#configuration-a
 
 `AgentModel.settings` defaults to an empty object and stores only Agent-authored overrides. Its JSON representation is validated against the selected Model's serializable native settings contract, including provider-specific fields, under [Model Management](30-model-management.md#parameter-schemas-and-validation). The same owner defines parameter descriptions, reserved fields, and [settings precedence](30-model-management.md#settings-precedence). `ResolvedAgentModel` retains these overrides, while `EffectiveAgentModel.settings` contains the final merged values used for execution.
 
-`OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
+`OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. Reconstruction resolves the supplied resources and uses the Harness shared structured-output validator for each schema or variant. Completed model and plugin outputs must satisfy Draft 2020-12 instance constraints; invalid model output consumes the structured-output correction budget. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
 The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, Environment adapter, attachment session, entered facade, arbitrary artifact URL, or other process-local value. Revision creation validates authored structure and resolves managed references. Installed-plugin business configuration is validated by the executing Worker.
 
@@ -414,22 +415,22 @@ For each outbound model request, the Worker rechecks the current Model and Model
 
 Creator and updater attribution use IAM `ActorRef`: human and Service Account Principals retain their actual kind, while builtin reconciliation records `system` with its stable system actor ID. System attribution never grants authentication or invocation authority.
 
-The `agents` table stores stable identity, organization ownership, name, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, normalized_name)` is unique.
+The `agents` table stores stable identity, organization ownership, name, key, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, key)` is unique; display names may repeat. Agent keys follow [Readable Resource Keys](../data-conventions.md#readable-resource-keys).
 
 The `agent_revisions` table stores complete config, frozen resolution, digests, provenance, actor, and creation time. `(agent_id, version)` is unique. The Agent head and current Revision advance atomically. Runs and downstream records store `agent_revision_id`, not only an Agent ID or version.
 
 ## Agent Management API Contract
 
-- `POST /api/v1/workspaces/{workspace_id}/agents`
-- `GET /api/v1/workspaces/{workspace_id}/agents`
-- `GET /api/v1/agents/{agent_id}`
-- `PATCH /api/v1/agents/{agent_id}`
-- `POST /api/v1/agents/{agent_id}/revisions`
-- `GET /api/v1/agents/{agent_id}/revisions`
+- `POST /api/v1/workspaces/{workspace}/agents`
+- `GET /api/v1/workspaces/{workspace}/agents`
+- `GET /api/v1/workspaces/{workspace}/agents/{agent}`
+- `PATCH /api/v1/workspaces/{workspace}/agents/{agent}`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions`
+- `GET /api/v1/workspaces/{workspace}/agents/{agent}/revisions`
 - `GET /api/v1/agent-revisions/{revision_id}`
-- `POST /api/v1/agents/{agent_id}/revisions/{revision_id}/restore`
-- `POST /api/v1/agents/{agent_id}/duplicate`
-- `POST /api/v1/agents/{agent_id}/{enable|disable|archive|unarchive}`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/duplicate`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/{enable|disable|archive|unarchive}`
 
 Create, Create Revision, Restore, Duplicate, and lifecycle commands require `Idempotency-Key`. Versioned Revision creation uses `expected_version`; metadata and lifecycle mutations use strong `If-Match`. Agent and Revision collections use opaque cursor pagination, and Revision List defaults to descending `version` with a stable ID tie-breaker.
 

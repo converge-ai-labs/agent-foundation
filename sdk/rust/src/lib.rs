@@ -3,5 +3,7 @@
 #![forbid(unsafe_code)]
 mod client;
 mod search;
+mod workspace;
 pub use client::{ApiError, Client, Error};
 pub use search::*;
+pub use workspace::WorkspaceClient;

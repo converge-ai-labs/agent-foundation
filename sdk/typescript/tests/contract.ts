@@ -33,3 +33,23 @@ export const searchProviderRequest: Schema["CreateSearchProviderRequest"] = {
 };
 // @ts-expect-error Credentials are not a readable resource field.
 export type ReadableSearchCredential = Schema["SearchProvider"]["credential"];
+import type { Client } from "../src/client.js";
+
+export async function scopedHttpContract(client: Client) {
+  const http = await client.workspaceHttp();
+  await http.GET("/agents");
+  await http.GET("/search-providers");
+  await http.POST("/search-providers/{provider_id}/test", {
+    params: { path: { provider_id: "sprov_test" } },
+    body: {},
+  });
+  await http.GET("/agents/{agent}", {
+    params: { path: { agent: "reviewer" } },
+  });
+  await http.PATCH("/agents/{agent}", {
+    params: { path: { agent: "reviewer" }, header: { "If-Match": '"v1"' } },
+    body: { key: "assistant" },
+  });
+  // @ts-expect-error Workspace is supplied by the credential, never by this caller.
+  await http.GET("/agents", { params: { path: { workspace: "other" } } });
+}

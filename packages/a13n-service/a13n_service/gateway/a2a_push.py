@@ -7,20 +7,24 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
 from urllib.parse import urljoin
 
 import anyio
 import httpx2
 from a2a.types import a2a_pb2 as a2a
-from google.protobuf.json_format import MessageToDict, ParseDict
-from google.protobuf.struct_pb2 import Value
+from google.protobuf.json_format import MessageToDict
 from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.credentials import CredentialSnapshot
+from a13n_service.durable_operations.http_delivery import (
+    DeliveryFailure,
+    http_failure,
+    response_is_bounded,
+    retry_delay_seconds,
+)
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import OutboxClaim, complete_outbox, fail_outbox
 from a13n_service.durable_operations.publication import dispatch_outbox_batch
@@ -37,6 +41,7 @@ from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 
+from .a2a_projection import project_artifacts, project_status
 from .models import A2APushConfigurationRecord, A2ATaskBindingRecord
 
 logger = logging.getLogger("a13n_service.gateway.a2a_push")
@@ -62,12 +67,6 @@ class A2APushMaterial:
     authentication_scheme: str | None
     authentication_credentials: str | None
     payload: bytes
-
-
-@dataclass(frozen=True, slots=True)
-class A2APushFailure:
-    error_code: str
-    retryable: bool
 
 
 class A2APushMaterialError(RuntimeError):
@@ -270,7 +269,7 @@ class A2APushPublisher:
         try:
             material = await self._load_material(claim)
         except A2APushMaterialError as error:
-            await self._settle_failure(claim, A2APushFailure(error.error_code, error.retryable))
+            await self._settle_failure(claim, DeliveryFailure(error.error_code, error.retryable))
             return
         if material is None:
             return
@@ -349,7 +348,7 @@ class A2APushPublisher:
             payload=payload,
         )
 
-    async def _deliver(self, material: A2APushMaterial) -> A2APushFailure | None:
+    async def _deliver(self, material: A2APushMaterial) -> DeliveryFailure | None:
         try:
             with anyio.fail_after(self._delivery_timeout_seconds):
                 current = await self._endpoint_policy.validate(material.endpoint_url, resolve_dns=True)
@@ -367,18 +366,15 @@ class A2APushPublisher:
                         content=material.payload,
                         follow_redirects=False,
                     ) as response:
-                        if not await self._response_is_bounded(response):
-                            return A2APushFailure("a2a_push_response_too_large", retryable=False)
+                        if not await response_is_bounded(response, maximum_bytes=self._max_response_bytes):
+                            return DeliveryFailure("a2a_push_response_too_large", retryable=False)
                         if response.status_code not in {301, 302, 303, 307, 308}:
-                            if 200 <= response.status_code < 300:
-                                return None
-                            retryable = response.status_code in {408, 425, 429} or response.status_code >= 500
-                            return A2APushFailure(f"a2a_push_http_{response.status_code}", retryable=retryable)
+                            return http_failure(response.status_code, error_prefix="a2a_push")
                         if redirect_count == self._max_redirects:
-                            return A2APushFailure("a2a_push_redirect_limit", retryable=False)
+                            return DeliveryFailure("a2a_push_redirect_limit", retryable=False)
                         location = response.headers.get("location")
                         if location is None:
-                            return A2APushFailure("a2a_push_redirect_invalid", retryable=False)
+                            return DeliveryFailure("a2a_push_redirect_invalid", retryable=False)
                         try:
                             current, same_origin = await self._endpoint_policy.validate_redirect(
                                 current,
@@ -386,34 +382,23 @@ class A2APushPublisher:
                                 resolve_dns=True,
                             )
                         except EndpointPolicyError:
-                            return A2APushFailure("a2a_push_redirect_unsafe", retryable=False)
+                            return DeliveryFailure("a2a_push_redirect_unsafe", retryable=False)
                         if not same_origin:
                             headers.pop("Authorization", None)
                             headers.pop("X-A2A-Notification-Token", None)
-                return A2APushFailure("a2a_push_redirect_limit", retryable=False)
+                return DeliveryFailure("a2a_push_redirect_limit", retryable=False)
         except TimeoutError:
-            return A2APushFailure("a2a_push_timed_out", retryable=True)
+            return DeliveryFailure("a2a_push_timed_out", retryable=True)
         except (EndpointPolicyError, httpx2.HTTPError):
-            return A2APushFailure("a2a_push_transport_failed", retryable=True)
+            return DeliveryFailure("a2a_push_transport_failed", retryable=True)
 
-    async def _response_is_bounded(self, response: httpx2.Response) -> bool:
-        content_length = response.headers.get("content-length")
-        if content_length is not None:
-            try:
-                if int(content_length) > self._max_response_bytes:
-                    return False
-            except ValueError:
-                return False
-        received = 0
-        async for chunk in response.aiter_bytes():
-            received += len(chunk)
-            if received > self._max_response_bytes:
-                return False
-        return True
-
-    async def _settle_failure(self, claim: OutboxClaim, failure: A2APushFailure) -> None:
+    async def _settle_failure(self, claim: OutboxClaim, failure: DeliveryFailure) -> None:
         failed_at = self._now()
-        retry_after = timedelta(seconds=self._retry_delay_seconds(claim.attempt_count))
+        retry_after = timedelta(
+            seconds=retry_delay_seconds(
+                claim.attempt_count, base=self._retry_base_seconds, maximum=self._retry_max_seconds
+            )
+        )
         async with transaction(self._sessions) as database:
             settled = await fail_outbox(
                 database,
@@ -434,10 +419,6 @@ class A2APushPublisher:
                     "retryable": failure.retryable and claim.attempt_count < self._max_attempts,
                 },
             )
-
-    def _retry_delay_seconds(self, attempt_count: int) -> float:
-        exponent = min(max(attempt_count - 1, 0), 16)
-        return min(self._retry_max_seconds, self._retry_base_seconds * (2**exponent))
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -470,59 +451,24 @@ def _event_payload(task: A2ATaskBindingRecord, event: LifecycleEventRecord) -> b
 
 
 def _event_status(event: LifecycleEventRecord) -> a2a.TaskStatus:
-    state = {
-        "run.running": a2a.TASK_STATE_WORKING,
-        "run.waiting": (
-            a2a.TASK_STATE_AUTH_REQUIRED
-            if event.payload.get("wait_reason") == "authentication"
-            else a2a.TASK_STATE_INPUT_REQUIRED
-        ),
-        "run.completed": a2a.TASK_STATE_COMPLETED,
-        "run.failed": a2a.TASK_STATE_FAILED,
-        "run.cancelled": a2a.TASK_STATE_CANCELED,
-    }[event.event_type]
-    status = a2a.TaskStatus(state=state)
-    if event.event_type == "run.waiting":
-        pending = event.payload.get("pending")
-        if isinstance(pending, dict):
-            value = Value()
-            ParseDict(pending, value)
-            status.message.CopyFrom(
-                a2a.Message(
-                    message_id=f"status-{event.id}",
-                    role=a2a.ROLE_AGENT,
-                    parts=[a2a.Part(data=value)],
-                )
-            )
-    elif event.event_type == "run.failed":
-        message = "The Agent task failed."
-        failure = event.payload.get("failure")
-        if isinstance(failure, dict):
-            candidate = failure.get("message")
-            if isinstance(candidate, str):
-                message = candidate
-        status.message.CopyFrom(
-            a2a.Message(message_id=f"status-{event.id}", role=a2a.ROLE_AGENT, parts=[a2a.Part(text=message)])
-        )
-    return status
+    return project_status(
+        run_status=event.event_type.removeprefix("run."),
+        wait_reason=event.payload.get("wait_reason"),
+        pending=event.payload.get("pending"),
+        failure=event.payload.get("failure"),
+        message_id=f"status-{event.id}",
+    )
 
 
 def _event_artifacts(task: A2ATaskBindingRecord, event: LifecycleEventRecord) -> list[a2a.Artifact]:
     if event.event_type != "run.completed":
         return []
     output_text = event.payload.get("output_text")
-    output = event.payload.get("output")
-    if isinstance(output_text, str):
-        parts = [a2a.Part(text=output_text)]
-    elif isinstance(output, str):
-        parts = [a2a.Part(text=output)]
-    elif output is not None:
-        value = Value()
-        ParseDict(cast(Any, output), value)
-        parts = [a2a.Part(data=value)]
-    else:
-        return []
-    return [a2a.Artifact(artifact_id=f"artifact-{task.id}-result", name="result", parts=parts)]
+    return project_artifacts(
+        task_id=task.id,
+        output_text=output_text if isinstance(output_text, str) else None,
+        output=event.payload.get("output"),
+    )
 
 
 def _decrypt_credential_bundle(
@@ -561,7 +507,6 @@ def _parse_destination_ref(value: str) -> tuple[str, int]:
 
 
 __all__ = [
-    "A2APushFailure",
     "A2APushMaterial",
     "A2APushMaterialError",
     "A2APushPublisher",

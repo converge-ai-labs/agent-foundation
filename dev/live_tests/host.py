@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from a13n_service.app import create_app
+from a13n_service.configuration.sources import load_settings
 from a13n_service.iam import AuthenticatedActor, AuthenticationError, PrincipalRef
 from a13n_service.process.components import Components
 from a13n_service.settings import ObjectBackend, ProcessRole, Settings
@@ -20,25 +21,27 @@ logger = logging.getLogger(__name__)
 
 
 def settings_for(config: dict, role: str) -> Settings:
-    settings = Settings()
-    overrides = {
-        "role": ProcessRole(role),
-        "host": "127.0.0.1",
-        "port": urlsplit(config[f"{role}_url"]).port,
-        "build_version": "live-test",
-        "gateway_run_queue_name": "live-test",
-        "pricing_auto_update": False,
-        "secret_master_key_base64": config["encryption_key"],
-        "secret_encryption_key_id": "live-test-1",
-        "connectivity_public_origin": config["control_url"],
-        "connectivity_http_origins": (config["control_url"],),
-        "connectivity_private_endpoint_cidrs": ("127.0.0.1/32",),
-        "connectivity_setup_correlation_secret": config["token"],
-        "model_private_endpoint_cidrs": ("127.0.0.1/32",),
-        "filesystem_root": Path(config["workspace_root"]).parent / role,
-    }
-    # Validate overrides normally: model_copy would leave SecretStr/path fields untyped.
-    return Settings(**{**settings.model_dump(), **overrides})
+    return load_settings(
+        overrides={
+            "service": {
+                "role": role,
+                "host": "127.0.0.1",
+                "port": urlsplit(config[f"{role}_url"]).port,
+                "build_version": "live-test",
+            },
+            "gateway": {"run_queue_name": "live-test"},
+            "pricing": {"auto_update": False},
+            "secrets": {"master_key_base64": config["encryption_key"], "encryption_key_id": "live-test-1"},
+            "connectivity": {
+                "public_origin": config.get("peer_url", config["control_url"]),
+                "http_origins": (config["control_url"],),
+                "private_endpoint_cidrs": ("127.0.0.1/32",),
+                "setup_correlation_secret": config["token"],
+            },
+            "models": {"private_endpoint_cidrs": ("127.0.0.1/32",)},
+            "filesystem": {"root": Path(config["workspace_root"]).parent / role},
+        }
+    )
 
 
 def bearer_authenticator(config: dict):
@@ -66,7 +69,11 @@ def bearer_authenticator(config: dict):
 
 def authenticated_control(config: dict):
     """Add local authentication and model fixtures to ordinary Control settings."""
-    settings = Settings(role=ProcessRole.control, host="127.0.0.1", port=urlsplit(config["control_url"]).port)
+    settings = load_settings(
+        overrides={
+            "service": {"role": ProcessRole.control, "host": "127.0.0.1", "port": urlsplit(config["control_url"]).port}
+        }
+    )
     authenticate = bearer_authenticator(config)
     app = create_app(settings, components=Components(request_authenticator=authenticate))
     app.include_router(fixture_router(Path(config["workspace_root"]), authenticate))
@@ -76,7 +83,7 @@ def authenticated_control(config: dict):
 
 def local_app(config: dict, role: str):
     settings = settings_for(config, role)
-    if settings.object_backend is not ObjectBackend.s3:
+    if settings.objects.backend is not ObjectBackend.s3:
         raise RuntimeError(
             "Separate live Control/Worker roles require shared S3 storage. Configure A13N_SERVICE_OBJECT_BACKEND=s3 "
             "and a compatible endpoint/bucket in .env before starting the live roles."
@@ -88,13 +95,13 @@ def local_app(config: dict, role: str):
     if "reverse_envd" in config and role == "worker":
         from .environment_host import ReverseEnvdHost
 
-        reverse_envd = ReverseEnvdHost(config["reverse_envd"], settings.environment_provider_builtins)
+        reverse_envd = ReverseEnvdHost(config["reverse_envd"], settings.environments.provider_builtins)
         environment_catalog = reverse_envd.catalog
     elif role == "control" and config.get("websocket_envd"):
         from a13n_environment import build_environment_provider_catalog
 
         environment_catalog = build_environment_provider_catalog(
-            builtin_keys=tuple(dict.fromkeys((*settings.environment_provider_builtins, "a13n.websocket-envd")))
+            builtin_keys=tuple(dict.fromkeys((*settings.environments.provider_builtins, "a13n.websocket-envd")))
         )
     if role == "worker":
         from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog

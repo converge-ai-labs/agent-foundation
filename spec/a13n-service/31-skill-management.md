@@ -107,7 +107,7 @@ All routes are under `/api/v1`, follow [Platform API Conventions](../api-convent
 ### Stage a ZIP
 
 ```http
-POST /api/v1/workspaces/{workspace_id}/skill-uploads
+POST /api/v1/workspaces/{workspace}/skill-uploads
 Content-Type: application/zip
 Idempotency-Key: opaque-caller-key
 
@@ -163,7 +163,7 @@ class CreateSkillRevisionRequest:
 ```
 
 ```http
-POST /api/v1/workspaces/{workspace_id}/skills
+POST /api/v1/workspaces/{workspace}/skills
 POST /api/v1/skills/{skill_id}/revisions
 Content-Type: application/json
 Idempotency-Key: opaque-caller-key
@@ -180,7 +180,7 @@ A GitHub source is a one-time acquisition performed during this request. Every c
 ### Read, Update, References, and Delete
 
 ```http
-GET /api/v1/workspaces/{workspace_id}/skills?limit=50&cursor=opaque
+GET /api/v1/workspaces/{workspace}/skills?limit=50&cursor=opaque
 GET /api/v1/skills/{skill_id}
 GET /api/v1/skills/{skill_id}/revisions?limit=50&cursor=opaque
 GET /api/v1/skill-revisions/{skill_revision_id}
@@ -199,6 +199,7 @@ class SkillAgentReference:
     agent_id: AgentId
     agent_revision_id: AgentRevisionId
     agent_name: str
+    agent_key: str
 
 
 class SkillPublicationReceipt:
@@ -211,7 +212,7 @@ Reads expose safe provenance and manifest metadata, never Secret selectors, obje
 
 PATCH changes only `name` and requires the current strong `ETag` in `If-Match`. It does not append a Revision or advance `Skill.version`; `key` is never patchable.
 
-The references route returns exactly the unarchived Agents whose current AgentRevision contains a binding to this `skill_id`. Pinned and unpinned bindings both count. It excludes archived Agents, historical non-current AgentRevisions, and accepted Runs. DELETE uses the same query and returns `409 skill_in_use` when any item exists. The reference list is an observation, not a precondition token; DELETE always reevaluates the set in its own transaction.
+Each reference includes the current Agent name and key for navigation. The references route returns exactly the unarchived Agents whose current AgentRevision contains a binding to this `skill_id`. Pinned and unpinned bindings both count. It excludes archived Agents, historical non-current AgentRevisions, and accepted Runs. DELETE uses the same query and returns `409 skill_in_use` when any item exists. The reference list is an observation, not a precondition token; DELETE always reevaluates the set in its own transaction.
 
 DELETE otherwise requires the current strong `ETag`, tombstones the Skill, and releases its Workspace key. It appends no Revision and advances no version. After commit, the Skill is absent from collections and every ordinary public read for that Skill, its Revisions, and its content returns `404`. An exact mutation replay within its idempotency-evidence horizon remains operation evidence and follows the shared replay contract.
 

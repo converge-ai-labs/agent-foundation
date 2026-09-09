@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import secrets
 from uuid import uuid4
 
 import pytest
@@ -60,13 +61,21 @@ async def connection(journey, kind):
             "connector_key": "live",
         },
     )
-    await journey.post(
+    nonce = secrets.token_hex(32)
+    launch = await journey.post(
         f"/api/v1/connector-connections/{resource['id']}/setup",
         {
             "expected_version": resource["version"],
             "setup": {"auth_config_id": "live-auth", "toolkit_version": TOOLKIT_VERSION},
             "return_path": "/",
+            "browser_nonce": nonce,
         },
+        expected=200,
+    )
+    assert launch["requires_browser_callback"] and launch["connection"]["status"] != "ready"
+    await journey.post(
+        "/api/v1/connector-setup/complete",
+        {"attempt_id": launch["attempt_id"], "browser_nonce": nonce, "session_uri": "live-session"},
         expected=200,
     )
     return await journey.live.wait(
@@ -105,9 +114,24 @@ async def test_managed_connection_calls_selected_tool_and_revocation_blocks_disp
 
     path = f"/api/v1/{kind}-connections/{resource['id']}"
     current = await live.request("GET", path)
-    await journey.post(
+    cleanup = await journey.post(
         path + ("/disable" if kind == "mcp" else "/revoke"), {"expected_version": current["version"]}, expected=200
     )
+    if kind == "connector":
+        assert cleanup["local_status"] == "disabled" and cleanup["remote_status"] == "succeeded"
+        current = await live.request("GET", path)
+        reconnect = await live.http.post(
+            path + "/reconnect",
+            headers={"Idempotency-Key": uuid4().hex},
+            json={
+                "expected_version": current["version"],
+                "setup": {"auth_config_id": "live-auth", "toolkit_version": TOOLKIT_VERSION},
+                "return_path": "/",
+                "browser_nonce": secrets.token_hex(32),
+            },
+        )
+        assert reconnect.status_code == 409
+        assert reconnect.json()["error"]["code"] == "reconnect_unsupported"
     # New invocations must be denied before any external dispatch. This does not test IAM grant revocation (case 29).
     rejected = await live.http.post(
         journey.base + "/runs",

@@ -8,6 +8,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_control_runtime
 
@@ -61,9 +62,9 @@ async def get_provider_type(request: Request, actor: Actor, provider_type: str) 
     )
 
 
-@router.post("/workspaces/{workspace_id}/environment-providers", status_code=201)
+@router.post("/workspaces/{workspace}/environment-providers", status_code=201)
 async def create_provider(
-    request: Request, actor: Actor, workspace_id: str, body: CreateProviderRequest
+    request: Request, actor: Actor, workspace_id: WorkspaceId, body: CreateProviderRequest
 ) -> EnvironmentProvider:
     return await _service(request).create_provider(actor=actor, workspace_id=workspace_id, request=body)
 
@@ -86,9 +87,13 @@ async def replace_credential(
     )
 
 
-@router.post("/workspaces/{workspace_id}/environment-templates", status_code=201)
+@router.post("/workspaces/{workspace}/environment-templates", status_code=201)
 async def create_template(
-    request: Request, actor: Actor, workspace_id: str, body: CreateTemplateRequest, idempotency_key: IdempotencyKey
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    body: CreateTemplateRequest,
+    idempotency_key: IdempotencyKey,
 ) -> EnvironmentTemplate:
     return await _service(request).create_template(
         actor=actor, workspace_id=workspace_id, request=body, idempotency_key=idempotency_key
@@ -123,18 +128,22 @@ async def get_revision(request: Request, actor: Actor, revision_id: str) -> Envi
     return await _service(request).get_revision(actor=actor, revision_id=revision_id)
 
 
-@router.post("/workspaces/{workspace_id}/environments", status_code=201)
+@router.post("/workspaces/{workspace}/environments", status_code=201)
 async def create_environment(
-    request: Request, actor: Actor, workspace_id: str, body: CreateEnvironmentRequest, idempotency_key: IdempotencyKey
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    body: CreateEnvironmentRequest,
+    idempotency_key: IdempotencyKey,
 ) -> Environment:
     return await _service(request).create_environment(
         actor=actor, workspace_id=workspace_id, request=body, idempotency_key=idempotency_key
     )
 
 
-@router.get("/workspaces/{workspace_id}/environment-providers")
+@router.get("/workspaces/{workspace}/environment-providers")
 async def list_providers(
-    request: Request, actor: Actor, workspace_id: str, limit: Limit = 50, cursor: str | None = None
+    request: Request, actor: Actor, workspace_id: WorkspaceId, limit: Limit = 50, cursor: str | None = None
 ) -> Collection[EnvironmentProvider]:
     return await _service(request).list_providers(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
 
@@ -146,9 +155,9 @@ async def get_provider(request: Request, response: Response, actor: Actor, resou
     return resource
 
 
-@router.get("/workspaces/{workspace_id}/environment-templates")
+@router.get("/workspaces/{workspace}/environment-templates")
 async def list_templates(
-    request: Request, actor: Actor, workspace_id: str, limit: Limit = 50, cursor: str | None = None
+    request: Request, actor: Actor, workspace_id: WorkspaceId, limit: Limit = 50, cursor: str | None = None
 ) -> Collection[EnvironmentTemplate]:
     return await _service(request).list_templates(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
 
@@ -160,9 +169,9 @@ async def get_template(request: Request, response: Response, actor: Actor, resou
     return resource
 
 
-@router.get("/workspaces/{workspace_id}/environments")
+@router.get("/workspaces/{workspace}/environments")
 async def list_environments(
-    request: Request, actor: Actor, workspace_id: str, limit: Limit = 50, cursor: str | None = None
+    request: Request, actor: Actor, workspace_id: WorkspaceId, limit: Limit = 50, cursor: str | None = None
 ) -> Collection[Environment]:
     return await _service(request).list_environments(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
 
@@ -203,17 +212,21 @@ async def get_command(request: Request, actor: Actor, command_id: str) -> Enviro
     return await _service(request).get_command(actor=actor, command_id=command_id)
 
 
-@router.post("/organizations/{organization_id}/environment-providers", status_code=201)
+@router.post("/organizations/{organization}/environment-providers", status_code=201)
 async def organization_create_provider(
-    request: Request, actor: Actor, organization_id: str, body: CreateProviderRequest
+    request: Request, actor: Actor, organization_id: OrganizationId, body: CreateProviderRequest
 ) -> EnvironmentProvider:
     require_organization_boundary(actor, organization_id)
     return await _service(request).create_provider(actor=actor, workspace_id=None, request=body)
 
 
-@router.post("/organizations/{organization_id}/environment-templates", status_code=201)
+@router.post("/organizations/{organization}/environment-templates", status_code=201)
 async def organization_create_template(
-    request: Request, actor: Actor, organization_id: str, body: CreateTemplateRequest, idempotency_key: IdempotencyKey
+    request: Request,
+    actor: Actor,
+    organization_id: OrganizationId,
+    body: CreateTemplateRequest,
+    idempotency_key: IdempotencyKey,
 ) -> EnvironmentTemplate:
     require_organization_boundary(actor, organization_id)
     return await _service(request).create_template(
@@ -221,17 +234,17 @@ async def organization_create_template(
     )
 
 
-@router.get("/organizations/{organization_id}/environment-providers")
+@router.get("/organizations/{organization}/environment-providers")
 async def organization_list_providers(
-    request: Request, actor: Actor, organization_id: str, limit: Limit = 50, cursor: str | None = None
+    request: Request, actor: Actor, organization_id: OrganizationId, limit: Limit = 50, cursor: str | None = None
 ) -> Collection[EnvironmentProvider]:
     require_organization_boundary(actor, organization_id)
     return await _service(request).list_providers(actor=actor, workspace_id=None, limit=limit, cursor=cursor)
 
 
-@router.get("/organizations/{organization_id}/environment-templates")
+@router.get("/organizations/{organization}/environment-templates")
 async def organization_list_templates(
-    request: Request, actor: Actor, organization_id: str, limit: Limit = 50, cursor: str | None = None
+    request: Request, actor: Actor, organization_id: OrganizationId, limit: Limit = 50, cursor: str | None = None
 ) -> Collection[EnvironmentTemplate]:
     require_organization_boundary(actor, organization_id)
     return await _service(request).list_templates(actor=actor, workspace_id=None, limit=limit, cursor=cursor)

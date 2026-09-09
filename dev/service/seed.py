@@ -1,0 +1,126 @@
+"""Prepare and verify the complete local development baseline."""
+
+import json
+
+import httpx2
+from a13n_service.app import create_app
+from a13n_service.settings import Settings
+
+from .model import MODEL_PORT, model_process
+from .seed_client import Client
+from .seed_connectivity import connectivity
+from .seed_environments import environments
+from .seed_execution import execution
+from .seed_identity import PASSWORD, members, profiles
+from .seed_journeys import journeys, run
+from .seed_lifecycle import resource_history
+from .seed_resources import resources
+from .seed_verify import report, verify
+
+
+async def seed(settings: Settings, *, session_count: int = 120, model_port: int = MODEL_PORT) -> dict:
+    # The temporary application owns the same production runtime and stops before
+    # reset returns. No browser, listening Service port, or test authenticator.
+    with model_process(model_port) as model_url:
+        app = create_app(settings)
+        async with app.router.lifespan_context(app):
+            identity = app.state.runtime.control.identity
+            issued = await identity.invitations.initialize(reissue=True)
+            if issued is None:
+                raise RuntimeError("Seeding requires a freshly migrated empty installation")
+            origin = settings.iam.public_origin
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app),
+                base_url=origin.replace("http://", "https://", 1),
+                headers={"Origin": origin},
+                timeout=60,
+                trust_env=False,
+            ) as http:
+                client = Client(http)
+                login = await client.request(
+                    "POST",
+                    f"/api/v1/invitations/{issued.invitation.id}/accept",
+                    json={"token": issued.token, "password": PASSWORD},
+                )
+                http.headers["X-A13N-CSRF-Token"] = login["csrf_token"]
+                organization = (await client.collection("/api/v1/organizations"))[0]
+                workspace = (await client.collection(f"/api/v1/organizations/{organization['id']}/workspaces"))[0]
+                empty = await client.request(
+                    "POST",
+                    f"/api/v1/organizations/{organization['id']}/workspaces",
+                    expected=201,
+                    json={"name": "Empty workspace / 空白体验"},
+                )
+                base = f"/api/v1/workspaces/{workspace['id']}"
+                http.headers["X-A13N-Workspace-ID"] = workspace["id"]
+                await profiles(client, organization["id"], workspace["id"])
+                identity_scenarios = await members(client, base, app, origin)
+                catalog = await resources(client, base, model_url, settings)
+                assets, skills, agents = catalog["assets"], catalog["skills"], catalog["agents"]
+                environment_id = catalog["environment_id"]
+                print(
+                    f"Prepared {len(agents)} Agents, {len(skills)} Skills and {len(assets)} Assets; creating Sessions...",
+                    flush=True,
+                )
+                runs = []
+                # One shared local filesystem Environment: seed its journeys in order.
+                for index in range(session_count):
+                    prompt = ("[fail] " if index % 20 == 19 else "[long] " if index % 12 == 0 else "") + (
+                        f"Review fictional release brief {index + 1}. 请检查导航、历史消息和附件的交互体验。"
+                    )
+                    runs.append(
+                        await run(
+                            client,
+                            base,
+                            agents[index % len(agents)],
+                            prompt,
+                            environment_id=environment_id,
+                            asset_id=[assets[(index + offset) % len(assets)] for offset in (0, 1, 3)]
+                            if index % 12 == 0
+                            else None,
+                        )
+                    )
+                    if (index + 1) % 20 == 0:
+                        print(f"Created {index + 1}/{session_count} Sessions", flush=True)
+                # One genuine continued conversation for scroll and history review.
+                previous = next(run for run in runs if run["status"] == "completed")
+                for index in range(12):
+                    previous = await run(
+                        client,
+                        base,
+                        previous["agent_id"],
+                        f"[long] Follow-up {index + 1}: expand the review.",
+                        previous=previous,
+                    )
+                print("Creating branching, retry, waiting, feedback, interruption and queue scenarios...", flush=True)
+                conversation_scenarios = await journeys(client, base, catalog, previous)
+                conversation_scenarios.update(await execution(client, base, catalog))
+                connectivity_scenarios = await connectivity(client, base, catalog, identity_scenarios, model_url)
+                catalog["scenarios"].update(await environments(client, base, catalog, settings))
+                catalog["scenarios"].update(await resource_history(client, base, catalog))
+                sessions = await client.collection(base + "/sessions")
+                manifest = {
+                    "workspace_id": workspace["id"],
+                    "empty_workspace_id": empty["id"],
+                    "agent_ids": agents,
+                    "asset_ids": assets,
+                    "skill_ids": skills,
+                    "session_count": len(sessions),
+                    "bulk_session_count": session_count,
+                    "long_thread_id": previous["thread_id"],
+                    "model_url": model_url,
+                    "asset_checks": catalog["asset_checks"],
+                    "scenarios": {
+                        "identity": identity_scenarios,
+                        "resources": catalog["scenarios"],
+                        "conversations": conversation_scenarios,
+                        "connectivity": connectivity_scenarios,
+                    },
+                }
+                print("Verifying retained resources, pagination, relationships and outcomes...", flush=True)
+                manifest["coverage"] = await verify(client, manifest)
+                await client.request("POST", "/api/v1/auth/logout", expected=204)
+    settings.filesystem.root.parent.joinpath("seed.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    settings.filesystem.root.parent.joinpath("seed-report.md").write_text(report(manifest))
+    print(f"Public local account: {settings.iam.initial_admin_email} / {PASSWORD}", flush=True)
+    return manifest

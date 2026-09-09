@@ -13,7 +13,7 @@ from a13n_service.agents.domain import (
     UpdateAgentRequest,
 )
 from a13n_service.agents.errors import AgentError
-from a13n_service.agents.persistence import load_replay, payload_identity
+from a13n_service.agents.persistence import load_replay, request_identity
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
@@ -329,6 +329,6 @@ async def test_agent_replay_rejects_organization_boundary(agent_sessions: async_
                 actor=organization_actor,
                 operation="agent.create",
                 scope_id=WORKSPACE_ID,
-                identity=payload_identity("workspace-only", {}),
+                identity=request_identity("workspace-only", {}),
                 now=NOW,
             )

@@ -21,8 +21,8 @@ class ServiceServer(uvicorn.Server):
         super().__init__(
             uvicorn.Config(
                 app,
-                host=host or settings.host,
-                port=settings.port,
+                host=host or settings.service.host,
+                port=settings.service.port,
                 log_config=None,
                 workers=1,
                 timeout_graceful_shutdown=_HTTP_DRAIN_SECONDS,

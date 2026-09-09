@@ -22,6 +22,8 @@ Go module releases use canonical module tags in the form `sdk/go/v<version>`, cr
 
 ## Search accounts
 
+Bind API Key operations with `client.Workspace(ctx)`. This reads `/api/v1/auth/context` once and returns search operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `SearchScope` operations; Service always enforces the credential boundary.
+
 Create a bearer client with `NewClient(baseURL, NewSecret(token), nil)` and call `Close` when finished. All operations accept `context.Context`. `SearchProviders` returns a `Representation[Page[SearchProvider]]`; pass `SearchListOptions{Cursor: ...}` to continue pagination. `UpdateSearchProvider` requires the current account ETag. `TestSearchProvider` sends one quota-consuming probe only when called.
 
 Credential request fields use `NewSecret(value)`. Their JSON and formatting diagnostics omit or redact credentials; the client serializes the write-only field for the request. `AgentRunOverride.Search` uses `Optional[SearchSelection]{}` to inherit, `Null[SearchSelection]()` to disable, and `Some(SearchSelection{ProviderID: accountID})` to replace. Configuration JSON round-trips preserve other fields in `Fields`.

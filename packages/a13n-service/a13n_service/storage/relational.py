@@ -1,5 +1,6 @@
 """Async relational storage construction and short session scopes."""
 
+import sqlite3
 from asyncio import CancelledError
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from anyio import CancelScope, fail_after
 from anyio.lowlevel import checkpoint_if_cancelled
 from sqlalchemy import URL, event, text
 from sqlalchemy.engine import ExceptionContext, make_url
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -162,3 +164,13 @@ def _configure_sqlite(engine: AsyncEngine, busy_timeout_seconds: float, path: Pa
                 cursor.execute("PRAGMA journal_mode=WAL")
         finally:
             cursor.close()
+
+
+def is_unique_conflict(error: IntegrityError, *, constraint: str, sqlite_columns: str) -> bool:
+    diagnostic = getattr(error.orig, "diag", None)
+    if diagnostic is not None:
+        return diagnostic.sqlstate == "23505" and diagnostic.constraint_name == constraint
+    return (
+        getattr(error.orig, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_UNIQUE
+        and str(error.orig) == f"UNIQUE constraint failed: {sqlite_columns}"
+    )

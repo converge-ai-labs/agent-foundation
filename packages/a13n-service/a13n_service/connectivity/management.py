@@ -4,28 +4,23 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import datetime
 
-from pydantic import BaseModel, JsonValue, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, StrictInt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.digests import digest_request
-from a13n_service.durable_operations.idempotency import (
-    EvidenceScope,
-    IdempotencyIdentity,
-    load_evidence,
-    new_evidence,
-)
+from a13n_service.durable_operations.idempotency import IdempotencyIdentity
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.durable_operations.requests import evidence_record, load_receipt, request_scope
 from a13n_service.iam.authorization import AuthenticatedActor
 
 
-@dataclass(frozen=True, slots=True)
-class CommandReceipt:
-    resource_id: str
-    result_version: int
-    created_at: datetime
+class CommandReceipt(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    resource_id: str = Field(exclude=True)
+    version: StrictInt
     resource: dict[str, JsonValue] | None
 
     def restore[T: BaseModel](self, model: type[T]) -> T:
@@ -45,30 +40,15 @@ async def replay_command(
     fingerprint: str,
     now: datetime,
 ) -> CommandReceipt | None:
-    evidence = await load_evidence(
+    receipt = await load_receipt(
         session,
-        scope=EvidenceScope(
-            workspace_id,
-            actor.principal.principal_type.value,
-            actor.principal.principal_id,
-            operation,
-            scope_id,
-            organization_id=actor.boundary_organization_id,
-        ),
+        scope=request_scope(actor, workspace_id=workspace_id, operation=operation, scope_id=scope_id),
         identity=IdempotencyIdentity(idempotency_key_digest, fingerprint),
         now=now,
     )
-    if evidence is None:
+    if receipt is None:
         return None
-    payload = evidence.receipt_json
-    if payload is None or not isinstance(payload.get("version"), int):
-        raise RuntimeError("command evidence is missing its receipt")
-    version = payload["version"]
-    assert isinstance(version, int)
-    resource = payload.get("resource")
-    return CommandReceipt(
-        evidence.result_ref, version, evidence.created_at, resource if isinstance(resource, dict) else None
-    )
+    return CommandReceipt.model_validate({**receipt.response, "resource_id": receipt.result_ref})
 
 
 def record_command(
@@ -87,24 +67,21 @@ def record_command(
     now: datetime,
     resource: BaseModel | None,
 ) -> IdempotencyEvidenceRecord:
-    record = new_evidence(
+    record = evidence_record(
+        actor=actor,
         organization_id=organization_id,
-        scope=EvidenceScope(
-            workspace_id,
-            actor.principal.principal_type.value,
-            actor.principal.principal_id,
-            operation,
-            scope_id,
-            organization_id=actor.boundary_organization_id,
-        ),
+        workspace_id=workspace_id,
+        operation=operation,
+        scope_id=scope_id,
         identity=IdempotencyIdentity(idempotency_key_digest, fingerprint),
         result_kind=resource_type,
         result_ref=resource_id,
         now=now,
-        receipt={
-            "version": result_version,
-            "resource": None if resource is None else resource.model_dump(mode="json", by_alias=True),
-        },
+        response=CommandReceipt(
+            resource_id=resource_id,
+            version=result_version,
+            resource=None if resource is None else resource.model_dump(mode="json", by_alias=True),
+        ),
     )
 
     session.add(record)

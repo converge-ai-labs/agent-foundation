@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createClient, ApiError } from "../dist/index.js";
 const baseUrl = "https://service.example";
-const path = { workspace_id: "ws_test", provider_id: "sp_test" };
+const path = { workspace: "ws_test", provider_id: "sp_test" };
 
 test("search account create, rotation, and tests never automatically replay", async () => {
   let calls = 0;
@@ -21,7 +21,7 @@ test("search account create, rotation, and tests never automatically replay", as
     },
   });
   await assert.rejects(
-    client.http.POST("/api/v1/workspaces/{workspace_id}/search-providers", {
+    client.http.POST("/api/v1/workspaces/{workspace}/search-providers", {
       params: { path },
       body: { type: "brave", name: "Research", credential: "test-secret" },
     }),
@@ -29,7 +29,7 @@ test("search account create, rotation, and tests never automatically replay", as
   );
   await assert.rejects(
     client.http.PATCH(
-      "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}",
+      "/api/v1/workspaces/{workspace}/search-providers/{provider_id}",
       {
         params: { path, header: { "If-Match": '\"v1\"' } },
         body: { credential: "test-secret" },
@@ -39,7 +39,7 @@ test("search account create, rotation, and tests never automatically replay", as
   );
   await assert.rejects(
     client.http.POST(
-      "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}/test",
+      "/api/v1/workspaces/{workspace}/search-providers/{provider_id}/test",
       { params: { path }, body: {} },
     ),
     ApiError,
@@ -95,9 +95,9 @@ test("scoped account responses retain ETags and do not copy secret inputs", asyn
     },
   });
   const result = await client.http.POST(
-    "/api/v1/organizations/{organization_id}/search-providers",
+    "/api/v1/organizations/{organization}/search-providers",
     {
-      params: { path: { organization_id: "org_test" } },
+      params: { path: { organization: "org_test" } },
       body: { type: "exa", name: "Research", credential: "test-secret" },
     },
   );
@@ -105,4 +105,32 @@ test("scoped account responses retain ETags and do not copy secret inputs", asyn
   assert.ok(!JSON.stringify(result.data).includes("test-secret"));
   assert.equal((await requests[0].json()).credential, "test-secret");
   client.close();
+});
+
+test("workspace-bound search uses credential context and shares shutdown", async () => {
+  const urls = [];
+  const client = createClient({
+    baseUrl,
+    auth: { type: "bearer", token: "token" },
+    fetch: async (request) => {
+      urls.push(request.url);
+      return Response.json(
+        request.url.endsWith("/auth/context")
+          ? { workspace_id: "ws_test", workspace_key: "renamed" }
+          : { items: [], next_cursor: null },
+      );
+    },
+  });
+  const http = await client.workspaceHttp();
+  await http.GET("/search-providers");
+  await http.GET("/search-providers/{provider_id}/references", {
+    params: { path: { provider_id: "sp_test" } },
+  });
+  assert.deepEqual(urls, [
+    `${baseUrl}/api/v1/auth/context`,
+    `${baseUrl}/api/v1/workspaces/ws_test/search-providers`,
+    `${baseUrl}/api/v1/workspaces/ws_test/search-providers/sp_test/references`,
+  ]);
+  client.close();
+  await assert.rejects(http.GET("/search-providers"));
 });

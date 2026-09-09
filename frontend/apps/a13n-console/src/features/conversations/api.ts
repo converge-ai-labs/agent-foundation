@@ -37,9 +37,9 @@ export function conversationQueries(client: Client, workspaceId: string) {
         queryKey: [...keys.sessions(), cursor],
         queryFn: ({ signal }) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/sessions", {
+            .GET("/api/v1/workspaces/{workspace}/sessions", {
               params: {
-                path: { workspace_id: workspaceId },
+                path: { workspace: workspaceId },
                 query: { cursor, limit: 20 },
               },
               signal,
@@ -243,8 +243,8 @@ export function invalidateConversation(
 export const isActiveRun = (status?: string) =>
   status === "accepted" || status === "running";
 export function runPath(
-  workspaceId: string,
+  basePath: string,
   receipt: { session_id: string; thread_id: string; run_id: string },
 ) {
-  return `/workspaces/${workspaceId}/sessions/${receipt.session_id}/threads/${receipt.thread_id}/runs/${receipt.run_id}`;
+  return `${basePath}/sessions/${receipt.session_id}/threads/${receipt.thread_id}/runs/${receipt.run_id}`;
 }

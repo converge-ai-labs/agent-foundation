@@ -19,6 +19,7 @@ it("keeps browser proof separate from the upstream session and rejects expired c
   expect(createBrowserNonce()).not.toBe(nonce);
   const context = {
     browser_nonce: nonce,
+    return_path: "/organization/default/connectors",
     workspace_id: "ws_test",
     connection_id: "cconn_test",
     attempt_id: "csa_test",

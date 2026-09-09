@@ -183,3 +183,39 @@ func TestSearchErrorsAndClose(t *testing.T) {
 		t.Log("Service errors and local cancellation verified")
 	})
 }
+
+func TestWorkspaceBinding(t *testing.T) {
+	Convey("Workspace binding resolves once, uses immutable ID, and shares shutdown", t, func() {
+		var paths []string
+		client, err := a13n.NewClient("https://service.example/prefix", a13n.NewSecret("token"), roundTrip(func(req *http.Request) (*http.Response, error) {
+			paths = append(paths, req.URL.Path)
+			if strings.HasSuffix(req.URL.Path, "/auth/context") {
+				return response(200, `{"workspace_id":"ws_test","workspace_key":"renamed"}`), nil
+			}
+			return response(200, `{"items":[`+providerJSON+`]}`), nil
+		}))
+		So(err, ShouldBeNil)
+		defer client.Close()
+		workspace, err := client.Workspace(context.Background())
+		So(err, ShouldBeNil)
+		for range 2 {
+			result, err := workspace.SearchProviders(context.Background(), a13n.SearchListOptions{})
+			So(err, ShouldBeNil)
+			So(result.Value.Items[0].ID, ShouldEqual, "sp_test")
+		}
+		So(paths, ShouldResemble, []string{"/prefix/api/v1/auth/context", "/prefix/api/v1/workspaces/ws_test/search-providers", "/prefix/api/v1/workspaces/ws_test/search-providers"})
+		client.Close()
+		_, err = workspace.SearchProviders(context.Background(), a13n.SearchListOptions{})
+		So(err, ShouldEqual, a13n.ErrClosed)
+		t.Log("Workspace context is resolved once; search uses immutable ID and shares shutdown")
+	})
+	Convey("Organization-bound credentials cannot create a Workspace binding", t, func() {
+		for _, body := range []string{`{}`, `{"workspace_id":null}`, `{"workspace_id":""}`} {
+			client, err := a13n.NewClient("https://service.example", a13n.NewSecret("token"), roundTrip(func(*http.Request) (*http.Response, error) { return response(200, body), nil }))
+			So(err, ShouldBeNil)
+			_, err = client.Workspace(context.Background())
+			So(err, ShouldNotBeNil)
+			client.Close()
+		}
+	})
+}

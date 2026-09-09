@@ -269,7 +269,7 @@ class ComposioToolCatalog:
         if len(keys) != len(set(keys)):
             raise ConnectorProviderError("invalid_provider_response")
         tools: dict[str, ConnectorTool] = {}
-        limit = Semaphore(8)
+        limit = Semaphore(32)
 
         async def load(key: str) -> None:
             async with limit:
@@ -381,6 +381,7 @@ class ComposioConnection:
                 json_body={
                     "arguments": arguments,
                     "connected_account_id": self._binding.external_ref,
+                    "user_id": self._binding.external_user_correlation,
                     "version": provider_version,
                 },
                 write=True,
@@ -393,7 +394,11 @@ class ComposioConnection:
         response = required_object(value)
         if response.get("successful") is not True:
             raise ConnectorProviderError("tool_rejected")
-        return ConnectorToolOutcome(kind="succeeded", result=response.get("data"), request_id=request_id)
+        # Upstream emits null for no error, but declares error as an optional string.
+        if response.get("error") is None:
+            response.pop("error", None)
+        # Composio output_parameters describes the entire execution response.
+        return ConnectorToolOutcome(kind="succeeded", result=response, request_id=request_id)
 
 
 def _inspection(

@@ -103,7 +103,7 @@ async def _completion(sessions, objects, *, queued_hook=False):
     handoffs = CompletionQueueHandoffService(
         sessions, states, RunPayloadStore(objects), _inline_hooks(), clock=clock, lifecycle=test_lifecycle_writer()
     )
-    completion = QueueCompletion(sessions, commands, handoffs, clock=clock)
+    completion = QueueCompletion(sessions, commands.queued, handoffs, clock=clock)
     committer = DatabaseAttemptCommitter(
         sessions,
         RunOutcomeService(sessions, RunPayloadStore(objects), clock=clock, lifecycle=test_lifecycle_writer()),
@@ -162,7 +162,7 @@ async def test_terminal_committer_completes_and_accepts_successor(
             successor.id,
         )
         assert await database.scalar(select(func.count()).select_from(RunRecord)) == 2
-    assert (await QueueRecovery(sessions, commands).scan()).completed == 0
+    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 0
 
 
 @pytest.mark.parametrize("failure", ["dependency", "timeout", "commit_timeout"])
@@ -173,15 +173,17 @@ async def test_preparation_failure_completes_source_and_recovery_consumes_queue(
     source, authority, stored, queued, commands, completion, committer = await _completion(
         sessions, interaction_object_store
     )
-    prepare = commands.prepare_queued_run
+    prepare = commands.queued.prepare_queued_run
     if failure == "timeout":
         authority = replace(authority, reconciliation_timeout=timedelta(milliseconds=50))
-        monkeypatch.setattr(commands, "prepare_queued_run", AsyncMock(side_effect=sleep_forever))
+        monkeypatch.setattr(commands.queued, "prepare_queued_run", AsyncMock(side_effect=sleep_forever))
     elif failure == "commit_timeout":
         authority = replace(authority, reconciliation_timeout=timedelta(milliseconds=50))
         monkeypatch.setattr(completion, "prepare", AsyncMock(return_value=sleep_forever))
     else:
-        monkeypatch.setattr(commands, "prepare_queued_run", AsyncMock(side_effect=ConnectionError("dependency down")))
+        monkeypatch.setattr(
+            commands.queued, "prepare_queued_run", AsyncMock(side_effect=ConnectionError("dependency down"))
+        )
     outcome = await committer.commit_verified_state_outcome(
         authority, await committer.verify_state_outcome(authority, stored)
     )
@@ -191,8 +193,8 @@ async def test_preparation_failure_completes_source_and_recovery_consumes_queue(
         assert (await database.get(RunRecord, source.id)).status == "completed"
         entry = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
         assert entry.position == 1 and entry.to_resource().state == "queued" and entry.failure_json is None
-    monkeypatch.setattr(commands, "prepare_queued_run", prepare)
-    assert (await QueueRecovery(sessions, commands).scan()).completed == 1
+    monkeypatch.setattr(commands.queued, "prepare_queued_run", prepare)
+    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 1
 
 
 @pytest.mark.parametrize("change", ["principal_disabled", "queue_version"])
@@ -218,7 +220,7 @@ async def test_final_revalidation_rolls_back_handoff_and_preserves_recoverable_q
         assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
     async with transaction(sessions) as database:
         (await database.get(UserRecord, USER_ID)).status = "active"
-    assert (await QueueRecovery(sessions, commands).scan()).completed == 1
+    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 1
 
 
 @pytest.mark.parametrize("deletion_proof_changes", [False, True])
@@ -275,7 +277,7 @@ async def test_worker_composition_consumes_queue_when_source_finishes(
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=respond)
-    settings = Settings(_env_file=None, worker_concurrency=1, worker_poll_interval_seconds=0.01)
+    settings = Settings(worker={"concurrency": 1, "poll_interval_seconds": 0.01})
     invocations = SimpleNamespace(preparation=_Preparation(), freezing=_Freezing([_frozen()]))
     async with worker_runtime(
         sessions,

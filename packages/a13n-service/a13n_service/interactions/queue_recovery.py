@@ -14,10 +14,10 @@ from a13n_service.background import Sweep
 from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .commands import InteractionCommands
 from .control_models import QueuedSubmissionRecord
 from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunObjectError
+from .queue_commands import QueuedRunCommands
 
 logger = logging.getLogger("a13n_service.interactions.queue_recovery")
 
@@ -26,7 +26,7 @@ class QueueRecovery:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        commands: InteractionCommands,
+        commands: QueuedRunCommands,
         *,
         batch_limit: int = 64,
         item_timeout_seconds: float = 30,

@@ -142,6 +142,8 @@ class LiveProviderModel(WrapperModel):
 
     def _validate_request_settings(self, settings: ModelSettings | None) -> None:
         value = dict(settings or {})
+        if self._harness_thread_id is not None and value.get("openai_prompt_cache_key") == self._harness_thread_id:
+            del value["openai_prompt_cache_key"]
         headers = value.get("extra_headers")
         if isinstance(headers, dict) and self._harness_thread_id is not None:
             headers = dict(headers)

@@ -303,23 +303,23 @@ GET /api/v1/model-provider-types
 Workspace Provider resources and commands use:
 
 ```http
-GET   /api/v1/workspaces/{workspace_id}/model-providers
-POST  /api/v1/workspaces/{workspace_id}/model-providers
-GET   /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}
-PATCH /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}
-POST  /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/test
-POST  /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/discover-models
-POST  /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/describe-model
+GET   /api/v1/workspaces/{workspace}/model-providers
+POST  /api/v1/workspaces/{workspace}/model-providers
+GET   /api/v1/workspaces/{workspace}/model-providers/{provider_id}
+PATCH /api/v1/workspaces/{workspace}/model-providers/{provider_id}
+POST  /api/v1/workspaces/{workspace}/model-providers/{provider_id}/test
+POST  /api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models
+POST  /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model
 ```
 
 Workspace Model resources and commands use:
 
 ```http
-GET   /api/v1/workspaces/{workspace_id}/models
-POST  /api/v1/workspaces/{workspace_id}/models
-GET   /api/v1/workspaces/{workspace_id}/models/{model_id}
-PATCH /api/v1/workspaces/{workspace_id}/models/{model_id}
-POST  /api/v1/workspaces/{workspace_id}/models/{model_id}/test
+GET   /api/v1/workspaces/{workspace}/models
+POST  /api/v1/workspaces/{workspace}/models
+GET   /api/v1/workspaces/{workspace}/models/{model_id}
+PATCH /api/v1/workspaces/{workspace}/models/{model_id}
+POST  /api/v1/workspaces/{workspace}/models/{model_id}/test
 ```
 
 Provider and Model collections use cursor pagination with deterministic `updated_at desc, id desc` ordering. Provider filters include name, type, and enabled state. Model filters include name/key, `provider_id`, and enabled state.
@@ -328,7 +328,7 @@ Provider and Model collections use cursor pagination with deterministic `updated
 
 `describe-model` accepts `upstream_model` and an optional `model_api`, and returns one `ModelDescription` without persisting or invoking a model. This same operation serves manual IDs, discovered candidates whose selected API changes, and existing Model editors. It requires no discovery-result token or Model ID. It can inspect upstream metadata but never performs generative inference. When metadata requires paginated listing, description stops after the page containing the requested model rather than requiring completion of unrelated pages. Description works with local trusted defaults when optional metadata is unavailable, including an unconfigured credential; credential and endpoint errors remain visible through discovery, connection testing, or inference. The service never sends credentials to an endpoint that failed policy validation.
 
-Every route above also exists under `/api/v1/organizations/{organization_id}` in place of `/api/v1/workspaces/{workspace_id}`. Organization routes enumerate, create, and manage Organization-owned resources; Workspace reads include parent resources, while Workspace mutations apply only to locally owned resources.
+Every route above also exists under `/api/v1/organizations/{organization}` in place of `/api/v1/workspaces/{workspace}`. Organization routes enumerate, create, and manage Organization-owned resources; Workspace reads include parent resources, while Workspace mutations apply only to locally owned resources.
 
 Create is synchronous and retains no separate idempotency record. Duplicate normalized Provider names return `409 model_provider_name_conflict`; duplicate normalized Model keys return `409 model_key_conflict`. All PATCH routes require `If-Match`; stale state returns `412 precondition_failed` and changes nothing.
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import anyio
@@ -12,6 +11,12 @@ import httpx2
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.background import PeriodicTask, Sweep
+from a13n_service.durable_operations.http_delivery import (
+    DeliveryFailure,
+    http_failure,
+    response_is_bounded,
+    retry_delay_seconds,
+)
 from a13n_service.durable_operations.outbox import OutboxClaim, complete_outbox, fail_outbox
 from a13n_service.durable_operations.publication import dispatch_outbox_batch
 from a13n_service.endpoint_policy import EndpointPolicyError
@@ -29,12 +34,6 @@ from .outbox import (
 from .validation import EndpointValidator
 
 logger = logging.getLogger("a13n_service.hooks.publisher")
-
-
-@dataclass(frozen=True, slots=True)
-class DeliveryFailure:
-    error_code: str
-    retryable: bool
 
 
 class WebhookPublisher:
@@ -161,12 +160,9 @@ class WebhookPublisher:
                 content=body,
                 follow_redirects=False,
             ) as response:
-                if not await self._response_is_bounded(response):
+                if not await response_is_bounded(response, maximum_bytes=self._max_response_bytes):
                     return DeliveryFailure("webhook_response_too_large", retryable=False)
-                if 200 <= response.status_code < 300:
-                    return None
-                retryable = response.status_code in {408, 425, 429} or response.status_code >= 500
-                return DeliveryFailure(f"webhook_http_{response.status_code}", retryable=retryable)
+                return http_failure(response.status_code, error_prefix="webhook")
         except (EndpointPolicyError, httpx2.HTTPError):
             return DeliveryFailure("webhook_transport_failed", retryable=True)
 
@@ -185,24 +181,13 @@ class WebhookPublisher:
             version=secret.version,
         )
 
-    async def _response_is_bounded(self, response: httpx2.Response) -> bool:
-        content_length = response.headers.get("content-length")
-        if content_length is not None:
-            try:
-                if int(content_length) > self._max_response_bytes:
-                    return False
-            except ValueError:
-                return False
-        received = 0
-        async for chunk in response.aiter_bytes():
-            received += len(chunk)
-            if received > self._max_response_bytes:
-                return False
-        return True
-
     async def _settle_failure(self, claim: OutboxClaim, failure: DeliveryFailure) -> None:
         failed_at = self._now()
-        retry_after = timedelta(seconds=self._retry_delay_seconds(claim.attempt_count))
+        retry_after = timedelta(
+            seconds=retry_delay_seconds(
+                claim.attempt_count, base=self._retry_base_seconds, maximum=self._retry_max_seconds
+            )
+        )
         async with transaction(self._sessions) as database:
             settled = await fail_outbox(
                 database,
@@ -224,10 +209,6 @@ class WebhookPublisher:
                 },
             )
 
-    def _retry_delay_seconds(self, attempt_count: int) -> float:
-        exponent = min(max(attempt_count - 1, 0), 16)
-        return min(self._retry_max_seconds, self._retry_base_seconds * (2**exponent))
-
     def _now(self) -> datetime:
         value = self._clock()
         try:
@@ -236,4 +217,4 @@ class WebhookPublisher:
             raise ValueError("Webhook publisher clock must include a UTC offset") from error
 
 
-__all__ = ["DeliveryFailure", "EndpointValidator", "WebhookPublisher"]
+__all__ = ["EndpointValidator", "WebhookPublisher"]

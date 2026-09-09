@@ -257,11 +257,8 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=model)
     settings = Settings(
-        _env_file=None,
-        build_version="test",
-        worker_concurrency=1,
-        worker_poll_interval_seconds=0.02,
-        worker_lease_seconds=12 if handoff else 30,
+        service={"build_version": "test"},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.02, "lease_seconds": 12 if handoff else 30},
     )
     async with worker_runtime(
         interaction_sessions,

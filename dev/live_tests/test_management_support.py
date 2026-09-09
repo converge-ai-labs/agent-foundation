@@ -3,12 +3,14 @@
 import asyncio
 import json
 import ssl
+from contextlib import suppress
 
 import httpx2
 import pytest
 from fastapi import FastAPI
+from jsonschema import Draft202012Validator
 
-from .fixture_connectivity import TOOLKIT_VERSION, connectivity_router
+from .fixture_connectivity import TOOL_OUTPUT_SCHEMA, TOOLKIT_VERSION, connectivity_router
 from .management_packages import skill_zip
 from .management_support import client_tool, has_tool
 from .round_two_lab import private_json
@@ -40,7 +42,8 @@ async def test_owned_tls_peer_is_trusted_by_lab_environment_only(tmp_path, monke
             await writer.drain()
         finally:
             writer.close()
-            await writer.wait_closed()
+            with suppress(ConnectionResetError):
+                await writer.wait_closed()
 
     async with await asyncio.start_server(respond, "127.0.0.1", 0, ssl=context) as server:
         origin = f"https://127.0.0.1:{server.sockets[0].getsockname()[1]}"
@@ -142,6 +145,10 @@ async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
             setup={"auth_config_id": "live-auth", "toolkit_version": TOOLKIT_VERSION}, context=context
         )
         inspection = await provider.inspect_setup(setup_ref=started.setup_ref, context=context)
+        assert inspection.status == "pending"
+        inspection = await provider.complete_setup(
+            session_uri="live-session", context=context, expected_external_ref=started.external_ref
+        )
         assert inspection.status == "ready"
         connected = provider.connect(
             ConnectionBinding(
@@ -150,6 +157,7 @@ async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
         )
         catalog = await connected.discover_tools(cursor=None)
         assert {tool.key for tool in catalog.items} == {"live_echo", "live_forbidden"}
+        assert all(tool.output_schema == TOOL_OUTPUT_SCHEMA for tool in catalog.items)
         fenced = []
 
         async def before_dispatch():
@@ -162,7 +170,9 @@ async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
             request_id="request",
             before_dispatch=before_dispatch,
         )
-        assert result.result == {"proof": "REMOTE:proof"} and fenced == [True]
+        assert result.result == {"successful": True, "data": {"proof": "REMOTE:proof"}}
+        assert fenced == [True]
+        Draft202012Validator(TOOL_OUTPUT_SCHEMA).validate(result.result)
         await connected.revoke(operation_id="revoke")
         assert (await connected.inspect()).status == "action_required"
 

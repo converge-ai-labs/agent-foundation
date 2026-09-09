@@ -260,14 +260,14 @@ async def postgres_connectivity_sessions(pg_url: str) -> AsyncIterator[async_ses
 
 async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, key="connectivity", name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,
                 organization_id=ORG_ID,
                 name="Default",
-                normalized_name="default",
+                key="default",
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -308,7 +308,7 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Support",
-                normalized_name="support",
+                key="support",
                 description=None,
                 version=1,
                 current_revision_id="agtr_connectivity_test",

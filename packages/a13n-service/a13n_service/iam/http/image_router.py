@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
+from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.request_runtime import get_process_runtime
 
 from ..management.images import MAX_IMAGE_BYTES, ImageOwner
@@ -78,37 +79,41 @@ async def get_avatar(request: Request, actor: Actor, user_id: str, image_id: str
     return await read(request, actor, ImageOwner.user, user_id, image_id)
 
 
-@router.put("/organizations/{organization_id}/icon", response_model=Organization, openapi_extra=IMAGE_UPLOAD)
+@router.put("/organizations/{organization}/icon", response_model=Organization, openapi_extra=IMAGE_UPLOAD)
 async def put_organization_icon(
-    request: Request, response: Response, actor: Actor, organization_id: str, if_match: IfMatch
+    request: Request, response: Response, actor: Actor, organization_id: OrganizationId, if_match: IfMatch
 ):
     return await change(request, response, actor, ImageOwner.organization, organization_id, if_match, remove=False)
 
 
-@router.delete("/organizations/{organization_id}/icon", response_model=Organization)
+@router.delete("/organizations/{organization}/icon", response_model=Organization)
 async def delete_organization_icon(
-    request: Request, response: Response, actor: Actor, organization_id: str, if_match: IfMatch
+    request: Request, response: Response, actor: Actor, organization_id: OrganizationId, if_match: IfMatch
 ):
     return await change(request, response, actor, ImageOwner.organization, organization_id, if_match, remove=True)
 
 
-@router.get("/organizations/{organization_id}/icon/{image_id}")
-async def get_organization_icon(request: Request, actor: Actor, organization_id: str, image_id: str) -> Response:
+@router.get("/organizations/{organization}/icon/{image_id}")
+async def get_organization_icon(
+    request: Request, actor: Actor, organization_id: OrganizationId, image_id: str
+) -> Response:
     return await read(request, actor, ImageOwner.organization, organization_id, image_id)
 
 
-@router.put("/workspaces/{workspace_id}/icon", response_model=Workspace, openapi_extra=IMAGE_UPLOAD)
-async def put_workspace_icon(request: Request, response: Response, actor: Actor, workspace_id: str, if_match: IfMatch):
+@router.put("/workspaces/{workspace}/icon", response_model=Workspace, openapi_extra=IMAGE_UPLOAD)
+async def put_workspace_icon(
+    request: Request, response: Response, actor: Actor, workspace_id: WorkspaceId, if_match: IfMatch
+):
     return await change(request, response, actor, ImageOwner.workspace, workspace_id, if_match, remove=False)
 
 
-@router.delete("/workspaces/{workspace_id}/icon", response_model=Workspace)
+@router.delete("/workspaces/{workspace}/icon", response_model=Workspace)
 async def delete_workspace_icon(
-    request: Request, response: Response, actor: Actor, workspace_id: str, if_match: IfMatch
+    request: Request, response: Response, actor: Actor, workspace_id: WorkspaceId, if_match: IfMatch
 ):
     return await change(request, response, actor, ImageOwner.workspace, workspace_id, if_match, remove=True)
 
 
-@router.get("/workspaces/{workspace_id}/icon/{image_id}")
-async def get_workspace_icon(request: Request, actor: Actor, workspace_id: str, image_id: str) -> Response:
+@router.get("/workspaces/{workspace}/icon/{image_id}")
+async def get_workspace_icon(request: Request, actor: Actor, workspace_id: WorkspaceId, image_id: str) -> Response:
     return await read(request, actor, ImageOwner.workspace, workspace_id, image_id)

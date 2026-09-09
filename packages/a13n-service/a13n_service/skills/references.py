@@ -44,6 +44,7 @@ async def current_agent_references(
             agent_id=agent.id,
             agent_revision_id=revision.id,
             agent_name=agent.name,
+            agent_key=agent.key,
         )
         for agent, revision in rows
         if any(binding.skill_id == skill_id for binding in _BINDINGS_ADAPTER.validate_python(revision.resolved_skills))

@@ -11,6 +11,7 @@ from a13n_service.connectivity.connectors.providers.composio.configuration impor
     ComposioConfiguration,
 )
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
+from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
 from .connector_helpers import allow_dispatch
@@ -41,7 +42,13 @@ def _composio(http_client: httpx2.AsyncClient) -> ComposioProvider:
 
 
 @pytest.mark.anyio
-async def test_composio_verified_callback_safe_projection_and_pinned_tool_version() -> None:
+@pytest.mark.parametrize(
+    ("error_fields", "expected_error_fields"),
+    [({}, {}), ({"error": None}, {}), ({"error": "notice"}, {"error": "notice"})],
+)
+async def test_composio_verified_callback_safe_projection_and_pinned_tool_version(
+    error_fields: dict[str, str | None], expected_error_fields: dict[str, str]
+) -> None:
     requests: list[httpx2.Request] = []
 
     def respond(request: httpx2.Request) -> httpx2.Response:
@@ -77,6 +84,16 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
                     "toolkit": {"slug": "github"},
                     "version": "20260903_01",
                     "input_parameters": {"type": "object"},
+                    "output_parameters": {
+                        "type": "object",
+                        "$defs": {"Result": {"type": "object", "required": ["id"]}},
+                        "properties": {
+                            "data": {"$ref": "#/$defs/Result"},
+                            "successful": {"type": "boolean"},
+                            "error": {"type": "string"},
+                        },
+                        "required": ["data", "successful"],
+                    },
                 },
             )
         if path.endswith("/connected_accounts/link"):
@@ -111,7 +128,10 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
                 },
             )
         if path.endswith("/execute/GITHUB_CREATE"):
-            return httpx2.Response(200, json={"successful": True, "data": {"id": 1}})
+            body = json.loads(request.content)
+            if body.get("user_id") != "usrh_opaque":
+                return httpx2.Response(400, json={"error": "User ID is required with connected account"})
+            return httpx2.Response(200, json={"successful": True, "data": {"id": 1, "nullable": None}, **error_fields})
         if path.endswith("/revoke"):
             return httpx2.Response(200, json={"status": "REVOKED"})
         raise AssertionError(f"unexpected request: {request.method} {path}")
@@ -149,6 +169,9 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
     assert "state" not in inspection.safe_metadata
     assert "access_token" not in inspection.safe_metadata
     assert outcome.kind == "succeeded"
+    assert outcome.result == {"successful": True, "data": {"id": 1, "nullable": None}, **expected_error_fields}
+    assert catalog.items[0].output_schema is not None
+    Draft202012Validator(catalog.items[0].output_schema).validate(outcome.result)
     execute_body = json.loads(requests[-1].content)
     assert execute_body["connected_account_id"] == "ca_external"
     assert execute_body["version"] == "20260903_01"
@@ -401,7 +424,7 @@ async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():
 
     active = 0
     peak = 0
-    names = [f"GITHUB_TOOL_{i}" for i in range(20)]
+    names = [f"GITHUB_TOOL_{i}" for i in range(64)]
 
     async def respond(request):
         nonlocal active, peak
@@ -432,10 +455,10 @@ async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():
         start = monotonic()
         page = await _composio(http).tool_catalog("github").discover_tools(cursor=None)
         elapsed = monotonic() - start
-    assert 2 <= peak <= 8
+    assert 2 <= peak <= 32
     assert [item.key for item in page.items] == names
     print(
-        f"20 tool details at 20ms simulated latency: {elapsed:.3f}s; peak concurrency={peak}; sequential floor=0.400s"
+        f"64 tool details at 20ms simulated latency: {elapsed:.3f}s; peak concurrency={peak}; sequential floor=1.280s"
     )
 
 

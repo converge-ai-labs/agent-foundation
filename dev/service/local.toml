@@ -1,0 +1,58 @@
+# LOCAL DEVELOPMENT ONLY. Safe to commit: all identities and credentials below
+# are public, fictional test values. NEVER put real secrets in this file.
+# Real credentials must be injected separately; never write them back here.
+# Paths are relative to this TOML file, independent of the invocation directory.
+
+[service]
+role = "all"
+host = "127.0.0.1"
+port = 8000
+deployment_environment_name = "local"
+
+[database]
+backend = "postgresql"
+url = "postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:15432/a13n_service_dev"
+
+[redis]
+backend = "redis"
+url = "redis://127.0.0.1:16379/0"
+
+[objects]
+backend = "local"
+local_root = "../../var/service/objects"
+
+[filesystem]
+root = "../../var/service/files"
+
+[iam]
+public_origin = "http://127.0.0.1:5173"
+initial_admin_email = "admin@example.com"
+
+[secrets]
+# Public 32-byte TEST key. It provides no access to any real environment.
+master_key_base64 = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+encryption_key_id = "local-public-test-key"
+
+[connectivity]
+# Local protocol fixtures share the scripted model process.
+private_endpoint_cidrs = ["127.0.0.1/32"]
+public_origin = "http://127.0.0.1:5173"
+http_origins = ["http://127.0.0.1:5173", "http://127.0.0.1:18080"]
+setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
+
+[models]
+# Allow the separate local, deterministic model used by the seeded Agents.
+private_endpoint_cidrs = ["127.0.0.1/32"]
+
+[pricing]
+auto_update = false
+
+[observability]
+tracing = false
+
+[migration]
+auto_migrate = false
+
+[logging]
+level = "INFO"
+format = "pretty"

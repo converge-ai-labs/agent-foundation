@@ -21,13 +21,10 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
-from a13n_service.interactions.commands import (
-    ContinueRunCommand,
-    InteractionCommandError,
-    InteractionCommands,
-    StartRunCommand,
-)
+from a13n_service.interactions.command_values import ContinueRunCommand, StartRunCommand
+from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, SteerReceipt
+from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.storage import short_session
@@ -125,7 +122,7 @@ class IngressInputAcceptor:
             key = batch.batch_id
             if selection.steer:
                 assert selection.run_id is not None
-                receipt = await self._commands.steer(
+                receipt = await self._commands.active.steer(
                     actor=selection.actor,
                     run_id=selection.run_id,
                     idempotency_key=key,
@@ -142,7 +139,7 @@ class IngressInputAcceptor:
                 ),
             )
             if selection.thread_id is None:
-                run_receipt = await self._commands.start(
+                run_receipt = await self._commands.runs.start(
                     actor=selection.actor,
                     workspace_id=batch.workspace_id,
                     idempotency_key=key,
@@ -161,7 +158,7 @@ class IngressInputAcceptor:
                     config_override=selection.override,
                 )
                 if selection.run_id is None:
-                    run_receipt = await self._commands.continue_empty_thread(
+                    run_receipt = await self._commands.runs.continue_empty_thread(
                         actor=selection.actor,
                         thread_id=selection.thread_id,
                         idempotency_key=key,
@@ -170,7 +167,7 @@ class IngressInputAcceptor:
                         transaction_hook=commit,
                     )
                 else:
-                    run_receipt = await self._commands.continue_from(
+                    run_receipt = await self._commands.runs.continue_from(
                         actor=selection.actor,
                         source_run_id=selection.run_id,
                         idempotency_key=key,

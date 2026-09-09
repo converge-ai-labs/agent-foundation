@@ -16,17 +16,17 @@ from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
-from a13n_service.interactions.commands import (
+from a13n_service.interactions.command_values import (
     ContinueRunCommand,
     ForkRunCommand,
-    InteractionCommandError,
-    InteractionCommands,
     RetryRunCommand,
     StartRunCommand,
     WaitingContinueRunCommand,
 )
+from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import InterruptRequest, WaitingRunFeedbackRequest
 from a13n_service.interactions.control_models import ThreadInboxRecord
+from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
@@ -116,6 +116,12 @@ def _commands(
     preparation: _Preparation,
     freezing: _Freezing,
     assets=None,
+    *,
+    clock=lambda: NOW,
+    queue_name="default",
+    priority=0,
+    execution_max_attempts=3,
+    max_handoffs=2,
 ) -> InteractionCommands:
     resolver = SimpleNamespace(preparation=preparation, freezing=freezing)
     payloads = RunPayloadStore(objects)
@@ -134,10 +140,14 @@ def _commands(
         RunStateStore(objects),
         assets if assets is not None else AsyncMock(),
         EndpointPolicy(),
-        outcomes=RunOutcomeService(sessions, payloads, clock=lambda: NOW, lifecycle=test_lifecycle_writer()),
+        outcomes=RunOutcomeService(sessions, payloads, clock=clock, lifecycle=test_lifecycle_writer()),
         inbox=ThreadInboxStore(sessions, clock=lambda: NOW),
         payloads=payloads,
-        clock=lambda: NOW,
+        queue_name=queue_name,
+        priority=priority,
+        execution_max_attempts=execution_max_attempts,
+        max_handoffs=max_handoffs,
+        clock=clock,
     )
 
 
@@ -272,13 +282,13 @@ async def test_start_accepts_root_run_and_replays_before_resolution(
     freezing = _Freezing([_frozen()])
     commands = _commands(interaction_sessions, interaction_object_store, preparation, freezing)
 
-    first = await commands.start(
+    first = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="start-one",
         request=_request(),
     )
-    repeated = await commands.start(
+    repeated = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="start-one",
@@ -305,7 +315,7 @@ async def test_start_rejects_idempotency_key_reuse_with_changed_request(
     interaction_sessions = lifecycle_interaction_sessions
     interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(interaction_sessions, interaction_object_store, _Preparation(), _Freezing([_frozen()]))
-    await commands.start(
+    await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="start-conflict",
@@ -313,7 +323,7 @@ async def test_start_rejects_idempotency_key_reuse_with_changed_request(
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.start(
+        await commands.runs.start(
             actor=_actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="start-conflict",
@@ -335,7 +345,7 @@ async def test_start_rejects_second_root_thread_in_existing_session(
         _Preparation(),
         _Freezing([_frozen()]),
     )
-    first = await commands.start(
+    first = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="first-root",
@@ -343,7 +353,7 @@ async def test_start_rejects_second_root_thread_in_existing_session(
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.start(
+        await commands.runs.start(
             actor=_actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="second-root",
@@ -380,7 +390,7 @@ async def test_start_rejects_final_invocation_drift_without_committing_run(
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.start(
+        await commands.runs.start(
             actor=_actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="start-drift",
@@ -405,7 +415,7 @@ async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    accepted = await commands.start(
+    accepted = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="interrupt-source",
@@ -413,13 +423,13 @@ async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(
     )
     request = InterruptRequest(expected_run_version=1, expected_thread_version=1)
 
-    first = await commands.interrupt(
+    first = await commands.active.interrupt(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="interrupt-one",
         request=request,
     )
-    repeated = await commands.interrupt(
+    repeated = await commands.active.interrupt(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="interrupt-one",
@@ -455,13 +465,13 @@ async def test_interrupt_idempotency_conflicts_before_terminal_precondition_chec
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    accepted = await commands.start(
+    accepted = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="interrupt-conflict-source",
         request=_request(),
     )
-    await commands.interrupt(
+    await commands.active.interrupt(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="interrupt-conflict",
@@ -469,7 +479,7 @@ async def test_interrupt_idempotency_conflicts_before_terminal_precondition_chec
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.interrupt(
+        await commands.active.interrupt(
             actor=_actor(),
             run_id=accepted.run_id,
             idempotency_key="interrupt-conflict",
@@ -489,16 +499,20 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         interaction_object_store,
         _Preparation(),
         _Freezing([_frozen()]),
+        queue_name="accepted-queue",
+        priority=7,
+        execution_max_attempts=4,
+        max_handoffs=3,
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    source_receipt = await commands.start(
+    source_receipt = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="retry-source",
         request=_request("same intent"),
         origin=SubmissionOrigin(native_tool_contexts=({"context_id": "accepted-native-context"},)),
     )
-    await commands.interrupt(
+    await commands.active.interrupt(
         actor=_actor(),
         run_id=source_receipt.run_id,
         idempotency_key="retry-source-cancel",
@@ -513,14 +527,21 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         terminal.handoffs_completed = 1
         terminal.started_at = NOW
 
+    # A service restart with new defaults must preserve the accepted execution policy.
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
     request = RetryRunCommand(expected_thread_version=2)
-    first = await commands.retry(
+    first = await commands.continuations.retry(
         actor=_actor(),
         run_id=source_receipt.run_id,
         idempotency_key="retry-one",
         request=request,
     )
-    repeated = await commands.retry(
+    repeated = await commands.continuations.retry(
         actor=_actor(),
         run_id=source_receipt.run_id,
         idempotency_key="retry-one",
@@ -536,6 +557,11 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))
     assert source is not None and retried is not None and thread is not None
     assert retried.retry_of_run_id == source.id
+    assert retried.queue_name == source.queue_name == "accepted-queue"
+    assert retried.priority == source.priority == 7
+    assert retried.execution_policy_version == source.execution_policy_version == "1"
+    assert retried.max_attempts == source.max_attempts == 4
+    assert retried.max_handoffs == source.max_handoffs == 3
     assert retried.native_tool_contexts_json == [{"context_id": "accepted-native-context"}]
     assert retried.parent_run_id is None
     assert retried.input_json == source.input_json
@@ -557,19 +583,19 @@ async def test_retry_rejects_terminal_run_after_thread_advances(
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="stale-retry-source",
         request=_request(),
     )
-    await commands.interrupt(
+    await commands.active.interrupt(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="stale-retry-cancel",
         request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
     )
-    await commands.retry(
+    await commands.continuations.retry(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="stale-retry-first",
@@ -577,7 +603,7 @@ async def test_retry_rejects_terminal_run_after_thread_advances(
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.retry(
+        await commands.continuations.retry(
             actor=_actor(),
             run_id=source.run_id,
             idempotency_key="stale-retry-second",
@@ -595,7 +621,7 @@ async def test_parent_consumers_reject_self_consistent_state_that_differs_from_s
     objects = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
     await seed_hook_actor_access(sessions)
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="seal-source", request=_request()
     )
     if command in {"feedback", "waiting_continue"}:
@@ -621,21 +647,21 @@ async def test_parent_consumers_reject_self_consistent_state_that_differs_from_s
     assert (await states.read(ORGANIZATION_ID, source.run_id)).body == body
     with pytest.raises(RunObjectIntegrityError, match="sealed state"):
         if command == "continue":
-            await commands.continue_from(
+            await commands.runs.continue_from(
                 actor=_actor(),
                 source_run_id=source.run_id,
                 idempotency_key="seal-consumer",
                 request=ContinueRunCommand(expected_thread_version=2, input=_request().input),
             )
         elif command == "fork":
-            await commands.fork(
+            await commands.runs.fork(
                 actor=_actor(),
                 run_id=source.run_id,
                 idempotency_key="seal-consumer",
                 request=ForkRunCommand(input=_request().input),
             )
         elif command == "feedback":
-            await commands.feedback(
+            await commands.continuations.feedback(
                 actor=_actor(),
                 run_id=source.run_id,
                 idempotency_key="seal-consumer",
@@ -644,7 +670,7 @@ async def test_parent_consumers_reject_self_consistent_state_that_differs_from_s
                 ),
             )
         else:
-            await commands.continue_waiting(
+            await commands.continuations.continue_waiting(
                 actor=_actor(),
                 run_id=source.run_id,
                 idempotency_key="seal-consumer",
@@ -697,7 +723,7 @@ async def test_fork_creates_child_thread_and_replays(
         _Freezing([source_config]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="fork-source",
@@ -710,13 +736,13 @@ async def test_fork_creates_child_thread_and_replays(
     )
     request = ForkRunCommand(input=_request("fork input").input)
 
-    first = await commands.fork(
+    first = await commands.runs.fork(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="fork-one",
         request=request,
     )
-    repeated = await commands.fork(
+    repeated = await commands.runs.fork(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="fork-one",
@@ -760,7 +786,7 @@ async def test_fork_idempotency_rejects_changed_input(
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="fork-conflict-source",
@@ -771,7 +797,7 @@ async def test_fork_idempotency_rejects_changed_input(
         interaction_object_store,
         run_id=source.run_id,
     )
-    await commands.fork(
+    await commands.runs.fork(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="fork-conflict",
@@ -779,7 +805,7 @@ async def test_fork_idempotency_rejects_changed_input(
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.fork(
+        await commands.runs.fork(
             actor=_actor(),
             run_id=source.run_id,
             idempotency_key="fork-conflict",
@@ -801,7 +827,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="feedback-source",
@@ -827,7 +853,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
         expected_thread_version=2,
         sealed_state_digest_sha256=public_digest,
     )
-    first = await commands.feedback(
+    first = await commands.continuations.feedback(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="feedback-one",
@@ -840,7 +866,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
             "resolutions": [{"call_id": "approval-1", "action": "reject"}],
         }
     )
-    repeated = await commands.feedback(
+    repeated = await commands.continuations.feedback(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="feedback-one",
@@ -884,7 +910,7 @@ async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="feedback-conflict-source",
@@ -899,7 +925,7 @@ async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
         expected_thread_version=2,
         sealed_state_digest_sha256=digest,
     )
-    await commands.feedback(
+    await commands.continuations.feedback(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="feedback-conflict",
@@ -914,7 +940,7 @@ async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.feedback(
+        await commands.continuations.feedback(
             actor=_actor(),
             run_id=source.run_id,
             idempotency_key="feedback-conflict",
@@ -936,7 +962,7 @@ async def test_waiting_continue_defaults_feedback_and_preserves_new_input(
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="waiting-continue-source",
@@ -954,13 +980,13 @@ async def test_waiting_continue_defaults_feedback_and_preserves_new_input(
         input=_request("handle this instead").input,
     )
 
-    first = await commands.continue_waiting(
+    first = await commands.continuations.continue_waiting(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="waiting-continue-one",
         request=request,
     )
-    repeated = await commands.continue_waiting(
+    repeated = await commands.continuations.continue_waiting(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="waiting-continue-one",
@@ -996,26 +1022,26 @@ async def test_steer_is_atomic_replayable_and_does_not_advance_thread(
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    accepted = await commands.start(
+    accepted = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="steer-source",
         request=_request(),
     )
 
-    first = await commands.steer(
+    first = await commands.active.steer(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="steer-one",
         input=_request("follow up").input,
     )
-    repeated = await commands.steer(
+    repeated = await commands.active.steer(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="steer-one",
         input=_request("follow up").input,
     )
-    status = await commands.get_steer(
+    status = await commands.active.get_steer(
         actor=_actor(),
         run_id=accepted.run_id,
         steer_id=first.steer_id,
@@ -1052,13 +1078,13 @@ async def test_steer_idempotency_rejects_changed_input(
         _Freezing([_frozen()]),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    accepted = await commands.start(
+    accepted = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="steer-conflict-source",
         request=_request(),
     )
-    await commands.steer(
+    await commands.active.steer(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="steer-conflict",
@@ -1066,7 +1092,7 @@ async def test_steer_idempotency_rejects_changed_input(
     )
 
     with pytest.raises(InteractionCommandError) as captured:
-        await commands.steer(
+        await commands.active.steer(
             actor=_actor(),
             run_id=accepted.run_id,
             idempotency_key="steer-conflict",

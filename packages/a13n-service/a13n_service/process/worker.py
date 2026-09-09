@@ -64,47 +64,47 @@ async def build_worker_runtime(
         environment_catalog,
         shared.secret_protector,
         shared.storage.files_root,
-        timeout_seconds=settings.environment_operation_timeout_seconds,
+        timeout_seconds=settings.environments.operation_timeout_seconds,
         capacity=CapacityLimits(
-            max_targets=settings.environment_max_targets_per_workspace,
-            max_active=settings.environment_max_active_per_workspace,
+            max_targets=settings.environments.max_targets_per_workspace,
+            max_active=settings.environments.max_active_per_workspace,
         ),
     )
     environment_maintenance = EnvironmentMaintenanceLoop(
         environments,
-        interval_seconds=settings.environment_maintenance_interval_seconds,
-        concurrency=settings.environment_maintenance_concurrency,
-        batch_size=settings.environment_maintenance_batch_size,
+        interval_seconds=settings.environments.maintenance_interval_seconds,
+        concurrency=settings.environments.maintenance_concurrency,
+        batch_size=settings.environments.maintenance_batch_size,
     )
 
     run_stream = RedisRunStream(
         shared.storage.redis,
-        max_events=settings.run_stream_max_events,
-        max_event_bytes=settings.run_stream_max_event_bytes,
-        closed_ttl_seconds=settings.run_stream_closed_ttl_seconds,
+        max_events=settings.runs.stream_max_events,
+        max_event_bytes=settings.runs.stream_max_event_bytes,
+        closed_ttl_seconds=settings.runs.stream_closed_ttl_seconds,
     )
     run_replay = RunReplayStore(
         shared.storage.objects,
-        max_events=settings.run_replay_max_events,
-        max_items=settings.run_replay_max_items,
-        max_bytes=settings.run_replay_max_bytes,
+        max_events=settings.runs.replay_max_events,
+        max_items=settings.runs.replay_max_items,
+        max_bytes=settings.runs.replay_max_bytes,
     )
     lifecycle_projector = LifecycleRunStreamProjector(
         shared.storage.sessions,
         run_stream,
         run_replay,
         worker_id=new_object_id("lsp"),
-        lease_duration=timedelta(seconds=settings.lifecycle_projection_lease_seconds),
-        retry_after=timedelta(seconds=settings.lifecycle_projection_retry_seconds),
-        max_attempts=settings.lifecycle_projection_max_attempts,
-        poll_interval_seconds=settings.lifecycle_projection_poll_interval_seconds,
-        claim_limit=settings.lifecycle_projection_claim_limit,
+        lease_duration=timedelta(seconds=settings.lifecycle.projection_lease_seconds),
+        retry_after=timedelta(seconds=settings.lifecycle.projection_retry_seconds),
+        max_attempts=settings.lifecycle.projection_max_attempts,
+        poll_interval_seconds=settings.lifecycle.projection_poll_interval_seconds,
+        claim_limit=settings.lifecycle.projection_claim_limit,
         terminal_projection=HostedAguiTerminalProjector(
             shared.storage.sessions,
             HostedAguiReplayStore(
                 shared.storage.objects,
-                max_events=settings.run_replay_max_events + 2,
-                max_bytes=settings.run_replay_max_bytes,
+                max_events=settings.runs.replay_max_events + 2,
+                max_bytes=settings.runs.replay_max_bytes,
             ),
         ).project,
     )
@@ -124,8 +124,8 @@ async def build_worker_runtime(
         or built_in_connector_provider_registry(
             http,
             endpoint_policy,
-            response_max_bytes=settings.connectivity_response_max_bytes,
-            timeout_seconds=settings.connectivity_total_timeout_seconds,
+            response_max_bytes=settings.connectivity.response_max_bytes,
+            timeout_seconds=settings.connectivity.total_timeout_seconds,
         ),
         clients.transport,
         endpoint_policy,
@@ -137,19 +137,19 @@ async def build_worker_runtime(
     staging = await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter)
     assets = AssetObjectStore(shared.storage.objects, staging)
     asset_publication = AssetRuntime(
-        shared.storage.sessions, AssetPublisher(assets, staging, max_size_bytes=settings.asset_max_size_bytes), assets
+        shared.storage.sessions, AssetPublisher(assets, staging, max_size_bytes=settings.assets.max_size_bytes), assets
     )
     inline_hooks = InlineHookValidator(
         EndpointPolicy.from_operator_allowlist(
-            private_domains=settings.webhook_private_endpoint_domains,
-            private_cidrs=settings.webhook_private_endpoint_cidrs,
+            private_domains=settings.webhooks.private_endpoint_domains,
+            private_cidrs=settings.webhooks.private_endpoint_cidrs,
         )
     )
     queue_completion = QueueCompletion(
         shared.storage.sessions,
         build_input_commands(
             settings, shared, invocations, AssetCatalog(shared.storage.sessions, assets), inline_hooks
-        ),
+        ).queued,
         CompletionQueueHandoffService(
             shared.storage.sessions,
             RunStateStore(shared.storage.objects),
@@ -175,13 +175,13 @@ async def build_worker_runtime(
             observability=observability,
             queue_completion=queue_completion,
         ),
-        build_id=settings.build_version,
-        queue_name=settings.gateway_run_queue_name,
-        concurrency=settings.worker_concurrency,
-        poll_seconds=settings.worker_poll_interval_seconds,
-        lease_seconds=settings.worker_lease_seconds,
-        cleanup_seconds=settings.worker_cleanup_seconds,
-        drain_seconds=settings.worker_drain_seconds,
+        build_id=settings.service.build_version,
+        queue_name=settings.gateway.run_queue_name,
+        concurrency=settings.worker.concurrency,
+        poll_seconds=settings.worker.poll_interval_seconds,
+        lease_seconds=settings.worker.lease_seconds,
+        cleanup_seconds=settings.worker.cleanup_seconds,
+        drain_seconds=settings.worker.drain_seconds,
     )
     runtime = WorkerRuntime(
         external_tools=external_tools,

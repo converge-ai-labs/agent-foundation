@@ -49,7 +49,7 @@ class LiveClient:
             assert response.status_code == 200, f"Local {role} is not ready: HTTP {response.status_code}"
             assert response.json() == {"status": "ready", "role": role}, f"Expected a dedicated {role} process"
         assert self.config.get("agent_id"), "Run make live-test-setup to create API resources"
-        await self.request("GET", f"/api/v1/agents/{self.config['agent_id']}")
+        await self.request("GET", f"/api/v1/workspaces/{self.config['workspace_id']}/agents/{self.config['agent_id']}")
 
     async def case(self, scenario: str) -> dict:
         case = {"case_id": uuid4().hex, "scenario": scenario, "token": uuid4().hex}

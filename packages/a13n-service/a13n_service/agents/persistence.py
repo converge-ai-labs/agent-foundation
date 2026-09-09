@@ -14,7 +14,6 @@ from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_visible_ascii_key,
 )
 from a13n_service.durable_operations.requests import ReplayReceipt, evidence_record
 from a13n_service.durable_operations.requests import load_replay as load_request_replay
@@ -35,7 +34,6 @@ from .domain import (
     AgentRevisionCreateResult,
     AgentSource,
     BuiltinAgentRegistration,
-    JsonObject,
     ResolvedRevisionContent,
 )
 from .errors import (
@@ -146,7 +144,6 @@ def new_builtin_agent(
         workspace_id=workspace_id,
         source=AgentSource.builtin.value,
         name=registration.name,
-        normalized_name=agent_name_key(registration.name),
         description=registration.description,
         version=1,
         current_revision_id=revision_id,
@@ -408,20 +405,11 @@ def add_command_evidence_and_audit(
     )
 
 
-def request_identity(idempotency_key: str, request) -> IdempotencyIdentity:
+def request_identity(idempotency_key: str, request: object) -> IdempotencyIdentity:
     try:
-        key_digest = digest_visible_ascii_key(idempotency_key)
+        return IdempotencyIdentity.from_request(idempotency_key, request)
     except InvalidIdempotencyKey as error:
         raise invalid_idempotency_key() from error
-    return IdempotencyIdentity(key_digest, digest_request(request))
-
-
-def payload_identity(idempotency_key: str, payload: JsonObject) -> IdempotencyIdentity:
-    try:
-        key_digest = digest_visible_ascii_key(idempotency_key)
-    except InvalidIdempotencyKey as error:
-        raise invalid_idempotency_key() from error
-    return IdempotencyIdentity(key_digest, digest_request(payload))
 
 
 async def load_replay(
@@ -471,7 +459,3 @@ def new_agent_audit(
         occurred_at=now,
         details=None,
     )
-
-
-def agent_name_key(value: str) -> str:
-    return value.casefold()

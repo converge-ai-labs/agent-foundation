@@ -60,7 +60,7 @@ async def _active_thread(
 ) -> str:
     objects = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    accepted = await commands.start(
+    accepted = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="queue-source",
@@ -75,7 +75,7 @@ async def _submission_setup(
 ):
     objects = await LocalObjectStore.create(tmp_path / "submission-objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    accepted = await commands.start(
+    accepted = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="submission-source",
@@ -193,7 +193,7 @@ async def test_thread_submission_accepts_root_like_run_after_cancelled_empty_hea
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     service, commands, _objects, source = await _submission_setup(lifecycle_interaction_sessions, tmp_path)
-    await commands.interrupt(
+    await commands.active.interrupt(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="cancel-for-root-like",
@@ -229,7 +229,7 @@ async def test_explicit_queue_consumption_accepts_under_retained_authority_and_r
         idempotency_key="submit-before-consume",
     )
     assert queued_receipt.queued_submission is not None
-    await commands.interrupt(
+    await commands.active.interrupt(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="cancel-before-consume",

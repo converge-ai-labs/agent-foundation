@@ -8,7 +8,16 @@ from a13n_service.etags import resource_etag
 
 from ..auth.passwords import csrf_token
 from ..auth.sessions import Login
-from ..schemas import AcceptInvitationRequest, AuthSession, LoginRequest, LoginResult, Page, PasswordRequest, User
+from ..schemas import (
+    AcceptInvitationRequest,
+    AuthSession,
+    CredentialContext,
+    LoginRequest,
+    LoginResult,
+    Page,
+    PasswordRequest,
+    User,
+)
 from ..service_common import identity_error
 from .authentication import SESSION_COOKIE, require_origin
 from .dependencies import Actor, Pagination, identity, private_response
@@ -84,3 +93,8 @@ async def change_password(request: Request, actor: Actor, body: ChangePasswordRe
     await identity(request).sessions.change_password(
         actor, body.current_password.get_secret_value(), body.password.get_secret_value()
     )
+
+
+@router.get("/auth/context", response_model=CredentialContext)
+async def credential_context(actor: Actor) -> CredentialContext:
+    return CredentialContext(workspace_id=actor.boundary_workspace_id, organization_id=actor.boundary_organization_id)

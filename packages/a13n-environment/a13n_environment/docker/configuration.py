@@ -141,7 +141,7 @@ _DEFAULT_MOUNTS = (
 )
 _DEFAULT_SHELL_PROFILES = (
     DockerShellProfile(
-        profile_id="bash",
+        profile_id="default",
         executable=PurePosixPath("/bin/bash"),
         fixed_arguments=("-c",),
     ),

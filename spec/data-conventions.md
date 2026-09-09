@@ -42,13 +42,41 @@ A checkpoint is stronger than ordinary state or a point-in-time snapshot: its ow
 Every independently addressable Foundation-owned object has one stable opaque identifier in the form `<kind-prefix>_<random-suffix>`.
 
 - The kind prefix is a short, stable, lowercase abbreviation of the object kind, such as `org` or `ag`.
-- The random suffix contains only lowercase ASCII letters and digits and is generated with sufficient unpredictable randomness by the shared platform generator.
+- Newly allocated random suffixes use lowercase hexadecimal (`0-9a-f`) from a cryptographically secure random generator. Length follows the owning subsystem's cumulative allocation volume and unpredictability requirements.
 - Prefixes are allocated as object kinds are introduced. The set is open, but an allocated prefix is never renamed, reused, or assigned another meaning.
 - An identifier is immutable and is not reused after its object is removed.
 - An identifier encodes no organization, region, time, ordering, parentage, storage, or routing information.
 - Possession or recognition of an identifier grants no authority.
 
 First-party Python code uses one shared object-ID generator rather than reimplementing prefix validation, alphabet selection, or randomness. Other languages follow the same observable format when they are responsible for creating Foundation-owned objects. Consumers treat IDs as opaque strings and do not derive behavior from their prefix or suffix.
+
+### Service ID Allocation
+
+Service allocates four suffix lengths. The table specifies capacity assumptions, not observed traffic or hard allocation quotas. Each volume is the lifetime cumulative allocation count for one prefix in a shared identity namespace, across all organizations and workspaces, including deleted objects. Independently generated namespaces that can later be combined share that budget. For independent uniform suffixes, the probability of at least one collision is approximately `1 - exp(-n * (n - 1) / (2 * 2**bits))`.
+
+| Suffix length     | Random bits | Allocation class                                                                              | Lifetime volume per prefix | Collision probability at that volume |
+| ----------------- | ----------- | --------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------ |
+| 20 hex characters | 80          | Managed identities and configuration resources                                                | `10**7`                    | `4.14e-11`                           |
+| 24 hex characters | 96          | Sessions, resource revisions, attachments, and bindings                                       | `10**10`                   | `6.31e-10`                           |
+| 28 hex characters | 112         | Runs, attempts, control inputs, and execution records                                         | `10**12`                   | `9.63e-11`                           |
+| 32 hex characters | 128         | High-volume events, coordination identities, authentication workflows, and unclassified kinds | `10**15`                   | `1.47e-9`                            |
+
+The shared Service allocator owns these prefix assignments; callers cannot choose a shorter length:
+
+| Suffix length | Allocated prefixes                                                                                                                                                                                                                                   |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 20            | `acct`, `ap`, `cconn`, `cnr`, `envp`, `envtpl`, `hsub`, `mcpc`, `mdl`, `mprov`, `org`, `sa`, `sk`, `usr`, `ws`                                                                                                                                       |
+| 24            | `a2actx`, `aguitb`, `apr`, `ast`, `bind`, `env`, `envrev`, `hsubr`, `img`, `inv`, `rb`, `sess`, `session`, `skr`, `sku`, `tgt`                                                                                                                       |
+| 28            | `a2amsg`, `a2apush`, `a2atask`, `aguirb`, `crr`, `envop`, `ibat`, `inb`, `qsub`, `rat`, `run`                                                                                                                                                        |
+| 32            | `ase`, `aud`, `audit`, `comment`, `csa`, `dlv`, `ect`, `effect`, `envowner`, `iadm`, `idem`, `key`, `lev`, `lsp`, `message`, `mos`, `mut`, `ntf`, `obx`, `opg`, `prt`, `reply`, `svc`, `tool`, `wrk`; every other valid kind defaults to this length |
+
+Kinds used for claims, worker incarnations, publication generations, or authentication workflows retain at least 128 random bits regardless of their expected volume. New kinds start at 32 characters until their owner assigns a smaller tier against an explicit lifetime volume budget. A deployment expected to exceed a tier's budget must review allocation length before that growth; cleanup does not reset the budget. These probabilities apply per prefix, not to the aggregate probability across all kinds.
+
+Hex allocation does not rewrite existing IDs. Service continues accepting its existing lowercase alphanumeric ID syntax (16-64 suffix characters), preserving stored references, links, and rolling interoperability. Acceptance does not enforce the current allocation length for a kind. Database column sizes and wire schemas remain unchanged. Unique constraints remain the final collision guard; a collision must not overwrite or reuse an existing object. This allocation policy introduces no automatic persistence retry contract.
+
+Authentication secrets, API key secret material, cookie tokens, OAuth state and verifiers, and provider-owned IDs retain their owning generation rules. A public credential record ID is distinct from its secret. The allocation tiers do not shorten those secrets or re-encode external identifiers.
+
+### Other Identity Forms
 
 External identifiers retain the format and semantics of their defining owner. Examples include Pydantic tool-call identities, provider Environment identities, JSON-RPC request identities, tracing identifiers, and caller-owned idempotency keys. Their containing schema preserves enough issuer, provider, or scope information to interpret them without presenting them as Foundation-owned IDs.
 
@@ -80,7 +108,7 @@ Package releases, protocol major/minor identities, Git or artifact revisions, an
 
 Public APIs and SDKs use concise domain language such as `id`, `model`, `agent`, and `provider`. They do not expose internal suffixes merely to restate meaning already established by the resource, operation, or type.
 
-The primary user-visible name of a managed resource is `name`, and a distinct stable technical selector is `key`. `display_name` is reserved for fields whose owning external or compatibility contract establishes that exact term. Qualified names such as `distribution_name`, `model_name`, and `provider_key` retain their owning semantics.
+The primary user-visible name of a managed resource is `name`, and a distinct technical selector is `key`. `display_name` is reserved for fields whose owning external or compatibility contract establishes that exact term. Qualified names such as `distribution_name`, `model_name`, and `provider_key` retain their owning semantics.
 
 Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an Agent ID and AgentRevision ID beside a provider model identity. Typed values such as an AgentRevision reference or model selector carry semantics that a bare string and naming convention cannot.
 
@@ -96,7 +124,17 @@ Suffixes have stable domain meanings. `Revision` is an immutable member of a res
 
 The public boundary validates and normalizes input once. Internal code consumes the resulting typed meaning instead of repeatedly inferring whether a string is an object ID, symbolic selection, external identity, scoped reference, or secret. No universal field-suffix rule overrides clarity at either boundary.
 
-Service display names bounded to 128 Unicode scalar values may expand during casefolding. Their case-insensitive uniqueness columns accommodate up to 384 scalar values; the derived key is never truncated and the display-name limit does not change. A uniqueness key is distinct from the feature-owned display-name normalization.
+Where a feature requires case-insensitive display-name uniqueness, Service display names bounded to 128 Unicode scalar values may expand during casefolding. Their case-insensitive uniqueness columns accommodate up to 384 scalar values; the derived key is never truncated and the display-name limit does not change. A uniqueness key is distinct from the feature-owned display-name normalization.
+
+### Readable Resource Keys
+
+Organization, Workspace, and Agent expose a mutable `key` separately from their immutable `id` and display `name`. Organization keys are globally unique; Workspace keys are unique within their Organization; Agent keys are unique within their Workspace. Display names may repeat. Deleted resources retain their keys until physical removal.
+
+A key contains 1–64 lowercase ASCII letters or digits separated by single hyphens. Underscores, leading or trailing hyphens, repeated hyphens, and application navigation keywords are invalid. Reserved keywords are `api`, `assets`, `confirm-email`, `connector-setup`, `forgot-password`, `invitations`, `login`, `new`, `reset-password`, and `settings`.
+
+Creation accepts an explicit key or derives one from the lowercase ASCII portions of the name, replacing intervening characters with hyphens and truncating to the key limit. A generated collision appends a hyphen and four random lowercase hexadecimal characters, shortening the readable prefix as needed. A name without usable ASCII characters uses the resource kind (`org`, `workspace`, or `agent`) as the prefix and always receives that suffix. A reserved derived key also receives a suffix. Allocation retries are finite, and database uniqueness protects concurrent creation. An explicit conflicting key returns `409 resource_key_conflict` rather than being changed automatically. Exhausted generated-key retries return `409 resource_key_exhausted` without creating a resource.
+
+Changing a name preserves the key. Explicit key changes retain the resource ID, references, revisions, and authorization; they invalidate the previous key immediately. There are no historical aliases or redirects. These rules do not replace Model or Skill key contracts.
 
 ## Ownership and Authority
 

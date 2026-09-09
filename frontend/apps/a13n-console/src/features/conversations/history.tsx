@@ -15,7 +15,7 @@ import { mergeRetainedItems } from "./projection";
 
 export function HistoryTranscript({ runId }: { runId: string }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
     [limit, setLimit] = useState(10);
   const lineage = useQuery(
@@ -48,7 +48,7 @@ export function HistoryTranscript({ runId }: { runId: string }) {
 }
 function HistoricalRun({ runId }: { runId: string }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
     queries = conversationQueries(client, workspace.id);
   const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
@@ -73,7 +73,7 @@ function HistoricalRun({ runId }: { runId: string }) {
     <section className={styles.historyRun}>
       <Link
         className={styles.historyLink}
-        to={runPath(workspace.id, { ...run, run_id: run.id })}
+        to={runPath(basePath, { ...run, run_id: run.id })}
       >
         {t("View run")} · <Timestamp value={run.created_at} />
       </Link>

@@ -22,13 +22,16 @@ print(a13n.__version__)
 
 ## Search accounts
 
+Bind API Key operations with `await client.workspace()`. This reads `/api/v1/auth/context` once and returns search operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `SearchScope` operations; Service always enforces the credential boundary.
+
 ```python
-from a13n import Client, SearchScope, AgentRunOverride, SearchSelection
+from a13n import Client, AgentRunOverride, SearchSelection
 
 
-async def accounts(base_url, token, workspace_id):
+async def accounts(base_url, token):
     async with Client(base_url, token) as client:
-        page = await client.search_providers(SearchScope("workspace", workspace_id))
+        workspace = await client.workspace()
+        page = await workspace.search_providers()
         return page.items
 
 

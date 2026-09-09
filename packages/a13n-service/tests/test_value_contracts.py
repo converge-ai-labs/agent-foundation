@@ -23,7 +23,7 @@ def test_object_ids_fit_the_relational_identifier_width() -> None:
 def test_plugin_key_and_agent_selection_accept_the_same_keys(key: str) -> None:
     assert (
         PluginSelection(instance_name="instance", plugin_key=key).plugin_key
-        == Settings(_env_file=None, plugin_keys=(key,)).plugin_keys[0]
+        == Settings(plugins={"keys": (key,)}).plugins.keys[0]
     )
 
 
@@ -32,7 +32,7 @@ def test_plugin_selection_rejects_invalid_plugin_keys(key: str) -> None:
     with pytest.raises(ValidationError):
         PluginSelection(instance_name="instance", plugin_key=key)
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, plugin_keys=(key,))
+        Settings(plugins={"keys": (key,)})
 
 
 def test_media_type_bound_applies_after_defaulting_to_all_callers() -> None:

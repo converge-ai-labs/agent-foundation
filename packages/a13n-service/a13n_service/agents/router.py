@@ -10,6 +10,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId, workspace_actor
 from a13n_service.request_runtime import get_control_runtime
 
 from .application import AgentManagement
@@ -27,9 +28,10 @@ from .domain import (
     UpdateAgentRequest,
 )
 from .errors import AgentError
+from .http_dependencies import AgentId
 
 router = APIRouter(prefix="/api/v1", tags=["agent-management"])
-Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
+Actor = Annotated[AuthenticatedActor, Depends(workspace_actor)]
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 
@@ -46,11 +48,11 @@ def _set_etag(response: Response, agent: Agent) -> None:
     response.headers["ETag"] = resource_etag(agent.id, agent.updated_at)
 
 
-@router.get("/workspaces/{workspace_id}/agents", response_model=AgentCollection)
+@router.get("/workspaces/{workspace}/agents", response_model=AgentCollection)
 async def list_agents(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
     enabled: bool | None = None,
@@ -69,7 +71,7 @@ async def list_agents(
 
 
 @router.post(
-    "/workspaces/{workspace_id}/agents",
+    "/workspaces/{workspace}/agents",
     response_model=AgentRevisionCreateResult,
     status_code=status.HTTP_201_CREATED,
 )
@@ -77,7 +79,7 @@ async def create_agent(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: CreateAgentRequest,
     idempotency_key: IdempotencyKey,
 ) -> AgentRevisionCreateResult:
@@ -91,19 +93,19 @@ async def create_agent(
     return result
 
 
-@router.get("/agents/{agent_id}", response_model=Agent)
-async def get_agent(request: Request, response: Response, actor: Actor, agent_id: str) -> Agent:
+@router.get("/workspaces/{workspace}/agents/{agent}", response_model=Agent)
+async def get_agent(request: Request, response: Response, actor: Actor, agent_id: AgentId) -> Agent:
     agent = await _management(request).queries.get(actor=actor, agent_id=agent_id)
     _set_etag(response, agent)
     return agent
 
 
-@router.patch("/agents/{agent_id}", response_model=Agent)
+@router.patch("/workspaces/{workspace}/agents/{agent}", response_model=Agent)
 async def update_agent(
     request: Request,
     response: Response,
     actor: Actor,
-    agent_id: str,
+    agent_id: AgentId,
     body: UpdateAgentRequest,
     if_match: IfMatch,
 ) -> Agent:
@@ -118,7 +120,7 @@ async def update_agent(
 
 
 @router.post(
-    "/agents/{agent_id}/revisions",
+    "/workspaces/{workspace}/agents/{agent}/revisions",
     response_model=AgentRevisionCreateResult,
     status_code=status.HTTP_201_CREATED,
 )
@@ -126,7 +128,7 @@ async def create_agent_revision(
     request: Request,
     response: Response,
     actor: Actor,
-    agent_id: str,
+    agent_id: AgentId,
     body: CreateAgentRevisionRequest,
     idempotency_key: IdempotencyKey,
 ) -> AgentRevisionCreateResult:
@@ -141,7 +143,7 @@ async def create_agent_revision(
 
 
 @router.post(
-    "/agents/{agent_id}/revisions/{revision_id}/restore",
+    "/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore",
     response_model=AgentRevisionCreateResult,
     status_code=status.HTTP_201_CREATED,
 )
@@ -149,7 +151,7 @@ async def restore_agent_revision(
     request: Request,
     response: Response,
     actor: Actor,
-    agent_id: str,
+    agent_id: AgentId,
     revision_id: str,
     body: RestoreAgentRevisionRequest,
     idempotency_key: IdempotencyKey,
@@ -166,7 +168,7 @@ async def restore_agent_revision(
 
 
 @router.post(
-    "/agents/{agent_id}/duplicate",
+    "/workspaces/{workspace}/agents/{agent}/duplicate",
     response_model=Agent,
     status_code=status.HTTP_201_CREATED,
 )
@@ -174,7 +176,7 @@ async def duplicate_agent(
     request: Request,
     response: Response,
     actor: Actor,
-    agent_id: str,
+    agent_id: AgentId,
     body: DuplicateAgentRequest,
     idempotency_key: IdempotencyKey,
 ) -> Agent:
@@ -188,12 +190,12 @@ async def duplicate_agent(
     return agent
 
 
-@router.post("/agents/{agent_id}/{action}", response_model=Agent)
+@router.post("/workspaces/{workspace}/agents/{agent}/{action}", response_model=Agent)
 async def change_agent_lifecycle(
     request: Request,
     response: Response,
     actor: Actor,
-    agent_id: str,
+    agent_id: AgentId,
     action: Literal["enable", "disable", "archive", "unarchive"],
     idempotency_key: IdempotencyKey,
     if_match: IfMatch,
@@ -209,11 +211,11 @@ async def change_agent_lifecycle(
     return agent
 
 
-@router.get("/agents/{agent_id}/revisions", response_model=AgentRevisionCollection)
+@router.get("/workspaces/{workspace}/agents/{agent}/revisions", response_model=AgentRevisionCollection)
 async def list_agent_revisions(
     request: Request,
     actor: Actor,
-    agent_id: str,
+    agent_id: AgentId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> AgentRevisionCollection:
@@ -228,7 +230,7 @@ async def list_agent_revisions(
 @router.get("/agent-revisions/{agent_revision_id}", response_model=AgentRevision)
 async def get_agent_revision(
     request: Request,
-    actor: Actor,
+    actor: Annotated[AuthenticatedActor, Depends(authenticate_request)],
     agent_revision_id: str,
 ) -> AgentRevision:
     return await _management(request).queries.get_revision(actor=actor, revision_id=agent_revision_id)

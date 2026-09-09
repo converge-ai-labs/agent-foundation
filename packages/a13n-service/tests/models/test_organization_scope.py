@@ -143,7 +143,7 @@ async def test_cross_organization_resources_remain_invisible(
 
     other_id = new_object_id("org")
     async with transaction(model_sessions) as session:
-        session.add(OrganizationRecord(id=other_id, name="Other", created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=other_id, key="other", name="Other", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             RoleBindingRecord(

@@ -40,9 +40,9 @@ export function ConnectorConnections() {
     queryKey: ["connector-connections", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/connector-connections", {
+        .GET("/api/v1/workspaces/{workspace}/connector-connections", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor },
           },
           signal,

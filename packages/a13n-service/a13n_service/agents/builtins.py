@@ -13,6 +13,7 @@ from a13n_service.iam import (
     authorize_workspace,
 )
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.resource_keys import insert_with_key
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -29,7 +30,6 @@ from .errors import (
 )
 from .models import AgentRecord, AgentRevisionRecord
 from .persistence import (
-    agent_name_key,
     lock_revision,
     new_agent_audit,
     new_builtin_agent,
@@ -129,6 +129,8 @@ class BuiltinAgents:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
                     raise resolution_error(error) from error
+                if created:
+                    await insert_with_key(session, record, prefix="agent")
                 revision = new_revision(
                     record,
                     revision_id=revision_id,
@@ -154,11 +156,7 @@ class BuiltinAgents:
                     )
                 )
                 content_changed = current_revision is None or current_revision.content_digest != revision.content_digest
-                metadata_changed = (
-                    record.name != registration.name
-                    or record.description != registration.description
-                    or record.normalized_name != agent_name_key(registration.name)
-                )
+                metadata_changed = record.name != registration.name or record.description != registration.description
                 if not content_changed and not metadata_changed:
                     assert current_revision is not None
                     return AgentRevisionCreateResult(
@@ -166,10 +164,7 @@ class BuiltinAgents:
                         revision=current_revision.to_resource(),
                     )
 
-                if created:
-                    session.add(record)
                 record.name = registration.name
-                record.normalized_name = agent_name_key(registration.name)
                 record.description = registration.description
                 record.updated_by_type = "system"
                 record.updated_by_id = registration.system_actor_id
@@ -197,7 +192,7 @@ class BuiltinAgents:
                 )
         except AuthorizationError as error:
             raise map_authorization_error(error) from error
-        except IntegrityError as error:
+        except IntegrityError:
             if expected_content_digest is not None:
                 try:
                     replay = await self._builtin_registration_replay(
@@ -210,11 +205,7 @@ class BuiltinAgents:
                     raise map_authorization_error(authorization_error) from authorization_error
                 if replay is not None:
                     return replay
-            raise AgentError(
-                "agent_name_conflict",
-                "An Agent with this name already exists in the Workspace.",
-                category=ErrorCategory.conflict,
-            ) from error
+            raise
 
     async def _builtin_registration_replay(
         self,

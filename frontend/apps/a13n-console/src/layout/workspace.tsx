@@ -7,6 +7,7 @@ import { Link, Navigate, Outlet, useLocation, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../auth/context";
 import { CreateWorkspace } from "../features/settings/create-workspace";
+import { workspacePath } from "../shared/paths";
 import { allPages, data, type Schema } from "../shared/api";
 import { Empty, ErrorNotice, Loading, Page } from "../shared/feedback";
 
@@ -23,7 +24,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const auth = useAuth(),
     client = useClient(),
     { t } = useTranslation();
-  const { workspaceId } = useParams();
+  const { organizationKey, workspaceKey } = useParams();
   const location = useLocation();
   const organization = auth.data?.organizations[0];
   const userId = auth.data?.user.value.id;
@@ -33,9 +34,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     queryFn: async ({ signal }) => ({
       items: await allPages((cursor) =>
         client.http
-          .GET("/api/v1/organizations/{organization_id}/workspaces", {
+          .GET("/api/v1/organizations/{organization}/workspaces", {
             params: {
-              path: { organization_id: organization!.id },
+              path: { organization: organization!.id },
               query: { limit: 100, cursor },
             },
             signal,
@@ -44,41 +45,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ),
     }),
   });
+  const items = workspaces.data?.items ?? [];
   const remembered = userId ? lastWorkspaceByUser.get(userId) : undefined;
-  const selected =
-    workspaceId ??
-    workspaces.data?.items.find((item) => item.id === remembered)?.id ??
-    workspaces.data?.items[0]?.id;
+  const workspace = workspaceKey
+    ? items.find((item) => item.key === workspaceKey)
+    : (items.find((item) => item.id === remembered) ?? items[0]);
+  const selected = workspace?.id;
   const permissions = useQuery({
     queryKey: ["permissions", selected],
-    enabled:
-      !!selected &&
-      !!workspaces.data?.items.some((item) => item.id === selected),
+    enabled: !!selected,
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/permissions", {
-          params: { path: { workspace_id: selected! } },
+        .GET("/api/v1/workspaces/{workspace}/permissions", {
+          params: { path: { workspace: selected! } },
           signal,
         })
         .then(data),
   });
   useEffect(() => {
-    if (
-      userId &&
-      selected &&
-      workspaces.data?.items.some((item) => item.id === selected)
-    )
-      lastWorkspaceByUser.set(userId, selected);
-  }, [userId, selected, workspaces.data]);
+    if (userId && selected) lastWorkspaceByUser.set(userId, selected);
+  }, [userId, selected]);
   if (!auth.isPending && !organization) return <NoOrganization />;
   if (
     auth.isPending ||
     workspaces.isPending ||
-    (selected &&
-      workspaces.data?.items.some((item) => item.id === selected) &&
-      permissions.isPending)
+    (selected && permissions.isPending)
   )
     return <Loading />;
+  if (
+    (organizationKey && organization?.key !== organizationKey) ||
+    (workspaceKey && workspaces.isSuccess && !selected)
+  )
+    return (
+      <Page title={t("Not found")}>
+        <ErrorNotice error={new Error(t("Resource not found"))} />
+      </Page>
+    );
   if (organization && workspaces.data?.items.length === 0)
     return <NoWorkspace organization={organization} />;
   const error = auth.error ?? workspaces.error ?? permissions.error;
@@ -97,26 +99,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           .filter((item) => item.id !== selected)
           .map((item) => (
             <p key={item.id}>
-              <Link to={`/workspaces/${item.id}/agents`}>{item.name}</Link>
+              <Link to={`${workspacePath(organization!, item)}/agents`}>
+                {item.name}
+              </Link>
             </p>
           ))}
         <Link to="/settings/profile">{t("Personal settings")}</Link>
       </Page>
     );
-  const workspace = workspaces.data?.items.find((item) => item.id === selected);
   if (!organization || !workspace || !permissions.data)
     return (
       <Page title={t("Workspace unavailable")}>
         <ErrorNotice error={new Error("Workspace unavailable")} />
         {workspaces.data?.items.map((item) => (
           <p key={item.id}>
-            <Link to={`/workspaces/${item.id}/agents`}>{item.name}</Link>
+            <Link to={`${workspacePath(organization!, item)}/agents`}>
+              {item.name}
+            </Link>
           </p>
         ))}
       </Page>
     );
-  if (!workspaceId && window.location.pathname === "/")
-    return <Navigate to={`/workspaces/${workspace.id}/agents`} replace />;
+  if (!workspaceKey && location.pathname === "/")
+    return (
+      <Navigate
+        to={`${workspacePath(organization, workspace)}/agents`}
+        replace
+      />
+    );
   return (
     <Context.Provider
       value={{
@@ -139,7 +149,11 @@ export function useAccess() {
 export function useWorkspace() {
   const access = useAccess();
   if (!access.workspace) throw new Error("Missing workspace provider");
-  return { ...access, workspace: access.workspace };
+  return {
+    ...access,
+    workspace: access.workspace,
+    basePath: workspacePath(access.organization, access.workspace),
+  };
 }
 
 function NoWorkspace({
@@ -155,8 +169,8 @@ function NoWorkspace({
     queryKey: ["organization-permissions", organization.id],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/organizations/{organization_id}/permissions", {
-          params: { path: { organization_id: organization.id } },
+        .GET("/api/v1/organizations/{organization}/permissions", {
+          params: { path: { organization: organization.id } },
           signal,
         })
         .then(data),
@@ -178,7 +192,7 @@ function NoWorkspace({
             <>
               <Link to="/settings/profile">{t("Personal settings")}</Link>
               {permissions.data?.organization_admin && (
-                <Link to="/organization/settings">
+                <Link to={`/${organization.key}/settings`}>
                   {t("Organization settings")}
                 </Link>
               )}
@@ -197,7 +211,7 @@ function NoWorkspace({
             error={permissions.error ?? logout.error}
             retry={() => void permissions.refetch()}
           />
-          {["/settings/profile", "/organization/settings"].includes(
+          {["/settings/profile", `/${organization.key}/settings`].includes(
             location.pathname,
           ) && !permissions.isPending ? (
             <Outlet />

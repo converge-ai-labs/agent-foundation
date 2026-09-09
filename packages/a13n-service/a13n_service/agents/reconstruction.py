@@ -21,6 +21,7 @@ from a13n_harness import (
 from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.errors import HarnessError
+from a13n_harness.output_schema import structured_output_type
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
     HarnessPluginFactoryContext,
@@ -33,7 +34,6 @@ from a13n_harness.tools.client import (
 )
 from pydantic_ai.agent.abstract import AgentRetries
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.output import StructuredDict
 from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
@@ -333,10 +333,10 @@ def _output_type(spec: OutputSpec | None) -> Any:
     try:
         if spec.schema_ is not None:
             schema = _inline_schema_resources(spec.schema_, spec.resources)
-            return StructuredDict(schema, name=spec.name, description=spec.description)
+            return structured_output_type(schema, name=spec.name, description=spec.description)
         assert spec.variants is not None
         return tuple(
-            StructuredDict(
+            structured_output_type(
                 _inline_schema_resources(variant.schema_, variant.resources),
                 name=variant.name,
                 description=variant.description,

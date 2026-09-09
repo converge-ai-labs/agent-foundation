@@ -82,9 +82,9 @@ function ImportForm({
     mutationFn: async () => {
       if (!upload) throw new Error(t("Choose a ZIP file first."));
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/skill-uploads", {
+        .POST("/api/v1/workspaces/{workspace}/skill-uploads", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, upload.key),
           },
           headers: { "Content-Type": "application/zip" },
@@ -122,9 +122,9 @@ function ImportForm({
       }
       const body = { source, ...(name && { name }) };
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/skills", {
+        .POST("/api/v1/workspaces/{workspace}/skills", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,

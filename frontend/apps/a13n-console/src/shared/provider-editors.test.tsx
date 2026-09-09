@@ -13,7 +13,11 @@ const http = vi.hoisted(() => ({
 }));
 vi.mock("../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "ws_test" },
+    can: () => true,
+  }),
   useAccess: () => ({
     can: () => true,
     organizationAdmin: true,
@@ -91,7 +95,7 @@ function setup(kind: "workspace" | "organization", surface: string) {
         : ["api_key"],
     },
   };
-  const listPath = `/api/v1/${kind === "workspace" ? "workspaces/{workspace_id}" : "organizations/{organization_id}"}/${surface}-providers`;
+  const listPath = `/api/v1/${kind === "workspace" ? "workspaces/{workspace}" : "organizations/{organization}"}/${surface}-providers`;
   const detailPath = `/api/v1/${surface}-providers/{${connector ? "connector_provider_id" : "resource_id"}}`;
   const response = () => new Response(null, { headers: { ETag: '"v3"' } });
   http.GET.mockImplementation(async (path: string) => {

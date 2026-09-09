@@ -249,7 +249,7 @@ async def test_failed_builtin_registration_creates_no_partial_agent(
 
 
 @pytest.mark.anyio
-async def test_builtin_name_conflict_creates_no_partial_agent(
+async def test_builtin_duplicate_display_name_allocates_distinct_key(
     agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -260,13 +260,12 @@ async def test_builtin_name_conflict_creates_no_partial_agent(
         request=CreateAgentRequest(name="Service Assistant", config=agent_config()),
     )
 
-    with pytest.raises(AgentError) as rejected:
-        await agent_management.builtins.register_builtin(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            registration=registration(),
-        )
-    assert rejected.value.code == "agent_name_conflict"
-
+    registered = await agent_management.builtins.register_builtin(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        registration=registration(),
+    )
+    assert registered.agent.key.startswith("service-assistant-")
+    assert len(registered.agent.key.removeprefix("service-assistant-")) == 4
     async with transaction(agent_sessions) as session:
-        assert await session.get(AgentRecord, BUILTIN_AGENT_ID) is None
+        assert await session.get(AgentRecord, BUILTIN_AGENT_ID) is not None

@@ -12,6 +12,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_control_runtime
 
 from .catalog import SkillCatalogService
@@ -72,7 +73,7 @@ def _publication(request: Request) -> SkillPublicationService:
 
 
 @router.post(
-    "/workspaces/{workspace_id}/skill-uploads",
+    "/workspaces/{workspace}/skill-uploads",
     response_model=SkillUploadReceipt,
     status_code=status.HTTP_201_CREATED,
     openapi_extra={
@@ -86,7 +87,7 @@ async def stage_skill_upload(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     idempotency_key: IdempotencyKey,
 ) -> SkillUploadReceipt:
     archive = await _read_zip_body(request)
@@ -112,7 +113,7 @@ async def delete_skill_upload(request: Request, actor: Actor, upload_id: str) ->
 
 
 @router.post(
-    "/workspaces/{workspace_id}/skills",
+    "/workspaces/{workspace}/skills",
     response_model=SkillPublicationReceipt,
     status_code=status.HTTP_201_CREATED,
 )
@@ -120,7 +121,7 @@ async def create_skill(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     idempotency_key: IdempotencyKey,
     body: CreateSkillRequest,
 ) -> SkillPublicationReceipt:
@@ -158,11 +159,11 @@ async def create_skill_revision(
     return result.result
 
 
-@router.get("/workspaces/{workspace_id}/skills", response_model=SkillCollection)
+@router.get("/workspaces/{workspace}/skills", response_model=SkillCollection)
 async def list_skills(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> SkillCollection:

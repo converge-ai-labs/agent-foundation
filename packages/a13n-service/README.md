@@ -13,7 +13,7 @@ Backend selection happens once during process startup. A failed network backend 
 
 ## Shared Configuration
 
-Model Providers, Models, Connector Providers, Environment Providers, and Environment Templates support Organization and Workspace ownership. A null `workspace_id` denotes Organization ownership. Organization collections use `/api/v1/organizations/{organization_id}/...`; Workspace configuration lists include local and parent resources. Organization Admin manages shared configuration, while Workspace roles retain their local management and shared-use permissions. Connections, actual Environments, and Runs remain Workspace-owned.
+Model Providers, Models, Connector Providers, Environment Providers, and Environment Templates support Organization and Workspace ownership. A null `workspace_id` denotes Organization ownership. Organization collections use `/api/v1/organizations/{organization}/...`; Workspace configuration lists include local and parent resources. Organization Admin manages shared configuration, while Workspace roles retain their local management and shared-use permissions. Connections, actual Environments, and Runs remain Workspace-owned.
 
 The Host authenticator supplies exactly one credential boundary: `boundary_workspace_id` for Workspace requests, or `boundary_organization_id` for an Organization-scoped human session. Workspace API keys cannot manage Organization resources. Initial migrations define these scopes directly; recreate local databases initialized from older baseline files.
 
@@ -139,7 +139,7 @@ A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY='sk-lf-...'
 
 Product distributions can register additional trusted adapters through `TraceQueryProviderRegistry`; runtime configuration selects only one key already fixed into that artifact. Duplicate keys and selections absent from the artifact fail startup.
 
-`GET /api/v1/workspaces/{workspace_id}/traces` and `GET /api/v1/workspaces/{workspace_id}/traces/{trace_id}` remain present when querying is disabled and return the shared safe unavailable error. Backend correlation is never authorization evidence: a distribution must inject `Components.trace_access_authorizer` backed by its authoritative RunAttempt domain before results can be returned. The current repository does not yet contain that RunAttempt persistence domain, so configured querying fails closed until the owning implementation is composed.
+`GET /api/v1/workspaces/{workspace}/traces` and `GET /api/v1/workspaces/{workspace}/traces/{trace_id}` remain present when querying is disabled and return the shared safe unavailable error. Backend correlation is never authorization evidence: a distribution must inject `Components.trace_access_authorizer` backed by its authoritative RunAttempt domain before results can be returned. The current repository does not yet contain that RunAttempt persistence domain, so configured querying fails closed until the owning implementation is composed.
 
 Run `make langfuse-test` to start the repository's local Langfuse v4 stack and verify a real standard-OTLP write followed by input search and Observations v2 list/detail reads. The ordinary Python test suite keeps this integration test skipped so it does not require Docker.
 
@@ -192,6 +192,61 @@ network_settings = StorageSettings.model_validate(
 
 The S3 client uses the standard AWS credential chain. Set `endpoint_url` and `force_path_style` only for a compatible non-AWS endpoint. The deployment mounts NFS at the configured filesystem root before the process starts.
 
+## Executable configuration
+
+Select one TOML file explicitly for every operation:
+
+```sh
+a13n-service --config /path/to/service.toml config check
+a13n-service --config /path/to/service.toml db upgrade
+a13n-service --config /path/to/service.toml serve
+```
+
+The precedence is defaults, then that TOML file, then `A13N_SERVICE_*`
+environment overrides, then explicit `serve --role` and `--host` overrides.
+Service never searches for `.env` or another configuration file. Invalid TOML,
+unknown fields and invalid effective values fail before startup. Configuration
+is immutable; restart the process after changing it. Relative storage paths use
+the selected file's directory (or the invocation directory with no file).
+
+The nested `Settings` model groups fields by operational concern. Most
+configuration fields map to the uppercase section and field name, for example
+`[database] pool_size` becomes `A13N_SERVICE_DATABASE_POOL_SIZE`. Existing
+singular deployment prefixes remain supported for plural sections:
+
+| TOML section                                                   | Environment prefix after `A13N_SERVICE_`                                               |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `service`                                                      | None (`port` → `PORT`, `name` → `SERVICE_NAME`, `instance_id` → `SERVICE_INSTANCE_ID`) |
+| `objects`, `assets`, `models`, `environments`                  | `OBJECT_`, `ASSET_`, `MODEL_`, `ENVIRONMENT_`                                          |
+| `plugins`, `subagents`, `webhooks`, `hooks`, `runs`, `secrets` | `PLUGIN_`, `SUBAGENT_`, `WEBHOOK_`, `HOOK_`, `RUN_`, `SECRET_`                         |
+| `logging`                                                      | `LOG_`                                                                                 |
+| `observability.query`                                          | `OBSERVABILITY_QUERY_`                                                                 |
+
+`[migration] auto_migrate` keeps `A13N_SERVICE_AUTO_MIGRATE`; `[gateway] a2a_*`
+keeps `A13N_SERVICE_A2A_*`. Arrays are native TOML arrays, or JSON arrays when
+supplied through the environment. Standard `OTEL_*` transport settings remain
+independent environment inputs.
+
+Secrets may be injected through deployment environment variables or a protected,
+explicitly selected configuration file. Never commit real credentials. The
+repository's [local TOML](../../dev/service/local.toml) contains only public,
+fictional credentials; use [the local development guide](../../dev/service/README.md)
+for a complete resettable environment. `.env.example` lists optional environment
+overrides only and is not automatically loaded. Embedded callers construct
+`Settings` explicitly, or call `load_settings` from
+`a13n_service.configuration.sources` to select input sources.
+
+The executable owns role-aware schema preparation: `all` and `control` upgrade
+only when `migration.auto_migrate` is enabled; otherwise they check the current
+heads. `worker` and `connectivity` always check and never migrate. The container
+entrypoint simply executes the requested command, so CLI overrides and TOML
+selection cannot disagree with migration behavior.
+
+The image selects `/app/service.toml` explicitly in both its default command and
+health probe. Mount a deployment TOML at that path to configure both. If replacing
+the command to select another path, also replace the container health command
+with `a13n-service --config PATH config healthcheck` for that same file.
+
 ## Relational Usage
 
 Consumers use SQLAlchemy directly. Generic storage does not define `get`, `insert`, or `do` wrappers.
@@ -228,16 +283,13 @@ The Alembic environment does not read process settings or create an engine. The 
 Select the database backend, then use the stable service CLI or repository commands:
 
 ```bash
-A13N_SERVICE_DATABASE_BACKEND=postgresql
-A13N_SERVICE_DATABASE_URL=postgresql+psycopg://a13n_service:a13n_service@127.0.0.1:5432/a13n_service
-
 make db-upgrade
 make db-current
 make db-check
 make db-history
 ```
 
-The corresponding executable commands are `a13n-service db upgrade`, `a13n-service db current --check-heads`, `a13n-service db history`, and `a13n-service db migrate "description"`. There is one process CLI; migration implementation remains in `database/migration.py` rather than introducing a second database-only settings or command layer.
+Repository database commands use `SERVICE_CONFIG` (default `dev/service/local.toml`). Corresponding executable commands use `a13n-service --config PATH db` followed by `upgrade`, `current --check-heads`, `history`, or `migrate "description"`. There is one process CLI; migration implementation remains in `database/migration.py` rather than introducing a second database-only settings or command layer.
 
 For the zero-service profile, set `A13N_SERVICE_DATABASE_BACKEND=sqlite` and `A13N_SERVICE_DATABASE_SQLITE_PATH=var/a13n-service.sqlite3`. The same accepted history is applied to both backends. A domain requiring PostgreSQL-only schema behavior must reject SQLite explicitly.
 

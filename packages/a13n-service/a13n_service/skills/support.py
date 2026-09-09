@@ -5,23 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_visible_ascii_key,
-    load_evidence,
-    new_evidence,
 )
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.durable_operations.requests import evidence_record, load_receipt, request_scope
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -47,21 +44,18 @@ class IdempotencyScope:
     identity: IdempotencyIdentity
 
 
-@dataclass(frozen=True, slots=True)
-class ReplayResult[Result: BaseModel]:
-    result: Result
-    created: bool
+class ReplayResult[Result: BaseModel](BaseModel):
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    result: Result = Field(validation_alias="response", serialization_alias="response")
+    created: StrictBool
 
 
 def idempotency_identity(key: str, request: dict[str, str] | BaseModel) -> IdempotencyIdentity:
     try:
-        key_digest = digest_visible_ascii_key(key)
+        return IdempotencyIdentity.from_request(key, request)
     except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    return IdempotencyIdentity(
-        key_digest=key_digest,
-        request_digest=digest_request(request),
-    )
 
 
 async def load_replay[ResponseModel: BaseModel](
@@ -72,19 +66,16 @@ async def load_replay[ResponseModel: BaseModel](
     response_model: type[ResponseModel],
 ) -> ReplayResult[ResponseModel] | None:
     try:
-        record = await load_evidence(session, scope=_evidence_scope(scope), identity=scope.identity, now=now)
+        receipt = await load_receipt(session, scope=_evidence_scope(scope), identity=scope.identity, now=now)
     except IdempotencyConflict as error:
         raise SkillError(
             "idempotency_conflict",
             "The Idempotency-Key was already used with different request content.",
             category=ErrorCategory.conflict,
         ) from error
-    if record is None:
+    if receipt is None:
         return None
-    payload = record.receipt_json
-    if payload is None or not isinstance(payload.get("created"), bool):
-        raise RuntimeError("Skill evidence has no publication receipt")
-    return ReplayResult(result=response_model.model_validate(payload["response"]), created=bool(payload["created"]))
+    return receipt.restore(ReplayResult[response_model])
 
 
 def new_replay_evidence(
@@ -94,24 +85,26 @@ def new_replay_evidence(
     created: bool,
     now: datetime,
 ) -> IdempotencyEvidenceRecord:
-    return new_evidence(
+    return evidence_record(
+        actor=scope.actor,
         organization_id=scope.organization_id,
-        scope=_evidence_scope(scope),
+        workspace_id=scope.workspace_id,
+        operation=scope.operation,
+        scope_id=scope.resource_scope_id,
         identity=scope.identity,
         result_kind="skill_command",
         result_ref=scope.resource_scope_id,
-        receipt={"response": response.model_dump(mode="json"), "created": created},
+        response=ReplayResult(result=response, created=created),
         now=now,
     )
 
 
 def _evidence_scope(scope: IdempotencyScope) -> EvidenceScope:
-    return EvidenceScope(
-        scope.workspace_id,
-        scope.actor.principal.principal_type.value,
-        scope.actor.principal.principal_id,
-        scope.operation,
-        scope.resource_scope_id,
+    return request_scope(
+        scope.actor,
+        workspace_id=scope.workspace_id,
+        operation=scope.operation,
+        scope_id=scope.resource_scope_id,
     )
 
 

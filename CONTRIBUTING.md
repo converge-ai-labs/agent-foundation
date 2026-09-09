@@ -39,6 +39,8 @@ make install
 
 The frontend pnpm workspace lives under `frontend/`: applications in `frontend/apps/` and shared UI source in `frontend/packages/`. `frontend/package.json` pins pnpm; install that version before running `make install`. The standalone TypeScript SDK retains its independent npm project and lockfile.
 
+Local Service development uses the explicit, public test configuration in `dev/service/local.toml`. See [the local Service guide](dev/service/README.md) for startup, storage ownership, reset baselines, and fictional login credentials. Service does not automatically load `.env`; environment variables remain available as explicit deployment overrides.
+
 The repository selects Python 3.13 through `.python-version`. Python packages are uv workspace members under `packages/`; Rust crates under `crates/` are validated by the same top-level merge gate.
 
 ## Engineering Standards
@@ -58,36 +60,40 @@ Keep transport handling, application orchestration, domain behavior, and infrast
 
 Use the Makefile as the stable development interface:
 
-| Command                       | Purpose                                                           |
-| ----------------------------- | ----------------------------------------------------------------- |
-| `make help`                   | List available commands                                           |
-| `make install`                | Synchronize locked workspace, application, and SDK dependencies   |
-| `make setup`                  | Start local PostgreSQL and Redis                                  |
-| `make dev`                    | Upgrade the schema and run a13n Service and Console               |
-| `make dev-down`               | Stop local infrastructure and remove its data volumes             |
-| `make langfuse-up`            | Start the isolated local Langfuse trace backend                   |
-| `make langfuse-down`          | Stop local Langfuse while preserving its data                     |
-| `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                   |
-| `make format`                 | Apply repository formatting hooks                                 |
-| `make lint`                   | Run non-mutating repository lint checks                           |
-| `make deps-check`             | Check each Python package's dependency declarations with deptry   |
-| `make typecheck`              | Type-check Python package sources with Pyright                    |
-| `make docs-serve`             | Start the local MkDocs development server                         |
-| `make docs-build`             | Build the documentation site in strict mode                       |
-| `make test`                   | Run Python workspace tests                                        |
-| `make examples-check`         | Lint and type-check the independent examples                      |
-| `make examples-check-all`     | Build and run the complete independent examples gate              |
-| `make eip-check`              | Verify generated EIP artifacts and shared Python/Rust wire models |
-| `make rust-check`             | Format-check and lint the root Rust workspace                     |
-| `make sdk-check`              | Lint and type-check the standalone SDKs                           |
-| `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI             |
-| `make frontend-sync`          | Install the locked frontend workspace dependencies                |
-| `make frontend-check-all`     | Check and build all frontend applications                         |
-| `make build`                  | Build all workspace packages, applications, and standalone SDKs   |
-| `make images`                 | Build the a13n-service and sandbox images                         |
-| `make image-check`            | Build and smoke-check both container images                       |
-| `make check`                  | Apply formatting, then run fast checks with four parallel workers |
-| `make check-all`              | Run the complete component gates, including tests and builds      |
+| Command                       | Purpose                                                            |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `make help`                   | List available commands                                            |
+| `make install`                | Synchronize locked workspace, application, and SDK dependencies    |
+| `make setup`                  | Start local PostgreSQL and Redis                                   |
+| `make dev`                    | Upgrade the schema and run a13n Service and Console                |
+| `make service-dev`            | Run only local Service and the scripted development model          |
+| `make dev-reset STATE=empty`  | Rebuild owned Service storage with no business data                |
+| `make dev-reset STATE=seeded` | Rebuild owned Service storage with fictional resources and history |
+| `make dev-state-check`        | Validate state tools with disposable local infrastructure          |
+| `make dev-down`               | Stop local infrastructure while preserving its data                |
+| `make langfuse-up`            | Start the isolated local Langfuse trace backend                    |
+| `make langfuse-down`          | Stop local Langfuse while preserving its data                      |
+| `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                    |
+| `make format`                 | Apply repository formatting hooks                                  |
+| `make lint`                   | Run non-mutating repository lint checks                            |
+| `make deps-check`             | Check each Python package's dependency declarations with deptry    |
+| `make typecheck`              | Type-check Python package sources with Pyright                     |
+| `make docs-serve`             | Start the local MkDocs development server                          |
+| `make docs-build`             | Build the documentation site in strict mode                        |
+| `make test`                   | Run Python workspace tests                                         |
+| `make examples-check`         | Lint and type-check the independent examples                       |
+| `make examples-check-all`     | Build and run the complete independent examples gate               |
+| `make eip-check`              | Verify generated EIP artifacts and shared Python/Rust wire models  |
+| `make rust-check`             | Format-check and lint the root Rust workspace                      |
+| `make sdk-check`              | Lint and type-check the standalone SDKs                            |
+| `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI              |
+| `make frontend-sync`          | Install the locked frontend workspace dependencies                 |
+| `make frontend-check-all`     | Check and build all frontend applications                          |
+| `make build`                  | Build all workspace packages, applications, and standalone SDKs    |
+| `make images`                 | Build the a13n-service and sandbox images                          |
+| `make image-check`            | Build and smoke-check both container images                        |
+| `make check`                  | Apply formatting, then run fast checks with four parallel workers  |
+| `make check-all`              | Run the complete component gates, including tests and builds       |
 
 This section owns validation policy; agent guides and skills refer here rather than adding separate gates. Select checks from changes since the last successful validation and their dependency impact. Without prior results, cover the complete intended change. For merge or rebase updates, include incoming changes and interactions between both branches, not just textual conflicts.
 
@@ -103,7 +109,9 @@ Testcontainers is pinned to 4.13.1 because 4.15.0 can read Ryuk port mappings be
 
 a13n Service CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `a13n Service Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-a13n-service.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for a13n Service, matching CI, and two workers for other Python suites. Tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
 
-Harness UI CI runs the Linux suite with two file-grouped workers on pull requests and `main`, retaining frontend checks and distribution verification. The separate [WebUI workflow](.github/workflows/ci-a13n-harness-ui-webui.yml) owns browser unit tests, API snapshot checks, and Python startup/HTTP integration tests; the main Linux job excludes those tests rather than running them twice. WebUI test CI does not build or start Docker images. Pull requests run a focused Windows native integration suite; the full Windows UI suite runs weekly and through `workflow_dispatch`, not on every merge. Manual runs also retain the Linux gate. The [workflow](.github/workflows/ci-a13n-harness-ui.yml) owns the native test selection and schedule. Windows smoke coverage does not replace full platform coverage: less common storage, plugin, and interaction regressions may only be detected by the full Windows run.
+UI Tests runs the Linux suite with two file-grouped workers on pull requests and `main`. Python tests, Console/shared frontend checks, and WebUI distribution verification run in parallel; the `UI (Linux)` check requires all three jobs to pass. Distribution tooling tests run with packaging, outside the application test path. The separate [WebUI workflow](.github/workflows/ci-a13n-harness-ui-webui.yml) owns browser unit tests, API snapshot checks, and Python startup/HTTP integration tests; the Linux Python test job excludes those tests rather than running them twice. WebUI test CI does not build or start Docker images. Pull requests run a focused Windows native integration suite; the full Windows UI suite runs weekly and through `workflow_dispatch`, not on every merge. Manual runs also retain the Linux gate. The [workflow](.github/workflows/ci-a13n-harness-ui.yml) owns the native test selection and schedule. Windows smoke coverage does not replace full platform coverage: less common storage, plugin, and interaction regressions may only be detected by the full Windows run.
+
+a13n-envd CI runs protocol verification and the native daemon platform matrix in parallel after path classification. The `a13n-envd checks` job requires every selected protocol, client, and daemon check to succeed; unselected checks may be skipped.
 
 Select directories, files, or pytest node IDs with `PYTHON_TEST_DIRS`. Paths in the same package run in one pytest process; packages run separately in first-selected order, stopping on failure. Without a selection, all workspace suites run. Use `PYTHON_TEST_WORKERS` to override concurrency, including `0` for a small serial reproduction:
 

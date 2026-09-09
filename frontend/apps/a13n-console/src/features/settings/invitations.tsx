@@ -30,19 +30,19 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
     queryFn: ({ signal }) =>
       scope.kind === "workspace"
         ? client.http
-            .GET("/api/v1/workspaces/{workspace_id}/invitations", {
+            .GET("/api/v1/workspaces/{workspace}/invitations", {
               signal,
               params: {
-                path: { workspace_id: scope.id },
+                path: { workspace: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
             })
             .then(data)
         : client.http
-            .GET("/api/v1/organizations/{organization_id}/invitations", {
+            .GET("/api/v1/organizations/{organization}/invitations", {
               signal,
               params: {
-                path: { organization_id: scope.id },
+                path: { organization: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
             })
@@ -163,15 +163,15 @@ function InvitationEditor({
       if (scope.kind === "workspace") {
         if (role === "member") throw new Error("Invalid workspace role");
         return client.http
-          .POST("/api/v1/workspaces/{workspace_id}/invitations", {
-            params: { path: { workspace_id: scope.id } },
+          .POST("/api/v1/workspaces/{workspace}/invitations", {
+            params: { path: { workspace: scope.id } },
             body: { email, role },
           })
           .then(data);
       }
       return client.http
-        .POST("/api/v1/organizations/{organization_id}/invitations", {
-          params: { path: { organization_id: scope.id } },
+        .POST("/api/v1/organizations/{organization}/invitations", {
+          params: { path: { organization: scope.id } },
           body: {
             email,
             grants: [

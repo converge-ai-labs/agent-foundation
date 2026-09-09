@@ -192,6 +192,25 @@ class OpenConnectorProvider:
             raise ConnectorProviderError("connection_substitution")
 
 
+def _requires_object(schema: object) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    if schema.get("type") in ("object", ["object"]):
+        return True
+    if any(_requires_object(branch) for branch in schema.get("allOf", [])):
+        return True
+    return any(
+        bool(branches) and all(_requires_object(branch) for branch in branches)
+        for branches in (schema.get("anyOf", []), schema.get("oneOf", []))
+    )
+
+
+def _mcp_schema(schema: JsonObject) -> JsonObject:
+    # Add only a redundant object constraint. Keep compositions and reference
+    # locations intact; native execution schemas and catalog digests are unchanged.
+    return {**schema, "type": "object"} if _requires_object(schema) else schema
+
+
 class ProjectToolCatalog:
     def __init__(self, catalog: OpenConnectorCatalog, service: str) -> None:
         self._catalog = catalog
@@ -209,8 +228,8 @@ class ProjectToolCatalog:
                         key=a.id,
                         provider_version=version,
                         description=a.description,
-                        input_schema=a.input_schema,
-                        output_schema=a.output_schema,
+                        input_schema=_mcp_schema(a.input_schema),
+                        output_schema=_mcp_schema(a.output_schema) if a.output_schema is not None else None,
                     )
                     for a in actions
                 ),

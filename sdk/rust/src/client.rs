@@ -177,6 +177,23 @@ impl Client {
         };
         tokio::select! { biased; _ = self.shutdown.cancelled() => Err(Error::Closed), result = operation => result }
     }
+    /// Resolve the API key's Workspace once and share this client's transport.
+    pub async fn workspace(&self) -> Result<crate::WorkspaceClient<'_>, Error> {
+        #[derive(serde::Deserialize)]
+        struct CredentialContext {
+            workspace_id: Option<String>,
+        }
+        let result: Representation<CredentialContext> = self
+            .request(Method::GET, &["auth", "context"], None, None, None)
+            .await?;
+        let id = result
+            .value
+            .workspace_id
+            .filter(|id| !id.is_empty())
+            .ok_or(Error::InvalidInput)?;
+        Ok(crate::WorkspaceClient::new(self, id))
+    }
+
     pub async fn search_provider_types(
         &self,
     ) -> Result<Representation<Page<SearchProviderDefinition>>, Error> {

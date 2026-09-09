@@ -20,12 +20,6 @@ from .transport import RemoteTransport
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoveryCommand:
-    evidence_id: str
-    actor: AuthenticatedActor
-
-
-@dataclass(frozen=True, slots=True)
 class DiscoveryResult:
     connection: MCPConnection
     tools: tuple[MCPTool, ...]
@@ -42,7 +36,9 @@ class MCPDiscoveryService:
         self._transport = transport
         self._credentials = credentials
 
-    async def discover(self, connection_id: str, *, command: DiscoveryCommand | None = None) -> DiscoveryResult:
+    async def discover(
+        self, connection_id: str, *, actor: AuthenticatedActor, command_id: str | None = None
+    ) -> DiscoveryResult:
         snapshot = await self._credentials.current(connection_id)
         generation = snapshot.credential_generation
 
@@ -89,10 +85,10 @@ class MCPDiscoveryService:
                 raise MCPConnectionError(
                     "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
                 )
+            await authorize_connection(session, actor, current, mode="manage")
             evidence = None
-            if command is not None:
-                await authorize_connection(session, command.actor, current, mode="manage")
-                evidence = await session.get(IdempotencyEvidenceRecord, command.evidence_id, with_for_update=True)
+            if command_id is not None:
+                evidence = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
                 if (
                     evidence is None
                     or evidence.result_ref != connection_id

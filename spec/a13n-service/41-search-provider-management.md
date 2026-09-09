@@ -149,18 +149,18 @@ Authorized Run configuration and safe invocation observations identify the selec
 
 All routes use `/api/v1`, the shared error envelope, and [API conventions](../api-conventions.md). The account and catalog surfaces are served by Control and `all` roles.
 
-| Method and route                                                           | Result                                                |
-| -------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `GET /search-provider-types`                                               | Complete bounded `{items: [...]}` type catalog        |
-| `GET /search-provider-types/{type}`                                        | One safe definition                                   |
-| `POST /workspaces/{workspace_id}/search-providers`                         | Create a local account; `201` with resource and ETag  |
-| `GET /workspaces/{workspace_id}/search-providers`                          | Visible local and Organization accounts               |
-| `GET /workspaces/{workspace_id}/search-providers/{provider_id}`            | Safe visible resource and ETag                        |
-| `PATCH /workspaces/{workspace_id}/search-providers/{provider_id}`          | Update a local account under `If-Match`               |
-| `POST /workspaces/{workspace_id}/search-providers/{provider_id}/test`      | Test a saved visible account                          |
-| `GET /workspaces/{workspace_id}/search-providers/{provider_id}/references` | Referencing Agent Revisions visible in this Workspace |
+| Method and route                                                        | Result                                                |
+| ----------------------------------------------------------------------- | ----------------------------------------------------- |
+| `GET /search-provider-types`                                            | Complete bounded `{items: [...]}` type catalog        |
+| `GET /search-provider-types/{type}`                                     | One safe definition                                   |
+| `POST /workspaces/{workspace}/search-providers`                         | Create a local account; `201` with resource and ETag  |
+| `GET /workspaces/{workspace}/search-providers`                          | Visible local and Organization accounts               |
+| `GET /workspaces/{workspace}/search-providers/{provider_id}`            | Safe visible resource and ETag                        |
+| `PATCH /workspaces/{workspace}/search-providers/{provider_id}`          | Update a local account under `If-Match`               |
+| `POST /workspaces/{workspace}/search-providers/{provider_id}/test`      | Test a saved visible account                          |
+| `GET /workspaces/{workspace}/search-providers/{provider_id}/references` | Referencing Agent Revisions visible in this Workspace |
 
-Organization-owned management uses equivalent `/organizations/{organization_id}/search-providers` routes. Organization collections contain only Organization-owned accounts. Reads and tests through a Workspace can address a visible parent account, but mutations must address its owning scope. Type catalog reads require an authorized Organization or Workspace context and reveal no account configuration.
+Organization-owned management uses equivalent `/organizations/{organization}/search-providers` routes. Organization collections contain only Organization-owned accounts. Reads and tests through a Workspace can address a visible parent account, but mutations must address its owning scope. Type catalog reads require an authorized Organization or Workspace context and reveal no account configuration.
 
 Account lists use standard cursor pagination ordered by `(casefold(name), id)` with optional exact `type` and `enabled` filters; disabled accounts remain visible. Reference lists include retained current and historical Agent Revisions, ordered by `(agent_id, version, agent_revision_id)`, with `agent_id`, `agent_revision_id`, `version`, and `is_current`. They apply both account-read and Agent-read authorization; Organization queries span only authorized descendant Workspaces. Results exclude inaccessible Agents rather than exposing their names or counts. A reference is inspection evidence, not permission to run or mutate that Agent.
 

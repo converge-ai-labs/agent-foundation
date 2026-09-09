@@ -12,7 +12,11 @@ import { Composer } from "./composer";
 
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http: {} }) }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => false }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "workspace" },
+    can: () => false,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),

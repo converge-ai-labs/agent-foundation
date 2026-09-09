@@ -190,3 +190,39 @@ def test_close_cancels_inflight_request_without_replay():
         assert task.cancelled()
 
     asyncio.run(run())
+
+
+def test_workspace_binding_uses_context_once_and_shares_shutdown():
+    async def run():
+        paths = []
+
+        def respond(request):
+            paths.append(request.url.path)
+            if request.url.path.endswith("/auth/context"):
+                return httpx2.Response(200, json={"workspace_id": "ws_test", "workspace_key": "renamed"})
+            return httpx2.Response(200, json={"items": [PROVIDER]})
+
+        client = Client("https://service.example/prefix", "token", transport=httpx2.MockTransport(respond))
+        workspace = await client.workspace()
+        for _ in range(2):
+            assert (await workspace.search_providers()).items[0].id == "sp_test"
+        assert paths == ["/prefix/api/v1/auth/context"] + ["/prefix/api/v1/workspaces/ws_test/search-providers"] * 2
+        await client.aclose()
+        with pytest.raises(TransportError):
+            await workspace.search_providers()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("context", [{}, {"workspace_id": None}, {"workspace_id": ""}])
+def test_workspace_binding_requires_workspace_credential(context):
+    async def run():
+        async with Client(
+            "https://service.example",
+            "token",
+            transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json=context)),
+        ) as client:
+            with pytest.raises(ValueError, match="Workspace-bound"):
+                await client.workspace()
+
+    asyncio.run(run())

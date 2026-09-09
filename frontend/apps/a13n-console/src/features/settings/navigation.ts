@@ -88,7 +88,8 @@ const sections: Record<SettingsScope, Section[]> = {
   ],
 };
 export function useSettingsNavigation() {
-  const { workspace, organization, can, organizationAdmin } = useWorkspace();
+  const { workspace, organization, can, organizationAdmin, basePath } =
+    useWorkspace();
   return [
     {
       scope: "personal" as const,
@@ -101,7 +102,7 @@ export function useSettingsNavigation() {
       scope: "workspace" as const,
       label: "Workspace",
       name: workspace.name,
-      path: `/workspaces/${workspace.id}/settings`,
+      path: `${basePath}/settings`,
       sections: sections.workspace.filter(
         (item) => !item.permission || can(item.permission),
       ),
@@ -112,7 +113,7 @@ export function useSettingsNavigation() {
             scope: "organization" as const,
             label: "Organization",
             name: organization.name,
-            path: "/organization/settings",
+            path: `/${organization.key}/settings`,
             sections: sections.organization,
           },
         ]

@@ -20,7 +20,7 @@ from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction
 from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.ids import new_object_id
 from a13n_service.secrets.crypto import SecretProtector
-from a13n_service.storage import transaction
+from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import (
@@ -338,8 +338,6 @@ def _account_position(position: dict[str, object]) -> tuple[str, str]:
 
 def _name_conflict(error: IntegrityError) -> None:
     # Only the two owning-scope name constraints map to a reconciliation conflict.
-    from a13n_service.models.service_common import is_unique_conflict
-
     if any(
         is_unique_conflict(error, constraint=constraint, sqlite_columns=columns)
         for constraint, columns in (

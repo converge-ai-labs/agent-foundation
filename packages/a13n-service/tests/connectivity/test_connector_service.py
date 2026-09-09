@@ -370,6 +370,75 @@ async def test_provider_metadata_and_discovery_use_new_routes_without_creating_c
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("command", ["reconnect", "revoke"])
+async def test_connection_http_commands_preserve_lifecycle_and_dispatch(
+    connector_services, connector_backend, monkeypatch, command
+) -> None:
+    import httpx2
+    from a13n_service.connectivity.connectors import router
+    from a13n_service.iam import authenticate_request
+    from fastapi import FastAPI
+
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(
+        connections, connector_provider_id=provider.id, idempotency_key="http-connection"
+    )
+    app = FastAPI()
+    app.include_router(router.router)
+    app.dependency_overrides[authenticate_request] = actor
+    monkeypatch.setattr(router, "_connections", lambda request: connections)
+    path = f"/api/v1/connector-connections/{connection.id}"
+    setup = {"setup": {"scopes": ["read"]}, "browser_nonce": "b" * 64, "return_path": "/connections"}
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app), base_url="https://foundation.example") as client:
+        response = await client.post(
+            path + "/setup",
+            headers={"Idempotency-Key": "http-setup"},
+            json={"expected_version": connection.version, **setup},
+        )
+        assert response.status_code == 200
+        launch = response.json()
+        response = await client.post(
+            "/api/v1/connector-setup/complete",
+            json={
+                "attempt_id": launch["attempt_id"],
+                "browser_nonce": setup["browser_nonce"],
+                "session_uri": f"session://{launch['attempt_id']}",
+            },
+        )
+        assert response.status_code == 200
+        current = (await client.get(path)).json()
+        assert current["status"] == "ready"
+        for index, (action, expected_status) in enumerate(
+            (("disable", "disabled"), ("enable", "ready"), ("disable", "disabled"))
+        ):
+            response = await client.post(
+                path + "/" + action,
+                headers={"Idempotency-Key": f"{action}-{index}"},
+                json={"expected_version": current["version"]},
+            )
+            assert response.status_code == 200 and response.headers.get("etag")
+            current = response.json()
+            assert current["status"] == expected_status
+
+        body = {"expected_version": current["version"], **(setup if command == "reconnect" else {})}
+        response = await client.post(path + "/" + command, headers={"Idempotency-Key": command}, json=body)
+        assert response.status_code == 200
+        result = response.json()
+        if command == "reconnect":
+            assert result["connection"]["id"] == connection.id
+            assert result["connection"]["status"] == "pending"
+            assert result["attempt_id"] != launch["attempt_id"]
+            assert connector_backend.started == 2 and not connector_backend.revoked
+        else:
+            assert result["local_status"] == "disabled" and result["remote_status"] == "succeeded"
+            assert (await client.get(path)).json()["status"] == "disabled"
+            replay = await client.post(path + "/revoke", headers={"Idempotency-Key": command}, json=body)
+            assert replay.status_code == 200 and replay.json() == result
+            assert len(connector_backend.revoked) == 1
+
+
+@pytest.mark.anyio
 async def test_connector_discovery_fences_credential_rotation(connector_services, monkeypatch) -> None:
     from .connector_helpers import FakeConnectorProvider
 

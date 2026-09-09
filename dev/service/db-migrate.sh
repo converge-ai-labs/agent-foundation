@@ -8,19 +8,21 @@ if [[ $# -ne 1 || -z "$1" ]]; then
 fi
 
 MESSAGE="$1"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE=(docker compose -f "$ROOT_DIR/dev/compose.yaml")
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+COMPOSE=(docker compose --env-file /dev/null --project-name "a13n-migrate-${$}" -f "$ROOT_DIR/dev/service/compose.yaml")
 DATABASE_NAME="a13n_service_migrate_${$}_${RANDOM}"
 POSTGRES_PORT=""
 
 cleanup() {
     if [[ -n "$POSTGRES_PORT" ]]; then
         "${COMPOSE[@]}" exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U a13n_service -d postgres \
+            psql -v ON_ERROR_STOP=1 -U a13n_service_dev -d postgres \
             -c "DROP DATABASE IF EXISTS \"$DATABASE_NAME\" WITH (FORCE);" >/dev/null || true
     fi
+    "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null || true
 }
 trap cleanup EXIT
+export A13N_DEV_POSTGRES_PORT=0
 
 "${COMPOSE[@]}" up -d --wait postgres
 POSTGRES_PORT="$("${COMPOSE[@]}" port postgres 5432 | awk -F: 'NR == 1 {print $NF}')"
@@ -30,10 +32,10 @@ if [[ -z "$POSTGRES_PORT" ]]; then
 fi
 
 "${COMPOSE[@]}" exec -T postgres \
-    psql -v ON_ERROR_STOP=1 -U a13n_service -d postgres \
+    psql -v ON_ERROR_STOP=1 -U a13n_service_dev -d postgres \
     -c "CREATE DATABASE \"$DATABASE_NAME\";" >/dev/null
 
-DATABASE_URL="postgresql+psycopg://a13n_service:a13n_service@127.0.0.1:${POSTGRES_PORT}/${DATABASE_NAME}"
+DATABASE_URL="postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:${POSTGRES_PORT}/${DATABASE_NAME}"
 VERSIONS_DIR="$ROOT_DIR/packages/a13n-service/a13n_service/database/migrations/versions"
 
 echo "Replaying migration history in disposable database $DATABASE_NAME..."

@@ -8,7 +8,7 @@ from a13n_service.gateway.queries import NativeInteractionQueries, NativeQueryEr
 from a13n_service.iam import WorkspaceAction
 from a13n_service.iam import authorization as iam_authorization
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions.commands import ContinueRunCommand
+from a13n_service.interactions.command_values import ContinueRunCommand
 from a13n_service.interactions.domain import ThreadOriginKind, ThreadRole
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.records import run_record, thread_record
@@ -109,7 +109,7 @@ async def _add_hidden_agent(database: AsyncSession) -> str:
     revision = await database.get(AgentRevisionRecord, AGENT_REVISION_ID)
     assert agent is not None and revision is not None
     agent_values = {column.name: getattr(agent, column.name) for column in AgentRecord.__table__.columns}
-    agent_values.update(id="agt_hidden", name="Hidden", normalized_name="hidden", current_revision_id="agtr_hidden")
+    agent_values.update(id="agt_hidden", name="Hidden", key="hidden", current_revision_id="agtr_hidden")
     database.add(AgentRecord(**agent_values))
     await database.flush()
     revision_values = {column.name: getattr(revision, column.name) for column in AgentRevisionRecord.__table__.columns}
@@ -242,7 +242,7 @@ async def test_preview_text_is_bounded_unicode_and_prefers_current_over_head(
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     objects = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="preview-source",
@@ -265,7 +265,7 @@ async def test_preview_text_is_bounded_unicode_and_prefers_current_over_head(
         thread = await database.get(ThreadRecord, source.thread_id)
         assert thread is not None
         thread.current_run_id = source.run_id
-    continued = await commands.continue_from(
+    continued = await commands.runs.continue_from(
         actor=hook_actor(),
         source_run_id=source.run_id,
         idempotency_key="preview-continue",
@@ -338,7 +338,7 @@ async def test_postgresql_batch_previews_use_bounded_unicode_projections(
         run.input_text = input_text
     objects = await LocalObjectStore.create(tmp_path / "postgres-objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    completed = await commands.start(
+    completed = await commands.runs.start(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="postgres-preview",

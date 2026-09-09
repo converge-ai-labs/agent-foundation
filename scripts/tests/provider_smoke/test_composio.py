@@ -83,6 +83,7 @@ def smoke(monkeypatch):
             body = json.loads(req.content)
             assert body["arguments"] == {"query": "hello"}
             assert body["connected_account_id"] == "account-1"
+            assert body["user_id"] == "user-1"
             assert body["version"] == version
             assert req.headers["idempotency-key"].startswith("smoke-")
             if state["unknown"]:

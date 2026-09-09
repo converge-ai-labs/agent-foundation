@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.ids import new_object_id
+from a13n_service.resource_keys import flush_key_change, insert_with_key
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
@@ -92,22 +93,22 @@ class MembershipService:
             )
             return page.finish([Workspace.model_validate(row) for row in rows], scope)
 
-    async def create_workspace(self, actor: AuthenticatedActor, organization_id: str, name: str) -> Workspace:
+    async def create_workspace(
+        self, actor: AuthenticatedActor, organization_id: str, name: str, *, key: str | None = None
+    ) -> Workspace:
         async with identity_transaction(self._sessions, organization_id) as session:
             if await authorize_organization_admin(session, actor=actor) != organization_id:
                 raise not_found()
-            await self._unique_workspace(session, organization_id, name)
             now = utc_now()
             row = WorkspaceRecord(
                 id=new_object_id("ws"),
                 organization_id=organization_id,
                 name=name,
-                normalized_name=name.casefold(),
                 created_at=now,
                 updated_at=now,
                 deleted_at=None,
             )
-            session.add(row)
+            await insert_with_key(session, row, prefix="workspace", requested=key)
             audit(
                 session,
                 actor=actor,
@@ -120,7 +121,7 @@ class MembershipService:
             return Workspace.model_validate(row)
 
     async def update_workspace(
-        self, actor: AuthenticatedActor, workspace_id: str, name: str, if_match: str
+        self, actor: AuthenticatedActor, workspace_id: str, name: str | None, if_match: str, *, key: str | None = None
     ) -> Workspace:
         current = await self.workspace(actor, workspace_id)
         async with identity_transaction(self._sessions, current.organization_id) as session:
@@ -131,8 +132,12 @@ class MembershipService:
             if row is None or row.deleted_at is not None:
                 raise not_found()
             require_etag(row, if_match)
-            await self._unique_workspace(session, row.organization_id, name, excluding=row.id)
-            row.name, row.normalized_name, row.updated_at = name, name.casefold(), utc_now()
+            if name is not None:
+                row.name = name
+            if key is not None:
+                row.key = key
+            row.updated_at = utc_now()
+            await flush_key_change(session)
             audit(
                 session,
                 actor=actor,
@@ -307,17 +312,3 @@ class MembershipService:
             )
             if scope.organization_id != organization_id:
                 raise not_found()
-
-    @staticmethod
-    async def _unique_workspace(
-        session: AsyncSession, organization_id: str, name: str, *, excluding: str | None = None
-    ) -> None:
-        query = select(WorkspaceRecord.id).where(
-            WorkspaceRecord.organization_id == organization_id,
-            WorkspaceRecord.normalized_name == name.casefold(),
-            WorkspaceRecord.deleted_at.is_(None),
-        )
-        if excluding is not None:
-            query = query.where(WorkspaceRecord.id != excluding)
-        if await session.scalar(query) is not None:
-            raise identity_error("workspace_name_conflict", "An active Workspace already uses this name.")

@@ -50,9 +50,9 @@ export function Composer({
   const upload = useMutation({
     mutationFn: async (selection: { file: File; key: string }) =>
       client.http
-        .POST("/api/v1/workspaces/{workspace_id}/assets", {
+        .POST("/api/v1/workspaces/{workspace}/assets", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: {
               filename: selection.file.name,
               media_type: selection.file.type || "application/octet-stream",

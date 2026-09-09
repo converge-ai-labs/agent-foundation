@@ -177,11 +177,11 @@ export function RunOptions({
     queryKey: ["run-options", workspace.id],
     enabled: open,
     queryFn: async ({ signal }) => {
-      const path = { workspace_id: workspace.id };
+      const path = { workspace: workspace.id };
       const [agents, models, templates, environments] = await Promise.all([
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/agents", {
+            .GET("/api/v1/workspaces/{workspace}/agents", {
               params: { path, query: { cursor } },
               signal,
             })
@@ -189,7 +189,7 @@ export function RunOptions({
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/models", {
+            .GET("/api/v1/workspaces/{workspace}/models", {
               params: { path, query: { cursor, enabled: true } },
               signal,
             })
@@ -197,7 +197,7 @@ export function RunOptions({
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/environment-templates", {
+            .GET("/api/v1/workspaces/{workspace}/environment-templates", {
               params: { path, query: { cursor } },
               signal,
             })
@@ -205,7 +205,7 @@ export function RunOptions({
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/environments", {
+            .GET("/api/v1/workspaces/{workspace}/environments", {
               params: { path, query: { cursor } },
               signal,
             })

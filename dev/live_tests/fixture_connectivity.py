@@ -18,6 +18,18 @@ TOOL_SCHEMA = {
     "required": ["value"],
     "additionalProperties": False,
 }
+TOOL_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "successful": {"type": "boolean"},
+        "data": {
+            "type": "object",
+            "properties": {"proof": {"type": "string"}},
+            "required": ["proof"],
+        },
+    },
+    "required": ["successful", "data"],
+}
 TOOLKIT_VERSION = "20260908_01"
 
 
@@ -101,15 +113,25 @@ def connectivity_router(root, config):
         if path == "connected_accounts/link":
             await account_path.write_text(
                 json.dumps(
-                    {"id": "live-account", "toolkit": {"slug": "live"}, "user_id": body["user_id"], "status": "ACTIVE"}
+                    {
+                        "id": "live-account",
+                        "toolkit": {"slug": "live"},
+                        "user_id": body["user_id"],
+                        "status": "INITIALIZING",
+                    }
                 )
             )
             return {
                 "connected_account_id": "live-account",
-                "session_uri": "live-session",
                 "redirect_url": "https://connect.composio.dev/link/live-test",
                 "expires_at": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
             }
+        if path == "connected_accounts/complete_auth":
+            account = json.loads(await account_path.read_text())
+            assert body == {"session_uri": "live-session", "user_id": account["user_id"]}
+            assert account["status"] == "INITIALIZING"
+            await account_path.write_text(json.dumps({**account, "status": "ACTIVE"}))
+            return {"connected_account_id": account["id"], "toolkit_slug": "live"}
         if path == "connected_accounts/live-account":
             return json.loads(await account_path.read_text())
         if path == "connected_accounts/live-account/revoke":
@@ -125,12 +147,14 @@ def connectivity_router(root, config):
                 "version": TOOLKIT_VERSION,
                 "description": "Return a real HTTP proof",
                 "input_parameters": TOOL_SCHEMA,
+                "output_parameters": TOOL_OUTPUT_SCHEMA,
             }
         if path.startswith("tools/execute/"):
             account = json.loads(await account_path.read_text())
             if account["status"] != "ACTIVE":
                 raise HTTPException(403, "Account revoked")
             assert body["connected_account_id"] == "live-account" and body["version"] == TOOLKIT_VERSION
+            assert body["user_id"] == account["user_id"]
             return {"successful": True, "data": {"proof": "REMOTE:" + body["arguments"]["value"]}}
         raise HTTPException(404, "Unknown test provider endpoint")
 

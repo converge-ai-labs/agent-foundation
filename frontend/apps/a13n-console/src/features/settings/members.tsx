@@ -43,18 +43,18 @@ export function Members({ scope }: { scope: MembershipScope }) {
       allPages((cursor) =>
         scope.kind === "organization"
           ? client.http
-              .GET("/api/v1/organizations/{organization_id}/users", {
+              .GET("/api/v1/organizations/{organization}/users", {
                 params: {
-                  path: { organization_id: scope.id },
+                  path: { organization: scope.id },
                   query: { cursor, limit: 100 },
                 },
                 signal,
               })
               .then(data)
           : client.http
-              .GET("/api/v1/workspaces/{workspace_id}/members", {
+              .GET("/api/v1/workspaces/{workspace}/members", {
                 params: {
-                  path: { workspace_id: scope.id },
+                  path: { workspace: scope.id },
                   query: { cursor, limit: 100 },
                 },
                 signal,
@@ -67,18 +67,18 @@ export function Members({ scope }: { scope: MembershipScope }) {
     queryFn: ({ signal }) =>
       scope.kind === "organization"
         ? client.http
-            .GET("/api/v1/organizations/{organization_id}/role-bindings", {
+            .GET("/api/v1/organizations/{organization}/role-bindings", {
               params: {
-                path: { organization_id: scope.id },
+                path: { organization: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
               signal,
             })
             .then(data)
         : client.http
-            .GET("/api/v1/workspaces/{workspace_id}/role-bindings", {
+            .GET("/api/v1/workspaces/{workspace}/role-bindings", {
               params: {
-                path: { workspace_id: scope.id },
+                path: { workspace: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
               signal,
@@ -302,9 +302,9 @@ function AddMember({
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
-          .GET("/api/v1/organizations/{organization_id}/users", {
+          .GET("/api/v1/organizations/{organization}/users", {
             params: {
-              path: { organization_id: organizationId },
+              path: { organization: organizationId },
               query: { cursor, limit: 100 },
             },
             signal,
@@ -314,8 +314,8 @@ function AddMember({
   });
   const add = useMutation({
     mutationFn: () =>
-      client.http.POST("/api/v1/workspaces/{workspace_id}/role-bindings", {
-        params: { path: { workspace_id: scope.id } },
+      client.http.POST("/api/v1/workspaces/{workspace}/role-bindings", {
+        params: { path: { workspace: scope.id } },
         body: { principal_id: userId, role },
       }),
     onSuccess: () => {

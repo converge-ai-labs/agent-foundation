@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from a13n_service.ids import ObjectId
+from a13n_service.resource_keys import ResourceKey
 from a13n_service.temporal import assume_utc
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
@@ -110,6 +111,18 @@ class UpdateServiceAccountRequest(ExpectedVersion):
 
 class CreateWorkspaceRequest(RequestModel):
     name: Name
+    key: ResourceKey | None = None
+
+
+class UpdateResourceProfileRequest(RequestModel):
+    name: Name | None = None
+    key: ResourceKey | None = None
+
+    @model_validator(mode="after")
+    def valid_change(self) -> Self:
+        if not self.model_fields_set or any(getattr(self, field) is None for field in self.model_fields_set):
+            raise ValueError("supply name or key; neither can be null")
+        return self
 
 
 class SetRoleRequest(RequestModel):
@@ -152,6 +165,7 @@ class Organization(Resource):
         return None if self.image_id is None else f"/api/v1/organizations/{self.id}/icon/{self.image_id}"
 
     name: str
+    key: ResourceKey
     created_at: datetime
     updated_at: datetime
 
@@ -166,6 +180,7 @@ class Workspace(Resource):
 
     organization_id: str
     name: str
+    key: ResourceKey
     created_at: datetime
     updated_at: datetime
 
@@ -249,3 +264,10 @@ class RoleBinding(Resource):
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None
+
+
+class CredentialContext(BaseModel):
+    """The authenticated credential boundary, independent of resource grants."""
+
+    workspace_id: str | None
+    organization_id: str | None

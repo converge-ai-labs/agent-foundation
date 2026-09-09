@@ -83,9 +83,9 @@ Slack and Lark send actions accept the selected destination ID and provider-spec
 
 ## Management API
 
-`GET /api/v1/workspaces/{workspace_id}/application-account-provider-types` lists only distribution-registered Account adapters and configuration versions. Each entry exposes the provider-owned configuration, write-only credential, and reception-policy JSON schemas plus supported target kinds. This authorized metadata read performs no external I/O, returns no configured identity or credential, and does not grant account management permission. The same typed provider models own form metadata and request validation.
+`GET /api/v1/workspaces/{workspace}/application-account-provider-types` lists only distribution-registered Account adapters and configuration versions. Each entry exposes the provider-owned configuration, write-only credential, and reception-policy JSON schemas plus supported target kinds. This authorized metadata read performs no external I/O, returns no configured identity or credential, and does not grant account management permission. The same typed provider models own form metadata and request validation.
 
-Account management uses `/api/v1/workspaces/{workspace_id}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
+Account management uses `/api/v1/workspaces/{workspace}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
 
 Exact object management uses the Account `/targets` child collection. Workspace Builders can manage targets within their current Agent and capability authority. Account management and credentials require Workspace Admin. Possession of an Account or target ID grants no authority.
 
