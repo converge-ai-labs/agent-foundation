@@ -254,3 +254,72 @@ async def test_read_and_retain_share_the_same_gate(tmp_path: Path, monkeypatch: 
         await reading
         await files.close()
         await other.close()
+
+
+@pytest.mark.anyio
+async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as_reference(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import base64
+    import json
+
+    import a13n_harness.model_auth as runtime
+    import httpx2
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    path = await _seed(tmp_path, monkeypatch)
+    image = BytesIO()
+    Image.new("RGB", (2, 2), "green").save(image, format="PNG")
+    encoded = base64.b64encode(image.getvalue()).decode()
+    item = {"id": "ig_1", "type": "image_generation_call", "status": "completed", "result": encoded}
+    response = {
+        "id": "resp_1",
+        "created_at": 1,
+        "object": "response",
+        "model": "gpt-4.1",
+        "output": [item],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        "status": "completed",
+    }
+    events = [
+        {"type": "response.output_item.done", "sequence_number": 0, "output_index": 0, "item": item},
+        {"type": "response.completed", "sequence_number": 1, "response": response},
+    ]
+    sse = "".join(f"data: {json.dumps(event)}\n\n" for event in events).encode()
+    requests = []
+
+    def transport(request):
+        requests.append(json.loads(request.content))
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=sse)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(transport)) as client:
+        monkeypatch.setattr(
+            runtime,
+            "CodexRequestModel",
+            lambda *args, **kwargs: OpenAIResponsesModel(
+                "gpt-4.1", provider=OpenAIProvider(api_key="test", http_client=client)
+            ),
+        )
+        settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+        async with open_harness_ui_app(settings, configuration_path=path) as app:
+            backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+            await backend.initialize()
+            await backend.execute(StreamRenderer(backend.status), prompt="Draw a green square")
+            assert backend.thread_id is not None
+            thread_id = backend.thread_id
+            scratch = tmp_path / "data/threads" / thread_id / "tmp"
+            generated = tuple(scratch.glob("image-*.png"))
+            assert len(generated) == 1 and generated[0].read_bytes() == image.getvalue()
+            assert not (scratch.parent / "attachments").exists()
+            transcript = (await app.get_thread_transcript(thread_id=thread_id)).model_dump_json()
+            assert generated[0].name in transcript
+            assert encoded not in transcript
+        async with open_harness_ui_app(settings, configuration_path=path) as app:
+            receipt = await app.submit_thread(thread_id=thread_id, prompt="Remember the square")
+            await app.wait_root_operation(receipt.receipt_id)
+        assert generated[0].name in json.dumps(requests[1]["input"])
+        assert encoded not in json.dumps(requests[1]["input"])

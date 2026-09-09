@@ -18,6 +18,7 @@ nav:
       - Agents and subagents: a13n-harness-ui/agents-and-subagents.md
       - Environments and Projects: a13n-harness-ui/environments-and-projects.md
       - Extensions and MCP: a13n-harness-ui/extensions-and-mcp.md
+      - Native and Web tools: a13n-harness-ui/native-and-web-tools.md
       - Automation and troubleshooting: a13n-harness-ui/automation-and-troubleshooting.md
   - Agent Harness:
       - Overview: a13n-harness/index.md

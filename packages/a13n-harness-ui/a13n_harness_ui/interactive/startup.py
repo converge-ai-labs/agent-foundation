@@ -87,12 +87,9 @@ async def run_terminal(
                         ask_user=landing.ask,
                         emit=emit,
                         environment=backend.environment,
-                        **(
-                            {"add_model" if request.action == "model" else "add_agent": True}
-                            if request.command == "add"
-                            else {}
-                        ),
-                        **({"advanced": True} if request.setup_advanced else {}),
+                        add_model=request.command == "add" and request.action == "model",
+                        add_agent=request.command == "add" and request.action != "model",
+                        advanced=request.setup_advanced,
                     )
                     if not completed or request.command in {"setup", "add"}:
                         await landing.close()

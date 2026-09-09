@@ -143,6 +143,8 @@ async def test_all_creation_flows_persist_known_native_image_support(
     notices = []
 
     async def ask(question, selection):
+        if question.key == "tools" or question.text == "Model saved. Configure tools on a new Agent?":
+            return question.default
         assert answers, question
         if question.key == "name":
             assert question.default.isascii() and question.default.isprintable()
@@ -183,7 +185,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
 
 def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> None:
     wizard = SetupWizard()
-    for answer in ("api", "anthropic", "", "env:TEST_KEY", "claude-sonnet-4-6", "", ""):
+    for answer in ("api", "anthropic", "", "env:TEST_KEY", "claude-sonnet-4-6", "", "", ""):
         wizard.accept(answer)
     assert "Native media input: image." in wizard.notice()
     while wizard.question.key != "model":
@@ -191,6 +193,7 @@ def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> No
     wizard.accept("custom-model")
     wizard.accept("")
     wizard.accept("")
+    wizard.accept("")  # Tool recommendations.
     assert "Native media input: unknown; no native media enabled." in wizard.notice()
     while wizard.question.key != "api_provider":
         assert wizard.back()

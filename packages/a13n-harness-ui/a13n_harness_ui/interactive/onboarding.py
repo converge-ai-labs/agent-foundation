@@ -80,6 +80,14 @@ class LandingScreen:
             assert self.selection is not None
             self.selection.move(1)
 
+        @keys.add(
+            " ",
+            filter=Condition(lambda: self.selection is not None and self.selection.multiple and not self.field.text),
+        )
+        def toggle(event: KeyPressEvent) -> None:
+            assert self.selection is not None
+            self.selection.toggle()
+
         @keys.add("escape")
         def back(event: KeyPressEvent) -> None:
             if self._answer is not None and not self._answer.done():
@@ -124,7 +132,9 @@ class LandingScreen:
                         Window(
                             FormattedTextControl(
                                 lambda: (
-                                    "  Enter continue · Esc back · Ctrl+C cancel"
+                                    "  Up/Down move · Space toggle · Enter confirm · Esc back · Ctrl+C cancel"
+                                    if self.selection is not None and self.selection.multiple
+                                    else "  Enter continue · Esc back · Ctrl+C cancel"
                                     if self.question
                                     else "  Working · Ctrl+C cancels"
                                 )
@@ -286,6 +296,7 @@ async def run_setup(
     add_agent: bool = False,
     add_model: bool = False,
     advanced: bool = False,
+    existing_model_id: str | None = None,
 ) -> bool:
     """Publish the completed choices. Cancellation never starts chat."""
     from pydantic import SecretStr
@@ -313,6 +324,8 @@ async def run_setup(
         add_agent=add_agent,
         add_model=add_model,
         model_choices=tuple(Choice(model.id, model.name, model.route) for model in models.values()),
+        model_resources=dict(models),
+        values={"model_source": existing_model_id} if existing_model_id is not None else {},
         subscription_models=frozenset(model.id for model in models.values() if model.authentication.kind != "api_key"),
         advanced=advanced,
         default_provider=next((item.provider for item in status.providers if item.available), "codex"),
@@ -351,7 +364,7 @@ async def run_setup(
                             known_context_window,
                             wizard.values["api_provider"],
                             wizard.values["model"],
-                            wizard.values["base_url"],
+                            wizard.values.get("base_url", ""),
                         )
                     if question.key == "provider" and wizard.values["provider"] != "api":
                         await _ensure_account(app, wizard.values["provider"], ask_user, emit)
@@ -406,6 +419,35 @@ async def run_setup(
                     if add_model
                     else "Ready. Use /agent to switch agents, /help for shortcuts."
                 )
+                if add_model:
+                    try:
+                        action = await _choose(
+                            ask_user,
+                            "Model saved. Configure tools on a new Agent?",
+                            (
+                                Choice(
+                                    "later", "Keep Model only", "Add an Agent later; this Model has no tool policy."
+                                ),
+                                Choice(
+                                    "agent",
+                                    "Set up an Agent now",
+                                    "Choose native tools for this Model; Host Web is included.",
+                                ),
+                            ),
+                        )
+                    except (SetupBack, SetupCancelled):
+                        emit("Model saved. Agent setup skipped; no Agent or default changed.")
+                        return True
+                    if action == "agent":
+                        await run_setup(
+                            app,
+                            directory,
+                            ask_user=ask_user,
+                            emit=emit,
+                            add_agent=True,
+                            advanced=advanced,
+                            existing_model_id=selection.new_model_id,
+                        )
                 return True
             except SetupBack:
                 if not wizard.back():

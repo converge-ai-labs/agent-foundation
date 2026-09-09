@@ -27,6 +27,7 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.capabilities.documents import DocumentsConfiguration
 from a13n_harness.capabilities.interaction import UserInteractionCapability
+from a13n_harness.capabilities.native_image_generation import NativeImageGenerationCapability
 from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability, ShellRiskLevel
 from a13n_harness.capabilities.skills import FileSkillSource, SkillManager, SkillsCapability, SkillsPolicy
 from a13n_harness.capabilities.web import WebConfiguration
@@ -46,8 +47,9 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
-from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
+from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability, NativeTool
+from pydantic_ai.native_tools import ImageGenerationTool
 
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError
@@ -72,6 +74,7 @@ _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "documents": DocumentsCapability,
     "skills": SkillsCapability,
     "web": WebCapability,
+    "native_image_generation": NativeImageGenerationCapability,
     "working_state": WorkingStateCapability,
     "user_interaction": UserInteractionCapability,
     **{
@@ -475,6 +478,17 @@ def _construct_capability(
                 user_skills="/environment/user-skills",
             ),
         )
+
+    if capability_type is NativeImageGenerationCapability:
+        from a13n_harness_ui.capability_runtime import save_native_image
+
+        return NativeImageGenerationCapability(
+            saver=save_native_image,
+            tool=TypeAdapter(ImageGenerationTool).validate_python(configuration),
+        )
+    if capability_type is NativeTool:
+        native_arguments: dict[str, Any] = dict(configuration)
+        return NativeTool.from_spec(**native_arguments)
 
     arguments = dict(configuration)
     if capability_type is ShellReviewCapability:

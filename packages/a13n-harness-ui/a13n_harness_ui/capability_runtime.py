@@ -12,6 +12,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpcore2
 import httpx2
@@ -33,8 +34,11 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
+from a13n_harness.context import AgentContext
 from anyio import getaddrinfo, to_thread
+from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import FilePart
 
 _MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
 _USER_AGENT = "a13n-harness-ui/0 web tools"
@@ -343,6 +347,25 @@ def production_run_capabilities(
     if DOCUMENTS_CAPABILITY_ID in owner_capability_ids:
         capabilities.append(DocumentsRunCapability(converter=LocalDocumentConverter()))
     return tuple(capabilities)
+
+
+async def save_native_image(ctx: RunContext[AgentContext], image: FilePart) -> str:
+    """Save model-native output in this Run's Thread scratch mount."""
+    extensions = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
+    suffix = extensions.get(image.content.media_type, ".img")
+    name = f"image-{uuid4().hex}{suffix}"
+    environment = ctx.deps.environment
+    selected = environment.select_files(name, alias="thread-files")
+    assert selected.mount_path is not None
+    path = f"{selected.mount_path.rstrip('/')}{selected.resolved_path.path}"
+
+    async def chunks() -> AsyncIterator[bytes]:
+        for offset in range(0, len(image.content.data), 65_536):
+            yield image.content.data[offset : offset + 65_536]
+
+    async with environment.open_files(selected) as files:
+        await files.write_bytes_stream(path, chunks(), mode="create")
+    return path
 
 
 async def _read_body(response: WebResponse) -> bytes:

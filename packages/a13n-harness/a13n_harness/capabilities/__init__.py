@@ -45,6 +45,7 @@ from .media import (
     MediaResource,
     MediaRunCapability,
 )
+from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
 from .shell_review import (
     AgentShellCommandReviewer,
     ShellCommandReviewer,
@@ -203,6 +204,8 @@ __all__ = [
     "MediaRunCapability",
     "Mem0Capability",
     "Mem0Scope",
+    "NativeImageGenerationCapability",
+    "NativeImageSaver",
     "ProviderTaskCursor",
     "ResolvedDelegationContext",
     "RuntimeContextCapability",

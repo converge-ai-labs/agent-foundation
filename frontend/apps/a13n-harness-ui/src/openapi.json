@@ -4165,6 +4165,32 @@
         ],
         "title": "ApiKeyAuthentication"
       },
+      "CapabilitySelection": {
+        "properties": {
+          "capability": {
+            "$ref": "#/components/schemas/CatalogKey"
+          },
+          "configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Configuration"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capability"
+        ],
+        "title": "CapabilitySelection"
+      },
+      "CatalogKey": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+      },
       "HarnessModelCharacteristics": {
         "properties": {
           "capabilities": {
@@ -4340,6 +4366,20 @@
             "type": "boolean",
             "title": "Connect Default",
             "default": false
+          },
+          "tool_capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CapabilitySelection"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Capabilities"
           },
           "default_agent": {
             "$ref": "#/components/schemas/ResourceId",

@@ -23,7 +23,7 @@ class ApiProvider:
     label: str
     base_url: str
     credential_env: str
-    transport: Literal["native", "openai-client"] = "native"
+    transport: Literal["native", "openai-client", "xai"] = "native"
 
 
 API_PROVIDERS = (
@@ -43,7 +43,8 @@ API_PROVIDERS = (
     ApiProvider(
         "fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY", "openai-client"
     ),
-    ApiProvider("grok", "xAI · Grok API", "https://api.x.ai/v1", "XAI_API_KEY", "openai-client"),
+    ApiProvider("grok", "xAI · Chat Completions", "https://api.x.ai/v1", "XAI_API_KEY", "openai-client"),
+    ApiProvider("xai", "xAI · Native SDK (gRPC)", "", "XAI_API_KEY", "xai"),
 )
 API_PROVIDER_BY_ROUTE = {provider.route: provider for provider in API_PROVIDERS}
 
@@ -64,6 +65,7 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
     "together": ("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Qwen/Qwen3-235B-A22B-Instruct-2507-tput"),
     "fireworks": ("accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/gpt-oss-120b"),
     "grok": ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
+    "xai": ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
 }
 
 
@@ -72,7 +74,11 @@ def known_context_window(provider: str, model_id: str, base_url: str) -> int | N
     from a13n_harness.pricing import get_default_pricing_catalog
 
     catalog_provider = (
-        "openai" if provider in {"openai-responses", "openai-chat"} else "x-ai" if provider == "grok" else provider
+        "openai"
+        if provider in {"openai-responses", "openai-chat"}
+        else "x-ai"
+        if provider in {"grok", "xai"}
+        else provider
     )
     entry = get_default_pricing_catalog().resolve(model_id, provider=catalog_provider, provider_url=base_url)
     return entry.context_window if entry is not None else None
@@ -94,6 +100,7 @@ def known_model_capabilities(route: str) -> frozenset[ModelCapability] | None:
         "openai-chat": "openai",
         "openai-codex": "openai",
         "google": "google-gla",
+        "xai": "grok",
     }.get(provider, provider)
     catalog_key = f"{catalog_provider}:{model_id}"
     if provider == "openrouter":
@@ -127,6 +134,21 @@ def known_model_capabilities(route: str) -> frozenset[ModelCapability] | None:
         else frozenset({ModelCapability.IMAGE_UNDERSTANDING})
     )
     return entry.characteristics.capabilities & supported
+
+
+def starter_tool_capabilities(
+    route: str,
+    *,
+    authentication: str | None = None,
+    base_url: str | None = None,
+) -> list[dict[str, JsonValue]]:
+    """Materialize the same editable recommendations shown in interactive setup."""
+    from a13n_harness_ui.tool_presets import selected_tool_capabilities, tool_choices
+
+    choices = tool_choices(route, authentication=authentication, base_url=base_url)
+    return selected_tool_capabilities(
+        tuple(choice.key for choice in choices if choice.recommended), authentication=authentication
+    )
 
 
 def validate_base_url(value: str) -> str:

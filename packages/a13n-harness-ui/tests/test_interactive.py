@@ -118,7 +118,7 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
     wizard.accept("gpt-5.6-sol")
-    for value in ("on", "all", "extended", "medium", "no", "", "sandbox"):
+    for value in ("on", "all", "extended", "medium", "", "no", "", "sandbox"):
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")

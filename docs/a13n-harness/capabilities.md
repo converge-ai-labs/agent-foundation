@@ -117,6 +117,50 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 
 Provider-backed run Capabilities contain live trusted collaborators. They are not definition state and never enter `HarnessState`.
 
+## Native Image Generation with Saving
+
+`NativeImageGenerationCapability` combines the provider-native `ImageGenerationTool` with a required async saver. Unlike selecting the raw upstream tool, a completed generation produces a saved reference rather than leaving the image only inside the model response. There is no separate output-replacement Capability, image API client, or fallback Model.
+
+```python
+from uuid import uuid4
+
+from anyio import Path
+from pydantic_ai import RunContext
+from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.messages import FilePart
+from pydantic_ai.native_tools import ImageGenerationTool
+
+from a13n_harness import AgentContext, HarnessBuilder
+from a13n_harness.capabilities import NativeImageGenerationCapability
+
+
+async def save_image(ctx: RunContext[AgentContext], image: FilePart) -> str:
+    # This Host owns this directory and makes it available to its users/Agents.
+    directory = Path("/path/to/generated-images")
+    await directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"image-{uuid4().hex}.png"
+    await target.write_bytes(image.content.data)
+    return str(target)
+
+
+agent = HarnessBuilder().build(
+    AgentSpec(model="openai-responses:gpt-5.4"),
+    output_type=str,
+    capabilities=(
+        NativeImageGenerationCapability(
+            tool=ImageGenerationTool(output_format="png"),
+            saver=save_image,
+        ),
+    ),
+)
+```
+
+The saver receives the current `RunContext` and native image `FilePart`; it can use authorized Environment storage, Host storage, or an upload service. Return a non-empty model-visible path or URL only after the write succeeds. Its code and credentials are process-local, not serialized configuration. The Host owns naming, access, retention, and sharing. Harness UI provides a default implementation that saves under the current Thread's `tmp` directory.
+
+The Capability retains native generation call/return metadata, withholds image previews, saves final images, and includes text references in output and continuation history. Image-only replies work with `output_type=str`. Interrupted images are not embedded into checkpoints, and a saver exception fails the Run. Generation, saving, and continuation publication are separate effects; a failure or cancellation can leave a saved file without a published reference. Saved references do not automatically attach pixels on later turns; an Agent needs an authorized file/media reader to inspect them.
+
+Native search remains independently composable with `NativeTool(WebSearchTool(...))` or upstream `WebSearch`. Provider support and account entitlement are checked by the native Model integration, not by a Harness provider matrix.
+
 ## Context Composition
 
 Harness context features use one model-context coordinator, so each owner contributes a bounded block without directly rewriting another owner's messages.

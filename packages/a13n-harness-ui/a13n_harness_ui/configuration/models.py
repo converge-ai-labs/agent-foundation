@@ -379,7 +379,8 @@ class AgentResource(StrictModel):
         for values in (self.harness_plugins, self.mcp_servers, self.tools):
             if values is not None and len(values) != len(set(values)):
                 raise ValueError("Agent selections must be unique and ordered")
-        capability_names = tuple(item.capability for item in self.capabilities)
+        # NativeTool registers one tool per entry; different native tools compose.
+        capability_names = tuple(item.capability for item in self.capabilities if item.capability != "NativeTool")
         if len(capability_names) != len(set(capability_names)):
             raise ValueError("Agent Capability selections must be unique")
         return self

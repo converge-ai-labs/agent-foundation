@@ -210,6 +210,8 @@ Each App-prepared root or child Run receives a `thread-files` mount for its own 
 
 A Sandbox command selected in a Project root does not gain access to the Thread file mount. To process an attachment with a shell, select a cwd under the Thread file root; that sandbox can access its own scratch and attachments, not arbitrary Project or Host paths. Custom adapters receive a Host Direct Local file-only mount rather than silently interpreting a Host directory as a remote Provider workspace. Availability and permission ceilings remain authoritative. Release-owned guidance tells the model to preserve attachments and to copy valuable results out of scratch.
 
+When an Agent selects `native_image_generation`, UI instantiation supplies the Harness Capability with a saver that writes a uniquely named image under the current Run's `thread-files/tmp/` through the Environment file boundary. This applies to roots and children, with or without a Project, and to Host-path and virtual-path layouts. It returns the aggregate file path only after the write succeeds. Generated images are scratch outputs, not submitted attachments; transcripts and continuation messages contain the saved references rather than generated image bytes. Scratch retention and pruning apply unchanged. Keeping an image long-term requires copying or publishing it outside scratch.
+
 This mount is not a Project binding or a durable shell-process recovery store. It publishes no Environment-state head. Finalization closes its Run-local Environment like other mounts while retaining the files themselves. Child Threads have their own file area; no parent's file authority is implicitly inherited.
 
 ## Host-authoritative Environment State

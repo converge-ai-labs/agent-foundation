@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds seven narrow boundaries:
+The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds these narrow boundaries:
 
 1. normalized code-first semantic input visible to Harness middleware;
 2. developer-facing native Model inference and deterministic patch composition;
@@ -10,7 +10,8 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 4. optional fresh run-scoped resolution of a logical model ID;
 5. one automatic request-correlation header derived from the active Thread;
 6. optional exact one-shot provider-history self-healing;
-7. bounded logical-run recovery after a recoverable model interruption.
+7. bounded logical-run recovery after a recoverable model interruption;
+8. optional native image generation with Host-owned saving.
 
 It does not add a hosted input wire format, durable model registry, serialized settings/profile system, provider route-pin schema, output mode, or Capability-only retry framework.
 
@@ -411,6 +412,16 @@ The Harness builds one matching process-local output adapter from the effective 
 For a root invocation, a Pydantic result whose output is `DeferredToolRequests` becomes a suspended Harness result rather than a completed business output. `.calls` and `.approvals` retain their native distinct meanings. The later Host or caller supplies the exact pending requests and matching Pydantic results through `DeferredToolResume` in a new logical run with prior state and fresh bindings. A child invocation resolves dynamic deferral as denied tool results inside the same loop; an unexpected terminal deferred output instead becomes a failed result with `code="subagent_deferred_unsupported"`.
 
 Trusted plugins may replace the complete result candidate, including output, usage, and state. The Harness revalidates field combinations, output type, message suffix, and run correlation. It does not enforce state provenance or require state history to match the result message view.
+
+## Native Image Generation
+
+`NativeImageGenerationCapability` registers Pydantic AI's `ImageGenerationTool` and owns saving the generated images. It is one code-first Capability, not a standalone response-replacement feature, general image-generation API, or fallback framework. Native search and other provider tools remain independently composable through Pydantic AI Capabilities; the effective Model and provider own their support, request options, account access, and usage.
+
+The Capability requires a Host-supplied asynchronous `NativeImageSaver`: a callable accepting `RunContext[AgentContext]` and the native image `FilePart`, returning a non-empty model-visible path or URL after saving succeeds. The Host owns storage authority, file naming, retention, retrieval, and any external publication. The saver is trusted process-local code and is not serialized into `AgentSpec` or continuation state. Tool options remain an ordinary native `ImageGenerationTool` instance.
+
+For a completed model response, the Capability saves each final image and records a text reference in place of its binary file part before output validation and continuation capture. Image-only responses therefore satisfy a text output contract without an extra model request. Text, native tool-call/return metadata, and non-image parts retain their native semantics. Stream consumers receive references only after saving, never provisional image bytes. Interrupted or incomplete images are represented as unsaved rather than embedded in continuation history. Saving failures propagate through the ordinary failed-Run path; they do not produce a successful reference or automatically switch to another generation backend.
+
+A saved reference is not an image attachment and does not make subsequent Models see the pixels automatically. A later Agent can read the referenced file through its authorized tools. Continuation persistence does not imply that the Host has retained the target forever. Model execution, file saving, and continuation publication are separate effects, not an atomic transaction; cancellation or failure may leave saved files whose references were not published.
 
 ## Failure Semantics
 

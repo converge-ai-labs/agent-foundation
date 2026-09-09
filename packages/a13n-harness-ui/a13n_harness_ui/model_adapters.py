@@ -91,7 +91,9 @@ class PydanticAiModelAdapter:
             )
         try:
             configuration = _ModelConfiguration.model_validate(dict(model_cfg), strict=True)
-            if configuration.base_url is not None and provider not in {*API_PROVIDER_BY_ROUTE, "openai"}:
+            if configuration.base_url is not None and (
+                provider == "xai" or provider not in {*API_PROVIDER_BY_ROUTE, "openai"}
+            ):
                 raise ValueError("This route does not support an API-key base URL override")
         except ValueError as exc:
             raise CompositionError(

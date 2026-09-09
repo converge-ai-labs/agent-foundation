@@ -114,7 +114,7 @@ class ResolvedAgentNode(CompositionModel):
         if len(names) != len(set(names)):
             raise ValueError("resolved immediate roster names must be unique")
         for values in (
-            tuple(item.capability for item in self.capabilities),
+            tuple(item.capability for item in self.capabilities if item.capability != "NativeTool"),
             tuple(item.plugin_id for item in self.harness_plugins),
             tuple(item.server_id for item in self.mcp_servers),
         ):

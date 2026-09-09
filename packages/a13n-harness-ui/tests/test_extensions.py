@@ -179,3 +179,71 @@ def test_catalog_preserves_explicit_keyword_metadata() -> None:
     capability = HarnessUiExtensionCatalog().capabilities((("SetToolMetadata", {"code_mode": True}),))[0].capability
     assert isinstance(capability, SetToolMetadata)
     assert capability.metadata == {"code_mode": True}
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_native_tool_specs_materialize_typed_composable_tools(explicit: bool) -> None:
+    from a13n_harness_ui.configuration.models import AgentResource
+    from pydantic_ai.capabilities import NativeTool
+    from pydantic_ai.native_tools import ImageGenerationTool, WebSearchTool
+
+    tools = [{"kind": "web_search", "external_web_access": False}, {"kind": "image_generation", "quality": "low"}]
+    agent = AgentResource.model_validate(
+        {
+            "schema_version": "1",
+            "kind": "agent",
+            "id": "agent-native",
+            "name": "Native",
+            "capabilities": [
+                {"capability": "NativeTool", "configuration": {"tool": tool} if explicit else tool} for tool in tools
+            ]
+            + [{"capability": "web", "configuration": {"search": {"mode": "off"}}}],
+        }
+    )
+    selected = HarnessUiExtensionCatalog().capabilities(
+        tuple((item.capability, item.configuration) for item in agent.capabilities)
+    )
+    search, images, web = (item.capability for item in selected)
+    assert isinstance(search, NativeTool) and isinstance(search.tool, WebSearchTool)
+    assert search.tool.external_web_access is False
+    assert isinstance(images, NativeTool) and isinstance(images.tool, ImageGenerationTool)
+    assert images.tool.quality == "low"
+    assert isinstance(web, WebCapability) and web.configuration.search.mode == "off"
+
+
+def test_native_image_generation_constructs_tool_with_ui_saver() -> None:
+    from a13n_harness.capabilities import NativeImageGenerationCapability
+    from a13n_harness_ui.capability_runtime import save_native_image
+    from pydantic_ai.native_tools import ImageGenerationTool
+
+    selected = HarnessUiExtensionCatalog().capabilities(
+        (("native_image_generation", {"quality": "high", "output_format": "webp"}),)
+    )[0]
+    capability = selected.capability
+    assert isinstance(capability, NativeImageGenerationCapability)
+    assert capability.tool == ImageGenerationTool(quality="high", output_format="webp")
+    assert capability.get_native_tools() == [capability.tool]
+    assert capability.saver is save_native_image
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        {"kind": "web_search"},
+        {"kind": "web_fetch", "enable_citations": True},
+        {"kind": "x_search", "allowed_x_handles": ["pydantic"]},
+        {"kind": "code_execution"},
+        {"kind": "image_generation", "output_format": "png"},
+        {"kind": "memory"},
+        {"kind": "mcp_server", "id": "docs", "url": "https://mcp.example/mcp"},
+        {"kind": "file_search", "file_store_ids": ["vs_docs"]},
+        {"kind": "advisor", "model": "claude-opus-4-6", "max_tokens": 4096},
+    ],
+)
+def test_all_nine_native_specifications_use_upstream_deserialization(tool):
+    from pydantic_ai.capabilities import NativeTool
+
+    selected = HarnessUiExtensionCatalog().capabilities((("NativeTool", tool),))[0].capability
+    assert isinstance(selected, NativeTool)
+    assert selected.tool.kind == tool["kind"]
+    assert not isinstance(selected.tool, dict)

@@ -217,6 +217,7 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     wizard.accept("high")
     wizard.accept("all")
     wizard.accept("")
+    wizard.accept("")  # Tool recommendations.
     wizard.accept("Keep replies concise")
     wizard.accept("1")
     assert wizard.question is None

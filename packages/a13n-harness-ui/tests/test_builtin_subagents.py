@@ -165,6 +165,7 @@ async def test_advanced_setup_offers_subagents_and_only_publishes_inclusion(tmp_
     assert wizard.question.choices == ("all", "none")
     wizard.accept(choice)
     wizard.accept("")  # Context budget.
+    wizard.accept("")  # Tool recommendations.
     wizard.accept("")  # Additional instructions.
     wizard.accept("full-control")
     assert wizard.question is None

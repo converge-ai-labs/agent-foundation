@@ -819,6 +819,13 @@ async def _compact_with_same_agent(
             _COMPACTION_PROMPT,
             message_history=deepcopy(request_context.messages),
             deps=ctx.deps,
+            # This is another model request in the same logical Harness Run,
+            # not a new Host execution. Keep its already-bound collaborators.
+            capabilities=[
+                capability
+                for capability_id, capability in ctx.capabilities.items()
+                if capability_id in ctx.deps._capability_provenance.run_ids
+            ],
             model_settings=cast(ModelSettings, settings),
             output_type=str,
             usage=ctx.usage,

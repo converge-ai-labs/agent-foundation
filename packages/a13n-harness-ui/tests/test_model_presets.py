@@ -27,6 +27,7 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
 
     monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
     endpoint = "https://example.invalid/custom/v1"
+    model_cfg = {} if provider.transport == "xai" else {"base_url": endpoint}
     captured = []
 
     def infer(name):
@@ -44,10 +45,10 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
         model_id="model-test",
         route=f"{provider.route}:{model_name}",
         authentication=ApiKeyAuthentication(kind="api_key", env="TEST_PROVIDER_KEY"),
-        model_configuration={"base_url": endpoint},
+        model_configuration=model_cfg,
     )
     adapter = PydanticAiModelAdapter().validate(route=recipe.route, settings={}, model_cfg=recipe.model_configuration)
-    assert adapter.model_cfg == {"base_url": endpoint}
+    assert adapter.model_cfg == model_cfg
     model = await HarnessUiModelResolver({recipe.model_id: recipe})(
         cast(ModelResolutionContext[AgentContext], None), recipe.model_id
     )
@@ -57,6 +58,11 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
 
         assert isinstance(model, OpenAIChatModel)
         assert str(model.client.base_url).rstrip("/") == endpoint
+    elif provider.transport == "xai":
+        from pydantic_ai.models.xai import XaiModel
+
+        assert isinstance(model, XaiModel)
+        assert captured == [{"api_key": "fixture-key"}]
     elif provider.transport == "openai-client":
         assert str(captured[0]["openai_client"].base_url).rstrip("/") == endpoint
     else:
@@ -165,6 +171,8 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
     questions, output = [], []
 
     async def ask(question, selection):
+        if question.key == "tools":
+            return question.default
         questions.append(question)
         assert answers, question
         return answers.popleft()
@@ -204,6 +212,8 @@ async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_p
     answers = deque(["api", "anthropic", "https://api.anthropic.com", "fixture-key"])
 
     async def ask(question, selection):
+        if question.key == "tools":
+            return question.default
         if not answers:
             raise SetupCancelled()
         return answers.popleft()
@@ -496,7 +506,7 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
     from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS
 
     wizard = SetupWizard()
-    for value in ("api", provider.route, "", "env:TEST_KEY"):
+    for value in ("api", provider.route, *(("",) if provider.transport != "xai" else ()), "env:TEST_KEY"):
         wizard.accept(value)
     assert wizard.question.choices == API_MODEL_SUGGESTIONS[provider.route]
     wizard.accept("2")
@@ -527,6 +537,7 @@ def test_api_context_defaults_manual_override_and_model_change(hint, expected) -
         with pytest.raises(ValueError, match="positive"):
             wizard.accept(invalid)
     wizard.accept("100k")
+    assert wizard.question.key == "environment"  # No native tools for Chat Completions.
     wizard.accept("full-control")
     characteristics = wizard.selection("/tmp")["api_key_model"]["model_characteristics"]
     assert characteristics == {
@@ -591,6 +602,8 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
     answers = deque(["api", provider, "", "env:TEST_KEY", model_id, "", "none", "", "", "full-control"])
 
     async def ask(question, selection):
+        if question.key == "tools":
+            return question.default
         assert answers, question
         return answers.popleft()
 
@@ -629,3 +642,38 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
         assert native.summary_reminder_tokens == int(window * 0.65)
         assert native.compact_threshold == 0.90
     assert not answers
+
+
+@pytest.mark.parametrize(
+    "route,authentication,base_url,kinds",
+    [
+        ("openai-codex:gpt-5.6-sol", "codex_subscription", None, ["web_search", "image_generation"]),
+        ("grok:grok-4.6", "grok_subscription", None, ["web_search"]),
+        ("grok:grok-4.6", "api_key", None, []),
+        ("openai-responses:gpt-5.4", "api_key", None, ["web_search", "image_generation"]),
+        ("openai-responses:gpt-5.4", "api_key", "https://proxy.example/v1", []),
+        ("openai-chat:gpt-5.4", "api_key", None, []),
+        ("anthropic:claude-sonnet-4-6", "api_key", None, ["web_search", "web_fetch"]),
+        ("google:gemini-3.1-pro-preview", "api_key", None, ["web_search", "web_fetch"]),
+        ("google:gemini-2.5-pro", "api_key", None, []),
+        ("openrouter:anthropic/claude-sonnet-4.6", "api_key", None, ["web_search"]),
+    ],
+)
+def test_starter_tools_follow_transport_not_brand(route, authentication, base_url, kinds) -> None:
+    from a13n_harness_ui.model_presets import starter_tool_capabilities
+
+    capabilities = starter_tool_capabilities(route, authentication=authentication, base_url=base_url)
+    actual = [item["configuration"]["kind"] for item in capabilities if item["capability"] == "NativeTool"]
+    if any(item["capability"] == "native_image_generation" for item in capabilities):
+        actual.append("image_generation")
+    assert actual == kinds
+    host = next(item for item in capabilities if item["capability"] == "web")
+    assert host == {
+        "capability": "web",
+        "configuration": {
+            "search": {"mode": "off" if "web_search" in kinds else "host"},
+            "scrape": {"mode": "off" if "web_fetch" in kinds else "host"},
+        },
+    }
+    if authentication == "codex_subscription":
+        assert capabilities[1]["configuration"]["external_web_access"] is True
