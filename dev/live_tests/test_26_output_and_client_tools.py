@@ -1,4 +1,4 @@
-"""Case 26: native structured-output semantics and one deferred client-tool successor."""
+"""Case 26: structured-output validation and one deferred client-tool successor."""
 
 from uuid import uuid4
 
@@ -10,9 +10,16 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize(
-    "non_object_responses", [0, 1, 2], ids=["schema-hint", "object-retry", "object-retry-exhausted"]
+    ("invalid_arguments", "invalid_responses"),
+    [
+        pytest.param(None, 0, id="valid"),
+        pytest.param("[]", 1, id="object-retry"),
+        pytest.param("[]", 2, id="object-retry-exhausted"),
+        pytest.param('{"answer":"invalid","count":0}', 1, id="schema-retry"),
+        pytest.param('{"answer":"invalid","count":0}', 2, id="schema-retry-exhausted"),
+    ],
 )
-async def test_structured_output_preserves_native_object_validation(management, non_object_responses):
+async def test_structured_output_enforces_schema_and_retry_budget(management, invalid_arguments, invalid_responses):
     journey, live = management, management.live
     schema = {
         "type": "object",
@@ -22,22 +29,21 @@ async def test_structured_output_preserves_native_object_validation(management, 
     }
     agent = await journey.agent(output_spec={"name": "live_result", "schema": schema}, retries={"output": 1})
     case = await journey.case()
-    # StructuredDict advertises the schema, but locally validates an object rather
-    # than every JSON Schema constraint. An array must still spend the retry budget.
-    output = {"answer": case["token"], "count": 0}
-    steps = [{"tool": "$output", "raw_arguments": "[]"} for _ in range(non_object_responses)]
-    if non_object_responses < 2:
+    # Non-objects and JSON Schema violations consume the same native retry budget.
+    output = {"answer": case["token"], "count": 1}
+    steps = [{"tool": "$output", "raw_arguments": invalid_arguments} for _ in range(invalid_responses)]
+    if invalid_responses < 2:
         steps.append({"tool": "$output", "arguments": output})
     journey.plan(case, steps=steps)
     receipt = await journey.start(case, agent_id=agent["agent"]["id"])
-    result = await live.finish(receipt["run_id"], "failed" if non_object_responses == 2 else "completed")
+    result = await live.finish(receipt["run_id"], "failed" if invalid_responses == 2 else "completed")
     observed = journey.observations(case)
-    assert len(observed) == min(non_object_responses + 1, 2), "Native output retry budget was not preserved"
+    assert len(observed) == min(invalid_responses + 1, 2), "Native output retry budget was not preserved"
     tools = [entry["function"] for entry in observed[0]["body"]["tools"]]
     output_tool = next(tool for tool in tools if "answer" in tool["parameters"].get("properties", {}))
     assert set(output_tool["parameters"]["required"]) == {"answer", "count"}
     assert output_tool["parameters"]["properties"]["count"]["minimum"] == 1
-    if non_object_responses < 2:
+    if invalid_responses < 2:
         assert result["output"] == output
     else:
         assert result["failure"] and result["output"] is None

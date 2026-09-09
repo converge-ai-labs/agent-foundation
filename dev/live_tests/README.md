@@ -371,7 +371,7 @@ Foundation passes the corresponding contract.
 
 ## Management integration: Service configuration to Harness execution
 
-This round adds 34 live variants in 11 independently selectable files. Cases 19,
+This round adds 36 live variants in 11 independently selectable files. Cases 19,
 28, 29 and 30 are intentionally excluded. All management resources are created
 through public HTTP APIs, and each enabled test uses its own isolated lab with
 the same automatic RustFS setup and optional loopback S3 override as round two.
@@ -386,7 +386,7 @@ the same automatic RustFS setup and optional loopback S3 override as round two.
 | `test_23_model_updates.py`           | Accepted Model settings/upstream remain frozen; a new Run receives new settings; the next request of a running Agent uses rotated Provider credentials/new endpoint or is denied after disable                                                               |
 | `test_24_skill_execution.py`         | Real ZIP document and attachment uploads; accepted latest version freezes before update; later current and explicit pinned bindings materialize/read correct files; cross-Workspace package reads and absent Environment are denied                          |
 | `test_25_asset_execution.py`         | File bytes materialize into the Environment and PNG bytes enter the model request unchanged; deletion before Worker claim blocks delivery; explicit publication produces an immutable downloadable Asset linked to its Run, with cross-Workspace denial      |
-| `test_26_output_and_client_tools.py` | Structured output advertises the authored schema and preserves native object validation and retry bounds; external client tool waits and resumes with actual supplied data; malformed, duplicate and stale feedback cannot create extra successors           |
+| `test_26_output_and_client_tools.py` | Structured output advertises the authored schema and enforces JSON Schema validation and native retry bounds; external client tool waits and resumes with actual supplied data; malformed, duplicate and stale feedback cannot create extra successors       |
 | `test_27_connectivity_execution.py`  | Production MCP client and Composio adapter connect to local HTTP peers; selected tools, arguments and credential hashes agree; disabling/revoking the connection prevents later dispatch                                                                     |
 | `test_31_observability.py`           | Actual OTLP/HTTP exports correlate Service Attempt, Harness, model and tool spans; durable Items, SSE and model usage agree; rejecting trace exports with HTTP 503 does not change the result or repeat the effect                                           |
 

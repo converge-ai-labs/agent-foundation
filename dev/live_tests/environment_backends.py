@@ -192,6 +192,8 @@ class EnvironmentBackend:
             # separately exercises its mandatory native isolation unchanged.
             "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
         }
+        # This selects the test executable; it is not a daemon configuration field.
+        environment.pop("A13N_ENVD_TEST_BINARY", None)
         if self.kind == "http-envd":
             environment.update(
                 A13N_ENVD_TRANSPORT="http",
