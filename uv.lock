@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -177,6 +177,7 @@ test = [
     { name = "fastmcp" },
     { name = "pyright" },
     { name = "pytest" },
+    { name = "pytest-xdist" },
 ]
 
 [package.metadata]
@@ -220,6 +221,7 @@ test = [
     { name = "fastmcp", specifier = ">=3.4,<4" },
     { name = "pyright", specifier = ">=1.1,<2" },
     { name = "pytest", specifier = ">=9,<10" },
+    { name = "pytest-xdist", specifier = ">=3.8,<4" },
 ]
 
 [[package]]

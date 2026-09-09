@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from a13n_environment import EnvironmentProviderCatalog, EnvironmentProviderError
@@ -129,7 +130,12 @@ class EnvironmentService:
                 raise invalid_environment("this Provider does not accept credentials")
             return None
         try:
-            return model.model_validate(value).model_dump_json() if value is not None else None
+            if value is None:
+                return None
+            model.model_validate(value)
+            # Validate with the Provider schema, then encrypt the submitted JSON.
+            # Serializing SecretStr fields would irreversibly store their display mask.
+            return json.dumps(value)
         except ValidationError as error:
             raise invalid_environment("Provider credential is invalid") from error
 

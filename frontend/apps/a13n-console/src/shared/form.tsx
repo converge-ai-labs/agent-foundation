@@ -47,6 +47,7 @@ export function Confirm({
   title,
   description,
   action,
+  onSuccess,
   trigger,
   danger = false,
   children,
@@ -54,6 +55,7 @@ export function Confirm({
   title: string;
   description: string;
   action: () => Promise<unknown>;
+  onSuccess?: () => void;
   trigger: ReactNode;
   danger?: boolean;
   children?: ReactNode;
@@ -64,7 +66,8 @@ export function Confirm({
   const mutation = useMutation({
     mutationFn: action,
     onSuccess: () => {
-      void cache.invalidateQueries();
+      if (onSuccess) onSuccess();
+      else void cache.invalidateQueries();
       setOpen(false);
     },
   });

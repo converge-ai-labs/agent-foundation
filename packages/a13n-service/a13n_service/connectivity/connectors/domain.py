@@ -144,6 +144,7 @@ class ConnectorConnectionCommandRequest(StrictModel):
 
 
 class StartConnectorConnectionSetupRequest(ConnectorConnectionCommandRequest):
+    browser_nonce: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$", repr=False)
     setup: JsonObject
     return_path: str = Field(pattern=r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2047}$")
 
@@ -152,7 +153,18 @@ class ReconnectConnectorConnectionRequest(StartConnectorConnectionSetupRequest):
     pass
 
 
+class CompleteConnectorSetupRequest(StrictModel):
+    attempt_id: str = Field(min_length=1, max_length=72)
+    browser_nonce: str = Field(pattern=r"^[a-f0-9]{64}$", repr=False)
+    session_uri: str = Field(min_length=1, max_length=4096, repr=False)
+
+
+class ConnectorSetupCompletion(StrictModel):
+    return_path: str
+
+
 class ConnectorSetupLaunch(StrictModel):
+    requires_browser_callback: bool = False
     attempt_id: str
     status: Literal["pending", "completed", "failed", "expired"]
     expires_at: datetime

@@ -40,6 +40,7 @@ from a13n_harness.codeact.programs import (
 from a13n_harness.codeact.runtime import CodeActExecution, CodeActRunState
 from a13n_harness.codeact.values import bounded_json_size
 from a13n_harness.context import AgentContext
+from a13n_harness.environment import EnvironmentError
 from a13n_harness.events import (
     CodeActExecutionCompletedPayload,
     CodeActExecutionStartedPayload,
@@ -364,6 +365,11 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         try:
             bounded_json_size(inputs or {}, self.config.max_output_bytes)
             program = await load_program_source(ctx, path, max_source_bytes=self.config.max_source_bytes)
+        except EnvironmentError as exc:
+            raise ToolFailed(
+                f"CodeAct program could not be read ({exc.code}); choose a readable .codeact.py file "
+                "inside an available Environment mount."
+            ) from exc
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             raise ModelRetry(f"CodeAct program could not be loaded or validated ({type(exc).__name__})") from exc
         return await self._execute(

@@ -14,6 +14,7 @@ import { WorkspaceProvider } from "./layout/workspace";
 import { Shell } from "./layout/shell";
 import { ErrorNotice, Loading, Empty, Page } from "./shared/feedback";
 import "./app.css";
+import { ConnectorSetupCallback } from "./features/connectors/callback";
 import { AppearanceProvider } from "./layout/appearance";
 
 const ModelsPage = lazy(() =>
@@ -187,6 +188,10 @@ function AppContent() {
         <AuthProvider>
           <Suspense fallback={<Loading />}>
             <Routes>
+              <Route
+                path="/connector-setup/callback"
+                element={<ConnectorSetupCallback />}
+              />
               {[
                 "/login",
                 "/forgot-password",

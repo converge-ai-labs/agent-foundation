@@ -3,18 +3,8 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
+import { conversationKeys, invalidateConversation } from "./api";
 
-const runtimeQueries = new Set([
-  "sessions",
-  "session-preview",
-  "session-threads",
-  "thread",
-  "thread-runs",
-  "thread-queue",
-  "run",
-  "pending-actions",
-  "run-attempts",
-]);
 export function useConversationNotifications(threadId?: string) {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
@@ -24,16 +14,36 @@ export function useConversationNotifications(threadId?: string) {
     [generation, setGeneration] = useState(0);
   useEffect(() => {
     if (!enabled) return;
+    let closed = false;
     setError(undefined);
-    const invalidate = (notification?: Notification) =>
-      void cache.invalidateQueries({
-        predicate: (query) =>
-          query.queryKey[1] === workspace.id &&
-          runtimeQueries.has(String(query.queryKey[0])) &&
-          (query.queryKey[0] !== "session-preview" ||
-            !notification?.session_id ||
-            query.queryKey[2] === notification.session_id),
+    const gap = () => {
+      if (!closed)
+        void cache.invalidateQueries({
+          queryKey: conversationKeys(workspace.id).root,
+        });
+    };
+    // A user-initiated replacement attachment also has an observation gap.
+    if (generation > 0) gap();
+    const invalidate = (notification: Notification) => {
+      if (closed || notification.workspace_id !== workspace.id) return;
+      void invalidateConversation(cache, workspace.id, {
+        sessionId:
+          notification.session_id ??
+          (notification.resource_type === "session"
+            ? notification.resource_id
+            : undefined),
+        threadId:
+          notification.thread_id ??
+          (notification.resource_type === "thread"
+            ? notification.resource_id
+            : undefined),
+        runId:
+          notification.run_id ??
+          (notification.resource_type === "run"
+            ? notification.resource_id
+            : undefined),
       });
+    };
     const attachment = client.notifications({
       subscriptions: [
         {
@@ -47,11 +57,16 @@ export function useConversationNotifications(threadId?: string) {
       ],
       onNotification: invalidate,
       onState: (state) => {
-        if (state === "gap") invalidate();
+        if (state === "gap") gap();
       },
-      onError: setError,
+      onError: (error) => {
+        if (!closed) setError(error);
+      },
     });
-    return () => attachment.close();
+    return () => {
+      closed = true;
+      attachment.close();
+    };
   }, [client, workspace.id, threadId, enabled, cache, generation]);
   return { error, reconnect: () => setGeneration((value) => value + 1) };
 }

@@ -35,12 +35,20 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             assert key.status_code == 201, key.text
             callbacks = [
                 "/api/v1/oauth/mcp/callback?code=code&state=" + "s" * 32 + "&iss=https://issuer.example",
-                "/connectivity/v1/connector-setup/callback?session_uri=https://provider.example/session",
             ]
             for callback in callbacks:
                 denied = await client.get(callback, headers={"X-A13N-CSRF-Token": ""})
                 assert denied.status_code == 403, denied.text
                 assert denied.json()["error"]["code"] == "csrf_rejected"
+            completion = await client.post(
+                "/api/v1/connector-setup/complete",
+                headers={"X-A13N-CSRF-Token": ""},
+                json={"attempt_id": "csa_test", "browser_nonce": "b" * 64, "session_uri": "private-session"},
+            )
+            assert completion.status_code == 403 and completion.json()["error"]["code"] == "csrf_rejected"
+            assert "private-session" not in completion.text
+            old_callback = await client.get("/connectivity/v1/connector-setup/callback?session_uri=private-session")
+            assert old_callback.status_code == 404
             client.cookies.clear()
             client.headers["Authorization"] = f"Bearer {key.json()['bearer']}"
             result = await client.get(f"/api/v1/workspaces/{ws}/agents")

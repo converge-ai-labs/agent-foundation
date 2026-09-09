@@ -26,20 +26,22 @@ class EnvironmentAccess(StrEnum):
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
     environment: Environment
-    access: EnvironmentAccess = EnvironmentAccess.FULL
+    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
     working_directory: str | None = "/"
     mount_path: str | None = None
 ```
 
 `EnvironmentMount` is a Run input/configuration value. It contains one already constructed adapter plus Run-local policy. It has no independent identity, lifecycle, durable serialization, or Provider discovery behavior.
 
-`EnvironmentAccess` is the complete user-facing access model:
+`EnvironmentMount.access` accepts an `EnvironmentAccess` preset or an exact `EnvironmentPermissionSet` action ceiling. Explicit permission sets are detached at construction. The presets are:
 
 - `READ_ONLY` permits provider-neutral file observation and file-copy source access;
 - `READ_WRITE` adds file mutation;
 - `FULL` permits every Agent-facing operation family offered by the Provider, including command/process behavior;
 - provider descriptors always narrow these ceilings;
 - state dump and local close remain trusted lifecycle operations and are not model-authored permissions.
+
+An exact permission set can expose a narrower combination, such as text read, text write, and remove without other file operations. Both forms are intersected with the Provider descriptor; neither can grant an operation the Provider does not offer.
 
 `working_directory` is `None` or a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
 
@@ -75,6 +77,14 @@ The rules are:
 A mount without `mount_path` retains the compatibility routes: every such mount is addressable at `/environment/{name}`, and the current default is also addressable at `/workspace`. Without a default, `/workspace` is unavailable. A mount with `mount_path` is addressable only at that explicit root; the Harness does not also expose `/workspace` or `/environment/{name}` for it. Relative paths still select the explicit alias or current default and begin at that mount's provider-local `working_directory`.
 
 A hosted worker constructs Environment instances from Host-authoritative configuration and state, and either prepares them before Harness execution or supplies Host-coordinated lazy preparation. An embedded caller can construct them directly through a trusted Provider.
+
+### Explicit Host runtime construction
+
+`create_environment_runtime(mounts=..., default_mount=..., extensions=...)` accepts the same `Environment` and `EnvironmentMount` values. A raw Environment selects full access, provider-local working directory `/`, and the ordinary implicit aggregate routes. The explicit runtime retains its existing default-selection rule: `default_mount` is selected only when supplied. Run-local `mount()` and `replace()` accept these same values. Hosts with already constructed Environment objects do not implement another binding adapter to enter or close them.
+
+The advanced `EnvironmentRuntimeMount(binding=..., permission_ceiling=..., working_directory=..., mount_path=...)` input remains supported by explicit runtime construction and mutation. Its `EnvironmentProviderBinding` owns a trusted async `bind()` scope and `discard()` cleanup for a candidate that was accepted but did not enter. It supports Host-specific acquisition, authentication, or resource scopes whose lifetime begins at binding, without requiring a preconstructed `Environment`. Such binding scopes expose the same provider-neutral operations and obey the same permissions, readiness, identity, and cleanup guarantees. This is an explicit Host integration boundary, not another Provider catalog or model-facing lifecycle.
+
+Validation of a complete initial mount set precedes ownership transfer. The same Environment object cannot occupy two initial mounts, including through distinct `EnvironmentMount` values. Ownership transfer precedes entry and is single-use: rebuilding a mount wrapper or constructing another runtime cannot transfer an already accepted Environment again. An already entered object is rejected without closing its existing scope. If an initial set includes an already transferred candidate, cleanup owns only the newly accepted candidates; it never discards the reused candidate. Dynamic mutation validates the prospective routes before transfer, so a rejected route does not consume the fresh candidate. After transfer, entry failure closes every accepted candidate according to the aggregate cleanup contract, including objects that never entered.
 
 ## Ownership Boundary
 
@@ -222,6 +232,8 @@ Logical routing is:
 - an alias and absolute path supplied together must select the same mount;
 - relative file paths and command working directories resolve below the selected mount's configured provider-local directory.
 
+Operation paths, unlike configured mount roots and working directories, accept trailing `/`, repeated separators within a path, and `.` segments. The aggregate boundary normalizes these spellings before resource metadata, route selection, and scoped file or command dispatch. POSIX, Windows drive, and UNC anchors retain their meaning; Windows paths use forward slashes. Empty inputs, NUL characters, and `..` segments are rejected with `environment_request_invalid` and actionable `field`, `reason`, and `hint` details. Parent traversal is not collapsed lexically across mount or symbolic-link boundaries. Normalization does not expand filesystem authority or change longest-component-prefix selection.
+
 Equal or Windows-equivalent routes owned by different mounts are invalid. Initial construction rejects them before Provider entry. Dynamic mount, replacement, and default changes validate the prospective complete route set before candidate transfer or publication. An overlap at different path depths is not a conflict because component-prefix routing remains deterministic.
 
 Invocation authorization covers the tool operation and arguments. Resource metadata describes the Environment when it was resolved, not a reserved backend for later dispatch. After policy, review, credential, or approval waits, a new routed operation selects the current mount and checks its current permitted actions at the dispatch/readiness boundary. Replacement or default-route changes during those waits do not by themselves invalidate the invocation. A stale explicit selector still fails rather than granting access to another resource.
@@ -297,6 +309,8 @@ State export is a continuation observation, not durable publication. Host finali
 The Provider package owns the async single-Environment file contract. Harness routes it across mounts and provides bounded provider-neutral operations for stat, listing, byte/text reads, streaming writes, patching, directory creation, move, copy, removal, glob/query, and text search.
 
 Every mutation returns a typed receipt. Reads and listings carry explicit offsets or continuation. Text reads report truncated lines. Search and glob expose bounded pages with deterministic ordering. Model-facing `glob.pattern` and `grep.include` use the [EIP path-glob contract](../a13n-envd/04-resource-operations.md#filefind), including bounded brace alternatives. `grep` exposes `regex=true` and `case_sensitive=true` defaults, with explicit literal and case-insensitive modes. Zero matches retain `ok: true`; invalid patterns retain the stable failure envelope and identify `error.details.field`, `reason`, and a corrective `hint`. Paging preserves filters and uses returned continuation offsets; it assumes a stable filesystem. Portable regex uses literals, classes, groups, alternation, anchors, and quantifiers. Direct Local/E2B use Python `re`, while envd uses Rust `regex`; lookaround, backreferences, engine-specific extensions, and Unicode edge cases are not cross-provider guarantees.
+
+Model-facing text `view` treats line bounds as ceilings. After applying any skill or external file-view profile, it narrows the requested line count to its finite page budget, accounting for UTF-8 encoding, rather than returning `environment_too_large` for an oversized combination of valid bounds. A smaller page remains a successful result. When later lines remain, its disclosure supplies `next_line_offset` and explicit continuation instructions. Source-line clipping is separate: non-empty `truncated_lines` carries an incomplete-content disclosure and guidance for rereading the affected one-based source lines with a larger line bound. `has_more` describes later lines, not omitted suffixes. Provider failures such as missing paths, denied access, and invalid text retain their error semantics.
 
 Direct Local confines native paths beneath its configured root and keeps blocking filesystem work off the event loop. It makes no sandbox claim. EIP-backed Providers perform all Agent file operations through EIP.
 

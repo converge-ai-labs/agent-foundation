@@ -301,3 +301,23 @@ def test_mkdir_failure_keeps_target_and_does_not_claim_creation(renderer):
     visible = render(renderer)
     assert "environment_denied" in visible and "Call mkdir target" in visible
     assert "created" not in visible
+
+
+def test_bounded_file_read_remains_successful_and_keeps_recovery_details(renderer):
+    call(
+        renderer,
+        "view",
+        {"file_path": "SKILL.md", "line_limit": 1000},
+        result={
+            "ok": True,
+            "content": "bounded source prefix\n",
+            "line_offset": 0,
+            "lines_read": 1,
+            "has_more": True,
+            "next_line_offset": 1,
+            "disclosure": {"truncated": True, "hint": "Use next_line_offset to continue."},
+        },
+    )
+    assert render(renderer) == "Read SKILL.md"
+    details = render(renderer, detailed=True)
+    assert "bounded source prefix" in details and "Use next_line_offset" in details

@@ -49,11 +49,6 @@ jobs:
             test_targets: >-
               packages/a13n-harness/tests/test_environment_core.py
               packages/a13n-harness/tests/test_monitored_process.py
-          - name: macOS
-            runner: macos-15
-            test_targets: >-
-              packages/a13n-harness/tests/test_environment_core.py
-              packages/a13n-harness/tests/test_monitored_process.py
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:

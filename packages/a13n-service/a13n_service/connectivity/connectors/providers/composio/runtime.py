@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from anyio import Semaphore, create_task_group
 
@@ -28,6 +29,7 @@ from ...http import ConnectorHttpClient
 from ...validation import (
     optional_string,
     path_segment,
+    provider_response_errors,
     required_object,
     required_string,
     same_origin_url,
@@ -40,7 +42,7 @@ _TOOLKIT_VERSION = re.compile(r"^[0-9]{8}_[0-9]{2}$")
 
 class ComposioProvider:
     compatibility_profile = "composio_v3_1"
-    setup_replay_safe = True
+    setup_replay_safe = False
 
     def __init__(
         self, http: ConnectorHttpClient, configuration: ComposioConfiguration, credentials: ApiKeyCredentials
@@ -135,6 +137,8 @@ class ComposioProvider:
         context: SetupContext,
         resume_ref: str | None = None,
     ) -> SetupStarted:
+        if resume_ref is not None:
+            return SetupStarted(setup_ref=resume_ref, external_ref=resume_ref, supports_verified_callback=True)
         configured = ComposioSetup.model_validate(setup)
         await validate_discovered_setup(self.discover_connectors, context.connector_key, setup)
         if context.callback_url is None:
@@ -150,15 +154,14 @@ class ComposioProvider:
                 "user_id": context.external_user_correlation,
             },
             write=True,
-            extra_headers={"idempotency-key": context.attempt_id},
         )
         try:
             response = required_object(value)
             return SetupStarted(
                 setup_ref=required_string(response, "connected_account_id"),
                 external_ref=required_string(response, "connected_account_id"),
-                external_handle=required_string(response, "session_uri", max_length=4096),
-                redirect_url=same_origin_url(response.get("redirect_url"), endpoint=self._configuration.endpoint),
+                expires_at=_link_expiry(response),
+                redirect_url=_authorization_url(response.get("redirect_url")),
                 supports_verified_callback=True,
             )
         except ValueError as error:
@@ -181,17 +184,31 @@ class ComposioProvider:
                 "user_id": context.external_user_correlation,
             },
             write=True,
-            extra_headers={"idempotency-key": context.attempt_id},
         )
         try:
-            return _inspection(
-                required_object(value),
-                external_ref=expected_external_ref,
-                connector_key=context.connector_key,
-                external_user_correlation=context.external_user_correlation,
-            )
+            response = required_object(value)
+            if (
+                required_string(response, "connected_account_id") != expected_external_ref
+                or required_string(response, "toolkit_slug") != context.connector_key
+            ):
+                raise ConnectorProviderError("connection_substitution")
         except ValueError as error:
             raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
+        return await self.inspect_setup(setup_ref=expected_external_ref, context=context)
+
+
+def _link_expiry(response: JsonObject) -> datetime:
+    expiry = datetime.fromisoformat(required_string(response, "expires_at"))
+    if expiry.tzinfo is None:
+        raise ValueError("Auth link expiry must have a timezone")
+    return expiry
+
+
+def _authorization_url(value: object) -> str:
+    # Connect Links are hosted separately from the REST API. Never accept a wildcard origin.
+    if not isinstance(value, str):
+        raise ValueError("Invalid authorization URL")
+    return same_origin_url(value, endpoint="https://connect.composio.dev")
 
 
 class ComposioToolCatalog:
@@ -309,20 +326,21 @@ class ComposioConnection:
         pass
 
     async def inspect(self) -> ConnectionInspection:
-        value = required_object(
-            await self._http.request(
-                "GET",
-                endpoint=self._configuration.endpoint,
-                path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}",
-                api_key=self._credentials.api_key,
+        with provider_response_errors():
+            value = required_object(
+                await self._http.request(
+                    "GET",
+                    endpoint=self._configuration.endpoint,
+                    path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}",
+                    api_key=self._credentials.api_key,
+                )
             )
-        )
-        return _inspection(
-            value,
-            external_ref=self._binding.external_ref,
-            connector_key=self._binding.connector_key,
-            external_user_correlation=self._binding.external_user_correlation,
-        )
+            return _inspection(
+                value,
+                external_ref=self._binding.external_ref,
+                connector_key=self._binding.connector_key,
+                external_user_correlation=self._binding.external_user_correlation,
+            )
 
     async def revoke(
         self,
@@ -387,11 +405,16 @@ def _inspection(
 ) -> ConnectionInspection:
     if required_string(value, "id") != external_ref:
         raise ConnectorProviderError("connection_substitution")
-    if required_string(value, "toolkit_slug", max_length=128) != connector_key:
+    if required_string(required_object(value.get("toolkit")), "slug", max_length=128) != connector_key:
         raise ConnectorProviderError("provider_mismatch")
     if required_string(value, "user_id", max_length=128) != external_user_correlation:
         raise ConnectorProviderError("owner_mismatch")
     status, reason = _status(required_string(value, "status", max_length=64))
+    disabled = value.get("is_disabled", False)
+    if not isinstance(disabled, bool):
+        raise ValueError("Invalid account enabled state")
+    if disabled:
+        status, reason = AdapterConnectionStatus.disabled, None
     return ConnectionInspection(
         external_ref=external_ref,
         connector_key=connector_key,
@@ -399,7 +422,7 @@ def _inspection(
         status=status,
         status_reason=reason,
         safe_metadata={
-            "display_name": optional_string(value.get("display_name"), max_length=256),
+            "display_name": optional_string(value.get("alias"), max_length=256),
             "created_at": optional_string(value.get("created_at"), max_length=64),
             "updated_at": optional_string(value.get("updated_at"), max_length=64),
         },

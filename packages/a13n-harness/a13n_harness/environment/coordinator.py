@@ -20,6 +20,7 @@ from a13n_harness.identity import AgentInstanceContext
 
 from ._mount_path import (
     mount_path_from_provider_path,
+    normalize_operation_path,
     parse_mount_path,
     provider_path_from_suffix,
 )
@@ -60,6 +61,7 @@ from .providers import (
     EnvironmentRuntimeMount,
     FileScopeSelection,
 )
+from .sources import EnvironmentEntry, _normalize_runtime_mount
 from .virtual_files import VirtualFileOperator, _PreparedFile
 
 if TYPE_CHECKING:
@@ -515,7 +517,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if not isinstance(mount, EnvironmentRuntimeMount):
             raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
         candidate = mount.binding
-        if not EnvironmentProviderBinding._claim_transfer(candidate):
+        if not candidate._claim_transfer():
             raise EnvironmentError(
                 "Environment provider binding was already transferred.",
                 code="environment_provider_binding_reused",
@@ -600,17 +602,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     def _resolve_path(self, path: str, *, alias: str | None = None) -> _ResolvedPath:
         self._assert_open()
-        if not isinstance(path, str) or not path or "\x00" in path:
-            raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid")
-        segments = path.split("/")
-        if any(segment == ".." or (segment == "." and path != ".") for segment in segments):
-            raise EnvironmentError("Environment path traversal is invalid.", code="environment_request_invalid")
+        path = _normalize_operation_path(path)
 
         if _is_absolute_path(path):
             try:
                 parsed = parse_mount_path(path)
             except ValueError as exc:
-                raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid") from exc
+                raise _invalid_operation_path(
+                    "Use an absolute POSIX, Windows drive, or UNC path with forward-slash separators."
+                ) from exc
             matches: list[tuple[int, _EnteredMount, str, tuple[str, ...]]] = []
             for entered in self._entered.values():
                 for root in _mount_paths(entered.public, self._snapshot.default_mount):
@@ -659,7 +659,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "The mount working directory is invalid.",
                 code="environment_provider_failure",
             )
-        provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
+        provider_path = base if path == "." else normalize_operation_path(f"{base.rstrip('/')}/{path}")
         return _ResolvedPath(
             entered=selected,
             provider_path=provider_path,
@@ -796,16 +796,14 @@ class CompositeBoundEnvironment(BoundEnvironment):
         entered: _EnteredMount,
         mount_path: str,
     ) -> EnvironmentPath:
-        if not isinstance(path, str) or not path or "\x00" in path:
-            raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid")
-        segments = path.split("/")
-        if any(segment == ".." or (segment == "." and path != ".") for segment in segments):
-            raise EnvironmentError("Environment path traversal is invalid.", code="environment_request_invalid")
+        path = _normalize_operation_path(path)
         if _is_absolute_path(path):
             try:
                 suffix = parse_mount_path(path).suffix_below(parse_mount_path(mount_path))
             except ValueError as exc:
-                raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid") from exc
+                raise _invalid_operation_path(
+                    "Use an absolute POSIX, Windows drive, or UNC path with forward-slash separators."
+                ) from exc
             if suffix is None:
                 raise EnvironmentError(
                     "The scoped file path selects another mount.",
@@ -819,7 +817,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     "The mount working directory is invalid.",
                     code="environment_provider_failure",
                 )
-            provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
+            provider_path = base if path == "." else normalize_operation_path(f"{base.rstrip('/')}/{path}")
         return EnvironmentPath(mount_id=entered.mount_id, path=provider_path)
 
     @asynccontextmanager
@@ -1346,14 +1344,16 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentRuntimeMount,
+        mount: EnvironmentEntry | EnvironmentRuntimeMount,
         *,
         make_default: bool = False,
     ) -> EnvironmentChange:
-        return await self._require_active_bound()._mount(name, mount, make_default=make_default)
+        return await self._require_active_bound()._mount(
+            name, _normalize_runtime_mount(mount), make_default=make_default
+        )
 
-    async def replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
-        return await self._require_active_bound()._replace(name, mount)
+    async def replace(self, name: str, mount: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentChange:
+        return await self._require_active_bound()._replace(name, _normalize_runtime_mount(mount))
 
     async def unmount(self, name: str) -> EnvironmentChange:
         return await self._require_active_bound()._unmount(name)
@@ -1533,7 +1533,7 @@ def _validate_initial_mounts(
     default_mount: str | None,
 ) -> None:
     names = [item.name for item in mounts]
-    candidate_ids = [id(item.candidate) for item in mounts]
+    candidate_ids = [id(item.candidate._transfer_owner) for item in mounts]
     if len(names) != len(set(names)):
         raise EnvironmentError("Environment mount names must be unique.", code="environment_request_invalid")
     if len(candidate_ids) != len(set(candidate_ids)):
@@ -1594,6 +1594,22 @@ def _preferred_mount_path(info: EnvironmentMountInfo, default_mount: str | None)
     if info.mount_path is not None:
         return info.mount_path
     return "/workspace" if info.name == default_mount else f"/environment/{info.name}"
+
+
+def _invalid_operation_path(hint: str) -> EnvironmentError:
+    return EnvironmentError(
+        "Environment path is invalid.",
+        code="environment_request_invalid",
+        details={"field": "path", "reason": "invalid_path", "hint": hint},
+        retry_hint="request_change",
+    )
+
+
+def _normalize_operation_path(path: str) -> str:
+    try:
+        return normalize_operation_path(path)
+    except ValueError as exc:
+        raise _invalid_operation_path(str(exc)) from exc
 
 
 def _is_absolute_path(path: str) -> bool:
@@ -1825,7 +1841,7 @@ def _claim_candidate_transfers(
     claimed: list[EnvironmentProviderBinding] = []
     reused: list[EnvironmentProviderBinding] = []
     for candidate in candidates.values():
-        transferred = EnvironmentProviderBinding._claim_transfer(candidate)
+        transferred = candidate._claim_transfer()
         (claimed if transferred else reused).append(candidate)
     return tuple(claimed), tuple(reused)
 
@@ -1921,12 +1937,13 @@ def _virtualize_path(root: str, provider_path: str) -> str:
 
 def create_environment_runtime(
     *,
-    mounts: Mapping[str, EnvironmentRuntimeMount],
+    mounts: Mapping[str, EnvironmentEntry | EnvironmentRuntimeMount],
     default_mount: str | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
 ) -> EnvironmentRuntime:
     """Capture one atomic initial mount set in a fresh single-use runtime."""
     try:
+        normalized = {name: _normalize_runtime_mount(entry) for name, entry in dict(mounts).items()}
         captured = tuple(
             _MountRequest(
                 name=name,
@@ -1935,7 +1952,7 @@ def create_environment_runtime(
                 mount_path=mount.mount_path,
                 candidate=mount.binding,
             )
-            for name, mount in dict(mounts).items()
+            for name, mount in normalized.items()
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc

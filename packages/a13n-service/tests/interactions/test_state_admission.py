@@ -1,5 +1,6 @@
 """Recovery admission with real relational fencing and conditional object storage."""
 
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
@@ -20,7 +21,7 @@ from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttemp
 from a13n_service.interactions.state import InboxReceipt
 from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
 from a13n_service.storage import ObjectAccessDenied, ObjectStoreUnavailable, short_session
-from anyio import Event, create_task_group, fail_after, sleep_forever
+from anyio import Event, create_task_group, current_time, fail_after, sleep_forever
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from sqlalchemy import select
 
@@ -209,12 +210,26 @@ async def test_preparation_failure_commits_fenced_retry_or_seal(
 ):
     run, _, states, _, control, driver, _ = admission
     if failure == "deadline":
+        claim_deadline = None
+
+        @contextmanager
+        def capture_deadline(seconds):
+            nonlocal claim_deadline
+            with fail_after(seconds) as scope:
+                # The first scope bounds the whole claim, including authority checks.
+                if claim_deadline is None:
+                    claim_deadline = scope
+                yield scope
 
         async def stalled(*args):
+            assert claim_deadline is not None
+            # Expire only after the read starts; real database scheduling must not
+            # consume a tiny wall-clock budget before reaching the injected stall.
+            claim_deadline.deadline = current_time()
             await sleep_forever()
 
         read = AsyncMock(side_effect=stalled)
-        monkeypatch.setattr(state_admission, "CLAIM_TOTAL_SECONDS", 0.05)
+        monkeypatch.setattr(state_admission, "fail_after", capture_deadline)
     else:
         error = (
             ObjectStoreUnavailable("temporary outage")
@@ -228,8 +243,10 @@ async def test_preparation_failure_commits_fenced_retry_or_seal(
         read = AsyncMock(side_effect=error)
     monkeypatch.setattr(states, "read_run", read)
     executor, capacity = await _executor(admission, interaction_sessions, interaction_object_store)
-    with fail_after(2):
-        receipt = await executor.run()
+    # Admission derives its budget from the active cancel-scope deadline. An
+    # outer test timeout can replace the injected failure with budget exhaustion
+    # on a busy runner. The deadline variant expires the admission scope above.
+    receipt = await executor.run()
     permanent = failure in {"permanent", "access_denied", "permission"}
     assert receipt.disposition.value == ("failed" if permanent else "retrying")
     assert read.await_count == (4 if failure == "transient" else 1)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from enum import StrEnum
 from typing import Literal, Protocol
 
@@ -39,7 +40,7 @@ class SetupStarted(StrictModel):
     setup_ref: str = Field(min_length=1, max_length=2048, repr=False)
     external_ref: str | None = Field(default=None, min_length=1, max_length=2048, repr=False)
     redirect_url: str | None = Field(default=None, max_length=4096, repr=False)
-    external_handle: str | None = Field(default=None, max_length=4096, repr=False)
+    expires_at: datetime | None = None
     supports_verified_callback: bool
 
 

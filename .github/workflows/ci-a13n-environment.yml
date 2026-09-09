@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/workflows/ci-a13n-environment.yml"
       - ".github/workflows/release-a13n-harness.yml"
-      - "deploy/containers/sandbox/Dockerfile"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/pyproject.toml"
       - "pyproject.toml"
@@ -20,7 +19,6 @@ on:
     paths:
       - ".github/workflows/ci-a13n-environment.yml"
       - ".github/workflows/release-a13n-harness.yml"
-      - "deploy/containers/sandbox/Dockerfile"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/pyproject.toml"
       - "pyproject.toml"
@@ -84,16 +82,3 @@ jobs:
       - name: Build a13n Environment distribution
         if: matrix.name == 'Linux'
         run: uv build --package a13n-environment --out-dir dist/provider
-
-  sandbox-image:
-    name: Build sandbox image
-    needs: provider
-    runs-on: ubuntu-24.04-8core
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Build sandbox image
-        run: make image-sandbox

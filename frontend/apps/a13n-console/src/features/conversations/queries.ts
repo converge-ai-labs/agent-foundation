@@ -2,16 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, workspaceHeaders } from "../../shared/api";
-import { conversationApi } from "./api";
+import { conversationQueries } from "./api";
 
 export function useRun(runId?: string | null) {
   const client = useClient(),
     { workspace } = useWorkspace();
   return useQuery({
-    queryKey: ["run", workspace.id, runId],
+    ...conversationQueries(client, workspace.id).run(runId ?? ""),
     enabled: !!runId,
-    queryFn: ({ signal }) =>
-      conversationApi(client, workspace.id).run(runId!, signal),
   });
 }
 

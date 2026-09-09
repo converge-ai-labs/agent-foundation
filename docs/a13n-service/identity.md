@@ -53,7 +53,9 @@ Manage existing membership through the Organization or Workspace `role-bindings`
 
 ## Browser OAuth callbacks
 
-The existing Connector and MCP OAuth GET callbacks require the same CSRF proof as mutations when using a local browser session. A provider redirect alone cannot complete them. The interactive completion flow remains tracked in [Issue #203](https://github.com/converge-ai-labs/agent-foundation/issues/203).
+Composio returns to the Console page `/connector-setup/callback`. The page removes the upstream session from the address bar and posts it with the exact attempt and browser proof to `/api/v1/connector-setup/complete`, using the normal Origin, session cookie, and CSRF token. Follow the [Composio setup guide](external-tools.md#connector-providers-composio-and-openconnector) to configure the verifier and shared origin.
+
+The MCP OAuth GET callback still requires the same CSRF proof as mutations when using a local browser session. A provider redirect alone cannot complete that route. Its interactive completion flow remains tracked in [Issue #203](https://github.com/converge-ai-labs/agent-foundation/issues/203).
 
 ## Create application keys
 

@@ -13,7 +13,9 @@ from a13n_environment import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
     Environment,
+    EnvironmentAction,
     EnvironmentError,
+    EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
 )
 from a13n_harness import (
@@ -586,6 +588,79 @@ async def test_environment_preparation_failure_emits_only_safe_live_projection(
         "message": "The Environment preparation operation failed.",
     }
     assert "provider-private-body" not in str(projector.environment_events)
+
+
+@pytest.mark.parametrize(
+    "access",
+    [
+        EnvironmentAccess.READ_ONLY,
+        EnvironmentAccess.READ_WRITE,
+        EnvironmentAccess.FULL,
+        EnvironmentPermissionSet(
+            operations=frozenset(
+                {EnvironmentAction.FILE_READ_TEXT, EnvironmentAction.FILE_WRITE_TEXT, EnvironmentAction.PORT_INSPECT}
+            )
+        ),
+    ],
+    ids=["read-only", "read-write", "full", "exact-permissions"],
+)
+async def test_environment_observations_preserve_access_and_effective_permissions(
+    interaction_object_store,
+    tmp_path: Path,
+    access: EnvironmentAccess | EnvironmentPermissionSet,
+) -> None:
+    instance = _instance()
+    state = await _stored_state(interaction_object_store, initial_state())
+    environment = _environment(tmp_path / "observed", "observed-workspace")
+    (tmp_path / "observed" / "input.txt").write_text("workspace input")
+    projector = _EventProjector()
+    effective_permissions: list[str] = []
+
+    async def complete(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "completed"
+
+    async def read_input(context: RunPreparationContext) -> str:
+        text = (await context.environment.files.read_text("/workspace/input.txt")).text
+        effective_permissions.extend(
+            sorted(item.value for item in context.environment.snapshot.mounts[0].permission_ceiling.operations)
+        )
+        return text
+
+    result = await _driver(_RuntimeCoordinator(state, instance, []), projector).run(
+        HarnessInvocation(
+            definition=AgentDefinition(
+                agent=AgentSpec(),
+                output_type=str,
+                model=FunctionModel(stream_function=complete),
+            ),
+            input=MaterializedHarnessInput(read_input),
+            collaborators=HarnessCollaborators(instance=instance),
+            environment=SingleHarnessEnvironment(EnvironmentMount(environment, access=access)),
+        ),
+        preparation=_preparation(),
+    )
+
+    assert result.output_or_raise() == "completed"
+    assert tuple(event.event_type for event in projector.environment_events) == (
+        "environment.preparation.started",
+        "environment.preparation.ready",
+        "environment.adapter.closed",
+    )
+    started, ready, closed = projector.environment_events
+    assert started.payload["access"] == (
+        access.value
+        if isinstance(access, EnvironmentAccess)
+        else {"operations": ["environment.file.read_text", "environment.file.write_text", "environment.port.inspect"]}
+    )
+    assert ready.payload["permissions"] == effective_permissions
+    assert ready.payload["ready_families"] == ["files"]
+    assert ready.payload["availability"] == "available"
+    if isinstance(access, EnvironmentPermissionSet):
+        assert ready.payload["permissions"] == ["environment.file.read_text", "environment.file.write_text"]
+    assert closed.payload["status"] == "closed"
+    assert not environment.is_entered
+    assert str(tmp_path) not in str(projector.environment_events)
 
 
 async def test_live_projection_failure_does_not_change_harness_outcome(

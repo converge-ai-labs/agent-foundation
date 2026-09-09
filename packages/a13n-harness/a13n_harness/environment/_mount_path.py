@@ -93,6 +93,39 @@ def parse_mount_path(value: str) -> ParsedMountPath:
     raise ValueError("mount_path must be an absolute POSIX, drive, or UNC path")
 
 
+def validate_working_directory(value: str | None) -> None:
+    """Require a canonical provider-local working directory when one is supplied."""
+    if value is not None and (
+        not isinstance(value, str)
+        or not value.startswith("/")
+        or "\x00" in value
+        or "//" in value
+        or (value != "/" and value.endswith("/"))
+        or any(segment in {".", ".."} for segment in value.split("/"))
+    ):
+        raise ValueError("working_directory must be a canonical absolute path")
+
+
+def normalize_operation_path(value: str) -> str:
+    """Normalize harmless input spelling without resolving parent traversal or links."""
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise ValueError("Use a non-empty path without NUL characters.")
+    if ".." in value.split("/"):
+        raise ValueError("Parent traversal (..) is not supported; use an absolute path under an available mount.")
+    drive = _DRIVE_PATH.fullmatch(value)
+    if (drive is not None or value.startswith("//")) and "\\" in value:
+        raise ValueError("Use forward slashes for Windows drive and UNC paths.")
+    prefix = "//" if value.startswith("//") else "/" if value.startswith("/") else ""
+    segments = [segment for segment in value.split("/") if segment not in {"", "."}]
+    normalized = prefix + "/".join(segments)
+    if drive is not None and len(segments) == 1:
+        normalized += "/"
+    elif drive is None and not prefix and _DRIVE_PATH.fullmatch(normalized):
+        # A relative POSIX name such as ./C:/file must not become a drive path.
+        normalized = f"./{normalized}"
+    return normalized or "."
+
+
 def provider_path_from_suffix(suffix: tuple[str, ...]) -> str:
     """Render a matched aggregate suffix as a provider-local absolute path."""
 

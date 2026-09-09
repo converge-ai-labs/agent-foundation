@@ -250,7 +250,9 @@ def test_tool_rows_use_status_colors_without_bold_or_payload_markup(theme, kind,
         expected = colors[tone]
         expected = expected if expected.startswith("#") else "ansi" + expected.replace("_", "")
         assert any(text == state and f"fg:{expected}" in style for style, text in fragments)
-        assert any(text == payload and not style.strip() for style, text in fragments)
+        muted = colors["muted"]
+        muted = muted if muted.startswith("#") else "ansi" + muted.replace("_", "")
+        assert any(payload in text and f"fg:{muted}" in style for style, text in fragments)
         assert all("bold" not in style.split() for style, _ in fragments)
     finally:
         transcript.close()
@@ -402,3 +404,49 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
         assert len(renderer.transcript.blocks) == (2 if mode == "detailed" else 1)
     finally:
         renderer.transcript.close()
+
+
+@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
+@pytest.mark.parametrize(
+    "preview",
+    [
+        "Read packages/a13n-harness-ui/tests/test_path_display.py",
+        "Find **/*.py in packages/a13n-harness-ui",
+        "Search literal [bold]query[/bold] in packages",
+        "List packages/a13n-harness-ui/tests",
+        "Run exit 0 · python -m pytest packages/a13n-harness-ui/tests",
+        "Call mkdir packages/a13n-harness-ui/tests",
+        "Delegate explorer · Inspect the terminal rendering implementation",
+        "Steer child-one · Check the long-path presentation",
+        "Modified: packages/a13n-harness-ui/tests/test_path_display.py",
+        "Explored 2 files\n  Read packages/first.py\n  Read packages/second.py",
+    ],
+)
+def test_entire_tool_summary_and_wrapped_continuations_are_subdued(theme: str, preview: str) -> None:
+    from a13n_harness_ui.interactive.theme import activity_colors
+
+    transcript = Transcript()
+    transcript.theme = resolve_theme(theme)
+    block = transcript.append("Expanded details", kind="tool")
+    transcript.preview(block, preview)
+    try:
+        colors = activity_colors(transcript.theme)
+        muted = colors["muted"]
+        muted = muted if muted.startswith("#") else "ansi" + muted.replace("_", "")
+        for width in (28, 120, 28):
+            _text(transcript, width)
+            assert all(
+                f"fg:{muted}" in style and "bold" not in style.split() and "dim" not in style.split()
+                for row in transcript.rows
+                for style, text in row
+                if text.strip()
+            )
+        transcript.append("Assistant prose", markdown=True)
+        _text(transcript)
+        assert any(
+            text.rstrip() == "Assistant prose" and f"fg:{muted}" not in style
+            for row in transcript.rows
+            for style, text in row
+        )
+    finally:
+        transcript.close()

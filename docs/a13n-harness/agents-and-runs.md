@@ -306,7 +306,7 @@ When selected, `HandoffCapability()` derives its summarize reminder at 65%. `Com
 
 ### Automatic model request affinity
 
-Every upstream model request receives two defaults from the current `AgentContext.thread_id`:
+The Harness derives request-affinity defaults from the current `AgentContext.thread_id`. The session header applies to every Model; the cache key applies only to GPT numeric-series model names:
 
 ```python
 ModelSettings(
@@ -317,14 +317,27 @@ ModelSettings(
 
 The value remains stable across continuation from the same `HarnessState` and differs for independent roots, children, siblings, and forks. A trusted Host can select the initial value through `HarnessState.new(thread_id=...)`, while `HarnessState.fork(thread_id=...)` creates a distinct Host-selected branch. An explicit `openai_prompt_cache_key` wins, and an explicit `ModelSettings.extra_headers` entry overrides `x-session-id` case-insensitively. The Harness does not use the transient `run_id` or mutate caller settings.
 
-Pydantic provider adapters consume only settings they recognize. Non-OpenAI adapters ignore `openai_prompt_cache_key`; OpenAI and OpenAI-compatible adapters may transmit it as `prompt_cache_key`. If an upstream endpoint rejects either automatic field, disable that patch before constructing `HarnessBuilder`:
+Cache-key eligibility uses the final resolved Model's `model_name`, not a Host-logical alias. Names must begin with `gpt-` followed immediately by an ASCII digit, optionally prefixed by exactly one `openai/`. Thus `gpt-4.1`, `gpt-5-codex`, and `openai/gpt-5` qualify; DeepSeek, `gpt-oss-120b`, `o3`, and custom deployment names do not. Matching is case-sensitive and does not trim whitespace or strip arbitrary namespaces. Both Chat Completions and Responses adapters can transmit the setting as `prompt_cache_key`. This naming policy is not a guarantee that a compatible gateway accepts the field.
+
+Hosts can independently control the defaults when constructing the builder:
+
+```python
+builder = HarnessBuilder(
+    x_session_id_enabled=True,
+    openai_prompt_cache_key_enabled=False,
+)
+```
+
+Each parameter defaults to `None`, meaning use the corresponding environment variable, then `True` when absent. An explicit boolean overrides that variable without reading it. If needed, deployment-wide defaults can still be configured before constructing `HarnessBuilder`:
 
 ```bash
 export A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED=false
 export A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED=false
 ```
 
-The switches are independent and default to enabled. They accept `1/true/yes/on` or `0/false/no/off`, case-insensitively. Invalid values fail builder construction. Each builder snapshots both switches once, so changing the environment does not alter existing builders or executables. A disabled patch leaves any explicit setting untouched.
+Environment values accept `1/true/yes/on` or `0/false/no/off`, case-insensitively and without surrounding whitespace. Invalid consulted environment values or non-boolean Builder overrides fail construction. Each builder snapshots both switches once for the entire executable graph, including children, so changing the environment does not alter existing builders or executables. Enabling the cache-key switch enables the GPT naming rule; it does not force injection for other models. A disabled patch leaves any explicit setting untouched, including a cache key on a non-GPT model.
+
+These switches control only Harness defaults, not provider-native behavior. The Codex adapter can still supply its own cache key when Harness injection is disabled; when enabled for a qualifying model, the Harness Thread-derived value takes precedence over that native default.
 
 ## Mandatory Composition
 

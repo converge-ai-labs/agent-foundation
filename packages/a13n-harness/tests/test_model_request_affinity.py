@@ -1,0 +1,264 @@
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+from typing import Any
+
+import a13n_harness.execution as execution_module
+import httpx2
+import pytest
+from a13n_harness import (
+    AgentDefinition,
+    AgentSpec,
+    DefinitionError,
+    HarnessBuilder,
+    HarnessState,
+    RunBindings,
+    SubagentDefinition,
+)
+from a13n_harness.models import (
+    MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
+    MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
+)
+from openai import AsyncOpenAI
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.openrouter import OpenRouterModel
+from pydantic_ai.models.wrapper import WrapperModel
+from pydantic_ai.providers.openrouter import OpenRouterProvider
+from pydantic_ai.settings import ModelSettings
+
+pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize(
+    ("model_name", "expected"),
+    [
+        ("gpt-4.1", True),
+        ("gpt-5", True),
+        ("gpt-5-codex", True),
+        ("openai/gpt-5", True),
+        ("deepseek/deepseek-chat", False),
+        ("claude-sonnet-4", False),
+        ("gpt-oss-120b", False),
+        ("openai/gpt-oss-120b", False),
+        ("o3", False),
+        ("production-model", False),
+        ("other/gpt-5", False),
+        ("openai/openai/gpt-5", False),
+        ("not-gpt-5", False),
+        ("gpt-", False),
+        ("gpt-\uff15", False),
+        ("GPT-5", False),
+        (" gpt-5", False),
+    ],
+)
+@pytest.mark.parametrize("selection", ["concrete", "resolved", "inferred"])
+async def test_cache_key_uses_final_model_name(
+    monkeypatch: pytest.MonkeyPatch, model_name: str, expected: bool, selection: str
+) -> None:
+    seen: list[ModelSettings | None] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        seen.append(info.model_settings)
+        yield "ok"
+
+    model = WrapperModel(FunctionModel(stream_function=stream, model_name=model_name))
+
+    async def resolve(context: ModelResolutionContext, model_id: str) -> Model:
+        assert model_id == "logical:primary"
+        return model
+
+    def infer(model_id: object, **kwargs: object) -> Model:
+        assert model_id == "logical:primary"
+        return model
+
+    monkeypatch.setattr(execution_module, "infer_model", infer)
+    executable = HarnessBuilder().build(
+        AgentSpec(model=None if selection == "concrete" else "logical:primary"),
+        model=model if selection == "concrete" else None,
+        output_type=str,
+    )
+    result = await executable.run(
+        "hello", bindings=RunBindings.embedded(model_resolver=resolve if selection == "resolved" else None)
+    )
+    assert result.output_or_raise() == "ok"
+    assert result.state is not None
+    settings = ModelSettings(extra_headers={"x-session-id": result.state.thread_id})
+    if expected:
+        settings["openai_prompt_cache_key"] = result.state.thread_id
+    assert seen == [settings]
+
+
+@pytest.mark.parametrize("session_enabled", [True, False])
+@pytest.mark.parametrize("cache_enabled", [True, False])
+async def test_builder_overrides_environment_for_parent_and_child(
+    monkeypatch: pytest.MonkeyPatch, session_enabled: bool, cache_enabled: bool
+) -> None:
+    # Explicit values must not even parse the corresponding ambient value.
+    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "invalid")
+    monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, "invalid")
+    seen: list[ModelSettings | None] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        seen.append(info.model_settings)
+        yield "ok"
+
+    model = FunctionModel(stream_function=stream, model_name="gpt-5")
+    builder = HarnessBuilder(x_session_id_enabled=session_enabled, openai_prompt_cache_key_enabled=cache_enabled)
+    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, str(not session_enabled))
+    monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, str(not cache_enabled))
+    executable = builder.build(
+        AgentSpec(),
+        model=model,
+        output_type=str,
+        subagents=(
+            SubagentDefinition(
+                name="child",
+                description="Child",
+                agent=AgentDefinition(agent=AgentSpec(), model=model, output_type=str),
+            ),
+        ),
+    )
+    for agent in (executable, executable.subagents["child"].executable):
+        result = await agent.run("hello", bindings=RunBindings.embedded())
+        assert result.output_or_raise() == "ok"
+        assert result.state is not None
+        expected = ModelSettings()
+        if session_enabled:
+            expected["extra_headers"] = {"x-session-id": result.state.thread_id}
+        if cache_enabled:
+            expected["openai_prompt_cache_key"] = result.state.thread_id
+        assert seen[-1] == (expected or None)
+
+
+@pytest.mark.parametrize("override", ["x_session_id_enabled", "openai_prompt_cache_key_enabled"])
+async def test_unspecified_builder_switch_still_follows_environment(
+    monkeypatch: pytest.MonkeyPatch, override: str
+) -> None:
+    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "false")
+    monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, "false")
+    seen: list[ModelSettings | None] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        seen.append(info.model_settings)
+        yield "ok"
+
+    executable = HarnessBuilder(**{override: True}).build(
+        AgentSpec(), model=FunctionModel(stream_function=stream, model_name="gpt-5"), output_type=str
+    )
+    result = await executable.run("hello", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "ok"
+    assert result.state is not None
+    expected = ModelSettings()
+    if override == "x_session_id_enabled":
+        expected["extra_headers"] = {"x-session-id": result.state.thread_id}
+    else:
+        expected["openai_prompt_cache_key"] = result.state.thread_id
+    assert seen == [expected]
+
+
+@pytest.mark.parametrize("parameter", ["x_session_id_enabled", "openai_prompt_cache_key_enabled"])
+@pytest.mark.parametrize("value", [0, 1, "false", [], {}])
+def test_builder_rejects_non_boolean_patch_override(parameter: str, value: Any) -> None:
+    with pytest.raises(DefinitionError) as exc_info:
+        HarnessBuilder(**{parameter: value})
+    assert exc_info.value.code == "model_request_patch_configuration_invalid"
+    assert exc_info.value.details == {"name": parameter}
+
+
+@pytest.mark.parametrize("model_name", ["gpt-5", "deepseek/deepseek-chat"])
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_explicit_affinity_survives_name_filter_and_disabled_patches(model_name: str, enabled: bool) -> None:
+    seen: list[ModelSettings | None] = []
+    settings = ModelSettings(
+        openai_prompt_cache_key="explicit-cache", extra_headers={"X-Session-ID": "explicit-session"}
+    )
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        seen.append(info.model_settings)
+        yield "ok"
+
+    executable = HarnessBuilder(x_session_id_enabled=enabled, openai_prompt_cache_key_enabled=enabled).build(
+        AgentSpec(model_settings=settings),
+        model=FunctionModel(stream_function=stream, model_name=model_name),
+        output_type=str,
+    )
+    result = await executable.run("hello", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "ok"
+    assert seen == [settings]
+    assert settings == ModelSettings(
+        openai_prompt_cache_key="explicit-cache", extra_headers={"X-Session-ID": "explicit-session"}
+    )
+
+
+async def test_gpt_cache_affinity_survives_continuation_and_changes_on_fork() -> None:
+    seen: list[ModelSettings | None] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        seen.append(info.model_settings)
+        yield "ok"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), model=FunctionModel(stream_function=stream, model_name="gpt-5-codex"), output_type=str
+    )
+    state = HarnessState.new(thread_id="thr_hostroot")
+    first = await executable.run("hello", bindings=RunBindings.embedded(), previous_state=state)
+    assert first.state is not None
+    second = await executable.run("continue", bindings=RunBindings.embedded(), previous_state=first.state)
+    fork = await executable.run("branch", bindings=RunBindings.embedded(), previous_state=first.state.fork())
+    assert second.state is not None and fork.state is not None
+    assert first.output_or_raise() == second.output_or_raise() == fork.output_or_raise() == "ok"
+    assert first.state.thread_id == second.state.thread_id != fork.state.thread_id
+    assert [settings["openai_prompt_cache_key"] for settings in seen if settings] == [
+        first.state.thread_id,
+        second.state.thread_id,
+        fork.state.thread_id,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("model_name", "expect_cache_key"),
+    [("deepseek/deepseek-chat", False), ("openai/gpt-5", True)],
+)
+async def test_openrouter_request_body_only_gets_automatic_cache_key_for_gpt(
+    model_name: str, expect_cache_key: bool
+) -> None:
+    bodies: list[dict[str, Any]] = []
+    headers: list[httpx2.Headers] = []
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(request.content))
+        headers.append(request.headers)
+        chunk = {
+            "id": "chatcmpl-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model_name,
+            "choices": [{"index": 0, "delta": {"content": "ok"}, "finish_reason": "stop"}],
+        }
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n",
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        model = OpenRouterModel(
+            model_name,
+            provider=OpenRouterProvider(
+                openai_client=AsyncOpenAI(api_key="test-key", base_url="https://example.test/v1", http_client=client)
+            ),
+        )
+        executable = HarnessBuilder().build(AgentSpec(), model=model, output_type=str)
+        result = await executable.run("hello", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "ok"
+    assert result.state is not None
+    assert len(bodies) == 1
+    assert headers[0]["x-session-id"] == result.state.thread_id
+    if expect_cache_key:
+        assert bodies[0]["prompt_cache_key"] == result.state.thread_id
+    else:
+        assert "prompt_cache_key" not in bodies[0]

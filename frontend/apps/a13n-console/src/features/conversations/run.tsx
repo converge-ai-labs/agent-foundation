@@ -20,7 +20,12 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
-import { conversationApi, isActiveRun, runPath } from "./api";
+import {
+  conversationQueries,
+  invalidateConversation,
+  isActiveRun,
+  runPath,
+} from "./api";
 import { useLiveRun } from "./live";
 import { useRun, useRunAgent } from "./queries";
 import { InputContent, PresentedItems } from "./items";
@@ -60,7 +65,7 @@ function RunContent({
     { workspace, can } = useWorkspace(),
     cache = useQueryClient(),
     navigate = useNavigate(),
-    api = conversationApi(client, workspace.id);
+    queries = conversationQueries(client, workspace.id);
   const live = useLiveRun(runId),
     [mode, setMode] = useState("message"),
     [notice, setNotice] = useState(""),
@@ -71,14 +76,10 @@ function RunContent({
   const transcript = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
   const threadQuery = useQuery({
-    queryKey: ["thread", workspace.id, run?.thread_id],
+    ...queries.thread(run?.thread_id ?? ""),
     enabled: !!run,
-    queryFn: ({ signal }) => api.thread(run!.thread_id, signal),
   });
-  const pending = useQuery({
-    queryKey: ["pending-actions", workspace.id, runId],
-    queryFn: ({ signal }) => api.pending(runId, signal),
-  });
+  const pending = useQuery(queries.pending(runId));
   const thread = threadQuery.data;
   useEffect(() => {
     const content = transcript.current;
@@ -139,15 +140,25 @@ function RunContent({
     },
     onSuccess: () => {
       interruptKey.reset();
-      void cache.invalidateQueries({ queryKey: ["run", workspace.id, runId] });
-      void cache.invalidateQueries({
-        queryKey: ["thread", workspace.id, threadId],
+      void invalidateConversation(cache, workspace.id, {
+        sessionId,
+        threadId,
+        runId,
       });
     },
   });
   const retryKey = useIdempotency();
   function accepted(receipt: Schema["RunAcceptanceReceipt"]) {
-    void cache.invalidateQueries();
+    void invalidateConversation(
+      cache,
+      workspace.id,
+      { sessionId, threadId, runId },
+      {
+        sessionId: receipt.session_id,
+        threadId: receipt.thread_id,
+        runId: receipt.run_id,
+      },
+    );
     navigate(runPath(workspace.id, receipt));
   }
   if (runQuery.isPending || threadQuery.isPending) return <Loading />;
@@ -410,6 +421,11 @@ function RunContent({
                     }),
                   );
                   setSteerIds((previous) => [...previous, receipt.steer_id]);
+                  void invalidateConversation(cache, workspace.id, {
+                    sessionId,
+                    threadId,
+                    runId,
+                  });
                 }}
               />
             ) : (
@@ -432,7 +448,10 @@ function RunContent({
                   if (receipt.run) accepted(receipt.run);
                   else {
                     setNotice(t("Message added to the thread queue."));
-                    void cache.invalidateQueries();
+                    void invalidateConversation(cache, workspace.id, {
+                      sessionId,
+                      threadId,
+                    });
                   }
                 }}
               />

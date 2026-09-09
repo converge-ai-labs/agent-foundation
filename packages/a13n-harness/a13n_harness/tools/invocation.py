@@ -40,6 +40,7 @@ from a13n_harness.capabilities.shell_review import (
 )
 from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.tools._output import (
@@ -267,6 +268,24 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
 
         try:
             prepared = await _prepare_invocation(ctx, tool_def.name, tool_def.toolset_id, tool_args, managed)
+        except EnvironmentError as exc:
+            await _emit(ctx, managed, "preparation_failed")
+            # Known Environment failures are actionable even before dispatch.
+            # Project only public details, never raw provider exception text.
+            error: dict[str, JsonValue] = {
+                "code": exc.code,
+                "details": {
+                    key: value for key in ("field", "reason", "hint") if isinstance(value := exc.details.get(key), str)
+                },
+            }
+            if exc.retry_hint is not None:
+                error["retry_hint"] = exc.retry_hint
+            return await _apply_result_policy(
+                {"ok": False, "error": error},
+                managed.output_policy,
+                context=ctx.deps,
+                reject_non_json=True,
+            )
         except ToolFailed:
             await _emit(ctx, managed, "preparation_failed")
             raise
@@ -932,6 +951,8 @@ async def _prepare_invocation(
     if metadata.resource_resolver is not None:
         try:
             resolved = await metadata.resource_resolver(deepcopy(typed_arguments), context=ctx.deps)
+        except EnvironmentError:
+            raise
         except Exception as exc:
             raise ToolFailed("Managed tool resources could not be resolved.") from exc
         if not isinstance(resolved, tuple) or not all(isinstance(item, CanonicalResource) for item in resolved):

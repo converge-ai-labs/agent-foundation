@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Mapping
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from a13n_environment import Environment
 from a13n_harness import (
     AgentSpec,
     HarnessBuilder,
@@ -19,6 +17,7 @@ from a13n_harness import (
 )
 from a13n_harness.environment import (
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
     EnvironmentRunExtensionFactoryCatalog,
     EnvironmentRunExtensionFactoryContext,
@@ -26,60 +25,11 @@ from a13n_harness.environment import (
     discover_environment_run_extension_factory_references,
 )
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import (
-    EnvironmentProviderBinding,
-    EnvironmentRuntimeMount,
-)
-from a13n_harness.identity import AgentInstanceContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 EXTENSION_KEY = "example.workspace-marker"
 type ExtensionSelectionMode = Literal["entrypoint", "code"]
-
-
-class _EnvironmentBinding(EnvironmentProviderBinding):
-    """Advanced runtime adapter for the already constructed demo Environment."""
-
-    def __init__(self, environment: Environment) -> None:
-        self._environment = environment
-        self._used = False
-
-    @property
-    def provider_type(self) -> str:
-        return self._environment.provider_key
-
-    @property
-    def environment_id(self) -> str:
-        return self._environment.environment_id
-
-    @asynccontextmanager
-    async def bind(
-        self,
-        *,
-        thread_id: str,
-        run_id: str,
-        instance: AgentInstanceContext,
-        mount_id: str,
-        host_refs: Mapping[str, str],
-    ) -> AsyncGenerator[Environment]:
-        if self._used:
-            raise RuntimeError("demo Environment binding is single-use")
-        self._used = True
-        try:
-            await self._environment.enter(
-                thread_id=thread_id,
-                run_id=run_id,
-                agent_instance_id=instance.agent_instance_id,
-                mount_id=mount_id,
-                host_refs=host_refs,
-            )
-            yield self._environment
-        finally:
-            await self._environment.close()
-
-    async def discard(self) -> None:
-        await self._environment.close()
 
 
 def _offline_model() -> FunctionModel:
@@ -147,9 +97,9 @@ async def _run_extension_demo(
     )
     environment_runtime = create_environment_runtime(
         mounts={
-            "workspace": EnvironmentRuntimeMount(
-                binding=_EnvironmentBinding(environment),
-                permission_ceiling=EnvironmentPermissionSet(
+            "workspace": EnvironmentMount(
+                environment=environment,
+                access=EnvironmentPermissionSet(
                     operations=frozenset(
                         {
                             EnvironmentAction.FILE_READ_TEXT,

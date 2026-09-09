@@ -144,3 +144,48 @@ async def test_structured_question_rejects_uncorrelated_answer_shape_before_resu
         )
 
     assert invalid.value.code == "deferred_results_invalid"
+
+
+@pytest.mark.parametrize("invalid_kind", ["duplicate_labels", "duplicate_questions", "blank_label", "wrong_shape"])
+async def test_invalid_question_returns_tool_failure_before_deferral(invalid_kind: str) -> None:
+    questions = json.loads(json.dumps(_QUESTIONS))
+    if invalid_kind == "duplicate_labels":
+        questions["questions"][0]["options"][1]["label"] = " Focused "
+    elif invalid_kind == "duplicate_questions":
+        questions["questions"].append({**questions["questions"][0], "question": " Which scope should be used? "})
+    elif invalid_kind == "blank_label":
+        questions["questions"][0]["options"][0]["label"] = " "
+    else:
+        questions = {"questions": []}
+    requests = 0
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        requests += 1
+        if requests == 1:
+            yield {
+                0: DeltaToolCall(name="ask_user_question", json_args=json.dumps(questions), tool_call_id="invalid-1")
+            }
+        else:
+            returned = next(
+                part
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == "ask_user_question"
+            )
+            assert returned.outcome == "failed"
+            assert "Invalid structured question" in str(returned.content)
+            yield {0: DeltaToolCall(name="ask_user_question", json_args=json.dumps(_QUESTIONS), tool_call_id="valid-1")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(UserInteractionCapability(),),
+    )
+    result = await executable.run("clarify", bindings=RunBindings.embedded())
+    assert requests == 2
+    assert result.status == "suspended"
+    assert result.deferred is not None
+    assert [call.tool_call_id for call in result.deferred.calls] == ["valid-1"]

@@ -6,9 +6,11 @@ import styles from "./shared.module.css";
 export function AuthorizationLink({
   url,
   expiresAt,
+  sameTab = false,
 }: {
   url?: string | null;
   expiresAt: string;
+  sameTab?: boolean;
 }) {
   const { t } = useTranslation();
   let href: string | undefined;
@@ -31,7 +33,7 @@ export function AuthorizationLink({
         <a
           className={styles.back}
           href={href}
-          target="_blank"
+          target={sameTab ? "_self" : "_blank"}
           rel="noopener noreferrer"
         >
           {t("Continue authorization")} <ExternalLink size={14} />

@@ -1053,5 +1053,11 @@
   "Search settings": "Search settings",
   "Search settings…": "Search settings…",
   "No matching settings": "No matching settings",
-  "More filters": "More filters"
+  "More filters": "More filters",
+  "Authorization context is missing or expired. Sign in and start authorization again in this tab.": "Authorization context is missing or expired. Sign in and start authorization again in this tab.",
+  "Check the connection status before starting another authorization.": "Check the connection status before starting another authorization.",
+  "Configure an OAuth2 auth config in the provider before connecting.": "Configure an OAuth2 auth config in the provider before connecting.",
+  "Invalid authorization return path.": "Invalid authorization return path.",
+  "Restart authorization": "Restart authorization",
+  "Verifying authorization": "Verifying authorization"
 }

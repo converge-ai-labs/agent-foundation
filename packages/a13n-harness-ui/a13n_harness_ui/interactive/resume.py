@@ -69,6 +69,12 @@ class ResumeBrowser:
         self.container = HSplit(
             [
                 Window(FormattedTextControl(self.title), height=1, style="class:session-selector.title"),
+                Window(
+                    FormattedTextControl(
+                        lambda: _clip(f" Resume in: {self.backend.directory}", self.app.output.get_size().columns)
+                    ),
+                    height=1,
+                ),
                 self.search,
                 ConditionalContainer(self.name, filter=Condition(lambda: self.renaming is not None)),
                 Window(FormattedTextControl(self.rows), height=self.row_height),
@@ -102,7 +108,7 @@ class ResumeBrowser:
             self.app.output.get_size().rows
             - self.preview_height()
             - self.message_height()
-            - 5
+            - 6
             - int(self.renaming is not None),
         )
 
@@ -125,10 +131,10 @@ class ResumeBrowser:
             item = self.page.threads[index]
             label = item.title or item.excerpt.first_input or "No messages yet"
             activity = item.activity_at or item.created_at
-            suffix = f"  {activity:%Y-%m-%d %H:%M}" if width >= 70 else ""
+            timestamp = f"{activity:%Y-%m-%d %H:%M}  " if width >= 70 else ""
             prefix = "> " if index == self.index else "  "
             style = "class:session-selector.selection" if index == self.index else ""
-            result.append((style, prefix + _clip(label, width - len(suffix) - 2) + suffix + "\n"))
+            result.append((style, prefix + timestamp + _clip(label, width - len(timestamp) - 2) + "\n"))
         return FormattedText(result)
 
     def guidance(self, item: ThreadSummary) -> str:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import ctypes
+import errno
 import itertools
 import os
 import shutil
@@ -346,8 +348,6 @@ class LocalFileOperator:
             raise EnvironmentError("line_limit must be positive.", code="environment_request_invalid")
         if max_line_length < 1:
             raise EnvironmentError("max_line_length must be positive.", code="environment_request_invalid")
-        if line_limit * max_line_length > self._policy.max_value_bytes:
-            raise EnvironmentError("Requested text page exceeds configured limit.", code="environment_too_large")
         native = await asyncio.to_thread(self._resolve_file, path, "Path")
         try:
             text, lines_read, has_more, truncated_lines = await asyncio.to_thread(
@@ -356,6 +356,7 @@ class LocalFileOperator:
                 line_offset,
                 line_limit,
                 max_line_length,
+                self._policy.max_value_bytes,
             )
         except UnicodeDecodeError as exc:
             raise EnvironmentError(
@@ -364,8 +365,6 @@ class LocalFileOperator:
             ) from exc
         except OSError as exc:
             raise _environment_error_from_os(exc, action="read a text file") from exc
-        if len(text.encode("utf-8")) > self._policy.max_value_bytes:
-            raise EnvironmentError("Text page exceeds configured limit.", code="environment_too_large")
         return FileTextResult(
             path=path,
             text=text,
@@ -714,8 +713,11 @@ class LocalFileOperator:
             raise EnvironmentError("Move destination exists.", code="environment_conflict")
         if destination_native.is_symlink():
             raise EnvironmentError("Move destination symlink is denied.", code="environment_denied")
-        if not replace or not destination_native.exists():
-            (os.replace if replace else os.rename)(source_native, destination_native)
+        if not replace:
+            _rename_no_replace(source_native, destination_native)
+            return
+        if not destination_native.exists():
+            os.replace(source_native, destination_native)
             return
 
         backup = destination_native.with_name(f".{destination_native.name}.a13n-replaced-{uuid4().hex}")
@@ -822,7 +824,11 @@ def _read_text_page(
     line_offset: int,
     line_limit: int,
     max_line_length: int,
+    max_bytes: int,
 ) -> tuple[str, int, bool, tuple[int, ...]]:
+    # Even an unbounded source line retains at most one page's character prefix.
+    max_line_length = min(max_line_length, max_bytes)
+
     def read_line(file: Any) -> tuple[str, bool, bool] | None:
         decoder = codecs.getincrementaldecoder("utf-8")("strict")
         parts: list[str] = []
@@ -859,6 +865,7 @@ def _read_text_page(
                 return "".join(parts), True, truncated
 
     selected: list[str] = []
+    selected_bytes = 0
     truncated_lines: list[int] = []
     line_index = 0
     with path.open("rb") as file:
@@ -867,18 +874,58 @@ def _read_text_page(
                 return "", 0, False, ()
             line_index += 1
 
-        while len(selected) < line_limit:
+        while len(selected) < line_limit and selected_bytes < max_bytes:
             line = read_line(file)
             if line is None:
                 return "".join(selected), len(selected), False, tuple(truncated_lines)
             preview, terminated, truncated = line
+            encoded = preview.encode("utf-8")
+            required = len(encoded) + int(terminated)
+            if selected_bytes + required > max_bytes:
+                if selected:
+                    # Leave the next whole line for the caller's next page.
+                    return "".join(selected), len(selected), True, tuple(truncated_lines)
+                # A single line must still make progress. The source has already
+                # passed strict UTF-8 validation; discard only a split code point
+                # at the byte boundary, retaining the LF and declaring the loss.
+                preview = encoded[: max_bytes - int(terminated)].decode("utf-8", errors="ignore")
+                required = len(preview.encode("utf-8")) + int(terminated)
+                truncated = True
             selected.append(preview + ("\n" if terminated else ""))
+            selected_bytes += required
             if truncated:
                 truncated_lines.append(line_index + 1)
             line_index += 1
 
         has_more = bool(file.read(1))
     return "".join(selected), len(selected), has_more, tuple(truncated_lines)
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    """Publish one native entry without overwriting a concurrent destination."""
+    if sys.platform == "win32":
+        os.rename(source, destination)
+        return
+    if sys.platform not in {"linux", "darwin"}:
+        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+
+    library = ctypes.CDLL(None, use_errno=True)
+    name = "renamex_np" if sys.platform == "darwin" else "renameat2"
+    rename = getattr(library, name, None)
+    if rename is None:
+        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+    rename.restype = ctypes.c_int
+    if sys.platform == "darwin":
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
+    else:
+        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+    if result != 0:
+        number = ctypes.get_errno()
+        if number in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}:
+            raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise OSError(number, os.strerror(number))
 
 
 def _remove_native_path(path: Path) -> None:

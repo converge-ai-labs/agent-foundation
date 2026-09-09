@@ -81,6 +81,34 @@ def test_composer_grows_for_multiline_and_adapts_hints(monkeypatch: pytest.Monke
         assert shell.composer.text.startswith("中文 line")
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize(("char", "per_row"), [("x", 77), ("中", 38)])
+async def test_composer_keeps_cursor_visible_at_wrap_boundaries(
+    monkeypatch: pytest.MonkeyPatch, char: str, per_row: int
+) -> None:
+    from prompt_toolkit.application.current import set_app
+    from prompt_toolkit.data_structures import Size
+
+    output = DummyOutput()
+    monkeypatch.setattr(output, "get_size", lambda: Size(rows=24, columns=80))
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+        shell = CliShell(CliRequest())
+        with set_app(shell.app):
+            for rows in (3, 7):
+                # Grow at the third row; scroll once the seven-row cap is reached.
+                count = rows * per_row - (1 if char == "x" else 0)
+                shell.composer.buffer.document = Document(char * count, count)
+                for offset in range(3):
+                    shell.app.renderer.render(shell.app, shell.app.layout)
+                    info = shell.composer.window.render_info
+                    assert info is not None
+                    cursor = (0, shell.composer.buffer.cursor_position)
+                    assert cursor in info._rowcol_to_yx
+                    assert (0, cursor[1] - 1) in info._rowcol_to_yx
+                    assert info.window_height == min(7, rows + (offset > 0))
+                    shell.composer.buffer.insert_text(char, fire_event=False)
+
+
 def test_huge_delta_and_cache_budgets_are_visible_and_bounded() -> None:
     transcript = Transcript(max_bytes=8192, max_blocks=8, block_bytes=4096, max_rows=40)
     transcript.append("a" * 100_000, markdown=True)

@@ -6,7 +6,12 @@ import { Button, Input, Tabs } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, representation, type Schema } from "../../shared/api";
+import {
+  data,
+  representation,
+  workspaceHeaders,
+  type Schema,
+} from "../../shared/api";
 import {
   Page,
   Loading,
@@ -108,6 +113,7 @@ export function SkillDetail() {
       client.http
         .GET("/api/v1/skills/{skill_id}", {
           params: { path: { skill_id: skillId } },
+          headers: workspaceHeaders(workspace.id),
           signal,
         })
         .then(representation),
@@ -179,6 +185,7 @@ function Revisions({ skill }: { skill: Schema["Skill"] }) {
             path: { skill_id: skill.id },
             query: { cursor: page.cursor },
           },
+          headers: workspaceHeaders(skill.workspace_id),
           signal,
         })
         .then(data),
@@ -191,6 +198,7 @@ function Revisions({ skill }: { skill: Schema["Skill"] }) {
             "/api/v1/skill-revisions/{skill_revision_id}/content",
             {
               params: { path: { skill_revision_id: revision.id } },
+              headers: workspaceHeaders(skill.workspace_id),
               parseAs: "blob",
             },
           ),
@@ -285,6 +293,7 @@ function References({ skill }: { skill: Schema["Skill"] }) {
             path: { skill_id: skill.id },
             query: { cursor: page.cursor },
           },
+          headers: workspaceHeaders(skill.workspace_id),
           signal,
         })
         .then(data),
@@ -352,7 +361,10 @@ function SkillSettings({
     navigate = useNavigate();
   const params = {
     path: { skill_id: basis.value.id },
-    header: { "If-Match": basis.etag ?? "" },
+    header: {
+      ...workspaceHeaders(basis.value.workspace_id),
+      "If-Match": basis.etag ?? "",
+    },
   };
   const save = useMutation({
     mutationFn: () =>

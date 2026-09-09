@@ -28,7 +28,7 @@ def _context(*, callback: bool = False) -> SetupContext:
         generation=1,
         connector_key="github",
         external_user_correlation="usrh_opaque",
-        callback_url=("https://foundation.example/connectivity/v1/connector-setup/callback" if callback else None),
+        callback_url=("https://foundation.example/connector-setup/callback" if callback else None),
     )
 
 
@@ -84,13 +84,16 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
                 200,
                 json={
                     "connected_account_id": "ca_external",
-                    "session_uri": "opaque-session",
-                    "redirect_url": "https://backend.composio.dev/link/private",
+                    "link_token": "not-a-callback-session",
+                    "expires_at": "2026-09-09T12:00:00Z",
+                    "redirect_url": "https://connect.composio.dev/link/private",
                 },
             )
         if path.endswith("/connected_accounts"):
             return httpx2.Response(200, json={"items": []})
         if path.endswith("/connected_accounts/complete_auth"):
+            return httpx2.Response(200, json={"connected_account_id": "ca_external", "toolkit_slug": "github"})
+        if path.endswith("/connected_accounts/ca_external"):
             return httpx2.Response(200, json=_composio_account())
         if path.endswith("/api/v3.1/tools"):
             assert request.url.params["toolkit_versions[github]"] == "20260903_01"
@@ -161,13 +164,52 @@ def test_connector_setup_contracts_reject_provider_credentials_and_unpinned_vers
 def _composio_account() -> dict[str, object]:
     return {
         "id": "ca_external",
-        "toolkit_slug": "github",
+        "toolkit": {"slug": "github"},
         "user_id": "usrh_opaque",
         "status": "ACTIVE",
-        "display_name": "Work",
+        "alias": "Work",
         "state": {"access_token": "masked"},
         "access_token": "masked",
     }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("malformed", [None, {"slug": "other"}, "github"])
+async def test_composio_account_inspection_rejects_invalid_toolkit(malformed):
+    account = _composio_account()
+    account["toolkit"] = malformed
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, json=account))
+    ) as http:
+        with pytest.raises(ConnectorProviderError):
+            await _composio(http).inspect_setup(setup_ref="ca_external", context=_context(callback=True))
+
+
+@pytest.mark.anyio
+async def test_composio_account_disabled_flag_overrides_active_status():
+    account = {**_composio_account(), "is_disabled": True}
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, json=account))
+    ) as http:
+        inspection = await _composio(http).inspect_setup(setup_ref="ca_external", context=_context(callback=True))
+        assert inspection.status == "disabled"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://connect.composio.dev/link/test",
+        "https://connect.composio.dev.evil.example/link",
+        "https://user:secret@connect.composio.dev/link",
+        "https://connect.composio.dev:444/link",
+        "https://backend.composio.dev/link/test",
+    ],
+)
+def test_composio_authorization_origin_is_exact(url):
+    from a13n_service.connectivity.connectors.providers.composio.runtime import _authorization_url
+
+    with pytest.raises(ValueError):
+        _authorization_url(url)
 
 
 @pytest.mark.anyio

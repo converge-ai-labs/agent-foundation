@@ -237,7 +237,6 @@ async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None
     assert seen == [
         ModelSettings(
             temperature=0.25,
-            openai_prompt_cache_key=result.state.thread_id,
             extra_headers={"x-session-id": result.state.thread_id},
         )
     ]
@@ -350,7 +349,7 @@ async def test_automatic_request_affinity_runs_inside_other_innermost_request_wr
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
-        model=FunctionModel(stream_function=stream),
+        model=FunctionModel(stream_function=stream, model_name="gpt-5"),
         capabilities=(ReplacingSettingsCapability(),),
     )
 
@@ -395,7 +394,7 @@ async def test_model_request_patches_can_be_disabled_independently_at_builder_cr
     executable = builder.build(
         AgentSpec(),
         output_type=str,
-        model=FunctionModel(stream_function=stream),
+        model=FunctionModel(stream_function=stream, model_name="gpt-5"),
     )
 
     result = await executable.run("hello", bindings=RunBindings.embedded())

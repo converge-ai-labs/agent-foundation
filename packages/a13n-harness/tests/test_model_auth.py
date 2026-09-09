@@ -639,9 +639,11 @@ async def test_codex_routing_hint_and_turn_state_follow_effective_run() -> None:
     response_states = iter(
         ("turn-one", "ignored", "ignored-again", "turn-two", "reused-one", "direct-one", "direct-two")
     )
+    request_tiers: list[str | None] = []
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
         request_headers.append(request.headers.copy())
+        request_tiers.append(json.loads(request.content).get("service_tier"))
         return httpx2.Response(
             200,
             headers={
@@ -690,6 +692,9 @@ async def test_codex_routing_hint_and_turn_state_follow_effective_run() -> None:
                 async for _ in response:
                     pass
 
+    # Pydantic AI maps the unified alias to the OpenAI wire field, with the
+    # provider-specific setting taking precedence. Check the body, not just hints.
+    assert request_tiers == ["priority", "flex", None, None, None, None, None]
     assert [headers[_CODEX_ROUTING_HINT_HEADER] for headers in request_headers] == [
         "model=gpt-5;tier=priority",
         "model=gpt-5;tier=flex",

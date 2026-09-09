@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from a13n_harness_ui.cli import CliRequest
@@ -230,6 +231,37 @@ async def test_shell_card_replaces_composer_resets_new_question_and_restores_cha
         finally:
             shell.app.exit()
             await task
+            shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("count", [1, 2])
+async def test_answer_submission_leaves_no_collection_or_submitting_panels(monkeypatch, count):
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=Output()):
+        shell = CliShell(CliRequest())
+        shell.backend = SimpleNamespace(execute=Mock(return_value=None))
+        launch = Mock()
+        monkeypatch.setattr(shell, "launch", launch)
+        shell.composer.buffer.document = draft = Document("ordinary draft", cursor_position=3)
+        shell._save_draft()
+        shell.interaction = interaction(count=count)
+        shell.selection = shell.interaction.selection()
+        shell._emit_decision()
+        try:
+            for index in range(count):
+                await shell.decision_answer("1")
+                assert not shell.renderer.transcript.blocks
+                if index < count - 1:
+                    assert shell.interaction.question_index == index + 1
+                    assert shell.question_card is not None
+                    launch.assert_not_called()
+            assert shell.interaction is None and shell.question_card is None
+            assert shell.composer.buffer.document == draft
+            shell.backend.execute.assert_called_once()
+            response = shell.backend.execute.call_args.kwargs["response"]
+            assert response is not None
+            launch.assert_called_once_with(None, kind="run")
+        finally:
             shell.renderer.transcript.close()
 
 

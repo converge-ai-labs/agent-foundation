@@ -964,7 +964,8 @@ async def test_file_change_event_keeps_only_confirmed_partial_batch_items(tmp_pa
     ]
 
 
-async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("invalid_path", ["/environment/missing/rejected", "/workspace/../rejected"])
+async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path, invalid_path: str) -> None:
     model_calls = 0
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -978,8 +979,8 @@ async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path
                     json_args=json.dumps(
                         {
                             "paths": [
-                                "/environment/missing/rejected",
                                 "/workspace/must-not-exist",
+                                invalid_path,
                             ],
                             "parents": False,
                         }
@@ -1908,15 +1909,15 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
 
         drive_binding = await shell_resources({"alias": "drive"}, context=context)
         drive_relative = await shell_resources(
-            {"alias": "drive", "cwd": "src"},
+            {"alias": "drive", "cwd": "./src//"},
             context=context,
         )
         drive_absolute = await shell_resources(
-            {"alias": "drive", "cwd": "c:/users/example/project/src"},
+            {"alias": "drive", "cwd": "c:/users/example/project/./src/"},
             context=context,
         )
         unc_absolute = await shell_resources(
-            {"alias": "unc", "cwd": "//SERVER/SHARE/project/src"},
+            {"alias": "unc", "cwd": "//SERVER/SHARE/project//src/"},
             context=context,
         )
 
@@ -1935,6 +1936,112 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
         with pytest.raises(EnvironmentError) as mismatch_error:
             environment.resolve_path("//server/share/project/src", alias="drive")
         assert mismatch_error.value.code == "environment_selection_invalid"
+
+
+@pytest.mark.parametrize("tool", ["ls", pytest.param("shell_exec", marks=requires_posix_process_groups)])
+@pytest.mark.parametrize(
+    "path", ["/native/project/tmp/", "/native/project/./tmp//", "./tmp/", "/native/project/../tmp"]
+)
+async def test_managed_tools_accept_directory_paths_and_explain_invalid_paths(
+    tmp_path: Path, path: str, tool: str
+) -> None:
+    (tmp_path / "tmp").mkdir()
+    (tmp_path / "tmp" / "value.txt").write_text("value", encoding="utf-8")
+    observed: list[Any] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            arguments = {"path": path} if tool == "ls" else {"command": "pwd", "cwd": path, "yield_time_seconds": 10}
+            yield {0: DeltaToolCall(name=tool, json_args=json.dumps(arguments), tool_call_id="tool-1")}
+        else:
+            observed.append(returns[-1].content)
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    runtime = create_environment_runtime(
+        mounts={"project": _local_mount(tmp_path, mount_path="/native/project", process_output=tool == "shell_exec")},
+        default_mount="project",
+    )
+    result = await executable.run("inspect directory", bindings=RunBindings.embedded(environment=runtime))
+    assert result.output_or_raise() == "done"
+    if ".." in path:
+        assert observed[0]["ok"] is False
+        assert observed[0]["error"]["code"] == "environment_request_invalid"
+        assert observed[0]["error"]["details"]["reason"] == "invalid_path"
+        assert "Parent traversal" in observed[0]["error"]["details"]["hint"]
+    else:
+        assert observed[0]["ok"] is True
+        if tool == "ls":
+            assert observed[0]["entries"][0]["path"] == "/native/project/tmp/value.txt"
+        else:
+            assert observed[0]["status"]["exit_code"] == 0
+            assert Path(observed[0]["stdout"]["text"].strip()).resolve() == (tmp_path / "tmp").resolve()
+
+
+@pytest.mark.parametrize("tool", ["write", "edit", "multi_edit"])
+@pytest.mark.parametrize("suffix", ["/", "/.", "//./"])
+@pytest.mark.parametrize("root", ["/native/project", "C:/Project", "//server/share/project"])
+@pytest.mark.parametrize("nested", [True, False])
+async def test_file_creation_derives_parent_from_normalized_path(
+    tmp_path: Path, tool: str, suffix: str, root: str, nested: bool
+) -> None:
+    observed: list[Any] = []
+    relative_path = "sub/value.txt" if nested else "value.txt"
+    arguments: dict[str, Any] = {"file_path": f"{root}/./{relative_path}{suffix}"}
+    if tool == "write":
+        arguments["content"] = "created"
+    elif tool == "edit":
+        arguments.update(old_string="", new_string="created")
+    else:
+        arguments["edits"] = [{"old_string": "", "new_string": "created"}]
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {0: DeltaToolCall(name=tool, json_args=json.dumps(arguments), tool_call_id="create-1")}
+        else:
+            observed.append(returns[-1].content)
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    operations = (
+        frozenset({EnvironmentAction.FILE_WRITE_TEXT})
+        if tool == "write" and not nested
+        else frozenset(EnvironmentAction)
+    )
+    runtime = create_environment_runtime(
+        mounts={"project": _local_mount(tmp_path, mount_path=root, operations=operations)}, default_mount="project"
+    )
+    result = await executable.run("create file", bindings=RunBindings.embedded(environment=runtime))
+    assert result.output_or_raise() == "done"
+    assert observed[0]["ok"] is True
+    assert (tmp_path / relative_path).is_file()
+    assert (tmp_path / relative_path).read_text(encoding="utf-8") == "created"
 
 
 async def test_resource_metadata_does_not_bind_execution_to_mount_incarnation(tmp_path: Path) -> None:
@@ -2163,6 +2270,10 @@ async def test_large_environment_result_is_bounded_without_retry_shaped_failure(
     assert observed["ok"] is True
     assert observed["has_more"] is False
     assert observed["truncated_lines"] == [1]
+    assert observed["disclosure"]["content_complete"] is False
+    assert "one-based" in observed["disclosure"]["hint"]
+    assert "max_line_length" in observed["disclosure"]["hint"]
+    assert "next_line_offset" not in observed
     assert isinstance(observed["content"], str)
     assert len(observed["content"]) == 2_000
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from copy import copy
 from dataclasses import dataclass
@@ -38,20 +39,44 @@ class ModelRequestPatchConfiguration:
         cls,
         *,
         environ: Mapping[str, str] | None = None,
+        x_session_id_enabled: bool | None = None,
+        openai_prompt_cache_key_enabled: bool | None = None,
     ) -> ModelRequestPatchConfiguration:
-        """Snapshot default-on patch switches from one environment mapping."""
+        """Snapshot Host overrides, falling back independently to environment and then True."""
 
         source = os.environ if environ is None else environ
         return cls(
-            x_session_id_enabled=_parse_enabled(
-                source.get(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV),
-                name=MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
+            x_session_id_enabled=_resolve_enabled(
+                x_session_id_enabled,
+                source=source,
+                parameter="x_session_id_enabled",
+                environment_name=MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
             ),
-            openai_prompt_cache_key_enabled=_parse_enabled(
-                source.get(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV),
-                name=MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
+            openai_prompt_cache_key_enabled=_resolve_enabled(
+                openai_prompt_cache_key_enabled,
+                source=source,
+                parameter="openai_prompt_cache_key_enabled",
+                environment_name=MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
             ),
         )
+
+
+def _resolve_enabled(
+    override: bool | None,
+    *,
+    source: Mapping[str, str],
+    parameter: str,
+    environment_name: str,
+) -> bool:
+    if override is None:
+        return _parse_enabled(source.get(environment_name), name=environment_name)
+    if not isinstance(override, bool):
+        raise DefinitionError(
+            f"{parameter} must be a boolean or None.",
+            code="model_request_patch_configuration_invalid",
+            details={"name": parameter},
+        )
+    return override
 
 
 def _parse_enabled(value: object, *, name: str) -> bool:
@@ -106,7 +131,12 @@ class ModelRequestHeadersCapability(AbstractCapability[AgentContext]):
                 {"x-session-id": ctx.deps.thread_id},
                 cast(Mapping[str, str] | None, settings.get("extra_headers")),
             )
-        if configuration.openai_prompt_cache_key_enabled and "openai_prompt_cache_key" not in settings:
+        # This is a conservative naming policy, not endpoint capability detection.
+        if (
+            configuration.openai_prompt_cache_key_enabled
+            and "openai_prompt_cache_key" not in settings
+            and re.match(r"(?:openai/)?gpt-[0-9]", request_context.model.model_name) is not None
+        ):
             settings["openai_prompt_cache_key"] = ctx.deps.thread_id
 
         updated = copy(request_context)

@@ -17,7 +17,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
 import { Empty, ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Pagination, useCursor } from "../../shared/collection";
-import { conversationApi, runPath } from "./api";
+import { conversationQueries, invalidateConversation, runPath } from "./api";
 import { SessionIdentity } from "./identity";
 import { Composer } from "./composer";
 import { OptionsComposer, RunOptions, useRunOptions } from "./options";
@@ -33,19 +33,9 @@ export function ConversationsPage() {
     page = useCursor(),
     navigate = useNavigate();
   const notifications = useConversationNotifications();
-  const sessions = useQuery({
-    queryKey: ["sessions", workspace.id, page.cursor],
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/sessions", {
-          params: {
-            path: { workspace_id: workspace.id },
-            query: { cursor: page.cursor, limit: 20 },
-          },
-          signal,
-        })
-        .then(data),
-  });
+  const sessions = useQuery(
+    conversationQueries(client, workspace.id).sessions(page.cursor),
+  );
   const { sessionId } = useParams();
   const location = useLocation();
   const nested = !!sessionId || /\/sessions\/new\/?$/.test(location.pathname);
@@ -114,43 +104,25 @@ function SessionLink({
   session: Schema["SessionResource"];
   selected: boolean;
 }) {
-  const { t } = useTranslation(),
-    client = useClient(),
-    { workspace } = useWorkspace();
-  const api = conversationApi(client, workspace.id);
-  const preview = useQuery({
-    queryKey: ["session-preview", workspace.id, session.id, session.updated_at],
-    staleTime: 60_000,
-    queryFn: async ({ signal }) => {
-      const threads = await api.threads(session.id, signal);
-      const thread = threads.items[0];
-      const id = thread?.current_run_id ?? thread?.head_run_id;
-      return id ? api.run(id, signal) : null;
-    },
-  });
+  const { t } = useTranslation();
+  const preview = session.preview;
   return (
     <Link
       to={session.id}
       className={styles.sessionLink}
       aria-current={selected ? "page" : undefined}
-      title={preview.data?.input_text || t("Untitled session")}
+      title={preview?.input_text || t("Untitled session")}
     >
       <div>
-        <strong>{preview.data?.input_text || t("Untitled session")}</strong>
+        <strong>{preview?.input_text || t("Untitled session")}</strong>
         <small>
           <Timestamp value={session.updated_at} relative />
         </small>
       </div>
       <p>
-        {preview.data?.output_text
-          ? preview.data.output_text
-              .replace(/[`#*_>]/g, "")
-              .replace(/\s+/g, " ")
-          : preview.data
-            ? t(`state.${preview.data.status}`, {
-                defaultValue: preview.data.status,
-              })
-            : t("Loading…")}
+        {preview?.output_text
+          ? preview.output_text.replace(/[`#*_>]/g, "").replace(/\s+/g, " ")
+          : t("Open session")}
       </p>
     </Link>
   );
@@ -226,8 +198,10 @@ export function NewConversation() {
                 body,
               }),
             );
-            void cache.invalidateQueries({
-              queryKey: ["sessions", workspace.id],
+            void invalidateConversation(cache, workspace.id, {
+              sessionId: receipt.session_id,
+              threadId: receipt.thread_id,
+              runId: receipt.run_id,
             });
             navigate(runPath(workspace.id, receipt));
           }}
@@ -244,12 +218,8 @@ export function SessionLayout() {
     { sessionId = "", threadId } = useParams(),
     { workspace, can } = useWorkspace(),
     client = useClient(),
-    api = conversationApi(client, workspace.id);
-  const threads = useQuery({
-    queryKey: ["session-threads", workspace.id, sessionId],
-    queryFn: ({ signal }) =>
-      allPages((cursor) => api.threads(sessionId, signal, cursor)),
-  });
+    queries = conversationQueries(client, workspace.id);
+  const threads = useQuery(queries.threads(sessionId));
   const navigate = useNavigate();
   const first = threads.data?.[0];
   return (
@@ -310,11 +280,8 @@ export function ThreadLayout() {
     { sessionId = "", threadId = "", runId } = useParams(),
     { workspace, can } = useWorkspace(),
     client = useClient(),
-    api = conversationApi(client, workspace.id);
-  const thread = useQuery({
-    queryKey: ["thread", workspace.id, threadId],
-    queryFn: ({ signal }) => api.thread(threadId, signal),
-  });
+    queries = conversationQueries(client, workspace.id);
+  const thread = useQuery(queries.thread(threadId));
   const navigate = useNavigate(),
     cache = useQueryClient();
   const selected =
@@ -371,7 +338,11 @@ export function ThreadLayout() {
                           },
                         ),
                       );
-                      void cache.invalidateQueries();
+                      void invalidateConversation(cache, workspace.id, {
+                        sessionId,
+                        threadId,
+                        runId: receipt.run?.run_id,
+                      });
                       if (receipt.run)
                         navigate(runPath(workspace.id, receipt.run));
                     }}
@@ -393,13 +364,9 @@ function RunHistory() {
     client = useClient(),
     navigate = useNavigate();
   const { sessionId = "", threadId = "", runId = "" } = useParams();
-  const runs = useQuery({
-    queryKey: ["thread-runs", workspace.id, threadId],
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        conversationApi(client, workspace.id).runs(threadId, signal, cursor),
-      ),
-  });
+  const runs = useQuery(
+    conversationQueries(client, workspace.id).runs(threadId),
+  );
   if (runs.error)
     return (
       <Button

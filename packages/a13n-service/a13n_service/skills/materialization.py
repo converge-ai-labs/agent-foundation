@@ -7,18 +7,20 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
+from uuid import uuid4
 
 from a13n_harness.capabilities import FileSkillSource, SkillCatalogItem
 from a13n_harness.environment.files import FileKind, FileOperator
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
-from anyio import Lock
+from anyio import Lock, move_on_after
 
 from .domain import SkillPackageFile, SkillPackageManifest, SkillRevisionLock
 from .objects import SkillPackageStore, SkillPackageStoreError
 from .package import MAX_FILES, NormalizedSkillPackage
 
 _COMPLETION_FILE = ".a13n-service-complete.json"
+_STAGING_DIRECTORY = ".a13n-service-staging"
 _STALE_ENVIRONMENT_CODES = frozenset({"environment_stale_mount", "environment_provider_binding_reused"})
 
 
@@ -138,10 +140,7 @@ class EnvironmentSkillMaterializer:
         try:
             async with self._lock:
                 await self._require_current()
-                if await self._matches(files, require_completion=True):
-                    await self._require_current()
-                    return
-                await self._replace(files)
+                await self._complete(files)
                 await self._require_current()
         except SkillMaterializationStale as error:
             raise DefinitionError(
@@ -163,64 +162,94 @@ class EnvironmentSkillMaterializer:
                 details={"environment_code": error.code},
             ) from error
 
-    async def _replace(self, files: FileOperator) -> None:
-        await self._require_current()
-        await self._remove_target(files)
-        await self._require_current()
-        await files.mkdir(self.target_root, parents=True, exist_ok=False)
+    async def _complete(self, files: FileOperator) -> None:
+        await self._ensure_directory(files, self.target_root)
+        expected = _expected_entries(self._plan.revisions)
+        for path, kind in expected.items():
+            if kind == "directory":
+                await self._ensure_directory(files, f"{self.target_root}/{path}")
         for selected in self._plan.revisions:
             await self._require_current()
-            package = await self._read_package(selected)
-            await self._require_current()
             root = _package_root(self.target_root, selected.lock.content_digest)
-            await files.mkdir(root, parents=True, exist_ok=False)
-            for item in package.files:
+            missing: set[str] = set()
+            for item in selected.manifest.files:
+                path = f"{root}/{item.path}"
+                if not await _exists_as(files, path, "file"):
+                    missing.add(item.path)
+                elif not await _matches_file(files, path, item):
+                    raise _invalid("An existing Skill file conflicts with its immutable Revision.")
+            if missing:
                 await self._require_current()
-                destination = f"{root}/{item.path}"
-                await files.mkdir(destination.rsplit("/", 1)[0], parents=True, exist_ok=True)
-                await self._require_current()
-                await files.write_bytes_stream(destination, _one_chunk(item.content), mode="create")
-        if not await self._matches(files, require_completion=False):
-            raise _invalid("The materialized Skill root failed complete verification.")
-        await self._require_current()
-        await files.write_bytes_stream(
-            f"{self.target_root}/{_COMPLETION_FILE}",
-            _one_chunk(self._completion),
-            mode="create",
-        )
+                package = await self._read_package(selected)
+                for item in package.files:
+                    if item.path in missing:
+                        await self._publish(files, f"{root}/{item.path}", item.content)
 
-    async def _remove_target(self, files: FileOperator) -> None:
-        try:
-            await files.stat(self.target_root)
-        except EnvironmentError as error:
-            if error.code == "environment_not_found":
-                return
-            raise
+        # All package entries now exist. Other valid writers can only add Host
+        # metadata, so pagination cannot skip an expected package entry.
+        actual = await _walk_entries(files, self.target_root, maximum=len(expected) + 3)
+        for name, kind in ((_COMPLETION_FILE, "file"), (_STAGING_DIRECTORY, "directory")):
+            if name in actual and actual.pop(name) != kind:
+                raise _invalid("The materialized Skill root has invalid Host metadata.")
+        if actual != expected:
+            raise _invalid("The materialized Skill root contains unexpected or missing entries.")
         await self._require_current()
-        await files.remove(self.target_root, recursive=True)
+        completion_path = f"{self.target_root}/{_COMPLETION_FILE}"
+        if await _exists_as(files, completion_path, "file"):
+            if await _read_bounded(files, completion_path, len(self._completion)) != self._completion:
+                raise _invalid("The materialized Skill completion manifest conflicts with its catalog.")
+        else:
+            await self._publish(files, completion_path, self._completion)
 
-    async def _matches(self, files: FileOperator, *, require_completion: bool) -> bool:
+    async def _ensure_directory(self, files: FileOperator, path: str) -> None:
+        if await _exists_as(files, path, "directory"):
+            return
+        # A provider may report a create conflict at a missing ancestor rather
+        # than the final directory. Each valid race creates at least one path
+        # component, so path depth bounds the work needed to complete it.
+        for _ in range(path.count("/") + 1):
+            await self._require_current()
+            try:
+                await files.mkdir(path, parents=True, exist_ok=True)
+            except EnvironmentError as error:
+                if error.code != "environment_conflict":
+                    raise
+                if await _exists_as(files, path, "directory"):
+                    return
+                continue
+            if not await _exists_as(files, path, "directory"):
+                raise _invalid("A Skill materialization directory is missing after creation.")
+            return
+        raise EnvironmentError("Skill directory creation did not converge.", code="environment_conflict")
+
+    async def _publish(self, files: FileOperator, destination: str, content: bytes) -> None:
+        staging = f"{self.target_root}/{_STAGING_DIRECTORY}"
+        await self._ensure_directory(files, staging)
+        await self._require_current()
+        staged = f"{staging}/{uuid4().hex}"
+        await files.write_bytes_stream(staged, _one_chunk(content), mode="create")
         try:
-            metadata = await files.stat(self.target_root)
-        except EnvironmentError as error:
-            if error.code == "environment_not_found":
-                return False
-            raise
-        if metadata.kind != "directory":
-            return False
-        expected = _expected_entries(self._plan.revisions, include_completion=require_completion)
-        actual = await _walk_entries(files, self.target_root, maximum=len(expected) + 1)
-        if actual != {path: kind for path, (kind, _) in expected.items()}:
-            return False
-        if require_completion:
-            completion = await _read_bounded(files, f"{self.target_root}/{_COMPLETION_FILE}", len(self._completion))
-            if completion != self._completion:
-                return False
-        for path, (kind, package_file) in expected.items():
-            if kind == "file" and package_file is not None:
-                if not await _matches_file(files, f"{self.target_root}/{path}", package_file):
-                    return False
-        return True
+            await self._require_current()
+            try:
+                # Keep provider write temporaries outside every scanned Skill
+                # package, and publish the complete file without replacing a winner.
+                await files.move(staged, destination, replace=False)
+            except EnvironmentError as error:
+                if error.code != "environment_conflict":
+                    raise
+            if (
+                not await _exists_as(files, destination, "file")
+                or await _read_bounded(files, destination, len(content)) != content
+            ):
+                raise _invalid("A published Skill file conflicts with its expected content.")
+        finally:
+            # Only this invocation's private file is ours to remove. Interrupted
+            # or unavailable cleanup is left to the Host, never repaired in place.
+            with move_on_after(5, shield=True):
+                try:
+                    await files.remove(staged)
+                except EnvironmentError:
+                    pass
 
     async def _require_current(self) -> None:
         if self._fence is not None:
@@ -245,21 +274,17 @@ class EnvironmentSkillMaterializer:
 
 def _expected_entries(
     revisions: tuple[LockedSkillRevision, ...],
-    *,
-    include_completion: bool,
-) -> dict[str, tuple[FileKind, SkillPackageFile | None]]:
-    expected: dict[str, tuple[FileKind, SkillPackageFile | None]] = {}
-    if include_completion:
-        expected[_COMPLETION_FILE] = ("file", None)
+) -> dict[str, FileKind]:
+    expected: dict[str, FileKind] = {}
     for selected in revisions:
         package_directory = selected.lock.content_digest
-        expected[package_directory] = ("directory", None)
+        expected[package_directory] = "directory"
         for item in selected.manifest.files:
             relative = f"{package_directory}/{item.path}"
             parts = relative.split("/")
             for index in range(1, len(parts)):
-                expected["/".join(parts[:index])] = ("directory", None)
-            expected[relative] = ("file", item)
+                expected["/".join(parts[:index])] = "directory"
+            expected[relative] = "file"
     return expected
 
 
@@ -267,6 +292,7 @@ async def _walk_entries(files: FileOperator, root: str, *, maximum: int) -> dict
     pending = [root]
     actual: dict[str, FileKind] = {}
     prefix = f"{root}/"
+    seen = 0
     while pending:
         directory = pending.pop()
         offset = 0
@@ -276,12 +302,18 @@ async def _walk_entries(files: FileOperator, root: str, *, maximum: int) -> dict
                 if not entry.path.startswith(prefix):
                     raise _invalid("The Environment returned a path outside the materialization root.")
                 relative = entry.path[len(prefix) :]
-                if not relative or relative in actual:
+                seen += 1
+                if not relative or seen > maximum * 2:
                     raise _invalid("The Environment returned an invalid materialization listing.")
+                if relative in actual:
+                    # An identical metadata publication can shift offset pages.
+                    if actual[relative] != entry.kind:
+                        raise _invalid("A materialized Skill entry changed kind during verification.")
+                    continue
                 actual[relative] = entry.kind
                 if len(actual) >= maximum:
                     return actual
-                if entry.kind == "directory":
+                if entry.kind == "directory" and relative != _STAGING_DIRECTORY:
                     pending.append(entry.path)
             if not page.has_more:
                 break
@@ -289,6 +321,18 @@ async def _walk_entries(files: FileOperator, root: str, *, maximum: int) -> dict
             if not page.entries:
                 raise _invalid("The Environment returned a non-progressing materialization listing.")
     return actual
+
+
+async def _exists_as(files: FileOperator, path: str, kind: FileKind) -> bool:
+    try:
+        metadata = await files.stat(path)
+    except EnvironmentError as error:
+        if error.code == "environment_not_found":
+            return False
+        raise
+    if metadata.kind != kind:
+        raise _invalid("A materialized Skill entry has an unexpected file kind.")
+    return True
 
 
 async def _matches_file(files: FileOperator, path: str, expected: SkillPackageFile) -> bool:
@@ -307,16 +351,16 @@ async def _matches_file(files: FileOperator, path: str, expected: SkillPackageFi
     return size == expected.size_bytes and digest.hexdigest() == expected.sha256
 
 
-async def _read_bounded(files: FileOperator, path: str, maximum: int) -> bytes:
+async def _read_bounded(files: FileOperator, path: str, maximum: int) -> bytes | None:
     body = bytearray()
     try:
         async for chunk in files.read_bytes_stream(path):
             body.extend(chunk)
             if len(body) > maximum:
-                return b""
+                return None
     except EnvironmentError as error:
         if error.code == "environment_not_found":
-            return b""
+            return None
         raise
     return bytes(body)
 

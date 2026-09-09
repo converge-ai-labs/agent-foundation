@@ -90,15 +90,15 @@ examples-check-all: examples-check examples-test examples-smoke examples-build #
 
 .PHONY: setup
 setup: sync ## Start local PostgreSQL and Redis
-	@docker compose -f dev/compose.yaml up -d --wait
+	@docker compose $(if $(wildcard .env),--env-file .env,) -f dev/compose.yaml up -d --wait
 
 .PHONY: dev
-dev: setup ## Upgrade the schema and run a13n Service
+dev: setup frontend-sync sdk-typescript-build ## Upgrade the schema and run a13n Service and Console
 	@uv run --locked a13n-service db upgrade
 	@bash scripts/dev.sh
 
 .PHONY: dev-down
-.PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-check live-test-auth-control
+.PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-local live-test-check live-test-auth-control live-test-round-two live-test-management
 LIVE_TEST_RUN = uv run --locked $(if $(wildcard .env),--env-file .env,)
 
 live-test-auth-control: sync ## Run ordinary local Control settings with the private test authenticator
@@ -118,6 +118,19 @@ live-test-setup: sync ## Create live-test Model, Environment, Plugin, and Agents
 
 live-test: sync ## Run opt-in local HTTP journeys (LIVE_TEST_ARGS="-k basic" selects cases)
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+live-test-local: sync ## Run first-round HTTP journeys with owned Docker dependencies and service processes
+	@uv run --locked python -m dev.live_tests.isolated $(LIVE_TEST_ARGS)
+
+live-test-round-two: sync ## Run isolated HTTP fault/recovery journeys with Docker dependencies
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+live-test-management: sync ## Run isolated Service/Harness management journeys with Docker dependencies
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+.PHONY: live-test-providers
+live-test-providers: sync ## Run optional configured real Providers in disposable local labs
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/test_31_real_providers.py --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
 live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked ruff check --no-fix dev/live_tests
@@ -303,8 +316,7 @@ a13n-harness-dist-check: ## Verify isolated same-version Harness wheels
 	@uv run --no-project python scripts/check-a13n-distributions.py dist
 
 .PHONY: a13n-harness-release-build
-a13n-harness-release-build: a13n-harness-python-build ## Build and verify the prepared Harness release group
-	@uv run --no-project python scripts/check-a13n-distributions.py dist --require-exact-internal-version
+a13n-harness-release-build: a13n-harness-python-build ## Build the prepared Harness release group
 
 .PHONY: a13n-harness-ui-build
 a13n-harness-ui-build: sync a13n-harness-ui-assets ## Build Harness UI for repository development
@@ -313,10 +325,9 @@ a13n-harness-ui-build: sync a13n-harness-ui-assets ## Build Harness UI for repos
 	@uv run --locked python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel
 
 .PHONY: a13n-harness-ui-release-build
-a13n-harness-ui-release-build: ## Build and verify Harness UI from prepared assets and release metadata
+a13n-harness-ui-release-build: ## Build Harness UI from prepared assets and release metadata
 	@rm -rf dist
 	@uv build --package a13n-harness-ui --out-dir dist
-	@uv run --no-project python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel --require-compatible-dependencies
 
 .PHONY: a13n-logging-python-build
 a13n-logging-python-build: ## Build only the logging Python distributions

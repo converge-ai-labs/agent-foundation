@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Literal, Protocol
 
 from a13n_environment import (
-    Environment,
     EnvironmentError,
     EnvironmentProviderError,
 )
@@ -47,12 +46,9 @@ class EnvironmentHookProjector(Protocol):
 class EnvironmentObserver:
     """Project events without wrapping or controlling the adapter."""
 
-    def __init__(
-        self, environment: Environment, projector: EnvironmentHookProjector, *, access: EnvironmentAccess
-    ) -> None:
-        self.environment = environment
+    def __init__(self, mount: EnvironmentMount, projector: EnvironmentHookProjector) -> None:
+        self._mount = mount
         self._projector = projector
-        self._access = access
         self._correlation: tuple[str, str, str] | None = None
 
     def observe(self, event: str, scope: EnvironmentScope, error: BaseException | None) -> None:
@@ -60,7 +56,13 @@ class EnvironmentObserver:
         if event == "ready":
             self._emit_ready()
         elif event == "started":
-            self._emit("environment.preparation.started", {"access": self._access.value})
+            access = self._mount.access
+            projection: JsonValue = (
+                access.value
+                if isinstance(access, EnvironmentAccess)
+                else {"operations": _JSON_LIST.validate_python(sorted(item.value for item in access.operations))}
+            )
+            self._emit("environment.preparation.started", {"access": projection})
         elif event == "failed":
             assert error is not None
             self._emit("environment.preparation.failed", {"failure": _safe_failure(error, phase="preparation")})
@@ -72,10 +74,10 @@ class EnvironmentObserver:
 
     def _emit_ready(self) -> None:
         try:
-            descriptor = self.environment.descriptor
-            availability = self.environment.availability
+            descriptor = self._mount.environment.descriptor
+            availability = self._mount.environment.availability
             operation_families = _JSON_LIST.validate_python(sorted(descriptor.operation_families), strict=True)
-            effective_permissions = descriptor.permissions.operations & self._access.permission_set().operations
+            effective_permissions = descriptor.permissions.operations & self._mount.permissions.operations
             permissions = _JSON_LIST.validate_python(sorted(item.value for item in effective_permissions), strict=True)
             ready_families = _JSON_LIST.validate_python(sorted(availability.ready_families), strict=True)
             self._emit(
@@ -101,7 +103,7 @@ class EnvironmentObserver:
         try:
             payload: dict[str, JsonValue] = {
                 "mount_id": mount_id,
-                "provider_key": self.environment.provider_key,
+                "provider_key": self._mount.environment.provider_key,
                 **fields,
             }
             self._projector.project_environment(
@@ -131,7 +133,7 @@ def observe_environment_entry(
     projector: EnvironmentHookProjector,
 ) -> EnvironmentEntry:
     mount = entry if isinstance(entry, EnvironmentMount) else EnvironmentMount(entry)
-    observer = EnvironmentObserver(mount.environment, projector, access=mount.access)
+    observer = EnvironmentObserver(mount, projector)
     mount.environment.observe(observer.observe)
     return mount
 
