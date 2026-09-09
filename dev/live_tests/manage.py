@@ -56,7 +56,13 @@ async def initialize() -> None:
             now = datetime.now(UTC)
             if await session.get(OrganizationRecord, config["organization_id"]) is None:
                 session.add(
-                    OrganizationRecord(id=config["organization_id"], name="Live tests", created_at=now, updated_at=now)
+                    OrganizationRecord(
+                        id=config["organization_id"],
+                        key=config["organization_id"].replace("_", "-"),
+                        name="Live tests",
+                        created_at=now,
+                        updated_at=now,
+                    )
                 )
             await session.flush()
             session.add(
@@ -76,7 +82,7 @@ async def initialize() -> None:
                     id=config["workspace_id"],
                     organization_id=config["organization_id"],
                     name=f"Live tests {config['workspace_id']}",
-                    normalized_name=f"live tests {config['workspace_id']}",
+                    key=config["workspace_id"].replace("_", "-"),
                     created_at=now,
                     updated_at=now,
                     deleted_at=None,
