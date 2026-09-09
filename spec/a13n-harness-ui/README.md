@@ -2,9 +2,9 @@
 
 ## Overview
 
-Harness UI (`a13n-harness-ui`) is the local single-user coding product, distributed by the independent `a13n-harness-ui` library. It embeds Harness in one reusable `HarnessUiApp`, reads human-editable resources, discovers trusted extensions and Capabilities, and retains internal Project/Thread identities for durable continuation and execution. Its native full-terminal renderer owns a bounded semantic display cache; the App remains conversation authority.
+Harness UI (`a13n-harness-ui`) is a local Agent workbench with a personal CLI and a trusted-team collaborative WebUI, distributed by the independent `a13n-harness-ui` library. It embeds Harness in one reusable `HarnessUiApp`, reads human-editable resources, discovers trusted extensions and Capabilities, and retains internal Project/Thread identities for durable continuation and execution. Its native full-terminal renderer owns a bounded semantic display cache; the App remains conversation authority.
 
-`a13n-harness-ui` starts the interactive CLI. `a13n-harness-ui webui` explicitly starts one foreground HTTP/SSE server and WebUI-mode App. The CLI and HTTP adapter consume the same commands, projections, receipts, and live subscriptions; the bundled browser page renders only Hello World and does not call the API. There is no detached daemon or IPC mode.
+`a13n-harness-ui` starts the interactive CLI. `a13n-harness-ui webui` explicitly starts one foreground server and WebUI-mode App. The CLI and browser adapter consume the same commands, projections, receipts, and live subscriptions. The browser provides project-organized conversations, shared prompt editing, resource configuration, and explicitly enabled native Host files, Git views, and PTY. All browser participants share one instance authority without multi-tenancy. There is no detached daemon or IPC mode.
 
 Harness UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but it does not durably accept root receipts, input, or deferred responses, recover active operating-system processes, lease work across workers, or provide distributed failover. a13n Service remains the durable hosted product.
 
@@ -27,7 +27,7 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), [Environment pac
 | [06-setup-and-environment-readiness.md](06-setup-and-environment-readiness.md)                   | First-use discovery, reviewed starter files, explicit defaults, and selected Environment preflight/recovery                    |
 | [07-interactive-cli.md](07-interactive-cli.md)                                                   | Full-terminal ownership, commands, display modes, startup, cwd sessions, and context choices                                   |
 
-The [WebUI contract](webui/README.md) owns the Hello World browser page and its build/distribution boundary; HTTP/API behavior remains owned by `05`.
+The [WebUI catalog](webui/README.md) indexes the browser workbench, collaborative conversations, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; browser drafts retain the storage boundary in `03`.
 
 ## Reading Paths
 
@@ -45,13 +45,13 @@ Read `01a`, `02b`, and `04`, then [Provider Specifications and Catalog](../a13n-
 
 ### Implement a Surface
 
-Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes detached projections and live events. It does not read SQLite, interpret Harness-private events, construct Providers, or own another Thread model. The terminal follows [Interactive CLI](07-interactive-cli.md); the HTTP adapter reuses the same application authority, while the [WebUI](webui/README.md) is a Hello World page with no application API client.
+Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes detached projections and live events. It does not read SQLite, interpret Harness-private events, construct Providers, or own another Thread model. The terminal follows [Interactive CLI](07-interactive-cli.md); the HTTP adapter reuses the same application authority, the [WebUI](webui/README.md) adds collaborative editing and optional native human access through that same App, without adding Environment debug files or terminals.
 
 ## Authority Rules
 
 01. The selected `a13n-harness-ui.yaml` and its fixed sibling resource directories are the primary desired-resource authority. The data-root Content Plugin catalog contributes separately managed editable Skill and Markdown content; SQLite retains accepted-generation indexes and mutable Thread/runtime heads but does not become an editable definition source.
 02. A successful stable read accepts one coherent configuration generation. Invalid or partially saved files leave the previous generation active.
-03. Projects, Models, configured extensions, MCP servers, Agents, and Markdown subagents have stable file-defined IDs. Global defaults select them only when a root Thread is created. Model credentials remain external references or compatible product account-store state.
+03. Projects, Models, configured extensions, MCP servers, Agents, and Markdown subagents have stable file-defined IDs. Explicit choices, Project defaults, Agent-owned defaults, and global defaults initialize root Thread selections under the configuration precedence contract. Model credentials remain external references or compatible product account-store state.
 04. Every Thread owns independent mutable metadata and sticky-configuration heads. Omitted configuration changes retain the previous selection; an admitted Run captures one immutable resolved composition that later file, Project, or Thread changes cannot alter.
 05. `HarnessUiApp` owns validated last-write-wins configuration-file publication, detached Project and Thread projections, Host-authoritative Environment state, process-local root receipts and deferred response, async child execution, and live presentation.
 06. Harness and Pydantic AI own native Agent construction, Agent loops, public stream items, results, Capability behavior, and `HarnessState` continuation semantics.
@@ -61,13 +61,15 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 10. Saved root and child facts never imply current-process liveness. Root receipts and all control availability are process-local; Harness UI does not infer liveness or silently replay work.
 11. The full-terminal CLI is an adapter over one reusable `HarnessUiApp`. Desired configuration remains editable; setup publication is explicit. Project and Thread management are not terminal workflows, but their durable identities and existing history remain intact.
 12. Focused live delivery follows complete root lineage and uses an epoch/sequence snapshot cutover. App-wide summary invalidations are best-effort refetch hints, not durable truth.
-13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling.
+13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling. Independent Apps do not thereby share live collaboration or execution receipts.
+14. Shared browser drafts are saved editing state, not selected continuation or durable root-work acceptance. Reconnect never authorizes automatic submission.
+15. Native Host files, Git views, and PTY are explicitly enabled human operations on the server OS, independent of Agent Environment policy and Run lifetime.
 
 ## Conventions
 
 - Python-like schemas are conceptual unless explicitly described as serialized configuration.
 - A Thread is one continuation-backed conversation identity. A root Thread has no parent; an async child Thread records its parent and can contain several linked execution segments.
-- A Project is an optional file-defined mutable named ordered list of local roots for organizing project-bound root Threads. Its first root anchors current-directory launch resolution and receives mount alias `workspace`; later roots are additional Run mounts with distinct aliases. Harness UI defines no Workspace resource.
+- A Project is an optional file-defined mutable named ordered list of local roots with conversation creation configuration for organizing project-bound root Threads. Its first root anchors current-directory launch resolution and receives mount alias `workspace`; later roots are additional Run mounts with distinct aliases. Harness UI defines no Workspace resource.
 - A Thread configuration is a sticky selection of optional Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. It is not a Harness Run or immutable history.
 - A Run composition is the immutable resolved value captured at admission from one configuration generation and one Thread configuration version.
 - An Environment profile selects Provider and Host-adapter configuration for Project-root execution. Harness UI owns the fixed Full Control and Sandbox profiles; extension YAML can define advanced custom profiles under other IDs. A profile is distinct from a runtime `Environment` identity and does not own the roots.

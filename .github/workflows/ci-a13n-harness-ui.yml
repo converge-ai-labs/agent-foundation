@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - ".github/workflows/ci-a13n-harness-ui.yml"
+      - ".github/workflows/ci-a13n-harness-ui*.yml"
       - ".github/workflows/release-a13n-harness-ui.yml"
       - ".gitignore"
       - "Makefile"
@@ -32,7 +32,7 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/ci-a13n-harness-ui.yml"
+      - ".github/workflows/ci-a13n-harness-ui*.yml"
       - ".github/workflows/release-a13n-harness-ui.yml"
       - ".gitignore"
       - "Makefile"
@@ -111,7 +111,8 @@ jobs:
         run: |
           make sdk-typescript-build
           pnpm --dir frontend install --frozen-lockfile
-          pnpm --dir frontend run check
+          pnpm --dir frontend run format:check
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run check
           pnpm --dir frontend run build
 
       - name: Synchronize Harness UI test environment
@@ -132,7 +133,11 @@ jobs:
 
       - name: Test Harness UI
         env:
-          PYTEST_ADDOPTS: --durations=20
+          # The independent WebUI job owns these platform-neutral HTTP tests.
+          PYTEST_ADDOPTS: >-
+            --durations=20
+            --ignore=packages/a13n-harness-ui/tests/test_webui.py
+            --ignore=packages/a13n-harness-ui/tests/test_webui_startup.py
         run: >-
           uv run --locked --no-sync python -m scripts.run_python_tests --workers 2
           packages/a13n-harness-ui/tests

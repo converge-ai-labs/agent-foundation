@@ -13,6 +13,7 @@ from a13n_logging import LogFormat
 from pydantic import EmailStr, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from a13n_service import __version__
 from a13n_service.agents.domain import PluginKey
 from a13n_service.connectivity.bounds import (
     MAX_REDIRECTS,
@@ -74,7 +75,8 @@ class Settings(BaseSettings):
     role: ProcessRole = ProcessRole.all
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
-    build_version: str = "unknown"
+    # Optional deployment/worker build identity; defaults to the installed release.
+    build_version: str = __version__
     deployment_environment_name: str = Field(default="default", min_length=1, max_length=256)
     service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
     iam_public_origin: str = "http://127.0.0.1:8000"

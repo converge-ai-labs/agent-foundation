@@ -1,0 +1,91 @@
+name: a13n Harness UI WebUI CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-a13n-harness-ui*.yml"
+      - "packages/a13n-harness-ui/**"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-stream-protocol/**"
+      - "frontend/apps/a13n-harness-ui/**"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/pnpm-workspace.yaml"
+      - "frontend/tsconfig.base.json"
+      - "scripts/export-a13n-harness-ui-openapi.py"
+      - "scripts/tests/test_harness_ui_ci_workflow.py"
+      - "conftest.py"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-a13n-harness-ui*.yml"
+      - "packages/a13n-harness-ui/**"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-stream-protocol/**"
+      - "frontend/apps/a13n-harness-ui/**"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/pnpm-workspace.yaml"
+      - "frontend/tsconfig.base.json"
+      - "scripts/export-a13n-harness-ui-openapi.py"
+      - "scripts/tests/test_harness_ui_ci_workflow.py"
+      - "conftest.py"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  webui:
+    name: WebUI unit and HTTP integration
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Test browser and generated contract
+        run: |
+          pnpm --dir frontend --filter a13n-harness-ui-webui install --frozen-lockfile
+          pnpm --dir frontend --filter a13n-harness-ui-webui run check
+      - name: Synchronize Python test dependencies
+        run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
+      - name: Test startup and HTTP integration
+        run: >-
+          uv run --locked --no-sync python -m pytest
+          packages/a13n-harness-ui/tests/test_webui.py
+          packages/a13n-harness-ui/tests/test_webui_startup.py

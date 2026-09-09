@@ -14,7 +14,7 @@ a13n-harness-ui login --help
 
 One-shot mode prints the final text or a structured operation object, then exits. It shares workspace, model, continuation, and permission semantics with interactive mode. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
 
-Help and version do not load provider or database modules. A lightweight startup view appears before execution dependencies load. Unused model-provider and memory SDKs are not imported merely to start the terminal. Startup shows runtime loading, local storage/configuration, and session preparation separately; phase timings are written to the data root’s `logs/terminal.log`. App initialization precedes chat, and startup, setup, and conversation keep the same alternate screen without a terminal reset; model construction, Environment acquisition, and selected MCP connections happen only when needed. The CLI and HTTP adapter share the reusable `HarnessUiApp` application boundary; the Hello World page does not call that API, and the CLI does not own a parallel execution engine.
+Help and version do not load provider or database modules. A lightweight startup view appears before execution dependencies load. Unused model-provider and memory SDKs are not imported merely to start the terminal. Startup shows runtime loading, local storage/configuration, and session preparation separately; phase timings are written to the data root’s `logs/terminal.log`. App initialization precedes chat, and startup, setup, and conversation keep the same alternate screen without a terminal reset; model construction, Environment acquisition, and selected MCP connections happen only when needed. The CLI and HTTP adapter share the reusable `HarnessUiApp` application boundary; the browser foundation uses authenticated status queries, and the CLI does not own a parallel execution engine.
 
 If interactive startup or `--resume` fails, the terminal prints the nested exception chain and traceback locations after cleanup, including application error codes, rather than only a TaskGroup error count. A private diagnostic report retains the full exception details. Local variables, source lines, and raw provider messages are not printed; review the report for sensitive content before sharing it. Nothing is uploaded automatically.
 
@@ -26,14 +26,20 @@ Recovery does not restart completed work or directly replay tool calls. Cancella
 
 ## Browser UI
 
-The bundled page displays only **Hello World**. It does not authenticate, consume the URL's API-key fragment, open live streams, or provide conversation, setup, or management controls. The HTTP API and foreground server remain available independently.
+The bundled foundation page accepts the instance API key and displays the installed Python package version returned by the server. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls; those facilities are explicitly unavailable. The HTTP API and foreground server remain available independently.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
 a13n-harness-ui webui --host 127.0.0.1 --port 9000
 ```
 
-Open the ordinary URL printed by the server to view the page; static assets require no API key. The server also prints a generated key and a convenience URL carrying it only in the fragment. The placeholder does not consume that fragment. API clients must send the key in `Authorization: Bearer <key>` for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
+Startup stdout prints the ordinary URL and, only for a generated key, the key and a convenience fragment URL. The browser consumes and removes the key fragment, sends `Authorization: Bearer <key>` on API requests, and retains successfully used keys in same-origin localStorage. Use **Forget API key** to remove that retention. Static assets contain no key and need no authentication.
+
+Key precedence is `--apikey`, then `A13N_HARNESS_UI_API_KEY`, then a fresh process key. Supplied keys are not echoed; command arguments may still be visible to the shell and operating system. Explicitly empty keys and conflicting repeated key values are rejected. `--dangerous-skip-permissions` disables Web authentication only, not Agent permissions or computer-sharing gates; combining it with a CLI or environment key is an error. `--api-key` and `--dangerously-bypass-permission` remain compatibility aliases.
+
+Non-loopback listening grants shared instance authority on a trusted network, not tenant isolation; use external TLS when needed. The server owns the App lifetime even without browsers; Ctrl+C or SIGTERM closes it. Unauthenticated `/healthz` and `/readyz` report bounded liveness and App readiness. A fresh instance can be ready for setup before any model is configured.
+
+The GHCR image is `ghcr.io/converge-ai-labs/a13n-harness-ui`: `dev` follows main, releases use `X.Y.Z`, and RCs use `X.Y.Z-rc.N` without advancing `latest`. Python and the page display RC metadata as `X.Y.ZrcN`. Development builds display source version `0.0.0` with a separate Git revision. For persistent configuration, data, and work mounts with loopback-only port publishing, use the repository's `deploy/compose/a13n-harness-ui.yaml`. The image runs as UID/GID `10001:10001`; bind mounts must be writable by that account. Do not remove its volumes when preserving data. Restart rotates generated keys; supply the API-key environment variable at runtime when a stable key is needed.
 
 The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, run `make a13n-harness-ui-assets` before `uv run --locked a13n-harness-ui webui`.
 
@@ -91,7 +97,7 @@ Put global options before the subcommand. Use `--help` at each level for exact a
 | `import subagents`                                       | Required `--product claude-code\|cursor\|codex`, `--scope user\|project`; optional `--project-root`, `--user-home`, `--apply`, `--format`                                    |
 | `plugin install REPOSITORY`                              | Optional `--plugin ID`, `--ref REF`, `--format`; repository must expose valid content                                                                                        |
 | `plugin list`, `plugin uninstall ID`                     | Content Plugin management; `--format`                                                                                                                                        |
-| `webui`                                                  | `--host`, `--port`, `--api-key`, `--dangerously-bypass-permission`; foreground server                                                                                        |
+| `webui`                                                  | `--host`, `--port`, `--apikey`, `--dangerous-skip-permissions`; foreground server                                                                                            |
 
 `--resume` cannot combine with Agent, Environment, or title overrides. Environment mode and profile options cannot combine. There is no detached execution, merge/deploy command, or hidden background continuation after the foreground App closes.
 

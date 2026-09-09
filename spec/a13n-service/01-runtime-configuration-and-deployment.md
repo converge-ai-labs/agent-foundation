@@ -4,6 +4,8 @@
 
 Each a13n Service product distribution ships one executable package and one container image. That build artifact fixes exactly one trusted distribution descriptor and starts it as a `control`, `worker`, or `connectivity` role, or as the all-in-one `all` composition. Configuration, schema preparation, resource construction, component startup, readiness, draining, and shutdown follow one process lifecycle regardless of whether the executable is invoked directly or through a container entrypoint.
 
+The executable's `--version` output and HTTP OpenAPI application version identify the installed `a13n-service` distribution. An optional deployment/Worker build identity does not replace that package version. The default build identity is the installed version. Release image labels and tags agree with the package version, allowing the repository's canonical-to-PEP-440 RC normalization.
+
 Runtime owns process behavior, not domain behavior. It loads the distribution fixed by the artifact, validates one effective configuration, starts only the components assigned to the selected role, and fails closed when the deployment cannot preserve their required semantics.
 
 ## Boundaries

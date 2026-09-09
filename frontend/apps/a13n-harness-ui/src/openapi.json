@@ -2246,6 +2246,38 @@
         "title": "HTTPValidationError"
       },
       "JsonValue": {},
+      "ListenerFeatures": {
+        "properties": {
+          "shared_drafts": {
+            "type": "boolean",
+            "const": false,
+            "title": "Shared Drafts",
+            "default": false
+          },
+          "host_files": {
+            "type": "boolean",
+            "const": false,
+            "title": "Host Files",
+            "default": false
+          },
+          "host_git": {
+            "type": "boolean",
+            "const": false,
+            "title": "Host Git",
+            "default": false
+          },
+          "host_terminal": {
+            "type": "boolean",
+            "const": false,
+            "title": "Host Terminal",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ListenerFeatures",
+        "description": "Implemented browser facilities, not the eventual workbench roadmap."
+      },
       "ListenerStatus": {
         "properties": {
           "api_version": {
@@ -2253,6 +2285,24 @@
             "const": "1",
             "title": "Api Version",
             "default": "1"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "build_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Revision"
+          },
+          "features": {
+            "$ref": "#/components/schemas/ListenerFeatures"
           },
           "app": {
             "$ref": "#/components/schemas/AppStatus"
@@ -2273,6 +2323,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "version",
           "app",
           "host",
           "access"

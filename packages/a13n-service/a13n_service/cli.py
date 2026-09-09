@@ -16,6 +16,7 @@ def _migrator(settings: Settings | None = None) -> DatabaseMigrator:
 
 
 @click.group()
+@click.version_option(package_name="a13n-service")
 def main() -> None:
     """Run and operate a13n Service."""
 

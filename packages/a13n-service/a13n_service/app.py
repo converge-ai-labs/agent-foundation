@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from a13n_service import __version__
 from a13n_service.agents.router import router as agent_router
 from a13n_service.api import install_api_conventions
 from a13n_service.assets.router import router as asset_router
@@ -92,7 +93,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
     serves_control_plane = owns_control(resolved_settings.role)
     app = FastAPI(
         title="a13n Service",
-        version=resolved_settings.build_version,
+        version=__version__,
         lifespan=_lifespan(
             resolved_settings,
             resolved_components,

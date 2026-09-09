@@ -1,28 +1,33 @@
 # Harness UI WebUI
 
-## Current Browser Contract
+## Overview
 
-The bundled WebUI renders only a **Hello World** heading. It is a static React page, not an Agent conversation or management application. It has no conversation composer, Thread navigation, setup, Settings, diagnostics, or execution controls.
+WebUI is the project-centric collaborative browser surface of Harness UI. Trusted participants connect to one foreground server and share conversations, prompt drafts, configuration, and explicitly enabled native Host access. It is not a multi-tenant service or a second Agent execution engine.
 
-Loading the page makes no application API requests, opens no SSE subscriptions, and starts no Agent operation. The page does not consume the startup URL's API-key fragment, authenticate, retain access keys, or store application state in browser storage. It does not implement client-side application routes. Server-recognized navigation paths can serve the same placeholder without providing the former browser features.
+## Document Catalog
 
-## Server and Application Boundary
+| Document                                                               | Owning contract                                                                                     |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                       | Browser product boundary, navigation, Project configuration experience, and application integration |
+| [01-collaborative-conversations.md](01-collaborative-conversations.md) | Shared prompt editing, participant presence, submission behavior, and reconnect boundaries          |
+| [02-host-computer-sharing.md](02-host-computer-sharing.md)             | Native Host files, Git-aware views, PTY, access gating, and human development workflows             |
+| [03-distribution.md](03-distribution.md)                               | Bundled browser assets and the ready-to-use Docker development image                                |
 
-The [HTTP adapter contract](../05-runtime-subagents-and-surfaces.md#http-adapter-contract) remains independent of the placeholder. `a13n-harness-ui webui` starts one foreground HTTP/SSE server owning one WebUI-mode `HarnessUiApp`; the page does not own that App or its lifetime. Browser disconnect does not stop the server or cancel App execution.
+[04-workbench-interaction.md](04-workbench-interaction.md) owns the default user journey, layout behavior, composer controls, configuration UX, code/diff workflows, terminal interaction, and failure presentation.
 
-[HTTP startup and access](../05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns listener binding, terminal key output, API authentication, Host/Origin checks, and static-asset security. The existing finite API, authenticated OpenAPI document, summary stream, focused stream, cursor/reset behavior, and App mutation semantics remain server contracts. The absence of a browser application neither removes these APIs nor relaxes their access requirements.
+## Reading Paths
 
-## Build and Distribution
+Read `00` for the product and `04` for the end-to-end user experience. Read `01` for pair prompting, `02` for native server access, and `03` for packaging and container deployment boundaries.
 
-`frontend/apps/a13n-harness-ui` remains private frontend build input with npm package name `a13n-harness-ui-webui`. TypeScript, React, and Vite produce the local static asset tree. The shared `frontend/pnpm-lock.yaml` owns dependency versions. There is no independently published npm artifact, browser-owned backend, Node.js runtime, or remote asset dependency.
+[App and surfaces](../05-runtime-subagents-and-surfaces.md) owns listener startup, API-key selection, HTTP/SSE delivery, and execution authority. [Configuration](../01-configuration-and-resource-catalog.md), [Projects and Threads](../04-projects-threads-and-environments.md), and [storage](../03-local-storage-and-recovery.md) own the shared domain contracts consumed by the browser.
 
-The compiled assets and their hash manifest remain bundled in the `a13n-harness-ui` wheel and sdist under the [repository packaging boundary](../../repository-model.md#repository-surfaces). Repository and release asset preparation requires Node.js; installed runtime and wheel rebuilds from the sdist do not.
+## Authority Rules
 
-The frontend retains an OpenAPI snapshot derived from the Python adapter for contract drift checks. That snapshot is not imported into the page. There is no generated browser API client or runtime validator bundle.
-
-## Verifiable Invariants
-
-1. The page renders a level-one Hello World heading without contacting the App API.
-2. Rendering the page cannot admit, steer, cancel, or resume an Agent operation, or mutate configuration.
-3. Browser rendering tests cover the placeholder; backend tests continue to own HTTP, authentication, OpenAPI, SSE, and App behavior.
-4. Production asset preparation and wheel/sdist inclusion remain required even though the page has no application features.
+1. One `HarnessUiApp` owns execution and mutations; browser state is not another Thread or configuration authority.
+2. A shared prompt draft is editable input, not a continuation checkpoint or durably accepted Run.
+3. Participants share work, not navigation, scroll position, or verified account identities.
+4. Host Files, Git views, and Host Terminal operate on the server machine, independently of the Agent's selected Environment.
+5. Access to native computer-sharing operations requires explicit startup enablement; API authentication bypass alone does not enable them.
+6. File-backed resources remain editable without the browser. Configuration UI does not create a parallel resource store.
+7. Browser disconnect neither cancels an Agent Run nor destroys a native terminal. Server process loss has different recovery consequences from browser disconnect.
+8. Browser assets remain part of the Harness UI distribution rather than an independently released application.

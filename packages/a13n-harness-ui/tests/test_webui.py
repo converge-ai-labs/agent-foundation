@@ -367,3 +367,62 @@ async def test_attachment_http_upload_download_submit_and_thread_scope(tmp_path:
             await client.post(url, params={"name": "too-big"}, content=b"x" * (10 * 1024 * 1024 + 1))
         ).status_code == 413
         assert (await client.post(url, params={"name": "invalid.png"}, content=b"not image")).status_code == 400
+
+
+@pytest.mark.anyio
+async def test_probes_runtime_version_and_unimplemented_features(
+    tmp_path: Path, account_home: None, monkeypatch
+) -> None:
+    from importlib.metadata import version
+
+    monkeypatch.setenv("A13N_HARNESS_UI_BUILD_REVISION", "source-revision")
+    server = create_webui(
+        lambda: open_harness_ui_app(_settings(tmp_path / "state"), host_mode="webui"),
+        api_key="probe-secret",
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://127.0.0.1") as client:
+        assert (await client.get("/healthz")).json() == {"status": "ok"}
+        assert (await client.get("/readyz")).status_code == 503
+        async with server.router.lifespan_context(server):
+            # A fresh instance without model configuration can serve setup.
+            assert (await client.get("/readyz")).json() == {"status": "ready"}
+            assert (await client.get("/api/status")).status_code == 401
+            response = await client.get("/api/status", headers={"Authorization": "Bearer probe-secret"})
+            assert response.status_code == 200
+            status = response.json()
+            assert status["version"] == version("a13n-harness-ui")
+            assert status["build_revision"] == "source-revision"
+            assert status["features"] == {
+                "shared_drafts": False,
+                "host_files": False,
+                "host_git": False,
+                "host_terminal": False,
+            }
+            assert "probe-secret" not in response.text
+            assert (await client.get("/readyz", headers={"Host": "evil.example"})).status_code == 400
+        assert (await client.get("/readyz")).status_code == 503
+
+
+@pytest.mark.anyio
+async def test_http_restart_keeps_durable_threads_not_listener_keys(tmp_path: Path, account_home: None) -> None:
+    settings = _settings(tmp_path / "state")
+    configuration = _write_configuration(tmp_path)
+    thread_id = None
+    for key in ("before-restart", "after-restart"):
+        server = create_webui(
+            lambda: open_harness_ui_app(settings, configuration_path=configuration, host_mode="webui"),
+            api_key=key,
+        )
+        async with _network_server(server) as url, httpx.AsyncClient(trust_env=False, base_url=url) as client:
+            client.headers["Authorization"] = f"Bearer {key}"
+            if thread_id is None:
+                result = await client.post("/api/threads", json={"title": "Persistent thread"})
+                assert result.status_code == 200
+                thread_id = result.json()["thread_id"]
+            else:
+                result = await client.get(f"/api/threads/{thread_id}")
+                assert result.status_code == 200
+                assert "Persistent thread" in result.text
+                assert (
+                    await client.get("/api/status", headers={"Authorization": "Bearer before-restart"})
+                ).status_code == 401

@@ -1,6 +1,6 @@
 # Harness UI
 
-`a13n-harness-ui` is the interactive coding CLI supplied by the `a13n-harness-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `HarnessUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-harness-ui webui` starts the HTTP API and bundled Hello World page in a foreground server process; browser chat and management are not implemented. There is no detached daemon.
+`a13n-harness-ui` is the interactive coding CLI supplied by the `a13n-harness-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `HarnessUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-harness-ui webui` starts the HTTP API and bundled authentication/runtime-status page in a foreground server process; browser chat and management are not implemented. There is no detached daemon.
 
 ## Install and Run
 
@@ -38,7 +38,7 @@ First use opens a single-screen setup wizard before chat: choose a connection, a
 
 `/mode concise|detailed` or Ctrl+O switches output live. Concise mode emphasizes text and necessary results; detailed mode includes exposed reasoning, file/tool calls, and bounded results. Display mode never changes model reasoning or tool permissions.
 
-The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` opens a searchable, paginated browser with saved input/reply previews. Ctrl+T inspects a selected conversation without switching, F2 edits its name, and Ctrl+A toggles current/all-directory scope. Enter resumes; Escape preserves the original conversation and draft. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history; `/model` is its alias. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the Hello World page does not call that API, and the CLI does not contain a second execution engine.
+The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` opens a searchable, paginated browser with saved input/reply previews. Ctrl+T inspects a selected conversation without switching, F2 edits its name, and Ctrl+A toggles current/all-directory scope. Enter resumes; Escape preserves the original conversation and draft. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history; `/model` is its alias. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the browser foundation uses authenticated status queries, and the CLI does not contain a second execution engine.
 
 ```console
 a13n-harness-ui --environment-mode sandbox
@@ -124,22 +124,44 @@ The wheel and sdist contain the native CLI, reusable App, and the project's Apac
 
 ## Versioning
 
-Harness UI releases independently through `release/a13n-harness-ui-v<version>`, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Its version does not need to match its dependencies; Python package metadata represents an RC as `X.Y.ZrcN`. The release workflow checks clean PyPI installations at the declared internal minimums and with latest-compatible dependencies, including CLI/configuration and matching native acquisition smoke checks. This does not run the full application compatibility suite or prove Sandbox isolation. The CLI has no companion npm artifact or independent frontend release. For user upgrades and constraint handling, see [Install and update](https://agent-foundation-docs.converge.ai/a13n-harness-ui/#install-and-update).
+Harness UI releases independently through `release/a13n-harness-ui-v<version>`, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Its version does not need to match its dependencies; Python package metadata represents an RC as `X.Y.ZrcN`. The release workflow publishes the Python artifacts and builds `ghcr.io/converge-ai-labs/a13n-harness-ui` from the same UI wheel. Stable images receive the release version and `latest` tags; RC images receive only the canonical RC tag. Application tests and local image smoke checks are not repeated during release. The CLI has no companion npm artifact or independent frontend release. For user upgrades and constraint handling, see [Install and update](https://agent-foundation-docs.converge.ai/a13n-harness-ui/#install-and-update).
 
 The accepted architecture is defined in the [Harness UI specification](../../spec/a13n-harness-ui/README.md).
 
 ## Browser UI
 
-The bundled page displays only **Hello World**. It does not authenticate, consume the URL's API-key fragment, open live streams, or provide conversation, setup, or management controls. The HTTP API and foreground server remain available independently.
+The bundled foundation page accepts an API key, consumes and removes the convenience URL's key fragment, and displays the installed Python package version returned by `/api/status`. It retains successfully used keys in same-origin localStorage, with an explicit Forget API key action. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls. These are reported unavailable, not enabled by a placeholder `--share-computer` option. The HTTP API and foreground server remain available independently.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
 a13n-harness-ui webui --host 127.0.0.1 --port 9000
 ```
 
-Open the ordinary URL printed by the server to view the page; static assets require no API key. The server also prints a generated key and a convenience URL carrying it only in the fragment. The placeholder does not consume that fragment. API clients must send the key in `Authorization: Bearer <key>` for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
+Open the URL printed on startup stdout; static assets require no API key. Key precedence is `--apikey`, then `A13N_HARNESS_UI_API_KEY`, then a freshly generated process key. Only generated keys appear in startup stdout, together with a convenience fragment URL; supplied keys are never echoed. API clients send `Authorization: Bearer <key>` on every API request. Command-line keys may be visible to the shell and operating system. `--dangerous-skip-permissions` disables Web authentication only, not Agent permissions; combining it with a CLI or environment key is an error. `--api-key` and `--dangerously-bypass-permission` remain aliases. Conflicting repeated key values and explicitly empty keys are rejected. A non-loopback listener grants shared instance authority on a trusted network, not tenant isolation; use external TLS when needed. The server owns the App lifetime even when browsers disconnect; Ctrl+C or SIGTERM stops the server and closes the App. `/healthz` reports process liveness and `/readyz` reports App readiness without requiring credentials or revealing configuration. Missing model configuration does not block readiness for setup.
 
 The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, run `make a13n-harness-ui-assets` before `uv run --locked a13n-harness-ui webui`.
+
+### Docker
+
+The initial non-root image packages the application, Python, Bash, Git, curl, and the system CA store. Native browser computer sharing is not implemented yet; the full development-image target is described in the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md). There is no Node.js runtime requirement, privileged mode, Docker socket, or separate service/database prerequisite.
+
+```bash
+# Published image, loopback port, and named persistent config/data/work volumes:
+docker compose -f deploy/compose/a13n-harness-ui.yaml up -d
+docker compose -f deploy/compose/a13n-harness-ui.yaml logs harness-ui
+
+# On-demand source build and local run:
+make image-a13n-harness-ui
+make image-check-a13n-harness-ui
+A13N_HARNESS_UI_IMAGE=a13n-harness-ui:local \
+  docker compose -f deploy/compose/a13n-harness-ui.yaml up -d
+```
+
+Use `A13N_HARNESS_UI_IMAGE=ghcr.io/converge-ai-labs/a13n-harness-ui:X.Y.Z` for a release rather than the mutable `dev` default. Development images show source package version `0.0.0` and their Git revision separately; RC package metadata displays `X.Y.ZrcN`. The private npm version is never used as the running application version. Main builds publish only `dev`; release builds publish the canonical version, plus `latest` for stable releases only. Overwriting `dev` does not delete old registry digests; automatic cleanup is not configured.
+
+The Compose file persists configuration under `/home/app/.a13n-harness-ui`, App data under `/data`, and the working directory under `/work`. Bind-mounted directories must be writable by UID/GID `10001:10001`; mounting a directory deliberately exposes it to the container account. Named volumes are initialized with the image's ownership. Do not use `down --volumes` when preserving data. Changing a container does not restore live Runs or terminals. With no supplied key, restart rotates the key; obtain the new convenience URL from container startup output. Keep that output private. Supply `A13N_HARNESS_UI_API_KEY` at runtime for a stable key, never as a build argument.
+
+Local image checks should cover non-root startup, protected API access, runtime version, persistent config/data/work across replacement, and graceful SIGTERM. They are on-demand checks, not recurring WebUI CI jobs. The image uses Tini to forward signals and reap children; its default port is `8765`.
 
 ## Windows Local Execution
 

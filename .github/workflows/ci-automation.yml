@@ -13,6 +13,11 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
+      - "scripts/prepare_harness_ui_image.py"
+      - "scripts/tests/test_image_workflows.py"
+      - "scripts/tests/test_prepare_harness_ui_image.py"
+      - "scripts/tests/test_harness_ui_release_workflow.py"
+      - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
       - "scripts/tests/test_local_validation.py"
@@ -31,6 +36,11 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
+      - "scripts/prepare_harness_ui_image.py"
+      - "scripts/tests/test_image_workflows.py"
+      - "scripts/tests/test_prepare_harness_ui_image.py"
+      - "scripts/tests/test_harness_ui_release_workflow.py"
+      - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
       - "scripts/tests/test_local_validation.py"
@@ -96,6 +106,7 @@ jobs:
           scripts/release_notes.py
           scripts/release_version.py
           scripts/run_python_tests.py
+          scripts/prepare_harness_ui_image.py
 
       - name: Test release tooling
         run: >-
@@ -104,3 +115,6 @@ jobs:
           scripts/tests/test_prepare_release_version.py
           scripts/tests/test_release_notes.py
           scripts/tests/test_local_validation.py
+          scripts/tests/test_image_workflows.py
+          scripts/tests/test_prepare_harness_ui_image.py
+          scripts/tests/test_harness_ui_release_workflow.py

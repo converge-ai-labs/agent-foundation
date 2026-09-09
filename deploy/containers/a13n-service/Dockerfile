@@ -70,8 +70,10 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     A13N_SERVICE_OBJECT_LOCAL_ROOT=/app/var/objects \
     A13N_SERVICE_FILESYSTEM_ROOT=/app/var/files \
     A13N_SERVICE_AUTO_MIGRATE=true \
-    A13N_SERVICE_LOG_FORMAT=json \
-    A13N_SERVICE_BUILD_VERSION="${BUILD_VERSION}"
+    A13N_SERVICE_LOG_FORMAT=json
+
+# BUILD_VERSION labels the artifact; the package itself owns its runtime version.
+RUN python -c 'import importlib.metadata, os; v = importlib.metadata.version("a13n-service"); expected = os.environ["BUILD_VERSION"]; assert expected == "dev" or v == expected.replace("-rc.", "rc"), (v, expected)'
 
 USER app
 EXPOSE 8000

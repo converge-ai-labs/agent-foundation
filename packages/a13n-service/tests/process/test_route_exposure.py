@@ -1,4 +1,5 @@
 import pytest
+from a13n_service import __version__
 from a13n_service.app import create_app
 from a13n_service.settings import ProcessRole, Settings
 
@@ -27,7 +28,8 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
 
     assert response.status_code == 200
     document = response.json()
-    assert document["info"] == {"title": "a13n Service", "version": "1.2.3"}
+    # A deployment build label must not replace the installed package version.
+    assert document["info"] == {"title": "a13n Service", "version": __version__}
     assert "/healthz" not in document["paths"]
     assert "/readyz" not in document["paths"]
     schemas = document["components"]["schemas"]

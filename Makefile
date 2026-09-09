@@ -2,6 +2,7 @@
 
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
+A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
@@ -587,8 +588,20 @@ image-a13n-service: ## Build the local a13n-service container image
 image-sandbox: ## Build the local sandbox image with a13n-envd
 	@docker build -f deploy/containers/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
 
+.PHONY: a13n-harness-ui-image-context
+a13n-harness-ui-image-context: a13n-harness-ui-assets ## Stage source wheels and locked constraints for the UI image
+	@uv run --locked python scripts/prepare_harness_ui_image.py
+
+.PHONY: image-a13n-harness-ui
+image-a13n-harness-ui: a13n-harness-ui-image-context ## Build the local packaged Harness UI image
+	@docker build -f deploy/containers/a13n-harness-ui/Dockerfile -t "$(A13N_HARNESS_UI_IMAGE)" dist/a13n-harness-ui-image
+
 .PHONY: images
-images: image-a13n-service image-sandbox ## Build all local container images
+images: image-a13n-service image-sandbox image-a13n-harness-ui ## Build all local container images
+
+.PHONY: image-check-a13n-harness-ui
+image-check-a13n-harness-ui: ## Check an existing UI image locally; not a CI or release prerequisite
+	@uv run --locked python scripts/check_harness_ui_image.py "$(A13N_HARNESS_UI_IMAGE)"
 
 .PHONY: image-check-a13n-service
 image-check-a13n-service: ## Smoke-check the existing a13n-service container image
@@ -605,7 +618,7 @@ image-check-sandbox: ## Smoke-check the existing sandbox container image
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-a13n-harness-ui
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks

@@ -49,3 +49,22 @@ def test_database_cli_delegates_to_service_migrator(monkeypatch: pytest.MonkeyPa
 
     assert result.exit_code == 0, result.output
     assert revisions == ["head"]
+
+
+def test_version_reports_installed_package_without_starting_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    from importlib.metadata import version
+
+    monkeypatch.setenv("A13N_SERVICE_BUILD_VERSION", "deployment-label")
+    result = CliRunner().invoke(main, ["--version"])
+    assert result.exit_code == 0
+    assert version("a13n-service") in result.output
+    assert "deployment-label" not in result.output
+
+
+def test_default_build_identity_uses_installed_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    from importlib.metadata import version
+
+    from a13n_service.settings import Settings
+
+    monkeypatch.delenv("A13N_SERVICE_BUILD_VERSION", raising=False)
+    assert Settings(_env_file=None).build_version == version("a13n-service")

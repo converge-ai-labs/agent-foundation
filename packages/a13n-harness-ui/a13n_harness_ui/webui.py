@@ -6,6 +6,7 @@ import base64
 import binascii
 import hmac
 import ipaddress
+import os
 import secrets
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -22,7 +23,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field, ValidationError
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from a13n_harness_ui.app import AppStatus, HarnessUiApp
+from a13n_harness_ui import __version__
+from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import LiveCursor, LiveEvent, SummaryCursor, SummaryInvalidation
@@ -54,8 +56,20 @@ _STATIC = Path(__file__).parent / "static"
 AppFactory = Callable[[], AbstractAsyncContextManager[HarnessUiApp]]
 
 
+class ListenerFeatures(SurfaceModel):
+    """Implemented browser facilities, not the eventual workbench roadmap."""
+
+    shared_drafts: Literal[False] = False
+    host_files: Literal[False] = False
+    host_git: Literal[False] = False
+    host_terminal: Literal[False] = False
+
+
 class ListenerStatus(SurfaceModel):
     api_version: Literal["1"] = "1"
+    version: str
+    build_revision: str | None = None
+    features: ListenerFeatures = Field(default_factory=ListenerFeatures)
     app: AppStatus
     host: str
     access: Literal["api_key", "dangerous_bypass"]
@@ -285,10 +299,28 @@ def create_webui(
     async def query_error(_request: Request, _exc: RequestValidationError) -> JSONResponse:
         return _error("request_invalid", "Query does not match the API schema.", 422)
 
+    @server.get("/healthz", include_in_schema=False)
+    async def health() -> JSONResponse:
+        return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})
+
+    @server.get("/readyz", include_in_schema=False)
+    async def ready() -> JSONResponse:
+        # Missing model configuration does not block setup or App access.
+        available = owner is not None and owner.state is AppState.ready
+        return JSONResponse(
+            {"status": "ready" if available else "not_ready"},
+            status_code=200 if available else 503,
+            headers={"Cache-Control": "no-store"},
+        )
+
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:
         return ListenerStatus(
-            app=await app().status(), host=host, access="api_key" if api_key is not None else "dangerous_bypass"
+            version=__version__,
+            build_revision=os.environ.get("A13N_HARNESS_UI_BUILD_REVISION"),
+            app=await app().status(),
+            host=host,
+            access="api_key" if api_key is not None else "dangerous_bypass",
         )
 
     @server.get("/api/setup", response_model=SetupStatus)
@@ -614,27 +646,31 @@ async def run(
         address = ipaddress.ip_address(host)
     except ValueError:
         raise HarnessUiError("--host requires an IPv4 or IPv6 address.", code="webui_host_invalid") from None
+    if api_key is None:
+        api_key = os.environ.get("A13N_HARNESS_UI_API_KEY")
     if dangerously_bypass_permission and api_key is not None:
         raise HarnessUiError(
-            "--api-key and --dangerously-bypass-permission cannot be combined.", code="webui_access_conflict"
+            "--dangerous-skip-permissions cannot be combined with a CLI or environment API key.",
+            code="webui_access_conflict",
         )
     if api_key == "":
-        raise HarnessUiError("--api-key cannot be empty.", code="webui_key_invalid")
+        raise HarnessUiError("--apikey or A13N_HARNESS_UI_API_KEY cannot be empty.", code="webui_key_invalid")
     generated = api_key is None and not dangerously_bypass_permission
     selected_key = None if dangerously_bypass_permission else (api_key or secrets.token_urlsafe(32))
-    browser_host = f"[{host}]" if address.version == 6 else host
+    browser_ip = ("::1" if address.version == 6 else "127.0.0.1") if address.is_unspecified else host
+    browser_host = f"[{browser_ip}]" if address.version == 6 else browser_ip
     url = f"http://{browser_host}:{port}/"
-    click.echo(f"WebUI: {url}", err=True)
+    click.echo(f"WebUI {__version__}: {url}")
     if dangerously_bypass_permission:
         click.echo("WARNING: API authentication is disabled. Every reachable client has full App access.", err=True)
     elif generated:
         assert selected_key is not None
-        click.echo(f"API key: {selected_key}\nOpen: {url}#api_key={quote(selected_key, safe='')}", err=True)
+        click.echo(f"API key: {selected_key}\nOpen: {url}#api_key={quote(selected_key, safe='')}")
     else:
         click.echo("Using supplied API key (not echoed). Shell history and process arguments may expose it.", err=True)
     if not address.is_loopback:
         click.echo(
-            "WARNING: non-loopback plain HTTP is a single-user trusted-network listener, not a multi-user service. Use external TLS when needed.",
+            "WARNING: non-loopback plain HTTP grants shared instance access on a trusted network, not tenant isolation. Use external TLS when needed.",
             err=True,
         )
     server = create_webui(app_factory, api_key=selected_key, host=host)
