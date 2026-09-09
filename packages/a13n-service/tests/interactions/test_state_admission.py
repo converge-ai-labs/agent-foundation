@@ -228,8 +228,10 @@ async def test_preparation_failure_commits_fenced_retry_or_seal(
         read = AsyncMock(side_effect=error)
     monkeypatch.setattr(states, "read_run", read)
     executor, capacity = await _executor(admission, interaction_sessions, interaction_object_store)
-    with fail_after(2):
-        receipt = await executor.run()
+    # Admission derives its budget from the active cancel-scope deadline. An
+    # outer test timeout can replace the injected failure with budget exhaustion
+    # on a busy runner. The deadline variant sets the admission budget above.
+    receipt = await executor.run()
     permanent = failure in {"permanent", "access_denied", "permission"}
     assert receipt.disposition.value == ("failed" if permanent else "retrying")
     assert read.await_count == (4 if failure == "transient" else 1)
