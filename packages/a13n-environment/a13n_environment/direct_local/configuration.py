@@ -76,7 +76,7 @@ class DirectLocalProviderConfiguration(BaseModel):
     inherit_environment: bool = False
     allowed_environment_keys: frozenset[Annotated[str, Field(min_length=1, max_length=128)]] | None = frozenset()
     allowed_ports: frozenset[Annotated[int, Field(ge=1, le=65535)]] = frozenset()
-    max_value_bytes: Annotated[int, Field(gt=0)] = 16 * _MIB
+    max_value_bytes: Annotated[int, Field(gt=0)] = 64 * _MIB
     max_concurrent_processes: Annotated[int, Field(gt=0)] = 128
     max_wall_time_seconds: float = 24 * 60 * 60
     terminate_grace_seconds: float = 5.0

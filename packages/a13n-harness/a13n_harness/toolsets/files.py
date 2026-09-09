@@ -22,6 +22,7 @@ from a13n_harness.environment.files import (
     FileMetadata,
     FileOperator,
     FileQueryRequest,
+    FileTextResult,
     FileTextSearchRequest,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPath
@@ -72,9 +73,11 @@ from .output import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     acknowledge_tool_output,
     continuation_disclosure,
+    create_tool_output_disclosure,
     disclose_mapping_field,
     disclose_sequence_field,
     disclose_text_fields,
+    fit_text_fields_to_limit,
     tool_output_size,
 )
 
@@ -520,16 +523,14 @@ class FileToolset:
         if line_offset in {None, 0}:
             effective_line_limit = max(effective_line_limit, profile.initial_line_limit)
         effective_max_line_length = max(max_line_length, profile.max_line_length)
-        # Request bounds are ceilings, not a promise to fill a page. Narrow the
-        # line count instead of rejecting valid combinations (including skill
-        # overrides), allowing four UTF-8 bytes per character and an LF.
-        effective_line_limit = min(
-            effective_line_limit,
-            max(1, profile.page_bytes // (4 * effective_max_line_length + 1)),
-        )
 
         async def disclose(value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
-            if profile.preserve_complete_lines or bool(value.get("has_more")) or bool(value.get("truncated_lines")):
+            if (
+                profile.preserve_complete_lines
+                or bool(value.get("has_more"))
+                or bool(value.get("truncated_lines"))
+                or tool_output_size(value) > profile.semantic_output_chars
+            ):
                 return await _disclose_line_preserving_file_page(
                     ctx.deps,
                     value,
@@ -546,11 +547,13 @@ class FileToolset:
 
         return await self._execute(
             file_path,
-            lambda files: files.read_text(
+            lambda files: self._read_text_page(
+                files,
                 file_path,
                 line_offset=line_offset or 0,
                 line_limit=effective_line_limit,
                 max_line_length=effective_max_line_length,
+                page_bytes=profile.page_bytes,
             ),
             lambda result: {
                 "file_path": result.path,
@@ -561,6 +564,53 @@ class FileToolset:
                 "truncated_lines": list(result.truncated_lines),
             },
             disclose=disclose,
+        )
+
+    async def _read_text_page(
+        self,
+        files: FileOperator,
+        path: str,
+        *,
+        line_offset: int,
+        line_limit: int,
+        max_line_length: int,
+        page_bytes: int,
+    ) -> FileTextResult:
+        # Bound each provider call without turning worst-case line width into
+        # the total row limit. Short lines can fill the requested page.
+        lines: list[str] = []
+        truncated_lines: list[int] = []
+        remaining_bytes = page_bytes
+        has_more = True
+        result_path = path
+        while len(lines) < line_limit and remaining_bytes > 0 and has_more:
+            self._guard_unscoped_step()
+            batch = await files.read_text(
+                path,
+                line_offset=line_offset + len(lines),
+                line_limit=min(line_limit - len(lines), max(1, remaining_bytes // (4 * max_line_length + 1))),
+                max_line_length=max_line_length,
+            )
+            result_path = batch.path
+            has_more = batch.has_more
+            if batch.lines_read == 0:
+                break
+            for line in _lf_lines(batch.text) or [""]:
+                size = len(line.encode("utf-8"))
+                if size > remaining_bytes:
+                    has_more = True
+                    remaining_bytes = 0
+                    break
+                lines.append(line)
+                remaining_bytes -= size
+            truncated_lines.extend(number for number in batch.truncated_lines if number <= line_offset + len(lines))
+        return FileTextResult(
+            path=result_path,
+            text="".join(lines),
+            line_offset=line_offset,
+            lines_read=len(lines),
+            has_more=has_more,
+            truncated_lines=tuple(truncated_lines),
         )
 
     async def write(
@@ -1352,6 +1402,14 @@ async def _disclose_line_preserving_file_page(
         preview["content"] = candidate_content
         preview["lines_read"] = shown + 1
         preview["next_line_offset"] = line_offset + shown + 1
+        preview["truncated_lines"] = cast(
+            JsonValue,
+            [
+                item
+                for item in cast(list[JsonValue], result.get("truncated_lines", []))
+                if isinstance(item, int) and line_offset < item <= line_offset + shown + 1
+            ],
+        )
         if tool_output_size(preview) > limit:
             preview["content"] = selected_content
             preview["lines_read"] = shown
@@ -1361,13 +1419,32 @@ async def _disclose_line_preserving_file_page(
         shown += 1
 
     if shown == 0:
-        return await disclose_text_fields(
+        # A single source line exceeds the semantic budget. Spill the fuller
+        # page, but advance only past the one line actually shown, not all
+        # provider rows. Do not insert synthetic lines into source content.
+        disclosure = await create_tool_output_disclosure(
             context,
             result,
-            text_fields=("content",),
             content_complete=not bool(result.get("has_more")) and not shortened,
             noun="file page",
-            limit=limit,
+        )
+        disclosure["hint"] += (
+            " Only a prefix of the source line in truncated_lines is shown because of the model output limit."
+            " has_more describes later lines; use next_line_offset to continue those lines."
+        )
+        preview.update(
+            content=lines[0],
+            lines_read=1,
+            has_more=bool(result.get("has_more")) or lines_read > 1,
+            truncated_lines=[line_offset + 1],
+            disclosure=cast(JsonValue, disclosure),
+        )
+        if preview["has_more"]:
+            preview["next_line_offset"] = line_offset + 1
+        else:
+            preview.pop("next_line_offset", None)
+        return acknowledge_tool_output(
+            fit_text_fields_to_limit(preview, text_fields=("content",), limit=limit, suffix="")
         )
     preview["truncated_lines"] = cast(
         JsonValue,

@@ -2278,6 +2278,100 @@ async def test_large_environment_result_is_bounded_without_retry_shaped_failure(
     assert len(observed["content"]) == 2_000
 
 
+@pytest.mark.parametrize("line_count", [160, 520])
+@pytest.mark.parametrize("line_text", ["x" * 90, "中文𐐀" * 30, '\\"' * 45])
+async def test_text_view_output_budget_continues_without_skipping_lines(
+    tmp_path: Path, line_count: int, line_text: str
+) -> None:
+    content = "".join(f"line {index}: {line_text}\n" for index in range(line_count)) + "tail"
+    (tmp_path / "notes.md").write_bytes(content.encode("utf-8"))
+    pages: list[dict[str, Any]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        offset = 0
+        if returns:
+            page = returns[-1]
+            assert isinstance(page, dict)
+            pages.append(page)
+            assert page["ok"] is True
+            assert page["truncated_lines"] == []
+            assert page["lines_read"] == len(page["content"].splitlines())
+            assert content.startswith("".join(item["content"] for item in pages))
+            assert len(json.dumps(page, ensure_ascii=False, separators=(",", ":"))) <= 12_000
+            if not page["has_more"]:
+                assert "".join(item["content"] for item in pages) == content
+                assert "next_line_offset" not in page
+                yield "done"
+                return
+            offset = page["next_line_offset"]
+            assert offset == page["line_offset"] + page["lines_read"]
+            assert offset > page["line_offset"]
+            assert page["content"].endswith("\n")
+            assert page["disclosure"]["content_complete"] is False
+            assert page["disclosure"]["output_file_path"] is None
+            assert "next_line_offset" in page["disclosure"]["hint"]
+        yield {
+            0: DeltaToolCall(
+                name="view",
+                json_args=json.dumps({"file_path": "/workspace/notes.md", "line_offset": offset, "line_limit": 1000}),
+                tool_call_id=f"read-page-{len(pages)}",
+            )
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "read",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(pages) >= 2
+
+
+@pytest.mark.parametrize("provider_budget", [9, 1000])
+@pytest.mark.parametrize("line", ["abcd\n", "中文\n", "𐐀\r\n"])
+async def test_text_view_batches_obey_actual_page_budget(tmp_path: Path, provider_budget: int, line: str) -> None:
+    content = line * 7 + "tail"
+    (tmp_path / "text").write_text(content, encoding="utf-8", newline="")
+    files = LocalFileOperator(
+        root=tmp_path,
+        read_only=True,
+        policy=DirectLocalFilePolicy(max_value_bytes=provider_budget),
+        mount_id="workspace",
+        generation="test",
+    )
+    toolset = FileToolset(files)
+    pages = []
+    offset = 0
+    for _ in range(10):
+        page = await toolset._read_text_page(
+            files, "/text", line_offset=offset, line_limit=1000, max_line_length=20_000, page_bytes=19
+        )
+        assert len(page.text.encode("utf-8")) <= 19
+        assert page.lines_read == len(page.text.splitlines()) > 0
+        assert not page.truncated_lines
+        pages.append(page.text)
+        offset += page.lines_read
+        if not page.has_more:
+            break
+    else:
+        pytest.fail("Text pagination made no bounded progress")
+    assert "".join(pages) == content
+    assert offset == 8
+
+
 async def test_agent_spec_tool_retries_exhaust_once_without_environment_retry_loop() -> None:
     model_calls = 0
 

@@ -64,7 +64,7 @@ class DirectLocalProviderConfiguration(BaseModel):
     inherit_environment: bool = False
     allowed_environment_keys: frozenset[str] | None = frozenset()
     allowed_ports: frozenset[int] = frozenset()
-    max_value_bytes: int = 16 * 1024 * 1024
+    max_value_bytes: int = 64 * 1024 * 1024
     max_concurrent_processes: int = 128
     max_wall_time_seconds: float = 24 * 60 * 60
     terminate_grace_seconds: float = 5.0

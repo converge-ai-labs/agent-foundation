@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from a13n_environment import DirectLocalProviderConfiguration, DirectLocalRootConfiguration
 from a13n_environment.direct_local.files import LocalFileOperator
 from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
 from a13n_environment.models import EnvironmentError
@@ -84,3 +85,19 @@ async def test_large_bounds_do_not_mask_a_missing_file(tmp_path: Path) -> None:
     with pytest.raises(EnvironmentError) as error:
         await _files(tmp_path, 8).read_text("/missing", line_limit=1000, max_line_length=20_000)
     assert error.value.code == "environment_not_found"
+
+
+async def test_default_value_budget_accepts_larger_files_but_rejects_actual_overflow(tmp_path: Path) -> None:
+    configuration = DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=tmp_path))
+    assert configuration.max_value_bytes == 64 * 1024 * 1024
+    files = _files(tmp_path, configuration.max_value_bytes)
+    path = tmp_path / "binary"
+    with path.open("wb") as stream:
+        stream.truncate(17 * 1024 * 1024)
+    assert len(await files.read_bytes("/binary")) == 17 * 1024 * 1024
+    with path.open("wb") as stream:
+        stream.truncate(configuration.max_value_bytes + 1)
+    with pytest.raises(EnvironmentError) as error:
+        await files.read_bytes("/binary")
+    assert error.value.code == "environment_too_large"
+    assert await files.read_bytes("/binary", length=8) == b"\0" * 8
