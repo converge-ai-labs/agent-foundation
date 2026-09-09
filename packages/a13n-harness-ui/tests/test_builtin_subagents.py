@@ -305,7 +305,9 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
             elif calls in {2, 4}:
                 yield {
                     0: DeltaToolCall(
-                        name="wait_subagent", json_args='{"timeout_seconds": 10}', tool_call_id=f"wait-{calls}"
+                        name="wait_subagent",
+                        json_args=json.dumps({"timeout_seconds": 90 if calls == 2 else 1000}),
+                        tool_call_id=f"wait-{calls}",
                     )
                 }
             elif calls == 3:
@@ -352,3 +354,59 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         assert sum(run.totals.model_requests for run in usage.recent_runs if run.descendant) == 2
 
     assert child_models == (["model-main"] if child_name == "explorer" else ["model-worker"]) * 2
+
+
+@pytest.mark.parametrize(
+    "tool_name", ["subagent_info", "wait_subagent", "steer_subagent", "cancel_subagent", "resume_subagent"]
+)
+@pytest.mark.anyio
+async def test_missing_subagent_execution_is_a_tool_failure_not_a_parent_run_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    path = _source(tmp_path, ("explorer",))
+    calls = 0
+
+    async def build(self, recipe, authentication):
+        async def stream(messages, info):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                arguments = {"execution_id": "execution-missing"}
+                if tool_name == "steer_subagent":
+                    arguments["message"] = "Continue"
+                elif tool_name == "resume_subagent":
+                    arguments["prompt"] = "Continue"
+                yield {0: DeltaToolCall(name=tool_name, json_args=json.dumps(arguments), tool_call_id="missing-1")}
+            else:
+                returned = next(
+                    part
+                    for message in messages
+                    if isinstance(message, ModelRequest)
+                    for part in message.parts
+                    if isinstance(part, ToolReturnPart) and part.tool_name == tool_name
+                )
+                assert returned.outcome == "failed"
+                assert "subagent_execution_unavailable" in str(returned.content)
+                yield "Parent recovered."
+
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "_api_key_model", build)
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False),
+        configuration_path=path,
+    ) as app:
+        backend = SessionBackend(app, CliRequest(agent_id="agent-main"), tmp_path, Status())
+        renderer = StreamRenderer(backend.status)
+        assert await backend.execute(renderer, prompt="Inspect the child") == ""
+        assert "Parent recovered." in renderer.drain()
+    assert calls == 2

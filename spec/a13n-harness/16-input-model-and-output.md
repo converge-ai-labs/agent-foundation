@@ -141,23 +141,27 @@ Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Har
 
 ### Automatic Request Affinity
 
-Every built Agent includes one mandatory final model-request Capability. Immediately before each upstream request, after effective settings and every earlier request hook have been applied, it copy-on-write adds these independent defaults from the active Thread:
+Every built Agent includes one mandatory final model-request Capability. Immediately before each upstream request, after effective settings and every earlier request hook have been applied, it copy-on-write adds eligible, enabled defaults from the active Thread:
 
 ```text
 ModelSettings.extra_headers["x-session-id"] = AgentContext.thread_id
 ModelSettings.openai_prompt_cache_key = AgentContext.thread_id
 ```
 
+The session header is eligible for every Model. The cache key is eligible only when the final request Model's `model_name` begins with `gpt-` immediately followed by an ASCII digit, optionally preceded by exactly one `openai/` namespace. Matching is case-sensitive, does not trim whitespace, and does not strip arbitrary prefixes. For example, `gpt-4.1`, `gpt-5-codex`, and `openai/gpt-5` qualify; `gpt-oss-120b`, `o3`, DeepSeek models, and custom deployment names do not. Selection strings and Host-logical aliases do not determine eligibility. This is a conservative naming policy, not endpoint capability detection, and is independent of Chat Completions versus Responses protocol selection. A GPT-compatible gateway may still reject the field.
+
 An explicit effective `extra_headers` entry wins case-insensitively, so `X-Session-ID` and `x-session-id` are the same override key. An explicit effective `openai_prompt_cache_key` also wins. The Capability does not mutate caller settings or header mappings, does not add transient run IDs, and applies to concrete, run-resolved, and inferred Models on both streaming and non-streaming paths. The selected Pydantic provider adapter remains responsible for consuming settings it recognizes: non-OpenAI adapters ignore the OpenAI-prefixed value, while an OpenAI or OpenAI-compatible adapter may render it as `prompt_cache_key`.
 
-Both automatic defaults are enabled when the corresponding environment variable is absent. `HarnessBuilder` snapshots the switches once during synchronous construction:
+`HarnessBuilder.__init__` exposes `x_session_id_enabled: bool | None = None` and `openai_prompt_cache_key_enabled: bool | None = None`. Each switch resolves independently: an explicit boolean wins without reading its corresponding environment variable; `None` falls back to that variable, then to `True` when absent. Non-boolean, non-`None` overrides fail construction. These are Host build policies, not Agent settings or Run bindings. The builder snapshots the resolved switches once during synchronous construction and shares them with every recursively built child:
 
 | Environment variable                                         | Automatic default controlled                  |
 | ------------------------------------------------------------ | --------------------------------------------- |
 | `A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED`            | `ModelSettings.extra_headers["x-session-id"]` |
 | `A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED` | `ModelSettings.openai_prompt_cache_key`       |
 
-Each switch accepts `1`, `true`, `yes`, or `on` and `0`, `false`, `no`, or `off`, case-insensitively and without surrounding whitespace. Any other present value fails builder construction. Setting one switch to false suppresses only that Harness-derived default; it neither removes an explicit effective setting nor changes the other switch. Existing builders and executables do not observe later environment changes. This process-level compatibility escape hatch lets a deployment disable a field rejected by an upstream OpenAI-compatible endpoint without adding another model capability registry or per-run flag.
+Each consulted environment variable accepts `1`, `true`, `yes`, or `on` and `0`, `false`, `no`, or `off`, case-insensitively and without surrounding whitespace. Any other consulted value fails builder construction. Setting one switch to false suppresses only that Harness-derived default; it neither removes an explicit effective setting, including on a non-GPT Model, nor changes the other switch. Enabling the cache-key switch applies the naming rule rather than forcing injection for every Model. Existing builders and executables do not observe later environment changes. A Host can therefore disable a field rejected by an upstream endpoint without changing process-global environment or introducing a model capability registry.
+
+These switches do not prohibit provider-native affinity behavior. In particular, the Codex adapter can still derive its own cache key when Harness injection is disabled. When Harness injection applies, its Thread-derived value takes precedence over the adapter's native default.
 
 The stable Thread ID gives continuations one correlation and cache-affinity value while keeping independent roots, children, siblings, and forks separate. `RequestHeadersModel` remains the lower-level helper for caller-selected static header defaults and does not own run metadata.
 

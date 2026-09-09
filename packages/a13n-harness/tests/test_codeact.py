@@ -478,3 +478,37 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
 
     assert result.output_or_raise() == "parent-done"
     assert calls == [("parent", 2), ("child", 3)]
+
+
+@pytest.mark.parametrize("local_mount", [False, True])
+async def test_run_program_unreadable_source_returns_tool_failure_and_continues(
+    tmp_path: Path, local_mount: bool
+) -> None:
+    requests = 0
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        requests += 1
+        if requests == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="run_program", json_args='{"path":"/missing.codeact.py"}', tool_call_id="program-1"
+                )
+            }
+        else:
+            returned = _tool_returns(messages, "run_program")[-1]
+            assert returned.outcome == "failed"
+            assert "CodeAct program could not be read" in str(returned.content)
+            assert "Environment mount" in str(returned.content)
+            yield "Recovered from missing program."
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(),),
+    )
+    environment = _local_environment(tmp_path) if local_mount else EmptyEnvironmentRuntime()
+    result = await executable.run("run a program", bindings=RunBindings.embedded(environment=environment))
+    assert result.status == "completed"
+    assert requests == 2

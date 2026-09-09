@@ -344,13 +344,27 @@ class Transcript:
                 value = Text(title, style=f"bold {colors['running']}", no_wrap=True, overflow="ellipsis")
                 value.append(separator + detail, style=f"not bold {colors['muted']}")
             elif kind == "question_receipt" and folded:
+                from rich import box
+                from rich.panel import Panel
+
                 colors = activity_colors(self.theme)
-                value = Text()
+                content = Text()
                 for line in source.rstrip("\n").splitlines(keepends=True):
-                    tone = "completed" if line.startswith("Answered · ") else "muted"
-                    value.append(
-                        line, style=colors[tone] if line.startswith(("Answered · ", "Not answered · ")) else "default"
-                    )
+                    if line.startswith(("Answered · ", "  [x] ")):
+                        style = f"bold {colors['completed']}"
+                    elif line.startswith(("Not answered · ", "  [ ] ")):
+                        style = colors["muted"]
+                    else:
+                        style = "default"
+                    content.append(line, style=style)
+                value = Panel(
+                    content,
+                    title=Text("Questions", style=f"bold {colors['running']}"),
+                    title_align="left",
+                    border_style=colors["muted"],
+                    box=box.ROUNDED,
+                    padding=(0, 1),
+                )
             elif kind in {"tool", "command"} and folded:
                 value = _tool_row(source.rstrip("\n"), self.theme)
             elif kind == "approval":

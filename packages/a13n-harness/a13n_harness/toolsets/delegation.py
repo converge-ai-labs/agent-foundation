@@ -22,6 +22,7 @@ from a13n_harness._json import dump_json_bytes
 from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
 from a13n_harness.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime, EnvironmentRuntimeMount
+from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import DefinitionError, HarnessError, RunError, StateError
 from a13n_harness.events import (
     HarnessEvent,
@@ -470,14 +471,14 @@ class _BorrowedEnvironmentRuntime(EnvironmentRuntime):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentRuntimeMount,
+        mount: EnvironmentEntry | EnvironmentRuntimeMount,
         *,
         make_default: bool = False,
     ) -> EnvironmentChange:
         del name, mount, make_default
         raise EnvironmentError("Inline children cannot mutate Environment mounts.", code="environment_denied")
 
-    async def replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
+    async def replace(self, name: str, mount: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentChange:
         del name, mount
         raise EnvironmentError("Inline children cannot mutate Environment mounts.", code="environment_denied")
 

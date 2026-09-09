@@ -4,7 +4,7 @@ import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, workspaceHeaders } from "../../shared/api";
+import { conversationQueries } from "./api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import styles from "./conversations.module.css";
@@ -16,19 +16,8 @@ export function RunEvents({ runId }: { runId: string }) {
     [pages, setPages] = useState([0]);
   const sequence = pages.at(-1)!;
   const query = useQuery({
-    queryKey: ["run-events", workspace.id, runId, sequence],
+    ...conversationQueries(client, workspace.id).events(runId, sequence),
     enabled: can("lifecycle_event.read"),
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/runs/{run_id}/events", {
-          params: {
-            path: { run_id: runId },
-            query: { after_resource_seq: sequence, limit: 50 },
-          },
-          headers: workspaceHeaders(workspace.id),
-          signal,
-        })
-        .then(data),
   });
   if (!can("lifecycle_event.read")) return null;
   return (

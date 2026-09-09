@@ -161,6 +161,10 @@ The public execution view contains execution, root lineage, parent Thread, child
 
 Steering, cancellation, and bounded live waiting operate only when the current App owns the segment in its process-local registry. A saved `running` value without a matching local runtime is inspectable but grants no control. Execution references are scoped to their originating parent relationship, and a stale execution ID cannot control a later segment.
 
+Child waits default to 30 seconds and accept finite non-negative timeouts, capped at 180 seconds. A longer request waits for at most 180 seconds rather than failing. The model-facing `wait_subagent` schema requires a positive timeout when supplied; Host queries also allow zero for polling. Completion can return earlier, and expiry returns the current execution projection without cancelling the child.
+
+At model-facing subagent entry points, unavailable or out-of-scope execution IDs and requests to resume a non-resumable execution produce native tool failures so the parent Agent can correct its request. Host surface calls retain typed application errors. Corrupt stored authority, invalid parent/plan bindings, programming defects, and cancellation are not converted into ordinary tool failures.
+
 ### Loss and Retention
 
 Orderly shutdown requests cancellation for locally owned segments. A durably completed cancellation becomes `cancelled`; a segment that cannot reach a terminal checkpoint becomes `lost`. Abrupt loss can leave a saved `running` head. Another App does not infer liveness, replay, or take over it.

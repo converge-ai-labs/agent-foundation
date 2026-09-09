@@ -85,7 +85,7 @@ Codex subscription requests do **not** receive an API output-token cap copied fr
 
 ## Fast mode and service tiers
 
-Codex onboarding adds a **Fast / Standard** choice after the model, defaulting to **Fast**. Fast saves `settings.service_tier: priority`; Standard saves `settings.service_tier: default`. The choice also appears when creating a new Codex Model with `add model` or `add agent`. Reusing a Model or loading an existing configuration does not change its tier.
+Codex onboarding adds a **Fast / Standard** choice after the model, defaulting to **Fast**. Fast saves `settings.openai_service_tier: priority`; Standard saves `settings.openai_service_tier: default`. The choice also appears when creating a new Codex Model with `add model` or `add agent`. Reusing a Model or loading an existing configuration does not change its tier.
 
 ### Temporary: use `/fast`
 
@@ -104,14 +104,16 @@ This is a generic Model setting, not a Codex-only command. It applies to the roo
 
 ### Permanent: edit the Model
 
-Use `/config` to locate the selected configuration directory. Add or update this field in its `models/<name>.yaml`, preserving the other settings:
+Use `/config` to locate the selected configuration directory. For OpenAI/Codex, add or update this field in its `models/<name>.yaml`, preserving the other settings:
 
 ```yaml
 settings:
-  service_tier: priority
+  openai_service_tier: priority
 ```
 
-Set it to `default` for permanent standard service, or remove it to leave the choice to the provider. Native integrations also accept generic `auto` and `flex` where supported; Fast specifically means `priority`, not a different model or reasoning level. Validate with `a13n-harness-ui config validate` (pass the same `--config` when using a custom configuration). Use `/fast reset` to remove an active temporary override; future Runs load the Model's current file settings.
+Use `openai_service_tier` when writing OpenAI/Codex configuration. The generic `service_tier` remains supported as a compatible alias; if both fields are configured, `openai_service_tier` takes precedence. Keep only one field to avoid conflicting values. Other providers retain their native or generic service-tier settings.
+
+Set it to `default` for permanent standard service, or remove the configured tier fields to leave the choice to the provider. Native integrations also accept generic `auto` and `flex` where supported; Fast specifically means `priority`, not a different model or reasoning level. Validate with `a13n-harness-ui config validate` (pass the same `--config` when using a custom configuration). Use `/fast reset` to remove an active temporary override; future Runs load the Model's current file settings.
 
 ## Codex Model example
 
@@ -240,7 +242,7 @@ Use the documentation for your installed Pydantic AI/provider version. Examples 
 | `extra_headers`, `extra_body`                                                         | Native request extensions, including nested JSON values                                    |
 | `openai_prompt_cache_key`, `openai_store`                                             | OpenAI request options; Codex still applies its native subscription behavior               |
 
-For example, an existing `settings.openai_service_tier: priority` works without renaming the field. The terminal shows the configured native tier; an explicit `/fast on` or `/fast off` overrides the applicable native tier for subsequent Runs only, and `/fast reset` restores the file selection. The source file is not rewritten.
+For example, an existing `settings.service_tier: priority` continues to work without renaming the field; newly written OpenAI/Codex configuration uses `settings.openai_service_tier: priority`. The terminal shows the configured native tier; an explicit `/fast on` or `/fast off` overrides the applicable native tier for subsequent Runs only, and `/fast reset` restores the file selection. The source file is not rewritten.
 
 Opaque settings are retained verbatim, not secret-scrubbed by guessing field names. Use the dedicated authentication and MCP credential sources for secrets; do not place credentials in settings or extension configuration unless you intend those values to be persisted in local configuration captures. Diagnostics and settings display should be reviewed before sharing.
 

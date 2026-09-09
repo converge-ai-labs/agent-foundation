@@ -493,9 +493,9 @@ class CliShell:
                 else [
                     "Enter resume",
                     "Esc back",
+                    "Ctrl+A current directory" if self.resume_browser.all_directories else "Ctrl+A all directories",
                     "↑↓ select",
                     "Ctrl+T history",
-                    "Ctrl+A scope",
                     "F2 rename",
                     "PgUp/PgDn pages",
                     "F5 refresh",
@@ -1563,10 +1563,7 @@ class CliShell:
         if self.backend is None or self.interaction is None:
             return
         try:
-            question_title = self.interaction.title() if self.question_card is not None else None
             response = self.interaction.accept(text)
-            if question_title is not None and response is None:
-                self.emit(f"Collected locally · {question_title} · batch not submitted", kind="info")
             if response == "review":
                 self.launch(self.backend.review(self.interaction.request.request_id), kind="review")
             else:
@@ -1587,10 +1584,6 @@ class CliShell:
             self.composer.text = ""
             self._emit_decision()
         else:
-            from a13n_harness_ui.surfaces import StructuredQuestionRequestView
-
-            if any(isinstance(request, StructuredQuestionRequestView) for request in self.interaction.batch.requests):
-                self.emit("Submitting question responses · awaiting accepted results", kind="info")
             self.interaction = None
             self._restore_draft()
             self.launch(self.backend.execute(self.renderer, response=response, flush=self.flush), kind="run")

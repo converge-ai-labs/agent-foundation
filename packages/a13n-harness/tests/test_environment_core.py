@@ -571,6 +571,30 @@ async def test_partial_entry_failure_closes_entered_and_discards_remaining_candi
     assert failed.discarded == later.discarded == 1
 
 
+async def test_initial_reuse_never_discards_an_active_advanced_binding() -> None:
+    active = _Binding("active")
+    fresh = _Binding("fresh")
+    runtime = create_environment_runtime(mounts=_request(active), default_mount="workspace-1")
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as bound:
+        await runtime._activate()
+        conflicting = create_environment_runtime(mounts=_request(active, fresh))
+        with pytest.raises(EnvironmentError) as reused:
+            async with conflicting.bind(thread_id="thread-2", run_id="run-2", instance=_instance(), host_refs={}):
+                pytest.fail("A transferred candidate cannot enter another runtime")
+        assert reused.value.code == "environment_provider_binding_reused"
+        assert active.entered == 1
+        assert active.exited == active.discarded == 0
+        assert fresh.entered == 0
+        assert fresh.discarded == 1
+        with pytest.raises(EnvironmentError) as discarded:
+            await runtime.replace("workspace-1", _runtime_mount(fresh))
+        assert discarded.value.code == "environment_provider_binding_reused"
+        assert fresh.discarded == 1
+        assert (await bound.files.stat("/workspace/value.txt")).kind == "file"
+    assert active.exited == 1
+    assert active.discarded == 0
+
+
 async def test_invalid_mount_set_is_rejected_before_provider_entry() -> None:
     candidate = _Binding("one")
     mount = _runtime_mount(candidate)

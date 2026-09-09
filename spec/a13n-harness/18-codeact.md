@@ -175,7 +175,7 @@ async def run_program(
 ) -> JsonValue: ...
 ```
 
-`run_program` reads source through `AgentContext.environment.files`. The current Environment performs logical-path resolution and authorization; CodeAct adds no lexical root, mount, provider handle, or `environment_alias` parameter. The Toolset reads at most `max_source_bytes + 1`, requires a `*.codeact.py` name and strict UTF-8, and hashes the exact source bytes that execute.
+`run_program` reads source through `AgentContext.environment.files`. The current Environment performs logical-path resolution and authorization; CodeAct adds no lexical root, mount, provider handle, or `environment_alias` parameter. The Toolset reads at most `max_source_bytes + 1`, requires a `*.codeact.py` name and strict UTF-8, and hashes the exact source bytes that execute. A missing, inaccessible, or out-of-mount source reported by the Environment becomes a model-visible tool failure with its safe error code, not a fatal Run exception. No program execution starts on that failure, and cancellation still propagates.
 
 Every invocation uses a fresh Monty session. A program cannot observe inline state or state from an earlier program invocation. Inputs cross as validated data and are never interpolated into source. Existing file tools own create, edit, list, and delete behavior; CodeAct adds no duplicate program-management API. `.agents/codeact/` may be an authoring convention but is not an authorization root.
 

@@ -69,7 +69,8 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
     configuration = await load_harness_ui_configuration(path)
     model = configuration.models["model-codex"]
     assert model.settings["thinking"] == "high"
-    assert model.settings["service_tier"] == ("default" if fast == "off" else "priority")
+    assert model.settings["openai_service_tier"] == ("default" if fast == "off" else "priority")
+    assert "service_tier" not in model.settings
     assert model.model_characteristics.context_window == 350000
     assert configuration.document.defaults.environment_profile == "environment-native"
 

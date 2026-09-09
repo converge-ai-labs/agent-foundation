@@ -664,6 +664,8 @@ class HarnessBuilder:
         configured_plugins_enabled: bool | None = None,
         gateway_provider_factory: GatewayModelProviderFactory | None = None,
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
+        x_session_id_enabled: bool | None = None,
+        openai_prompt_cache_key_enabled: bool | None = None,
     ) -> None:
         if capability_type_catalog is not None and not isinstance(capability_type_catalog, CapabilityTypeCatalog):
             raise DefinitionError(
@@ -691,7 +693,10 @@ class HarnessBuilder:
             HarnessInstrumentation.from_environment() if instrumentation == "environment" else instrumentation
         )
         self._observation = _compile_observation(resolved_instrumentation)
-        self._model_request_patch_configuration = ModelRequestPatchConfiguration.from_environment()
+        self._model_request_patch_configuration = ModelRequestPatchConfiguration.from_environment(
+            x_session_id_enabled=x_session_id_enabled,
+            openai_prompt_cache_key_enabled=openai_prompt_cache_key_enabled,
+        )
         if build_context is None:
             resolved_build_context = HarnessBuildContext.from_environment(enabled=configured_plugins_enabled)
         else:

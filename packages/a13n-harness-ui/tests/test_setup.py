@@ -51,6 +51,33 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("tier", [None, "priority", "default"])
+@pytest.mark.parametrize("operation", ["setup", "add_model", "add_agent"])
+async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str | None, operation: str) -> None:
+    path = tmp_path / "config.yaml"
+    changes: dict[str, object] = {}
+    if operation != "setup":
+        assert (await publish_setup(path, _selection(tmp_path), validate_candidate=_validate())).completed
+        changes = (
+            {"new_model_id": "model-second", "new_model_name": "Second Model"}
+            if operation == "add_model"
+            else {"new_agent_id": "agent-second", "new_agent_name": "Second Agent"}
+        )
+    selection = _selection(tmp_path, providers=("codex",), codex_service_tier=tier, **changes)
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    models = [yaml.safe_load(content) for name, content in preview.files.items() if name.startswith("models/")]
+    settings = next(model["settings"] for model in models if model["settings"].get("thinking") == "high")
+    assert "service_tier" not in settings
+    if tier is None:
+        assert "openai_service_tier" not in settings
+    else:
+        assert settings["openai_service_tier"] == tier
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    for name, content in preview.files.items():
+        assert (path.parent / name).read_text() == content
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "authored_tools",
     [

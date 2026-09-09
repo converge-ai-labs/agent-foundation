@@ -134,6 +134,8 @@ The distribution registers a separate aggregate-lifecycle factory:
 
 The factory receives an `EnvironmentRunExtensionFactoryContext` with separate `extension_key`, `extension_id`, and detached JSON configuration. It returns a fresh pre-entry-inert extension. All file I/O occurs only inside `EnvironmentRunExtension.bind()`.
 
+The demo passes the Provider's Environment through `EnvironmentMount` with an exact text-read, text-write, and remove ceiling. The same mount input works with `run()` and `create_environment_runtime()`; Harness owns single-use transfer, entry, and cleanup without an example-specific lifecycle adapter.
+
 ### Installed entry-point mode
 
 [`run_environment_extension_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment_extension.py) discovers metadata, selects only `example.workspace-marker`, creates one configured instance, registers it on `create_environment_runtime()`, and gives that runtime to a real offline `ExecutableAgent` through `RunBindings`:

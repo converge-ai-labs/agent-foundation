@@ -19,8 +19,8 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
 )
-from a13n_harness.environment import EnvironmentError
-from a13n_harness.environment.advanced import create_empty_environment_runtime
+from a13n_harness.environment import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
+from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -319,8 +319,9 @@ async def test_environment_adapter_is_single_use(tmp_path: Path) -> None:
     first = await _executable().run("first", environment=environment)
     assert first.output_or_raise() == "ok"
 
-    with pytest.raises(RuntimeError, match="entered exactly once"):
+    with pytest.raises(EnvironmentError) as failure:
         await _executable().run("second", environment=environment)
+    assert failure.value.code == "environment_provider_binding_reused"
 
 
 async def test_entered_environments_close_in_reverse_order_when_later_preparation_fails(
@@ -351,3 +352,152 @@ async def test_entered_environments_close_in_reverse_order_when_later_preparatio
         "close:second",
         "close:first",
     ]
+
+
+@pytest.mark.parametrize("explicit_access", [False, True])
+async def test_runtime_accepts_environments_with_exact_mount_policy(tmp_path: Path, explicit_access: bool) -> None:
+    (tmp_path / "value.txt").write_text("preserved")
+    environment = _TrackingEnvironment(tmp_path, "runtime-input")
+    permissions = EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_READ_TEXT}))
+    mount = EnvironmentMount(environment, access=permissions) if explicit_access else environment
+    runtime = create_environment_runtime(mounts={"workspace": mount}, default_mount="workspace")
+
+    async def prepare(context) -> str:
+        assert (await context.environment.files.read_text("/workspace/value.txt")).text == "preserved"
+        if explicit_access:
+            assert context.environment.snapshot.mounts[0].permission_ceiling == permissions
+            with pytest.raises(EnvironmentError) as denied:
+                await context.environment.files.write_text("/workspace/other.txt", "denied", mode="create")
+            assert denied.value.code == "environment_denied"
+        return "use environment"
+
+    result = await _executable().run(input_factory=prepare, bindings=RunBindings.embedded(environment=runtime))
+    assert result.output_or_raise() == "ok"
+    assert environment.close_calls == 1
+    assert not (tmp_path / "other.txt").exists()
+
+
+async def test_runtime_rejects_duplicate_environment_before_transfer(tmp_path: Path) -> None:
+    environment = _TrackingEnvironment(tmp_path, "duplicate-runtime-input")
+    with pytest.raises(EnvironmentError) as failure:
+        create_environment_runtime(mounts={"first": environment, "second": EnvironmentMount(environment)})
+    assert failure.value.code == "environment_request_invalid"
+    assert environment.close_calls == 0
+    result = await _executable().run("still usable", environment=environment)
+    assert result.output_or_raise() == "ok"
+    assert environment.close_calls == 1
+
+
+async def test_environment_reuse_cannot_close_another_active_runtime(tmp_path: Path) -> None:
+    environment = _TrackingEnvironment(tmp_path, "shared-runtime-input")
+    runtime = create_environment_runtime(mounts={"workspace": environment}, default_mount="workspace")
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        other = create_environment_runtime(mounts={"workspace": EnvironmentMount(environment)})
+        with pytest.raises(EnvironmentError) as reused:
+            await _executable().run("conflicting run", bindings=RunBindings.embedded(environment=other))
+        assert reused.value.code == "environment_provider_binding_reused"
+        assert environment.close_calls == 0
+        await bound.files.write_text("/workspace/still-active.txt", "preserved", mode="create")
+    assert environment.close_calls == 1
+    assert (tmp_path / "still-active.txt").read_text() == "preserved"
+
+
+async def test_dynamic_environment_inputs_preserve_transfer_and_replacement(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("first", "mounted", "replacement")]
+    for root in roots:
+        root.mkdir()
+    first, mounted, replacement = [_TrackingEnvironment(root, root.name) for root in roots]
+    runtime = create_environment_runtime(mounts={"workspace": first}, default_mount="workspace")
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        await runtime._activate()
+        for operation in (runtime.mount, runtime.replace):
+            name = "other" if operation == runtime.mount else "workspace"
+            with pytest.raises(EnvironmentError) as reused:
+                await operation(name, EnvironmentMount(first))
+            assert reused.value.code == "environment_provider_binding_reused"
+            assert first.close_calls == 0
+        await runtime.mount("mounted", mounted)
+        await runtime.replace("workspace", EnvironmentMount(replacement))
+        await bound.files.write_text("/workspace/replaced.txt", "new target", mode="create")
+        await bound.files.write_text("/environment/mounted/added.txt", "added target", mode="create")
+    assert [item.close_calls for item in (first, mounted, replacement)] == [1, 1, 1]
+    assert not (roots[0] / "replaced.txt").exists()
+    assert (roots[2] / "replaced.txt").read_text() == "new target"
+    assert (roots[1] / "added.txt").read_text() == "added target"
+
+
+async def test_failed_initial_environment_entry_discards_owned_inputs_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, failed, later = [_TrackingEnvironment(tmp_path, name) for name in ("first", "failed", "later")]
+
+    async def fail_entry(**kwargs: object) -> None:
+        del kwargs
+        raise RuntimeError("entry failed")
+
+    monkeypatch.setattr(failed, "enter", fail_entry)
+    runtime = create_environment_runtime(mounts={"first": first, "failed": failed, "later": later})
+    with pytest.raises(RuntimeError, match="entry failed"):
+        await _executable().run("initial entry", bindings=RunBindings.embedded(environment=runtime))
+    assert [item.close_calls for item in (first, failed, later)] == [1, 1, 1]
+
+    active = _TrackingEnvironment(tmp_path, "active")
+    active_runtime = create_environment_runtime(mounts={"workspace": active}, default_mount="workspace")
+    async with active_runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        await active_runtime._activate()
+        for discarded in (first, failed, later):
+            for operation in (active_runtime.mount, active_runtime.replace):
+                name = "other" if operation == active_runtime.mount else "workspace"
+                with pytest.raises(EnvironmentError) as reused:
+                    await operation(name, discarded)
+                assert reused.value.code == "environment_provider_binding_reused"
+        assert active.close_calls == 0
+        assert [item.close_calls for item in (first, failed, later)] == [1, 1, 1]
+        await bound.files.write_text("/workspace/usable.txt", "still active", mode="create")
+    assert active.close_calls == 1
+
+
+async def test_externally_entered_environment_is_not_taken_or_closed(tmp_path: Path) -> None:
+    environment = _TrackingEnvironment(tmp_path, "external")
+    await environment.enter(
+        thread_id="thread-external",
+        run_id="run-external",
+        agent_instance_id="agent-external",
+        mount_id="mount-external",
+    )
+    try:
+        with pytest.raises(EnvironmentError) as failure:
+            await _executable().run("cannot take ownership", environment=environment)
+        assert failure.value.code == "environment_provider_binding_reused"
+        assert environment.is_entered
+        assert environment.close_calls == 0
+    finally:
+        await environment.close()
+    assert environment.close_calls == 1
+
+
+async def test_rejected_dynamic_route_does_not_consume_an_environment(tmp_path: Path) -> None:
+    first = _TrackingEnvironment(tmp_path, "first")
+    candidate = _TrackingEnvironment(tmp_path, "candidate")
+    runtime = create_environment_runtime(
+        mounts={"workspace": EnvironmentMount(first, mount_path="/project")}, default_mount="workspace"
+    )
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        await runtime._activate()
+        with pytest.raises(EnvironmentError) as conflict:
+            await runtime.mount("conflicting", EnvironmentMount(candidate, mount_path="/project"))
+        assert conflict.value.code == "environment_request_invalid"
+        assert candidate.close_calls == 0
+        assert not candidate.is_entered
+        await runtime.replace("workspace", EnvironmentMount(candidate, mount_path="/project"))
+        await bound.files.write_text("/project/value.txt", "accepted", mode="create")
+    assert first.close_calls == candidate.close_calls == 1
+    assert (tmp_path / "value.txt").read_text() == "accepted"

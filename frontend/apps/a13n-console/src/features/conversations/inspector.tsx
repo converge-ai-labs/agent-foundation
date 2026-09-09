@@ -6,15 +6,10 @@ import { Info } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import {
-  allPages,
-  data,
-  workspaceHeaders,
-  type Schema,
-} from "../../shared/api";
+import type { Schema } from "../../shared/api";
 import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
-import { conversationApi, runPath } from "./api";
+import { conversationQueries, runPath } from "./api";
 import { RunEvents } from "./events";
 import styles from "./conversations.module.css";
 
@@ -23,26 +18,9 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
     { workspace, can } = useWorkspace(),
     client = useClient(),
     [open, setOpen] = useState(false);
-  const attempts = useQuery({
-    queryKey: ["run-attempts", workspace.id, run.id],
-    enabled: open,
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        client.http
-          .GET("/api/v1/runs/{run_id}/attempts", {
-            params: { path: { run_id: run.id }, query: { cursor } },
-            headers: workspaceHeaders(workspace.id),
-            signal,
-          })
-          .then(data),
-      ),
-  });
-  const lineage = useQuery({
-    queryKey: ["run-lineage", workspace.id, run.id],
-    enabled: open,
-    queryFn: ({ signal }) =>
-      conversationApi(client, workspace.id).lineage(run.id, signal),
-  });
+  const queries = conversationQueries(client, workspace.id);
+  const attempts = useQuery({ ...queries.attempts(run.id), enabled: open });
+  const lineage = useQuery({ ...queries.lineage(run.id), enabled: open });
   return (
     <Dialog
       title={t("Run details")}

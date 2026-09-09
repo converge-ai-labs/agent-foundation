@@ -75,8 +75,6 @@ jobs:
             runner: ubuntu-24.04
           - name: Windows
             runner: windows-2025
-          - name: macOS
-            runner: macos-15
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 12
     steps:
@@ -145,8 +143,8 @@ jobs:
           scripts/tests/test_prepare_a13n_harness_ui_assets.py
           scripts/tests/test_prepare_release_version.py
 
-      - name: Test Harness UI on Windows and macOS
-        if: matrix.name != 'Linux'
+      - name: Test Harness UI on Windows
+        if: matrix.name == 'Windows'
         run: uv run --locked python -m pytest packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle

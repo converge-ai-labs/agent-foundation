@@ -8,7 +8,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { JsonView, TextArea } from "../../shared/form";
-import { runPath } from "./api";
+import { invalidateConversation, runPath } from "./api";
 import styles from "./conversations.module.css";
 
 export function PendingFeedback({
@@ -80,7 +80,20 @@ export function PendingFeedback({
         .then(data);
     },
     onSuccess: (receipt) => {
-      void cache.invalidateQueries();
+      void invalidateConversation(
+        cache,
+        workspace.id,
+        {
+          sessionId: run.session_id,
+          threadId: thread.id,
+          runId: run.id,
+        },
+        {
+          sessionId: receipt.session_id,
+          threadId: receipt.thread_id,
+          runId: receipt.run_id,
+        },
+      );
       navigate(runPath(workspace.id, receipt));
     },
   });
