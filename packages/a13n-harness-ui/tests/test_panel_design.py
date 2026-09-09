@@ -45,6 +45,30 @@ def test_custom_panels_share_frame_and_preserve_literal_output(
     transcript.close()
 
 
+@pytest.mark.parametrize("terminal", ["dumb", "unknown", "xterm-256color"])
+@pytest.mark.parametrize("legacy_windows", [False, True])
+def test_transcript_layout_uses_viewport_width_in_any_terminal_environment(
+    terminal: str, legacy_windows: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import a13n_harness_ui.interactive.transcript as module
+
+    monkeypatch.setenv("TERM", terminal)
+    monkeypatch.setenv("COLUMNS", "120")
+    monkeypatch.delenv("LINES", raising=False)
+    monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
+    transcript = Transcript()
+    try:
+        transcript.append("Review\n" + "wrapped output " * 12, kind="command")
+        narrow = _text(transcript, 28)
+        wide = _text(transcript, 80)
+        assert all(get_cwidth(line) <= 28 for line in narrow.splitlines())
+        assert len(narrow.splitlines()) > len(wide.splitlines())
+        assert narrow.count("wrapped") == narrow.count("output") == 12
+        assert all(get_cwidth(line) <= 80 for line in wide.splitlines())
+    finally:
+        transcript.close()
+
+
 @pytest.mark.parametrize("detailed", [False, True])
 @pytest.mark.parametrize("kind", ["tool", "command", "edit"])
 def test_thinking_touches_tool_frame_but_answer_keeps_paragraph_spacing(kind: str, detailed: bool) -> None:
