@@ -2262,6 +2262,31 @@
         "title": "Collection[dict]",
         "type": "object"
       },
+      "CompleteConnectorSetupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "maxLength": 72,
+            "minLength": 1,
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "browser_nonce": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Browser Nonce",
+            "type": "string"
+          },
+          "session_uri": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Session Uri",
+            "type": "string"
+          }
+        },
+        "required": ["attempt_id", "browser_nonce", "session_uri"],
+        "title": "CompleteConnectorSetupRequest",
+        "type": "object"
+      },
       "CompleteEmailChangeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2823,6 +2848,18 @@
         "title": "ConnectorProviderTestResult",
         "type": "object"
       },
+      "ConnectorSetupCompletion": {
+        "additionalProperties": false,
+        "properties": {
+          "return_path": {
+            "title": "Return Path",
+            "type": "string"
+          }
+        },
+        "required": ["return_path"],
+        "title": "ConnectorSetupCompletion",
+        "type": "object"
+      },
       "ConnectorSetupLaunch": {
         "additionalProperties": false,
         "properties": {
@@ -2849,6 +2886,11 @@
               }
             ],
             "title": "Redirect Url"
+          },
+          "requires_browser_callback": {
+            "default": false,
+            "title": "Requires Browser Callback",
+            "type": "boolean"
           },
           "status": {
             "enum": ["pending", "completed", "failed", "expired"],
@@ -8022,6 +8064,18 @@
       "ReconnectConnectorConnectionRequest": {
         "additionalProperties": false,
         "properties": {
+          "browser_nonce": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser Nonce"
+          },
           "expected_version": {
             "minimum": 1.0,
             "title": "Expected Version",
@@ -10385,6 +10439,18 @@
       "StartConnectorConnectionSetupRequest": {
         "additionalProperties": false,
         "properties": {
+          "browser_nonce": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser Nonce"
+          },
           "expected_version": {
             "minimum": 1.0,
             "title": "Expected Version",
@@ -15496,6 +15562,45 @@
           }
         },
         "summary": "Change Connector Provider Lifecycle",
+        "tags": ["connectivity-management"]
+      }
+    },
+    "/api/v1/connector-setup/complete": {
+      "post": {
+        "operationId": "complete_connector_setup_api_v1_connector_setup_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteConnectorSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSetupCompletion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Connector Setup",
         "tags": ["connectivity-management"]
       }
     },

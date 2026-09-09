@@ -9,6 +9,14 @@ Private pnpm workspace for a13n browser applications. Use Node.js 24 and the pnp
 From the repository root:
 
 ```bash
+make dev
+```
+
+This prepares dependencies and runs Service and Console together. Ctrl+C stops both application processes.
+
+For individual frontend checks and development servers:
+
+```bash
 make frontend-sync
 make frontend-check-all
 pnpm --dir frontend --filter a13n-ui dev

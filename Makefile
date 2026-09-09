@@ -90,10 +90,10 @@ examples-check-all: examples-check examples-test examples-smoke examples-build #
 
 .PHONY: setup
 setup: sync ## Start local PostgreSQL and Redis
-	@docker compose -f dev/compose.yaml up -d --wait
+	@docker compose $(if $(wildcard .env),--env-file .env,) -f dev/compose.yaml up -d --wait
 
 .PHONY: dev
-dev: setup ## Upgrade the schema and run a13n Service
+dev: setup frontend-sync sdk-typescript-build ## Upgrade the schema and run a13n Service and Console
 	@uv run --locked a13n-service db upgrade
 	@bash scripts/dev.sh
 

@@ -571,6 +571,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connector-setup/complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Connector Setup */
+    post: operations["complete_connector_setup_api_v1_connector_setup_complete_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environment-commands/{command_id}": {
     parameters: {
       query?: never;
@@ -3599,6 +3616,15 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
+    /** CompleteConnectorSetupRequest */
+    CompleteConnectorSetupRequest: {
+      /** Attempt Id */
+      attempt_id: string;
+      /** Browser Nonce */
+      browser_nonce: string;
+      /** Session Uri */
+      session_uri: string;
+    };
     /** CompleteEmailChangeRequest */
     CompleteEmailChangeRequest: {
       /**
@@ -3835,6 +3861,11 @@ export interface components {
       /** Verified Access */
       verified_access: ("catalog_read" | "account_read")[];
     };
+    /** ConnectorSetupCompletion */
+    ConnectorSetupCompletion: {
+      /** Return Path */
+      return_path: string;
+    };
     /** ConnectorSetupLaunch */
     ConnectorSetupLaunch: {
       /** Attempt Id */
@@ -3847,6 +3878,11 @@ export interface components {
       expires_at: string;
       /** Redirect Url */
       redirect_url?: string | null;
+      /**
+       * Requires Browser Callback
+       * @default false
+       */
+      requires_browser_callback?: boolean;
       /**
        * Status
        * @enum {string}
@@ -5779,6 +5815,8 @@ export interface components {
     };
     /** ReconnectConnectorConnectionRequest */
     ReconnectConnectorConnectionRequest: {
+      /** Browser Nonce */
+      browser_nonce?: string | null;
       /** Expected Version */
       expected_version: number;
       /** Return Path */
@@ -6592,6 +6630,8 @@ export interface components {
     };
     /** StartConnectorConnectionSetupRequest */
     StartConnectorConnectionSetupRequest: {
+      /** Browser Nonce */
+      browser_nonce?: string | null;
       /** Expected Version */
       expected_version: number;
       /** Return Path */
@@ -8961,6 +9001,39 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ConnectorProvider"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  complete_connector_setup_api_v1_connector_setup_complete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompleteConnectorSetupRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorSetupCompletion"];
         };
       };
       /** @description Validation Error */

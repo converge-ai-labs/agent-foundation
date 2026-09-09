@@ -7,10 +7,11 @@ import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, StateBadge } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
-import { SchemaFields } from "../../shared/schema-fields";
+import { SchemaFields, withSchemaConstants } from "../../shared/schema-fields";
 import { AuthorizationLink } from "../../shared/authorization-link";
 import { jsonObject, validateSettings } from "../../shared/validation";
 import { useIdempotency } from "../../shared/idempotency";
+import { createBrowserNonce, saveAuthorization } from "./authorization-context";
 import styles from "../../shared/shared.module.css";
 
 export function ConnectionSetup({
@@ -26,6 +27,7 @@ export function ConnectionSetup({
     { t } = useTranslation(),
     key = useIdempotency(),
     [basis] = useState(connection),
+    [nonce] = useState(createBrowserNonce),
     [setup, setSetup] = useState<Record<string, unknown>>({});
   const catalog = useQuery({
     queryKey: ["connector-setup-catalog", connection.connector_provider_id],
@@ -47,20 +49,38 @@ export function ConnectionSetup({
     catalog.data?.items.find((item) => item.key === connection.connector_key);
   const launch = useMutation({
     gcTime: 0,
-    mutationFn: () => {
+    mutationFn: (options?: {
+      restart: Schema["ConnectorConnection"];
+      nonce: string;
+    }) => {
+      const selected = options?.restart ?? basis,
+        browserNonce = options?.nonce ?? nonce;
       if (!definition)
         throw new Error(t("This connector is unavailable from its provider."));
-      validateSettings(definition.setup_schema, setup);
+      if (definition.authentication_methods.length === 0)
+        throw new Error(
+          t(
+            "Configure an OAuth2 auth config in the provider before connecting.",
+          ),
+        );
+      const configured = withSchemaConstants(definition.setup_schema, setup);
+      validateSettings(definition.setup_schema, configured);
       const body = {
-          expected_version: basis.version,
-          setup: jsonObject(JSON.stringify(setup)),
+          expected_version: selected.version,
+          browser_nonce: browserNonce,
+          setup: jsonObject(JSON.stringify(configured)),
           return_path: `/workspaces/${workspace.id}/connectors`,
         },
         params = {
-          path: { connection_id: basis.id },
+          path: { connection_id: selected.id },
           header: commandHeaders(workspace.id, key.forBody(body)),
         };
-      return basis.status === "pending"
+      saveAuthorization({
+        browser_nonce: browserNonce,
+        workspace_id: workspace.id,
+        connection_id: selected.id,
+      });
+      return !options?.restart && basis.status === "pending"
         ? client.http
             .POST("/api/v1/connector-connections/{connection_id}/setup", {
               params,
@@ -74,7 +94,15 @@ export function ConnectionSetup({
             })
             .then(data);
     },
-    onSuccess: () => {
+    onSuccess: (result, options) => {
+      if (result.requires_browser_callback)
+        saveAuthorization({
+          browser_nonce: options?.nonce ?? nonce,
+          workspace_id: workspace.id,
+          connection_id: basis.id,
+          attempt_id: result.attempt_id,
+          expires_at: result.expires_at,
+        });
       void cache.invalidateQueries({ queryKey: ["connector-connections"] });
     },
   });
@@ -118,8 +146,25 @@ export function ConnectionSetup({
             <AuthorizationLink
               url={launch.data.redirect_url}
               expiresAt={launch.data.expires_at}
+              sameTab={launch.data.requires_browser_callback}
             />
           )}
+          {(!launch.data.redirect_url ||
+            status.data?.status === "action_required" ||
+            Date.now() >= Date.parse(launch.data.expires_at)) &&
+            status.data?.status !== "ready" && (
+              <Button
+                loading={launch.isPending}
+                onClick={() =>
+                  launch.mutate({
+                    restart: status.data ?? launch.data!.connection,
+                    nonce: createBrowserNonce(),
+                  })
+                }
+              >
+                {t("Restart authorization")}
+              </Button>
+            )}
           <Button onClick={() => void status.refetch()}>
             {t("Refresh connection")}
           </Button>
@@ -139,10 +184,18 @@ export function ConnectionSetup({
               onChange={setSetup}
             />
           )}
-          <FormActions
-            pending={launch.isPending}
-            label={t("Start authorization")}
-          />
+          {definition?.authentication_methods.length === 0 ? (
+            <p role="status">
+              {t(
+                "Configure an OAuth2 auth config in the provider before connecting.",
+              )}
+            </p>
+          ) : (
+            <FormActions
+              pending={launch.isPending}
+              label={t("Start authorization")}
+            />
+          )}
         </form>
       )}
     </div>

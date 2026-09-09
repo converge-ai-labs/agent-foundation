@@ -4,7 +4,15 @@ The private React and TypeScript web application for Agent Foundation Service. C
 
 ## Local development
 
-Start a Service with browser authentication configured, then run:
+From the repository root, start local PostgreSQL and Redis, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together:
+
+```bash
+make dev
+```
+
+Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. Configure Service browser authentication for login.
+
+To run only Console against an already running Service:
 
 ```bash
 make frontend-sync

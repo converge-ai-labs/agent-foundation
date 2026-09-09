@@ -63,7 +63,7 @@ Use the Makefile as the stable development interface:
 | `make help`                   | List available commands                                           |
 | `make install`                | Synchronize locked workspace, application, and SDK dependencies   |
 | `make setup`                  | Start local PostgreSQL and Redis                                  |
-| `make dev`                    | Upgrade the schema and run a13n Service                           |
+| `make dev`                    | Upgrade the schema and run a13n Service and Console               |
 | `make dev-down`               | Stop local infrastructure and remove its data volumes             |
 | `make langfuse-up`            | Start the isolated local Langfuse trace backend                   |
 | `make langfuse-down`          | Stop local Langfuse while preserving its data                     |

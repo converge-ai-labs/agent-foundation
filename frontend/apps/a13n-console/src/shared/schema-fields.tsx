@@ -28,6 +28,21 @@ function fieldSchema(
     };
   return value;
 }
+/** Apply fixed provider values to the submitted object as well as the form. */
+export function withSchemaConstants(
+  schema: Record<string, unknown>,
+  value: Record<string, unknown>,
+) {
+  const result = { ...value };
+  if (object(schema.properties)) {
+    for (const [key, definition] of Object.entries(schema.properties)) {
+      const field = fieldSchema(definition, schema);
+      if (Object.hasOwn(field, "const")) result[key] = field.const;
+    }
+  }
+  return result;
+}
+
 /** Provider-owned JSON Schema drives ordinary fields; complex values retain a validated JSON input. */
 export function SchemaFields({
   schema,
@@ -59,6 +74,7 @@ export function SchemaFields({
           typeof field.description === "string"
             ? t(field.description)
             : undefined;
+        if (Object.hasOwn(field, "const")) return null;
         const current = value[key] ?? field.default;
         if (
           Array.isArray(field.enum) &&

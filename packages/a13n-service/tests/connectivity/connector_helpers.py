@@ -110,7 +110,6 @@ class FakeConnectorProvider:
                 context.external_user_correlation, f"external-{len(self.backend.external_accounts) + 1}"
             ),
             redirect_url="https://connector.example/authorize",
-            external_handle=f"session://{context.attempt_id}",
             supports_verified_callback=self.backend.supports_callback,
         )
 

@@ -1001,5 +1001,11 @@
   "Stop": "停止",
   "Request details": "请求详情",
   "Run history could not be loaded.": "无法加载运行历史。",
-  "Retry history": "重试加载历史"
+  "Retry history": "重试加载历史",
+  "Authorization context is missing or expired. Sign in and start authorization again in this tab.": "授权上下文缺失或已过期。请登录后在当前标签页重新发起授权。",
+  "Check the connection status before starting another authorization.": "再次发起授权前，请先检查连接状态。",
+  "Configure an OAuth2 auth config in the provider before connecting.": "请先在提供方配置 OAuth2 授权，再连接账号。",
+  "Invalid authorization return path.": "授权返回地址无效。",
+  "Restart authorization": "重新发起授权",
+  "Verifying authorization": "正在验证授权"
 }
