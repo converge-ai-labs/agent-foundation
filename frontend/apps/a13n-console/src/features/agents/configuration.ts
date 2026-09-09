@@ -7,6 +7,7 @@ import {
 
 export type AgentConfig = Schema["AgentConfig-Input"];
 const commonFields = new Set([
+  "search",
   "model",
   "instructions",
   "skills",
@@ -36,7 +37,12 @@ export function buildConfig(
   original: AgentConfig,
   common: Pick<
     AgentConfig,
-    "model" | "instructions" | "skills" | "mcp_tools" | "connector_tools"
+    | "model"
+    | "instructions"
+    | "skills"
+    | "mcp_tools"
+    | "connector_tools"
+    | "search"
   >,
   advanced: string,
 ): AgentConfig {
@@ -47,6 +53,7 @@ export function buildConfig(
   // Hidden requirements are retained verbatim; only the exposed advanced slice is replaced.
   const value = {
     ...extra,
+    search: original.search,
     ...common,
     plugins: original.plugins,
     secret_requirements: original.secret_requirements,

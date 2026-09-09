@@ -10,6 +10,7 @@ import {
   Network,
   Plug,
   Sparkles,
+  Search,
 } from "lucide-react";
 export const navigationGroups: {
   label: string;
@@ -34,6 +35,7 @@ export const navigationGroups: {
           ["models/providers", "Providers"],
         ],
       ],
+      ["search-providers", "Search accounts", Search],
       ["skills", "Skills", Sparkles],
       ["assets", "Assets", File],
       [

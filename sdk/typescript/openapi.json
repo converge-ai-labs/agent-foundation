@@ -724,6 +724,16 @@
               }
             ]
           },
+          "search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "secret_requirements": {
             "default": [],
             "items": {
@@ -841,6 +851,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchSelection"
               },
               {
                 "type": "null"
@@ -1228,6 +1248,16 @@
               }
             ]
           },
+          "search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "skills": {
             "anyOf": [
               {
@@ -1370,6 +1400,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchSelection"
               },
               {
                 "type": "null"
@@ -3610,6 +3650,39 @@
         },
         "required": ["type", "name"],
         "title": "CreateProviderRequest",
+        "type": "object"
+      },
+      "CreateSearchProviderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/SearchConfiguration"
+          },
+          "credential": {
+            "format": "password",
+            "title": "Credential",
+            "type": "string",
+            "writeOnly": true
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "enum": ["brave", "exa"],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": ["type", "name", "credential"],
+        "title": "CreateSearchProviderRequest",
         "type": "object"
       },
       "CreateServiceAccountRequest": {
@@ -9690,10 +9763,288 @@
         "title": "SafeFailure",
         "type": "object"
       },
+      "SearchConfiguration": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SearchConfiguration",
+        "type": "object"
+      },
       "SearchIn": {
         "enum": ["input", "output", "input_output"],
         "title": "SearchIn",
         "type": "string"
+      },
+      "SearchProvider": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "additionalProperties": true,
+            "title": "Configuration",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/PrincipalRef"
+          },
+          "credential_configured": {
+            "title": "Credential Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "$ref": "#/components/schemas/PrincipalRef"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "type",
+          "name",
+          "configuration",
+          "credential_configured",
+          "enabled",
+          "created_by",
+          "updated_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SearchProvider",
+        "type": "object"
+      },
+      "SearchProviderCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchProvider"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items"],
+        "title": "SearchProviderCollection",
+        "type": "object"
+      },
+      "SearchProviderDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration_schema": {
+            "additionalProperties": true,
+            "title": "Configuration Schema",
+            "type": "object"
+          },
+          "credential_required": {
+            "default": true,
+            "title": "Credential Required",
+            "type": "boolean"
+          },
+          "credential_schema": {
+            "additionalProperties": true,
+            "title": "Credential Schema",
+            "type": "object"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "setup_url": {
+            "title": "Setup Url",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "display_name",
+          "configuration_schema",
+          "credential_schema",
+          "setup_url"
+        ],
+        "title": "SearchProviderDefinition",
+        "type": "object"
+      },
+      "SearchProviderDefinitionCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchProviderDefinition"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "SearchProviderDefinitionCollection",
+        "type": "object"
+      },
+      "SearchProviderReference": {
+        "properties": {
+          "agent_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_revision_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["agent_id", "agent_revision_id", "version", "is_current"],
+        "title": "SearchProviderReference",
+        "type": "object"
+      },
+      "SearchProviderReferenceCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchProviderReference"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items"],
+        "title": "SearchProviderReferenceCollection",
+        "type": "object"
+      },
+      "SearchProviderTestResult": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": ["success", "code", "checked_at"],
+        "title": "SearchProviderTestResult",
+        "type": "object"
+      },
+      "SearchSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "include_domains": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Include Domains",
+            "type": "array"
+          },
+          "max_results": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "provider_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Provider Id",
+            "type": "string"
+          }
+        },
+        "required": ["provider_id"],
+        "title": "SearchSelection",
+        "type": "object"
       },
       "SecretRequirement": {
         "additionalProperties": false,
@@ -12661,6 +13012,61 @@
         },
         "required": ["expected_version", "submission"],
         "title": "UpdateQueuedSubmissionRequest",
+        "type": "object"
+      },
+      "UpdateSearchProviderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential",
+            "writeOnly": true
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "UpdateSearchProviderRequest",
         "type": "object"
       },
       "UpdateServiceAccountRequest": {
@@ -18976,6 +19382,417 @@
         "tags": ["identity-settings"]
       }
     },
+    "/api/v1/organizations/{organization_id}/search-providers": {
+      "get": {
+        "operationId": "list_organization_provider_api_v1_organizations__organization_id__search_providers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Organization Provider",
+        "tags": ["search-providers"]
+      },
+      "post": {
+        "operationId": "create_organization_provider_api_v1_organizations__organization_id__search_providers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSearchProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProvider"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Organization Provider",
+        "tags": ["search-providers"]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/search-providers/{provider_id}": {
+      "get": {
+        "operationId": "get_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProvider"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Organization Provider",
+        "tags": ["search-providers"]
+      },
+      "patch": {
+        "operationId": "update_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSearchProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProvider"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Organization Provider",
+        "tags": ["search-providers"]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/search-providers/{provider_id}/references": {
+      "get": {
+        "operationId": "references_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__references_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderReferenceCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "References Organization Provider",
+        "tags": ["search-providers"]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/search-providers/{provider_id}/test": {
+      "post": {
+        "operationId": "test_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchConfiguration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Organization Provider",
+        "tags": ["search-providers"]
+      }
+    },
     "/api/v1/organizations/{organization_id}/security-audit-events": {
       "get": {
         "operationId": "organization_security_events_api_v1_organizations__organization_id__security_audit_events_get",
@@ -20425,6 +21242,65 @@
         },
         "summary": "Continue From Run",
         "tags": ["protocol-gateway"]
+      }
+    },
+    "/api/v1/search-provider-types": {
+      "get": {
+        "operationId": "list_types_api_v1_search_provider_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderDefinitionCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Types",
+        "tags": ["search-providers"]
+      }
+    },
+    "/api/v1/search-provider-types/{provider_type}": {
+      "get": {
+        "operationId": "get_type_api_v1_search_provider_types__provider_type__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_type",
+            "required": true,
+            "schema": {
+              "title": "Provider Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderDefinition"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Type",
+        "tags": ["search-providers"]
       }
     },
     "/api/v1/service-accounts/{account_id}": {
@@ -25260,6 +26136,417 @@
         },
         "summary": "Start Run",
         "tags": ["protocol-gateway"]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/search-providers": {
+      "get": {
+        "operationId": "list_workspace_provider_api_v1_workspaces__workspace_id__search_providers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Workspace Provider",
+        "tags": ["search-providers"]
+      },
+      "post": {
+        "operationId": "create_workspace_provider_api_v1_workspaces__workspace_id__search_providers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSearchProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProvider"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Workspace Provider",
+        "tags": ["search-providers"]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}": {
+      "get": {
+        "operationId": "get_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProvider"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workspace Provider",
+        "tags": ["search-providers"]
+      },
+      "patch": {
+        "operationId": "update_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSearchProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProvider"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Workspace Provider",
+        "tags": ["search-providers"]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}/references": {
+      "get": {
+        "operationId": "references_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__references_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderReferenceCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "References Workspace Provider",
+        "tags": ["search-providers"]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}/test": {
+      "post": {
+        "operationId": "test_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchConfiguration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProviderTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Workspace Provider",
+        "tags": ["search-providers"]
       }
     },
     "/api/v1/workspaces/{workspace_id}/security-audit-events": {

@@ -27,6 +27,7 @@ from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import ControlRuntime, SharedRuntime
 from a13n_service.process.submission import build_input_commands
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
+from a13n_service.search.service import SearchProviderService
 from a13n_service.settings import Settings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
@@ -200,6 +201,7 @@ async def build_control_runtime(
         agents=agents,
         models=models.models,
         model_providers=models.providers,
+        search_providers=SearchProviderService(shared.storage.sessions, shared.secret_protector),
         assets=assets.catalog,
         asset_uploads=assets.uploads,
         hook_subscriptions=hooks.subscriptions,

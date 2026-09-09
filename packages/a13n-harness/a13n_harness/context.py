@@ -75,6 +75,7 @@ def _copy_subagent_declaration(declaration: SubagentDefinition) -> SubagentDefin
         context=declaration.context,
         identity=declaration.identity,
         usage_limits=declaration.usage_limits,
+        run_capability_factory=declaration.run_capability_factory,
     )
 
 

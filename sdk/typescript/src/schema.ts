@@ -1370,6 +1370,76 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/organizations/{organization_id}/search-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Organization Provider */
+    get: operations["list_organization_provider_api_v1_organizations__organization_id__search_providers_get"];
+    put?: never;
+    /** Create Organization Provider */
+    post: operations["create_organization_provider_api_v1_organizations__organization_id__search_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization_id}/search-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Provider */
+    get: operations["get_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Organization Provider */
+    patch: operations["update_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization_id}/search-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** References Organization Provider */
+    get: operations["references_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__references_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization_id}/search-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Organization Provider */
+    post: operations["test_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/organizations/{organization_id}/security-audit-events": {
     parameters: {
       query?: never;
@@ -1726,6 +1796,40 @@ export interface paths {
     put?: never;
     /** Continue From Run */
     post: operations["continue_from_run_api_v1_runs__source_run_id__continue_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/search-provider-types": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Types */
+    get: operations["list_types_api_v1_search_provider_types_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/search-provider-types/{provider_type}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Type */
+    get: operations["get_type_api_v1_search_provider_types__provider_type__get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2664,6 +2768,76 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace_id}/search-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Workspace Provider */
+    get: operations["list_workspace_provider_api_v1_workspaces__workspace_id__search_providers_get"];
+    put?: never;
+    /** Create Workspace Provider */
+    post: operations["create_workspace_provider_api_v1_workspaces__workspace_id__search_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Workspace Provider */
+    get: operations["get_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Workspace Provider */
+    patch: operations["update_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** References Workspace Provider */
+    get: operations["references_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__references_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/search-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Workspace Provider */
+    post: operations["test_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace_id}/security-audit-events": {
     parameters: {
       query?: never;
@@ -3073,6 +3247,7 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
+      search?: components["schemas"]["SearchSelection"] | null;
       /**
        * Secret Requirements
        * @default []
@@ -3128,6 +3303,7 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
+      search?: components["schemas"]["SearchSelection"] | null;
       /**
        * Secret Requirements
        * @default []
@@ -3253,6 +3429,7 @@ export interface components {
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
+      search?: components["schemas"]["SearchSelection"] | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -3276,6 +3453,7 @@ export interface components {
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
+      search?: components["schemas"]["SearchSelection"] | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -4123,6 +4301,27 @@ export interface components {
       name: string;
       /** Type */
       type: string;
+    };
+    /** CreateSearchProviderRequest */
+    CreateSearchProviderRequest: {
+      configuration?: components["schemas"]["SearchConfiguration"];
+      /**
+       * Credential
+       * Format: password
+       */
+      credential: string;
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** Name */
+      name: string;
+      /**
+       * Type
+       * @enum {string}
+       */
+      type: "brave" | "exa";
     };
     /** CreateServiceAccountRequest */
     CreateServiceAccountRequest: {
@@ -6365,11 +6564,125 @@ export interface components {
        */
       retry_hint?: "none" | "new_run" | "dependency_change";
     };
+    /** SearchConfiguration */
+    SearchConfiguration: Record<string, never>;
     /**
      * SearchIn
      * @enum {string}
      */
     SearchIn: "input" | "output" | "input_output";
+    /** SearchProvider */
+    SearchProvider: {
+      /** Configuration */
+      configuration: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      created_by: components["schemas"]["PrincipalRef"];
+      /** Credential Configured */
+      credential_configured: boolean;
+      /** Enabled */
+      enabled: boolean;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /** Type */
+      type: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      updated_by: components["schemas"]["PrincipalRef"];
+      /** Workspace Id */
+      workspace_id: string | null;
+    };
+    /** SearchProviderCollection */
+    SearchProviderCollection: {
+      /** Items */
+      items: components["schemas"]["SearchProvider"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** SearchProviderDefinition */
+    SearchProviderDefinition: {
+      /** Configuration Schema */
+      configuration_schema: {
+        [key: string]: unknown;
+      };
+      /**
+       * Credential Required
+       * @default true
+       */
+      credential_required?: boolean;
+      /** Credential Schema */
+      credential_schema: {
+        [key: string]: unknown;
+      };
+      /** Display Name */
+      display_name: string;
+      /** Setup Url */
+      setup_url: string;
+      /** Type */
+      type: string;
+    };
+    /** SearchProviderDefinitionCollection */
+    SearchProviderDefinitionCollection: {
+      /** Items */
+      items: components["schemas"]["SearchProviderDefinition"][];
+    };
+    /** SearchProviderReference */
+    SearchProviderReference: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Is Current */
+      is_current: boolean;
+      /** Version */
+      version: number;
+    };
+    /** SearchProviderReferenceCollection */
+    SearchProviderReferenceCollection: {
+      /** Items */
+      items: components["schemas"]["SearchProviderReference"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** SearchProviderTestResult */
+    SearchProviderTestResult: {
+      /**
+       * Checked At
+       * Format: date-time
+       */
+      checked_at: string;
+      /** Code */
+      code: string | null;
+      /** Success */
+      success: boolean;
+    };
+    /** SearchSelection */
+    SearchSelection: {
+      /**
+       * Include Domains
+       * @default []
+       */
+      include_domains?: string[];
+      /**
+       * Max Results
+       * @default 5
+       */
+      max_results?: number;
+      /** Provider Id */
+      provider_id: string;
+    };
     /** SecretRequirement */
     SecretRequirement: {
       /** Description */
@@ -7262,6 +7575,16 @@ export interface components {
       /** Expected Version */
       expected_version: number;
       submission: components["schemas"]["ThreadRunSubmissionIntent-Input"];
+    };
+    /** UpdateSearchProviderRequest */
+    UpdateSearchProviderRequest: {
+      configuration?: components["schemas"]["SearchConfiguration"] | null;
+      /** Credential */
+      credential?: string | null;
+      /** Enabled */
+      enabled?: boolean | null;
+      /** Name */
+      name?: string | null;
     };
     /** UpdateServiceAccountRequest */
     UpdateServiceAccountRequest: {
@@ -11132,6 +11455,218 @@ export interface operations {
       };
     };
   };
+  list_organization_provider_api_v1_organizations__organization_id__search_providers_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        type?: string | null;
+        enabled?: boolean | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderCollection"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  create_organization_provider_api_v1_organizations__organization_id__search_providers_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateSearchProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProvider"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProvider"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        "If-Match"?: string | null;
+      };
+      path: {
+        organization_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateSearchProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProvider"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  references_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__references_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderReferenceCollection"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  test_organization_provider_api_v1_organizations__organization_id__search_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SearchConfiguration"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderTestResult"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   organization_security_events_api_v1_organizations__organization_id__security_audit_events_get: {
     parameters: {
       query?: {
@@ -12006,6 +12541,57 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RunAcceptanceReceipt"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_types_api_v1_search_provider_types_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderDefinitionCollection"];
+        };
+      };
+    };
+  };
+  get_type_api_v1_search_provider_types__provider_type__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_type: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderDefinition"];
         };
       };
       /** @description Validation Error */
@@ -14864,6 +15450,218 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RunAcceptanceReceipt"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_workspace_provider_api_v1_workspaces__workspace_id__search_providers_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        type?: string | null;
+        enabled?: boolean | null;
+      };
+      header?: never;
+      path: {
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderCollection"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  create_workspace_provider_api_v1_workspaces__workspace_id__search_providers_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateSearchProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProvider"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProvider"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateSearchProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProvider"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  references_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__references_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderReferenceCollection"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  test_workspace_provider_api_v1_workspaces__workspace_id__search_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SearchConfiguration"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchProviderTestResult"];
         };
       };
       /** @description Validation Error */

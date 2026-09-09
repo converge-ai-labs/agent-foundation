@@ -13,6 +13,7 @@ class ErrorCategory(StrEnum):
     not_acceptable = "not_acceptable"
     conflict = "conflict"
     stale_version = "stale_version"
+    precondition_required = "precondition_required"
     size_limit = "size_limit"
     unsupported_media = "unsupported_media"
     invalid_input = "invalid_input"

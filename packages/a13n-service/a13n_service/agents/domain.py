@@ -31,6 +31,7 @@ from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
+from a13n_service.search.domain import SearchSelection
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
@@ -214,6 +215,7 @@ class ProtocolConfig(StrictModel):
 
 
 class AgentConfig(StrictModel):
+    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] = ""
@@ -270,6 +272,7 @@ class RetryOverride(StrictModel):
 
 
 class AgentRunOverride(StrictModel):
+    search: SearchSelection | None = None
     model: ModelOverride | None = None
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
@@ -334,6 +337,7 @@ class ChildAgentExecution(StrictModel):
 
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
+    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     subagent_mode: Literal["inline", "async"] = "inline"
     child_configs: dict[ObjectId, ChildAgentExecution] = Field(default_factory=dict, max_length=128)

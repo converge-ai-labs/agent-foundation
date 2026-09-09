@@ -22,6 +22,7 @@ const descriptions: Record<string, string> = {
   audit: "Review changes to access and account security.",
   activity: "Review recent security activity on your account.",
   sessions: "Manage browsers signed in to your account.",
+  "search-providers": "Search accounts available across your organization.",
   models: "Models available across your organization.",
   "model-providers": "Model providers available across your organization.",
   "environment-providers":

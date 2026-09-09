@@ -520,6 +520,8 @@ def _create_inline_child_bindings(
             "Inline delegation found an incompatible invocation policy.",
             code="capability_type_mismatch",
         )
+    factory = child.declaration.run_capability_factory
+    child_capabilities = tuple(factory()) if factory is not None else ()
     return RunBindings(
         instance=AgentInstanceContext(
             identity=identity,
@@ -532,7 +534,7 @@ def _create_inline_child_bindings(
         environment=_BorrowedEnvironmentRuntime(parent.environment),
         model_resolver=parent.model_resolver,
         toolset_instructions=parent._toolset_instructions_override,
-        capabilities=((invocation_policy,) if invocation_policy is not None else ()),
+        capabilities=(*((invocation_policy,) if invocation_policy is not None else ()), *child_capabilities),
         metadata=parent.metadata,
     )
 

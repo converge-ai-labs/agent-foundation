@@ -165,6 +165,7 @@ class ProtocolConfig:
 class AgentConfig:
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
+    search: SearchSelection | None
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
@@ -181,6 +182,8 @@ class AgentConfig:
 ```
 
 The [`PluginSelection` contract](36-installed-harness-plugins.md#configuration-and-recovery) selects an installed factory key, instance name, and bounded configuration. `instructions` is the Agent's stable system prompt; Service- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key. Primary Environment selection is independent Thread/Run context under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection). `ChildEnvironmentPolicy.template_revision_id` is required exactly for `dedicated`; `shared` uses the spawning Run's Environment and `none` supplies no environment. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
+
+`search` selects one first-party search account and bounded parameters under [Search Provider Management](41-search-provider-management.md#agent-selection). Absence or null disables this feature. The selection is Agent Revision content and is retained in each accepted graph node; the Provider owns live credentials and availability. Service composes the search capability directly, without requiring a Connector or installed-plugin selection.
 
 `connector_tools` and `mcp_tools` are ordered lists keyed semantically by their managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within either category are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
@@ -212,7 +215,7 @@ candidate = (overridden Agent selections when inherit_agent else empty) + includ
 effective = candidate intersect current authorization and deployment policy
 ```
 
-`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, instructions, output contract, Plugins, subagents, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
+`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, search selection, instructions, output contract, Plugins, subagents, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
 
 The accepted Run retains the complete effective selections and the revision locks required by each capability owner. Connection selections retain source identity, tool scope, and deferred-loading policy; [external tool discovery](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery) supplies current schemas without a durable tool snapshot. Replacement RunAttempts preserve those selections and locks while revalidating authority and discovering current external tools. Model input and tool output cannot create or modify an overlay.
 
@@ -253,6 +256,7 @@ class RetryOverride:
 
 class AgentRunOverride:
     model: ModelOverride | None
+    search: SearchSelection | None  # May be absent.
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
@@ -270,6 +274,8 @@ Within `model`, an absent `model_key` inherits the Agent selection; a supplied k
 
 `connector_tools` and `mcp_tools` each replace their complete category when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
 
+`search` absence inherits the selected Revision, null disables first-party search, and an object replaces the complete selection. Its resource validation, override authorization, and per-node execution semantics belong to [Search Provider Management](41-search-provider-management.md#agent-selection).
+
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
 Plugin override replacement and resolution follow the [installed Plugin selection contract](36-installed-harness-plugins.md#configuration-and-recovery). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Run overrides select managed resources and accept no direct credential values. The owning resource domain resolves current credentials at its execution boundary.
@@ -282,6 +288,7 @@ class EffectiveAgentConfig:
     child_configs: dict[AgentRevisionId, ChildAgentExecution]
     schema_version: str
     model: EffectiveAgentModel
+    search: SearchSelection | None
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]

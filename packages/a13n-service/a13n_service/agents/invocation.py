@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from a13n_service.search.domain import SearchSelection
+
 from .domain import (
     AgentConfig,
     AgentModel,
@@ -31,6 +33,7 @@ from .errors import invalid_run_override
 class MergedAgentRunConfig(StrictModel):
     """Typed non-secret config after applying one Run override to a Revision."""
 
+    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: str
@@ -240,6 +243,7 @@ def merge_agent_run_override(
         retries=retries,
         secret_requirements=base.secret_requirements,
         asset_publication=base.asset_publication,
+        search=override.search if "search" in fields else base.search,
         protocol=protocol,
     )
 

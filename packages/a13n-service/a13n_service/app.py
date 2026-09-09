@@ -39,6 +39,7 @@ from a13n_service.process.lifecycle import open_process_runtime
 from a13n_service.process.roles import owns_connectivity_data, owns_control
 from a13n_service.process.runtime import ProcessStatus
 from a13n_service.request_runtime import get_process_runtime
+from a13n_service.search.router import router as search_router
 from a13n_service.settings import Settings, get_settings
 from a13n_service.skills.router import router as skill_router
 from a13n_service.storage import short_session
@@ -161,6 +162,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(thread_router)
         app.include_router(asset_router)
         app.include_router(model_router)
+        app.include_router(search_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
         app.include_router(account_router)

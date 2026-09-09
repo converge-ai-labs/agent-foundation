@@ -120,6 +120,8 @@ The Service-owned processor projects only validated values from this closed corr
 
 The root additionally owns `a13n.run_attempt.outcome` with `succeeded`, `yielded`, `failed`, or `cancelled` after a matching authoritative Attempt decision, plus an optional bounded `a13n.run_attempt.failure.code`. An unfinished span or missing outcome does not invent a durable status. Harness retains `a13n.run.id` for its process-local Harness Run; Service never overwrites or reinterprets that field as its durable Run identity. Harness and Pydantic AI retain their other existing attributes and remain the sole owners of Harness Run, model, tool, streaming, native usage, and native exception fields.
 
+First-party search annotates its existing tool-execution span with `a13n.search.provider.id` and `a13n.search.provider.type`, using the exact selected Search Provider identity and bounded catalog type from [Search Provider Management](41-search-provider-management.md). These attributes describe only that invocation, not every node in the Run; they are absent from unrelated spans. They add no duplicate tool or provider span and contain no account name, endpoint, credential, or query. Outcome, duration, and available usage retain their existing tool and provider observation owners.
+
 Correlation values are never authorization evidence. The processor does not flatten arbitrary identity claims, request metadata, Agent metadata, headers, provider state, or `RunBindings.metadata`. A value that fails the owning ID or bounded scalar contract is omitted and diagnosed by safe category rather than truncated into a different identity.
 
 ## RunAttempt Trace Lifecycle

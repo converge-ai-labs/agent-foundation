@@ -20,6 +20,7 @@ import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
 import { jsonObject } from "../../shared/validation";
 import styles from "./agents.module.css";
+import { AgentSearchSelection } from "../search/selection";
 import { AgentCapabilities } from "./capabilities";
 import { useAgentChoices } from "./choices";
 import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
@@ -74,6 +75,7 @@ export function AgentForm({
     [expanded, setExpanded] = useState(false),
     [instructionsExpanded, setInstructionsExpanded] = useState(false),
     [validation, setValidation] = useState<Error>();
+  const [search, setSearch] = useState(initial.search ?? null);
   const [skills, setSkills] = useState(initial.skills ?? []),
     [mcp, setMcp] = useState(initial.mcp_tools ?? []),
     [connectors, setConnectors] = useState(initial.connector_tools ?? []);
@@ -90,6 +92,7 @@ export function AgentForm({
         initial,
         {
           instructions,
+          search,
           model: {
             ...initial.model,
             model_key: model,
@@ -114,6 +117,7 @@ export function AgentForm({
   }
   const dirty =
     creating ||
+    JSON.stringify(search) !== JSON.stringify(initial.search ?? null) ||
     instructions !== (initial.instructions ?? "") ||
     model !== initial.model.model_key ||
     settings !== JSON.stringify(initial.model.settings ?? {}, null, 2) ||
@@ -235,6 +239,7 @@ export function AgentForm({
                 </span>
               </footer>
             </section>
+            <AgentSearchSelection value={search} onChange={setSearch} />
             <AgentCapabilities
               choices={choices}
               skills={skills}

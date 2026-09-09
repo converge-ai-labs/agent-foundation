@@ -444,6 +444,7 @@ class SubagentDefinition:
     context: DelegationContextPolicy = field(default_factory=DelegationContextPolicy)
     identity: SubagentIdentityPolicy = field(default_factory=SubagentIdentityPolicy)
     usage_limits: UsageLimits | None = None
+    run_capability_factory: Callable[[], Sequence[AbstractCapability[AgentContext]]] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -461,6 +462,8 @@ class SubagentDefinition:
             raise DefinitionError("Subagent identity must be SubagentIdentityPolicy.", code="subagent_identity_invalid")
         if self.usage_limits is not None and not isinstance(self.usage_limits, UsageLimits):
             raise DefinitionError("Subagent usage_limits must be UsageLimits or None.", code="subagent_limits_invalid")
+        if self.run_capability_factory is not None and not callable(self.run_capability_factory):
+            raise DefinitionError("Child run capability factory must be callable.", code="subagent_binding_invalid")
         object.__setattr__(self, "usage_limits", deepcopy(self.usage_limits))
 
 

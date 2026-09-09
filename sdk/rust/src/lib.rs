@@ -1,7 +1,7 @@
-//! Rust SDK package for a13n Service.
-//!
-//! This crate currently reserves a stable package name while the service API is
-//! being designed. Client APIs will be added after the service contract is
-//! stable enough to support compatibility guarantees.
-
+//! Async Native Search Provider client and lossless Agent search configuration.
+//! Other Service surfaces are not yet implemented by this SDK.
 #![forbid(unsafe_code)]
+mod client;
+mod search;
+pub use client::{ApiError, Client, Error};
+pub use search::*;

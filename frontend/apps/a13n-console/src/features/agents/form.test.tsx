@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { initialConfig } from "./configuration";
 import { AgentForm } from "./form";
 
+vi.mock("../search/selection", () => ({ AgentSearchSelection: () => null }));
 vi.mock("./choices", () => ({
   useAgentChoices: () => ({
     isPending: false,

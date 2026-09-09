@@ -10,6 +10,7 @@ _STATUS = {
     ErrorCategory.not_acceptable: 406,
     ErrorCategory.conflict: 409,
     ErrorCategory.stale_version: 412,
+    ErrorCategory.precondition_required: 428,
     ErrorCategory.size_limit: 413,
     ErrorCategory.unsupported_media: 415,
     ErrorCategory.invalid_input: 422,

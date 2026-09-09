@@ -38,7 +38,7 @@ flowchart TB
     subgraph Service[a13n-service]
         Gateway[Protocol Gateway]
         Control[Control plane]
-        Definitions[AgentRevisions, Skill revisions, Assets, Model Providers, and Models]
+        Definitions[AgentRevisions, Skill revisions, Assets, Model Providers, Models, and Search Providers]
         Connectivity[Connectivity resources]
         Lifecycle[Durable Runs and RunAttempts]
         Worker[Worker]

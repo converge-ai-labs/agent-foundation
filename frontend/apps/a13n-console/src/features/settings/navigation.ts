@@ -7,6 +7,7 @@ import {
   Mail,
   Monitor,
   Settings,
+  Search,
   Shield,
   SlidersHorizontal,
   User,
@@ -70,6 +71,7 @@ const sections: Record<SettingsScope, Section[]> = {
     { value: "invitations", label: "Invitations", icon: Mail },
     { value: "models", label: "Models", icon: Boxes },
     { value: "model-providers", label: "Model providers", icon: Boxes },
+    { value: "search-providers", label: "Search accounts", icon: Search },
     {
       value: "environments",
       label: "Environment templates",

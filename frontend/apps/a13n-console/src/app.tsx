@@ -18,6 +18,11 @@ import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
 import { Empty, ErrorNotice, Loading, Page } from "./shared/feedback";
 
+const SearchProvidersPage = lazy(() =>
+  import("./features/search/page").then((module) => ({
+    default: module.SearchProvidersPage,
+  })),
+);
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
     default: module.ModelsPage,
@@ -258,6 +263,10 @@ function AppContent() {
                     <Route path="assets" element={<AssetsPage />} />
                     <Route path="skills" element={<SkillsPage />} />
                     <Route path="skills/:skillId" element={<SkillDetail />} />
+                    <Route
+                      path="search-providers"
+                      element={<SearchProvidersPage />}
+                    />
                     <Route path="models" element={<ModelsPage />} />
                     <Route
                       path="models/providers"
