@@ -1,7 +1,6 @@
 """Deterministic failures and barriers at the real HTTP model boundary."""
 
 import json
-import re
 from uuid import uuid4
 
 import anyio
@@ -13,9 +12,15 @@ FLAGS = ("checkpoint_ready", "gate_ready", "child_0_started", "child_1_started",
 COUNTERS = ("effects", "effect_attempts", "checkpoint_requests", "injected_errors", "model_timeouts")
 
 
+def matches_tool_name(value: str, name: str) -> bool:
+    from a13n_service.connectivity.toolsets import portable_tool_name
+
+    return any(value == alias or value.endswith("_" + alias) for alias in (name, portable_tool_name(name)))
+
+
 def tool_call(body: dict, name: str, arguments: dict) -> dict:
     names = [entry["function"]["name"] for entry in body.get("tools", [])]
-    selected = next((value for value in names if value == name or value.endswith("_" + name)), None)
+    selected = next((value for value in names if matches_tool_name(value, name)), None)
     if selected is None:
         raise HTTPException(400, f"Required live-test tool is not exposed: {name}")
     return {
@@ -60,35 +65,9 @@ async def completion(case, path, body: dict, texts: list[str], tool_messages: li
     elif case.scenario == "gate":
         await gate(path, "gate_ready")
     elif case.scenario == "async_children":
-        child = next(
-            (match for text in texts if (match := re.search(r"^LIVE_CHILD ([01])$", text, re.MULTILINE))), None
-        )
-        if child:
-            index = child[1]
-            await gate(path, f"child_{index}_started")
-            answer = f"CHILD_RESULT_{index}_{case.token}"
-        else:
-            delegated = [message for message in tool_messages if "execution_id" in str(message.get("content"))]
-            if len(delegated) < 2:
-                tool = tool_call(
-                    body,
-                    "delegate",
-                    {
-                        "subagent_name": "child",
-                        "prompt": "LIVE_TEST " + case.model_dump_json() + f"\nLIVE_CHILD {len(delegated)}",
-                    },
-                )
-            else:
-                await gate(path, "parent_ready")
-                deliveries = [
-                    json.loads(match)["child_run_id"]
-                    for text in texts
-                    for match in re.findall(r"Trusted Host provenance: (\{[^\n]+\})", text)
-                ]
-                async with await anyio.Path(path / "result_deliveries").open("a") as output:
-                    await output.write(json.dumps(deliveries) + "\n")
-                observed = [index for index in (0, 1) if f"CHILD_RESULT_{index}_{case.token}" in "\n".join(texts)]
-                answer = "children-seen:" + ",".join(map(str, observed))
+        from .async_children_model import response
+
+        tool, answer = await response(case, path, body, texts, tool_messages)
     if not body.get("stream"):
         raise HTTPException(400, "Live journeys require streamed model requests")
     return StreamingResponse(_chunks(case, path, answer, tool), media_type="text/event-stream")

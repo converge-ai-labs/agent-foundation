@@ -1,4 +1,4 @@
-"""The same Agent admission dependencies for Gateway and Connectivity roles."""
+"""The same Agent admission dependencies for Gateway, Worker, and Connectivity roles."""
 
 from dataclasses import dataclass
 

@@ -1,4 +1,4 @@
-"""Case 18: uploaded wheel configuration becomes an executable Harness tool."""
+"""Case 18: installed plugin selections reach real Worker preparation and execution."""
 
 import pytest
 
@@ -7,15 +7,13 @@ from .management_support import has_tool
 pytestmark = pytest.mark.anyio
 
 
-async def test_managed_plugin_configuration_controls_real_effect(management):
+async def test_installed_plugin_configuration_controls_real_effect(management):
     journey, live = management, management.live
     case = await journey.case()
     plugins = live.config["resilience_plugins"]
-    # Upload and exact version binding happened through HTTP in this test's lab.
+    # Control preserves authored selections; the Worker owns the installed catalog.
     revision = await journey.agent(plugins=plugins)
-    lock = revision["revision"]["resolved_plugin_versions"]
-    assert len(lock) == 1 and lock[0]["plugin_version_id"] == plugins[0]["plugin_version_id"]
-    assert lock[0]["config"] == plugins[0]["config"]
+    assert revision["revision"]["config"]["plugins"] == plugins
     from .round_two_lab import private_json
 
     private_json(
@@ -35,12 +33,30 @@ async def test_managed_plugin_configuration_controls_real_effect(management):
     await live.finish(receipt["run_id"])
     assert not has_tool(journey.observations(unbound)[0], "live_effect")
     assert (await live.evidence(unbound))["effects"] == 0
-    # Invalid factory configuration is rejected before it can create an Agent.
-    await journey.post(
-        journey.base + "/agents",
-        {
-            "name": "Invalid plugin configuration",
-            "config": {**plain["revision"]["config"], "plugins": [{**plugins[0], "config": {"unknown": "rejected"}}]},
-        },
-        expected=400,
-    )
+
+
+@pytest.mark.parametrize(
+    ("override", "failure_code"),
+    [
+        pytest.param({"config": {}}, "plugin_factory_configuration_invalid", id="missing-root"),
+        pytest.param(
+            {"config": {"root": ".", "unknown": "rejected"}},
+            "plugin_factory_configuration_invalid",
+            id="unknown-field",
+        ),
+        pytest.param({"plugin_key": "live.missing"}, "plugin_factory_missing", id="missing-factory"),
+    ],
+)
+async def test_worker_rejects_invalid_plugin_selection(management, override, failure_code):
+    journey, live = management, management.live
+    selection = {**live.config["resilience_plugins"][0], **override}
+    # Control accepts bounded JSON without loading factories or checking their schema.
+    revision = await journey.agent(plugins=[selection])
+    assert revision["revision"]["config"]["plugins"] == [selection]
+    case = await journey.case()
+    receipt = await journey.start(case, agent_id=revision["agent"]["id"])
+    result = await live.finish(receipt["run_id"], "failed")
+    assert result["failure"]["code"] == failure_code
+    assert journey.observations(case) == []
+    evidence = await live.evidence(case)
+    assert evidence["effects"] == 0 and evidence["effect_attempts"] == 0

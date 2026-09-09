@@ -51,6 +51,7 @@ from .inbox_persistence import (
     bind_unbound_async_entries,
     bind_waiting_entries,
 )
+from .inheritance import inherited_run_fields
 from .inline_hooks import InlineHookAcceptance
 from .input import AcceptedAgentInput
 from .lifecycle import LifecycleWriter
@@ -859,27 +860,7 @@ def _validate_retry_copy(source: Run, candidate: Run) -> None:
 
 
 def _validate_inherited_execution(source: Run, candidate: Run) -> None:
-    source_authority = (
-        source.authority_principal,
-        source.agent_id,
-        source.agent_revision_id,
-        source.effective_agent_config_digest,
-        source.model_execution_observation,
-        source.connector_connection_selections,
-        source.mcp_connection_selections,
-        source.native_tool_contexts,
-    )
-    candidate_authority = (
-        candidate.authority_principal,
-        candidate.agent_id,
-        candidate.agent_revision_id,
-        candidate.effective_agent_config_digest,
-        candidate.model_execution_observation,
-        candidate.connector_connection_selections,
-        candidate.mcp_connection_selections,
-        candidate.native_tool_contexts,
-    )
-    if candidate_authority != source_authority:
+    if inherited_run_fields(candidate) != inherited_run_fields(source):
         raise RunAcceptanceError(
             "run_inherited_authority_invalid",
             "Run must preserve its source's accepted execution authority",

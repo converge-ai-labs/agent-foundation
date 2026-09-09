@@ -8,7 +8,10 @@ import httpx2
 import pytest
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from a13n_service.connectivity.mcp.management import require_connection
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction
+from sqlalchemy import select, update
 
 from .conftest import NOW, actor
 from .test_mcp_refresh import _expired_connection
@@ -82,8 +85,8 @@ async def test_discovery_refreshes_across_handshake_and_pages(
         expected_version=ready.version,
         idempotency_key="reconnect-pages",
     )
-    assert result.status == "pending"
-    assert (await connections.get(actor=actor(), connection_id=result.id)).status == "ready"
+    assert result.status == "ready"
+    assert await connections.get(actor=actor(), connection_id=result.id) == result
     assert len(tokens) == 2
     before = next(token for method, cursor, token in requests if method == expiration_boundary and cursor is None)
     after = next(
@@ -99,7 +102,7 @@ async def test_discovery_refreshes_across_handshake_and_pages(
         assert bundle["access_token"] == used_tokens[-1]
 
 
-@pytest.mark.parametrize("change", ["endpoint", "version", "credential", "disabled", "deleted"])
+@pytest.mark.parametrize("change", ["endpoint", "version", "credential", "disabled", "deleted", "authority"])
 async def test_discovery_completion_rejects_concurrent_invalidation(
     mcp_services, connectivity_sessions, credential_protector, monkeypatch, change
 ):
@@ -123,6 +126,12 @@ async def test_discovery_completion_rejects_concurrent_invalidation(
                 connection.replace_credential(value, credential_protector)
             elif change == "disabled":
                 connection.status = "disabled"
+            elif change == "authority":
+                await session.execute(
+                    update(RoleBindingRecord)
+                    .where(RoleBindingRecord.id == "rb_connectivity_admin")
+                    .values(role_key="viewer")
+                )
             else:
                 connection.deleted_at = NOW
                 connection.clear_credential()
@@ -135,6 +144,11 @@ async def test_discovery_completion_rejects_concurrent_invalidation(
             expected_version=ready.version,
             idempotency_key="reconnect-race",
         )
+    async with connectivity_sessions() as session:
+        evidence = await session.scalar(
+            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "mcp_connection.reconnect")
+        )
+        assert evidence.receipt_json["resource"] is None
 
 
 @pytest.mark.parametrize("protocol_version", ["2024-11-05", "2025-03-26"])

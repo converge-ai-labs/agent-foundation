@@ -159,3 +159,45 @@ def test_round_two_agent_definitions_match_the_service_contract():
         agent_config(subagent_mode="async", subagents={"child": {"agent_id": "ap_" + "a" * 24}}),
     ):
         AgentConfig.model_validate(definition)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("occurrences", [0, 1, 2])
+async def test_steer_fixture_exposes_missing_or_duplicate_input(tmp_path, occurrences):
+    case = {"case_id": "f" * 32, "scenario": "steer", "token": "a" * 32}
+    token = "b" * 32
+    messages = [
+        {"role": "user", "content": "LIVE_TEST " + json.dumps(case)},
+        {"role": "tool", "content": case["token"], "tool_call_id": "call_completed"},
+        *[{"role": "user", "content": "LIVE_STEER " + token} for _ in range(occurrences)],
+    ]
+    async with fixture_http(tmp_path) as client:
+        await client.put("/__live__/cases/" + case["case_id"], json=case)
+        response = await client.post("/__live__/model/v1/chat/completions", json={"stream": True, "messages": messages})
+        assert response.status_code == 200
+        chunks = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: {")]
+        answer = "".join(choice["delta"].get("content", "") for chunk in chunks for choice in chunk["choices"])
+        assert answer == (token if occurrences == 1 else f"steer-count:{occurrences}")
+        evidence = (await client.get("/__live__/cases/" + case["case_id"])).json()
+        assert evidence["steer_observations"] == [[token] * occurrences]
+
+
+@pytest.mark.anyio
+async def test_child_and_parent_model_barriers_release_independently(tmp_path):
+    from .async_children_model import gate
+
+    parent = asyncio.create_task(gate(tmp_path, "parent_ready", "parent_release"))
+    child = asyncio.create_task(gate(tmp_path, "child_0_started", "children_release"))
+    try:
+        async with asyncio.timeout(5):
+            while not all((tmp_path / name).exists() for name in ("parent_ready", "child_0_started")):
+                await asyncio.sleep(0.01)
+            (tmp_path / "children_release").touch()
+            await child
+            assert not parent.done(), "Child release also released the parent; status coverage would race"
+            (tmp_path / "parent_release").touch()
+            await parent
+    finally:
+        parent.cancel()
+        child.cancel()
+        await asyncio.gather(parent, child, return_exceptions=True)

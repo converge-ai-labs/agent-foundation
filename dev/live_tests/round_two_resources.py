@@ -2,8 +2,6 @@
 
 from uuid import uuid4
 
-from .wheel import fixture_wheel
-
 
 def agent_config(model_key="live-fixture", **values):
     return {
@@ -46,20 +44,10 @@ async def provision(client):
         )
         if key == "live-fixture":
             config["model_id"] = model["id"]
-    filename, wheel = fixture_wheel("resilience")
-    version = await client.request(
-        "POST",
-        "/api/v1/plugins",
-        expected=201,
-        params={"filename": filename},
-        content=wheel,
-        headers={"Content-Type": "application/octet-stream", "Idempotency-Key": filename},
-    )
     plugins = [
         {
-            "mode": "on_demand",
             "instance_name": "resilience",
-            "plugin_version_id": version["id"],
+            "plugin_key": "live.resilience",
             "config": {"root": config["workspace_root"]},
         }
     ]

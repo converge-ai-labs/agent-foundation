@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from .fixture_connectivity import TOOLKIT_VERSION, connectivity_router
 from .management_packages import skill_zip
-from .management_support import client_tool
+from .management_support import client_tool, has_tool
 from .round_two_lab import private_json
 from .round_two_resources import agent_config
 from .test_round_two_support import fixture_http
@@ -57,7 +57,8 @@ async def test_owned_tls_peer_is_trusted_by_lab_environment_only(tmp_path, monke
 
 
 @pytest.mark.anyio
-async def test_script_uses_observed_results_and_resets_for_new_continuation(tmp_path):
+@pytest.mark.parametrize("advertised_name", ["live_echo", "mcp_5534dcadf444ea40_live_echo_6dd03da008c5745e"])
+async def test_script_uses_observed_results_and_resets_for_new_continuation(tmp_path, advertised_name):
     first = {"case_id": "a" * 32, "scenario": "management", "token": "b" * 32}
     second = {**first, "case_id": "c" * 32}
     async with fixture_http(tmp_path) as client:
@@ -68,14 +69,16 @@ async def test_script_uses_observed_results_and_resets_for_new_continuation(tmp_
                 tmp_path / case["case_id"] / "plan.json",
                 {"steps": [{"tool": "live_echo", "arguments": {"value": "argument"}}]},
             )
-            body = {"stream": True, "messages": messages, "tools": [{"function": {"name": "live_echo"}}]}
+            body = {"stream": True, "messages": messages, "tools": [{"function": {"name": advertised_name}}]}
+            assert has_tool({"body": body}, "live_echo")
+            assert not has_tool({"body": body}, "live_forbidden")
             response = await client.post("/__live__/model/v1/chat/completions", json=body)
             calls = [
                 item["choices"][0]["delta"]["tool_calls"]
                 for item in chunks(response)
                 if item["choices"] and "tool_calls" in item["choices"][0]["delta"]
             ]
-            assert len(calls) == 1 and calls[0][0]["function"]["name"] == "live_echo"
+            assert len(calls) == 1 and calls[0][0]["function"]["name"] == advertised_name
             messages.append({"role": "tool", "tool_call_id": calls[0][0]["id"], "content": "actual-peer-result"})
             response = await client.post("/__live__/model/v1/chat/completions", json=body)
             text = "".join(

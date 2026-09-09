@@ -35,6 +35,11 @@ def test_override_and_independent_sections_keep_secrets_private(tmp_path, monkey
         '[environment]\napi_key="sample-secret"',
         '[environment]\ntype="unsupported"\napi_key="sample-secret"',
         '[connector]\nprovider="composio"',
+        '[connector]\nprovider="openconnector"\ncatalog_api_key="sample-secret"',
+        '[connector]\nprovider="openconnector"\nproject_api_key="sample-secret"',
+        '[connector]\nprovider="openconnector"\nproject_api_key="sample-secret"\ncatalog_api_key="key"\nservices=[]',
+        '[connector]\nprovider="composio"\napi_key="key"\nproject_api_key="sample-secret"',
+        '[connector]\nprovider="unknown"\napi_key="sample-secret"',
         '[model]\nprovider="openrouter"\napi_key="sample-secret"',
         '[model]\nprovider="openai_compatible"\napi_key="sample-secret"\nmodel="model"',
         '[model]\nprovider="openai_compatible"\napi_key="sample-secret"\nmodel="model"\nbase_url="https://sample-secret@example.com"',
@@ -71,18 +76,47 @@ def test_enabled_model_and_connector_sections(tmp_path, provider):
     assert config.environment is None
 
 
+def test_openconnector_configuration_uses_two_private_keys(tmp_path):
+    path = tmp_path / "settings.toml"
+    path.write_text(
+        '[connector]\nprovider="openconnector"\nproject_api_key="project-secret"\ncatalog_api_key="catalog-secret"\n'
+    )
+    config = load_provider_settings(path)
+    assert config.connector.services == ["slack"]
+    assert config.connector.project_api_key.get_secret_value() == "project-secret"
+    assert config.connector.catalog_api_key.get_secret_value() == "catalog-secret"
+    for secret in ("project-secret", "catalog-secret"):
+        assert secret not in repr(config) + config.model_dump_json()
+
+
 @pytest.mark.anyio
-async def test_offline_fixture_does_not_read_private_configuration(monkeypatch):
+@pytest.mark.parametrize("section,flag", [("model", ""), ("slack", ""), ("model", "--live-slack")])
+async def test_offline_fixture_does_not_read_private_configuration(monkeypatch, section, flag):
     from .conftest import configured_provider
 
     def unexpected_read():
         raise AssertionError("Offline collection read private configuration")
 
     monkeypatch.setattr(provider_config, "load_provider_settings", unexpected_read)
-    request = SimpleNamespace(config=SimpleNamespace(getoption=lambda option: False), param="model")
+    request = SimpleNamespace(config=SimpleNamespace(getoption=lambda option: option == flag), param=section)
     fixture = configured_provider.__wrapped__(request)
     with pytest.raises(pytest.skip.Exception):
         await anext(fixture)
+
+
+@pytest.mark.anyio
+async def test_provider_opt_in_does_not_start_interactive_slack(monkeypatch):
+    from .conftest import configured_provider
+
+    def unexpected_read():
+        raise AssertionError("Noninteractive run read Slack configuration")
+
+    monkeypatch.setattr(provider_config, "load_provider_settings", unexpected_read)
+    request = SimpleNamespace(
+        config=SimpleNamespace(getoption=lambda option: option == "--live-providers"), param="slack"
+    )
+    with pytest.raises(pytest.skip.Exception, match="interactive Slack OAuth"):
+        await anext(configured_provider.__wrapped__(request))
 
 
 @pytest.mark.anyio

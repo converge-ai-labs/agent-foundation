@@ -80,6 +80,7 @@ class WorkerExecutionLoop:
         self._capacity = Semaphore(concurrency)
         self._worker_id = new_object_id("wrk")
         self._draining = Event()
+        self._handoffs_requested = Event()
         self._stopped = Event()
         self._controls: dict[str, RunAttemptControl] = {}
         self._scopes: dict[str, CancelScope] = {}
@@ -90,7 +91,8 @@ class WorkerExecutionLoop:
     def is_draining(self) -> bool:
         return self._draining.is_set()
 
-    async def drain(self) -> None:
+    def begin_drain(self) -> None:
+        """Stop admission immediately without waiting for active Run control locks."""
         if not self.is_draining():
             self._drain_deadline = current_time() + self._drain_seconds
             self._draining.set()
@@ -98,13 +100,23 @@ class WorkerExecutionLoop:
             self._admission_scope.deadline = self._drain_deadline
         for scope in tuple(self._scopes.values()):
             scope.deadline = self._drain_deadline
-        for control in tuple(self._controls.values()):
-            # Each root retains its lease monitor until handoff or the hard deadline.
-            with move_on_after(max(0, self._drain_deadline - current_time())):
-                try:
-                    await control.request_handoff(RunAttemptYieldReason.service_drain)
-                except Exception:
-                    logger.info("run_handoff_request_ended", extra={"run_id": control.current_context.run_id})
+
+    async def drain(self) -> None:
+        self.begin_drain()
+        await self._handoffs_requested.wait()
+
+    async def _request_handoffs_on_drain(self) -> None:
+        await self._draining.wait()
+        try:
+            for control in tuple(self._controls.values()):
+                # Each root retains its lease monitor until handoff or the hard deadline.
+                with move_on_after(max(0, self._drain_deadline - current_time())):
+                    try:
+                        await control.request_handoff(RunAttemptYieldReason.service_drain)
+                    except Exception:
+                        logger.info("run_handoff_request_ended", extra={"run_id": control.current_context.run_id})
+        finally:
+            self._handoffs_requested.set()
 
     async def wait_stopped(self) -> None:
         await self._stopped.wait()
@@ -112,6 +124,7 @@ class WorkerExecutionLoop:
     async def run(self) -> None:
         try:
             async with create_task_group() as roots:
+                roots.start_soon(self._request_handoffs_on_drain)
                 while not self.is_draining():
                     with CancelScope(deadline=self._drain_deadline) as admission:
                         self._admission_scope = admission

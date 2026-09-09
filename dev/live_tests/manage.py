@@ -11,11 +11,11 @@ from pathlib import Path
 
 import anyio
 import httpx2
-import uvicorn
 from a13n_service.database import DatabaseMigrator
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.log import configure_logging
+from a13n_service.process.server import serve_app
 from a13n_service.settings import Settings
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
@@ -23,7 +23,6 @@ from a13n_service.storage.relational import create_session_factory, create_sql_e
 from .client import LiveClient
 from .config import CONFIG, STATE, load_config, save_config
 from .host import authenticated_control, local_app, settings_for
-from .wheel import approval_wheel
 
 
 async def initialize() -> None:
@@ -188,18 +187,6 @@ async def provision() -> None:
         await create_once(
             "agent_id", base + "/agents", {"name": "Live test agent", "config": agent_config}, response_key="agent"
         )
-        if "approval_plugin_version_id" not in config:
-            filename, body = approval_wheel()
-            version = await client.request(
-                "POST",
-                "/api/v1/plugins",
-                expected=201,
-                params={"filename": filename},
-                content=body,
-                headers={"Content-Type": "application/octet-stream", "Idempotency-Key": "live-approval-" + filename},
-            )
-            config["approval_plugin_version_id"] = version["id"]
-            save_config(config)
         await create_once(
             "approval_agent_id",
             base + "/agents",
@@ -209,9 +196,8 @@ async def provision() -> None:
                     **agent_config,
                     "plugins": [
                         {
-                            "mode": "on_demand",
                             "instance_name": "approval",
-                            "plugin_version_id": config["approval_plugin_version_id"],
+                            "plugin_key": "live.approval",
                             "config": {"root": config["workspace_root"]},
                         }
                     ],
@@ -233,12 +219,12 @@ def main() -> None:
     elif args.command == "authenticated-control":
         settings, app = authenticated_control(load_config())
         configure_logging(settings)
-        uvicorn.run(app, host=settings.host, port=settings.port, workers=1, log_config=None)
+        serve_app(app)
     else:
         config = load_config()
         settings = settings_for(config, args.command)
         configure_logging(settings)
-        uvicorn.run(local_app(config, args.command), host=settings.host, port=settings.port, workers=1, log_config=None)
+        serve_app(local_app(config, args.command))
 
 
 if __name__ == "__main__":

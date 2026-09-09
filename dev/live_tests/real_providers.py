@@ -7,6 +7,7 @@ import anyio
 
 from .client import ACTIVE
 from .management_support import ManagementJourney
+from .provider_config import OpenConnectorSettings
 from .round_two_lab import open_lab
 
 logger = logging.getLogger(__name__)
@@ -36,13 +37,22 @@ async def provision_provider(journey, section, settings):
         )
         return await journey.post(journey.base + "/environments", {"template_id": template["id"]})
     if section == "connector":
+        if isinstance(settings, OpenConnectorSettings):
+            configuration = {"enabled_services": settings.services}
+            credentials = {
+                "project_api_key": settings.project_api_key.get_secret_value(),
+                "catalog_api_key": settings.catalog_api_key.get_secret_value(),
+            }
+        else:
+            configuration = {"enabled_toolkits": settings.toolkits}
+            credentials = {"api_key": settings.api_key.get_secret_value()}
         return await journey.post(
             journey.base + "/connector-providers",
             {
                 "name": "Configured live Connector",
                 "type": settings.provider,
-                "configuration": {"enabled_toolkits": settings.toolkits},
-                "credentials": {"api_key": settings.api_key.get_secret_value()},
+                "configuration": configuration,
+                "credentials": credentials,
             },
         )
     if section != "model":

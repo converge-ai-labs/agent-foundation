@@ -166,7 +166,7 @@ class RoundTwoLab:
 
 
 @asynccontextmanager
-async def open_lab(*, suite="round-two"):
+async def open_lab(*, suite="round-two", websocket_envd=False):
     if suite not in {"core", "round-two", "management"}:
         raise ValueError(f"Unknown live-test suite: {suite}")
     management = suite == "management"
@@ -190,6 +190,13 @@ async def open_lab(*, suite="round-two"):
         for container in (postgres, redis):
             stack.push_async_callback(anyio.to_thread.run_sync, container.stop)
             await anyio.to_thread.run_sync(container.start)
+
+        async def retain_database_log():
+            # Keep SQL error diagnostics before the owned disposable DB is removed.
+            stdout, stderr = await anyio.to_thread.run_sync(postgres.get_logs)
+            (root / "postgres.log").write_bytes(stdout + stderr)
+
+        stack.push_async_callback(retain_database_log)
         database_url = (
             f"postgresql+psycopg://{postgres.username}:{postgres.password}@"
             f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}/{postgres.dbname}"
@@ -203,6 +210,8 @@ async def open_lab(*, suite="round-two"):
             "timeout_seconds": 120,
             "encryption_key": base64.b64encode(secrets.token_bytes(32)).decode(),
         }
+        if websocket_envd:
+            config["websocket_envd"] = True
         from .fixture_peer import certificate_context, create_certificate
 
         if management:

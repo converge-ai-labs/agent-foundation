@@ -87,6 +87,8 @@ async def completion(case, path, body, request):
             }
         else:
             tool = tool_call(body, name, arguments)
+        if "raw_arguments" in step:
+            tool["function"]["arguments"] = step["raw_arguments"]
     # A completed tool journey returns its actual tool result, never the expected value.
     answer = json.dumps(messages[-1]["content"]) if messages else case.token
     return StreamingResponse(_chunks(case, path, answer, tool), media_type="text/event-stream")

@@ -15,10 +15,12 @@ from .conftest import NOW, ORGANIZATION_ID
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("begin_without_waiting", [False, True])
 async def test_worker_reserves_before_claim_releases_losers_and_drains_owned_roots(
     interaction_sessions,
     interaction_object_store,
     monkeypatch,
+    begin_without_waiting,
 ):
     _, run, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store)
     owned = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
@@ -63,7 +65,11 @@ async def test_worker_reserves_before_claim_releases_losers_and_drains_owned_roo
         async with create_task_group() as tasks:
             tasks.start_soon(loop.run)
             await started.wait()
-            await loop.drain()
+            if begin_without_waiting:
+                loop.begin_drain()
+                loop.begin_drain()
+            else:
+                await loop.drain()
             await loop.wait_stopped()
     assert claims == ["loser", run.id]
     assert loop._capacity.value == 1

@@ -461,7 +461,7 @@ async def test_lease_monitor_fences_control_and_cancels_scope_on_authority_loss(
     assert error.value.code == "service_control_fenced"
 
 
-async def test_control_watcher_acknowledges_only_after_each_durable_reconciliation(
+async def test_control_watcher_acknowledges_before_durable_reconciliation(
     interaction_object_store: ObjectStore,
 ) -> None:
     trace: list[str] = []
@@ -484,9 +484,49 @@ async def test_control_watcher_acknowledges_only_after_each_durable_reconciliati
     assert trace == [
         "attempt:validate",
         "wakeup:receive",
-        "attempt:validate",
         "wakeup:ack",
+        "attempt:validate",
     ]
+
+
+async def test_watcher_restart_reconciles_after_post_ack_failure_without_redelivery(
+    interaction_object_store: ObjectStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace: list[str] = []
+    envelope = initial_state()
+    states, stored = await _stored_state(interaction_object_store, envelope)
+    control = RunAttemptControl(
+        context=_context(envelope.thread_id),
+        execution=_Execution(trace),
+        states=states,
+        state=stored,
+        inbox=_Inbox(trace),
+    )
+    reconcile = control.reconcile
+    calls = 0
+
+    async def reconcile_with_failure():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ConnectionError("PostgreSQL temporarily unavailable")
+        await reconcile()
+
+    monkeypatch.setattr(control, "reconcile", reconcile_with_failure)
+    wakeups = _Wakeups(trace)
+    with pytest.raises(ConnectionError):
+        await ControlWatcher(control.current_context, control, wakeups).run()
+    assert wakeups.acknowledged.is_set()
+    assert trace == ["attempt:validate", "wakeup:receive", "wakeup:ack"]
+
+    # The acknowledged signal is gone. Startup reconciliation runs before receive.
+    async with create_task_group() as tasks:
+        await tasks.start(ControlWatcher(control.current_context, control, wakeups).run)
+        tasks.cancel_scope.cancel()
+    assert calls == 3
+    assert trace.count("attempt:validate") == 2
+    assert trace.count("wakeup:ack") == 1
 
 
 async def test_active_reconciliation_uses_driver_steer_without_consuming_receipt(

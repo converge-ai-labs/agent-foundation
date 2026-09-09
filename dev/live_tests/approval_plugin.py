@@ -1,4 +1,4 @@
-"""Source packaged into the test-only approval plugin Wheel; never imported by the Host."""
+"""Trusted approval plugin loaded by the live-test Worker at startup."""
 
 from __future__ import annotations
 

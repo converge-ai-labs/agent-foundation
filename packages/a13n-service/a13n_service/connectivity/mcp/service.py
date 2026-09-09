@@ -35,13 +35,13 @@ from .credentials import (
     normalize_static_header_names,
     static_header_bundle,
 )
+from .discovery import DiscoveryCommand, DiscoveryResult
 from .domain import (
     CreateMCPConnectionRequest,
     MCPAuthMode,
     MCPConnection,
     MCPConnectionCollection,
     MCPConnectionStatus,
-    MCPTool,
     MCPToolCollection,
     ReplaceMCPCredentialsRequest,
     UpdateMCPConnectionRequest,
@@ -60,7 +60,7 @@ from .models import MCPConnectionRecord, MCPOAuthSessionRecord
 
 
 class ConnectionDiscovery(Protocol):
-    async def discover(self, connection_id: str) -> tuple[MCPTool, ...]: ...
+    async def discover(self, connection_id: str, *, command: DiscoveryCommand | None = None) -> DiscoveryResult: ...
 
 
 class RegistrationCleaner(Protocol):
@@ -138,7 +138,7 @@ class MCPConnectionService:
                 except IdempotencyConflict as error:
                     raise map_management_error(error) from error
                 if replay is not None:
-                    return replay.restore(MCPConnection)
+                    return _restore_connection(replay)
                 record = MCPConnectionRecord(
                     id=connection_id,
                     organization_id=workspace.organization_id,
@@ -162,7 +162,7 @@ class MCPConnectionService:
                     updated_at=now,
                 )
                 session.add(record)
-                record_command(
+                command = record_command(
                     session,
                     actor=actor,
                     organization_id=workspace.organization_id,
@@ -175,8 +175,9 @@ class MCPConnectionService:
                     resource_id=connection_id,
                     result_version=1,
                     now=now,
-                    resource=record.to_resource(),
+                    resource=None if request.auth_mode is MCPAuthMode.none else record.to_resource(),
                 )
+                command_id = command.id
                 session.add(audit(actor, record, action="mcp_connection.create", now=now))
                 await session.flush()
         except IntegrityError as error:
@@ -186,7 +187,8 @@ class MCPConnectionService:
                 category=ErrorCategory.conflict,
             ) from error
         if request.auth_mode is MCPAuthMode.none:
-            await self._discovery.discover(connection_id)
+            result = await self._discovery.discover(connection_id, command=DiscoveryCommand(command_id, actor))
+            return result.connection
         return record.to_resource()
 
     async def list(
@@ -251,12 +253,12 @@ class MCPConnectionService:
             record = await require_connection(session, connection_id)
             await authorize_connection(session, actor, record, mode="manage")
             require_version(record.version, expected_version)
-        tools = await self._discovery.discover(connection_id)
+        result = await self._discovery.discover(connection_id)
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id)
             await authorize_connection(session, actor, record, mode="manage")
             require_version(record.version, expected_version)
-        return MCPToolCollection(items=tools)
+        return MCPToolCollection(items=result.tools)
 
     async def update(
         self,
@@ -306,7 +308,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
             if replay:
-                return replay.restore(MCPConnection)
+                return _restore_connection(replay)
             require_version(record.version, request.expected_version)
             try:
                 record.replace_credential(credential_value, self._protector)
@@ -322,16 +324,17 @@ class MCPConnectionService:
             record.version += 1
             record.updated_at = self._clock()
             invalidate_refresh_claim(record, now=record.updated_at)
-            self._record(
+            command_id = self._record(
                 session,
                 actor=actor,
                 record=record,
                 operation="mcp_connection.credentials.replace",
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
+                discovery_pending=True,
             )
-        await self._discovery.discover(connection_id)
-        return record.to_resource()
+        result = await self._discovery.discover(connection_id, command=DiscoveryCommand(command_id, actor))
+        return result.connection
 
     async def reconnect(
         self,
@@ -355,7 +358,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
             if replay:
-                return replay.restore(MCPConnection)
+                return _restore_connection(replay)
             require_version(record.version, expected_version)
             if record.auth_mode != "none" and record.ciphertext is None:
                 raise MCPConnectionError(
@@ -366,16 +369,17 @@ class MCPConnectionService:
             record.version += 1
             record.updated_at = self._clock()
             invalidate_refresh_claim(record, now=record.updated_at)
-            self._record(
+            command_id = self._record(
                 session,
                 actor=actor,
                 record=record,
                 operation="mcp_connection.reconnect",
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
+                discovery_pending=True,
             )
-        await self._discovery.discover(connection_id)
-        return record.to_resource()
+        result = await self._discovery.discover(connection_id, command=DiscoveryCommand(command_id, actor))
+        return result.connection
 
     async def set_enabled(
         self,
@@ -572,8 +576,9 @@ class MCPConnectionService:
         operation: str,
         key_digest: str,
         request_fingerprint: str,
-    ) -> None:
-        record_command(
+        discovery_pending: bool = False,
+    ) -> str:
+        command = record_command(
             session,
             actor=actor,
             organization_id=record.organization_id,
@@ -586,9 +591,20 @@ class MCPConnectionService:
             resource_id=record.id,
             result_version=record.version,
             now=self._clock(),
-            resource=record.to_resource(),
+            resource=None if discovery_pending else record.to_resource(),
         )
         session.add(audit(actor, record, action=operation, now=self._clock()))
+        return command.id
+
+
+def _restore_connection(receipt: CommandReceipt) -> MCPConnection:
+    if receipt.resource is None:
+        raise MCPConnectionError(
+            "mcp_discovery_incomplete",
+            "Discovery has not completed for this command. Read the connection before starting a new command.",
+            category=ErrorCategory.conflict,
+        )
+    return receipt.restore(MCPConnection)
 
 
 def _validate_auth_identity(auth_mode: MCPAuthMode, header_names: tuple[str, ...]) -> None:

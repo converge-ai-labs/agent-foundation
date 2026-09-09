@@ -24,6 +24,7 @@ from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, Redis
 from a13n_service.interactions.models import RunAttemptRecord, SessionRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
+from a13n_service.interactions.queue_completion import QueueCompletion
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
 from a13n_service.interactions.worker import WorkerCapacitySlot
@@ -57,6 +58,7 @@ class WorkerAttempts:
         assets: AssetObjectStore,
         asset_publication: AssetRuntime,
         observability: ObservabilityRuntime | None = None,
+        queue_completion: QueueCompletion | None = None,
     ) -> None:
         self._shared = shared
         self._resources = execution
@@ -76,7 +78,9 @@ class WorkerAttempts:
         outcomes = RunOutcomeService(
             shared.storage.sessions, self._payloads, lifecycle=shared.lifecycle, control_signals=self._signals
         )
-        self._committer = DatabaseAttemptCommitter(shared.storage.sessions, outcomes, self._execution)
+        self._committer = DatabaseAttemptCommitter(
+            shared.storage.sessions, outcomes, self._execution, queue_completion=queue_completion
+        )
         self._subagents = ServiceSubagents(
             shared.storage.sessions,
             self._states,

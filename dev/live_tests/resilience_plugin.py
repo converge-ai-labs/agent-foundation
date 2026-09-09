@@ -1,4 +1,4 @@
-"""A real uploaded tool fixture for checkpoint effects and bounded tool failures."""
+"""Installed tool fixture for checkpoint effects and bounded tool failures."""
 
 from __future__ import annotations
 

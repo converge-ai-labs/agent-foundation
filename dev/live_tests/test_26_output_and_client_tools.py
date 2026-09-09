@@ -1,4 +1,4 @@
-"""Case 26: output schema enforcement and exactly one deferred client-tool successor."""
+"""Case 26: native structured-output semantics and one deferred client-tool successor."""
 
 from uuid import uuid4
 
@@ -9,8 +9,10 @@ from .management_support import client_tool, feedback_body
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("valid_after_retry", [True, False])
-async def test_output_schema_is_enforced_by_harness(management, valid_after_retry):
+@pytest.mark.parametrize(
+    "non_object_responses", [0, 1, 2], ids=["schema-hint", "object-retry", "object-retry-exhausted"]
+)
+async def test_structured_output_preserves_native_object_validation(management, non_object_responses):
     journey, live = management, management.live
     schema = {
         "type": "object",
@@ -20,24 +22,23 @@ async def test_output_schema_is_enforced_by_harness(management, valid_after_retr
     }
     agent = await journey.agent(output_spec={"name": "live_result", "schema": schema}, retries={"output": 1})
     case = await journey.case()
-    correct = {"answer": case["token"], "count": 2}
-    journey.plan(
-        case,
-        steps=[
-            {"tool": "$output", "arguments": {"answer": case["token"], "count": 0}},
-            {"tool": "$output", "arguments": correct if valid_after_retry else {"count": "invalid"}},
-        ],
-    )
+    # StructuredDict advertises the schema, but locally validates an object rather
+    # than every JSON Schema constraint. An array must still spend the retry budget.
+    output = {"answer": case["token"], "count": 0}
+    steps = [{"tool": "$output", "raw_arguments": "[]"} for _ in range(non_object_responses)]
+    if non_object_responses < 2:
+        steps.append({"tool": "$output", "arguments": output})
+    journey.plan(case, steps=steps)
     receipt = await journey.start(case, agent_id=agent["agent"]["id"])
-    result = await live.finish(receipt["run_id"], "completed" if valid_after_retry else "failed")
+    result = await live.finish(receipt["run_id"], "failed" if non_object_responses == 2 else "completed")
     observed = journey.observations(case)
-    assert len(observed) == 2, "Output validation did not perform exactly one model retry"
+    assert len(observed) == min(non_object_responses + 1, 2), "Native output retry budget was not preserved"
     tools = [entry["function"] for entry in observed[0]["body"]["tools"]]
     output_tool = next(tool for tool in tools if "answer" in tool["parameters"].get("properties", {}))
     assert set(output_tool["parameters"]["required"]) == {"answer", "count"}
     assert output_tool["parameters"]["properties"]["count"]["minimum"] == 1
-    if valid_after_retry:
-        assert result["output"] == correct
+    if non_object_responses < 2:
+        assert result["output"] == output
     else:
         assert result["failure"] and result["output"] is None
 

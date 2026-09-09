@@ -12,6 +12,8 @@ def pytest_addoption(parser):
     parser.addoption("--live-round-two", action="store_true", help="Run isolated process and dependency fault journeys")
     parser.addoption("--live-management", action="store_true", help="Run isolated Service/Harness management journeys")
     parser.addoption("--live-providers", action="store_true", help="Run configured real-provider integration journeys")
+    parser.addoption("--live-slack", action="store_true", help="Authorize OpenConnector Slack and run a read-only tool")
+    parser.addoption("--live-environments", action="store_true", help="Run the five-backend Environment matrix")
 
 
 @pytest.fixture
@@ -62,17 +64,23 @@ async def management(request):
 
 @pytest.fixture
 async def configured_provider(request):
-    if not any(
+    slack = request.param == "slack"
+    if slack and not request.config.getoption("--live-slack"):
+        pytest.skip("Opt in with --live-slack; this journey requires interactive Slack OAuth")
+    if not slack and not any(
         request.config.getoption(option)
         for option in ("--live", "--live-round-two", "--live-management", "--live-providers")
     ):
         pytest.skip("Opt in with a live-test target; private Provider configuration is not read by offline checks")
-    from .provider_config import load_provider_settings
+    from .provider_config import OpenConnectorSettings, load_provider_settings
 
-    settings = getattr(load_provider_settings(), request.param)
+    section = "connector" if slack else request.param
+    settings = getattr(load_provider_settings(), section)
+    if slack and (not isinstance(settings, OpenConnectorSettings) or "slack" not in settings.services):
+        pytest.fail("--live-slack requires an openconnector configuration with slack in services")
     if settings is None:
         pytest.skip(f"Optional {request.param} Provider is not configured; existing defaults are unchanged")
     from .real_providers import configured_provider_lab
 
-    async with configured_provider_lab(request.param, settings) as configured:
+    async with configured_provider_lab(section, settings) as configured:
         yield configured

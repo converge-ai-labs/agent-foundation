@@ -9,6 +9,8 @@ import httpx2
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 
+from a13n_service.agents.invocation_resolution import AgentInvocationResolver
+from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.publication import AssetPublisher
 from a13n_service.assets.runtime import AssetRuntime
@@ -17,12 +19,17 @@ from a13n_service.connectivity.connectors.providers import built_in_connector_pr
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.http import cookie_free_jar
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
 from a13n_service.gateway.hosted_agui import HostedAguiTerminalProjector
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.ids import new_object_id
+from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
+from a13n_service.interactions.queue_completion import QueueCompletion
+from a13n_service.interactions.queue_handoff import CompletionQueueHandoffService
 from a13n_service.interactions.scheduling import AttemptScheduler
 from a13n_service.interactions.worker import WorkerExecutionLoop
 from a13n_service.observability import ObservabilityRuntime
@@ -30,6 +37,7 @@ from a13n_service.process.attempts import WorkerAttempts
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
+from a13n_service.process.submission import build_input_commands
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
@@ -46,6 +54,7 @@ async def build_worker_runtime(
     connector_providers: ConnectorProviderRegistry | None = None,
     *,
     plugin_catalog: HarnessPluginFactoryCatalog,
+    invocations: AgentInvocationResolver,
     observability: ObservabilityRuntime | None = None,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
@@ -130,6 +139,25 @@ async def build_worker_runtime(
     asset_publication = AssetRuntime(
         shared.storage.sessions, AssetPublisher(assets, staging, max_size_bytes=settings.asset_max_size_bytes), assets
     )
+    inline_hooks = InlineHookValidator(
+        EndpointPolicy.from_operator_allowlist(
+            private_domains=settings.webhook_private_endpoint_domains,
+            private_cidrs=settings.webhook_private_endpoint_cidrs,
+        )
+    )
+    queue_completion = QueueCompletion(
+        shared.storage.sessions,
+        build_input_commands(
+            settings, shared, invocations, AssetCatalog(shared.storage.sessions, assets), inline_hooks
+        ),
+        CompletionQueueHandoffService(
+            shared.storage.sessions,
+            RunStateStore(shared.storage.objects),
+            RunPayloadStore(shared.storage.objects),
+            inline_hooks,
+            lifecycle=shared.lifecycle,
+        ),
+    )
     execution_loop = WorkerExecutionLoop(
         shared.storage.sessions,
         AttemptScheduler(shared.storage.sessions, lifecycle=shared.lifecycle),
@@ -145,6 +173,7 @@ async def build_worker_runtime(
             assets=assets,
             asset_publication=asset_publication,
             observability=observability,
+            queue_completion=queue_completion,
         ),
         build_id=settings.build_version,
         queue_name=settings.gateway_run_queue_name,

@@ -63,11 +63,18 @@ async def test_cross_layer_evidence_and_telemetry_failure_does_not_change_result
     usage = completed[0].data["payload"]["data"]["usage"]
     assert usage["model_requests"] == 2
     items = await live.collection(f"/api/v1/runs/{result['id']}/items")
+    retained_events = [event for item in items for event in item["content"]["events"]]
+    # Only starts declare the role for model output; correlate deltas by message identity.
+    assistant_messages = {
+        event["payload"]["messageId"]
+        for event in retained_events
+        if event["event_type"] == "agui.text_message_start" and event["payload"]["role"] == "assistant"
+    }
+    assert assistant_messages, "Retained Items omitted the assistant output"
     deltas = [
         event["payload"]["delta"]
-        for item in items
-        for event in item["content"]["events"]
-        if event["event_type"] == "agui.text_message_content"
+        for event in retained_events
+        if event["event_type"] == "agui.text_message_content" and event["payload"]["messageId"] in assistant_messages
     ]
     assert "".join(deltas) == result["output_text"]
     assert case["token"] in json.dumps(items)

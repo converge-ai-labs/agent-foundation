@@ -8,6 +8,7 @@ from uuid import uuid4
 import httpx2
 
 from .round_two_lab import private_json
+from .round_two_model import matches_tool_name
 from .round_two_resources import agent_config
 
 
@@ -144,7 +145,7 @@ def tool_names(observation):
 
 
 def has_tool(observation, name):
-    return any(value == name or value.endswith("_" + name) for value in tool_names(observation))
+    return any(matches_tool_name(value, name) for value in tool_names(observation))
 
 
 def client_tool():

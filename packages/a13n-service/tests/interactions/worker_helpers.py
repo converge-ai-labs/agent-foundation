@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, Mock
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_service.models.provider_runtime import LiveProviderResolver
+from a13n_service.process.agents import build_agent_resources
+from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.process.worker import build_worker_runtime
@@ -41,7 +43,16 @@ async def accepted_running_attempt(sessions, objects):
 
 @asynccontextmanager
 async def worker_runtime(
-    sessions, objects, path, monkeypatch, *, settings, model_factory, connectors=None, plugin_catalog=None
+    sessions,
+    objects,
+    path,
+    monkeypatch,
+    *,
+    settings,
+    model_factory,
+    connectors=None,
+    plugin_catalog=None,
+    invocations=None,
 ):
     resources = Mock(spec=ExecutionResources)
     resources.native_model_factory = model_factory
@@ -64,6 +75,9 @@ async def worker_runtime(
             EnvironmentProviderCatalog(),
             stack,
             connectors,
+            invocations=invocations
+            if invocations is not None
+            else build_agent_resources(Components(), shared, resources.model_provider_registry).invocations,
             plugin_catalog=plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(()),
         )
         assert runtime.execution_loop is not None

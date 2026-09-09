@@ -314,7 +314,7 @@ class RedisThreadControlSignals:
         count: int = 16,
         block_ms: int | None = None,
     ) -> tuple[ThreadControlSignal, ...]:
-        """Read new wakeups; callers reconcile PostgreSQL before acknowledging."""
+        """Read new wakeups; callers acknowledge receipt before reconciling PostgreSQL."""
 
         _validate_signal_read(consumer=consumer, count=count, block_ms=block_ms)
         key = _signal_key(organization_id, thread_id)
@@ -362,7 +362,7 @@ class RedisThreadControlSignals:
         thread_id: str,
         stream_ids: Sequence[bytes],
     ) -> int:
-        """Acknowledge wakeups only after the caller's reconciliation attempt."""
+        """Acknowledge receipt of wakeups independently of durable reconciliation."""
 
         if not stream_ids:
             return 0

@@ -30,6 +30,7 @@ from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
+from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.state import CompletedOutcomeCandidate, InboxReceipt
@@ -495,6 +496,7 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         workspace_id=WORKSPACE_ID,
         idempotency_key="retry-source",
         request=_request("same intent"),
+        origin=SubmissionOrigin(native_tool_contexts=({"context_id": "accepted-native-context"},)),
     )
     await commands.interrupt(
         actor=_actor(),
@@ -534,6 +536,7 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))
     assert source is not None and retried is not None and thread is not None
     assert retried.retry_of_run_id == source.id
+    assert retried.native_tool_contexts_json == [{"context_id": "accepted-native-context"}]
     assert retried.parent_run_id is None
     assert retried.input_json == source.input_json
     assert retried.authority_principal_id == source.authority_principal_id
@@ -803,6 +806,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
         workspace_id=WORKSPACE_ID,
         idempotency_key="feedback-source",
         request=_request(),
+        origin=SubmissionOrigin(native_tool_contexts=({"context_id": "accepted-native-context"},)),
     )
     digest = await _wait_run(
         lifecycle_interaction_sessions,
@@ -852,6 +856,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == source.thread_id))
     assert waiting is not None and waiting.status == "waiting"
     assert successor is not None and thread is not None
+    assert successor.native_tool_contexts_json == [{"context_id": "accepted-native-context"}]
     assert successor.parent_run_id == waiting.id
     assert successor.input_kind == "waiting_feedback"
     assert successor.authority_principal_id == waiting.authority_principal_id
@@ -936,6 +941,7 @@ async def test_waiting_continue_defaults_feedback_and_preserves_new_input(
         workspace_id=WORKSPACE_ID,
         idempotency_key="waiting-continue-source",
         request=_request(),
+        origin=SubmissionOrigin(native_tool_contexts=({"context_id": "accepted-native-context"},)),
     )
     digest = await _wait_run(
         lifecycle_interaction_sessions,
@@ -968,6 +974,7 @@ async def test_waiting_continue_defaults_feedback_and_preserves_new_input(
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == source.thread_id))
     assert successor is not None and thread is not None
     assert successor.input_kind == "waiting_continue"
+    assert successor.native_tool_contexts_json == [{"context_id": "accepted-native-context"}]
     assert successor.parent_run_id == source.run_id
     assert successor.authority_principal_id == USER_ID
     assert successor.input_text == "handle this instead"

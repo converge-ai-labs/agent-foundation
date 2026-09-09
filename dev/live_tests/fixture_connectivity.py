@@ -7,6 +7,7 @@ They retain the actual dispatch arguments and credential hashes as test evidence
 import hashlib
 import json
 import secrets
+from datetime import UTC, datetime, timedelta
 
 import anyio
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -100,13 +101,14 @@ def connectivity_router(root, config):
         if path == "connected_accounts/link":
             await account_path.write_text(
                 json.dumps(
-                    {"id": "live-account", "toolkit_slug": "live", "user_id": body["user_id"], "status": "ACTIVE"}
+                    {"id": "live-account", "toolkit": {"slug": "live"}, "user_id": body["user_id"], "status": "ACTIVE"}
                 )
             )
             return {
                 "connected_account_id": "live-account",
                 "session_uri": "live-session",
-                "redirect_url": config["control_url"] + "/__live__/authorize",
+                "redirect_url": "https://connect.composio.dev/link/live-test",
+                "expires_at": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
             }
         if path == "connected_accounts/live-account":
             return json.loads(await account_path.read_text())

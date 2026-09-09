@@ -242,7 +242,7 @@ async def test_bearer_connection_is_pending_until_credentials_then_becomes_ready
         idempotency_key="bearer-credentials",
         request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
     )
-    assert ready.status == "pending"
+    assert ready.status == "ready"
     assert (await connections.get(actor=actor(), connection_id=ready.id)).status == "ready"
     assert ready.credential_configured is True
     assert "bearer-secret" not in repr(ready)
@@ -377,7 +377,7 @@ async def test_static_headers_require_the_complete_immutable_name_set(mcp_servic
             static_headers={"x-api-key": "static-secret"},
         ),
     )
-    assert ready.status == "pending"
+    assert ready.status == "ready"
     assert (await connections.get(actor=actor(), connection_id=ready.id)).status == "ready"
     assert any(request.headers.get("x-api-key") == "static-secret" for request in remote.requests)
     assert "static-secret" not in repr(ready)
@@ -444,9 +444,8 @@ async def test_none_connection_discovers_immediately_and_lifecycle_is_versioned(
             auth_mode=MCPAuthMode.none,
         ),
     )
-    assert created.status == "pending"
-    created = await connections.get(actor=actor(), connection_id=created.id)
     assert created.status == "ready"
+    assert await connections.get(actor=actor(), connection_id=created.id) == created
     disabled = await connections.set_enabled(
         actor=actor(),
         connection_id=created.id,

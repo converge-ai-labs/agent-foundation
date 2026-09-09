@@ -19,7 +19,7 @@ def test_serve_role_overrides_environment_role(
         del kwargs
         served_apps.append(app)
 
-    monkeypatch.setattr("a13n_service.cli.uvicorn.run", capture_app)
+    monkeypatch.setattr("a13n_service.cli.serve_app", capture_app)
     try:
         result = CliRunner().invoke(main, ["serve", "--role", "worker"])
     finally:

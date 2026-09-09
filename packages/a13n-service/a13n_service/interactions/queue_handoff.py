@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -55,6 +56,7 @@ class CombinedQueueHandoffReceipt:
     source_run_id: str
     source_run_version: int
     source_attempt_version: int
+    thread_version: int
     outcome: Literal["run_accepted", "submission_failed"]
     queued_submission: QueuedSubmission
     queue_version: int
@@ -67,6 +69,9 @@ class CombinedQueueHandoffReceipt:
         expected_state = QueuedSubmissionState.consumed if accepted else QueuedSubmissionState.failed
         if self.queued_submission.state is not expected_state:
             raise ValueError("combined handoff outcome and queued submission are inconsistent")
+
+
+type QueueHandoffCommit = Callable[[], Awaitable[CombinedQueueHandoffReceipt]]
 
 
 class CompletionQueueHandoffService:
@@ -89,7 +94,7 @@ class CompletionQueueHandoffService:
         self._inline_hooks = InlineHookAcceptance(sessions, inline_hooks)
         self._clock = clock
 
-    async def complete_and_consume(
+    async def prepare_consumption(
         self,
         *,
         authority: AttemptContext,
@@ -102,8 +107,9 @@ class CompletionQueueHandoffService:
         expected_thread_version: int,
         expected_queue_version: int,
         expected_head_run_id: str | None,
-    ) -> CombinedQueueHandoffReceipt:
-        """Atomically seal a completed source and accept the prepared queue head."""
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
+    ) -> QueueHandoffCommit:
+        """Publish successor objects and return a SQL-only combined commit."""
 
         await self._inline_hooks.validate_queued_destination(
             organization_id=successor_run.organization_id,
@@ -119,117 +125,123 @@ class CompletionQueueHandoffService:
         )
         await self._publish_initial(successor_run, successor_state)
 
-        now = assume_utc(self._clock())
-        try:
-            async with transaction(self._sessions) as database:
-                source, attempt, thread = await _lock_and_seal_source(
-                    database,
-                    authority=authority,
-                    source_state=source_state,
-                    candidate=candidate,
-                    expected_thread_version=expected_thread_version,
-                    expected_queue_version=expected_queue_version,
-                    expected_head_run_id=expected_head_run_id,
-                    now=now,
-                    additional_environment_ids=(
-                        (successor_run.environment_id,) if successor_run.environment_id else ()
-                    ),
-                )
-                _validate_successor_scope(successor_run, thread.organization_id, thread.session_id, thread.id)
+        async def commit() -> CombinedQueueHandoffReceipt:
+            now = assume_utc(self._clock())
+            try:
+                async with transaction(self._sessions) as database:
+                    source, attempt, thread = await _lock_and_seal_source(
+                        database,
+                        authority=authority,
+                        source_state=source_state,
+                        candidate=candidate,
+                        expected_thread_version=expected_thread_version,
+                        expected_queue_version=expected_queue_version,
+                        expected_head_run_id=expected_head_run_id,
+                        now=now,
+                        additional_environment_ids=(
+                            (successor_run.environment_id,) if successor_run.environment_id else ()
+                        ),
+                    )
+                    if final_validator is not None:
+                        await final_validator(database)
+                    _validate_successor_scope(successor_run, thread.organization_id, thread.session_id, thread.id)
 
-                await validate_advancement(
-                    database,
-                    thread,
-                    source,
-                    successor_run,
-                    candidate_payload=input_payload,
-                    next_head_run_id=source.id,
-                )
-                session_record_value = await require_session(database, successor_run)
-                successor_record = await add_run_with_environment(
-                    database,
-                    run=successor_run,
-                    state=successor_state,
-                    workspace_id=session_record_value.workspace_id,
-                    intent=requested_environment(
-                        await queued_environment_choice(database, queued_submission_id),
-                        default=EnvironmentDefault.thread,
-                    ),
-                )
-                await bind_unbound_async_entries(
-                    database,
-                    organization_id=successor_run.organization_id,
-                    thread_id=thread.id,
-                    target_run_id=successor_run.id,
-                    now=now,
-                )
-                consumed = await _consume_queue_head(
-                    database,
-                    run=successor_run,
-                    queued_submission_id=queued_submission_id,
-                    submission_digest_sha256=submission_digest_sha256,
-                    now=now,
-                )
-
-                thread.head_run_id = source.id
-                thread.current_run_id = successor_run.id
-                thread.version += 2
-                thread.queue_version += 1
-                thread.updated_at = now
-                await database.flush()
-                await self._inline_hooks.authorize(
-                    database,
-                    run=successor_run,
-                    workspace_id=session_record_value.workspace_id,
-                    subscription=consumed.submission.hook_subscription,
-                )
-                mutation_id = new_mutation_id()
-                await self._lifecycle.append_run_with_attempt_lifecycle(
-                    database,
-                    source,
-                    "run.completed",
-                    attempt=attempt,
-                    attempt_event_type="run_attempt.succeeded",
-                    mutation_id=mutation_id,
-                    occurred_at=now,
-                    actor_type="worker",
-                    actor_id=attempt.worker_id,
-                )
-                successor_hook_subscription_id = await self._inline_hooks.create(
-                    database,
-                    run=successor_record,
-                    workspace_id=session_record_value.workspace_id,
-                    subscription=consumed.submission.hook_subscription,
-                    now=now,
-                )
-                await self._lifecycle.append_accepted_run_lifecycle(
-                    database,
-                    successor_record,
-                    mutation_id=mutation_id,
-                )
-                return CombinedQueueHandoffReceipt(
-                    source_run_id=source.id,
-                    source_run_version=source.version,
-                    source_attempt_version=attempt.version,
-                    outcome="run_accepted",
-                    queued_submission=consumed,
-                    successor=RunAcceptanceReceipt(
-                        session_id=thread.session_id,
+                    await validate_advancement(
+                        database,
+                        thread,
+                        source,
+                        successor_run,
+                        candidate_payload=input_payload,
+                        next_head_run_id=source.id,
+                    )
+                    session_record_value = await require_session(database, successor_run)
+                    successor_record = await add_run_with_environment(
+                        database,
+                        run=successor_run,
+                        state=successor_state,
+                        workspace_id=session_record_value.workspace_id,
+                        intent=requested_environment(
+                            await queued_environment_choice(database, queued_submission_id),
+                            default=EnvironmentDefault.thread,
+                        ),
+                    )
+                    await bind_unbound_async_entries(
+                        database,
+                        organization_id=successor_run.organization_id,
                         thread_id=thread.id,
-                        thread_version=thread.version,
-                        run_id=successor_run.id,
-                        run_version=successor_run.version,
-                        hook_subscription_id=successor_hook_subscription_id,
-                    ),
-                    queue_version=thread.queue_version,
-                )
-        except IntegrityError as error:
-            raise RunAcceptanceError(
-                "combined_handoff_conflict",
-                "Combined handoff lost a concurrent mutation",
-            ) from error
+                        target_run_id=successor_run.id,
+                        now=now,
+                    )
+                    consumed = await _consume_queue_head(
+                        database,
+                        run=successor_run,
+                        queued_submission_id=queued_submission_id,
+                        submission_digest_sha256=submission_digest_sha256,
+                        now=now,
+                    )
 
-    async def complete_and_fail_permanently(
+                    thread.head_run_id = source.id
+                    thread.current_run_id = successor_run.id
+                    thread.version += 2
+                    thread.queue_version += 1
+                    thread.updated_at = now
+                    await database.flush()
+                    await self._inline_hooks.authorize(
+                        database,
+                        run=successor_run,
+                        workspace_id=session_record_value.workspace_id,
+                        subscription=consumed.submission.hook_subscription,
+                    )
+                    mutation_id = new_mutation_id()
+                    await self._lifecycle.append_run_with_attempt_lifecycle(
+                        database,
+                        source,
+                        "run.completed",
+                        attempt=attempt,
+                        attempt_event_type="run_attempt.succeeded",
+                        mutation_id=mutation_id,
+                        occurred_at=now,
+                        actor_type="worker",
+                        actor_id=attempt.worker_id,
+                    )
+                    successor_hook_subscription_id = await self._inline_hooks.create(
+                        database,
+                        run=successor_record,
+                        workspace_id=session_record_value.workspace_id,
+                        subscription=consumed.submission.hook_subscription,
+                        now=now,
+                    )
+                    await self._lifecycle.append_accepted_run_lifecycle(
+                        database,
+                        successor_record,
+                        mutation_id=mutation_id,
+                    )
+                    return CombinedQueueHandoffReceipt(
+                        source_run_id=source.id,
+                        source_run_version=source.version,
+                        source_attempt_version=attempt.version,
+                        thread_version=thread.version,
+                        outcome="run_accepted",
+                        queued_submission=consumed,
+                        successor=RunAcceptanceReceipt(
+                            session_id=thread.session_id,
+                            thread_id=thread.id,
+                            thread_version=thread.version,
+                            run_id=successor_run.id,
+                            run_version=successor_run.version,
+                            hook_subscription_id=successor_hook_subscription_id,
+                        ),
+                        queue_version=thread.queue_version,
+                    )
+            except IntegrityError as error:
+                raise RunAcceptanceError(
+                    "combined_handoff_conflict",
+                    "Combined handoff lost a concurrent mutation",
+                ) from error
+
+        return commit
+
+    async def prepare_failure(
         self,
         *,
         authority: AttemptContext,
@@ -240,69 +252,77 @@ class CompletionQueueHandoffService:
         expected_thread_version: int,
         expected_queue_version: int,
         expected_head_run_id: str | None,
-    ) -> CombinedQueueHandoffReceipt:
-        """Atomically seal completion and terminally fail an invalid queue head."""
+        revalidate: Callable[[AsyncSession], Awaitable[bool]],
+    ) -> QueueHandoffCommit:
+        """Verify source objects and return a SQL-only permanent-failure commit."""
 
         candidate = await self._verify_source(authority=authority, source_state=source_state)
-        now = assume_utc(self._clock())
-        try:
-            async with transaction(self._sessions) as database:
-                source, attempt, thread = await _lock_and_seal_source(
-                    database,
-                    authority=authority,
-                    source_state=source_state,
-                    candidate=candidate,
-                    expected_thread_version=expected_thread_version,
-                    expected_queue_version=expected_queue_version,
-                    expected_head_run_id=expected_head_run_id,
-                    now=now,
-                )
-                try:
-                    failed = await fail_first_submission(
+
+        async def commit() -> CombinedQueueHandoffReceipt:
+            now = assume_utc(self._clock())
+            try:
+                async with transaction(self._sessions) as database:
+                    source, attempt, thread = await _lock_and_seal_source(
                         database,
-                        organization_id=source.organization_id,
-                        thread_id=thread.id,
-                        queued_submission_id=queued_submission_id,
-                        submission_digest_sha256=submission_digest_sha256,
-                        failure=failure,
+                        authority=authority,
+                        source_state=source_state,
+                        candidate=candidate,
+                        expected_thread_version=expected_thread_version,
+                        expected_queue_version=expected_queue_version,
+                        expected_head_run_id=expected_head_run_id,
                         now=now,
                     )
-                except QueueConsumptionConflict as error:
-                    raise RunAcceptanceError(
-                        "queue_consumption_conflict",
-                        "Queued submission changed before combined handoff",
-                    ) from error
-                thread.head_run_id = source.id
-                thread.current_run_id = source.id
-                thread.version += 1
-                thread.queue_version += 1
-                thread.updated_at = now
-                await database.flush()
-                mutation_id = new_mutation_id()
-                await self._lifecycle.append_run_with_attempt_lifecycle(
-                    database,
-                    source,
-                    "run.completed",
-                    attempt=attempt,
-                    attempt_event_type="run_attempt.succeeded",
-                    mutation_id=mutation_id,
-                    occurred_at=now,
-                    actor_type="worker",
-                    actor_id=attempt.worker_id,
-                )
-                return CombinedQueueHandoffReceipt(
-                    source_run_id=source.id,
-                    source_run_version=source.version,
-                    source_attempt_version=attempt.version,
-                    outcome="submission_failed",
-                    queued_submission=failed.to_resource(),
-                    queue_version=thread.queue_version,
-                )
-        except IntegrityError as error:
-            raise RunAcceptanceError(
-                "combined_handoff_conflict",
-                "Combined handoff lost a concurrent mutation",
-            ) from error
+                    if not await revalidate(database):
+                        raise RunAcceptanceError("queue_failure_changed", "Permanent queued-intent invalidity changed")
+                    try:
+                        failed = await fail_first_submission(
+                            database,
+                            organization_id=source.organization_id,
+                            thread_id=thread.id,
+                            queued_submission_id=queued_submission_id,
+                            submission_digest_sha256=submission_digest_sha256,
+                            failure=failure,
+                            now=now,
+                        )
+                    except QueueConsumptionConflict as error:
+                        raise RunAcceptanceError(
+                            "queue_consumption_conflict",
+                            "Queued submission changed before combined handoff",
+                        ) from error
+                    thread.head_run_id = source.id
+                    thread.current_run_id = source.id
+                    thread.version += 1
+                    thread.queue_version += 1
+                    thread.updated_at = now
+                    await database.flush()
+                    mutation_id = new_mutation_id()
+                    await self._lifecycle.append_run_with_attempt_lifecycle(
+                        database,
+                        source,
+                        "run.completed",
+                        attempt=attempt,
+                        attempt_event_type="run_attempt.succeeded",
+                        mutation_id=mutation_id,
+                        occurred_at=now,
+                        actor_type="worker",
+                        actor_id=attempt.worker_id,
+                    )
+                    return CombinedQueueHandoffReceipt(
+                        source_run_id=source.id,
+                        source_run_version=source.version,
+                        source_attempt_version=attempt.version,
+                        thread_version=thread.version,
+                        outcome="submission_failed",
+                        queued_submission=failed.to_resource(),
+                        queue_version=thread.queue_version,
+                    )
+            except IntegrityError as error:
+                raise RunAcceptanceError(
+                    "combined_handoff_conflict",
+                    "Combined handoff lost a concurrent mutation",
+                ) from error
+
+        return commit
 
     async def _verify_prepared(
         self,
@@ -377,6 +397,7 @@ def _validate_combined_successor(
             agent_id=run.agent_id,
             agent_revision_id=run.agent_revision_id,
             effective_agent_config=state.effective_agent_config,
+            secret_bindings=state.secret_bindings,
         ),
         source_state.envelope,
     )

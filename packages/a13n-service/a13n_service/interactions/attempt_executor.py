@@ -76,7 +76,7 @@ class LeaseMonitor:
 
 
 class ControlWatcher:
-    """Turn Redis hints into bounded durable reconciliation and late acknowledgement."""
+    """Acknowledge Redis hints on receipt, then reconcile durable state."""
 
     def __init__(
         self,
@@ -96,9 +96,9 @@ class ControlWatcher:
             # Keep teardown cancellable even when control has already terminalized.
             await sleep(0)
             signal = await self._wakeups.receive()
-            await self._reconcile()
             with fail_after(self._context.reconciliation_timeout.total_seconds()):
                 await self._wakeups.acknowledge(signal)
+            await self._reconcile()
 
     async def _reconcile(self) -> None:
         with fail_after(self._context.reconciliation_timeout.total_seconds()):

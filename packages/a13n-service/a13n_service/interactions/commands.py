@@ -48,6 +48,8 @@ from a13n_service.interactions.control_domain import (
     QueuedSubmissionConsumptionReceipt,
     SteerReceipt,
     SteerStatus,
+    WaitingRunContinueInput,
+    WaitingRunFeedback,
     WaitingRunFeedbackRequest,
     normalize_feedback,
     normalize_waiting_continue,
@@ -76,6 +78,7 @@ from a13n_service.interactions.environment_selection import (
 )
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
+from a13n_service.interactions.inheritance import inherited_run_fields
 from a13n_service.interactions.initialization import (
     RunStateSeed,
     frozen_run_fields,
@@ -93,12 +96,13 @@ from a13n_service.interactions.input import (
     AgentInputError,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
-from a13n_service.interactions.objects import RunObjectError, RunPayloadStore, RunStateStore
+from a13n_service.interactions.objects import RunObjectError, RunPayloadStore, RunStateStore, StoredRunState
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
 from a13n_service.interactions.protocol_context import ProtocolInputContext
+from a13n_service.interactions.queue_preparation import PreparedQueuedRun
 from a13n_service.interactions.queue_validity import permanent_queue_failure
-from a13n_service.interactions.state import RunPayloadEnvelope
+from a13n_service.interactions.state import RunCheckpoint, RunPayloadEnvelope
 from a13n_service.secrets.agent_inputs import graph_secret_requirements, require_secret, validate_secret_bindings
 from a13n_service.secrets.domain import AgentSecretBinding
 from a13n_service.storage import ObjectStoreError, short_session, transaction
@@ -861,7 +865,7 @@ class InteractionCommands:
             idempotency_key=None,
             request_fingerprint=request_fingerprint,
             organization_id=source.organization_id,
-            authority_principal=source.authority_principal,
+            **inherited_run_fields(source),
             session_id=source.session_id,
             thread_id=source.thread_id,
             parent_run_id=source.parent_run_id,
@@ -872,15 +876,8 @@ class InteractionCommands:
             parent_agent_instance_id=source.parent_agent_instance_id,
             delegation_id=source.delegation_id,
             parent_tool_call_id=source.parent_tool_call_id,
-            agent_id=source.agent_id,
-            agent_revision_id=source.agent_revision_id,
             environment_id=source.environment_id,
             environment_access=source.environment_access,
-            effective_agent_config_digest=source.effective_agent_config_digest,
-            model_execution_observation=source.model_execution_observation,
-            connector_connection_selections=source.connector_connection_selections,
-            mcp_connection_selections=source.mcp_connection_selections,
-            native_tool_contexts=source.native_tool_contexts,
             priority=source.priority,
             queue_name=source.queue_name,
             execution_budget=source.execution_budget,
@@ -1017,6 +1014,73 @@ class InteractionCommands:
             actor=actor,
             thread_id=thread_id,
         )
+        prepared = await self.prepare_queued_run(
+            actor=actor,
+            current=current,
+            head=head,
+            head_state=None if head is None else (await self._states.read_run(head)).envelope,
+            thread=thread,
+            queued=queued,
+            request_fingerprint=request_fingerprint,
+        )
+        run = prepared.run
+
+        async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
+            # Automatic drain recovers from the queue row, not a synthetic HTTP command.
+            if stored_key is None:
+                return
+            database.add(
+                new_evidence(
+                    organization_id=run.organization_id,
+                    scope=run_command_scope(actor),
+                    identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
+                    result_kind="queue_consumption",
+                    result_ref=run.id,
+                    receipt=receipt.model_dump(mode="json"),
+                    now=self._clock(),
+                )
+            )
+
+        try:
+            return await self._acceptance.consume_queued(
+                run=run,
+                state=prepared.state,
+                queued_submission_id=queued.queued_submission_id,
+                submission_digest_sha256=queued.submission_digest_sha256,
+                accepted_input=prepared.input,
+                expected_thread_version=request.expected_thread_version,
+                expected_queue_version=request.expected_queue_version,
+                expected_current_run_id=current.id,
+                expected_head_run_id=None if head is None else head.id,
+                next_head_run_id=None if head is None else head.id,
+                final_validator=prepared.validate,
+                transaction_hook=record_receipt,
+            )
+        except RunAcceptanceError as error:
+            if stored_key is None:
+                raise _map_acceptance_error(error) from error
+            replay = await self._queued_consumption_replay(
+                actor=actor,
+                thread_id=thread_id,
+                stored_key=stored_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return replay
+            raise _map_acceptance_error(error) from error
+
+    async def prepare_queued_run(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        current: Run,
+        head: Run | None,
+        head_state: RunCheckpoint | None,
+        thread: Thread,
+        queued: QueuedSubmission,
+        request_fingerprint: str,
+    ) -> PreparedQueuedRun:
+        """Resolve the queue Principal's intent outside its final acceptance transaction."""
         retained_actor = AuthenticatedActor(
             principal=queued.authority_principal,
             auth_method="stored_queued_submission",
@@ -1056,13 +1120,11 @@ class InteractionCommands:
             state = initialize_empty_thread_state(seed, thread_id=thread.id)
             parent_run_id = None
             lineage_kind = RunLineageKind.root
-            next_head_run_id = None
         else:
-            head_state = await self._states.read_run(head)
-            state = initialize_completed_continuation_state(seed, head_state.envelope)
+            assert head_state is not None
+            state = initialize_completed_continuation_state(seed, head_state)
             parent_run_id = head.id
             lineage_kind = RunLineageKind.continue_
-            next_head_run_id = head.id
 
         now = self._clock()
         run = accepted_run(
@@ -1118,49 +1180,7 @@ class InteractionCommands:
                     category=ErrorCategory.conflict,
                 )
 
-        async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
-            # Automatic drain recovers from the queue row, not a synthetic HTTP command.
-            if stored_key is None:
-                return
-            database.add(
-                new_evidence(
-                    organization_id=run.organization_id,
-                    scope=run_command_scope(actor),
-                    identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
-                    result_kind="queue_consumption",
-                    result_ref=run.id,
-                    receipt=receipt.model_dump(mode="json"),
-                    now=self._clock(),
-                )
-            )
-
-        try:
-            return await self._acceptance.consume_queued(
-                run=run,
-                state=state,
-                queued_submission_id=queued.queued_submission_id,
-                submission_digest_sha256=queued.submission_digest_sha256,
-                accepted_input=accepted_input,
-                expected_thread_version=request.expected_thread_version,
-                expected_queue_version=request.expected_queue_version,
-                expected_current_run_id=current.id,
-                expected_head_run_id=None if head is None else head.id,
-                next_head_run_id=next_head_run_id,
-                final_validator=validate_final,
-                transaction_hook=record_receipt,
-            )
-        except RunAcceptanceError as error:
-            if stored_key is None:
-                raise _map_acceptance_error(error) from error
-            replay = await self._queued_consumption_replay(
-                actor=actor,
-                thread_id=thread_id,
-                stored_key=stored_key,
-                request_fingerprint=request_fingerprint,
-            )
-            if replay is not None:
-                return replay
-            raise _map_acceptance_error(error) from error
+        return PreparedQueuedRun(run, state, accepted_input, validate_final)
 
     async def feedback(
         self,
@@ -1233,96 +1253,17 @@ class InteractionCommands:
                 category=ErrorCategory.conflict,
             )
 
-        new_run_id_value = new_run_id()
-        state = initialize_waiting_continuation_state(
-            RunStateSeed(
-                run_id=new_run_id_value,
-                agent_id=source.agent_id,
-                agent_revision_id=source.agent_revision_id,
-                effective_agent_config=source_state.envelope.effective_agent_config,
-                prepared_plugins=source_state.envelope.prepared_plugins,
-                secret_bindings=source_state.envelope.secret_bindings,
-                protocol_context=protocol_context
-                if protocol_context is not None
-                else source_state.envelope.protocol_context,
-            ),
-            source_state.envelope,
-        )
-        now = self._clock()
-        feedback_run = accepted_run(
-            now=now,
-            id=new_run_id_value,
-            organization_id=source.organization_id,
-            authority_principal=source.authority_principal,
-            session_id=source.session_id,
-            thread_id=source.thread_id,
-            parent_run_id=source.id,
-            retry_of_run_id=None,
-            lineage_kind=RunLineageKind.continue_,
-            trigger_type="feedback",
-            agent_id=source.agent_id,
-            agent_revision_id=source.agent_revision_id,
-            effective_agent_config_digest=source.effective_agent_config_digest,
-            model_execution_observation=source.model_execution_observation,
-            connector_connection_selections=source.connector_connection_selections,
-            mcp_connection_selections=source.mcp_connection_selections,
-            priority=source.priority,
-            queue_name=source.queue_name,
-            execution_budget=source.execution_budget,
-            idempotency_key=None,
+        return await self._accept_waiting_successor(
+            actor=actor,
+            source=source,
+            source_state=source_state,
+            request=request,
+            normalized=normalized,
+            stored_key=stored_key,
             request_fingerprint=request_fingerprint,
-            input_kind=RunInputKind.waiting_feedback,
-            input=normalized.model_dump(mode="json", by_alias=True),
-            input_text=None,
+            protocol_context=protocol_context,
+            transaction_hook=transaction_hook,
         )
-
-        async def validate_final(database: AsyncSession) -> None:
-            try:
-                await authorize_agent(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    agent_id=source.agent_id,
-                    action=WorkspaceAction.run_feedback,
-                )
-                await authorize_persisted_agent_principal_actions(
-                    database,
-                    principal=source.authority_principal,
-                    organization_id=source.organization_id,
-                    workspace_id=actor.workspace_id,
-                    agent_id=source.agent_id,
-                    actions=frozenset({WorkspaceAction.agent_invoke}),
-                )
-            except AuthorizationError as error:
-                raise _not_found() from error
-
-        try:
-            return await self._acceptance.advance_thread(
-                environment=RetainedRunEnvironment(source.id, source.thread_id),
-                run=feedback_run,
-                state=state,
-                expected_thread_version=request.expected_thread_version,
-                expected_current_run_id=source.id,
-                expected_head_run_id=source.id,
-                next_head_run_id=source.id,
-                hook_subscription=request.hook_subscription,
-                hook_source_run_id=source.id if "hook_subscription" not in request.model_fields_set else None,
-                hook_actor=actor.principal,
-                final_validator=validate_final,
-                transaction_hook=RunCommandCommit(
-                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
-                ),
-            )
-        except RunAcceptanceError as error:
-            replay = await self._start_replay(
-                actor=actor,
-                workspace_id=actor.workspace_id,
-                stored_key=stored_key,
-                request_fingerprint=request_fingerprint,
-            )
-            if replay is not None:
-                return replay
-            raise _map_acceptance_error(error) from error
 
     async def continue_waiting(
         self,
@@ -1395,6 +1336,38 @@ class InteractionCommands:
                 category=ErrorCategory.conflict,
             )
 
+        return await self._accept_waiting_successor(
+            actor=actor,
+            source=source,
+            source_state=source_state,
+            request=request,
+            normalized=normalized,
+            stored_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            protocol_context=request.protocol_context,
+            transaction_hook=transaction_hook,
+        )
+
+    async def _accept_waiting_successor(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        source: Run,
+        source_state: StoredRunState,
+        request: WaitingRunFeedbackRequest | WaitingContinueRunCommand,
+        normalized: WaitingRunFeedback,
+        stored_key: str,
+        request_fingerprint: str,
+        protocol_context: ProtocolInputContext | None,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None,
+    ) -> RunAcceptanceReceipt:
+        """Preserve the waiting execution while accepting its normalized resolution."""
+        accepted_input = normalized.input if isinstance(normalized, WaitingRunContinueInput) else None
+        actions = (
+            (WorkspaceAction.run_continue, WorkspaceAction.run_feedback)
+            if accepted_input is not None
+            else (WorkspaceAction.run_feedback,)
+        )
         successor_id = new_run_id()
         state = initialize_waiting_continuation_state(
             RunStateSeed(
@@ -1403,44 +1376,39 @@ class InteractionCommands:
                 agent_revision_id=source.agent_revision_id,
                 effective_agent_config=source_state.envelope.effective_agent_config,
                 prepared_plugins=source_state.envelope.prepared_plugins,
-                secret_bindings=accepted_input.secret_bindings,
-                protocol_context=request.protocol_context
-                if request.protocol_context is not None
+                secret_bindings=accepted_input.secret_bindings
+                if accepted_input is not None
+                else source_state.envelope.secret_bindings,
+                protocol_context=protocol_context
+                if protocol_context is not None
                 else source_state.envelope.protocol_context,
             ),
             source_state.envelope,
         )
-        now = self._clock()
         successor = accepted_run(
-            now=now,
+            now=self._clock(),
             id=successor_id,
             organization_id=source.organization_id,
-            authority_principal=source.authority_principal,
+            **inherited_run_fields(source),
             session_id=source.session_id,
             thread_id=source.thread_id,
             parent_run_id=source.id,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.continue_,
-            trigger_type="user_input",
-            agent_id=source.agent_id,
-            agent_revision_id=source.agent_revision_id,
-            effective_agent_config_digest=source.effective_agent_config_digest,
-            model_execution_observation=source.model_execution_observation,
-            connector_connection_selections=source.connector_connection_selections,
-            mcp_connection_selections=source.mcp_connection_selections,
+            trigger_type="user_input" if accepted_input is not None else "feedback",
             priority=source.priority,
             queue_name=source.queue_name,
             execution_budget=source.execution_budget,
             idempotency_key=None,
             request_fingerprint=request_fingerprint,
-            input_kind=RunInputKind.waiting_continue,
+            input_kind=RunInputKind.waiting_continue if accepted_input is not None else RunInputKind.waiting_feedback,
             input=normalized.model_dump(mode="json", by_alias=True),
-            input_text=_input_text(accepted_input),
+            input_text=_input_text(accepted_input) if accepted_input is not None else None,
         )
 
         async def validate_final(database: AsyncSession) -> None:
             try:
-                for action in (WorkspaceAction.run_continue, WorkspaceAction.run_feedback):
+                for action in actions:
                     await authorize_agent(
                         database,
                         actor=actor,

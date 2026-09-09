@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import click
-import uvicorn
 
 from a13n_service.database import DatabaseMigrator
 from a13n_service.log import configure_logging
+from a13n_service.process.server import serve_app
 from a13n_service.settings import ProcessRole, Settings, get_settings
 
 
@@ -32,13 +32,7 @@ def serve(host: str | None, role: str | None) -> None:
     if role is not None:
         settings = settings.model_copy(update={"role": ProcessRole(role)})
     configure_logging(settings)
-    uvicorn.run(
-        create_app(settings),
-        host=host or settings.host,
-        port=settings.port,
-        log_config=None,
-        workers=1,
-    )
+    serve_app(create_app(settings), host=host)
 
 
 @main.group()

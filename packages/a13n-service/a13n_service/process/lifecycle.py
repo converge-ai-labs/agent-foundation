@@ -82,11 +82,7 @@ async def open_process_runtime(
                 ),
                 secret_protector=settings.secret_protector(),
             )
-            agent_resources = (
-                build_agent_resources(components, shared, model_provider_registry)
-                if owns_control(settings.role) or owns_connectivity_data(settings.role)
-                else None
-            )
+            agent_resources = build_agent_resources(components, shared, model_provider_registry)
             execution = (
                 await build_execution_resources(
                     shared,
@@ -120,12 +116,13 @@ async def open_process_runtime(
                     stack,
                     components.connector_provider_registry,
                     plugin_catalog=plugin_catalog,
+                    invocations=agent_resources.invocations,
                     observability=observability,
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
             if owns_control(settings.role):
-                if execution is None or environment_catalog is None or agent_resources is None:
+                if execution is None or environment_catalog is None:
                     raise RuntimeError("Control execution resources were not constructed")
                 control, control_background = await build_control_runtime(
                     settings,
@@ -142,8 +139,6 @@ async def open_process_runtime(
                 if control is not None:
                     commands = control.gateway.commands
                 else:
-                    if agent_resources is None:
-                        raise RuntimeError("Connectivity Agent admission resources were not constructed")
                     assets = await build_asset_bundle(settings, shared)
                     commands = build_input_commands(
                         settings,
@@ -198,16 +193,14 @@ async def open_process_runtime(
                 try:
                     yield runtime
                 finally:
-                    status.draining = True
+                    runtime.begin_drain()
                     if worker is not None:
                         if worker.execution_loop is not None:
                             await worker.execution_loop.drain()
                             await worker.execution_loop.wait_stopped()
-                        worker.environment_maintenance.drain()
                         with move_on_after(settings.environment_operation_timeout_seconds):
                             await worker.environment_maintenance.wait_stopped()
                     if control is not None:
-                        control.subagent_maintenance.drain()
                         with move_on_after(settings.subagent_reconcile_drain_seconds):
                             await control.subagent_maintenance.wait_stopped()
                     background_tasks.cancel_scope.cancel()

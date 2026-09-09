@@ -84,6 +84,10 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
             result[name] = await (path / name).read_text() if await (path / name).is_file() else ""
         for name in ("model_requests", "approval_executions", *round_two_model.COUNTERS):
             result[name] = len((await (path / name).read_text()).splitlines()) if await (path / name).is_file() else 0
+        steers = path / "steer_observations"
+        result["steer_observations"] = (
+            [json.loads(line) for line in (await steers.read_text()).splitlines()] if await steers.is_file() else []
+        )
         deliveries = path / "result_deliveries"
         result["result_deliveries"] = (
             [json.loads(line) for line in (await deliveries.read_text()).splitlines()]
@@ -120,6 +124,10 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
             return await management_model.completion(case, path, body, request)
         if case.scenario in round_two_model.SCENARIOS:
             return await round_two_model.completion(case, path, body, texts, tool_messages)
+        if case.scenario == "steer":
+            steers = [value for text in texts for value in re.findall(r"LIVE_STEER ([a-f0-9]{32})", text)]
+            async with await anyio.open_file(path / "steer_observations", "a") as output:
+                await output.write(json.dumps(steers) + "\n")
         tool = None
         answer = case.token
         if case.scenario == "remember":
@@ -149,8 +157,7 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
                 },
             }
         elif case.scenario == "steer":
-            steers = [value for text in texts for value in re.findall(r"LIVE_STEER ([a-f0-9]{32})", text)]
-            answer = steers[-1] if steers else "steer-not-delivered"
+            answer = steers[0] if len(steers) == 1 else f"steer-count:{len(steers)}"
         elif case.scenario == "approval":
             answer = "approval-resolved"
         if not body.get("stream"):

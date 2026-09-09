@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pydantic_ai.mcp import MCPToolset
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.iam import AuthenticatedActor
 from a13n_service.storage import transaction
 
-from .domain import MCPTool
+from .domain import MCPConnection, MCPTool
 from .errors import MCPConnectionError
-from .management import require_connection
+from .management import authorize_connection, require_connection
 from .refresh import OAuthCredentialRefresh
 from .transport import RemoteTransport
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryCommand:
+    evidence_id: str
+    actor: AuthenticatedActor
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryResult:
+    connection: MCPConnection
+    tools: tuple[MCPTool, ...]
 
 
 class MCPDiscoveryService:
@@ -26,7 +42,7 @@ class MCPDiscoveryService:
         self._transport = transport
         self._credentials = credentials
 
-    async def discover(self, connection_id: str) -> tuple[MCPTool, ...]:
+    async def discover(self, connection_id: str, *, command: DiscoveryCommand | None = None) -> DiscoveryResult:
         snapshot = await self._credentials.current(connection_id)
         generation = snapshot.credential_generation
 
@@ -73,6 +89,24 @@ class MCPDiscoveryService:
                 raise MCPConnectionError(
                     "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
                 )
+            evidence = None
+            if command is not None:
+                await authorize_connection(session, command.actor, current, mode="manage")
+                evidence = await session.get(IdempotencyEvidenceRecord, command.evidence_id, with_for_update=True)
+                if (
+                    evidence is None
+                    or evidence.result_ref != connection_id
+                    or evidence.receipt_json is None
+                    or evidence.receipt_json.get("version") != current.version
+                ):
+                    raise MCPConnectionError(
+                        "connection_changed",
+                        "MCPConnection command changed during discovery.",
+                        category=ErrorCategory.conflict,
+                    )
             current.status = "ready"
             current.status_reason = None
-        return tools
+            resource = current.to_resource()
+            if evidence is not None:
+                evidence.receipt_json = {"version": resource.version, "resource": resource.model_dump(mode="json")}
+        return DiscoveryResult(connection=resource, tools=tools)
