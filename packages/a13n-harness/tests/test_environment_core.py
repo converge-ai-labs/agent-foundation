@@ -600,7 +600,7 @@ async def test_direct_mount_paths_route_by_longest_prefix_without_legacy_aliases
         host_refs={},
     ) as environment:
         root = environment.resolve_path("/Users/example/project/readme.md")
-        child = environment.resolve_path("/Users/example/project/vendor/package.toml")
+        child = environment.resolve_path("/Users/example/project/./vendor//package.toml")
         relative = environment.resolve_path("src/main.py")
 
         assert root.mount_id == project.mount_id
@@ -619,6 +619,51 @@ async def test_direct_mount_paths_route_by_longest_prefix_without_legacy_aliases
         with pytest.raises(EnvironmentError) as mismatch:
             environment.resolve_path("/Users/example/project/vendor/package.toml", alias="workspace")
         assert mismatch.value.code == "environment_selection_invalid"
+
+
+@pytest.mark.parametrize(
+    "root", ["/native/project", "C:/Users/Example", "//server/share/project", "/", "C:/", "//server/share/"]
+)
+@pytest.mark.parametrize("suffix", ["src/", "src//", "./src/./", "src//./"])
+async def test_operation_paths_normalize_before_routing_and_scoped_io(root: str, suffix: str) -> None:
+    received: list[str] = []
+
+    class RecordingFiles(_Files):
+        async def stat(self, path: str) -> FileMetadata:
+            received.append(path)
+            return await super().stat(path)
+
+    provider = _Binding("project", operations=EnvironmentProviderOperations(files=RecordingFiles()))
+    runtime = create_environment_runtime(
+        mounts={"project": _runtime_mount(provider, mount_path=root)}, default_mount="project"
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        absolute = f"{root.rstrip('/')}/{suffix}"
+        selected = await environment.resolve_files(absolute)
+        assert selected.resolved_path.path == "/src"
+        assert environment.resolve_path(suffix) == selected.resolved_path
+        assert environment.resolve_path(f"{root.rstrip('/')}/").path == "/"
+        assert environment.resolve_path("./").path == "/"
+        assert environment.resolve_path("./C:/src").path == "/C:/src"
+        async with environment.open_files(selected) as files:
+            assert (await files.stat(absolute)).path == absolute
+            assert (await files.stat(suffix)).path == suffix
+        assert (await environment.files.stat(absolute)).path == absolute
+        assert received == ["/src", "/src", "/src"]
+
+
+@pytest.mark.parametrize("path", ["", "bad\x00path", "../src", "/workspace/src/../other", "/workspace/./../other"])
+async def test_invalid_operation_paths_have_actionable_errors(path: str) -> None:
+    provider = _Binding("project")
+    runtime = create_environment_runtime(mounts={"project": _runtime_mount(provider)}, default_mount="project")
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        with pytest.raises(EnvironmentError) as invalid:
+            environment.resolve_path(path)
+        assert invalid.value.code == "environment_request_invalid"
+        assert invalid.value.retry_hint == "request_change"
+        assert invalid.value.details["field"] == "path"
+        assert invalid.value.details["reason"] == "invalid_path"
+        assert invalid.value.details["hint"]
 
 
 async def test_default_change_rejects_a_new_legacy_route_conflict() -> None:

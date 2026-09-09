@@ -13,6 +13,7 @@ from a13n_harness import (
     HarnessEvent,
     RunBindings,
 )
+from a13n_harness.environment import EnvironmentError
 from a13n_harness.tools import (
     CanonicalResource,
     CredentialLease,
@@ -116,6 +117,57 @@ async def test_resource_resolution_precedes_policy_and_uses_typed_arguments() ->
 
     assert result.status == "completed"
     assert order == [("resolver", 3, int), ("policy", "/3"), ("tool", 3)]
+
+
+@pytest.mark.parametrize("known", [True, False])
+async def test_resource_resolution_failures_are_safe_and_never_dispatch(known: bool) -> None:
+    seen: list[Any] = []
+    executed: list[bool] = []
+
+    async def resolve(arguments, *, context):
+        del arguments, context
+        if known:
+            raise EnvironmentError(
+                "private provider diagnostic",
+                code="environment_request_invalid",
+                details={
+                    "field": "path",
+                    "reason": "invalid_path",
+                    "hint": "Use an absolute mounted path.",
+                    "private": "must not appear",
+                },
+                retry_hint="request_change",
+            )
+        raise RuntimeError("private provider diagnostic")
+
+    def read() -> str:
+        executed.append(True)
+        return "unexpected"
+
+    tool = HarnessTool(read, harness_metadata=_metadata(resolver=resolve))
+    result = await _run(tool, InvocationPolicyCapability(evaluator=_Allow(seen)))
+    assert result.status == "completed"
+    assert seen == executed == []
+    returns = [
+        part
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert len(returns) == 1
+    if known:
+        assert returns[0].content == {
+            "ok": False,
+            "error": {
+                "code": "environment_request_invalid",
+                "retry_hint": "request_change",
+                "details": {"field": "path", "reason": "invalid_path", "hint": "Use an absolute mounted path."},
+            },
+        }
+    else:
+        assert "Managed tool resources could not be resolved" in str(returns[0].content)
+    assert "private" not in str(returns[0].content)
 
 
 async def test_resource_resolver_cannot_mutate_digested_dispatch_arguments() -> None:

@@ -1040,13 +1040,13 @@ class StreamRenderer:
                             edit.edit_applied = True
                         if panel.kind == "edit":
                             lines = panel.body.splitlines()
-                            preview_body = "\n".join(lines[:50])
-                            if len(lines) > 50:
-                                preview_body += f"\n… {len(lines) - 50} more diff lines · Ctrl+O details"
+                            preview_body = "\n".join(lines[:100])
+                            if len(lines) > 100:
+                                preview_body += f"\n… {len(lines) - 100} more diff lines · Ctrl+O details"
                             self.transcript.preview(
                                 block_id,
                                 terminal_text(f"{panel.title}\n{preview_body}"),
-                                54,
+                                104,
                                 limit=self.transcript.block_bytes,
                             )
                         elif panel.kind == "tool":

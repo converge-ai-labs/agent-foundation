@@ -16,6 +16,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._json import redact_json
 from a13n_harness.context import AgentContext, ToolMetadataKey
+from a13n_harness.environment._mount_path import normalize_operation_path
 from a13n_harness.environment._resources import EnvironmentResources
 from a13n_harness.environment.files import (
     FileMetadata,
@@ -1072,7 +1073,10 @@ class FileToolset:
         )
 
     async def _ensure_parent(self, files: FileOperator, file_path: str) -> None:
-        parent = posixpath.dirname(file_path)
+        # Derive the parent from dispatch spelling, but keep the original input
+        # for exact scope matching so root-level writes need no mkdir permission.
+        normalized_path = normalize_operation_path(file_path) if self._resources is not None else file_path
+        parent = posixpath.dirname(normalized_path)
         parts = tuple(part for part in parent.split("/") if part)
         is_binding_root = (
             self._file_access.has_mount_root_parent(file_path)

@@ -20,6 +20,7 @@ from a13n_harness.identity import AgentInstanceContext
 
 from ._mount_path import (
     mount_path_from_provider_path,
+    normalize_operation_path,
     parse_mount_path,
     provider_path_from_suffix,
 )
@@ -600,17 +601,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     def _resolve_path(self, path: str, *, alias: str | None = None) -> _ResolvedPath:
         self._assert_open()
-        if not isinstance(path, str) or not path or "\x00" in path:
-            raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid")
-        segments = path.split("/")
-        if any(segment == ".." or (segment == "." and path != ".") for segment in segments):
-            raise EnvironmentError("Environment path traversal is invalid.", code="environment_request_invalid")
+        path = _normalize_operation_path(path)
 
         if _is_absolute_path(path):
             try:
                 parsed = parse_mount_path(path)
             except ValueError as exc:
-                raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid") from exc
+                raise _invalid_operation_path(
+                    "Use an absolute POSIX, Windows drive, or UNC path with forward-slash separators."
+                ) from exc
             matches: list[tuple[int, _EnteredMount, str, tuple[str, ...]]] = []
             for entered in self._entered.values():
                 for root in _mount_paths(entered.public, self._snapshot.default_mount):
@@ -659,7 +658,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "The mount working directory is invalid.",
                 code="environment_provider_failure",
             )
-        provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
+        provider_path = base if path == "." else normalize_operation_path(f"{base.rstrip('/')}/{path}")
         return _ResolvedPath(
             entered=selected,
             provider_path=provider_path,
@@ -796,16 +795,14 @@ class CompositeBoundEnvironment(BoundEnvironment):
         entered: _EnteredMount,
         mount_path: str,
     ) -> EnvironmentPath:
-        if not isinstance(path, str) or not path or "\x00" in path:
-            raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid")
-        segments = path.split("/")
-        if any(segment == ".." or (segment == "." and path != ".") for segment in segments):
-            raise EnvironmentError("Environment path traversal is invalid.", code="environment_request_invalid")
+        path = _normalize_operation_path(path)
         if _is_absolute_path(path):
             try:
                 suffix = parse_mount_path(path).suffix_below(parse_mount_path(mount_path))
             except ValueError as exc:
-                raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid") from exc
+                raise _invalid_operation_path(
+                    "Use an absolute POSIX, Windows drive, or UNC path with forward-slash separators."
+                ) from exc
             if suffix is None:
                 raise EnvironmentError(
                     "The scoped file path selects another mount.",
@@ -819,7 +816,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     "The mount working directory is invalid.",
                     code="environment_provider_failure",
                 )
-            provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
+            provider_path = base if path == "." else normalize_operation_path(f"{base.rstrip('/')}/{path}")
         return EnvironmentPath(mount_id=entered.mount_id, path=provider_path)
 
     @asynccontextmanager
@@ -1594,6 +1591,22 @@ def _preferred_mount_path(info: EnvironmentMountInfo, default_mount: str | None)
     if info.mount_path is not None:
         return info.mount_path
     return "/workspace" if info.name == default_mount else f"/environment/{info.name}"
+
+
+def _invalid_operation_path(hint: str) -> EnvironmentError:
+    return EnvironmentError(
+        "Environment path is invalid.",
+        code="environment_request_invalid",
+        details={"field": "path", "reason": "invalid_path", "hint": hint},
+        retry_hint="request_change",
+    )
+
+
+def _normalize_operation_path(path: str) -> str:
+    try:
+        return normalize_operation_path(path)
+    except ValueError as exc:
+        raise _invalid_operation_path(str(exc)) from exc
 
 
 def _is_absolute_path(path: str) -> bool:

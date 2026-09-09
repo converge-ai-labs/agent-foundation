@@ -54,14 +54,7 @@ def _tool_row(source: str, theme: ResolvedTheme) -> Text:
             "Explored",
         )
     ):
-        value = Text(no_wrap=False, overflow="fold")
-        for index, line in enumerate(source.splitlines()):
-            if index:
-                value.append("\n")
-            label, separator, detail = line.partition(" ")
-            value.append(label + separator, style=colors["muted"])
-            value.append(detail, style="default")
-        return value
+        return Text(source, style=colors["muted"], no_wrap=False, overflow="fold")
     name, separator, remainder = source.partition(" | ")
     value = Text(name, style=colors["muted"], no_wrap=False, overflow="fold")
     if not separator:
@@ -80,7 +73,7 @@ def _tool_row(source: str, theme: ResolvedTheme) -> Text:
     value.append(" | ", style=colors["muted"])
     value.append(state, style=colors[tone])
     value.append(separator, style=colors["muted"])
-    value.append(detail, style="default")
+    value.append(detail, style=colors["muted"])
     return value
 
 
@@ -372,19 +365,43 @@ class Transcript:
                 content: Text | TerminalMarkdown = Text(body, no_wrap=folded, overflow="ellipsis" if folded else "fold")
                 if kind == "edit":
                     content = Text(no_wrap=False, overflow="fold")
-                    for line in body.splitlines(keepends=True):
+                    shortened = False
+                    body_width = max(1, width - 4)
+                    for index, line in enumerate(body.splitlines()):
+                        if index:
+                            content.append("\n")
                         style = "green" if line.startswith("+") else "red" if line.startswith("-") else ""
-                        content.append(line, style=style)
-                    # Rich panel titles are single-line; keep long paths in the
-                    # wrapping body so concise mode does not silently lose them.
-                    content = Text.assemble((title + "\n", "bold"), content)
+                        value_line = Text(line, style=style)
+                        if folded:
+                            wrapped = value_line.wrap(console, body_width, overflow="fold", no_wrap=False)
+                            if len(wrapped) > 3:
+                                shortened = True
+                                wrapped[2].truncate(body_width - 1)
+                                wrapped[2].append("…")
+                                value_line = Text("\n").join(wrapped[:3])
+                        content.append(value_line)
+                    if shortened:
+                        content.append(
+                            "\n… Long diff lines shortened · Ctrl+O details",
+                            style=activity_colors(self.theme)["muted"],
+                        )
+                    # Rich adds two title spaces and four frame cells. Keep
+                    # fitting headings on the border, but never clip a path.
+                    if title.startswith("Edit · ") and Text(title).cell_len > width - 6:
+                        path, separator, counts = title.removeprefix("Edit · ").rpartition(" · ")
+                        if separator:
+                            title = f"Edit · {counts}"
+                            heading = Text(path, style=activity_colors(self.theme)["muted"])
+                            if Text(title).cell_len > width - 6:
+                                title = "Edit"
+                                heading.append(f"\n{counts}")
+                            heading.append("\n\n")
+                            content = Text.assemble(heading, content, no_wrap=False, overflow="fold")
                 elif markdown:
                     content = TerminalMarkdown(body, code_theme=self.theme.syntax_theme, hyperlinks=False)
                 value = Panel(
                     content,
-                    title=None
-                    if kind == "edit"
-                    else Text(
+                    title=Text(
                         title,
                         style=f"bold {activity_colors(self.theme)['running']}"
                         if kind == "notes"
@@ -420,7 +437,7 @@ class Transcript:
                     accent = "fg:ansibrightblack"
                 elif kind == "shell":
                     accent = "fg:ansicyan"
-                elif kind != "notice" and not markdown and text.startswith("["):
+                elif kind not in {"notice", "tool", "command"} and not markdown and text.startswith("["):
                     accent = "fg:ansicyan bold"
                 elif kind == "edit" and text.startswith(("+", "-")):
                     accent = "fg:ansigreen" if text.startswith("+") else "fg:ansired"

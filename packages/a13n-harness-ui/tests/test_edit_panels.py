@@ -125,3 +125,67 @@ def test_shell_diff_output_retains_file_headers_and_hunk_coordinates() -> None:
     assert shell_result_preview(result, "git diff") == "exit 0 | git diff"
     _, _, expanded = tool_result("shell_exec", result).partition("\n")
     assert json.loads(expanded)["stdout"]["text"] == diff
+
+
+@pytest.mark.parametrize("detailed", [False, True])
+@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/file.py",
+        "/Users/example/.a13n-harness-ui/data/threads/thread-123456789/tmp/tool-smoke-test-0547c555.txt",
+        r"C:\Users\example\project\long-directory\file.py",
+        "src/中文目录/文件 · [bold].py",
+    ],
+)
+def test_edit_heading_reflows_between_border_and_subdued_path_without_losing_content(path, theme, detailed) -> None:
+    from a13n_harness_ui.interactive.theme import activity_colors, resolve_theme
+    from prompt_toolkit.utils import get_cwidth
+
+    renderer = StreamRenderer(Status())
+    renderer.transcript.theme = resolve_theme(theme)
+    renderer.transcript.detailed = detailed
+    renderer.ingest(
+        "CUSTOM",
+        {
+            "name": "a13n.filesystem.edit_applied",
+            "value": {"event": {"file_path": path, "before": "old\n", "after": "new\n"}},
+        },
+    )
+    title = f"Edit · {path} · +1 -1"
+    fitting_width = get_cwidth(title) + 6
+    block = next(iter(renderer.transcript.blocks.values()))
+    source = block.source
+    try:
+        # Cover the exact fit boundary, narrow fallback, and resize back to a title.
+        for width in (fitting_width, fitting_width - 1, 28, 12, fitting_width):
+            renderer.transcript.render(width)
+            rows = ["".join(text for _, text in row) for row in renderer.transcript.rows]
+            assert all(get_cwidth(row) <= width for row in rows)
+            assert rows[0].startswith(("╭", "┌")) and rows[-1].startswith(("╰", "└"))
+            body = "".join(row[2:-2].rstrip() for row in rows[1:-1])
+            assert "-old" in body and "+new" in body
+            if width == fitting_width:
+                assert title in rows[0]
+                assert path not in body
+                assert "-old" in rows[1]
+            else:
+                # Wrapping can put path whitespace at padded line ends.
+                assert path.replace(" ", "") in body.replace(" ", "")
+                assert "Edit" in rows[0] and "Edit" not in body
+                assert ("+1 -1" in rows[0]) if width >= 18 else ("+1 -1" in body)
+                diff_start = next(index for index, row in enumerate(rows) if "-old" in row)
+                assert not rows[diff_start - 1][2:-2].strip()
+                muted = activity_colors(renderer.transcript.theme)["muted"]
+                muted = muted if muted.startswith("#") else "ansi" + muted.replace("_", "")
+                assert any(
+                    f"fg:{muted}" in style and "bold" not in style.split()
+                    for row in list(renderer.transcript.rows)[1 : diff_start - 1]
+                    for style, text in row
+                    if text.strip("│ ")
+                )
+            assert any("ansigreen" in style for row in renderer.transcript.rows for style, _ in row)
+            assert any("ansired" in style for row in renderer.transcript.rows for style, _ in row)
+            assert block.source == source
+    finally:
+        renderer.transcript.close()
